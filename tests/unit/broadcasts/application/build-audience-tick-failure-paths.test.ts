@@ -2586,18 +2586,20 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
    * this audience. Deleting it now would turn that send `failed` at Resend
    * while our row goes `sending`.
    */
-  // Spec 140 s2b review round 2 (CR#3) — under the dispatch lease every
-  // restart write carries the token and a status change clears it, so a lost
-  // CAS is a lost lease: the tick answers the concurrent skip, not the hold.
-  it('tick 2 hold, the claim CAS is LOST (a sibling moved the row) → the audience is NOT deleted; a lease_lost skip, logged, not counted', async () => {
+  // Spec 140 s2b review round 3 (CR#4, CR#5) — a CAS miss (status or id) is
+  // `cas_lost`, labelled `unknown_or_already_processed`; only a lease check
+  // answers `lease_lost`. Not a hold either: nothing recorded.
+  it('tick 2 hold, the claim CAS is LOST (a sibling moved the row) → the audience is NOT deleted; an unknown_or_already_processed skip, logged, not counted', async () => {
     const { logger } = await import('@/lib/logger');
     const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
     const abandonedSpy = vi.spyOn(broadcastsMetrics, 'audienceImportAbandonedOnHold');
+    const heldSpy = vi.spyOn(broadcastsMetrics, 'dispatchStandingHeldTotal');
     const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW, standing: { access: 'suspended' }, releaseImportLoses: true });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' } });
+    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
+    expect(heldSpy).not.toHaveBeenCalled();
     expect(rec.gatewayCalls).toEqual([]);
     expect(rec.releases.map((r) => r.method)).toEqual(['releaseAudienceImport']);
     expect(abandonedSpy).not.toHaveBeenCalled();
@@ -4022,8 +4024,8 @@ describe('buildAudienceTick — the remaining restart / fence arms', () => {
   const TICK2 = { ...POLLING, audienceImportSubmittedAt: NOW } as const;
   const AUDIENCE_404 = { method: 'createBroadcast', kind: 'permanent', code: 'not_found' } as const;
 
-  // Spec 140 s2b review round 2 (CR#3) — a lost CAS is a lost lease: the skip.
-  it('a hold whose final release CAS is LOST → a lease_lost skip, logged, not counted', async () => {
+  // Spec 140 s2b review round 3 (CR#5) — a CAS miss is cas_lost: the old label.
+  it('a hold whose final release CAS is LOST → an unknown_or_already_processed skip, logged, not counted', async () => {
     const { logger } = await import('@/lib/logger');
     const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
     const abandonedSpy = vi.spyOn(broadcastsMetrics, 'audienceImportAbandonedOnHold');
@@ -4031,20 +4033,20 @@ describe('buildAudienceTick — the remaining restart / fence arms', () => {
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' } });
+    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
     expect(rec.releases.map((r) => r.method)).toEqual(['releaseAudienceImport', 'releaseResendAudience']);
     expect(abandonedSpy).not.toHaveBeenCalled();
     const log = infoSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.hold_abandon_lost');
     expect(log?.[0]).toMatchObject({ step: 'release_audience' });
   });
 
-  // Spec 140 s2b review round 2 (spec L-g) — labelled lease_lost.
-  it('the audience-missing self-heal LOSES its claim → a lease_lost skip, nothing terminal', async () => {
+  // Spec 140 s2b review round 3 (CR#5) — a claim CAS miss is cas_lost, not a lost lease.
+  it('the audience-missing self-heal LOSES its claim → an unknown_or_already_processed skip, nothing terminal', async () => {
     const { deps, rec } = makeDeps({ ...TICK2, throwOn: AUDIENCE_404, releaseImportLoses: true });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' } });
+    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
     expect(rec.transitions).toEqual([]);
     expect(rec.memberEmails).toEqual([]);
   });

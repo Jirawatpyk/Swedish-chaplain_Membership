@@ -544,12 +544,16 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     expect(lost.writeLeases.map((w) => w.method)).not.toContain('applyTransition:failed_to_dispatch');
   });
 
-  it('A4 — a lease lost after /send (the ids attach) logs lease_lost_after_send at INFO, not sent_but_transition_lost', async () => {
+  // Review round 3 (reliability LOW-B) — an `approved` row after `/send` has
+  // no remaining cause (no live holder can be taken over inside the TTL), so
+  // it is still not the critical line, but it is WARN, not INFO.
+  it('A4 — a lease lost after /send (the ids attach) on an approved row logs lease_lost_after_send at WARN, not sent_but_transition_lost', async () => {
     const h = harness({ row: TICK2_ROW, attachResendIdsThrows: 'lease_lost', lostRowStatus: 'approved' });
     const res = await h.run();
     expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost', rowStatus: 'approved' });
     expect(h.gatewayCalls()).toContain('gw:sendBroadcast');
-    expect(logged(info, 'broadcasts.audience_import.lease_lost_after_send')).toBe(true);
+    expect(logged(warn, 'broadcasts.audience_import.lease_lost_after_send')).toBe(true);
+    expect(logged(info, 'broadcasts.audience_import.lease_lost_after_send')).toBe(false);
     expect(logged(error, 'broadcasts.audience_import.sent_but_transition_lost')).toBe(false);
   });
 
@@ -585,12 +589,14 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     expect(counted).toHaveBeenCalledWith('test-tenant', step);
   });
 
-  // Spec L4 — the completion-stamp A4 site. Review round 2 (sec L1, spec F2):
-  // a `sending` row passes the stamp fence, so the reachable arms are a row
-  // a cancel took past the send (critical) and a takeover (`approved`, benign).
-  it('A4 — a lease lost at the completion stamp on a cancelled row logs completion_stamp_failed and counts it; the tick still reports sent', async () => {
+  // Spec L4 — the completion-stamp A4 site. Review round 3 (spec F2): the
+  // stamp runs after the `sending` transition, and every SENDING_STARTED
+  // status passes its fence, so the one status it can reach without the token
+  // is `failed_to_dispatch` — `reconcile-stuck-sending` failing a row stuck in
+  // `sending` for more than 24 h, which clears the lease. That is critical.
+  it('A4 — a lease lost at the completion stamp on a failed_to_dispatch row logs completion_stamp_failed and counts it; the tick still reports sent', async () => {
     const counted = vi.spyOn(broadcastsMetrics, 'dispatchLeaseLostAfterSend').mockImplementation(() => undefined);
-    const h = harness({ row: TICK2_ROW, completionStampThrows: 'lease_lost', lostRowStatus: 'cancelled' });
+    const h = harness({ row: TICK2_ROW, completionStampThrows: 'lease_lost', lostRowStatus: 'failed_to_dispatch' });
     const res = await h.run();
     expect(res.ok ? res.value.kind : res.error).toBe('sent');
     expect(logged(error, 'broadcasts.audience_import.completion_stamp_failed')).toBe(true);
@@ -598,12 +604,14 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     expect(counted).toHaveBeenCalledWith('test-tenant', 'completion_stamp');
   });
 
-  it('A4 — a lease lost at the completion stamp on an approved row (a takeover) is the benign INFO line, counted', async () => {
+  // A dead-arm pin: the stamp cannot meet an `approved` row (it runs after the
+  // `sending` transition). If it ever did, the answer is the WARN line, counted.
+  it('dead-arm pin — a lease lost at the completion stamp on an approved row is the WARN line, counted', async () => {
     const counted = vi.spyOn(broadcastsMetrics, 'dispatchLeaseLostAfterSend').mockImplementation(() => undefined);
     const h = harness({ row: TICK2_ROW, completionStampThrows: 'lease_lost', lostRowStatus: 'approved' });
     const res = await h.run();
     expect(res.ok ? res.value.kind : res.error).toBe('sent');
-    expect(logged(info, 'broadcasts.audience_import.lease_lost_after_send')).toBe(true);
+    expect(logged(warn, 'broadcasts.audience_import.lease_lost_after_send')).toBe(true);
     expect(logged(error, 'broadcasts.audience_import.completion_stamp_failed')).toBe(false);
     expect(counted).toHaveBeenCalledWith('test-tenant', 'completion_stamp');
   });
@@ -614,17 +622,27 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     ['expiring', { kind: 'lease_expiring', step: 'delete_audience' }],
     ['lost', { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' }],
   ] as const)('the hold arm passes the restart’s %s lease through', async (answer, expected) => {
+    const held = vi.spyOn(broadcastsMetrics, 'dispatchStandingHeldTotal').mockImplementation(() => undefined);
     const h = harness({ row: { resendAudienceId: 'aud-held' }, standing: { access: 'suspended' }, checks: [answer] });
     const res = await h.run();
     expect(res.ok ? res.value : res.error).toEqual(expected);
     expect(h.gatewayCalls()).not.toContain('gw:deleteAudience:aud-held');
+    // Review round 3 (CR#4) — not a hold: nothing recorded, the clock untouched.
+    expect(held).not.toHaveBeenCalled();
+    expect(logged(info, 'broadcasts.dispatch.standing_held')).toBe(false);
+    expect(h.writeLeases.map((w) => w.method)).not.toContain('clearDispatchRetryClock');
   });
 
   it('the hold arm still answers dispatch_held_member_suspended when its restart completes', async () => {
+    const held = vi.spyOn(broadcastsMetrics, 'dispatchStandingHeldTotal').mockImplementation(() => undefined);
     const h = harness({ row: { resendAudienceId: 'aud-held' }, standing: { access: 'suspended' } });
     const res = await h.run();
     expect(res.ok ? res.value : res.error).toEqual({ kind: 'dispatch_held_member_suspended' });
     expect(h.gatewayCalls()).toContain('gw:deleteAudience:aud-held');
+    // Review round 3 (CR#4) — the hold is recorded and the clock reset AFTER the restart.
+    expect(held).toHaveBeenCalledTimes(1);
+    const writes = h.events.filter((e) => e.startsWith('write:'));
+    expect(writes.indexOf('write:clearDispatchRetryClock')).toBeGreaterThan(writes.indexOf('write:releaseResendAudience'));
   });
 
   // Review round 2 (spec L-g) — a self-heal restart that lost the lease says so.
