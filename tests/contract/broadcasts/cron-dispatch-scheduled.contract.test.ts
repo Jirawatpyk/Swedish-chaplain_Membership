@@ -718,3 +718,81 @@ describe('cron dispatch-scheduled — span attributes mirror the summary (spec 1
     }
   });
 });
+
+/**
+ * Spec 140 s2b — the route and the dispatch lease.
+ *   row 13 (A7) — the due scan leaves out a row whose lease is live, with the
+ *            import flag ON and OFF (a held row must not take a `LIMIT` slot,
+ *            and a dead holder's row waits out its lease, then is reclaimed);
+ *            NOT inside `importRowsFilter`, which exists only flag OFF.
+ *   DL9 — both legs get `{ tickStartedAt, maxDurationMs }` (the route's entry
+ *            instant and its `maxDuration`), and a row deferred past the cutoff
+ *            is its own bucket on either leg — never `succeeded` or
+ *            `import_pending`, which an ok kind would otherwise fall into.
+ */
+describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => {
+  const LEASE_EXCLUSION = '(dispatch_lease_token IS NULL OR dispatch_lease_expires_at < now())';
+  const captureScan = (rows: unknown[] = []): unknown[] => {
+    const executed: unknown[] = [];
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({
+        execute: async (q: unknown) => {
+          executed.push(q);
+          return rows;
+        },
+      }),
+    );
+    return executed;
+  };
+
+  it.each([
+    ['OFF', false],
+    ['ON', true],
+  ] as const)('row 13 — the scan excludes a live lease, import flag %s', async (_label, flag) => {
+    isF7ImportAudienceEnabledMock.mockReturnValue(flag);
+    const executed = captureScan();
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const scanSql = sqlTextOf(executed[0]);
+    // Positive control: the clauses the due scan always keeps.
+    expect(scanSql).toContain("status = 'approved'");
+    expect(scanSql).toContain('FOR UPDATE SKIP LOCKED');
+    expect(scanSql).toContain(LEASE_EXCLUSION);
+  });
+
+  it('DL9 — both legs receive the tick budget: the route entry instant and maxDuration (300 s)', async () => {
+    captureScan([{ broadcast_id: BROADCAST_ID }]);
+    dispatchScheduledBroadcastMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
+    const before = Date.now();
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const [legacyDeps] = dispatchScheduledBroadcastMock.mock.calls[0] as [{ tickBudget?: { tickStartedAt: number; maxDurationMs: number } }];
+    expect(legacyDeps.tickBudget?.maxDurationMs).toBe(300_000);
+    expect(legacyDeps.tickBudget?.tickStartedAt).toBeGreaterThanOrEqual(before);
+    expect(legacyDeps.tickBudget?.tickStartedAt).toBeLessThanOrEqual(Date.now());
+
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const [importDeps] = buildAudienceTickMock.mock.calls[0] as [{ tickBudget?: { tickStartedAt: number; maxDurationMs: number } }];
+    expect(importDeps.tickBudget?.maxDurationMs).toBe(300_000);
+    expect(importDeps.tickBudget?.tickStartedAt).toBeGreaterThanOrEqual(before);
+  });
+
+  it.each([
+    ['legacy', false],
+    ['import', true],
+  ] as const)('DL9 — a row deferred past the cutoff on the %s leg is counted deferred_past_cutoff, nothing else', async (_leg, flag) => {
+    isF7ImportAudienceEnabledMock.mockReturnValue(flag);
+    captureScan([{ broadcast_id: BROADCAST_ID }]);
+    dispatchScheduledBroadcastMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
+    buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['deferred_past_cutoff']).toBe(1);
+    expect(body['succeeded']).toBe(0);
+    expect(body['import_pending']).toBe(0);
+    expect(body['unknown_error']).toBe(0);
+  });
+});
