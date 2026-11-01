@@ -3115,7 +3115,7 @@ describe('buildAudienceTick — FR-021 budget anchors on the first failure (F119
 
     expect(res).toEqual({
       ok: false,
-      error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' },
+      error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' }, // spec 140 s2b review round 1 (security I5): the stamp is token-fenced
     });
     expect(rec.transitions).toHaveLength(0);
     expect(rec.audits).toHaveLength(0);
