@@ -2816,8 +2816,10 @@ async function onResolveFailure(
     //
     // The caller-visible kind is still `mapped` on SUCCESS, because the cron's
     // arms and alerts read it; only a FAILED terminal write now surfaces as
-    // itself.
-    if (!terminal.ok && terminal.error.kind === 'dispatch.server_error') return terminal;
+    // itself. Spec 140 s2b — so does a lost lease (`failTerminally`'s
+    // concurrent skip): nothing was written, and answering `mapped` would have
+    // the cron count `permanent_failed` for a row this tick no longer owns.
+    if (!terminal.ok && (terminal.error.kind === 'dispatch.server_error' || isLeaseLost(terminal.error))) return terminal;
     return err(mapped);
   }
 
