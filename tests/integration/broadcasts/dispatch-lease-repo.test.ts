@@ -455,16 +455,33 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
       expect(row.dispatchLeaseExpiresAt).toEqual(lease.dispatchLeaseExpiresAt);
     });
 
-    // Review round 1 (CR#3) — a re-time replaces the time the holder was
-    // working to; the holder must stop, as on a status change.
-    it('a same-status re-time (new scheduledFor) clears the lease', async () => {
-      const id = await seed(tenantA, foreignLease(120_000));
+    // Review round 2 (reliability MED-1; supersedes round 1's "a re-time
+    // clears the lease") — a re-time cannot land while a tick holds the row:
+    // the holder may already have sent at the old time. A held row answers
+    // 0 rows (the caller's concurrent-mutation answer); once the lease has
+    // expired the re-time is admitted and leaves the (dead) lease alone.
+    it('a same-status re-time is refused while a live lease is held, and allowed once it expired', async () => {
+      const later = new Date(Date.now() + 3_600_000);
+      const live = foreignLease(120_000);
+      const held = await seed(tenantA, live);
+      const before = await readRow(tenantA, held);
+      const thrown = await repoA()
+        .withTx((tx) => repoA().applyTransition(tx, tenantA.ctx.slug, held, 'approved', { scheduledFor: later }, 'approved', null))
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(thrown).toBeInstanceOf(BroadcastConcurrentMutationError);
+      expect(await readRow(tenantA, held)).toEqual(before);
+
+      const dead = foreignLease(-60_000);
+      const expired = await seed(tenantA, dead);
       await repoA().withTx((tx) =>
-        repoA().applyTransition(tx, tenantA.ctx.slug, id, 'approved', { scheduledFor: new Date(Date.now() + 3_600_000) }, 'approved', null),
+        repoA().applyTransition(tx, tenantA.ctx.slug, expired, 'approved', { scheduledFor: later }, 'approved', null),
       );
-      const row = await readRow(tenantA, id);
-      expect(row.dispatchLeaseToken).toBeNull();
-      expect(row.dispatchLeaseExpiresAt).toBeNull();
+      const row = await readRow(tenantA, expired);
+      expect(row.scheduledFor).toEqual(later);
+      expect(row.dispatchLeaseToken).toBe(dead.dispatchLeaseToken);
     });
   });
 
