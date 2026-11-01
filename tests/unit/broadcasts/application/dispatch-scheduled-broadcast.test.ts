@@ -5926,11 +5926,10 @@ describe('spec 140 s2a DL7 — the legacy leg skips a row that holds import colu
       },
       baseInput,
     );
-    // The cron route buckets this kind as `concurrent_skip`: not a failure, no email.
-    expect(result).toEqual({
-      ok: false,
-      error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' },
-    });
+    // Its own kind (review round 1, code-review #3): the cron route counts it
+    // under `import_row_skipped` at info — not a failure, no email, and not a
+    // `concurrent_skip` warn.
+    expect(result).toEqual({ ok: false, error: { kind: 'import_row_skipped' } });
     expect(gatewayCalls).toEqual([]);
     expect(repo.transitions).toEqual([]);
     expect(audit.emits).toEqual([]);

@@ -184,7 +184,7 @@ describe('DL8 — every broadcasts gateway call aborts at callTimeoutMs on a hun
   });
 });
 
-describe('DL5a — a create is never retried in-process', () => {
+describe('DL5a — a create is not retried in-process on a 5xx or a timeout', () => {
   // The default 10 s budget: a backoff would fit, so one request is the policy,
   // not the budget.
   it.each(CREATES)('%s: one request on a 5xx', async (_name, run) => {
@@ -206,34 +206,69 @@ describe('DL5a — a create is never retried in-process', () => {
   });
 });
 
+// Review round 1, CR#1: a 429 created nothing (Resend refused the request for
+// its rate), so a create still retries it inside the budget; anything that may
+// have reached Resend (a 5xx, a network failure, a timeout) stays one attempt.
+describe('CR#1 — a create retries a 429 but not a 5xx or a timeout', () => {
+  const rateLimited = (): Response =>
+    json(429, { statusCode: 429, name: 'rate_limit_exceeded', message: 'Too many requests' });
+
+  it.each(CREATES)('%s: a create retries a 429 but not a 5xx or a timeout', async (_name, run) => {
+    handler = async (call) => (call === 1 ? rateLimited() : json(201, { object: 'x', id: 'x_1' }));
+    const after429 = await settleWithin(run(createResendBroadcastsGateway()), 2_500);
+    expect({ settled: 'value' in (after429.settled as object), requests: requests.length }).toEqual({
+      settled: true,
+      requests: 2,
+    });
+
+    requests = [];
+    handler = async () => server5xx();
+    const after5xx = await settleWithin(run(createResendBroadcastsGateway()), 1_500);
+    expect({ settled: after5xx.settled, requests: requests.length }).toEqual({
+      settled: { thrown: { kind: 'retryable', subKind: 'server_5xx' } },
+      requests: 1,
+    });
+
+    requests = [];
+    handler = hang;
+    const afterTimeout = await settleWithin(run(createResendBroadcastsGateway({ callTimeoutMs: 50 })), 1_000);
+    expect({ settled: afterTimeout.settled, requests: requests.length }).toEqual({
+      settled: { thrown: { kind: 'retryable', subKind: 'timeout' } },
+      requests: 1,
+    });
+  });
+});
+
 describe('P6 — one signal spans every attempt of a retried call', () => {
   // Room for exactly one 1 s backoff: a retry fits only while the budget left
-  // exceeds the next backoff + 1 s.
-  const C = 2_100;
+  // exceeds the next backoff + 1 s. Every bound is relative to C (review round
+  // 1, CR#4): a per-attempt signal would end case (a) at 1 s + C ≈ 1.33 C, and
+  // a missing budget guard would end case (b) at or after C.
+  const C = 3_000;
 
   it('a retried GET never exceeds C in total (a 5xx, then a hang)', async () => {
     handler = async (call, init) => (call === 1 ? server5xx() : hang(call, init));
     const { settled, elapsedMs } = await settleWithin(
       createResendBroadcastsGateway({ callTimeoutMs: C }).retrieveBroadcast('bc_1'),
-      C + 700,
+      C * 1.25,
     );
     expect({ settled, requests: requests.length }).toEqual({
       settled: { thrown: { kind: 'retryable', subKind: 'timeout' } },
       requests: 2,
     });
-    expect(elapsedMs).toBeLessThan(C + 500);
+    expect(elapsedMs).toBeLessThan(C * 1.2);
   });
 
   it('a retried GET that keeps failing fast gives up before C, never sleeping past it', async () => {
     handler = async () => server5xx();
     const { settled, elapsedMs } = await settleWithin(
       createResendBroadcastsGateway({ callTimeoutMs: C }).getContactImport('imp_1'),
-      C + 700,
+      C * 1.25,
     );
     expect({ settled, requests: requests.length }).toEqual({
       settled: { thrown: { kind: 'retryable', subKind: 'server_5xx' } },
       requests: 2,
     });
-    expect(elapsedMs).toBeLessThan(C);
+    expect(elapsedMs).toBeLessThan(C * 0.75);
   });
 });

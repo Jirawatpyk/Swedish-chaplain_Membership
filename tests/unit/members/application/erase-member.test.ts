@@ -568,6 +568,19 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(Object.prototype.hasOwnProperty.call(opts, 'deadlineAt')).toBe(false);
   });
 
+  // Spec 140 s2a review round 1 (pdpa H-1) — the same deadline bounds the
+  // sub-processor propagation, so its audit row lands before `maxDuration`.
+  it('propagate receives the cascade deadline', async () => {
+    const deadlineAt = new Date('2026-10-31T00:04:30Z');
+    const withDeadline = buildEraseDeps();
+    await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, { ...META, deadlineAt }, withDeadline);
+    expect(withDeadline.subprocessorErasure.propagate).toHaveBeenCalledWith(expect.objectContaining({ deadlineAt }));
+    const without = buildEraseDeps();
+    await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, without);
+    const input = (without.subprocessorErasure.propagate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as object;
+    expect(Object.prototype.hasOwnProperty.call(input, 'deadlineAt')).toBe(false);
+  });
+
   // Spec 139 DE2 wiring — erasure is the ONE caller that selects the cascade's
   // `delete_then_cancel` mode (archive keeps the skip, DE4).
   it('spec 139: asks the broadcasts cascade to delete-then-cancel a dispatch-begun E-Blast', async () => {
