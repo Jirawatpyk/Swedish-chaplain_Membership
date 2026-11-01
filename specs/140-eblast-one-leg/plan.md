@@ -691,6 +691,14 @@ Finding for review: the route logs a DL7 skip at **WARN**, as `cron.broadcasts.d
 | Probe: second tick | `processed:0`, and the row is unchanged. |
 | Erasure + propagate deadline | Erase → 200 `cascadesComplete:true`. The draft → **404**. `member_erased` has `resend_drafts_cleared:1`. `subprocessor_erasure_propagated` is written with `resend_outcome:ok`. The member had no live-audience pairs, so the deadline cut itself was not exercised live; it is covered by unit tests. |
 
+### Slice 2a — re-Verify on HEAD: the maintainer's `/verify` (1 Nov 2026, on `f94c24c0b`): PASS
+
+Run because `route.ts` changed after `147bf6150` (the span attribute `757d7d01f`, then attributes derived from the summary `93953fa01`). :3400, flag OFF, tenant swecham, Neon dev, no Resend calls.
+- Before seeding: 0 due `approved` rows.
+- A wrong Bearer and an empty Bearer → 401 `unauthorized`; the seeded import row was unchanged, `updated_at` included.
+- The CRON_SECRET Bearer, twice → 200 `processed:0` (all 13 summary keys present, `import_row_skipped:0`), the row unchanged both times. Two `tick_complete` lines at INFO; 0 `resend.*` lines.
+- Cleanup: the seed was deleted (`leftover:0`) and the server stopped.
+
 ### Slice 2a — review round 1 (`/code-review high 719`, security APPROVE, reliability MERGEABLE, pdpa APPROVE WITH CONDITIONS; 1 Nov 2026)
 
 **Review metrics:** round 1 · 6 + 3 + 3 + 2 items (code-review, security, reliability, pdpa) · cap: ≥ 2 full + ≤ 2 targeted.
