@@ -323,19 +323,21 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     );
   });
 
-  it('row 6 — within C + M of expiry no call is made: lease_expiring, and the lease is still released', async () => {
+  // Review round 1 (CR#4) — a lease expiring on its own holder is a budget
+  // breach, not a concurrent skip: its own kind, logged at WARN.
+  it('row 6 — within C + M of expiry no call is made: the lease_expiring kind, WARN, and the lease is still released', async () => {
     const h = harness({ checks: ['expiring'] });
     const res = await h.run();
-    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_expiring' });
+    expect(res.ok ? res.value : res.error).toEqual({ kind: 'lease_expiring', step: 'createAudience' });
     expect(h.gatewayCalls()).toEqual([]);
-    expect(logged(info, 'broadcasts.audience_import.lease_expiring')).toBe(true);
+    expect(logged(warn, 'broadcasts.audience_import.lease_expiring')).toBe(true);
     expect(h.releases).toEqual([TOKEN]);
   });
 
   it('the import POST demands I + M: a lease good for C + M but not I + M makes no import', async () => {
     const h = harness({ checks: ['held', 'expiring'] });
     const res = await h.run();
-    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_expiring' });
+    expect(res.ok ? res.value : res.error).toEqual({ kind: 'lease_expiring', step: 'createContactImport' });
     expect(h.gatewayCalls()).toEqual(['gw:createAudience']);
     expect(h.events).toContain(`check:${IMPORT_HEADROOM_MS}:expiring`);
   });
@@ -385,6 +387,10 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
       `check:${CALL_HEADROOM_MS}:held`,
       'gw:deleteAudience:aud-stale',
     ]);
+
+    const expiring = harness({ row: { resendAudienceId: 'aud-stale', resendBroadcastId: 'rb-dead' }, probe: 'draft', checks: ['held', 'expiring'] });
+    const expiringRes = await expiring.run();
+    expect(expiringRes.ok ? expiringRes.value : expiringRes.error).toEqual({ kind: 'lease_expiring', step: 'delete_audience' });
 
     const lost = harness({ row: { resendAudienceId: 'aud-stale', resendBroadcastId: 'rb-dead' }, probe: 'draft', checks: ['held', 'lost'] });
     await lost.run();

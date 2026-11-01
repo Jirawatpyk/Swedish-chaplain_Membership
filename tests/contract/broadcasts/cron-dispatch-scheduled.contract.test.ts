@@ -35,6 +35,7 @@ const dispatchScheduledBroadcastMock = vi.fn();
 const dispatchResolveFailedTotalSpy = vi.fn();
 const cronSkippedCountSpy = vi.fn();
 const cronUnknownErrorCountSpy = vi.fn();
+const dispatchLeaseExpiringSpy = vi.fn();
 /** F119 PR-A — the members bridge the deps factory hands the route, and the F8 access port. */
 const STUB_BRIDGE = { kind: 'members-bridge-stub' } as const;
 const STUB_ACCESS = { kind: 'membership-access-stub' } as const;
@@ -91,6 +92,7 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
       dispatchResolveFailedTotal: (...args: unknown[]) => dispatchResolveFailedTotalSpy(...args),
       cronSkippedCount: (...args: unknown[]) => cronSkippedCountSpy(...args),
       cronUnknownErrorCount: (...args: unknown[]) => cronUnknownErrorCountSpy(...args),
+      dispatchLeaseExpiring: (...args: unknown[]) => dispatchLeaseExpiringSpy(...args),
     },
   };
 });
@@ -794,5 +796,28 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     expect(body['succeeded']).toBe(0);
     expect(body['import_pending']).toBe(0);
     expect(body['unknown_error']).toBe(0);
+  });
+
+  // Review round 1 (CR#4) — a lease that expired on its own holder is a budget
+  // breach: its own bucket (and so its own span attribute), a WARN line and
+  // `broadcasts_dispatch_lease_expiring_total`; never concurrent_skip or unknown_error.
+  it('a lease_expiring outcome has its own bucket and WARN', async () => {
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    captureScan([{ broadcast_id: BROADCAST_ID }]);
+    dispatchLeaseExpiringSpy.mockReset();
+    buildAudienceTickMock.mockResolvedValue(err({ kind: 'lease_expiring', step: 'sendBroadcast' }));
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['lease_expiring']).toBe(1);
+    expect(body['concurrent_skip']).toBe(0);
+    expect(body['unknown_error']).toBe(0);
+    expect(spanAttributes.get('cron.lease_expiring')).toBe(1);
+    expect(dispatchLeaseExpiringSpy).toHaveBeenCalledWith('test-tenant');
+    expect(cronUnknownErrorCountSpy).not.toHaveBeenCalled();
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      { tenantId: 'test-tenant', broadcastId: BROADCAST_ID, step: 'sendBroadcast' },
+      'cron.broadcasts.dispatch.lease_expiring',
+    );
   });
 });
