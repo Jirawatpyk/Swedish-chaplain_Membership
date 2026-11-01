@@ -12,21 +12,24 @@ import { type MoneyDialogFooterState, useReportMoneyDialogFooter } from './money
 import { routeRecordPaymentError } from './record-payment-error-routing';
 import { refreshWhenOnline } from './refresh-when-online';
 import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from './unknown-outcome';
-import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
-import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyRefusal, problemCode } from '@/lib/http/read-only-refusal';
+import { useStillWorking } from './use-still-working';
 
 const METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
 
 type PaymentFormError =
   | { readonly kind: 'concurrent' }
-  // #48 — the connection dropped: the payment may have been recorded.
+  // #48 / #57 / #58 — no trustworthy answer: the payment may have been recorded.
   | { readonly kind: 'unconfirmed' }
+  // The READ_ONLY_MODE freeze refused it: nothing was written (#724 review).
+  | { readonly kind: 'readOnly' }
   | { readonly kind: 'failure'; readonly message: string };
 
 /** One tone per kind; a new kind must pick one. A stale write is not the admin's error. */
 const PAYMENT_ERROR_TONE = {
   concurrent: 'info',
   unconfirmed: 'warning',
+  readOnly: 'warning',
   failure: 'danger',
 } as const satisfies Record<PaymentFormError['kind'], FeedbackTone>;
 
@@ -34,6 +37,7 @@ const PAYMENT_ERROR_TONE = {
 const PAYMENT_ERROR_WRAPPER_TONE = {
   concurrent: 'neutral',
   unconfirmed: 'warning',
+  readOnly: 'warning',
   failure: 'destructive',
 } as const satisfies Record<PaymentFormError['kind'], string>;
 
@@ -97,8 +101,9 @@ export function PaymentForm({
 }) {
   const t = useTranslations('admin.invoices.pay');
   const router = useRouter();
-  const readOnlyToast = useReadOnlyToast();
+  const tErrors = useTranslations('errors');
   const [pending, startTransition] = useTransition();
+  const stillWorking = useStillWorking(pending);
   // The submit validates the date itself, so it is enabled until in flight.
   useReportMoneyDialogFooter(onFooterChange, {
     pending,
@@ -186,10 +191,10 @@ export function PaymentForm({
           const body: unknown = await res.json().catch(() => ({}));
           // The write freeze refused it: nothing ran (its flat body names no code).
           if (isReadOnlyRefusal(res.status, body)) {
-            setFormError({ kind: 'failure', message: readOnlyToast() });
+            setFormError({ kind: 'readOnly' });
             return;
           }
-          const code = (body as { error?: { code?: string } })?.error?.code;
+          const code = problemCode(body);
           // #57 — a 5xx naming no refusal may come after the payment (and its
           // RC) committed.
           if (isUnknownOutcome(res.status, code)) {
@@ -232,9 +237,18 @@ export function PaymentForm({
         // non-blocking warning line so the admin knows to deliver it manually.
         const noEmailWarning =
           body.email_dispatch === 'skipped_no_email' ? t('successNoEmailWarning') : null;
-        if (rc) {
+        if (body.replayed === true) {
+          // #59 / #724 review — the invoice was already paid. The server
+          // checked only that, not that it was this payment: say nothing new
+          // was recorded and keep it on screen, so a second payment by the
+          // member is not missed.
+          toast.warning(rc ? t('alreadyPaid', { number: rc }) : t('alreadyPaidNoNumber'), {
+            duration: Infinity,
+            closeButton: true,
+          });
+        } else if (rc) {
           toast.success(
-            body.replayed === true ? t('successAlreadyRecorded', { number: rc }) : t('successReceipt', { number: rc }),
+            t('successReceipt', { number: rc }),
             noEmailWarning ? { description: noEmailWarning } : undefined,
           );
         } else {
@@ -289,7 +303,7 @@ export function PaymentForm({
           className="outline-none"
           data-testid="record-payment-error"
           action={
-            formError.kind !== 'failure' ? (
+            formError.kind !== 'failure' && formError.kind !== 'readOnly' ? (
               <Button
                 type="button"
                 variant="secondary"
@@ -314,12 +328,19 @@ export function PaymentForm({
             ? t('errors.concurrent')
             : formError.kind === 'unconfirmed'
               ? t('errors.unconfirmed')
-              : formError.message}
+              : formError.kind === 'readOnly'
+                ? `${tErrors('readOnlyMode')} ${tErrors('readOnlyNothingChanged')}`
+                : formError.message}
         </Alert>
       )}
-      {/* #48 — the offline wait, announced once (outside the alert region). */}
+      {/* #48 — the offline wait, and #724 the 10 s "still working" note:
+          announced once, outside the alert region. */}
       <div role="status" aria-live="polite" className="sr-only">
-        {waitingForConnection ? t('errors.waitingForConnection') : ''}
+        {waitingForConnection
+          ? t('errors.waitingForConnection')
+          : stillWorking
+            ? t('errors.stillWorking')
+            : ''}
       </div>
       <Select
         id="method"

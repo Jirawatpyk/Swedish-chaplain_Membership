@@ -25,12 +25,6 @@ import { rateLimiter } from '@/lib/auth-deps';
 import { createServerTiming, type ServerTiming } from '@/lib/server-timing';
 
 /**
- * #58 — the run limit, stated here so the dialog's client timeout
- * (`MONEY_POST_TIMEOUT_MS`, 75 s) always outlasts it.
- */
-export const maxDuration = 60;
-
-/**
  * Every response carries a `Server-Timing` header (DevTools → Network →
  * Timing) and the same numbers land in one `pay.timing` log line (Vercel
  * runtime logs), so a slow mark-paid can be attributed to a step — auth,

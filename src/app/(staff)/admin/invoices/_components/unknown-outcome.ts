@@ -12,8 +12,9 @@ export function isUnknownOutcome(status: number, code: string | null | undefined
 }
 
 /**
- * The browser's wait on those POSTs. It outlasts the routes' 60 s
- * `maxDuration`, so the browser never gives up on a request the server is
- * still running; a timeout then reads as an unknown outcome (#58).
+ * The browser's wait on those POSTs (#58). The routes keep the platform's
+ * default run limit (300 s): a lower one would make a kill inside the
+ * transaction likelier. So the server may still be running when this fires,
+ * and the dialog says exactly that: it can't tell, refresh to check.
  */
 export const MONEY_POST_TIMEOUT_MS = 75_000;

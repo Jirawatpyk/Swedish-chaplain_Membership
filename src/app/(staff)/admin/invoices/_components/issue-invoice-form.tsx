@@ -60,8 +60,8 @@ import { ZeroRateCertUploader } from './zero-rate-cert-uploader';
 import { type MoneyDialogFooterState, useReportMoneyDialogFooter } from './money-dialog-footer';
 import { refreshWhenOnline } from './refresh-when-online';
 import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from './unknown-outcome';
-import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
-import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyRefusal, problemCode } from '@/lib/http/read-only-refusal';
+import { useStillWorking } from './use-still-working';
 
 export type IssueInvoiceFormProps = {
   readonly invoiceId: string;
@@ -113,8 +113,10 @@ export type IssueInvoiceFormProps = {
 type IssueFormError =
   | { readonly kind: 'concurrent' }
   | { readonly kind: 'stale' }
-  // #48 — the connection dropped: the issue may have committed.
+  // #48 / #57 / #58 — no trustworthy answer: the issue may have committed.
   | { readonly kind: 'unconfirmed' }
+  // The READ_ONLY_MODE freeze refused it: nothing was written (#724 review).
+  | { readonly kind: 'readOnly' }
   | { readonly kind: 'failure'; readonly message: string };
 
 /** One tone per kind; a new kind must pick one (the wrapper's `data-tone` follows). */
@@ -122,6 +124,7 @@ const ISSUE_ERROR_TONE = {
   concurrent: { alert: 'info', wrapper: 'neutral' },
   stale: { alert: 'info', wrapper: 'neutral' },
   unconfirmed: { alert: 'warning', wrapper: 'warning' },
+  readOnly: { alert: 'warning', wrapper: 'warning' },
   failure: { alert: 'danger', wrapper: 'destructive' },
 } as const satisfies Record<IssueFormError['kind'], { alert: FeedbackTone; wrapper: string }>;
 
@@ -144,9 +147,10 @@ export function IssueInvoiceForm({
   const tDetail = useTranslations('admin.invoices.detail');
   const locale = useLocale();
   const router = useRouter();
-  const readOnlyToast = useReadOnlyToast();
+  const tErrors = useTranslations('errors');
   const [typed, setTyped] = useState('');
   const [pending, startTransition] = useTransition();
+  const stillWorking = useStillWorking(pending);
 
   // 088 T021a / FR-032 — issue failure surfaces INLINE via a focused
   // role="alert" (never a transient toast); a concurrent 409 shows an inline
@@ -314,10 +318,10 @@ export function IssueInvoiceForm({
           const errBody: unknown = await res.json().catch(() => ({}));
           // The write freeze refused it: nothing ran (its flat body names no code).
           if (isReadOnlyRefusal(res.status, errBody)) {
-            setFormError({ kind: 'failure', message: readOnlyToast() });
+            setFormError({ kind: 'readOnly' });
             return;
           }
-          const code = (errBody as { error?: { code?: string } })?.error?.code;
+          const code = problemCode(errBody);
           // #57 — a 5xx naming no refusal may come after the issue committed.
           if (isUnknownOutcome(res.status, code)) {
             setFormError({ kind: 'unconfirmed' });
@@ -649,7 +653,7 @@ export function IssueInvoiceForm({
             role="none"
             tone={ISSUE_ERROR_TONE[formError.kind].alert}
             action={
-              formError.kind !== 'failure' ? (
+              formError.kind !== 'failure' && formError.kind !== 'readOnly' ? (
                 <Button
                   type="button"
                   variant="secondary"
@@ -681,13 +685,20 @@ export function IssueInvoiceForm({
                 ? t('errors.issue_total_changed')
                 : formError.kind === 'unconfirmed'
                   ? t('errors.unconfirmed')
-                  : formError.message}
+                  : formError.kind === 'readOnly'
+                    ? `${tErrors('readOnlyMode')} ${tErrors('readOnlyNothingChanged')}`
+                    : formError.message}
           </Alert>
         </div>
       )}
-      {/* #48 — the offline wait, announced once (outside the alert region). */}
+      {/* #48 — the offline wait, and #724 the 10 s "still working" note:
+          announced once, outside the alert region. */}
       <div role="status" aria-live="polite" className="sr-only">
-        {waitingForConnection ? t('errors.waitingForConnection') : ''}
+        {waitingForConnection
+          ? t('errors.waitingForConnection')
+          : stillWorking
+            ? t('errors.stillWorking')
+            : ''}
       </div>
 
       <div className="flex flex-col gap-1">

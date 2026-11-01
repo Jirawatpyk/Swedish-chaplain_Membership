@@ -28,12 +28,6 @@ import { logger } from '@/lib/logger';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
 
-/**
- * #58 — the run limit, stated here so the dialog's client timeout
- * (`MONEY_POST_TIMEOUT_MS`, 75 s) always outlasts it.
- */
-export const maxDuration = 60;
-
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ invoiceId: string }> },
