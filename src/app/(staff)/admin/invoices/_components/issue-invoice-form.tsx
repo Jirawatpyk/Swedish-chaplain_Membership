@@ -59,6 +59,9 @@ import { routeIssueError } from './issue-error-routing';
 import { ZeroRateCertUploader } from './zero-rate-cert-uploader';
 import { type MoneyDialogFooterState, useReportMoneyDialogFooter } from './money-dialog-footer';
 import { refreshWhenOnline } from './refresh-when-online';
+import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from './unknown-outcome';
+import { isReadOnlyRefusal, readProblemCode } from '@/lib/http/read-only-refusal';
+import { useStillWorking } from './use-still-working';
 
 export type IssueInvoiceFormProps = {
   readonly invoiceId: string;
@@ -110,8 +113,10 @@ export type IssueInvoiceFormProps = {
 type IssueFormError =
   | { readonly kind: 'concurrent' }
   | { readonly kind: 'stale' }
-  // #48 — the connection dropped: the issue may have committed.
+  // #48 / #57 / #58 — no trustworthy answer: the issue may have committed.
   | { readonly kind: 'unconfirmed' }
+  // The READ_ONLY_MODE freeze refused it: nothing was written (#724 review).
+  | { readonly kind: 'readOnly' }
   | { readonly kind: 'failure'; readonly message: string };
 
 /** One tone per kind; a new kind must pick one (the wrapper's `data-tone` follows). */
@@ -119,6 +124,7 @@ const ISSUE_ERROR_TONE = {
   concurrent: { alert: 'info', wrapper: 'neutral' },
   stale: { alert: 'info', wrapper: 'neutral' },
   unconfirmed: { alert: 'warning', wrapper: 'warning' },
+  readOnly: { alert: 'warning', wrapper: 'warning' },
   failure: { alert: 'danger', wrapper: 'destructive' },
 } as const satisfies Record<IssueFormError['kind'], { alert: FeedbackTone; wrapper: string }>;
 
@@ -141,8 +147,10 @@ export function IssueInvoiceForm({
   const tDetail = useTranslations('admin.invoices.detail');
   const locale = useLocale();
   const router = useRouter();
+  const tErrors = useTranslations('errors');
   const [typed, setTyped] = useState('');
   const [pending, startTransition] = useTransition();
+  const stillWorking = useStillWorking(pending);
 
   // 088 T021a / FR-032 — issue failure surfaces INLINE via a focused
   // role="alert" (never a transient toast); a concurrent 409 shows an inline
@@ -295,18 +303,32 @@ export function IssueInvoiceForm({
                   method: 'POST',
                   headers: { 'content-type': 'application/json' },
                   body: JSON.stringify(body),
+                  signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
                 }
-              : { method: 'POST' },
+              : { method: 'POST', signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS) },
           );
         } catch {
-          // #48 — no response: the issue may have committed. A retry is safe
+          // #48 / #58 — no response (a drop or the timeout): the issue may
+          // have committed. A retry is safe
           // (the server answers invoice_already_issued), but check first.
           setFormError({ kind: 'unconfirmed' });
           return;
         }
         if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          const code = (errBody as { error?: { code?: string } })?.error?.code;
+          const errBody: unknown = await res.json().catch(() => ({}));
+          // The write freeze refused it: nothing ran (its flat body names no code).
+          if (isReadOnlyRefusal(res.status, errBody)) {
+            setFormError({ kind: 'readOnly' });
+            return;
+          }
+          const problem = readProblemCode(errBody);
+          // Route codes are nested; a flat string is not one (read-only aside).
+          const code = problem?.shape === 'nested' ? problem.code : undefined;
+          // #57 — a 5xx naming no refusal may come after the issue committed.
+          if (isUnknownOutcome(res.status, problem)) {
+            setFormError({ kind: 'unconfirmed' });
+            return;
+          }
           const routing = routeIssueError(code);
           if (routing.kind === 'concurrent' || routing.kind === 'stale') {
             setFormError({ kind: routing.kind });
@@ -633,7 +655,7 @@ export function IssueInvoiceForm({
             role="none"
             tone={ISSUE_ERROR_TONE[formError.kind].alert}
             action={
-              formError.kind !== 'failure' ? (
+              formError.kind !== 'failure' && formError.kind !== 'readOnly' ? (
                 <Button
                   type="button"
                   variant="secondary"
@@ -665,13 +687,22 @@ export function IssueInvoiceForm({
                 ? t('errors.issue_total_changed')
                 : formError.kind === 'unconfirmed'
                   ? t('errors.unconfirmed')
-                  : formError.message}
+                  : formError.kind === 'readOnly'
+                    ? `${tErrors('readOnlyMode')} ${tErrors('readOnlyNothingChanged')}`
+                    : formError.message}
           </Alert>
         </div>
       )}
-      {/* #48 — the offline wait, announced once (outside the alert region). */}
-      <div role="status" aria-live="polite" className="sr-only">
-        {waitingForConnection ? t('errors.waitingForConnection') : ''}
+      {/* #48 — the offline wait, and #724 the 10 s "still working" note:
+          announced once, outside the alert region. */}
+      {/* Visible too (#724 review): sighted admins are the ones who might close
+          the window during a long wait. */}
+      <div role="status" aria-live="polite" className="min-h-5 text-sm text-[var(--aura-fg-secondary)]">
+        {waitingForConnection
+          ? t('errors.waitingForConnection')
+          : stillWorking
+            ? t('errors.stillWorking')
+            : ''}
       </div>
 
       <div className="flex flex-col gap-1">

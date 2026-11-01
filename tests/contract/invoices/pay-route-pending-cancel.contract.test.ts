@@ -161,8 +161,8 @@ describe('contract: POST /api/invoices/[invoiceId]/pay — post-commit PaymentIn
       requestId: 'req-pay-cancel-1',
       cause: 'invoice_paid_manually',
     });
-    // `replayed` is internal — not part of the response body.
-    expect(await res.json()).not.toHaveProperty('replayed');
+    // #59 — the dialog reads `replayed` to say "already recorded".
+    expect(await res.json()).toMatchObject({ replayed: false });
   });
 
   it('replay (invoice already paid, e.g. by the webhook) → cause invoice_already_paid', async () => {
@@ -173,6 +173,7 @@ describe('contract: POST /api/invoices/[invoiceId]/pay — post-commit PaymentIn
     expect(cancelMock).toHaveBeenCalledWith(
       expect.objectContaining({ cause: 'invoice_already_paid' }),
     );
+    expect(await res.json()).toMatchObject({ replayed: true });
   });
 
   it('refused payment (409) → no cancel', async () => {

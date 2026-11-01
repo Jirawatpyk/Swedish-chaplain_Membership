@@ -23,7 +23,7 @@
  * stay primitive-agnostic across the Alert → InlineAlert migration.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { PaymentForm } from '@/app/(staff)/admin/invoices/_components/payment-form';
@@ -35,8 +35,8 @@ const pushMock = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, refresh: refreshMock, replace: vi.fn() }),
 }));
-const { toastSuccess } = vi.hoisted(() => ({ toastSuccess: vi.fn() }));
-vi.mock('@/lib/toast', () => ({ toast: { success: toastSuccess, error: vi.fn() } }));
+const { toastSuccess, toastWarning } = vi.hoisted(() => ({ toastSuccess: vi.fn(), toastWarning: vi.fn() }));
+vi.mock('@/lib/toast', () => ({ toast: { success: toastSuccess, error: vi.fn(), warning: toastWarning } }));
 
 // useTransition / async-transition interactions need real timers
 // (tests/setup.ts installs fakes).
@@ -112,7 +112,12 @@ describe('PaymentForm — concurrent 409 inline recovery (FR-032)', () => {
       expect(alert).toHaveClass('aura-alert--info');
       expect(alert).toHaveAttribute('role', 'alert');
       expect(alert).toHaveTextContent(
-        'This invoice was already paid or changed in another session. Refresh to see the latest status and the receipt (RC) number.',
+        enMessages.admin.invoices.pay.errors.concurrent,
+      );
+      // #59 — a same-session retry lands here too: no "another session".
+      expect(alert).not.toHaveTextContent(/another session/);
+      expect(alert).toHaveTextContent(
+        'This invoice has already been paid or changed. Refresh to see its status and the receipt (RC) number.',
       );
 
       // The recovery affordance is the whole point of the concurrent branch.
@@ -329,6 +334,172 @@ describe('PaymentForm — the connection drops (#48)', () => {
       expect(refreshMock).toHaveBeenCalledTimes(1);
     } finally {
       onLine.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('PaymentForm — an unknown outcome is not a failure (#57, #58, #59)', () => {
+  function respond(status: number, body: unknown, json = true) {
+    return vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: status < 400,
+      status,
+      json: async () => {
+        if (!json) throw new Error('Unexpected token < in JSON');
+        return body;
+      },
+    }));
+  }
+
+  it('a 504 with an HTML body shows the unconfirmed warning, tone warning', async () => {
+    vi.stubGlobal('fetch', respond(504, null, false));
+    try {
+      renderForm();
+      submitPayment();
+      const alert = await screen.findByTestId('record-payment-error');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      // A 504 is not a dropped connection: the copy names no cause.
+      expect(alert).not.toHaveTextContent(/connection/i);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a 500 internal_error shows the unconfirmed warning', async () => {
+    vi.stubGlobal('fetch', respond(500, { error: { code: 'internal_error' } }));
+    try {
+      renderForm();
+      submitPayment();
+      const alert = await screen.findByTestId('record-payment-error');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a 500 with a flat body (no route code) is unconfirmed, not "Error code"', async () => {
+    vi.stubGlobal('fetch', respond(500, { error: 'server-error' }));
+    try {
+      renderForm();
+      submitPayment();
+      const alert = await screen.findByTestId('record-payment-error');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
+      expect(alert).not.toHaveTextContent(/Error code/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a named 5xx the route rolled back (pdf_render_failed) stays a failure', async () => {
+    vi.stubGlobal('fetch', respond(500, { error: { code: 'pdf_render_failed' } }));
+    try {
+      renderForm();
+      submitPayment();
+      const alert = await screen.findByTestId('record-payment-error');
+      expect(alert).toHaveAttribute('data-tone', 'destructive');
+      expect(alert).not.toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the READ_ONLY_MODE 503 (nothing written) is the read-only message, not unconfirmed', async () => {
+    vi.stubGlobal('fetch', respond(503, { error: 'read-only-mode' }));
+    try {
+      renderForm();
+      submitPayment();
+      const alert = await screen.findByTestId('record-payment-error');
+      expect(alert).toHaveTextContent(enMessages.errors.readOnlyMode);
+      expect(alert).toHaveTextContent(enMessages.errors.readOnlyNothingChanged);
+      expect(alert).not.toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
+      // Nothing is wrong and nothing was written: a warning, said once, inline.
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(toastWarning).not.toHaveBeenCalled();
+      expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the POST carries a timeout signal, and a timeout reads as unconfirmed', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => {
+      throw new DOMException('The operation timed out.', 'TimeoutError');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      submitPayment();
+      const alert = await screen.findByTestId('record-payment-error');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
+      const [, init] = fetchMock.mock.calls[0]!;
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a replayed 200 with no RC number still says nothing new was recorded', async () => {
+    vi.stubGlobal('fetch', respond(200, { receipt_document_number_raw: null, email_dispatch: 'sent', replayed: true }));
+    const onSuccess = vi.fn();
+    toastSuccess.mockClear();
+    toastWarning.mockClear();
+    try {
+      renderForm(onSuccess);
+      submitPayment();
+      await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+      expect(toastSuccess).not.toHaveBeenCalled();
+      expect(toastWarning.mock.calls[0]?.[0]).toBe(enMessages.admin.invoices.pay.alreadyPaidNoNumber);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('after 10 s with no answer, a status line says it is still working', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)));
+    try {
+      renderForm();
+      submitPayment();
+      const still = enMessages.admin.invoices.pay.errors.stillWorking;
+      const hasStill = () => screen.queryAllByRole('status').some((el) => el.textContent === still);
+      await act(async () => {
+        vi.advanceTimersByTime(9_000);
+      });
+      expect(hasStill()).toBe(false);
+      await act(async () => {
+        vi.advanceTimersByTime(1_500);
+      });
+      expect(hasStill()).toBe(true);
+      // Sighted admins see it too, not only screen readers.
+      const line = screen.queryAllByRole('status').find((el) => el.textContent === still)!;
+      expect(line).not.toHaveClass('sr-only');
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a replayed 200 says the invoice was already paid, with its RC number', async () => {
+    vi.stubGlobal(
+      'fetch',
+      respond(200, { receipt_document_number_raw: 'RC-2030-000011', email_dispatch: 'sent', replayed: true }),
+    );
+    const onSuccess = vi.fn();
+    toastSuccess.mockClear();
+    toastWarning.mockClear();
+    try {
+      renderForm(onSuccess);
+      submitPayment();
+      await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+      // The server checked only that the invoice is paid, not that it was this
+      // payment: a warning that says nothing new was recorded, kept on screen.
+      expect(toastSuccess).not.toHaveBeenCalled();
+      expect(toastWarning.mock.calls[0]?.[0]).toBe(
+        enMessages.admin.invoices.pay.alreadyPaid.replace('{number}', 'RC-2030-000011'),
+      );
+      expect(toastWarning.mock.calls[0]?.[1]).toMatchObject({ duration: Infinity });
+    } finally {
       vi.unstubAllGlobals();
     }
   });
