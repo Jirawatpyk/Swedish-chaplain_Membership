@@ -1576,7 +1576,11 @@ per contact, `listAudiences` per page) has the budget per request, so it can
 run N × 10 s (a per-invocation budget is slice 2b's). `resend.broadcasts.retry`
 (warn) fires at most 3 times per request (backoffs of 1, 2 and 4 s fit the
 budget); for a create (`createAudience`, `createBroadcast`,
-`createContactImport`) only after a 429, which created nothing.
+`createContactImport`) only after a 429, which created nothing — except the
+legacy leg's `createBroadcast` (`legacyResendBroadcastsGateway`, until slice 4),
+which retries any retryable error. `createContactImport`'s budget is
+`IMPORT_CALL_TIMEOUT_MS` = 30 s (ASSUMED). The route span carries
+`cron.import_row_skipped` beside the other summary buckets.
 
 With the import flag OFF the dispatch cron's due scan leaves out rows holding
 `audience_import_id` or `audience_import_submitted_at`, so they never take a
