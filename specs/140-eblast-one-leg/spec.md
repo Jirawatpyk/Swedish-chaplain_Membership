@@ -118,7 +118,7 @@ As the chamber, an E-Blast is built and sent by one cron invocation at a time. A
 - **DL5b** (slice 2b). A timed-out `createBroadcast` writes an orphan-id row with no id (`create_unconfirmed`), counted in a gauge.
 - **DL6.** A failed reclaim writes an orphan-id row, and the cleanup cron deletes it at Resend.
 - **DL7.** The legacy leg skips a row that holds import columns. (Slice 2a. In slice 2b it also skips a row holding a live lease.)
-- **DL8.** Every broadcasts gateway call aborts at its timeout.
+- **DL8.** Every broadcasts gateway request aborts at its timeout: one budget per request, its retries included. A port call that makes several requests (`addContactsToAudience` per contact, `listAudiences` per page) can therefore run N × the timeout; its per-invocation budget is slice 2b's (review round 1, CR#2).
 
 ### US3 — The import leg reads Resend correctly (slice 3)
 
