@@ -215,7 +215,7 @@ The full state table and the s2b plan follow.
    | `k` lock waits per row | 2 | the claim, plus one pre-call check (one cascade per row per tick) | ASSUMED |
    | `D` DB + resolve, one row | 15 000 | ~15 short statements + one `resolveRecipients` at the 900 ceiling | **ASSUMED**: build step measures p99 on dev (seeded 900) and replaces it |
    | `W_max` | 154 000 | k·E + N·C + P + D = 46 + 90 + 3 + 15 | derived |
-   | (s2a round 2) | — | `createContactImport` now has its own budget `IMPORT_CALL_TIMEOUT_MS` = 30 000, not C. **s2b recomputes W_max at build time** with that budget on any path that holds the lease across the import POST | note |
+   | (s2a round 2) | — | `createContactImport` now has its own budget `IMPORT_CALL_TIMEOUT_MS` = 30 000, not C. **s2b recomputes W_max at build time**: only the import-POST term takes 30 s (not N × 30 s), and the pre-call check before `createContactImport` demands ≥ 30 s + M of lease left, not C + M (review round 4) | note |
    | `M` = `LEASE_MARGIN_MS` | 15 000 | ≥ C (design rule) + 5 s for the post-call CAS | derived |
    | pre-call headroom | 25 000 | C + M | derived |
    | `LEASE_TTL_MS` | 330 000 | > `maxDuration` 300 s (second line) and ≥ W_max + M = 169 s | derived |
@@ -765,6 +765,21 @@ Finding for review: the route logs a DL7 skip at **WARN**, as `cron.broadcasts.d
 | code-review #9 | A real 1 s backoff in the CR#2 tests | **Accepted (Low):** about 2 s of suite time, and the second half pins the instance split, which CR#1 does not. |
 | code-review #10 | A redundant `toBeDefined()` in the deps case | **Fixed** `e93cf07cd` |
 | security INFO | The per-tick bound | Same as code-review #3, carried. |
+
+### Slice 2a — review round 4 (targeted, `/code-review high 49f3ed8e3..379f53a49`; 1 Nov 2026) — cap reached
+
+**Review metrics:** round 4 · 8 items · cap: 2 full + 2 targeted, **reached**. The maintainer decided (1 Nov 2026): fix six, accept two as Low, no further round.
+
+| # | Finding | Closure |
+|---|---|---|
+| 1 | The docstring and RoPA 8d say "up to 3" drafts per legacy call; 4 attempts fit, and a timed-out attempt can have minted too | **Fixed:** "up to 4", the timeout named (gateway docblock, RoPA 8d) |
+| 2 | RoPA 8d treats an unknown-id mint as legacy-only; the default one-attempt create leaves one too | **Fixed:** 8d names the class for every create (s2b counts it as `create_unconfirmed`, id unknown); slice 4 removes the multiplier, not the class; the DSR caveat covers any E-Blast |
+| 3 | The port docstring's "the MAX of the two" makes W_max negative if read literally, and C + M headroom is under a 30 s POST | **Fixed:** only the import-POST term takes 30 s; the pre-call check before the import demands ≥ 30 s + M (port docstring, the s2b constants note) |
+| 4 | The CR#3 test lost the bound that shows it aborts AT its budget | **Fixed:** `early + late < 1 800 ms` restored (a doubled budget, ~2 s, is red) |
+| 5 | "How to find one" leans on a retry warn that carries no row id and is absent when the last attempt fails | **Fixed:** 8d says to list by `audience_id` for every row; the warn is no longer the trigger |
+| 6 | The span test compares attributes with a body built from the same `summary`, so it cannot catch an unbucketed outcome | **Accepted (Low, maintainer):** it pins that every bucket reaches the span, which was the R2-15 / CR#5 class; an outcome with no bucket is a separate class |
+| 7 | The `typeof === 'number'` filter is dead, and future numeric response fields would become `cron.*` attributes | **Accepted (Low, maintainer):** s2b, which adds the time-budget fields, owns the summary's shape |
+| 8 | The test file's header still gives the old timing | **Fixed** |
 
 ## Rollout
 

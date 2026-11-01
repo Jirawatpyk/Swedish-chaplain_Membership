@@ -9,7 +9,8 @@
  * so an unbounded call fails an assertion instead of the test timeout.
  *
  * `AbortSignal.timeout` runs on real timers, so this file never fakes them:
- * the budgets are real milliseconds (50 ms, or ~2 s where a retry must fit).
+ * the budgets are real milliseconds (50 ms; ~2 s where a retry must fit; 1 s
+ * for the CR#3 import budget).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -298,6 +299,9 @@ describe('CR#3 — createContactImport has its own budget', () => {
       settled: { thrown: { kind: 'retryable', subKind: 'timeout' } },
       requests: 1,
     });
+    // Review round 4: it ends AT its 1 s budget, not merely inside the window, so a
+    // doubled or summed budget (~2 s) is red.
+    expect(early.elapsedMs + late.elapsedMs).toBeLessThan(1_800);
   });
 });
 

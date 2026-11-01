@@ -36,9 +36,11 @@ export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'ap
  * a measured round trip of ~0.5 s. It bounds every method except
  * `createContactImport`, which has {@link IMPORT_CALL_TIMEOUT_MS} (30 s); a
  * port call that loops (`addContactsToAudience`, `listAudiences`) takes it per
- * request. Exported so the dispatch lease (slice 2b) can size W_max, the TTL
- * and the cutoff from the MAX of the two on any path that holds the lease
- * across the import POST (plan.md, review round 3).
+ * request. Exported for the dispatch lease (slice 2b): in W_max only the one
+ * import-POST term takes {@link IMPORT_CALL_TIMEOUT_MS} (every other call stays
+ * at this C), and the pre-call lease check before `createContactImport` must
+ * demand at least IMPORT_CALL_TIMEOUT_MS + M of lease left, not C + M (plan.md,
+ * review rounds 3-4).
  */
 export const RESEND_CALL_TIMEOUT_MS = 10_000;
 
