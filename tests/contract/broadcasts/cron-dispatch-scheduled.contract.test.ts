@@ -73,7 +73,7 @@ vi.mock('@/lib/otel-tracer', () => ({
     _tracer: unknown,
     _name: string,
     _attrs: unknown,
-    fn: (span: { setAttribute: () => void; setStatus: () => void }) => Promise<unknown>,
+    fn: (span: { setAttribute: (key: string, value: unknown) => void; setStatus: () => void }) => Promise<unknown>,
   ) =>
     fn({
       setAttribute: (key: string, value: unknown) => {
