@@ -16,6 +16,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const headMock = vi.fn();
+const delMock = vi.fn();
 const fetchMock = vi.fn();
 
 vi.mock('@vercel/blob', async () => {
@@ -24,7 +25,7 @@ vi.mock('@vercel/blob', async () => {
     ...actual,
     head: (...args: unknown[]) => headMock(...args),
     put: vi.fn(),
-    del: vi.fn(),
+    del: (...args: unknown[]) => delMock(...args),
     list: vi.fn(),
   };
 });
@@ -47,6 +48,7 @@ async function loadAdapter() {
 beforeEach(() => {
   vi.resetModules();
   headMock.mockReset();
+  delMock.mockReset();
   fetchMock.mockReset();
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -154,5 +156,21 @@ describe('vercelBlobAdapter — NOT-FOUND is the port class, everything else pas
     expect(thrown).not.toBeInstanceOf(BlobKeyNotFoundError);
     expect((thrown as Error).message).toContain('HTTP 503');
     expect((thrown as Error).message).not.toContain(KEY);
+  });
+});
+
+// #60 — the post-rollback receipt cleanup deletes while holding the invoice
+// row lock, and the SDK's `del` retries with backoff for minutes on a 5xx. The
+// adapter bounds every delete so a Blob outage cannot hold the lock (or a
+// failing request) open.
+describe('vercelBlobAdapter.delete — bounded', () => {
+  it('passes an AbortSignal to del alongside the token', async () => {
+    delMock.mockResolvedValue(undefined);
+    const { vercelBlobAdapter } = await loadAdapter();
+    await vercelBlobAdapter.delete(KEY);
+    expect(delMock).toHaveBeenCalledWith(
+      KEY,
+      expect.objectContaining({ token: 'test-token', abortSignal: expect.any(AbortSignal) }),
+    );
   });
 });

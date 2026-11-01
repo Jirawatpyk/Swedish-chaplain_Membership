@@ -1936,7 +1936,7 @@ describe('recordPayment — #60 receipt blob: overwrite + post-rollback cleanup'
     expect(deps.blob.delete).toHaveBeenCalledWith(RECEIPT_KEY);
   });
 
-  it('concurrent_state_change → NO delete (someone else may own bytes at the key)', async () => {
+  it('concurrent_state_change → the overwrite made the bytes ours, so they ARE deleted (the locked re-read guards a committed owner)', async () => {
     const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
     deps.invoiceRepo.applyPayment = vi.fn(async () => {
       throw new InvoiceApplyConflictError('applyPayment');
@@ -1944,7 +1944,7 @@ describe('recordPayment — #60 receipt blob: overwrite + post-rollback cleanup'
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('concurrent_state_change');
-    expect(deps.blob.delete).not.toHaveBeenCalled();
+    expect(deps.blob.delete).toHaveBeenCalledWith(RECEIPT_KEY);
   });
 
   it('pdf_render_failed → NO delete (the render runs before the upload; nothing was written)', async () => {
@@ -1978,6 +1978,45 @@ describe('recordPayment — #60 receipt blob: overwrite + post-rollback cleanup'
     expect(
       errorLog.mock.calls.some((c) => String(c[1]).startsWith('recordPayment: orphan receipt blob cleanup failed')),
     ).toBe(true);
+  });
+
+  it('cleanup re-reads the row under its lock: a committed receipt at the key (ambiguous COMMIT / a later attempt) is KEPT', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const boom = new Error('connection terminated during COMMIT');
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw boom;
+    });
+    // The re-read sees the payment committed after all, owning this key.
+    deps.invoiceRepo.findByIdInTxForUpdate = vi.fn(async () =>
+      makeIssuedInvoice({
+        status: 'paid',
+        receiptPdf: { blobKey: RECEIPT_KEY, sha256: Sha256Hex.ofUnsafe('b'.repeat(64)), templateVersion: 1 },
+      } as InvoiceFixtureOverrides),
+    );
+    await expect(recordPayment(deps, input)).rejects.toBe(boom);
+    expect(deps.invoiceRepo.findByIdInTxForUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      INVOICE_ID,
+      'test-swecham',
+    );
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
+
+  it('cleanup deletes only after the locked re-read shows no committed receipt at the key', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const order: string[] = [];
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw new Error('apply failed');
+    });
+    deps.invoiceRepo.findByIdInTxForUpdate = vi.fn(async () => {
+      order.push('locked-read');
+      return makeIssuedInvoice();
+    });
+    deps.blob.delete = vi.fn(async () => {
+      order.push('delete');
+    });
+    await expect(recordPayment(deps, input)).rejects.toThrow('apply failed');
+    expect(order).toEqual(['locked-read', 'delete']);
   });
 
   it('an idempotent replay never uploads or deletes', async () => {
