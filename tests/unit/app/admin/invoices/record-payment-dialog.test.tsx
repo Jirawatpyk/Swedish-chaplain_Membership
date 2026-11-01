@@ -149,3 +149,46 @@ describe('RecordPaymentDialog — review fixes (US8 T809)', () => {
     expect(document.activeElement).toBe(screen.getByTestId('row-menu'));
   });
 });
+
+describe('RecordPaymentDialog — Refresh after a dropped connection (#48)', () => {
+  // waitFor polls on real timers; tests/setup.ts fakes them by default.
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    refreshSpy.mockReset();
+  });
+
+  it('closes, and focus lands on the fallback when the refresh unmounts the trigger', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
+    function Harness() {
+      const [paid, setPaid] = useState(false);
+      refreshSpy.mockImplementation(() => setPaid(true));
+      return (
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <main id="main-content" tabIndex={-1} />
+          <button type="button" id="row-menu-inv-1" data-testid="row-menu">
+            ⋯
+          </button>
+          {paid ? null : (
+            <RecordPaymentDialog
+              invoiceId="inv-1"
+              documentNumber="SC-2026-000127"
+              issueDate="2026-09-16"
+              todayIso="2026-09-20"
+              finalFocusFallbackId="row-menu-inv-1"
+            />
+          )}
+        </NextIntlClientProvider>
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId('record-payment-trigger'));
+    fireEvent.click(screen.getByRole('button', { name: pay.submit }));
+    await screen.findByTestId('record-payment-error');
+    fireEvent.click(screen.getByRole('button', { name: pay.errors.refreshAction }));
+    await waitFor(() => expect(screen.queryByTestId('record-payment-trigger')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('row-menu')));
+  });
+});

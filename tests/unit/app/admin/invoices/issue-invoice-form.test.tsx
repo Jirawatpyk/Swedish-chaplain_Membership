@@ -14,7 +14,8 @@
  * (non-blocking); a valid zero-rate issue POSTs the vat_treatment + cert.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { useState } from 'react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { IssueInvoiceForm } from '@/app/(staff)/admin/invoices/_components/issue-invoice-form';
@@ -28,7 +29,7 @@ const refreshMock = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: refreshMock, replace: vi.fn() }),
 }));
-vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
 // RHF/transition interactions need real timers (tests/setup.ts installs fakes).
 beforeEach(() => {
@@ -509,7 +510,7 @@ describe('IssueInvoiceForm — concurrent 409 inline recovery (FR-032)', () => {
       expect(alert).toHaveAttribute('data-tone', 'neutral');
       expect(alert).toHaveAttribute('role', 'alert');
       expect(alert).toHaveTextContent(
-        'This invoice was already issued in another session. Refresh to see the latest status and its number.',
+        'This invoice has already been issued. Refresh to see its status and number.',
       );
 
       expect(refreshMock).not.toHaveBeenCalled();
@@ -529,7 +530,8 @@ describe('IssueInvoiceForm — stale total 409 inline recovery', () => {
     const fetchMock = rejectingFetch('issue_total_changed');
     vi.stubGlobal('fetch', fetchMock);
     try {
-      renderForm();
+      const onClose = vi.fn();
+      renderForm({ onClose });
       confirmAndSubmit();
 
       const alert = await screen.findByTestId('issue-invoice-error');
@@ -539,6 +541,8 @@ describe('IssueInvoiceForm — stale total 409 inline recovery', () => {
       );
       fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
       expect(refreshMock).toHaveBeenCalledTimes(1);
+      // Nothing was issued: the dialog stays open to pick up the new total.
+      expect(onClose).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -613,3 +617,250 @@ describe('IssueInvoiceDialog — AURA alertdialog', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// #48 — a dropped connection: the issue may or may not have committed.
+// ---------------------------------------------------------------------------
+
+describe('IssueInvoiceForm — the connection drops (#48)', () => {
+  function rejectingFetch() {
+    return vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+  }
+
+  async function confirmAndDrop(onClose = vi.fn()) {
+    renderForm({ onClose });
+    fireEvent.change(screen.getByLabelText(/to confirm/i), {
+      target: { value: 'ISSUE' },
+    });
+    const confirm = screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ });
+    fireEvent.click(confirm);
+    const alert = await screen.findByTestId('issue-invoice-error');
+    return { alert, confirm, onClose };
+  }
+
+  it('shows an inline warning, keeps the dialog open, and allows a retry', async () => {
+    const fetchMock = rejectingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const { alert, confirm, onClose } = await confirmAndDrop();
+      // The wrapper is the focused live region; the AURA alert inside draws it.
+      expect(alert.querySelector('.aura-alert--warning')).not.toBeNull();
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.issue.errors.unconfirmed);
+      await waitFor(() => expect(alert).toHaveFocus());
+      expect(onClose).not.toHaveBeenCalled();
+
+      // A retry issues nothing new if the first one committed.
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('Refresh closes the dialog for a refresh, then refreshes the page', async () => {
+    vi.stubGlobal('fetch', rejectingFetch());
+    try {
+      const { onClose } = await confirmAndDrop();
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      expect(onClose).toHaveBeenCalledWith('refresh');
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+      expect(onClose.mock.invocationCallOrder[0]!).toBeLessThan(refreshMock.mock.invocationCallOrder[0]!);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('Refresh while still offline keeps the warning open, then closes and refreshes once online', async () => {
+    vi.stubGlobal('fetch', rejectingFetch());
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      const { onClose } = await confirmAndDrop();
+      const refresh = screen.getByRole('button', { name: 'Refresh' });
+      fireEvent.click(refresh);
+      fireEvent.click(refresh);
+      expect(onClose).not.toHaveBeenCalled();
+      expect(refreshMock).not.toHaveBeenCalled();
+      expect(screen.getByTestId('issue-invoice-error')).toBeInTheDocument();
+      // The wait is visible and announced, and the button stops inviting clicks.
+      const waiting = screen.getByRole('button', {
+        name: enMessages.admin.invoices.issue.errors.waitingForConnection,
+      });
+      expect(waiting).toHaveAttribute('aria-disabled', 'true');
+      expect(
+        screen
+          .getAllByRole('status')
+          .some((el) => el.textContent === enMessages.admin.invoices.issue.errors.waitingForConnection),
+      ).toBe(true);
+      window.dispatchEvent(new Event('online'));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledWith('refresh');
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+      window.dispatchEvent(new Event('online'));
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+    } finally {
+      onLine.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('IssueInvoiceDialog — focus after a refresh close (#48)', () => {
+  it('lands on #main-content, not <body>, when the refresh unmounts the trigger', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      }),
+    );
+    function Harness() {
+      const [issued, setIssued] = useState(false);
+      refreshMock.mockImplementation(() => setIssued(true));
+      return (
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <main id="main-content" tabIndex={-1} data-testid="main-content-stub" />
+          {issued ? null : (
+            <IssueInvoiceDialog
+              invoiceId="inv-1"
+              summary={BASE_SUMMARY}
+              taxAtPayment
+              isMembership
+              buyerIsVatRegistrant
+              totalsByTreatment={priced(800_000)}
+            />
+          )}
+        </NextIntlClientProvider>
+      );
+    }
+    try {
+      render(<Harness />);
+      fireEvent.click(screen.getByRole('button', { name: 'Issue…' }));
+      fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: 'ISSUE' } });
+      fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
+      await screen.findByTestId('issue-invoice-error');
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('main-content-stub')));
+    } finally {
+      refreshMock.mockReset();
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('IssueInvoiceForm — an unknown outcome is not a failure (#57, #58)', () => {
+  function respond(status: number, body: unknown, json = true) {
+    return vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: status < 400,
+      status,
+      json: async () => {
+        if (!json) throw new Error('Unexpected token < in JSON');
+        return body;
+      },
+    }));
+  }
+  function confirmIssue() {
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: 'ISSUE' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
+  }
+
+  it('a 504 with an HTML body shows the unconfirmed warning', async () => {
+    vi.stubGlobal('fetch', respond(504, null, false));
+    try {
+      renderForm();
+      confirmIssue();
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.issue.errors.unconfirmed);
+      // A 504 is not a dropped connection: the copy names no cause.
+      expect(alert).not.toHaveTextContent(/connection/i);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a 500 with a flat body (no route code) is unconfirmed, not "Error code"', async () => {
+    vi.stubGlobal('fetch', respond(500, { error: 'server-error' }));
+    try {
+      renderForm();
+      confirmIssue();
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.issue.errors.unconfirmed);
+      expect(alert).not.toHaveTextContent(/Error code/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a named 5xx the route rolled back (pdf_render_failed) stays a failure', async () => {
+    vi.stubGlobal('fetch', respond(500, { error: { code: 'pdf_render_failed' } }));
+    try {
+      renderForm();
+      confirmIssue();
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'destructive');
+      expect(alert).not.toHaveTextContent(enMessages.admin.invoices.issue.errors.unconfirmed);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the READ_ONLY_MODE 503 (nothing written) is the read-only message, not unconfirmed', async () => {
+    vi.stubGlobal('fetch', respond(503, { error: 'read-only-mode' }));
+    try {
+      renderForm();
+      confirmIssue();
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveTextContent(enMessages.errors.readOnlyMode);
+      expect(alert).toHaveTextContent(enMessages.errors.readOnlyNothingChanged);
+      expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('after 10 s with no answer, a status line says it is still working', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)));
+    try {
+      renderForm();
+      confirmIssue();
+      const still = enMessages.admin.invoices.issue.errors.stillWorking;
+      const hasStill = () => screen.queryAllByRole('status').some((el) => el.textContent === still);
+      await act(async () => {
+        vi.advanceTimersByTime(9_000);
+      });
+      expect(hasStill()).toBe(false);
+      await act(async () => {
+        vi.advanceTimersByTime(1_500);
+      });
+      expect(hasStill()).toBe(true);
+      // Sighted admins see it too, not only screen readers.
+      const line = screen.queryAllByRole('status').find((el) => el.textContent === still)!;
+      expect(line).not.toHaveClass('sr-only');
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the POST carries a timeout signal, and a timeout reads as unconfirmed', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => {
+      throw new DOMException('The operation timed out.', 'TimeoutError');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      confirmIssue();
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.issue.errors.unconfirmed);
+      const [, init] = fetchMock.mock.calls[0]!;
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
