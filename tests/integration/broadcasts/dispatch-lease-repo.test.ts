@@ -365,6 +365,26 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
     });
   });
 
+  // Review round 1 (CR#2, reliability L1) — the completion stamp runs after
+  // `/send`: the mail is out, so the token guards nothing once the row says so.
+  // A webhook's `sending → sent` (a non-holder status change) clears the lease
+  // before the stamp; the stamp must still land.
+  describe('the completion stamp after /send', () => {
+    it.each([
+      ['sent', { status: 'sent' as const, sendingStartedAt: SEED_AT, sentAt: SEED_AT, quotaYearConsumed: 2026, quotaConsumedAt: SEED_AT }],
+      ['sending', { status: 'sending' as const, sendingStartedAt: SEED_AT }],
+    ])('a webhook %s-transition before the stamp still lets the stamp land (no lease on the row)', async (_label, statusPatch) => {
+      const id = await seed(tenantA, {
+        ...statusPatch,
+        resendAudienceId: 'aud-stamp',
+        audienceImportId: 'imp-stamp',
+        audienceImportSubmittedAt: SEED_AT,
+      });
+      await repoA().withTx((tx) => repoA().markAudienceImportCompleted(tx, tenantA.ctx.slug, id, randomUUID() as never));
+      expect((await readRow(tenantA, id)).audienceImportCompletedAt).not.toBeNull();
+    });
+  });
+
   describe('non-holder writes', () => {
     it('row 20 — a status change with lease: null clears both lease columns', async () => {
       const id = await seed(tenantA, foreignLease(120_000));
