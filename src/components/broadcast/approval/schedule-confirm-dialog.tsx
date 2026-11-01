@@ -39,7 +39,13 @@
  * warning — its title AND "nothing was changed" — said INSIDE the dialog only,
  * in the warning tone (review D4/D5): the dialog stays open (the choice is
  * still valid once the freeze lifts), and a toast would sit behind the modal.
- * Every form-level refusal is focused when it lands (review D8, § 6.4).
+ * Spec 140 s2b review round 4 — a 409 `dispatch_in_progress` (a re-time while
+ * a dispatch tick holds the row) is the same kind of refusal: nobody's error,
+ * the page not stale, the choice valid in a few minutes. So it gets the same
+ * warning (its own title and "nothing was changed"), inside the dialog, with
+ * the picked time kept — not the stale-page path below. Every other 409/404
+ * means the stage moved: the dialog closes with a toast and the page
+ * refreshes. Every form-level refusal is focused when it lands (review D8, § 6.4).
  */
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
@@ -67,7 +73,10 @@ const PROPOSAL_ID = 'schedule-confirm-proposal';
 const FORM_ERROR_ID = 'schedule-confirm-error';
 
 /** A form-level refusal on screen — a fresh object each time, so the focus hook refires. */
-type FormRefusal = { readonly kind: 'error'; readonly message: string } | { readonly kind: 'read_only' };
+type FormRefusal =
+  | { readonly kind: 'error'; readonly message: string }
+  | { readonly kind: 'read_only' }
+  | { readonly kind: 'dispatch_in_progress' };
 
 export type ScheduleConfirmStatus = 'member_approved' | 'approved';
 export type ScheduleConfirmMode = 'keep_proposal' | 'schedule' | 'send_now' | 'cancel';
@@ -208,6 +217,13 @@ export function ScheduleConfirmAction({
           setProposalUsable(false);
           setMode('schedule');
           setFieldError(message);
+          return;
+        }
+        if (res.status === 409 && code === 'dispatch_in_progress') {
+          // Spec 140 s2b review round 4 — a dispatch tick holds the row: the
+          // page is not stale and the choice stays valid, so the warning is
+          // said here and the picked time is kept (docblock).
+          setFormError({ kind: 'dispatch_in_progress' });
           return;
         }
         if (res.status === 409 && code !== null && STANDING_REFUSAL_CODES.has(code)) {
@@ -361,6 +377,13 @@ export function ScheduleConfirmAction({
               data-testid="schedule-confirm-error"
               title={tReadOnly('readOnlyMode')}
               description={tReadOnly('readOnlyNothingChanged')}
+            />
+          ) : formError.kind === 'dispatch_in_progress' ? (
+            <InlineWarning
+              id={FORM_ERROR_ID}
+              data-testid="schedule-confirm-error"
+              title={t('dispatchInProgress.title')}
+              description={t('dispatchInProgress.description')}
             />
           ) : (
             <InlineError id={FORM_ERROR_ID} data-testid="schedule-confirm-error" message={formError.message} />

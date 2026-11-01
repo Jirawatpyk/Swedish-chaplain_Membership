@@ -426,8 +426,12 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     messageThai: 'E-Blast นี้กำลังถูกส่งแล้ว จึงไม่สามารถถอนหรือหยุดได้อีก',
   },
   dispatch_in_progress: {
-    message: 'This E-Blast is being prepared for sending right now. Try again in a few minutes.',
-    messageThai: 'ระบบกำลังเตรียมส่ง E-Blast นี้อยู่ในขณะนี้ โปรดลองอีกครั้งในอีกไม่กี่นาที',
+    // Spec 140 s2b review round 4 — the dialog's warning description, verbatim
+    // (`admin.broadcasts.approval.schedule.dispatchInProgress.description`).
+    message:
+      'Nothing was changed. This E-Blast is being prepared for sending right now. Try again in a few minutes — if it has been sent by then, its time can no longer be changed.',
+    messageThai:
+      'ยังไม่มีการเปลี่ยนแปลงใด ๆ ระบบกำลังเตรียมส่ง E-Blast นี้อยู่ กรุณาลองอีกครั้งในอีกไม่กี่นาที หากส่งไปแล้วในระหว่างนั้น จะเปลี่ยนเวลาส่งไม่ได้อีก',
   },
   member_halted: {
     message:

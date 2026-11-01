@@ -1135,7 +1135,7 @@ Run because `route.ts` changed after `147bf6150` (the span attribute `757d7d01f`
 - **One existing expectation changed with the behaviour it pins:** `build-audience-tick-failure-paths` H1 asserted the clock reset BEFORE the tick-2 delete; CR#4 moves it after the restart, so it now asserts after.
 - **CR#4 reading:** "after the restart succeeds" is read as "whenever the hold is the answer". A restart that FAILED (a DB fault) still answers the hold, as before, so it still records it and resets the clock; only a lease or CAS stop skips both.
 - **CR#8:** the route's loop has three exits (`continue`, the deferral `break`, the catch), so `processed` is counted once in a `finally`, skipped for the deferred row, rather than moved into one branch.
-- **`dispatch_in_progress` in the UI:** the schedule dialog renders every error code through `approvalErrorMessage` (`t.has(code)`), so the copy key `admin.broadcasts.approval.errors.dispatch_in_progress` is the whole UI change; a 409 closes the dialog with a toast and refreshes the page, as for every other 409 there.
+- **`dispatch_in_progress` in the UI:** *(superseded by review round 4, plan row 4: the code has its own branch, an inline warning that keeps the dialog open with the picked time; the single errors key was split into `admin.broadcasts.approval.schedule.dispatchInProgress.{title,description}`.)* Round 3 rendered it through `approvalErrorMessage` (`t.has(code)`), so a 409 closed the dialog with a toast and refreshed the page, as for every other 409 there.
 
 ### Slice 2b — review round 4 (targeted; the last under the cap. `/code-review high f4f4528b0..06bdfc63a`, reliability MERGEABLE, i18n ship, enterprise-ux ship with follow-ups; 1 Nov 2026) — cap reached
 
@@ -1163,6 +1163,11 @@ Run because `route.ts` changed after `147bf6150` (the span attribute `757d7d01f`
 | CR#7 | the `'lease_held'` literal has two meanings | **Fix:** the claim's and the legacy leg's skip use a separate named constant `LEASE_HELD_BY_ANOTHER_TICK`; `LEASE_HELD` stays the staff re-time refusal; the port docblock lists each producer |
 | rel LOW-3 | a DB blip at the attach alerts as `uncaught_error` | **Fix:** row 3 above |
 | i18n | TH uses โปรด and a doubled progressive | **Fix:** with row 4's copy, TH uses กรุณา and drops ขณะนี้; `messageThai` matches |
+
+### Slice 2b — review round 4 build notes (1 Nov 2026)
+
+- **Plan row 4 (UI presentation, D-023 shared commit) — the failing run, on the old dialog code** (the copy keys and the test added, `schedule-confirm-dialog.tsx` unchanged):
+  `× F119 T064 — the schedule confirmation dialog > a 409 dispatch_in_progress keeps the dialog open with the picked time and an alert` → `Unable to find role="alert"` (the old code closed the dialog with a toast).
 
 ## Rollout
 
