@@ -71,6 +71,8 @@ interface Opts {
   readonly createAudienceRetryable?: boolean;
   /** What `markDispatchRetryStarted` answers (`null` = no row matched: here, a lost token). */
   readonly retryStampReturns?: Date | null;
+  readonly attachAudienceIdThrows?: 'lease_lost';
+  readonly deleteAudienceThrows?: boolean;
 }
 
 function harness(opts: Opts = {}) {
@@ -161,6 +163,7 @@ function harness(opts: Opts = {}) {
       },
       async attachAudienceId(_tx: unknown, _t: unknown, _b: unknown, _id: string, lease: unknown) {
         write('attachAudienceId', lease);
+        if (opts.attachAudienceIdThrows === 'lease_lost') throw leaseLost();
       },
       async attachAudienceImport(_tx: unknown, _t: unknown, _b: unknown, _id: string, lease: unknown) {
         write('attachAudienceImport', lease);
@@ -240,6 +243,7 @@ function harness(opts: Opts = {}) {
       },
       async deleteAudience(id: string) {
         events.push(`gw:deleteAudience:${id}`);
+        if (opts.deleteAudienceThrows === true) throw { kind: 'retryable', subKind: 'timeout', reason: 'aborted' };
       },
       async deleteBroadcastOnce(id: string) {
         events.push(`gw:deleteBroadcastOnce:${id}`);
@@ -368,6 +372,28 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     expect(h.gatewayCalls()).not.toContain('gw:sendBroadcast');
     expect(h.writeLeases.map((w) => w.method)).not.toContain('applyTransition:sending');
     expect(logged(info, 'broadcasts.audience_import.lease_lost')).toBe(true);
+  });
+
+  // Review round 2 (code-review #1) — the audience twin of A2: an audience
+  // this tick just created is on no row once its attach loses the lease, so
+  // no tick can be using it; it is deleted with NO pre-call check. An
+  // undecided delete is the leak an operator must see.
+  it('a lost lease at attachAudienceId deletes the audience it just created (no lease check first)', async () => {
+    const h = harness({ attachAudienceIdThrows: 'lease_lost' });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' });
+    const afterCreate = h.events.slice(h.events.indexOf('gw:createAudience') + 1);
+    expect(afterCreate.filter((e) => e.startsWith('gw:') || e.startsWith('check:'))).toEqual(['gw:deleteAudience:aud-new']);
+    expect(h.gatewayCalls()).not.toContain('gw:createContactImport');
+  });
+
+  it('an undecided delete of that audience logs audience_leaked at ERROR with the id', async () => {
+    const h = harness({ attachAudienceIdThrows: 'lease_lost', deleteAudienceThrows: true });
+    await h.run();
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({ resendAudienceId: 'aud-new' }),
+      'broadcasts.audience_import.audience_leaked',
+    );
   });
 
   it('row 8 — a lost-token attach after the mint is a concurrent skip; the mint is reclaimed with NO lease check (A2)', async () => {
