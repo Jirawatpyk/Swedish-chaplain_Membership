@@ -725,7 +725,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const claimed = await repo.withTx((tx) =>
       repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: null }, null),
     );
-    expect(claimed).toBe(true);
+    expect(claimed).toBe('ok');
     // Legal under 0299 (the import id and its stamp go NULL together) and under
     // the immutability trigger's normal arm — proven by the write landing.
     expect(await readIds(raw)).toEqual({
@@ -746,7 +746,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     // After the audience delete: both columns released together.
     expect(
       await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: null }, null)),
-    ).toBe(true);
+    ).toBe('ok');
     expect((await readIds(raw)).resend_audience_id).toBeNull();
   });
 
@@ -764,11 +764,11 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const claimed = await repo.withTx((tx) =>
       repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: null }, null),
     );
-    expect(claimed).toBe(false);
+    expect(claimed).toBe('cas_lost');
     // And the release refuses a row that still carries an import.
     expect(
       await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: 'rb_sender' }, null)),
-    ).toBe(false);
+    ).toBe('cas_lost');
     expect(await readIds(raw)).toEqual({
       resend_audience_id: 'aud_fence',
       resend_broadcast_id: 'rb_sender',
@@ -791,15 +791,15 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
       await repo.withTx((tx) =>
         repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: 'rb_draft' }, null),
       ),
-    ).toBe(true);
+    ).toBe('ok');
     expect((await readIds(raw)).resend_broadcast_id).toBe('rb_draft');
     // A different id than the one deleted: refused.
     expect(
       await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: 'rb_other' }, null)),
-    ).toBe(false);
+    ).toBe('cas_lost');
     expect(
       await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: 'rb_draft' }, null)),
-    ).toBe(true);
+    ).toBe('ok');
     const after = await readIds(raw);
     expect(after.resend_broadcast_id).toBeNull();
     expect(after.resend_audience_id).toBeNull();
@@ -839,7 +839,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     });
     expect(
       await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_gone', resendBroadcastId: null }, null)),
-    ).toBe(true);
+    ).toBe('ok');
 
     await expect(
       repo.withTx(async (tx) => {

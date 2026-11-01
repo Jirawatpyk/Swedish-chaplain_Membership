@@ -99,7 +99,7 @@ describe('releaseAudienceImport (the restart\'s claim) — SQL shape', () => {
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await expect(repo.releaseAudienceImport(tx, TENANT as never, BROADCAST_ID, EXPECTED, null)).resolves.toBe(true);
+    await expect(repo.releaseAudienceImport(tx, TENANT as never, BROADCAST_ID, EXPECTED, null)).resolves.toBe('ok');
 
     expect(sent[0]?.sql).toContain("current_setting('app.current_tenant'");
     const update = theUpdate(sent);
@@ -129,11 +129,11 @@ describe('releaseAudienceImport (the restart\'s claim) — SQL shape', () => {
     expect(nullSafeParam(theUpdate(sent), 'resend_broadcast_id')).toBeNull();
   });
 
-  it('matching no row (the claim lost) answers false, not a throw', async () => {
+  it('matching no row (the claim lost) answers cas_lost, not a throw', async () => {
     const { tx } = recordingTx();
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await expect(repo.releaseAudienceImport(tx, TENANT as never, BROADCAST_ID, EXPECTED, null)).resolves.toBe(false);
+    await expect(repo.releaseAudienceImport(tx, TENANT as never, BROADCAST_ID, EXPECTED, null)).resolves.toBe('cas_lost');
   });
 });
 
@@ -142,7 +142,7 @@ describe('releaseResendAudience (after both deletes) — SQL shape', () => {
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await expect(repo.releaseResendAudience(tx, TENANT as never, BROADCAST_ID, DELETED, null)).resolves.toBe(true);
+    await expect(repo.releaseResendAudience(tx, TENANT as never, BROADCAST_ID, DELETED, null)).resolves.toBe('ok');
 
     expect(sent[0]?.sql).toContain("current_setting('app.current_tenant'");
     const update = theUpdate(sent);
@@ -171,11 +171,11 @@ describe('releaseResendAudience (after both deletes) — SQL shape', () => {
     expect(nullSafeParam(theUpdate(sent), 'resend_broadcast_id')).toBeNull();
   });
 
-  it('matching no row answers false, not a throw', async () => {
+  it('matching no row answers cas_lost, not a throw', async () => {
     const { tx } = recordingTx();
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await expect(repo.releaseResendAudience(tx, TENANT as never, BROADCAST_ID, DELETED, null)).resolves.toBe(false);
+    await expect(repo.releaseResendAudience(tx, TENANT as never, BROADCAST_ID, DELETED, null)).resolves.toBe('cas_lost');
   });
 });
 

@@ -79,6 +79,8 @@ interface Opts {
   /** The read-back after a failed attach throws. */
   readonly readBackThrows?: boolean;
   readonly deleteAudienceThrows?: boolean;
+  /** What the restart's claim (`releaseAudienceImport`) answers. Default: it lands. */
+  readonly releaseImportAnswers?: 'lease_lost' | 'cas_lost';
 }
 
 function harness(opts: Opts = {}) {
@@ -215,7 +217,7 @@ function harness(opts: Opts = {}) {
       },
       async releaseAudienceImport(_tx: unknown, _t: unknown, _b: unknown, _e: unknown, lease: unknown) {
         write('releaseAudienceImport', lease);
-        return true;
+        return opts.releaseImportAnswers ?? true;
       },
       async releaseResendAudience(_tx: unknown, _t: unknown, _b: unknown, _e: unknown, lease: unknown) {
         write('releaseResendAudience', lease);
@@ -643,6 +645,21 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     expect(held).toHaveBeenCalledTimes(1);
     const writes = h.events.filter((e) => e.startsWith('write:'));
     expect(writes.indexOf('write:clearDispatchRetryClock')).toBeGreaterThan(writes.indexOf('write:releaseResendAudience'));
+  });
+
+  // Review round 4 (code-review #4) — a 0-row release CAS probes the token,
+  // so the restart answers the REAL cause: a cleared token is lease_lost, an
+  // id that moved is cas_lost (unknown_or_already_processed). Not a hold.
+  it.each([
+    ['lease_lost' as const, { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' }],
+    ['cas_lost' as const, { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' }],
+  ])('a hold whose release CAS answers %s answers that cause and deletes nothing', async (answer, expected) => {
+    const held = vi.spyOn(broadcastsMetrics, 'dispatchStandingHeldTotal').mockImplementation(() => undefined);
+    const h = harness({ row: TICK2_ROW, standing: { access: 'suspended' }, releaseImportAnswers: answer });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toEqual(expected);
+    expect(h.gatewayCalls().filter((e) => e.startsWith('gw:delete'))).toEqual([]);
+    expect(held).not.toHaveBeenCalled();
   });
 
   // Review round 2 (spec L-g) — a self-heal restart that lost the lease says so.

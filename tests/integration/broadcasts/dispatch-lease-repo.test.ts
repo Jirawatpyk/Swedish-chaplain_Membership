@@ -280,7 +280,7 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
    * that refused for another reason would pass the stale case.
    */
   describe('row 7 / DL2 — every writer refuses a stale token with its own signal (A3)', () => {
-    type Signal = 'throws_lease_lost' | 'null' | 'false' | 'zero_rows';
+    type Signal = 'throws_lease_lost' | 'null' | 'answers_lease_lost' | 'zero_rows';
     type Case = {
       readonly name: string;
       readonly seed: Partial<NewBroadcastRow>;
@@ -362,7 +362,7 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
       {
         name: 'releaseAudienceImport',
         seed: { resendAudienceId: AUD, audienceImportId: IMP, audienceImportSubmittedAt: SEED_AT },
-        signal: 'false',
+        signal: 'answers_lease_lost',
         call: (tx, id, lease) =>
           repoA().releaseAudienceImport(
             tx,
@@ -376,7 +376,7 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
       {
         name: 'releaseResendAudience',
         seed: { resendAudienceId: AUD },
-        signal: 'false',
+        signal: 'answers_lease_lost',
         call: (tx, id, lease) =>
           repoA().releaseResendAudience(tx, tenantA.ctx.slug, id, { resendAudienceId: AUD, resendBroadcastId: null }, lease as never),
         landed: (row) => expect(row.resendAudienceId).toBeNull(),
@@ -408,8 +408,9 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
         expect((thrown as BroadcastConcurrentMutationError).rowStatus).toBe(c.seed.status ?? 'approved');
       } else if (c.signal === 'null') {
         expect(await stale).toBeNull();
-      } else if (c.signal === 'false') {
-        expect(await stale).toBe(false);
+      } else if (c.signal === 'answers_lease_lost') {
+        // Review round 4 (code-review #4) — the 0-row release probes the token.
+        expect(await stale).toBe('lease_lost');
       } else {
         await expect(stale).resolves.toBeUndefined();
       }
@@ -418,6 +419,39 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
       // Positive control: the live holder's token lands.
       await repoA().withTx((tx) => c.call(tx, id, holder));
       c.landed(await readRow(tenantA, id));
+    });
+
+    // Review round 4 (code-review #4) — the restart's two release CASes say
+    // WHY they matched no row: the token is gone (a non-holder cleared it) →
+    // lease_lost; the token is still this tick's but an id moved → cas_lost.
+    it('a release whose token was cleared reports lease_lost; an id drift reports cas_lost', async () => {
+      const token = randomUUID();
+      const cleared = await seed(tenantA, { resendAudienceId: AUD, audienceImportId: IMP, audienceImportSubmittedAt: SEED_AT });
+      expect(
+        await repoA().withTx((tx) =>
+          repoA().releaseAudienceImport(tx, tenantA.ctx.slug, cleared, { importId: IMP, resendAudienceId: AUD, resendBroadcastId: null }, token as never),
+        ),
+      ).toBe('lease_lost');
+      const clearedAudience = await seed(tenantA, { resendAudienceId: AUD });
+      expect(
+        await repoA().withTx((tx) =>
+          repoA().releaseResendAudience(tx, tenantA.ctx.slug, clearedAudience, { resendAudienceId: AUD, resendBroadcastId: null }, token as never),
+        ),
+      ).toBe('lease_lost');
+
+      const live = { dispatchLeaseToken: token, dispatchLeaseExpiresAt: new Date(Date.now() + 120_000) };
+      const drifted = await seed(tenantA, { resendAudienceId: AUD, audienceImportId: IMP, audienceImportSubmittedAt: SEED_AT, ...live });
+      expect(
+        await repoA().withTx((tx) =>
+          repoA().releaseAudienceImport(tx, tenantA.ctx.slug, drifted, { importId: 'imp-other', resendAudienceId: AUD, resendBroadcastId: null }, token as never),
+        ),
+      ).toBe('cas_lost');
+      const driftedAudience = await seed(tenantA, { resendAudienceId: AUD, ...live });
+      expect(
+        await repoA().withTx((tx) =>
+          repoA().releaseResendAudience(tx, tenantA.ctx.slug, driftedAudience, { resendAudienceId: 'aud-other', resendBroadcastId: null }, token as never),
+        ),
+      ).toBe('cas_lost');
     });
 
     it('a stale holder whose row was ALSO cancelled still reads lease_lost (a cancel clears the token in the same UPDATE)', async () => {
