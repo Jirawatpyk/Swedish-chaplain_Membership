@@ -453,6 +453,9 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
     it.each([
       ['sent', { status: 'sent' as const, sendingStartedAt: SEED_AT, sentAt: SEED_AT, quotaYearConsumed: 2026, quotaConsumedAt: SEED_AT }],
       ['sending', { status: 'sending' as const, sendingStartedAt: SEED_AT }],
+      // Review round 2 (spec L-e) — the fence admits every SENDING_STARTED status.
+      ['partially_sent', { status: 'partially_sent' as const, sendingStartedAt: SEED_AT }],
+      ['partial_delivery_accepted', { status: 'partial_delivery_accepted' as const, sendingStartedAt: SEED_AT, quotaYearConsumed: 2026, quotaConsumedAt: SEED_AT, partialDeliveryAcceptedAt: SEED_AT }],
     ])('a webhook %s-transition before the stamp still lets the stamp land (no lease on the row)', async (_label, statusPatch) => {
       const id = await seed(tenantA, {
         ...statusPatch,

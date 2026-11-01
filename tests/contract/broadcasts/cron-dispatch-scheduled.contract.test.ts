@@ -790,6 +790,8 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
     const body = (await res.json()) as Record<string, number>;
     expect(body['deferred_past_cutoff']).toBe(1);
+    // Review round 2 (CR#5) — a deferred row is not processed.
+    expect(body['processed']).toBe(0);
     expect(body['succeeded']).toBe(0);
     expect(body['import_pending']).toBe(0);
     expect(body['unknown_error']).toBe(0);
@@ -823,6 +825,23 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     const body = (await res.json()) as Record<string, number>;
     expect(buildAudienceTickMock).toHaveBeenCalledTimes(1);
     expect(body['deferred_past_cutoff']).toBe(3);
+    expect(body['processed']).toBe(0);
+  });
+
+  // Review round 2 (CR#5, spec L-d) — processed + deferred_past_cutoff = the rows reached.
+  it('DL9 — one row runs and the rest defer: processed 1, deferred_past_cutoff 2', async () => {
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    captureScan([{ broadcast_id: BROADCAST_ID }, { broadcast_id: 'row-2' }, { broadcast_id: 'row-3' }]);
+    buildAudienceTickMock
+      .mockResolvedValueOnce({ ok: true, value: { kind: 'sent' } })
+      .mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, number>;
+    expect(buildAudienceTickMock).toHaveBeenCalledTimes(2);
+    expect(body['processed']).toBe(1);
+    expect(body['succeeded']).toBe(1);
+    expect(body['deferred_past_cutoff']).toBe(2);
   });
 
   // Review round 1 (CR#4) — a lease that expired on its own holder is a budget

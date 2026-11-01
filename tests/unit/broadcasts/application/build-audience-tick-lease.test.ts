@@ -54,7 +54,8 @@ interface Opts {
   readonly attachBroadcastIdThrows?: 'lease_lost';
   readonly attachResendIdsThrows?: 'lease_lost';
   readonly sendingTransitionThrows?: 'lease_lost';
-  readonly terminalTransitionThrows?: 'lease_lost';
+  /** `conflict` = a non-holder CAS loss (the row moved to `cancelled`). */
+  readonly terminalTransitionThrows?: 'lease_lost' | 'conflict';
   readonly releaseThrows?: boolean;
   readonly importStatus?: string;
   readonly standing?: FakeSendStandingOpts;
@@ -180,6 +181,9 @@ function harness(opts: Opts = {}) {
         write(`applyTransition:${target}`, lease);
         if (target === 'sending' && opts.sendingTransitionThrows === 'lease_lost') throw leaseLost();
         if (target === 'failed_to_dispatch' && opts.terminalTransitionThrows === 'lease_lost') throw leaseLost();
+        if (target === 'failed_to_dispatch' && opts.terminalTransitionThrows === 'conflict') {
+          throw new (BroadcastConcurrentMutationError as unknown as new (...a: unknown[]) => Error)(tenant.slug, BROADCAST_ID, 'cancelled');
+        }
         return { ...broadcast, status: target };
       },
       async markAudienceImportCompleted(_tx: unknown, _t: unknown, _b: unknown, lease: unknown) {
@@ -526,15 +530,63 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     expect(counted).toHaveBeenCalledWith('test-tenant', step);
   });
 
-  // Spec L4 — the completion-stamp A4 site.
-  it('A4 — a lease lost at the completion stamp (row sending) logs lease_lost_after_send and counts it; the tick still reports sent', async () => {
+  // Spec L4 — the completion-stamp A4 site. Review round 2 (sec L1, spec F2):
+  // a `sending` row passes the stamp fence, so the reachable arms are a row
+  // a cancel took past the send (critical) and a takeover (`approved`, benign).
+  it('A4 — a lease lost at the completion stamp on a cancelled row logs completion_stamp_failed and counts it; the tick still reports sent', async () => {
     const counted = vi.spyOn(broadcastsMetrics, 'dispatchLeaseLostAfterSend').mockImplementation(() => undefined);
-    const h = harness({ row: TICK2_ROW, completionStampThrows: 'lease_lost', lostRowStatus: 'sending' });
+    const h = harness({ row: TICK2_ROW, completionStampThrows: 'lease_lost', lostRowStatus: 'cancelled' });
+    const res = await h.run();
+    expect(res.ok ? res.value.kind : res.error).toBe('sent');
+    expect(logged(error, 'broadcasts.audience_import.completion_stamp_failed')).toBe(true);
+    expect(logged(info, 'broadcasts.audience_import.lease_lost_after_send')).toBe(false);
+    expect(counted).toHaveBeenCalledWith('test-tenant', 'completion_stamp');
+  });
+
+  it('A4 — a lease lost at the completion stamp on an approved row (a takeover) is the benign INFO line, counted', async () => {
+    const counted = vi.spyOn(broadcastsMetrics, 'dispatchLeaseLostAfterSend').mockImplementation(() => undefined);
+    const h = harness({ row: TICK2_ROW, completionStampThrows: 'lease_lost', lostRowStatus: 'approved' });
     const res = await h.run();
     expect(res.ok ? res.value.kind : res.error).toBe('sent');
     expect(logged(info, 'broadcasts.audience_import.lease_lost_after_send')).toBe(true);
     expect(logged(error, 'broadcasts.audience_import.completion_stamp_failed')).toBe(false);
     expect(counted).toHaveBeenCalledWith('test-tenant', 'completion_stamp');
+  });
+
+  // Review round 2 (CR#3) — the hold's restart is best-effort, but a lease
+  // that ran short or was lost while it ran is the tick's answer, not a hold.
+  it.each([
+    ['expiring', { kind: 'lease_expiring', step: 'delete_audience' }],
+    ['lost', { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' }],
+  ] as const)('the hold arm passes the restart’s %s lease through', async (answer, expected) => {
+    const h = harness({ row: { resendAudienceId: 'aud-held' }, standing: { access: 'suspended' }, checks: [answer] });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toEqual(expected);
+    expect(h.gatewayCalls()).not.toContain('gw:deleteAudience:aud-held');
+  });
+
+  it('the hold arm still answers dispatch_held_member_suspended when its restart completes', async () => {
+    const h = harness({ row: { resendAudienceId: 'aud-held' }, standing: { access: 'suspended' } });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toEqual({ kind: 'dispatch_held_member_suspended' });
+    expect(h.gatewayCalls()).toContain('gw:deleteAudience:aud-held');
+  });
+
+  // Review round 2 (spec L-g) — a self-heal restart that lost the lease says so.
+  it('a self-heal restart that loses the lease answers lease_lost, not unknown_or_already_processed', async () => {
+    const h = harness({ row: { resendAudienceId: 'aud-stale', resendBroadcastId: 'rb-dead' }, probe: 'draft', checks: ['held', 'lost'] });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' });
+  });
+
+  // Review round 2 (reliability NIT) — the ERROR line names what failed and where the row was.
+  it('cleanup_failed carries errorKind, importId and the expected and observed statuses', async () => {
+    const h = harness({ row: TICK2_ROW, importStatus: 'failed', terminalTransitionThrows: 'conflict' });
+    await h.run();
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({ errorKind: 'audience_import_failed', importId: 'imp-1', expectedStatus: 'approved', observedStatus: 'cancelled' }),
+      'broadcasts.audience_import.cleanup_failed',
+    );
   });
 
   it('releases the lease in a finally, once, on success; a failed release is logged and changes nothing', async () => {
