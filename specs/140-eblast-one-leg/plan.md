@@ -680,6 +680,15 @@ The branch ran on :3400 with the import flag OFF, against dev Neon, tenant `swec
 
 Finding for review: the route logs a DL7 skip at **WARN**, as `cron.broadcasts.dispatch.concurrent_skip`, after the INFO `import_row_skipped`.
 
+### Slice 2a — re-Verify: the maintainer's `/verify` after review round 1 (1 Nov 2026, on `147bf6150`): PASS
+
+| Done-when / probe | Observed |
+|---|---|
+| DL7 (scan exclusion) | A due `approved` row with import columns set. Cron → 200 `processed:0`, `concurrent_skip:0`, `import_row_skipped:0`. No log line names the row, and the row is unchanged (`updated_at` included). |
+| Probe: wrong Bearer | **401**, and the row is unchanged. |
+| Probe: second tick | `processed:0`, and the row is unchanged. |
+| Erasure + propagate deadline | Erase → 200 `cascadesComplete:true`. The draft → **404**. `member_erased` has `resend_drafts_cleared:1`. `subprocessor_erasure_propagated` is written with `resend_outcome:ok`. The member had no live-audience pairs, so the deadline cut itself was not exercised live; it is covered by unit tests. |
+
 ### Slice 2a — review round 1 (`/code-review high 719`, security APPROVE, reliability MERGEABLE, pdpa APPROVE WITH CONDITIONS; 1 Nov 2026)
 
 **Review metrics:** round 1 · 6 + 3 + 3 + 2 items (code-review, security, reliability, pdpa) · cap: ≥ 2 full + ≤ 2 targeted.
