@@ -51,8 +51,9 @@
  * unauthenticated fallback — every request MUST carry the bearer
  * token regardless of NODE_ENV.
  *
- * Idempotent: re-running the cron is safe — already-swept rows are
- * already in `failed` status and won't match `WHERE status='pending'`.
+ * Idempotent: re-running the cron is safe — a swept row is terminal
+ * (`succeeded` or `failed`, decided by Stripe's own answer) and no longer
+ * matches `WHERE status='pending'`.
  *
  * Runbook: `docs/runbooks/stale-pending-refund-sweep.md`
  *
@@ -190,7 +191,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const olderThanHours = (() => {
     if (olderThanRaw === null) return DEFAULT_OLDER_THAN_HOURS;
     const parsed = Number(olderThanRaw);
-    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 24 * 30) {
+    // Whole hours only: the orphan arm's proof also refuses a row under an
+    // hour old, but a fractional override has no use worth that risk.
+    if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 24 * 30) {
+      // Said out loud: an operator must not believe a discarded override ran.
+      logger.warn(
+        { requestId, raw: olderThanRaw.slice(0, 16), fallback: DEFAULT_OLDER_THAN_HOURS },
+        'cron.sweep_stale_pending_refunds.override_ignored',
+      );
       return DEFAULT_OLDER_THAN_HOURS;
     }
     return parsed;

@@ -401,6 +401,10 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
         expect(r.error.kind).toBe(kind);
         // Q1 fix: propagate the gateway's `reason`, not the discriminator.
         expect(r.error.reason).toBe(reason);
+        // #51 — the domain's verdict travels with the error.
+        expect(r.error.moneyExit).toBe('unknown');
+      } else {
+        throw new Error('expected processor_unavailable');
       }
 
       // THE POINT: no terminal write at all. `failed` is read downstream as
@@ -423,6 +427,24 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
     },
   );
 
+  it('#51 — permanent processor_response_amount_invalid: Stripe made the refund, so moneyExit is unknown and the row stays pending', async () => {
+    const deps = makeDeps();
+    asMock(deps.processorGateway.createRefund).mockResolvedValueOnce(
+      err({ kind: 'permanent', code: 'processor_response_amount_invalid', reason: 'amount' }),
+    );
+    const r = await issueRefund(deps, baseInput());
+    if (!r.ok && r.error.code === 'processor_unavailable') {
+      expect(r.error.kind).toBe('permanent');
+      expect(r.error.moneyExit).toBe('unknown');
+    } else {
+      throw new Error('expected processor_unavailable');
+    }
+    const failedWrites = asMock(deps.refundsRepo.updateStatus).mock.calls.filter(
+      (c) => c[1].nextStatus === 'failed',
+    );
+    expect(failedWrites).toEqual([]);
+  });
+
   it('gateway permanent DOES flip the row to failed — the processor refused, nothing moved', async () => {
     // The discrimination has to cut both ways. If all three kinds stayed
     // pending, the guard would be indiscriminate rather than correct, and
@@ -437,6 +459,9 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
     if (!r.ok && r.error.code === 'processor_unavailable') {
       expect(r.error.kind).toBe('permanent');
       expect(r.error.reason).toBe('charge_already_refunded');
+      expect(r.error.moneyExit).toBe('rejected');
+    } else {
+      throw new Error('expected processor_unavailable');
     }
     const failedWrites = asMock(deps.refundsRepo.updateStatus).mock.calls.filter(
       (c) => c[1].nextStatus === 'failed',
@@ -1375,6 +1400,7 @@ describe('issueRefund (#1) — Stripe refund-status branch', () => {
         expect(r.error.kind).toBe('permanent');
         // The Stripe refund status is surfaced as the closed-union reason.
         expect(r.error.reason).toBe(status);
+        expect(r.error.moneyExit).toBe('rejected');
       } else {
         throw new Error('expected processor_unavailable');
       }

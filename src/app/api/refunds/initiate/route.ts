@@ -33,7 +33,7 @@ import {
   makeIssueRefundDeps,
   type IssueRefundError,
 } from '@/modules/payments';
-import { type F5RouteErrorCode } from '@/lib/payments-errors-i18n';
+import { REFUND_DECLINED_MESSAGES, type F5RouteErrorCode } from '@/lib/payments-errors-i18n';
 import {
   baseHeaders,
   buildUseCaseErrorTelemetry,
@@ -141,12 +141,13 @@ function httpStatusForUseCaseError(error: IssueRefundError): {
       return { status: 422, routeCode: 'membership_effect_not_applicable' };
     case 'tenant_settings_missing':
       return { status: 422, routeCode: 'tenant_settings_incomplete' };
-    // Task B — only a `permanent` gateway failure proves the money stayed
-    // put (the row is finalised `failed`), so only it may say "retry". A
-    // `retryable` or `idempotency_conflict` failure leaves the row `pending`
-    // for the stale-pending sweep: the refund may have gone through.
+    // Task B / #51 — only a proven refusal (`moneyExit: 'rejected'`, the row
+    // finalised `failed`) may say "try again". Anything else leaves the row
+    // `pending` for the stale-pending sweep: the refund may have gone
+    // through. Read from the domain's verdict, never re-derived from `kind`
+    // (`permanent/processor_response_amount_invalid` is `unknown`).
     case 'processor_unavailable':
-      return error.kind === 'permanent'
+      return error.moneyExit === 'rejected'
         ? { status: 502, routeCode: 'processor_unavailable' }
         : { status: 502, routeCode: 'processor_outcome_unknown' };
     case 'f4_preflight_read_error':
@@ -527,6 +528,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ...(result.error.code === 'possible_duplicate_refund'
         ? { duplicateRefundedAt: result.error.refundedAt }
         : {}),
+      // #51 — a refused refund says so, in the refund's own words; the
+      // shared payments copy ("temporarily unavailable, please retry") is for
+      // a payment intent, not a refund the processor declined.
+      ...(routeCode === 'processor_unavailable' ? { messages: REFUND_DECLINED_MESSAGES } : {}),
     });
   } catch (e) {
     logger.error(

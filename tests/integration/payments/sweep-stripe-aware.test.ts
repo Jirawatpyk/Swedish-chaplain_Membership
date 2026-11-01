@@ -132,12 +132,25 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
 
   function fakeGateway(
     statusByRe: Readonly<Record<string, string>>,
+    // #50 — what Stripe lists for an orphan's payment intent. The default is
+    // an incomplete answer, which never closes a row.
+    listed: {
+      refunds: { id: string; status: string; appRefundId: string | null; amountSatang: bigint | null }[];
+      complete: boolean;
+    } = {
+      refunds: [],
+      complete: false,
+    },
   ): SweepStalePendingRefundsDeps['processorGateway'] {
     return {
       createPaymentIntent: vi.fn(),
-      retrievePaymentIntent: vi.fn(),
+      // #50 — every intent the sweep checks exists on the account.
+      retrievePaymentIntent: vi.fn(async (pi: string) =>
+        ok({ id: pi, status: 'succeeded', clientSecret: null, promptpayQrSvgUrl: null }),
+      ),
       cancelPaymentIntent: vi.fn(),
       createRefund: vi.fn(),
+      listRefundsForPaymentIntent: vi.fn(async () => ok(listed)),
       retrieveRefund: vi.fn(async (refundId: string) => {
         const status = statusByRe[refundId];
         if (status === undefined) {
@@ -480,7 +493,7 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
     // pending → untouched (NEVER marked failed).
     expect((await refundStatusFields(rfndPend)).status).toBe('pending');
 
-    // null-id aged → untouched (NEVER blind-failed).
+    // null-id aged, Stripe's list incomplete → untouched (NEVER blind-failed).
     expect((await refundStatusFields(rfndNull)).status).toBe('pending');
 
     // Fresh (< 24h cutoff) → NOT picked up at all: status untouched, no
@@ -626,4 +639,93 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
     // The concurrently-set terminal state is intact (not clobbered).
     expect((await refundStatusFields(raceRefundId)).status).toBe('succeeded');
   }, 60_000);
+
+  it('#50 — an orphan Stripe holds no refund for is closed failed; another tenant\'s sweep never touches it', async () => {
+    const orphanPaymentId = asPaymentId(`pmt_${randomUUID().replace(/-/g, '').slice(0, 26)}`);
+    const orphanInvoiceId = randomUUID();
+    const orphanRefundId = `rfnd_${randomUUID().replace(/-/g, '').slice(0, 26)}`;
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: orphanInvoiceId,
+        memberId,
+        planYear: 2026,
+        planId: 'sweep-plan',
+        draftByUserId: user.userId,
+      });
+    });
+    await seedPayment(orphanPaymentId, orphanInvoiceId);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await makeDrizzleRefundsRepo(tenant.ctx.slug).insert(tx, {
+        id: orphanRefundId,
+        tenantId: tenant.ctx.slug,
+        paymentId: orphanPaymentId,
+        invoiceId: orphanInvoiceId,
+        amountSatang: asSatang(10_000n),
+        reason: 'orphan — Stripe never made it',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-orphan',
+        creditNoteWaiverReason: null,
+        initiatedAt: STALE_INITIATED,
+      });
+    });
+    const emptyAndComplete = { refunds: [], complete: true };
+
+    // Cross-tenant (Principle I): tenant B's sweep, with a gateway that would
+    // close anything it is shown, never sees tenant A's orphan.
+    const other = await createTestTenant('test-swecham');
+    try {
+      const otherGateway = fakeGateway({}, emptyAndComplete);
+      const otherRun = await sweepStalePendingRefunds(
+        {
+          refundsRepo: makeDrizzleRefundsRepo(other.ctx.slug),
+          paymentsRepo: makeDrizzlePaymentsRepo(other.ctx.slug),
+          tenantSettingsRepo: stubSettings(other.ctx.slug),
+          processorGateway: otherGateway,
+          invoicingBridge: stubBridge(succCnId),
+          audit: f5AuditAdapter,
+          clock: systemClock,
+        },
+        { tenantId: other.ctx.slug, requestId: 'req-sweep-orphan-b' },
+      );
+      expect(otherRun.ok && otherRun.value.sweptCount).toBe(0);
+      expect(vi.mocked(otherGateway.listRefundsForPaymentIntent)).not.toHaveBeenCalled();
+      expect((await refundStatusFields(orphanRefundId)).status).toBe('pending');
+    } finally {
+      await other.cleanup().catch((e) => console.error('tenant B cleanup:', e));
+    }
+
+    // Tenant A's sweep: the parent intent is looked up and Stripe has none.
+    const gateway = fakeGateway({ [rePend]: 'pending' }, emptyAndComplete);
+    const run = await sweepStalePendingRefunds(
+      {
+        refundsRepo: makeDrizzleRefundsRepo(tenant.ctx.slug),
+        paymentsRepo: makeDrizzlePaymentsRepo(tenant.ctx.slug),
+        tenantSettingsRepo: stubSettings(tenant.ctx.slug),
+        processorGateway: gateway,
+        invoicingBridge: stubBridge(succCnId),
+        audit: f5AuditAdapter,
+        clock: systemClock,
+      },
+      { tenantId: tenant.ctx.slug, requestId: 'req-sweep-orphan-a' },
+    );
+    expect(run.ok).toBe(true);
+    // The intent asked about is the orphan's own parent payment's (the join).
+    const [parent] = await db
+      .select({ pi: payments.processorPaymentIntentId })
+      .from(payments)
+      .where(and(eq(payments.tenantId, tenant.ctx.slug), eq(payments.id, orphanPaymentId)));
+    expect(vi.mocked(gateway.listRefundsForPaymentIntent)).toHaveBeenCalledWith(
+      parent!.pi,
+      expect.any(String),
+    );
+    const closed = await refundStatusFields(orphanRefundId);
+    expect(closed.status).toBe('failed');
+    expect(closed.failure_reason_code).toBe('no_processor_refund');
+    expect(await auditCount('refund_failed', orphanRefundId)).toBe(1);
+    // The first null-id row (rfndNull) is also closed now: same answer.
+    expect((await refundStatusFields(rfndNull)).status).toBe('failed');
+  }, 90_000);
 });

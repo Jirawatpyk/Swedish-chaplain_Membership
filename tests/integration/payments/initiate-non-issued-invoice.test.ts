@@ -73,6 +73,7 @@ function makeCountingGateway(): { gateway: ProcessorGatewayPort; calls: () => nu
       cancelPaymentIntent: refuse,
       createRefund: refuse,
       retrieveRefund: refuse,
+      listRefundsForPaymentIntent: refuse,
     },
     calls: () => calls,
   };

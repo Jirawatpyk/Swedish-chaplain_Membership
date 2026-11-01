@@ -144,4 +144,31 @@ export interface ProcessorGatewayPort {
     refundId: string,
     stripeAccount: string,
   ): Promise<Result<RetrievedRefund, ProcessorGatewayError>>;
+
+  /**
+   * #50 — every refund the processor holds for a payment intent, so the
+   * stale-pending sweep can tell whether an orphan row (no processor refund
+   * id) ever reached it. `complete` is false when there are more than one
+   * page's worth: the sweep never closes a row on a partial answer.
+   */
+  listRefundsForPaymentIntent(
+    paymentIntentId: string,
+    stripeAccount: string,
+  ): Promise<Result<ListedRefunds, ProcessorGatewayError>>;
+}
+
+/**
+ * #50 — PCI SAQ-A allow-list: id, status, amount and the app's own refund
+ * id from the refund's metadata. Nothing else crosses the boundary.
+ */
+export interface ListedRefunds {
+  readonly refunds: ReadonlyArray<{
+    readonly id: string;
+    readonly status: string;
+    /** `metadata.refundId` — the `refunds.id` that created it, or null. */
+    readonly appRefundId: string | null;
+    /** The refunded amount, or null when Stripe's value cannot be trusted. */
+    readonly amountSatang: Satang | null;
+  }>;
+  readonly complete: boolean;
 }

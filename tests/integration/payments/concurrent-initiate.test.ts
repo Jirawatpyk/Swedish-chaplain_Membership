@@ -145,6 +145,9 @@ function makeRaceGateway(piId: string): {
       async retrieveRefund() {
         throw new Error('not used in T136');
       },
+      async listRefundsForPaymentIntent() {
+        throw new Error('not used in T136');
+      },
     },
     counts,
   };

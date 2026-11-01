@@ -133,6 +133,7 @@ function buildHybridDeps(tenantId: string): IssueRefundDeps {
         }),
       ),
       retrieveRefund: vi.fn(),
+      listRefundsForPaymentIntent: vi.fn(),
     },
     invoicingBridge: {
       getInvoiceForPayment: vi.fn(),

@@ -143,7 +143,12 @@ describe('f5RefundBridge outcome mapping (F8-RP)', () => {
 
   it('REGRESSION: genuine processor_unavailable → refund_failed (unchanged)', async () => {
     issueRefundMock.mockResolvedValue(
-      err({ code: 'processor_unavailable', kind: 'permanent', reason: 'sk_live_FORBIDDEN_DETAIL' }),
+      err({
+        code: 'processor_unavailable',
+        kind: 'permanent',
+        moneyExit: 'rejected',
+        reason: 'sk_live_FORBIDDEN_DETAIL',
+      }),
     );
     const result = await f5RefundBridge.issueRefundForInvoice(INPUT);
     expect(result.status).toBe('refund_failed');
@@ -164,12 +169,25 @@ describe('f5RefundBridge outcome mapping (F8-RP)', () => {
     'processor_unavailable kind:%s (outcome unknown) → refund_pending, not refund_failed',
     async (kind) => {
       issueRefundMock.mockResolvedValue(
-        err({ code: 'processor_unavailable', kind, reason: 'x' }),
+        err({ code: 'processor_unavailable', kind, moneyExit: 'unknown', reason: 'x' }),
       );
       const result = await f5RefundBridge.issueRefundForInvoice(INPUT);
       expect(result.status).toBe('refund_pending');
     },
   );
+
+  it('#51 — the bridge follows moneyExit, not kind: permanent but unknown → refund_pending', async () => {
+    issueRefundMock.mockResolvedValue(
+      err({
+        code: 'processor_unavailable',
+        kind: 'permanent',
+        moneyExit: 'unknown',
+        reason: 'processor_response_amount_invalid',
+      }),
+    );
+    const result = await f5RefundBridge.issueRefundForInvoice(INPUT);
+    expect(result.status).toBe('refund_pending');
+  });
 
   it('no succeeded payment / fully refunded → no_payment_found (refund never attempted)', async () => {
     computeRemainingMock.mockReturnValue(null);

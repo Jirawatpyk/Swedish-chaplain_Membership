@@ -18,7 +18,7 @@
  * MUST NOT leak into Application or Domain (Constitution Principle
  * III). The use-case calls these methods only through the port.
  */
-import { and, asc, desc, eq, gte, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { asSatang, type Satang } from '@/lib/money';
 import type {
   RefundsRepo,
@@ -244,6 +244,10 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
       if (input.expectedCurrentStatus !== undefined) {
         whereClauses.push(eq(refunds.status, input.expectedCurrentStatus));
       }
+      // #50 — an orphan closed by the sweep must still have no processor id.
+      if (input.expectProcessorRefundIdNull === true) {
+        whereClauses.push(isNull(refunds.processorRefundId));
+      }
       const [updated] = await tx
         .update(refunds)
         .set({ ...patch, updatedAt: sql`now()` })
@@ -370,6 +374,25 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
     // INNER join — a refund with no visible parent payment yields null, which
     // routes the caller to the forensic rather than to a suppression with an
     // unverifiable PI.
+    async listProcessorRefundIdsForPayment(
+      txUnknown,
+      tenantIdArg: string,
+      paymentId: PaymentId,
+    ): Promise<ReadonlyArray<string>> {
+      const tx = txUnknown as TenantTx;
+      const rows = await tx
+        .select({ processorRefundId: refunds.processorRefundId })
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.tenantId, tenantIdArg),
+            eq(refunds.paymentId, paymentId),
+            isNotNull(refunds.processorRefundId),
+          ),
+        );
+      return rows.flatMap((r) => (r.processorRefundId === null ? [] : [r.processorRefundId]));
+    },
+
     async findAwaitingAttachByAppRefundId(
       txUnknown,
       tenantIdArg: string,
@@ -433,6 +456,8 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         readonly correlationId: string;
         readonly initiatorUserId: string;
         readonly processorRefundId: string | null;
+        readonly paymentIntentId: string;
+        readonly paymentProcessorEnvironment: string;
       }>
     > {
       const tx = txUnknown as TenantTx;
@@ -448,8 +473,16 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
           // A.14 — Stripe `re_…` id (nullable) so the sweep can
           // `retrieveRefund` the real outcome instead of blind-failing.
           processorRefundId: refunds.processorRefundId,
+          // #50 — the parent intent, so an orphan row can be looked up, and
+          // the environment it was taken in, checked against the settings.
+          paymentIntentId: payments.processorPaymentIntentId,
+          paymentProcessorEnvironment: payments.processorEnvironment,
         })
         .from(refunds)
+        .innerJoin(
+          payments,
+          and(eq(payments.id, refunds.paymentId), eq(payments.tenantId, tenantIdArg)),
+        )
         .where(
           and(
             eq(refunds.tenantId, tenantIdArg),
@@ -483,6 +516,8 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         correlationId: r.correlationId,
         initiatorUserId: r.initiatorUserId,
         processorRefundId: r.processorRefundId,
+        paymentIntentId: r.paymentIntentId,
+        paymentProcessorEnvironment: r.paymentProcessorEnvironment,
       }));
     },
 

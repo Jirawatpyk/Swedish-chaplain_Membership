@@ -31,6 +31,7 @@ import type {
   RetrievedPaymentIntent,
   CreatedRefund,
   RetrievedRefund,
+  ListedRefunds,
 } from '../../application/ports/processor-gateway-port';
 import { getStripeClient } from './stripe-client';
 
@@ -89,7 +90,7 @@ function connectOptions(stripeAccount: string): { stripeAccount?: string } {
 // webhook read-consistency means the object is INTERMITTENTLY not yet
 // retrievable right when the event fires — the retrieve throws a
 // `StripeInvalidRequestError` with `code: 'resource_missing'` / HTTP 404.
-// `mapStripeError` classifies that via its default arm as `permanent`,
+// `mapStripeError` classifies that (a `StripeInvalidRequestError`) as `permanent`,
 // so it was NOT retried → the payment row landed `method='other'` with
 // no card brand/last4 (UI shows "Other"). Impact is COSMETIC (method
 // label + brand/last4); the payment outcome / mark-paid / receipt are
@@ -139,15 +140,18 @@ function isWebhookReadLagError(e: unknown): boolean {
  *
  * Stripe exposes `error.type` (SDK-level) + `error.code` (API-level)
  * + `error.statusCode` (HTTP). We classify by `type`:
- *   - `StripeConnectionError` / `StripeAPIError` → retryable
+ *   - `StripeCardError` / `StripeInvalidRequestError` /
+ *     `StripeAuthenticationError` / `StripePermissionError` → permanent
+ *     (Stripe refused the request; nothing was done)
  *   - `StripeIdempotencyError` → idempotency_conflict
- *   - everything else (invalid_request, authentication, card, rate_limit,
- *     permission) → permanent
+ *   - `StripeConnectionError` / `StripeAPIError` / `StripeRateLimitError`,
+ *     network errors, and ANYTHING ELSE → retryable
  *
- * `rate_limit` is classified `permanent` at this layer because the SDK
- * already retries 3x under the hood (see stripe-client.ts config) —
- * if it still bubbles up, the caller should surface it to the user
- * rather than loop again.
+ * #51 — the default is `retryable`, not `permanent`. Downstream,
+ * `permanent` reads as "the processor refused, no money moved", which
+ * a refund then finalises `failed` and a retry can pay twice on. An
+ * error this mapper does not recognise proves no such thing, so it
+ * fails closed: the outcome is treated as unknown.
  *
  * Exported (vs. module-private) so a unit test can throw synthetic
  * Stripe error instances directly at the mapper without going through
@@ -235,8 +239,15 @@ export function mapStripeError(
       return { kind: 'retryable', reason };
     case 'StripeIdempotencyError':
       return { kind: 'idempotency_conflict', reason };
-    default:
+    // Stripe refused the request: nothing was done.
+    case 'StripeCardError':
+    case 'StripeInvalidRequestError':
+    case 'StripeAuthenticationError':
+    case 'StripePermissionError':
       return { kind: 'permanent', code, reason };
+    // #51 — anything unrecognised fails closed: the outcome is unknown.
+    default:
+      return { kind: 'retryable', reason };
   }
 }
 
@@ -820,6 +831,42 @@ export const stripeGateway: ProcessorGatewayPort = {
       });
     } catch (e) {
       return err(mapStripeError(e, { stripeAccount }));
+    }
+  },
+
+  async listRefundsForPaymentIntent(
+    paymentIntentId,
+    stripeAccount,
+  ): Promise<Result<ListedRefunds, ProcessorGatewayError>> {
+    const client = getStripeClient();
+    try {
+      // One page of 100. A payment intent with more refunds than that is not a
+      // real case for a membership invoice, and `complete: false` makes the
+      // sweep leave the row for a person rather than guess.
+      const page = await client.refunds.list(
+        { payment_intent: paymentIntentId, limit: 100 },
+        connectOptions(stripeAccount),
+      );
+      // PCI allow-list: id, status, amount and our own refund id only. Never
+      // the refund object itself (it carries `destination_details`), and
+      // never other metadata (it carries the admin's free-text reason). An
+      // amount that is not a non-negative safe integer is unknown (null),
+      // which the sweep treats as a conflict, never as a number.
+      const refunds = page.data.map((r) => ({
+        id: r.id,
+        status: r.status ?? 'pending',
+        appRefundId:
+          typeof r.metadata?.['refundId'] === 'string' ? r.metadata['refundId'] : null,
+        amountSatang:
+          Number.isSafeInteger(r.amount) && r.amount >= 0 ? asSatang(BigInt(r.amount)) : null,
+      }));
+      logger.info(
+        { stripeAccount, paymentIntentId, count: refunds.length, hasMore: page.has_more },
+        'stripe-gateway: listRefundsForPaymentIntent ok',
+      );
+      return ok({ refunds, complete: !page.has_more });
+    } catch (e) {
+      return err(mapStripeError(e, { stripeAccount, paymentIntentId }));
     }
   },
 };
