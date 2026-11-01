@@ -1685,7 +1685,27 @@ async function submitImport(
         );
       }),
     );
-    if (!attached.ok) return err(attached.error);
+    if (!attached.ok) {
+      // Spec 140 s2b review round 2 (code-review #1) — the audience twin of A2.
+      // The lease was lost between `createAudience` and its attach, so the
+      // audience is on no row: no tick can be using it, and nobody else will
+      // ever delete it. Reclaim it now, with NO pre-call check (a check would
+      // always fail at this moment and leak it). An undecided delete is the
+      // leak an operator must see (the daily `reclaim-orphan-audiences` cron
+      // is the backstop).
+      if (isLeaseLost(attached.error)) {
+        try {
+          await deps.broadcastsGateway.deleteAudience(audienceId);
+          logger.info({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendAudienceId: audienceId }, 'broadcasts.audience_import.audience_reclaimed');
+        } catch (e) {
+          logger.error(
+            { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendAudienceId: audienceId, err: errKind(e), errorKind: classifyThrown(e).kind, severity: 'critical' },
+            'broadcasts.audience_import.audience_leaked',
+          );
+        }
+      }
+      return err(attached.error);
+    }
   }
 
   // S48 — time the one call the whole design rests on. Nothing measured it
