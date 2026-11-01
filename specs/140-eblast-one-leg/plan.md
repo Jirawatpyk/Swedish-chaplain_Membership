@@ -791,6 +791,18 @@ Mutation proofs (from `5f8fe56a2`, each file restored byte for byte, tree clean)
 - the erased wrapper's log call made inert: 3 red (the gate test and both legs).
 - the baseline count put back inside the candidate tx: 2 red.
 
+### Slice 2b — Verify: the maintainer's `/verify` (1 Nov 2026, on `b0783995a`): PASS
+
+:3400, Neon dev with 0322 applied, tenant swecham. The import flag was ON in the worktree's `.env.local` only, and the file was restored afterwards. Resend went to the sink address only, and no `/send` ran.
+- **Safety:** 0 due rows and only the `General` segment before seeding. Seeds: R-LIVE (another tick's lease, valid until +24 h) and R-EXP (another tick's lease, expired 1 minute ago). Both are `custom` rows to the sink address.
+- **Wrong Bearer → 401.** Both rows were unchanged, `updated_at` included.
+- **DL1/DL2 mechanics, flag ON:** `processed:1, import_submitted:1`.
+  - R-LIVE was not picked up: its token, expiry and `updated_at` did not change.
+  - R-EXP was claimed and its import submitted; the token and expiry were NULL after the release.
+  - The log reads `lease_claimed → audience_created → contact_import_submitted → submitted → lease_released`, with 0 send lines.
+- **The scan exclusion holds on every flag state (A7):** with the flag OFF after a restart, `processed:0`, and R-LIVE was unchanged. R-EXP is left out by the s2a import-row scan filter. The command had expected an `import_row_skipped` log, but no row reaches the use case.
+- **Teardown:** the Resend audience was deleted (200, segments back to `General`), both rows deleted, the due count back to 0.
+
 ### Slice 2b — build notes (1 Nov 2026)
 
 - **Column names:** `dispatch_lease_token` / `dispatch_lease_expires_at`. The 2b prose says `lease_*`; the Approach SQL and the sibling `dispatch_first_failed_at` use `dispatch_`. The migration header records this.
