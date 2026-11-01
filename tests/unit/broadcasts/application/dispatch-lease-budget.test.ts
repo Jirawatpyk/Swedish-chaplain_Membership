@@ -19,6 +19,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   CALL_HEADROOM_MS,
+  CHECK_LOCK_TIMEOUT_MS,
+  ERASURE_ROW_LOCK_HOLD_MS,
   DISPATCH_MAX_DURATION_MS,
   IMPORT_HEADROOM_MS,
   LEASE_BUDGET_INPUTS,
@@ -67,6 +69,11 @@ describe('spec 140 s2b — the dispatch lease budget (DL9, A5)', () => {
     expect(ROW_START_CUTOFF_MS).toBe(131_000);
     expect(CALL_HEADROOM_MS).toBe(RESEND_CALL_TIMEOUT_MS + LEASE_MARGIN_MS);
     expect(IMPORT_HEADROOM_MS).toBe(IMPORT_CALL_TIMEOUT_MS + LEASE_MARGIN_MS);
+  });
+
+  it('review round 1 (reliability L2) — the pre-call check waits at most E + 5 s for the row lock', () => {
+    expect(CHECK_LOCK_TIMEOUT_MS).toBe(ERASURE_ROW_LOCK_HOLD_MS + 5_000);
+    expect(CHECK_LOCK_TIMEOUT_MS).toBe(28_000);
   });
 
   it('every inequality holds for the shipped values', () => {

@@ -29,7 +29,9 @@ import { db, runInTenant } from '@/lib/db';
 import { asBroadcastId, type BroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import {
+  checkDispatchLeaseStatement,
   claimDispatchLeaseStatement,
+  hasLiveDispatchLeaseStatement,
   makeDrizzleBroadcastsRepo,
   releaseDispatchLeaseStatement,
 } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
@@ -150,6 +152,40 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
       expect(await check(randomUUID(), 25_000)).toBe('lost');
       await repo.withTx((tx) => repo.releaseDispatchLease(tx, tenantA.ctx.slug, id, token));
       expect(await check(token, 25_000)).toBe('lost');
+    });
+
+    // Review round 1 (reliability L2) — the check waits at most
+    // `CHECK_LOCK_TIMEOUT_MS` (E + 5 s) for the row lock; lowered here so the
+    // test does not wait 28 s. A timeout throws, which the tick answers as
+    // `lease_check_failed` (retryable, no call).
+    it('a check behind a lock held longer than its lock_timeout fails (55P03), so the tick answers lease_check_failed', async () => {
+      const id = await seed(tenantA, foreignLease(120_000));
+      const repo = repoA();
+      let release!: () => void;
+      const released = new Promise<void>((r) => (release = r));
+      let markLocked!: () => void;
+      const locked = new Promise<void>((r) => (markLocked = r));
+      const holder = repo.withTx(async (tx) => {
+        await repo.lockForUpdate(tx, tenantA.ctx.slug, id);
+        markLocked();
+        await released;
+      });
+      await locked;
+      try {
+        const started = Date.now();
+        const thrown = await runInTenant(tenantA.ctx, (tx) =>
+          checkDispatchLeaseStatement(tx as never, tenantA.ctx.slug, id, randomUUID() as never, 25_000, 500),
+        ).then(
+          () => null,
+          (e: unknown) => e,
+        );
+        expect(thrown).not.toBeNull();
+        expect(JSON.stringify(thrown, Object.getOwnPropertyNames(thrown as object)) + String((thrown as { cause?: unknown }).cause?.toString?.())).toMatch(/55P03|lock timeout/i);
+        expect(Date.now() - started).toBeLessThan(10_000);
+      } finally {
+        release();
+        await holder;
+      }
     });
 
     it('a row that is gone reads lost', async () => {
@@ -469,6 +505,22 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
       expect(await releaseDispatchLeaseStatement(db as never, tenantA.ctx.slug, idA, token!)).toBe(true);
       expect((await readRow(tenantB, idB)).dispatchLeaseToken).toBe(token);
       expect((await readRow(tenantA, idA)).dispatchLeaseToken).toBeNull();
+    });
+
+    // Review round 1 (security L4) — the check and the legacy leg's live-lease
+    // read, on the BYPASSRLS owner too: the tenant predicate alone keeps
+    // tenant B's leased row (same broadcast uuid) out.
+    it('the check and hasLive statement builders on the BYPASSRLS owner read only tenant A’s row', async () => {
+      const shared = randomUUID();
+      const idA = await seed(tenantA, { broadcastId: shared });
+      const theirs = foreignLease(120_000);
+      await seed(tenantB, { broadcastId: shared, ...theirs });
+      // B's token, read through tenant A's predicate: A's row holds none.
+      expect(await checkDispatchLeaseStatement(db as never, tenantA.ctx.slug, idA, theirs.dispatchLeaseToken as never, 25_000)).toBe('lost');
+      expect(await hasLiveDispatchLeaseStatement(db as never, tenantA.ctx.slug, idA)).toBe(false);
+      // Positive control: tenant B's own predicate does see its live lease.
+      expect(await checkDispatchLeaseStatement(db as never, tenantB.ctx.slug, idA, theirs.dispatchLeaseToken as never, 25_000)).toBe('held');
+      expect(await hasLiveDispatchLeaseStatement(db as never, tenantB.ctx.slug, idA)).toBe(true);
     });
   });
 });
