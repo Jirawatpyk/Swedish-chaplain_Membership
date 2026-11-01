@@ -11,8 +11,16 @@
  *   - 404 audience/broadcast → `{kind: 'resource_missing', resourceType, resourceId}`
  *   - 4xx other → `{kind: 'permanent', code, reason}`
  *
- * Retry policy: 1/2/4/8/16s × 5 (CHK020) on retryable errors only.
- * Permanent errors throw immediately.
+ * Retry policy: 1/2/4/8/16s backoff (CHK020) on retryable errors only, inside
+ * ONE budget per request (`callTimeoutMs`, default `RESEND_CALL_TIMEOUT_MS` =
+ * 10 s; spec 140 s2a): a backoff is taken only while the budget left exceeds
+ * it + 1 s, so a retried call gives up within 10 s, not ~31 s. On the
+ * default instance the creates (`createAudience`, `createBroadcast`,
+ * `createContactImport`) make ONE attempt unless Resend answered 429 (it
+ * created nothing); `createContactImport`'s budget is `IMPORT_CALL_TIMEOUT_MS`
+ * (30 s). The legacy instance (`legacyResendBroadcastsGateway`, the legacy
+ * dispatch leg only, until slice 4) retries `createBroadcast` on any retryable
+ * error inside the budget. Permanent errors throw immediately.
  *
  * Logging: pino with `redact` configured globally to drop request
  * bodies; only metadata (audienceId, broadcastId, recipientCount,
@@ -22,6 +30,10 @@ import type { Resend } from 'resend';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import {
+  IMPORT_CALL_TIMEOUT_MS,
+  RESEND_CALL_TIMEOUT_MS,
+} from '../../application/ports/broadcasts-gateway-port';
 import type {
   AudienceContact,
   AudienceContactCount,
@@ -224,22 +236,76 @@ function classifyResendError(
   return new GatewayThrowable({ kind: 'permanent', reason, code });
 }
 
-async function withRetry<T>(
-  op: () => Promise<T>,
-  ctx: { method: string },
+/**
+ * Spec 140 s2a — the least time an attempt after a backoff must have left. A
+ * retry is made only while the budget left exceeds the next backoff + this.
+ */
+const RETRY_MIN_ATTEMPT_MS = 1_000;
+
+/** A 429: `classifyResendError` gives it, and only it, `retryable` / `api`. */
+function isRateLimited(e: unknown): boolean {
+  return e instanceof GatewayThrowable && e.kind === 'retryable' && e.subKind === 'api';
+}
+
+/**
+ * Spec 140 s2a (DL5a, DL8, P6) — one bounded gateway call.
+ *
+ * ONE `AbortSignal.timeout(callTimeoutMs)` spans every attempt and every
+ * backoff, so a retried call never takes longer than `callTimeoutMs` in total;
+ * a per-attempt signal would let six attempts run ~6 × C. Every attempt hands
+ * the signal to its request (the SDK's `RequestOptions.signal` reaches
+ * `fetch`, `node_modules/resend/dist/index.mjs` `fetchRequest`).
+ *
+ * Once the signal has aborted, the failure is `retryable` / `timeout`,
+ * whatever shape it arrived in: the SDK's outer catch turns an aborted `fetch`
+ * (or an aborted `response.json()`) into `application_error` with
+ * `statusCode: null`, and a raw `fetch` rejects with a `TimeoutError`, before
+ * or mid-body.
+ *
+ * `retry: 'rate_limit'` (the creates, on the default instance) retries a 429
+ * only: Resend refused the request for its rate and created nothing. Anything
+ * else that may have reached Resend (a 5xx, a network failure, a timeout) is
+ * one attempt, because a retried create that reached Resend mints a second
+ * resource; a failed create waits for the next tick, inside the FR-021 hour
+ * (review round 1, CR#1). `retry: 'retryable'` retries every retryable error;
+ * the legacy instance uses it for `createBroadcast` (review round 2, CR#2,
+ * until slice 4). A timeout is never retried: the signal is spent.
+ */
+async function boundedCall<T>(
+  op: (signal: AbortSignal) => Promise<T>,
+  ctx: {
+    readonly method: string;
+    readonly callTimeoutMs: number;
+    readonly retry: 'retryable' | 'rate_limit';
+  },
 ): Promise<T> {
+  const signal = AbortSignal.timeout(ctx.callTimeoutMs);
+  const deadline = Date.now() + ctx.callTimeoutMs;
   let lastErr: unknown = null;
-  for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
+  for (let attempt = 0; ; attempt++) {
     try {
-      return await op();
+      return await op(signal);
     } catch (e) {
       lastErr = e;
       // Only retry on `retryable` kind; everything else throws immediately
       if (e instanceof GatewayThrowable && e.kind !== 'retryable') {
         throw e;
       }
-      if (attempt === RETRY_BACKOFF_MS.length) break;
-      const backoff = RETRY_BACKOFF_MS[attempt] ?? 16_000;
+      if (signal.aborted) {
+        throw new GatewayThrowable({
+          kind: 'retryable',
+          subKind: 'timeout',
+          reason: `${ctx.method} gave up after ${ctx.callTimeoutMs} ms`,
+        });
+      }
+      const backoff = RETRY_BACKOFF_MS[attempt];
+      if (
+        (ctx.retry === 'rate_limit' && !isRateLimited(e)) ||
+        backoff === undefined ||
+        deadline - Date.now() <= backoff + RETRY_MIN_ATTEMPT_MS
+      ) {
+        break;
+      }
       logger.warn(
         {
           method: ctx.method,
@@ -274,293 +340,236 @@ function client(): Resend {
   return getResendBroadcastsClient();
 }
 
-export const resendBroadcastsGateway: BroadcastsGatewayPort = {
-  async createAudience(name: string): Promise<{ readonly audienceId: string }> {
-    return withRetry(
-      async () => {
-        const sdk = client();
-        const result = (await sdk.audiences.create({ name })) as ResendSdkResponse<{
-          id: string;
-        }>;
-        if (result.error || !result.data?.id) {
-          throw classifyResendError(result.error ?? undefined, 'audience');
-        }
-        logger.info(
-          { audienceId: result.data.id },
-          'resend.broadcasts.audience_created',
-        );
-        return { audienceId: result.data.id };
-      },
-      { method: 'createAudience' },
-    );
-  },
+export interface ResendBroadcastsGatewayOptions {
+  /**
+   * The budget of one request, its retries and backoff included. Default
+   * {@link RESEND_CALL_TIMEOUT_MS}; tests pass 50 ms. A port call that makes
+   * several requests (`addContactsToAudience` per contact, `listAudiences` per
+   * page) has this budget PER REQUEST, so it can run N x C (a per-invocation
+   * budget is spec 140 slice 2b's).
+   */
+  readonly callTimeoutMs?: number;
+  /**
+   * Spec 140 s2a review round 2 (CR#3) — `createContactImport`'s budget
+   * (one attempt, a 429 aside). Default {@link IMPORT_CALL_TIMEOUT_MS}.
+   */
+  readonly importCallTimeoutMs?: number;
+  /**
+   * Spec 140 s2a review round 2 (CR#2, the maintainer's decision, 1 Nov 2026)
+   * — `createBroadcast`'s retry. Default `'rate_limit'`: one attempt, a 429
+   * retried. `'retryable'` (only {@link legacyResendBroadcastsGateway}) also
+   * retries a 5xx or a network failure inside the budget, as the legacy leg
+   * did before s2a.
+   */
+  readonly createBroadcastRetry?: 'retryable' | 'rate_limit';
+}
 
-  async addContactsToAudience(
-    audienceId: string,
-    contacts: ReadonlyArray<AudienceContact>,
-  ): Promise<void> {
-    if (contacts.length === 0) return;
-    assertNonEmpty({ audienceId });
-
-    // The Resend Contacts API is one-at-a-time (no bulk endpoint). The
-    // account limit is 10 req/s, NOT the 2 this comment used to claim
-    // (measured 2026-09-08, T095: `ratelimit-policy: 10;w=1` straight from
-    // the API's headers). But this loop is serial, so it can only reach
-    // `min(10, 1/RTT)` and the warm round trip is ~0.29 s — i.e. ~3.4 req/s,
-    // latency-bound. Two consequences worth knowing before you tune anything
-    // here: one tick drains ~1,000 contacts, not the ~3,000 the documented
-    // limit suggests; and on the `dispatch-scheduled` path the 429 backoff
-    // below never fires, because one serial loop at 3.45 req/s never
-    // approaches 10.
-    //
-    // That second point is path-specific — corrected 2026-09-08 after review.
-    // `dispatch-batches` drives this same method through
-    // `batch-dispatcher.ts`, which keeps up to `concurrencyCap` batches in
-    // flight (default 4). Four serial loops are ~13.8 req/s against a 10 req/s
-    // policy, so on THAT path 429s are expected and the backoff is load-bearing.
-    // Do not tune it away on the strength of the serial-path reasoning.
-    // See `specs/108-contact-recipient-rules/research.md` § R9 (T095 block).
-    //
-    // Wrap EACH single create in its own
-    // withRetry so that when Resend answers 429 (now classified retryable —
-    // see classifyResendError), the 1/2/4/8/16s backoff self-throttles just
-    // that ONE contact and retries it, WITHOUT re-creating the contacts that
-    // already succeeded. Previously the retry wrapped a whole 100-contact
-    // batch, so a mid-batch 429 re-ran the entire batch (duplicate creates)
-    // AND — before 429 was retryable — killed the broadcast outright
-    // (BUG-028).
-    //
-    // We deliberately do NOT add a fixed per-contact sleep: a blanket delay
-    // across a list bounded only by `audienceCeiling()` (5,000, or 50,000 once
-    // the 108 flag and batching are both on — `domain/audience-ceiling.ts`;
-    // the `AUDIENCE_HARD_CAP` this comment used to name was deleted by 108
-    // T085) would burn the whole dispatch-function time budget on sleeping and
-    // time the invocation out before it finishes. Reactive backoff only pays
-    // the cost when the limit is actually hit. Reliable delivery of very large
-    // audiences within a single invocation is what `createContactImport` below
-    // solves — one multipart upload instead of N requests — so this loop is the
-    // legacy path only, reached when `FEATURE_F7_IMPORT_AUDIENCE` is off. Its
-    // capacity is the reason `currentAudienceCeiling()` clamps in that state:
-    // measured 2.08 req/s ⇒ ~623 per 300 s tick ⇒ a 500 accept bound. Anything
-    // above that used to be accepted and never delivered.
-    for (const c of contacts) {
-      await withRetry(
-        async () => {
+/** Spec 140 s2a — a gateway whose every request is bounded by `callTimeoutMs`. */
+export function createResendBroadcastsGateway({
+  callTimeoutMs = RESEND_CALL_TIMEOUT_MS,
+  importCallTimeoutMs = IMPORT_CALL_TIMEOUT_MS,
+  createBroadcastRetry = 'rate_limit',
+}: ResendBroadcastsGatewayOptions = {}): BroadcastsGatewayPort {
+  return {
+    async createAudience(name: string): Promise<{ readonly audienceId: string }> {
+      return boundedCall(
+        async (signal) => {
           const sdk = client();
-          const result = (await sdk.contacts.create({
-            email: c.emailLower,
-            audienceId,
-            ...(c.firstName !== undefined && { firstName: c.firstName }),
-            ...(c.lastName !== undefined && { lastName: c.lastName }),
-            unsubscribed: false,
-          })) as ResendSdkResponse<{ id: string }>;
-          if (result.error) {
-            throw classifyResendError(
-              result.error ?? undefined,
-              'audience',
-              audienceId,
-            );
-          }
-        },
-        { method: 'addContactsToAudience' },
-      );
-    }
-    logger.info(
-      { audienceId, recipientCount: contacts.length },
-      'resend.broadcasts.contacts_added',
-    );
-  },
-
-  async createBroadcast(
-    input: CreateBroadcastInput,
-  ): Promise<{ readonly broadcastId: string }> {
-    assertNonEmpty({ audienceId: input.audienceId });
-    return withRetry(
-      async () => {
-        const sdk = client();
-        // T147 — wrap the sanitised inner body with the chamber-branded
-        // shell + locale-aware footer (FR-029). The footer carries the
-        // unsubscribe CTA via Resend's `{{{RESEND_UNSUBSCRIBE_URL}}}`
-        // merge tag — Resend substitutes per-recipient at send time.
-        const wrappedHtml = renderBroadcastHtml({
-          subject: input.subject,
-          bodyHtml: input.htmlBody,
-          tenantDisplayName: input.tenantDisplayName,
-          locale: input.locale,
-          // F119 T031 — live brand chrome; omitted ⇒ byte-identical to pre-F119.
-          ...(input.brand !== undefined ? { brand: input.brand } : {}),
-        });
-        const bareFromEmail = extractBareEmail(input.fromEmail);
-        // Finding B — strip `<`/`>` from the display name so a member company
-        // name containing angle brackets cannot produce a nested, invalid
-        // RFC 5322 `from` header that Resend rejects (permanent
-        // failed_to_dispatch). `extractBareEmail` only sanitises the address.
-        const safeFromName = stripAngleBrackets(input.fromName);
-        const result = (await sdk.broadcasts.create({
-          audienceId: input.audienceId,
-          from: `${safeFromName} <${bareFromEmail}>`,
-          subject: input.subject,
-          html: wrappedHtml,
-          replyTo: input.replyToEmail,
-          name: input.broadcastNameForResendDashboard,
-        })) as ResendSdkResponse<{ id: string }>;
-        if (result.error || !result.data?.id) {
-          throw classifyResendError(result.error ?? undefined, 'broadcast');
-        }
-        logger.info(
-          {
-            broadcastId: result.data.id,
-            audienceId: input.audienceId,
-            subjectLength: input.subject.length,
-          },
-          'resend.broadcasts.broadcast_created',
-        );
-        return { broadcastId: result.data.id };
-      },
-      { method: 'createBroadcast' },
-    );
-  },
-
-  async sendBroadcast(
-    broadcastId: string,
-    idempotencyKey: string,
-  ): Promise<void> {
-    assertNonEmpty({ broadcastId });
-    await withRetry(
-      async () => {
-        const sdk = client();
-        // Spec 141: resend@6.35.0 fixed this upstream — `broadcasts.send(id,
-        // payload, requestOptions)` now forwards the options to `post()`
-        // (`node_modules/resend/dist/index.mjs:310`). The raw `post()` below is
-        // kept, pinned on the wire by `tests/contract/resend/`; moving to
-        // `broadcasts.send` is spec 140's call. The 4.8 history follows.
-        //
-        // ⚠️ NOT `sdk.broadcasts.send(...)`. Round 3 finding 3-1: in
-        // resend@4.8.0 that helper is
-        //   `send(id, payload) => this.resend.post(path, {scheduled_at})`
-        // — TWO arguments (`node_modules/resend/dist/index.js:252`). The
-        // `Idempotency-Key` header is set ONLY from `post()`'s THIRD `options`
-        // argument (`:599`), which the sibling `broadcasts.create` does pass and
-        // `send` does not. Its own `.d.ts` declares an unused
-        // `SendBroadcastRequestOptions extends PostOptions`, so the omission
-        // looks like an oversight upstream rather than a design.
-        //
-        // The key was therefore NEVER transmitted, and the previous line here
-        // asserted the opposite ("Resend SDK accepts idempotencyKey as a request
-        // option") while an `as Parameters<...>[1]` cast suppressed the tsc
-        // error that would have said so. A comment plus a cast is how a missing
-        // guarantee survives a green suite.
-        //
-        // `post<T>` is public and typed on the `Resend` class
-        // (`index.d.ts:833`), so this is the SDK's own API, not a raw fetch.
-        // Body `{}` matches what the helper sends: `{scheduled_at: undefined}`
-        // serialises to `{}`.
-        //
-        // What a replay meets: MEASURED 2026-10-29, the key changes nothing —
-        // a `withRetry` replay INSIDE one tick (a lost response, or a 5xx after
-        // Resend already accepted the send) is answered `422 validation_error
-        // "Only draft broadcasts can be sent or scheduled"` whatever the key,
-        // and Resend delivers once. That 422 is classified `permanent` below;
-        // both dispatch legs probe it (`_probe-refused-send.ts`) rather than
-        // record a failure for mail that went out.
-        //
-        // What it does NOT close: `createBroadcast` carries no key at all, so
-        // a re-entered tick that minted again would send a NEW resource, where
-        // no key can help. Neither leg relies on the key for that: both persist
-        // the minted id BEFORE this call (`attachBroadcastId`) and a re-entered
-        // tick probes it (`retrieveBroadcast`) and reuses it — S8, closed on
-        // the import leg in `build-audience-tick.ts`.
-        const result = (await sdk.post(`/broadcasts/${broadcastId}/send`, {}, {
-          idempotencyKey,
-        })) as ResendSdkResponse<{ id: string }>;
-        if (result.error) {
-          throw classifyResendError(
-            result.error ?? undefined,
-            'broadcast',
-            broadcastId,
-          );
-        }
-        logger.info(
-          { broadcastId, idempotencyKeyHash: idempotencyKey.slice(0, 16) },
-          'resend.broadcasts.broadcast_sent',
-        );
-      },
-      { method: 'sendBroadcast' },
-    );
-  },
-
-  async getAudienceContactCount(
-    audienceId: string,
-  ): Promise<AudienceContactCount> {
-    // IMP-5 — query Resend for the contact count on an audience.
-    //
-    // Round 4 F1 residual — this said "(paginated). For MVP we list and return
-    // `data.length`", and then threw away the only thing that made the caveat
-    // actionable. MEASURED against the live account 2026-09-09: the response's
-    // top-level keys are exactly `data,has_more,object`. The endpoint TELLS us
-    // when the list is short, and we were not reading it.
-    //
-    // resend@4.8.0 modelled neither half (`ListContactsOptions` was
-    // `{ audienceId }`, `ListContactsResponseSuccess` was `{ object, data }`),
-    // so `has_more` is read off the runtime shape; 6.35 declares it, and the
-    // read is unchanged. On 6.35 this call goes to `/segments/{id}/contacts`:
-    // MEASURED 2026-10-30 with 110 contacts, both paths return all 110 with
-    // `has_more: false` (spec 141). Narrowed with `=== false`, so
-    // that a missing field reads as "not complete": an absent signal must not be
-    // reported as a verified-complete count. Because the field is undeclared, a
-    // provider rename cannot fail the build — only this narrowing direction
-    // protects the caller, and only the wire-level test protects the narrowing.
-    //
-    // No `resource_missing` → `not_found` mapping any more. This endpoint does
-    // not 404 a missing audience (MEASURED 2026-09-10: `200` + empty list), so
-    // the arm that used to sit here had no reachable input, and the callers'
-    // handling of the value it never produced was dead code that read as
-    // covered. If Resend ever changes that, the throw reaches the caller's
-    // unverifiable arm, which is where "we could not count" already goes.
-    assertNonEmpty({ audienceId });
-    return await withRetry(
-      async () => {
-        const sdk = client();
-        const result = (await sdk.contacts.list({ audienceId })) as ResendSdkResponse<{
-          data: ReadonlyArray<unknown>;
-          has_more?: boolean;
-        }>;
-        if (result.error) {
-          throw classifyResendError(
-            result.error ?? undefined,
-            'audience',
-            audienceId,
-          );
-        }
-        return {
-          // BOTH levels need `?.`: with only the outer one a payload-less 200
-          // threw a TypeError, which `withRetry` retries (it short-circuits
-          // only a `GatewayThrowable`) for 31 s and rethrows as a transport
-          // timeout.
-          count: result.data?.data?.length ?? 0,
-          // True only on positive evidence — `has_more: true`, an absent field
-          // and a missing payload all mean "unverifiable". Pinned per case in
-          // `resend-audience-contact-count.test.ts`.
-          complete: result.data?.has_more === false,
-        };
-      },
-      { method: 'getAudienceContactCount' },
-    );
-  },
-
-  async retrieveBroadcast(
-    broadcastId: string,
-  ): Promise<RetrieveBroadcastOutcome> {
-    assertNonEmpty({ broadcastId });
-    try {
-      const resource = await withRetry(
-        async (): Promise<RetrievedBroadcastResource | null> => {
-          const sdk = client();
-          const result = (await sdk.broadcasts.get(broadcastId)) as ResendSdkResponse<{
+          const result = (await sdk.audiences.create({ name }, { signal })) as ResendSdkResponse<{
             id: string;
-            status: string;
-            sent_at?: string | null;
           }>;
+          if (result.error || !result.data?.id) {
+            throw classifyResendError(result.error ?? undefined, 'audience');
+          }
+          logger.info(
+            { audienceId: result.data.id },
+            'resend.broadcasts.audience_created',
+          );
+          return { audienceId: result.data.id };
+        },
+        { method: 'createAudience', callTimeoutMs, retry: 'rate_limit' },
+      );
+    },
+
+    async addContactsToAudience(
+      audienceId: string,
+      contacts: ReadonlyArray<AudienceContact>,
+    ): Promise<void> {
+      if (contacts.length === 0) return;
+      assertNonEmpty({ audienceId });
+
+      // The Resend Contacts API is one-at-a-time (no bulk endpoint). The
+      // account limit is 10 req/s, NOT the 2 this comment used to claim
+      // (measured 2026-09-08, T095: `ratelimit-policy: 10;w=1` straight from
+      // the API's headers). But this loop is serial, so it can only reach
+      // `min(10, 1/RTT)` and the warm round trip is ~0.29 s — i.e. ~3.4 req/s,
+      // latency-bound. Two consequences worth knowing before you tune anything
+      // here: one tick drains ~1,000 contacts, not the ~3,000 the documented
+      // limit suggests; and on the `dispatch-scheduled` path the 429 backoff
+      // below never fires, because one serial loop at 3.45 req/s never
+      // approaches 10.
+      //
+      // That second point is path-specific — corrected 2026-09-08 after review.
+      // `dispatch-batches` drives this same method through
+      // `batch-dispatcher.ts`, which keeps up to `concurrencyCap` batches in
+      // flight (default 4). Four serial loops are ~13.8 req/s against a 10 req/s
+      // policy, so on THAT path 429s are expected and the backoff is load-bearing.
+      // Do not tune it away on the strength of the serial-path reasoning.
+      // See `specs/108-contact-recipient-rules/research.md` § R9 (T095 block).
+      //
+      // Wrap EACH single create in its own
+      // boundedCall (its own 10 s budget; spec 140 s2a) so that when Resend answers 429 (now classified retryable —
+      // see classifyResendError), the 1/2/4/8/16s backoff self-throttles just
+      // that ONE contact and retries it, WITHOUT re-creating the contacts that
+      // already succeeded. Previously the retry wrapped a whole 100-contact
+      // batch, so a mid-batch 429 re-ran the entire batch (duplicate creates)
+      // AND — before 429 was retryable — killed the broadcast outright
+      // (BUG-028).
+      //
+      // We deliberately do NOT add a fixed per-contact sleep: a blanket delay
+      // across a list bounded only by `audienceCeiling()` (5,000, or 50,000 once
+      // the 108 flag and batching are both on — `domain/audience-ceiling.ts`;
+      // the `AUDIENCE_HARD_CAP` this comment used to name was deleted by 108
+      // T085) would burn the whole dispatch-function time budget on sleeping and
+      // time the invocation out before it finishes. Reactive backoff only pays
+      // the cost when the limit is actually hit. Reliable delivery of very large
+      // audiences within a single invocation is what `createContactImport` below
+      // solves — one multipart upload instead of N requests — so this loop is the
+      // legacy path only, reached when `FEATURE_F7_IMPORT_AUDIENCE` is off. Its
+      // capacity is the reason `currentAudienceCeiling()` clamps in that state:
+      // measured 2.08 req/s ⇒ ~623 per 300 s tick ⇒ a 500 accept bound. Anything
+      // above that used to be accepted and never delivered.
+      for (const c of contacts) {
+        await boundedCall(
+          async (signal) => {
+            const sdk = client();
+            const result = (await sdk.contacts.create({
+              email: c.emailLower,
+              audienceId,
+              ...(c.firstName !== undefined && { firstName: c.firstName }),
+              ...(c.lastName !== undefined && { lastName: c.lastName }),
+              unsubscribed: false,
+            }, { signal })) as ResendSdkResponse<{ id: string }>;
+            if (result.error) {
+              throw classifyResendError(
+                result.error ?? undefined,
+                'audience',
+                audienceId,
+              );
+            }
+          },
+          { method: 'addContactsToAudience', callTimeoutMs, retry: 'retryable' },
+        );
+      }
+      logger.info(
+        { audienceId, recipientCount: contacts.length },
+        'resend.broadcasts.contacts_added',
+      );
+    },
+
+    async createBroadcast(
+      input: CreateBroadcastInput,
+    ): Promise<{ readonly broadcastId: string }> {
+      assertNonEmpty({ audienceId: input.audienceId });
+      return boundedCall(
+        async (signal) => {
+          const sdk = client();
+          // T147 — wrap the sanitised inner body with the chamber-branded
+          // shell + locale-aware footer (FR-029). The footer carries the
+          // unsubscribe CTA via Resend's `{{{RESEND_UNSUBSCRIBE_URL}}}`
+          // merge tag — Resend substitutes per-recipient at send time.
+          const wrappedHtml = renderBroadcastHtml({
+            subject: input.subject,
+            bodyHtml: input.htmlBody,
+            tenantDisplayName: input.tenantDisplayName,
+            locale: input.locale,
+            // F119 T031 — live brand chrome; omitted ⇒ byte-identical to pre-F119.
+            ...(input.brand !== undefined ? { brand: input.brand } : {}),
+          });
+          const bareFromEmail = extractBareEmail(input.fromEmail);
+          // Finding B — strip `<`/`>` from the display name so a member company
+          // name containing angle brackets cannot produce a nested, invalid
+          // RFC 5322 `from` header that Resend rejects (permanent
+          // failed_to_dispatch). `extractBareEmail` only sanitises the address.
+          const safeFromName = stripAngleBrackets(input.fromName);
+          const result = (await sdk.broadcasts.create({
+            audienceId: input.audienceId,
+            from: `${safeFromName} <${bareFromEmail}>`,
+            subject: input.subject,
+            html: wrappedHtml,
+            replyTo: input.replyToEmail,
+            name: input.broadcastNameForResendDashboard,
+          }, { signal })) as ResendSdkResponse<{ id: string }>;
+          if (result.error || !result.data?.id) {
+            throw classifyResendError(result.error ?? undefined, 'broadcast');
+          }
+          logger.info(
+            {
+              broadcastId: result.data.id,
+              audienceId: input.audienceId,
+              subjectLength: input.subject.length,
+            },
+            'resend.broadcasts.broadcast_created',
+          );
+          return { broadcastId: result.data.id };
+        },
+        { method: 'createBroadcast', callTimeoutMs, retry: createBroadcastRetry },
+      );
+    },
+
+    async sendBroadcast(
+      broadcastId: string,
+      idempotencyKey: string,
+    ): Promise<void> {
+      assertNonEmpty({ broadcastId });
+      await boundedCall(
+        async (signal) => {
+          const sdk = client();
+          // Spec 141: resend@6.35.0 fixed this upstream — `broadcasts.send(id,
+          // payload, requestOptions)` now forwards the options to `post()`
+          // (`node_modules/resend/dist/index.mjs:310`). The raw `post()` below is
+          // kept, pinned on the wire by `tests/contract/resend/`; moving to
+          // `broadcasts.send` is spec 140's call. The 4.8 history follows.
+          //
+          // ⚠️ NOT `sdk.broadcasts.send(...)`. Round 3 finding 3-1: in
+          // resend@4.8.0 that helper is
+          //   `send(id, payload) => this.resend.post(path, {scheduled_at})`
+          // — TWO arguments (`node_modules/resend/dist/index.js:252`). The
+          // `Idempotency-Key` header is set ONLY from `post()`'s THIRD `options`
+          // argument (`:599`), which the sibling `broadcasts.create` does pass and
+          // `send` does not. Its own `.d.ts` declares an unused
+          // `SendBroadcastRequestOptions extends PostOptions`, so the omission
+          // looks like an oversight upstream rather than a design.
+          //
+          // The key was therefore NEVER transmitted, and the previous line here
+          // asserted the opposite ("Resend SDK accepts idempotencyKey as a request
+          // option") while an `as Parameters<...>[1]` cast suppressed the tsc
+          // error that would have said so. A comment plus a cast is how a missing
+          // guarantee survives a green suite.
+          //
+          // `post<T>` is public and typed on the `Resend` class
+          // (`index.d.ts:833`), so this is the SDK's own API, not a raw fetch.
+          // Body `{}` matches what the helper sends: `{scheduled_at: undefined}`
+          // serialises to `{}`.
+          //
+          // What a replay meets: MEASURED 2026-10-29, the key changes nothing —
+          // a `boundedCall` replay INSIDE one tick (a lost response, or a 5xx after
+          // Resend already accepted the send) is answered `422 validation_error
+          // "Only draft broadcasts can be sent or scheduled"` whatever the key,
+          // and Resend delivers once. That 422 is classified `permanent` below;
+          // both dispatch legs probe it (`_probe-refused-send.ts`) rather than
+          // record a failure for mail that went out.
+          //
+          // What it does NOT close: `createBroadcast` carries no key at all, so
+          // a re-entered tick that minted again would send a NEW resource, where
+          // no key can help. Neither leg relies on the key for that: both persist
+          // the minted id BEFORE this call (`attachBroadcastId`) and a re-entered
+          // tick probes it (`retrieveBroadcast`) and reuses it — S8, closed on
+          // the import leg in `build-audience-tick.ts`.
+          const result = (await sdk.post(`/broadcasts/${broadcastId}/send`, {}, {
+            idempotencyKey,
+            signal,
+          })) as ResendSdkResponse<{ id: string }>;
           if (result.error) {
             throw classifyResendError(
               result.error ?? undefined,
@@ -568,462 +577,561 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
               broadcastId,
             );
           }
-          if (!result.data) return null;
-          return {
-            id: result.data.id,
-            status: normaliseStatus(result.data.status),
-            sentAt: result.data.sent_at ?? null,
-          };
-        },
-        { method: 'retrieveBroadcast' },
-      );
-      if (resource === null) return { kind: 'not_found' };
-      return { kind: 'present', resource };
-    } catch (e) {
-      if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
-        return { kind: 'not_found' };
-      }
-      throw e;
-    }
-  },
-
-  /**
-   * Spec 139 review round 1 — the port docblock has the contract. A raw
-   * `fetch` with the same 10 s bound as {@link deleteBroadcastOnce}, because
-   * the erasure cascade calls it under the broadcast row's lock. The log line
-   * carries the HTTP status and the outcome only, never the body.
-   */
-  async retrieveBroadcastOnce(broadcastId: string): Promise<RetrieveBroadcastOnceOutcome> {
-    // One attempt and an outcome, never a throw: an empty id would read the
-    // broadcast LIST at `/broadcasts/`, so it is unclassified, with no request.
-    if (isBlankId(broadcastId)) return { kind: 'other' };
-    let res: Response;
-    try {
-      res = await fetch(`${RESEND_API_BASE_URL}/broadcasts/${encodeURIComponent(broadcastId)}`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(DELETE_ONCE_TIMEOUT_MS),
-        headers: { Authorization: `Bearer ${env.broadcasts.apiKey}` },
-      });
-    } catch (e) {
-      logger.warn(
-        { broadcastId, err: errKind(e), timedOut: isTimeout(e) },
-        'resend.broadcasts.retrieve_once_transport_failed',
-      );
-      return { kind: 'retryable' };
-    }
-    const text = await res.text().catch(() => '');
-    const outcome = retrieveOnceOutcomeFor(rawHttpStatusOf(res.status, text), text);
-    logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.retrieve_once');
-    return outcome;
-  },
-
-  async removeContactFromAudience(
-    audienceId: string,
-    email: string,
-  ): Promise<RemoveContactOutcome> {
-    assertNonEmpty({ audienceId, email });
-    try {
-      await withRetry(
-        async () => {
-          const sdk = client();
-          const result = (await sdk.contacts.remove({
-            audienceId,
-            email,
-          })) as ResendSdkResponse<{ deleted: boolean }>;
-          if (result.error) {
-            throw classifyResendError(result.error ?? undefined, 'audience', audienceId);
-          }
-        },
-        { method: 'removeContactFromAudience' },
-      );
-      logger.info({ audienceId }, 'resend.broadcasts.contact_detached');
-      return { kind: 'detached' };
-    } catch (e) {
-      // A 404 → the contact/audience is already gone → nothing to detach.
-      //
-      // Round 2 R2-25 — this used to `return` here, indistinguishable from a real
-      // detach. The caller counted both as removals, and that count became
-      // `resend_contacts_removed_count` in an append-only Art. 30 record shown to
-      // a DPO as "Contacts removed". Reporting a removal that did not happen is
-      // worse than reporting none: it is a false statement under Art. 12(3), and
-      // the register entry cannot be corrected once written.
-      if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
-        logger.info({ audienceId }, 'resend.broadcasts.contact_already_absent');
-        return { kind: 'already_absent' };
-      }
-      throw e;
-    }
-  },
-
-  /**
-   * COMP-1 US3-C — the call that actually erases.
-   *
-   * `removeContactFromAudience` above answers `{"deleted": true}` and DETACHES:
-   * measured 2026-09-09, the audience-scoped read 404s afterwards while
-   * `GET /contacts/{email}` still returns the contact at 200. This endpoint's
-   * read-back is a real 404.
-   *
-   * The distinction matters because the erasure cascade was calling the wrong
-   * one and counting each call as a removal, so `resendOutcome: 'ok'` was
-   * reported for members whose addresses were still at the processor.
-   */
-  async deleteContactGlobally(email: string): Promise<void> {
-    assertNonEmpty({ email });
-    try {
-      await withRetry(
-        async () => {
-          const body = await importFetch(
-            `/contacts/${encodeURIComponent(email)}`,
-            { method: 'DELETE' },
-            // No resourceId: it would be the address, and that must not reach a
-            // classified error's `reason`, which is logged.
+          logger.info(
+            { broadcastId, idempotencyKeyHash: idempotencyKey.slice(0, 16) },
+            'resend.broadcasts.broadcast_sent',
           );
-          // The provider says `deleted: true` for a detach as well, so this is
-          // logged rather than trusted as proof. What makes this call correct is
-          // the endpoint, not the answer.
-          if ((body as { deleted?: unknown }).deleted !== true) {
-            logger.warn(
-              { deleted: (body as { deleted?: unknown }).deleted },
-              'resend.broadcasts.contact_delete_unexpected_body',
+        },
+        { method: 'sendBroadcast', callTimeoutMs, retry: 'retryable' },
+      );
+    },
+
+    async getAudienceContactCount(
+      audienceId: string,
+    ): Promise<AudienceContactCount> {
+      // IMP-5 — query Resend for the contact count on an audience.
+      //
+      // Round 4 F1 residual — this said "(paginated). For MVP we list and return
+      // `data.length`", and then threw away the only thing that made the caveat
+      // actionable. MEASURED against the live account 2026-09-09: the response's
+      // top-level keys are exactly `data,has_more,object`. The endpoint TELLS us
+      // when the list is short, and we were not reading it.
+      //
+      // resend@4.8.0 modelled neither half (`ListContactsOptions` was
+      // `{ audienceId }`, `ListContactsResponseSuccess` was `{ object, data }`),
+      // so `has_more` is read off the runtime shape; 6.35 declares it, and the
+      // read is unchanged. On 6.35 this call goes to `/segments/{id}/contacts`:
+      // MEASURED 2026-10-30 with 110 contacts, both paths return all 110 with
+      // `has_more: false` (spec 141). Narrowed with `=== false`, so
+      // that a missing field reads as "not complete": an absent signal must not be
+      // reported as a verified-complete count. Because the field is undeclared, a
+      // provider rename cannot fail the build — only this narrowing direction
+      // protects the caller, and only the wire-level test protects the narrowing.
+      //
+      // No `resource_missing` → `not_found` mapping any more. This endpoint does
+      // not 404 a missing audience (MEASURED 2026-09-10: `200` + empty list), so
+      // the arm that used to sit here had no reachable input, and the callers'
+      // handling of the value it never produced was dead code that read as
+      // covered. If Resend ever changes that, the throw reaches the caller's
+      // unverifiable arm, which is where "we could not count" already goes.
+      assertNonEmpty({ audienceId });
+      return await boundedCall(
+        async (signal) => {
+          const sdk = client();
+          const result = (await sdk.contacts.list({ audienceId }, { signal })) as ResendSdkResponse<{
+            data: ReadonlyArray<unknown>;
+            has_more?: boolean;
+          }>;
+          if (result.error) {
+            throw classifyResendError(
+              result.error ?? undefined,
+              'audience',
+              audienceId,
             );
           }
+          return {
+            // BOTH levels need `?.`: with only the outer one a payload-less 200
+            // threw a TypeError, which `boundedCall` retries (it short-circuits
+            // only a `GatewayThrowable`) for 31 s and rethrows as a transport
+            // timeout.
+            count: result.data?.data?.length ?? 0,
+            // True only on positive evidence — `has_more: true`, an absent field
+            // and a missing payload all mean "unverifiable". Pinned per case in
+            // `resend-audience-contact-count.test.ts`.
+            complete: result.data?.has_more === false,
+          };
         },
-        { method: 'deleteContactGlobally' },
+        { method: 'getAudienceContactCount', callTimeoutMs, retry: 'retryable' },
       );
-      // No email in the log line — forbidden-fields hygiene (FR-053a).
-      logger.info({}, 'resend.broadcasts.contact_deleted_globally');
-    } catch (e) {
-      // A 404 means the contact is already gone: the erasure goal is met.
-      if (e instanceof GatewayThrowable && e.kind === 'resource_missing') return;
-      // `resource_missing` needs a resourceId, and the only id available here is
-      // the address itself — which must not reach a classified error's `reason`,
-      // because that is logged. So a genuine 404 arrives as `permanent`, and its
-      // `code` carries the provider's `name`. Measured: Resend answers
-      // `{"statusCode":404,"name":"not_found"}`.
-      if (
-        e instanceof GatewayThrowable &&
-        e.kind === 'permanent' &&
-        e.code === 'not_found'
-      ) {
-        return;
-      }
-      throw e;
-    }
-  },
+    },
 
-  async listAudiences(): Promise<ReadonlyArray<ResendAudienceSummary>> {
-    // Spec 141: on resend@6.35 `audiences.list` is the paginated
-    // `GET /segments`, so follow `has_more` (cursor = the last id) instead of
-    // reading page 1 only — reclaim-orphaned-audiences must see EVERY audience.
-    // Each page is its own `withRetry`, so a retry never re-reads earlier pages.
-    const byId = new Map<string, { id: string; name: string; created_at: string }>();
-    const seenCursors = new Set<string>();
-    let after: string | undefined;
-    let truncated = false;
-    for (let page = 0; ; page += 1) {
-      if (page === LIST_AUDIENCES_MAX_PAGES) {
-        truncated = true;
-        break;
-      }
-      const result = await withRetry(
-        async () => {
-          const sdk = client();
-          const res = (await sdk.audiences.list({
-            limit: LIST_AUDIENCES_PAGE_SIZE,
-            ...(after !== undefined && { after }),
-          })) as ResendSdkResponse<{
-            object: string;
-            has_more?: boolean;
-            data: ReadonlyArray<{ id: string; name: string; created_at: string }>;
-          }>;
-          if (res.error) {
-            throw classifyResendError(res.error ?? undefined, 'audience');
-          }
-          return res.data;
-        },
-        { method: 'listAudiences' },
-      );
-      const pageRows = result?.data ?? [];
-      for (const r of pageRows) byId.set(r.id, r);
-      const last = pageRows.at(-1);
-      if (result?.has_more !== true) break;
-      // `has_more` with an empty page leaves no cursor to follow: the list is cut.
-      if (last === undefined) {
-        truncated = true;
-        break;
-      }
-      // A cursor seen before would page forever over the same rows.
-      if (seenCursors.has(last.id)) {
-        truncated = true;
-        break;
-      }
-      seenCursors.add(last.id);
-      after = last.id;
-    }
-    const rows = [...byId.values()];
-    if (truncated) {
-      // Reclaim then sees fewer audiences than exist: it deletes less, never
-      // more, but say so rather than pass a cut list off as the whole.
-      logger.warn({ audienceCount: rows.length }, 'resend.broadcasts.audiences_list_truncated');
-    }
-    logger.info({ audienceCount: rows.length }, 'resend.broadcasts.audiences_listed');
-    // Parse at the adapter boundary so callers work with Date, not raw strings.
-    return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at) }));
-  },
-
-  async deleteAudience(audienceId: string): Promise<void> {
-    assertNonEmpty({ audienceId });
-    await withRetry(
-      async () => {
-        const sdk = client();
-        const result = (await sdk.audiences.remove(audienceId)) as ResendSdkResponse<{
-          deleted: boolean;
-          id: string;
-          object: string;
-        }>;
-        if (result.error) {
-          // Finding H — 404 Not Found AND 410 Gone both mean the audience is
-          // already absent → the delete goal is met (idempotent early-return).
-          // Without the 410 branch, a Resend 410 would fall through to
-          // `classifyResendError` → `permanent`, and the cleanup row would
-          // re-fail every cron tick forever.
-          if (isProviderGone(result.error)) {
-            logger.info({ audienceId }, 'resend.broadcasts.audience_already_absent');
-            return; // idempotent: already gone
-          }
-          throw classifyResendError(result.error ?? undefined, 'audience', audienceId);
-        }
-        logger.info({ audienceId }, 'resend.broadcasts.audience_deleted');
-      },
-      { method: 'deleteAudience' },
-    );
-  },
-
-  /**
-   * Reclaim a broadcast resource this tick minted and could not persist. The
-   * exact shape of `deleteAudience` above, for the same reason: 404 and 410
-   * both mean "already gone", which is the goal, so they resolve instead of
-   * falling into `classifyResendError` → `permanent`.
-   *
-   * `DELETE /broadcasts/{id}` was exercised against the live account on
-   * 2026-09-10 (the `'draft'` measurement was taken by creating a broadcast and
-   * deleting it), so unlike the idempotency header this is a call whose happy
-   * path is known to work, not assumed to.
-   */
-  async deleteBroadcast(broadcastId: string): Promise<void> {
-    assertNonEmpty({ broadcastId });
-    await withRetry(
-      async () => {
-        const sdk = client();
-        const result = (await sdk.broadcasts.remove(broadcastId)) as ResendSdkResponse<{
-          deleted: boolean;
-          id: string;
-          object: string;
-        }>;
-        if (result.error) {
-          if (isProviderGone(result.error)) {
-            logger.info({ broadcastId }, 'resend.broadcasts.broadcast_already_absent');
-            return; // idempotent: already gone
-          }
-          throw classifyResendError(result.error ?? undefined, 'broadcast', broadcastId);
-        }
-        logger.info({ broadcastId }, 'resend.broadcasts.broadcast_deleted');
-      },
-      { method: 'deleteBroadcast' },
-    );
-  },
-
-  /**
-   * Spec 139 P1 — the port docblock has the contract. A raw `fetch`, like
-   * `importFetch`, because the SDK took no `signal` when this was written
-   * (resend@4.8.0; 6.32+ accepts one, adopted by spec 140) and this
-   * call must not outlive {@link DELETE_ONCE_TIMEOUT_MS} while the caller holds
-   * a row lock. One attempt; the outcome is the status class, never the
-   * provider's text (the log line carries the HTTP status only).
-   */
-  async deleteBroadcastOnce(broadcastId: string): Promise<DeleteBroadcastOnceOutcome> {
-    // As `retrieveBroadcastOnce`: an empty id is unclassified, with no request.
-    if (isBlankId(broadcastId)) return { kind: 'other' };
-    let res: Response;
-    try {
-      res = await fetch(`${RESEND_API_BASE_URL}/broadcasts/${encodeURIComponent(broadcastId)}`, {
-        method: 'DELETE',
-        signal: AbortSignal.timeout(DELETE_ONCE_TIMEOUT_MS),
-        headers: { Authorization: `Bearer ${env.broadcasts.apiKey}` },
-      });
-    } catch (e) {
-      // A timeout, an abort or a transport failure: whether the DELETE reached
-      // Resend is unknown, so nothing is decided.
-      logger.warn(
-        { broadcastId, err: errKind(e), timedOut: isTimeout(e) },
-        'resend.broadcasts.delete_once_transport_failed',
-      );
-      return { kind: 'retryable' };
-    }
-    // The body decides one thing only: whether an error came from Resend.
-    const text = await res.text().catch(() => '');
-    const outcome = deleteOnceOutcomeFor(rawHttpStatusOf(res.status, text));
-    logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.delete_once');
-    return outcome;
-  },
-
-  /**
-   * T086 — hand the WHOLE audience to Resend in one multipart request.
-   *
-   * Replaces the `addContactsToAudience` loop, which is serial and therefore
-   * bounded by latency (~2.08 req/s measured, so ~623 contacts per 300 s
-   * function). This call is size-independent: ~412 ms for one address and the
-   * same for thousands, because Resend processes the CSV asynchronously and
-   * answers with a job id. `getContactImport` below is how we learn it landed.
-   *
-   * Field shapes are not negotiable and are pinned by value in
-   * `tests/unit/broadcasts/infrastructure/resend-contact-import.test.ts`:
-   *
-   *   - `segments` is an array of OBJECTS, `[{ id }]`. `[<id>]` is a 422, and
-   *     `audience_id` — the spelling two 2026-09-08 probes used — is accepted
-   *     and SILENTLY IGNORED, which is how "the import does not attach to an
-   *     audience" became a recorded fact for a day.
-   *   - `column_map` maps `email` only. The CSV must carry no `unsubscribed`
-   *     column: research V2 measured that `on_conflict=upsert` preserves a
-   *     contact's unsubscribed flag precisely while that column is absent, and
-   *     that measurement is the only reason `upsert` is lawful here
-   *     (GDPR Art. 21 / PDPA section 32). Adding the column would resurrect
-   *     everyone who ever pressed unsubscribe.
-   *   - `upsert` also makes a resubmitted import harmless, which is what lets
-   *     the caller retry a tick without tracking partial progress.
-   */
-  /**
-   * KNOWN, ACCEPTED: this call is wrapped in `withRetry` but carries no
-   * idempotency key, because `POST /contacts/imports` does not accept one
-   * (108 Phase 9 review S18).
-   *
-   * A transport failure AFTER the request reached Resend therefore creates a
-   * SECOND import job, and only the second id is stored. State stays correct —
-   * `on_conflict=upsert` means both jobs converge on the same contact set, so
-   * the counts the completion rule reads still match — but it burns contact
-   * quota and orphans a job nothing will ever poll. On the Free plan's 1,000
-   * contacts that is worth knowing before a large send.
-   *
-   * Not fixed here because the honest fixes both cost more than the defect:
-   * dropping the retry makes a routine network blip fail a broadcast, and
-   * de-duplicating would mean listing recent imports and matching them by
-   * audience — a second provider round trip on every submit to save a rare
-   * duplicate. Recorded instead of silently retried.
-   */
-  async createContactImport(
-    audienceId: string,
-    emails: readonly string[],
-  ): Promise<{ readonly importId: string }> {
-    assertNonEmpty({ audienceId });
-    return withRetry(
-      async () => {
-        // BOUNDARY VALIDATION (108 Phase 9 review S16). `EmailLower` looks like
-        // a guarantee and is not: `unsafeBrandEmailLower` is `return raw as
-        // EmailLower` with no validation, and it is what feeds every path into
-        // this method. So the CSV's safety rested entirely on validation done
-        // when the address was written to the database, with nothing re-checking
-        // it here.
-        //
-        // An address containing \n or \r injects an extra CSV row — creating a
-        // contact in the audience that was never in the resolved list. One with
-        // a comma or a quote shifts columns. The completion rule DOES catch the
-        // injected-row case downstream (`total !== resolvedCount` refuses the
-        // send), but only AFTER the contact exists at Resend: that is a
-        // backstop, not a boundary. Refuse here so the bad row is never created.
-        const unsafe = emails.filter((e) => /[\r\n",]/.test(e));
-        if (unsafe.length > 0) {
-          throw classifyResendError({
-            statusCode: 422,
-            name: 'unsafe_recipient_format',
-            // Count only — never echo the addresses into an error whose message
-            // reaches a log line (S15 is about exactly that path).
-            message: `${unsafe.length} recipient address(es) contain CSV control characters`,
-          });
-        }
-        const csv = ['email', ...emails].join('\n') + '\n';
-        const form = new FormData();
-        form.append('file', new Blob([csv], { type: 'text/csv' }), 'audience.csv');
-        form.append('column_map', JSON.stringify({ email: 'email' }));
-        form.append('on_conflict', 'upsert');
-        form.append('segments', JSON.stringify([{ id: audienceId }]));
-
-        const body = await importFetch('/contacts/imports', {
-          method: 'POST',
-          body: form,
-        });
-        if (body.id === undefined || body.id === '') {
-          // A 2xx with no id is unusable and cannot be retried into existence.
-          throw classifyResendError({
-            statusCode: 502,
-            name: 'malformed_import_response',
-            message: 'contact import accepted but returned no id',
-          });
-        }
-        logger.info(
-          { audienceId, importId: body.id, recipientCount: emails.length },
-          'resend.broadcasts.contact_import_submitted',
-        );
-        return { importId: body.id };
-      },
-      { method: 'createContactImport' },
-    );
-  },
-
-  /**
-   * T086 — poll one import.
-   *
-   * Returns `status` and `counts` VERBATIM. The completion decision belongs to
-   * the caller (contract section 4: `completed` AND `failed === 0` AND
-   * `created + updated + skipped === total` AND `total` equals the resolved
-   * count), and it is load-bearing rather than defensive: one import in five
-   * identical probes returned `completed` with `failed: 0` and `total: 0` and
-   * attached nothing (research R9 V2 (c)). Smoothing that into "it finished,
-   * so it worked" here would send a broadcast to an empty audience.
-   *
-   * Absent counts (a `pending` import has none) become zeros rather than
-   * `undefined`, so arithmetic on them is comparable rather than NaN.
-   */
-  async getContactImport(importId: string): Promise<{
-    readonly status: string;
-    readonly counts: {
-      readonly total: number;
-      readonly created: number;
-      readonly updated: number;
-      readonly skipped: number;
-      readonly failed: number;
-    };
-  }> {
-    assertNonEmpty({ importId });
-    return withRetry(
-      async () => {
-        // `importId` is provider-controlled — it arrives as `body.id` from
-        // Resend and is persisted without validation — and it goes straight into
-        // a URL PATH. `fetch` normalises `..` segments, so an id carrying one
-        // would change which endpoint this calls (108 Phase 9 review S23). Low
-        // risk, since it needs a compromised or misbehaving Resend, and one
-        // function call to remove.
-        const body = await importFetch(
-          `/contacts/imports/${encodeURIComponent(importId)}`,
-          { method: 'GET' },
-          importId,
-        );
-        const c = body.counts ?? {};
-        return {
-          status: body.status ?? 'unknown',
-          counts: {
-            total: c.total ?? 0,
-            created: c.created ?? 0,
-            updated: c.updated ?? 0,
-            skipped: c.skipped ?? 0,
-            failed: c.failed ?? 0,
+    async retrieveBroadcast(
+      broadcastId: string,
+    ): Promise<RetrieveBroadcastOutcome> {
+      assertNonEmpty({ broadcastId });
+      try {
+        const resource = await boundedCall(
+          async (signal): Promise<RetrievedBroadcastResource | null> => {
+            const sdk = client();
+            const result = (await sdk.broadcasts.get(broadcastId, { signal })) as ResendSdkResponse<{
+              id: string;
+              status: string;
+              sent_at?: string | null;
+            }>;
+            if (result.error) {
+              throw classifyResendError(
+                result.error ?? undefined,
+                'broadcast',
+                broadcastId,
+              );
+            }
+            if (!result.data) return null;
+            return {
+              id: result.data.id,
+              status: normaliseStatus(result.data.status),
+              sentAt: result.data.sent_at ?? null,
+            };
           },
-        };
-      },
-      { method: 'getContactImport' },
-    );
-  },
+          { method: 'retrieveBroadcast', callTimeoutMs, retry: 'retryable' },
+        );
+        if (resource === null) return { kind: 'not_found' };
+        return { kind: 'present', resource };
+      } catch (e) {
+        if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
+          return { kind: 'not_found' };
+        }
+        throw e;
+      }
+    },
 
-};
+    /**
+     * Spec 139 review round 1 — the port docblock has the contract. A raw
+     * `fetch` with the same `callTimeoutMs` bound (10 s) as {@link deleteBroadcastOnce}, because
+     * the erasure cascade calls it under the broadcast row's lock. The log line
+     * carries the HTTP status and the outcome only, never the body.
+     */
+    async retrieveBroadcastOnce(broadcastId: string): Promise<RetrieveBroadcastOnceOutcome> {
+      // One attempt and an outcome, never a throw: an empty id would read the
+      // broadcast LIST at `/broadcasts/`, so it is unclassified, with no request.
+      if (isBlankId(broadcastId)) return { kind: 'other' };
+      let res: Response;
+      try {
+        res = await fetch(`${RESEND_API_BASE_URL}/broadcasts/${encodeURIComponent(broadcastId)}`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(callTimeoutMs),
+          headers: { Authorization: `Bearer ${env.broadcasts.apiKey}` },
+        });
+      } catch (e) {
+        logger.warn(
+          { broadcastId, err: errKind(e), timedOut: isTimeout(e) },
+          'resend.broadcasts.retrieve_once_transport_failed',
+        );
+        return { kind: 'retryable' };
+      }
+      // Spec 140 s2a — a body that stalls past the budget is a timeout, not an
+      // unreadable answer.
+      const text = await res.text().catch(() => null);
+      if (text === null) return { kind: 'retryable' };
+      const outcome = retrieveOnceOutcomeFor(rawHttpStatusOf(res.status, text), text);
+      logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.retrieve_once');
+      return outcome;
+    },
+
+    async removeContactFromAudience(
+      audienceId: string,
+      email: string,
+    ): Promise<RemoveContactOutcome> {
+      assertNonEmpty({ audienceId, email });
+      try {
+        await boundedCall(
+          async (signal) => {
+            const sdk = client();
+            const result = (await sdk.contacts.remove({
+              audienceId,
+              email,
+            }, { signal })) as ResendSdkResponse<{ deleted: boolean }>;
+            if (result.error) {
+              throw classifyResendError(result.error ?? undefined, 'audience', audienceId);
+            }
+          },
+          { method: 'removeContactFromAudience', callTimeoutMs, retry: 'retryable' },
+        );
+        logger.info({ audienceId }, 'resend.broadcasts.contact_detached');
+        return { kind: 'detached' };
+      } catch (e) {
+        // A 404 → the contact/audience is already gone → nothing to detach.
+        //
+        // Round 2 R2-25 — this used to `return` here, indistinguishable from a real
+        // detach. The caller counted both as removals, and that count became
+        // `resend_contacts_removed_count` in an append-only Art. 30 record shown to
+        // a DPO as "Contacts removed". Reporting a removal that did not happen is
+        // worse than reporting none: it is a false statement under Art. 12(3), and
+        // the register entry cannot be corrected once written.
+        if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
+          logger.info({ audienceId }, 'resend.broadcasts.contact_already_absent');
+          return { kind: 'already_absent' };
+        }
+        throw e;
+      }
+    },
+
+    /**
+     * COMP-1 US3-C — the call that actually erases.
+     *
+     * `removeContactFromAudience` above answers `{"deleted": true}` and DETACHES:
+     * measured 2026-09-09, the audience-scoped read 404s afterwards while
+     * `GET /contacts/{email}` still returns the contact at 200. This endpoint's
+     * read-back is a real 404.
+     *
+     * The distinction matters because the erasure cascade was calling the wrong
+     * one and counting each call as a removal, so `resendOutcome: 'ok'` was
+     * reported for members whose addresses were still at the processor.
+     */
+    async deleteContactGlobally(email: string): Promise<void> {
+      assertNonEmpty({ email });
+      try {
+        await boundedCall(
+          async (signal) => {
+            const body = await importFetch(
+              `/contacts/${encodeURIComponent(email)}`,
+              { method: 'DELETE' },
+              signal,
+              // No resourceId: it would be the address, and that must not reach a
+              // classified error's `reason`, which is logged.
+            );
+            // The provider says `deleted: true` for a detach as well, so this is
+            // logged rather than trusted as proof. What makes this call correct is
+            // the endpoint, not the answer.
+            if ((body as { deleted?: unknown }).deleted !== true) {
+              logger.warn(
+                { deleted: (body as { deleted?: unknown }).deleted },
+                'resend.broadcasts.contact_delete_unexpected_body',
+              );
+            }
+          },
+          { method: 'deleteContactGlobally', callTimeoutMs, retry: 'retryable' },
+        );
+        // No email in the log line — forbidden-fields hygiene (FR-053a).
+        logger.info({}, 'resend.broadcasts.contact_deleted_globally');
+      } catch (e) {
+        // A 404 means the contact is already gone: the erasure goal is met.
+        if (e instanceof GatewayThrowable && e.kind === 'resource_missing') return;
+        // `resource_missing` needs a resourceId, and the only id available here is
+        // the address itself — which must not reach a classified error's `reason`,
+        // because that is logged. So a genuine 404 arrives as `permanent`, and its
+        // `code` carries the provider's `name`. Measured: Resend answers
+        // `{"statusCode":404,"name":"not_found"}`.
+        if (
+          e instanceof GatewayThrowable &&
+          e.kind === 'permanent' &&
+          e.code === 'not_found'
+        ) {
+          return;
+        }
+        throw e;
+      }
+    },
+
+    async listAudiences(): Promise<ReadonlyArray<ResendAudienceSummary>> {
+      // Spec 141: on resend@6.35 `audiences.list` is the paginated
+      // `GET /segments`, so follow `has_more` (cursor = the last id) instead of
+      // reading page 1 only — reclaim-orphaned-audiences must see EVERY audience.
+      // Each page is its own `boundedCall`, so a retry never re-reads earlier pages.
+      const byId = new Map<string, { id: string; name: string; created_at: string }>();
+      const seenCursors = new Set<string>();
+      let after: string | undefined;
+      let truncated = false;
+      for (let page = 0; ; page += 1) {
+        if (page === LIST_AUDIENCES_MAX_PAGES) {
+          truncated = true;
+          break;
+        }
+        const result = await boundedCall(
+          async (signal) => {
+            const sdk = client();
+            const res = (await sdk.audiences.list({
+              limit: LIST_AUDIENCES_PAGE_SIZE,
+              ...(after !== undefined && { after }),
+            }, { signal })) as ResendSdkResponse<{
+              object: string;
+              has_more?: boolean;
+              data: ReadonlyArray<{ id: string; name: string; created_at: string }>;
+            }>;
+            if (res.error) {
+              throw classifyResendError(res.error ?? undefined, 'audience');
+            }
+            return res.data;
+          },
+          { method: 'listAudiences', callTimeoutMs, retry: 'retryable' },
+        );
+        const pageRows = result?.data ?? [];
+        for (const r of pageRows) byId.set(r.id, r);
+        const last = pageRows.at(-1);
+        if (result?.has_more !== true) break;
+        // `has_more` with an empty page leaves no cursor to follow: the list is cut.
+        if (last === undefined) {
+          truncated = true;
+          break;
+        }
+        // A cursor seen before would page forever over the same rows.
+        if (seenCursors.has(last.id)) {
+          truncated = true;
+          break;
+        }
+        seenCursors.add(last.id);
+        after = last.id;
+      }
+      const rows = [...byId.values()];
+      if (truncated) {
+        // Reclaim then sees fewer audiences than exist: it deletes less, never
+        // more, but say so rather than pass a cut list off as the whole.
+        logger.warn({ audienceCount: rows.length }, 'resend.broadcasts.audiences_list_truncated');
+      }
+      logger.info({ audienceCount: rows.length }, 'resend.broadcasts.audiences_listed');
+      // Parse at the adapter boundary so callers work with Date, not raw strings.
+      return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at) }));
+    },
+
+    async deleteAudience(audienceId: string): Promise<void> {
+      assertNonEmpty({ audienceId });
+      await boundedCall(
+        async (signal) => {
+          const sdk = client();
+          const result = (await sdk.audiences.remove(audienceId, { signal })) as ResendSdkResponse<{
+            deleted: boolean;
+            id: string;
+            object: string;
+          }>;
+          if (result.error) {
+            // Finding H — 404 Not Found AND 410 Gone both mean the audience is
+            // already absent → the delete goal is met (idempotent early-return).
+            // Without the 410 branch, a Resend 410 would fall through to
+            // `classifyResendError` → `permanent`, and the cleanup row would
+            // re-fail every cron tick forever.
+            if (isProviderGone(result.error)) {
+              logger.info({ audienceId }, 'resend.broadcasts.audience_already_absent');
+              return; // idempotent: already gone
+            }
+            throw classifyResendError(result.error ?? undefined, 'audience', audienceId);
+          }
+          logger.info({ audienceId }, 'resend.broadcasts.audience_deleted');
+        },
+        { method: 'deleteAudience', callTimeoutMs, retry: 'retryable' },
+      );
+    },
+
+    /**
+     * Reclaim a broadcast resource this tick minted and could not persist. The
+     * exact shape of `deleteAudience` above, for the same reason: 404 and 410
+     * both mean "already gone", which is the goal, so they resolve instead of
+     * falling into `classifyResendError` → `permanent`.
+     *
+     * `DELETE /broadcasts/{id}` was exercised against the live account on
+     * 2026-09-10 (the `'draft'` measurement was taken by creating a broadcast and
+     * deleting it), so unlike the idempotency header this is a call whose happy
+     * path is known to work, not assumed to.
+     */
+    async deleteBroadcast(broadcastId: string): Promise<void> {
+      assertNonEmpty({ broadcastId });
+      await boundedCall(
+        async (signal) => {
+          const sdk = client();
+          const result = (await sdk.broadcasts.remove(broadcastId, { signal })) as ResendSdkResponse<{
+            deleted: boolean;
+            id: string;
+            object: string;
+          }>;
+          if (result.error) {
+            if (isProviderGone(result.error)) {
+              logger.info({ broadcastId }, 'resend.broadcasts.broadcast_already_absent');
+              return; // idempotent: already gone
+            }
+            throw classifyResendError(result.error ?? undefined, 'broadcast', broadcastId);
+          }
+          logger.info({ broadcastId }, 'resend.broadcasts.broadcast_deleted');
+        },
+        { method: 'deleteBroadcast', callTimeoutMs, retry: 'retryable' },
+      );
+    },
+
+    /**
+     * Spec 139 P1 — the port docblock has the contract. A raw `fetch`, like
+     * `importFetch`, because the SDK took no `signal` when this was written
+     * (resend@4.8.0; 6.32+ accepts one, adopted by spec 140) and this
+     * call must not outlive the gateway's `callTimeoutMs` (10 s) while the caller holds
+     * a row lock. One attempt; the outcome is the status class, never the
+     * provider's text (the log line carries the HTTP status only).
+     */
+    async deleteBroadcastOnce(broadcastId: string): Promise<DeleteBroadcastOnceOutcome> {
+      // As `retrieveBroadcastOnce`: an empty id is unclassified, with no request.
+      if (isBlankId(broadcastId)) return { kind: 'other' };
+      let res: Response;
+      try {
+        res = await fetch(`${RESEND_API_BASE_URL}/broadcasts/${encodeURIComponent(broadcastId)}`, {
+          method: 'DELETE',
+          signal: AbortSignal.timeout(callTimeoutMs),
+          headers: { Authorization: `Bearer ${env.broadcasts.apiKey}` },
+        });
+      } catch (e) {
+        // A timeout, an abort or a transport failure: whether the DELETE reached
+        // Resend is unknown, so nothing is decided.
+        logger.warn(
+          { broadcastId, err: errKind(e), timedOut: isTimeout(e) },
+          'resend.broadcasts.delete_once_transport_failed',
+        );
+        return { kind: 'retryable' };
+      }
+      // The body decides one thing only: whether an error came from Resend.
+      // As `retrieveBroadcastOnce`: a stalled body is a timeout.
+      const text = await res.text().catch(() => null);
+      if (text === null) return { kind: 'retryable' };
+      const outcome = deleteOnceOutcomeFor(rawHttpStatusOf(res.status, text));
+      logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.delete_once');
+      return outcome;
+    },
+
+    /**
+     * T086 — hand the WHOLE audience to Resend in one multipart request.
+     *
+     * Replaces the `addContactsToAudience` loop, which is serial and therefore
+     * bounded by latency (~2.08 req/s measured, so ~623 contacts per 300 s
+     * function). This call is size-independent: ~412 ms for one address and the
+     * same for thousands, because Resend processes the CSV asynchronously and
+     * answers with a job id. `getContactImport` below is how we learn it landed.
+     *
+     * Field shapes are not negotiable and are pinned by value in
+     * `tests/unit/broadcasts/infrastructure/resend-contact-import.test.ts`:
+     *
+     *   - `segments` is an array of OBJECTS, `[{ id }]`. `[<id>]` is a 422, and
+     *     `audience_id` — the spelling two 2026-09-08 probes used — is accepted
+     *     and SILENTLY IGNORED, which is how "the import does not attach to an
+     *     audience" became a recorded fact for a day.
+     *   - `column_map` maps `email` only. The CSV must carry no `unsubscribed`
+     *     column: research V2 measured that `on_conflict=upsert` preserves a
+     *     contact's unsubscribed flag precisely while that column is absent, and
+     *     that measurement is the only reason `upsert` is lawful here
+     *     (GDPR Art. 21 / PDPA section 32). Adding the column would resurrect
+     *     everyone who ever pressed unsubscribe.
+     *   - `upsert` also makes a resubmitted import harmless, which is what lets
+     *     the caller retry a tick without tracking partial progress.
+     */
+    /**
+     * Spec 140 s2a (DL5a): ONE attempt, no in-process retry, a 429 aside (it
+     * created nothing; review round 1, CR#1). It carries no
+     * idempotency key, because `POST /contacts/imports` does not accept one
+     * (108 Phase 9 review S18), so a retry after the request reached Resend made
+     * a second import job; a failed submit now waits for the next tick. The
+     * history of the retry this used to have follows.
+     *
+     * A transport failure AFTER the request reached Resend therefore creates a
+     * SECOND import job, and only the second id is stored. State stays correct —
+     * `on_conflict=upsert` means both jobs converge on the same contact set, so
+     * the counts the completion rule reads still match — but it burns contact
+     * quota and orphans a job nothing will ever poll. On the Free plan's 1,000
+     * contacts that is worth knowing before a large send.
+     *
+     * Not fixed here because the honest fixes both cost more than the defect:
+     * dropping the retry makes a routine network blip fail a broadcast, and
+     * de-duplicating would mean listing recent imports and matching them by
+     * audience — a second provider round trip on every submit to save a rare
+     * duplicate. Recorded instead of silently retried.
+     */
+    async createContactImport(
+      audienceId: string,
+      emails: readonly string[],
+    ): Promise<{ readonly importId: string }> {
+      assertNonEmpty({ audienceId });
+      return boundedCall(
+        async (signal) => {
+          // BOUNDARY VALIDATION (108 Phase 9 review S16). `EmailLower` looks like
+          // a guarantee and is not: `unsafeBrandEmailLower` is `return raw as
+          // EmailLower` with no validation, and it is what feeds every path into
+          // this method. So the CSV's safety rested entirely on validation done
+          // when the address was written to the database, with nothing re-checking
+          // it here.
+          //
+          // An address containing \n or \r injects an extra CSV row — creating a
+          // contact in the audience that was never in the resolved list. One with
+          // a comma or a quote shifts columns. The completion rule DOES catch the
+          // injected-row case downstream (`total !== resolvedCount` refuses the
+          // send), but only AFTER the contact exists at Resend: that is a
+          // backstop, not a boundary. Refuse here so the bad row is never created.
+          const unsafe = emails.filter((e) => /[\r\n",]/.test(e));
+          if (unsafe.length > 0) {
+            throw classifyResendError({
+              statusCode: 422,
+              name: 'unsafe_recipient_format',
+              // Count only — never echo the addresses into an error whose message
+              // reaches a log line (S15 is about exactly that path).
+              message: `${unsafe.length} recipient address(es) contain CSV control characters`,
+            });
+          }
+          const csv = ['email', ...emails].join('\n') + '\n';
+          const form = new FormData();
+          form.append('file', new Blob([csv], { type: 'text/csv' }), 'audience.csv');
+          form.append('column_map', JSON.stringify({ email: 'email' }));
+          form.append('on_conflict', 'upsert');
+          form.append('segments', JSON.stringify([{ id: audienceId }]));
+
+          const body = await importFetch('/contacts/imports', {
+            method: 'POST',
+            body: form,
+          }, signal);
+          if (body.id === undefined || body.id === '') {
+            // A 2xx with no id is unusable and cannot be retried into existence.
+            throw classifyResendError({
+              statusCode: 502,
+              name: 'malformed_import_response',
+              message: 'contact import accepted but returned no id',
+            });
+          }
+          logger.info(
+            { audienceId, importId: body.id, recipientCount: emails.length },
+            'resend.broadcasts.contact_import_submitted',
+          );
+          return { importId: body.id };
+        },
+        { method: 'createContactImport', callTimeoutMs: importCallTimeoutMs, retry: 'rate_limit' },
+      );
+    },
+
+    /**
+     * T086 — poll one import.
+     *
+     * Returns `status` and `counts` VERBATIM. The completion decision belongs to
+     * the caller (contract section 4: `completed` AND `failed === 0` AND
+     * `created + updated + skipped === total` AND `total` equals the resolved
+     * count), and it is load-bearing rather than defensive: one import in five
+     * identical probes returned `completed` with `failed: 0` and `total: 0` and
+     * attached nothing (research R9 V2 (c)). Smoothing that into "it finished,
+     * so it worked" here would send a broadcast to an empty audience.
+     *
+     * Absent counts (a `pending` import has none) become zeros rather than
+     * `undefined`, so arithmetic on them is comparable rather than NaN.
+     */
+    async getContactImport(importId: string): Promise<{
+      readonly status: string;
+      readonly counts: {
+        readonly total: number;
+        readonly created: number;
+        readonly updated: number;
+        readonly skipped: number;
+        readonly failed: number;
+      };
+    }> {
+      assertNonEmpty({ importId });
+      return boundedCall(
+        async (signal) => {
+          // `importId` is provider-controlled — it arrives as `body.id` from
+          // Resend and is persisted without validation — and it goes straight into
+          // a URL PATH. `fetch` normalises `..` segments, so an id carrying one
+          // would change which endpoint this calls (108 Phase 9 review S23). Low
+          // risk, since it needs a compromised or misbehaving Resend, and one
+          // function call to remove.
+          const body = await importFetch(
+            `/contacts/imports/${encodeURIComponent(importId)}`,
+            { method: 'GET' },
+            signal,
+            importId,
+          );
+          const c = body.counts ?? {};
+          return {
+            status: body.status ?? 'unknown',
+            counts: {
+              total: c.total ?? 0,
+              created: c.created ?? 0,
+              updated: c.updated ?? 0,
+              skipped: c.skipped ?? 0,
+              failed: c.failed ?? 0,
+            },
+          };
+        },
+        { method: 'getContactImport', callTimeoutMs, retry: 'retryable' },
+      );
+    },
+
+  };
+}
 
 /**
  * T086 — the Contacts Import endpoints, spoken to with a raw `fetch`.
@@ -1082,22 +1190,6 @@ function throwImportError(
 }
 
 /**
- * A hung `fetch` has no default timeout. This one is bounded by the route's
- * `maxDuration = 300`, but that budget is shared with every remaining broadcast
- * in the same tick loop (`MAX_PER_TICK = 50`, no wall-clock check between rows),
- * so one stalled call can starve the rest of the tick. 30 s is generous against
- * a measured ~481 ms round trip and still leaves the loop time to continue.
- */
-const IMPORT_FETCH_TIMEOUT_MS = 30_000;
-
-/**
- * Spec 139 P1 — the erasure cascade holds the broadcast row's lock across the
- * DELETE and (after a 404 or 403) the GET, so each is bounded far tighter than
- * an import: 10 s against a measured round trip of ~0.5 s, ≈ 23 s at most with the 3 s pause after a 404 (D-040).
- */
-const DELETE_ONCE_TIMEOUT_MS = 10_000;
-
-/**
  * `AbortSignal.timeout` rejects with a `TimeoutError` (a `DOMException`, so
  * `errKind` alone reads only the class); kept apart from an abort or a network
  * failure so a slow Resend is visible on the log line.
@@ -1153,31 +1245,51 @@ function retrieveOnceOutcomeFor(status: number, text: string): RetrieveBroadcast
   return { kind: 'other' };
 }
 
+/**
+ * `signal` is the caller's `boundedCall` signal (spec 140 s2a: it replaced a
+ * 30 s per-request timeout), so one budget covers the request, its body and
+ * any retry.
+ */
 async function importFetch(
   path: string,
   init: RequestInit,
+  signal: AbortSignal,
   resourceId?: string,
 ): Promise<ResendImportResponse> {
   let res: Response;
   try {
     res = await fetch(`${RESEND_API_BASE_URL}${path}`, {
       ...init,
-      signal: AbortSignal.timeout(IMPORT_FETCH_TIMEOUT_MS),
+      signal,
       headers: {
         ...(init.headers ?? {}),
         Authorization: `Bearer ${env.broadcasts.apiKey}`,
       },
     });
   } catch (e) {
-    // A transport failure never reached Resend, so it is safe to retry — the
-    // same reading `classifyResendError` gives `statusCode: 0`.
+    // A transport failure, or a request that may have reached Resend and lost
+    // its answer: retryable/network, the reading `classifyResendError` gives
+    // `statusCode: 0` (an aborted signal reads as a timeout in `boundedCall`).
+    // A GET or DELETE retries it; a create does not (spec 140 s2a, DL5a).
     throw classifyResendError({
       statusCode: 0,
       name: 'network_error',
       message: e instanceof Error ? e.message : String(e),
     });
   }
-  const text = await res.text();
+  let text: string;
+  try {
+    text = await res.text();
+  } catch (e) {
+    // The body stalled or broke mid-read (an aborted signal rejects here too):
+    // the answer is unknown, as for a transport failure. `boundedCall` reads an
+    // aborted signal as a timeout.
+    throw classifyResendError({
+      statusCode: 0,
+      name: 'network_error',
+      message: e instanceof Error ? e.message : String(e),
+    });
+  }
   let body: ResendImportResponse;
   try {
     body = text.length > 0 ? (JSON.parse(text) as ResendImportResponse) : {};
@@ -1236,3 +1348,20 @@ function normaliseStatus(
       return 'unknown';
   }
 }
+
+/** The production gateway: every call bounded by {@link RESEND_CALL_TIMEOUT_MS}. */
+export const resendBroadcastsGateway: BroadcastsGatewayPort = createResendBroadcastsGateway();
+
+/**
+ * Spec 140 s2a review round 2 (CR#2, the maintainer's decision, 1 Nov 2026) —
+ * the legacy dispatch leg's gateway: its `createBroadcast` retries a 5xx or a
+ * network failure inside the 10 s budget, as before s2a, so one 5xx does not
+ * end the tick and re-push every contact. Wired ONLY by
+ * `makeDispatchScheduledBroadcastDeps`. Each failed attempt (5xx, network
+ * failure, or one our timeout aborts) that did mint leaves a draft whose id we
+ * never received, up to 4 per call (RoPA 8d). DELETED with the legacy leg in
+ * slice 4.
+ */
+export const legacyResendBroadcastsGateway: BroadcastsGatewayPort = createResendBroadcastsGateway({
+  createBroadcastRetry: 'retryable',
+});

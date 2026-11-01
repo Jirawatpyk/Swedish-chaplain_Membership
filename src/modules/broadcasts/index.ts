@@ -541,6 +541,9 @@ export { eventAttendeesStub } from './infrastructure/event-attendees-stub';
 // EventCreate has shipped). Stub export retained for empty-segment tests.
 export { eventAttendeesBridge } from './infrastructure/event-attendees-bridge';
 export { resendBroadcastsGateway } from './infrastructure/resend/resend-broadcasts-gateway';
+// Spec 140 s2a — one gateway request's budget; the members erasure adapter
+// stops its pair loop when less than this is left before the cascade deadline.
+export { RESEND_CALL_TIMEOUT_MS } from './application/ports/broadcasts-gateway-port';
 // Round 4, whole-branch review #9 — `noOpAdvisoryLock` re-export removed with
 // its module. It had no consumer in `src/`, `tests/` or `scripts/`; the barrel
 // was the only thing keeping it reachable, which is what made it look alive.

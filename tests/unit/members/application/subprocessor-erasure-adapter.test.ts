@@ -38,6 +38,7 @@ const { removeContactFromAudience } = vi.hoisted(() => ({
 // barrel; exposing just that export avoids pulling the whole broadcasts graph.
 vi.mock('@/modules/broadcasts', () => ({
   resendBroadcastsGateway: { removeContactFromAudience },
+  RESEND_CALL_TIMEOUT_MS: 10_000,
 }));
 
 import {
@@ -237,6 +238,93 @@ describe('subprocessorErasureAdapter', () => {
     expect(result.resendContactsFailed).toBe(1);
     const logPayload = loggerWarn.mock.calls[0]![0] as Record<string, unknown>;
     expect(logPayload.errKind).toBe('unknown');
+  });
+});
+
+// Spec 140 s2a review round 1 (pdpa H-1, reliability L2) — `propagate` is
+// bounded by the caller's erasure deadline as well as per request: before each
+// pair it stops when less than one request budget (C = 10 s) is left, and
+// every pair it did not try is counted `failed`, so the
+// `subprocessor_erasure_propagated` row is written before `maxDuration` and is
+// never a false `ok`.
+describe('subprocessorErasureAdapter.propagate — the caller deadline', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const pairs = [
+    { audienceId: 'aud-1', email: 'a@example.com' },
+    { audienceId: 'aud-2', email: 'a@example.com' },
+    { audienceId: 'aud-3', email: 'a@example.com' },
+  ];
+
+  it('propagate stops at the deadline and counts the untried pairs as failed', async () => {
+    // C + 1 s left at the start; the first pair spends 2 s, so C is not left
+    // before the second.
+    const deadlineAt = new Date(Date.now() + 11_000);
+    removeContactFromAudience.mockImplementation(async () => {
+      vi.setSystemTime(Date.now() + 2_000);
+      return { kind: 'detached' };
+    });
+
+    const result = await subprocessorErasureAdapter.propagate({ ...inputWith(pairs), deadlineAt });
+
+    expect(removeContactFromAudience).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      resendOutcome: 'partial',
+      resendContactsRemoved: 1,
+      resendContactsAlreadyAbsent: 0,
+      resendContactsFailed: 2,
+      stripeOutcome: 'ok',
+    });
+    // Review round 2 (CR#1, pdpa M-1): the audiences to clean by hand, ids only.
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        untriedPairs: 2,
+        untriedAudienceIds: ['aud-2', 'aud-3'],
+        untriedAudienceIdsTruncated: false,
+        cascade: 'subprocessor_resend',
+      }),
+      'erase-member: subprocessor Resend propagate deadline reached',
+    );
+    expect(JSON.stringify(loggerWarn.mock.calls)).not.toContain('a@example.com');
+  });
+
+  it('a deadline with less than C left tries no pair and counts every pair failed', async () => {
+    const result = await subprocessorErasureAdapter.propagate({
+      ...inputWith(pairs),
+      deadlineAt: new Date(Date.now() + 9_999),
+    });
+    expect(removeContactFromAudience).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      resendOutcome: 'failed',
+      resendContactsRemoved: 0,
+      resendContactsAlreadyAbsent: 0,
+      resendContactsFailed: 3,
+      stripeOutcome: 'ok',
+    });
+  });
+
+  it('the untried audience ids are deduplicated and capped at 50', async () => {
+    // The duplicate sits inside the first 50, so only deduplication keeps
+    // `aud-49` in the capped list.
+    const many = [
+      { audienceId: 'aud-0', email: 'b@example.com' },
+      ...Array.from({ length: 60 }, (_, i) => ({ audienceId: `aud-${i}`, email: 'a@example.com' })),
+    ];
+    await subprocessorErasureAdapter.propagate({ ...inputWith(many), deadlineAt: new Date(Date.now() + 1) });
+    const payload = loggerWarn.mock.calls[0]![0] as { untriedPairs: number; untriedAudienceIds: string[]; untriedAudienceIdsTruncated: boolean };
+    expect(payload.untriedPairs).toBe(61);
+    expect(payload.untriedAudienceIds).toEqual(Array.from({ length: 50 }, (_, i) => `aud-${i}`));
+    expect(payload.untriedAudienceIdsTruncated).toBe(true);
+    expect(JSON.stringify(payload)).not.toContain('@example.com');
+  });
+
+  it('with no deadline every pair is tried', async () => {
+    removeContactFromAudience.mockResolvedValue({ kind: 'detached' });
+    const result = await subprocessorErasureAdapter.propagate(inputWith(pairs));
+    expect(removeContactFromAudience).toHaveBeenCalledTimes(3);
+    expect(result.resendContactsRemoved).toBe(3);
   });
 });
 

@@ -192,13 +192,10 @@ describe('createContactImport — the multipart contract (T086)', () => {
     expect(captured).toHaveLength(1);
   });
 
+  // Spec 140 s2a (DL5a + review round 1, CR#1): a create makes one attempt,
+  // except on a 429 — Resend refused it for its rate and created nothing, so it
+  // is retried inside the 10 s budget. `upsert` makes the second submit harmless.
   it('a 429 is RETRYABLE — the next attempt succeeds and the import is NOT resubmitted twice on success', async () => {
-    // Deliberately "429 then 201" rather than "429 forever": exhausting the
-    // 1/2/4/8/16 s schedule costs 31 real seconds, and the exhaustion path is
-    // already pinned for the sibling methods in
-    // `resend-broadcasts-gateway-contract.test.ts`. What is specific to THIS
-    // method is that a rate-limited first attempt must not leave a half-made
-    // import behind — `upsert` is what makes the second attempt harmless.
     stubFetch((call) =>
       call === 1
         ? jsonResponse(429, {
@@ -219,7 +216,7 @@ describe('createContactImport — the multipart contract (T086)', () => {
     // upsert cannot duplicate anyone.
     expect(captured[0]!.fileText).toBe(captured[1]!.fileText);
     expect(captured[1]!.fields['on_conflict']).toBe('upsert');
-  }, 15_000);
+  });
 });
 
 describe('getContactImport — the completion signal (T086)', () => {

@@ -30,6 +30,29 @@ import type { BrandSettings } from '../../domain/brand/brand-settings';
 
 export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'api';
 
+/**
+ * Spec 140 s2a (DL8) — the budget of one gateway REQUEST, retries and their
+ * backoff included: one `AbortSignal.timeout` spans every attempt. 10 s against
+ * a measured round trip of ~0.5 s. It bounds every method except
+ * `createContactImport`, which has {@link IMPORT_CALL_TIMEOUT_MS} (30 s); a
+ * port call that loops (`addContactsToAudience`, `listAudiences`) takes it per
+ * request. Exported for the dispatch lease (slice 2b): in W_max only the one
+ * import-POST term takes {@link IMPORT_CALL_TIMEOUT_MS} (every other call stays
+ * at this C), and the pre-call lease check before `createContactImport` must
+ * demand at least IMPORT_CALL_TIMEOUT_MS + M of lease left, not C + M (plan.md,
+ * review rounds 3-4).
+ */
+export const RESEND_CALL_TIMEOUT_MS = 10_000;
+
+/**
+ * Spec 140 s2a review round 2 (CR#3) — `createContactImport`'s budget: it
+ * uploads the whole audience as one CSV (up to the 5,000 / 50,000 ceiling), so
+ * 10 s is unsized for it. 30 s is the pre-s2a `importFetch` value and is
+ * **ASSUMED**, not measured at size: the import POST measured 412 ms for a
+ * small CSV (2026-09-08); slice 4's ceiling work measures it at 900 rows.
+ */
+export const IMPORT_CALL_TIMEOUT_MS = 30_000;
+
 export type BroadcastsGatewayError =
   | {
       readonly kind: 'retryable';
@@ -304,8 +327,9 @@ export interface BroadcastsGatewayPort {
   ): Promise<RetrieveBroadcastOutcome>;
 
   /**
-   * Spec 139 review round 1 — ONE `GET /broadcasts/{id}`: no `withRetry`
-   * backoff and a hard 10 s timeout, like {@link deleteBroadcastOnce}. The
+   * Spec 139 review round 1 — ONE `GET /broadcasts/{id}`: no retry or backoff
+   * and a hard {@link RESEND_CALL_TIMEOUT_MS} (10 s) timeout, like
+   * {@link deleteBroadcastOnce}. The
    * erasure cascade calls it while it still holds the broadcast row's lock
    * (after a DELETE 404 or 403), so the row's whole decision is made under the
    * lock that did the DELETE; together the two calls hold it for at most
@@ -495,11 +519,12 @@ export interface BroadcastsGatewayPort {
   deleteBroadcast(broadcastId: string): Promise<void>;
 
   /**
-   * Spec 139 P1 — ONE `DELETE /broadcasts/{id}`: no `withRetry` backoff and a
-   * hard 10 s timeout (the SDK has none). The erasure cascade calls it while it
-   * holds the broadcast row's lock, so a slow Resend must not hold that lock —
-   * and every dispatch tick that reaches the row — for the 31 s of backoff
-   * `deleteBroadcast` can spend. Never throws: every failure is an arm of
+   * Spec 139 P1 — ONE `DELETE /broadcasts/{id}`: no retry or backoff and a
+   * hard {@link RESEND_CALL_TIMEOUT_MS} (10 s) timeout. The erasure cascade
+   * calls it while it holds the broadcast row's lock, so a slow Resend must not
+   * hold that lock — and every dispatch tick that reaches the row — for the
+   * backoff `deleteBroadcast` can spend (up to 10 s since spec 140 s2a; 31 s
+   * before). Never throws: every failure is an arm of
    * {@link DeleteBroadcastOnceOutcome}.
    *
    * The second caller is the dispatch legs' standing refusal (spec 139 P2 for

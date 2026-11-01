@@ -1563,6 +1563,35 @@ member key), as they do for every other `deleteBroadcast` caller.
 | `broadcasts_retention_sweep_failed_total` increments on **two consecutive daily runs** for the same `tenant` | **alarm** | one failed run is retried the next day; two in a row means the retention the RoPA says is enforced is not being enforced | `docs/runbooks/cron-jobs.md` § F7 — broadcasts/retention-sweep |
 | No `broadcast_retention_swept` audit row for a tenant in **48 h** | **warn** | the cron did not run at all (it writes a row per run even when it deletes nothing) | same |
 
+### 22.14 Spec 140 s2a — bounded Resend calls and the legacy import-row skip
+
+No new metric. Every Broadcasts gateway REQUEST (`resend-broadcasts-gateway.ts`
+`boundedCall`) runs under ONE `AbortSignal.timeout(RESEND_CALL_TIMEOUT_MS)`
+= 10 s that spans all its attempts, so a request that hits the budget surfaces
+to its caller as `retryable` with `subKind: 'timeout'` — the existing
+`cron.broadcasts.dispatch.retryable` line, the `broadcasts.dispatch_budget_exhausted.count`
+`sub_kind="timeout"` label and the import leg's retryable arm carry it; nothing
+is renamed. A port call that makes several requests (`addContactsToAudience`
+per contact, `listAudiences` per page) has the budget per request, so it can
+run N × 10 s (a per-invocation budget is slice 2b's). `resend.broadcasts.retry`
+(warn) fires at most 3 times per request (backoffs of 1, 2 and 4 s fit the
+budget); for a create (`createAudience`, `createBroadcast`,
+`createContactImport`) only after a 429, which created nothing — except the
+legacy leg's `createBroadcast` (`legacyResendBroadcastsGateway`, until slice 4),
+which retries any retryable error. `createContactImport`'s budget is
+`IMPORT_CALL_TIMEOUT_MS` = 30 s (ASSUMED). The route span carries
+`cron.import_row_skipped` beside the other summary buckets.
+
+With the import flag OFF the dispatch cron's due scan leaves out rows holding
+`audience_import_id` or `audience_import_submitted_at`, so they never take a
+`LIMIT` slot; the legacy leg's own check is a backstop.
+
+| Log line | Level | Fields | Meaning |
+|---|---|---|---|
+| `broadcasts.dispatch.import_row_skipped` | info | `tenantId`, `broadcastId` | The legacy (flag-OFF) dispatch leg's backstop found an `approved` row holding import columns and left it alone under the row lock, with no Resend call (DL7, decision 8). The use case returns `import_row_skipped`. |
+| `cron.broadcasts.dispatch.import_row_skipped` | info | `tenantId`, `broadcastId` | The route's line for the same outcome, counted in the response summary's `import_row_skipped` (never `concurrent_skip`, never `unknown_error`). Expected only when a row gained import columns between the scan and the lock; a row that waits with the flag OFF is visible through `broadcasts.approved_overdue_count` (runbook `broadcast-audience-build.md` § C step 1). |
+| `erase-member: subprocessor Resend propagate deadline reached` | warn | `memberId`, `requestId`, `untriedPairs`, `cascade` | The erasure cascade deadline left less than one 10 s request budget; the remaining (audience, email) pairs were not tried and count in `resend_contacts_failed_count` (RoPA 8a). |
+
 ---
 
 ## 23. F8 Renewal Tracking + Smart Reminders — observability

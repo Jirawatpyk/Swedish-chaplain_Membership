@@ -92,7 +92,7 @@ After fix is deployed:
 
 ## Prevention
 
-- Phase 3+ retry policy with exponential backoff (1/2/4/8/16s × 5) per CHK020 — handles transient Resend 5xx automatically without surfacing as `failed_to_dispatch`.
+- Retry policy with exponential backoff (1/2/4 s, CHK020) inside one 10 s budget per call (spec 140 s2a) — a transient Resend 5xx on a GET, DELETE or `/send` is retried in the same call; a create (audience, broadcast, contact import) makes one attempt, a 429 retried, so the row stays `approved` and the next tick tries again — except on the legacy (flag-OFF) leg, whose `createBroadcast` retries a 5xx or a network failure inside the 10 s (`legacyResendBroadcastsGateway`, until slice 4). A contact import has its own 30 s budget. Neither surfaces as `failed_to_dispatch` until the FR-021 hour runs out.
 - Monthly Resend quota monitoring; alert at 80% to give admin lead time to upgrade.
 - Pre-deploy verification: `pnpm test:integration tests/integration/broadcasts/` GREEN required.
 

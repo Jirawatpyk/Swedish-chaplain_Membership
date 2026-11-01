@@ -114,12 +114,11 @@ As the chamber, an E-Blast is built and sent by one cron invocation at a time. A
 - **DL2.** A holder whose lease expired mid-run makes no Resend call after the expiry and writes no column. Every CAS and every pre-call check refuses a stale token.
 - **DL3.** The claim waits behind an erasure's row lock, then skips the cancelled row.
 - **DL4.** With two tenants holding the same broadcast uuid, claim and release each touch only their own row (run as `chamber_app`).
-- **DL5.** A timed-out `createBroadcast`:
-  - is not retried;
-  - writes an orphan-id row.
+- **DL5a** (slice 2a). On the default gateway (the import leg, erasure, cleanup), a `createBroadcast`, `createAudience` or `createContactImport` that hits a 5xx or a timeout makes exactly one request: it is not retried in-process. The exception (maintainer, 1 Nov 2026): the legacy leg's `createBroadcast` retries inside its 10 s budget until s4 deletes that leg.
+- **DL5b** (slice 2b). A timed-out `createBroadcast` writes an orphan-id row with no id (`create_unconfirmed`), counted in a gauge.
 - **DL6.** A failed reclaim writes an orphan-id row, and the cleanup cron deletes it at Resend.
-- **DL7.** The legacy leg skips a row that holds import columns.
-- **DL8.** Every broadcasts gateway call aborts at its timeout.
+- **DL7.** The legacy leg skips a row that holds import columns. (Slice 2a. In slice 2b it also skips a row holding a live lease.)
+- **DL8.** Every broadcasts gateway request aborts at its timeout: one budget per request, its retries included. A port call that makes several requests (`addContactsToAudience` per contact, `listAudiences` per page) can therefore run N × the timeout; its per-invocation budget is slice 2b's (review round 1, CR#2).
 
 ### US3 — The import leg reads Resend correctly (slice 3)
 

@@ -25,7 +25,7 @@
  * proof; a `partial`/`failed` outcome is re-driven by the US2d reconciler /
  * US3-E DPO runbook.
  */
-import { resendBroadcastsGateway } from '@/modules/broadcasts';
+import { RESEND_CALL_TIMEOUT_MS, resendBroadcastsGateway } from '@/modules/broadcasts';
 import { logger } from '@/lib/logger';
 import type {
   SubprocessorErasurePort,
@@ -44,6 +44,9 @@ function gatewayField(e: unknown, field: 'kind' | 'code'): string | null {
   if (typeof v !== 'string') return null;
   return /^[a-z0-9_]{1,64}$/.test(v) ? v : 'unrecognised';
 }
+
+/** Spec 140 s2a review round 2 — the most untried audience ids one deadline log line names. */
+const UNTRIED_AUDIENCE_IDS_LOG_CAP = 50;
 
 /**
  * No-op sub-processor-erasure adapter for tests that don't exercise the F7
@@ -109,7 +112,36 @@ export const subprocessorErasureAdapter: SubprocessorErasurePort = {
     let removed = 0;
     let alreadyAbsent = 0;
     let failed = 0;
-    for (const { audienceId, email } of input.audienceContacts) {
+    const pairs = input.audienceContacts;
+    for (let i = 0; i < pairs.length; i += 1) {
+      // Spec 140 s2a review round 1 (pdpa H-1): the caller's deadline. One
+      // request can take up to RESEND_CALL_TIMEOUT_MS, so a pair is started
+      // only while that much is left; every pair not tried counts as failed,
+      // never as removed or absent, so the outcome is never a false `ok`.
+      if (
+        input.deadlineAt !== undefined &&
+        input.deadlineAt.getTime() - Date.now() < RESEND_CALL_TIMEOUT_MS
+      ) {
+        const untriedPairs = pairs.length - i;
+        failed += untriedPairs;
+        // Review round 2 (CR#1, pdpa M-1): the audiences the DPO must clean by
+        // hand (a re-drive cannot repeat these pairs). Ids only, never an
+        // email; deduplicated and capped so one log line stays bounded.
+        const untried = [...new Set(pairs.slice(i).map((p) => p.audienceId))];
+        logger.warn(
+          {
+            memberId: input.memberId,
+            requestId: input.requestId,
+            untriedPairs,
+            untriedAudienceIds: untried.slice(0, UNTRIED_AUDIENCE_IDS_LOG_CAP),
+            untriedAudienceIdsTruncated: untried.length > UNTRIED_AUDIENCE_IDS_LOG_CAP,
+            cascade: 'subprocessor_resend',
+          },
+          'erase-member: subprocessor Resend propagate deadline reached',
+        );
+        break;
+      }
+      const { audienceId, email } = pairs[i]!;
       try {
         const outcome = await resendBroadcastsGateway.removeContactFromAudience(
           audienceId,

@@ -172,6 +172,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // audience, and with it OFF `currentAudienceCeiling()` clamps to what the
   // serial push can drain, so an oversized audience is refused at submit
   // rather than claimed and stranded.
+  // T087 — with the import flag ON the import leg (`buildAudienceTick`) works
+  // the rows; OFF, the legacy leg. Read once per tick: it routes the rows below
+  // and (spec 140 s2a review round 1, code-review #3) narrows the due scan.
+  const importEnabled = isF7ImportAudienceEnabled();
+  // Flag OFF: a row the import leg started (DL7) is never the legacy leg's, so
+  // the scan leaves it out rather than let it take a `LIMIT` slot every tick;
+  // the use case's own check is the backstop. Hoisted out of the template so
+  // the tenant-SQL shape scan reads the whole query (nested-template rule).
+  // Both predicates are kept on purpose: CHECK `broadcasts_audience_import_coherent`
+  // (read on dev 1 Nov 2026) is `(audience_import_id IS NULL) =
+  // (audience_import_submitted_at IS NULL)`, so either one alone is enough
+  // today; the redundant one costs nothing and is the path `/verify` drove
+  // (review round 2, CR#4).
+  const importRowsFilter = importEnabled
+    ? sql``
+    : sql`AND audience_import_id IS NULL AND audience_import_submitted_at IS NULL`;
   let eligible: ReadonlyArray<{ broadcast_id: string }>;
   try {
     eligible = await runInTenant(tenant, async (tx) => {
@@ -182,6 +198,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           AND status = 'approved'
           AND scheduled_for IS NOT NULL
           AND scheduled_for <= now()
+          ${importRowsFilter}
         ORDER BY scheduled_for ASC
         LIMIT ${MAX_PER_TICK}
         FOR UPDATE SKIP LOCKED
@@ -249,6 +266,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      * (`metrics.ts:2544`), which draws the same line for the same reason.
      */
     concurrent_skip: 0,
+    /**
+     * Spec 140 s2a (DL7; review round 1, code-review #3) — the legacy leg's
+     * backstop met a row holding import columns and left it alone. Not a race
+     * and not a failure, so neither `concurrent_skip` nor a page: the row waits
+     * for the import flag to come back ON, or for staff to cancel it
+     * (`broadcast-audience-build.md`).
+     */
+    import_row_skipped: 0,
     unknown_error: 0,
     uncaught_error: 0,
   };
@@ -311,8 +336,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // `buildAudienceTick` instead of the serial single-tick push. Built once
     // per tick like `deps`, and only when it will be used: the maker resolves
     // the tenant display name, which is a DB read nobody should pay for on the
-    // flag-OFF path.
-    const importEnabled = isF7ImportAudienceEnabled();
+    // flag-OFF path. (`importEnabled` is read once, above the due scan.)
     const importDeps = importEnabled
       ? {
           ...(await makeBuildAudienceTickDeps(tenant.slug, deps.membersBridge)),
@@ -518,6 +542,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           case 'broadcast_audience_post_suppression_empty':
             summary.permanent_failed++;
             break;
+          case 'import_row_skipped':
+            summary.import_row_skipped++;
+            logger.info(
+              { tenantId: tenant.slug, broadcastId: row.broadcast_id },
+              'cron.broadcasts.dispatch.import_row_skipped',
+            );
+            break;
           case 'broadcast_invalid_state_transition':
           case 'broadcast_not_found':
             // Same bucket as the import branch above — and this is the leg that
@@ -605,21 +636,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // is the one trace an operator opens on the first real send, and tick 1
     // legitimately succeeding looks identical to tick 1 silently failing.
     //
-    // Every bucket the summary counts is now an attribute, so the trace says
-    // WHICH outcome happened. `import_submitted` and `import_pending` are the two
-    // that used to be invisible.
-    cronSpan.setAttribute('cron.processed', summary.processed);
-    cronSpan.setAttribute('cron.succeeded', summary.succeeded);
-    cronSpan.setAttribute('cron.import_submitted', summary.import_submitted);
-    cronSpan.setAttribute('cron.import_pending', summary.import_pending);
-    cronSpan.setAttribute('cron.held', summary.held);
-    cronSpan.setAttribute('cron.audience_restarted', summary.audience_restarted);
-    cronSpan.setAttribute('cron.retryable', summary.retryable);
-    cronSpan.setAttribute('cron.permanent_failed', summary.permanent_failed);
-    cronSpan.setAttribute('cron.concurrent_skip', summary.concurrent_skip);
-    cronSpan.setAttribute('cron.resource_missing', summary.resource_missing);
-    cronSpan.setAttribute('cron.unknown_error', summary.unknown_error);
-    cronSpan.setAttribute('cron.uncaught_error', summary.uncaught_error);
+    // The span attributes are DERIVED from the summary: every bucket it counts
+    // is `cron.<key>`, so the trace says WHICH outcome happened and a new bucket
+    // cannot be left off it (spec 140 s2a review round 3; round 2 had to add
+    // `import_row_skipped` by hand). `import_submitted` and `import_pending`
+    // were the two that used to be invisible.
+    for (const [key, value] of Object.entries(summary)) {
+      if (typeof value === 'number') cronSpan.setAttribute(`cron.${key}`, value);
+    }
     if (summary.uncaught_error > 0 || summary.unknown_error > 0) {
       cronSpan.setStatus({
         code: SpanStatusCode.ERROR,

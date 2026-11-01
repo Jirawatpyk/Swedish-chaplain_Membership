@@ -776,10 +776,20 @@ When the alert fires:
      for the member's email from the DSR intake record, and remove it from
      every audience it is still in.
    - **`gatewayKind: retryable`** (retries exhausted) — Resend answered a transient error
-     six times in a row. A non-JSON answer (an edge's or proxy's HTML page,
+     on every attempt inside the call's 10 s budget (spec 140 s2a: up to four
+     attempts; `subKind: timeout` = Resend did not answer within 10 s). A non-JSON answer (an edge's or proxy's HTML page,
      even one with status 404) is read as transient on purpose, so a `failed`
      count can come from an edge problem, not a Resend outage; the contact is
      NOT known to be gone. Remediate it like any other failure.
+   - **`erase-member: subprocessor Resend propagate deadline reached`** (warn;
+     spec 140 s2a) — the erasure's cascade deadline left less than one 10 s
+     request budget, so `untriedPairs` pairs were never sent to Resend and are
+     counted in `resend_contacts_failed_count`. A re-drive cannot repeat them
+     (the pairs are captured once), so remove them by hand as below: the
+     audiences to clean are the line's **`untriedAudienceIds`** (deduplicated,
+     ids only, at most 50). If **`untriedAudienceIdsTruncated`** is `true`, more
+     audiences were untried than the line names: search the Resend dashboard
+     for the member's email (from the DSR intake record) instead.
 
 2. **Remove the contact via the Resend dashboard.** For each stuck audience,
    open Resend → Audiences (the dashboard may label it **Segments**: since SDK 6.35 the two are one resource, spec 141) → the audience → remove the contact by the member's

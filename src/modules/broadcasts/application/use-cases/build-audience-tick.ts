@@ -2031,7 +2031,8 @@ async function advanceToSending(
   // `pg_advisory_xact_lock`, but its tx commits at the top of the tick, before
   // every gateway call — so the window spans a `getContactImport` round trip, a
   // full `resolveRecipients` re-walk, `createBroadcast` and `sendBroadcast`
-  // (each up to 6 `withRetry` attempts). `cancelBroadcast` accepts `approved`,
+  // (each bounded at 10 s per request since spec 140 s2a; the creates make one
+  // attempt, a 429 aside). `cancelBroadcast` accepts `approved`,
   // so an admin cancel can land inside it: the mail is out and the row says
   // `cancelled` — an unpleasant state no code here can undo.
   //

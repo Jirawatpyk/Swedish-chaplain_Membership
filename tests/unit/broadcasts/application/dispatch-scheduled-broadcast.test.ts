@@ -5877,3 +5877,66 @@ describe('spec 139 P8 — a /send 404 after the row left approved is a concurren
     expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
   });
 });
+
+// Spec 140 s2a, DL7 (state-table cell 22; decision 8) — the legacy leg never
+// works a row the import leg has started: a row that holds `audience_import_id`
+// or `audience_import_submitted_at` is skipped under the row lock, before any
+// Resend call, so reverting the leg retirement is safe with no env change.
+describe('spec 140 s2a DL7 — the legacy leg skips a row that holds import columns', () => {
+  it.each([
+    ['audience_import_id', { audienceImportId: 'imp_from_import_leg' }],
+    ['audience_import_submitted_at', { audienceImportSubmittedAt: FROZEN_NOW }],
+  ])('the legacy leg skips a row that holds import columns (%s)', async (_column, importColumns) => {
+    const infoSpy = vi.spyOn(logger, 'info');
+    const audit = makeAudit();
+    const row: Broadcast = { ...makeBroadcast('approved'), ...importColumns };
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: row });
+    const gw = makeGateway();
+    // Every gateway method, counted: the skip makes no Resend call at all.
+    const gatewayCalls: string[] = [];
+    const countingPort = new Proxy(gw.port, {
+      get(target, prop, receiver) {
+        const value: unknown = Reflect.get(target, prop, receiver);
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          gatewayCalls.push(String(prop));
+          return (value as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: countingPort,
+        membersBridge: makeMembersBridge({ recipients: [recipient('m-r1', 'one@example.com')], primaryContact: 'sender@example.com' }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
+        brandChrome: NO_BRAND_CHROME,
+      },
+      baseInput,
+    );
+    // Its own kind (review round 1, code-review #3): the cron route counts it
+    // under `import_row_skipped` at info — not a failure, no email, and not a
+    // `concurrent_skip` warn.
+    expect(result).toEqual({ ok: false, error: { kind: 'import_row_skipped' } });
+    expect(gatewayCalls).toEqual([]);
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(infoSpy).toHaveBeenCalledWith(
+      { tenantId: 'test-tenant', broadcastId },
+      'broadcasts.dispatch.import_row_skipped',
+    );
+    infoSpy.mockRestore();
+  });
+});
