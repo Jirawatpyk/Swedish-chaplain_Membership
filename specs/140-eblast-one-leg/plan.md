@@ -1091,6 +1091,37 @@ Run because `route.ts` changed after `147bf6150` (the span attribute `757d7d01f`
 - **Three `build-audience-tick-failure-paths` cases changed their expected answer, not their property:** a lost restart CAS on the hold (claim, final release) and on the self-heal answered `held` / `unknown_or_already_processed`. Under the lease every restart write carries the token and a status change clears it, so a lost CAS is a lost lease: they now expect `lease_lost`. Their no-delete, not-counted and logged assertions are unchanged.
 - **`audience_leaked` has no automatic backstop while the row exists:** `reclaim-orphan-audiences` deletes only audiences whose broadcast row is gone, and `cleanup-orphaned-audiences` only the id a terminal row holds. The ERROR line with the id is the operator's only record (observability § 22.15, runbook § C).
 
+### Slice 2b — review round 3 (targeted; `/code-review high d4ab7b62d..4d31f68e3`, reliability MERGEABLE, spec-compliance PARTIAL; 1 Nov 2026)
+
+**Review metrics:** round 3 (targeted) · 9 + 2 + 4 items (code-review, reliability, spec-compliance) · cap: 2 full + 1 of ≤ 2 targeted used.
+
+**Plan rows added before the fixes (D-043).**
+
+| Mechanism (asked by) | State / rule | Test that goes red first |
+|---|---|---|
+| **The just-created audience is reclaimed on any failed attach, with a read-back** (code-review #1) | When `attachAudienceId` fails after `createAudience`: on `lease_lost` delete at once (round 2). On any other failure, read the row back in a new tx. If it holds this audience id, the write committed and the audience is kept. Otherwise delete it. A read-back that itself fails keeps the audience and logs `audience_leaked` at ERROR. This is the `_persist-minted-broadcast-id.ts` pattern | tick unit · "a DB fault at attachAudienceId whose read-back shows no id deletes the audience"; · "… whose read-back shows the id keeps it" |
+| **A re-time refused for a live lease is its own answer** (code-review #2, #3) | The repo refusal throws `BroadcastConcurrentMutationError` with `observedStatus: 'lease_held'`, distinct from status drift. confirm-schedule maps it to a new kind `dispatch_in_progress` (409), not `sending_started`. Staff see: "This E-Blast is being prepared for sending right now. Try again in a few minutes." (EN/TH/SV). Status drift keeps its existing mapping | repo · "a refused re-time reports observedStatus lease_held"; confirm-schedule unit · "lease_held maps to dispatch_in_progress"; schedule route contract · 409 + code |
+
+**Closures:**
+
+| # | Finding | Closure |
+|---|---|---|
+| CR#1 | an audience is left on no row after a non-lease attach failure | **Fix:** row 1 above |
+| CR#2, CR#3 | a lease-held refusal is reported as `sending_started`, and cannot be told from drift | **Fix:** row 2 above (copy reviewed by i18n and enterprise-ux in round 4) |
+| CR#4 / rel NIT | the hold arm records the hold and resets the retry clock before a restart that then loses the lease | **Fix:** `recordDispatchHold` and the clock reset run only after the restart succeeds |
+| CR#5 | every `'lost'` from `restartAudienceBuild` is labelled `lease_lost`, including a status or id CAS miss | **Fix:** the restart returns `lease_lost` for a lease check and `cas_lost` for a CAS miss; `cas_lost` keeps the old `unknown_or_already_processed` label |
+| CR#6 | a stale orphan docblock above `CHECK_LOCK_TIMEOUT_MS` | **Fix** |
+| CR#7 | `TickBudget.maxDurationMs` is a dead field | **Fix:** removed from `TickBudget` and the route; the cutoff is `ROW_START_CUTOFF_MS` |
+| CR#8 | `processed++` then `processed--` | **Fix:** the increment moves below the deferral check |
+| CR#9 | a token with a NULL expiry could block a re-time for ever | **Accepted:** impossible. The CHECK `broadcasts_dispatch_lease_pair` (0322) makes the two columns both-or-neither |
+| rel LOW-A | the release's lock wait is outside the budget, and the claim's wait is not bounded by `lock_timeout` | **Accepted (Low), documented:** the `_dispatch-lease.ts` docblock says the release is outside W_max on purpose. A kill mid-release only delays the row one tick (the lease expires at TTL); safety rests on TTL > `maxDuration`. The claim's wait stays the ASSUMED k term |
+| rel LOW-B | the benign `approved` arm after `/send` has no remaining cause | **Fix:** it logs at WARN (`lease_lost_after_send`, `rowStatus: approved`, "unexpected: no live holder can be taken over"); the counter is unchanged |
+| spec F2 | the completion-stamp unit cases name statuses the stamp cannot reach | **Fix (docs/test):** the comment says the reachable status is `failed_to_dispatch` (after `reconcile-stuck-sending`, more than 24 h); the `approved` case is relabelled a dead-arm pin; "completion stamp" is removed from row 30 |
+| spec M (Verify) | the maintainer's `/verify` (`b0783995a`) predates the release `lock_timeout` and the route loop change | **Fix:** a re-Verify on the final HEAD, handed to the maintainer after round 4 |
+| spec L2 | `plan.md` says TTL ≥ W_max + M = 169 s | **Fix (docs):** 179 s |
+| spec L3 | the test-plan row "plain applyTransition clears the lease · rows 20, 21" | **Fix (docs):** row 20 only; the re-time has its own row |
+| spec L4 | three failure-path expectation changes landed in a GREEN commit | **Accepted (Low):** the property has its own case in RED `c557ea125`; recorded in the round-2 build notes |
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
