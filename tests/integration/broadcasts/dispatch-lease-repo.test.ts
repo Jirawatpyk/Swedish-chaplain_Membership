@@ -405,15 +405,27 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
       expect(row.dispatchLeaseExpiresAt).toBeNull();
     });
 
-    it('row 21 — a same-status write (an approved → approved re-time) keeps the lease', async () => {
+    it('row 21 — a same-status write without scheduledFor keeps the lease', async () => {
       const lease = foreignLease(120_000);
       const id = await seed(tenantA, lease);
       await repoA().withTx((tx) =>
-        repoA().applyTransition(tx, tenantA.ctx.slug, id, 'approved', { scheduledFor: new Date(Date.now() + 3_600_000) }, 'approved', null),
+        repoA().applyTransition(tx, tenantA.ctx.slug, id, 'approved', { estimatedRecipientCount: 2 }, 'approved', null),
       );
       const row = await readRow(tenantA, id);
       expect(row.dispatchLeaseToken).toBe(lease.dispatchLeaseToken);
       expect(row.dispatchLeaseExpiresAt).toEqual(lease.dispatchLeaseExpiresAt);
+    });
+
+    // Review round 1 (CR#3) — a re-time replaces the time the holder was
+    // working to; the holder must stop, as on a status change.
+    it('a same-status re-time (new scheduledFor) clears the lease', async () => {
+      const id = await seed(tenantA, foreignLease(120_000));
+      await repoA().withTx((tx) =>
+        repoA().applyTransition(tx, tenantA.ctx.slug, id, 'approved', { scheduledFor: new Date(Date.now() + 3_600_000) }, 'approved', null),
+      );
+      const row = await readRow(tenantA, id);
+      expect(row.dispatchLeaseToken).toBeNull();
+      expect(row.dispatchLeaseExpiresAt).toBeNull();
     });
   });
 
