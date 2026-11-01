@@ -189,6 +189,8 @@ interface RepoOpts {
    * concurrent cancel won), as the repo throws it.
    */
   readonly failedToDispatchLosesCas?: boolean;
+  /** Spec 140 s2b (cell 23) — an import tick holds a live dispatch lease on the row. */
+  readonly liveLease?: boolean;
 }
 
 function makeRepo(opts: RepoOpts): {
@@ -378,7 +380,7 @@ function makeRepo(opts: RepoOpts): {
     async claimDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
     async checkDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
     async releaseDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
-    async hasLiveDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    async hasLiveDispatchLease() { return opts.liveLease === true; },
     async existingBroadcastIds() { throw new Error('not used in dispatch-scheduled-broadcast fixture'); },
     },
   };
@@ -5942,5 +5944,88 @@ describe('spec 140 s2a DL7 — the legacy leg skips a row that holds import colu
       'broadcasts.dispatch.import_row_skipped',
     );
     infoSpy.mockRestore();
+  });
+});
+
+// Spec 140 s2b — the legacy leg and the dispatch lease. Cell 23 (premise P3):
+// a tick-1 row an import tick is working holds a live lease and a
+// `resend_audience_id` but no import yet, so the DL7 import-column skip misses
+// it and the legacy leg would reuse its audience; it is skipped under the row
+// lock too. DL9: the row-start cutoff holds on this leg as well.
+describe('spec 140 s2b — the legacy leg under the dispatch lease (cell 23, DL9)', () => {
+  const legacyDeps = (repo: ReturnType<typeof makeRepo>, gatewayPort: BroadcastsGatewayPort, audit: ReturnType<typeof makeAudit>, tickStartedAt: number) => ({
+    tenant,
+    broadcastsRepo: repo.port,
+    audienceMode: 'primary_only' as const,
+    audienceCeiling: 5000,
+    broadcastsGateway: gatewayPort,
+    membersBridge: makeMembersBridge({ recipients: [recipient('m-r1', 'one@example.com')], primaryContact: 'sender@example.com' }),
+    marketingUnsubscribes: makeMarketingUnsubscribes(),
+    eventAttendees: makeEventAttendees(),
+    audit: audit.port,
+    clock,
+    tickBudget: { tickStartedAt, maxDurationMs: 300_000 },
+    fromEmail: 'noreply@test.invalid-but-test-only',
+    tenantDisplayName: 'Test Chamber',
+    locale: 'en' as const,
+    plansBridge: makePlansBridge(),
+    emailTransactional: makeEmailTransactional().port,
+    sendStanding: OK_STANDING,
+    brandChrome: NO_BRAND_CHROME,
+  });
+  const counting = (port: BroadcastsGatewayPort, calls: string[]) =>
+    new Proxy(port, {
+      get(target, prop, receiver) {
+        const value: unknown = Reflect.get(target, prop, receiver);
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          calls.push(String(prop));
+          return (value as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+
+  it('cell 23 — legacy skips a live lease: lease_held, no Resend call, no write', async () => {
+    const infoSpy = vi.spyOn(logger, 'info');
+    const audit = makeAudit();
+    const row: Broadcast = { ...makeBroadcast('approved'), resendAudienceId: 'aud_from_import_tick_1' };
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: row, liveLease: true });
+    const calls: string[] = [];
+    const result = await dispatchScheduledBroadcast(
+      legacyDeps(repo, counting(makeGateway().port, calls), audit, FROZEN_NOW.getTime()) as never,
+      baseInput,
+    );
+    expect(result).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_held' } });
+    expect(calls).toEqual([]);
+    expect(repo.transitions).toEqual([]);
+    expect(repo.attachAudienceCalls).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(infoSpy).toHaveBeenCalledWith({ tenantId: 'test-tenant', broadcastId }, 'broadcasts.dispatch.lease_held');
+    infoSpy.mockRestore();
+  });
+
+  it('cell 24 — no live lease (none or expired): the legacy leg works the row as before', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved'), liveLease: false });
+    const calls: string[] = [];
+    const result = await dispatchScheduledBroadcast(
+      legacyDeps(repo, counting(makeGateway().port, calls), audit, FROZEN_NOW.getTime()) as never,
+      baseInput,
+    );
+    expect(result.ok ? result.value.kind : result.error).toBe('sent');
+    expect(calls).toContain('sendBroadcast');
+  });
+
+  it('DL9 — no row starts after the cutoff on the legacy leg: nothing locked, nothing called', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved') });
+    const calls: string[] = [];
+    const result = await dispatchScheduledBroadcast(
+      legacyDeps(repo, counting(makeGateway().port, calls), audit, FROZEN_NOW.getTime() - 131_001) as never,
+      baseInput,
+    );
+    expect(result).toEqual({ ok: true, value: { kind: 'deferred_past_cutoff' } });
+    expect(repo.lockCalls).toBe(0);
+    expect(calls).toEqual([]);
   });
 });
