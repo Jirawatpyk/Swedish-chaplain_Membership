@@ -762,16 +762,16 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     expect(scanSql).toContain(LEASE_EXCLUSION);
   });
 
-  it('DL9 — both legs receive the tick budget: the route entry instant and maxDuration (300 s)', async () => {
+  // Review round 1 (CR#5) — the cutoff is the import leg's only: the legacy
+  // leg's per-contact push is not in W_max, so a cutoff there bounded nothing.
+  it('DL9 — the import leg receives the tick budget (the route entry instant, maxDuration 300 s); the legacy leg none', async () => {
     captureScan([{ broadcast_id: BROADCAST_ID }]);
-    dispatchScheduledBroadcastMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
+    dispatchScheduledBroadcastMock.mockResolvedValue({ ok: true, value: { kind: 'sent' } });
     const before = Date.now();
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    const [legacyDeps] = dispatchScheduledBroadcastMock.mock.calls[0] as [{ tickBudget?: { tickStartedAt: number; maxDurationMs: number } }];
-    expect(legacyDeps.tickBudget?.maxDurationMs).toBe(300_000);
-    expect(legacyDeps.tickBudget?.tickStartedAt).toBeGreaterThanOrEqual(before);
-    expect(legacyDeps.tickBudget?.tickStartedAt).toBeLessThanOrEqual(Date.now());
+    const [legacyDeps] = dispatchScheduledBroadcastMock.mock.calls[0] as [{ tickBudget?: unknown }];
+    expect(legacyDeps.tickBudget).toBeUndefined();
 
     isF7ImportAudienceEnabledMock.mockReturnValue(true);
     buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
@@ -781,13 +781,9 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     expect(importDeps.tickBudget?.tickStartedAt).toBeGreaterThanOrEqual(before);
   });
 
-  it.each([
-    ['legacy', false],
-    ['import', true],
-  ] as const)('DL9 — a row deferred past the cutoff on the %s leg is counted deferred_past_cutoff, nothing else', async (_leg, flag) => {
-    isF7ImportAudienceEnabledMock.mockReturnValue(flag);
+  it('DL9 — a row deferred past the cutoff on the import leg is counted deferred_past_cutoff, nothing else', async () => {
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
     captureScan([{ broadcast_id: BROADCAST_ID }]);
-    dispatchScheduledBroadcastMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
     buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
@@ -796,6 +792,19 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     expect(body['succeeded']).toBe(0);
     expect(body['import_pending']).toBe(0);
     expect(body['unknown_error']).toBe(0);
+  });
+
+  // Review round 1 (CR#7) — past the cutoff no later row can start either, so
+  // the route stops at the first deferral and counts every row it left.
+  it('DL9 — the route stops scanning rows after the first deferred_past_cutoff and counts the rest deferred', async () => {
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    captureScan([{ broadcast_id: BROADCAST_ID }, { broadcast_id: 'row-2' }, { broadcast_id: 'row-3' }]);
+    buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, number>;
+    expect(buildAudienceTickMock).toHaveBeenCalledTimes(1);
+    expect(body['deferred_past_cutoff']).toBe(3);
   });
 
   // Review round 1 (CR#4) — a lease that expired on its own holder is a budget
