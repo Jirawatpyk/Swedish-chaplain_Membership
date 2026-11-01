@@ -14,9 +14,12 @@ export async function generateMetadata(): Promise<Metadata> {
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
-import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
-import { runListEvents, runResolveRegistrationEventId } from '@/lib/events-admin-deps';
+import {
+  runListEventNamesByIds,
+  runListEvents,
+  runResolveRegistrationEventId,
+} from '@/lib/events-admin-deps';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { buttonClass } from '@jirawatpyk/aura-react/server';
@@ -29,6 +32,7 @@ import { type MemberOption, type PlanOption } from '../_components/invoice-form'
 import { InvoiceCreateSwitcher } from './_components/invoice-create-switcher';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing';
 import type { EventOption } from './_components/event-fee-form';
+import { toEventOption, withDeepLinkedEvent } from './_lib/event-options';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 
 const UUID_RE =
@@ -145,12 +149,11 @@ export default async function NewInvoiceDraftPage({
       );
     }
     if (eventsResult.ok) {
-      events = eventsResult.value.items.map((e) => ({
-        eventId: e.eventId,
-        // CE start date (Asia/Bangkok) — BE is display-only, applied at the
-        // user-facing renderer, not here. Matches the line-description date.
-        label: `${e.name} (${bangkokLocalDate(e.startDate)})`,
-      }));
+      // CE start date (Asia/Bangkok) — BE is display-only, applied at the
+      // user-facing renderer, not here. Matches the line-description date.
+      events = eventsResult.value.items.map((e) =>
+        toEventOption({ eventId: e.eventId, name: e.name, startDateIso: e.startDate }),
+      );
     } else {
       logger.warn(
         { event: 'invoice_new_events_load_failed', tenantId: tenantCtx.slug },
@@ -167,6 +170,34 @@ export default async function NewInvoiceDraftPage({
           tenantCtx.slug,
           initialRegistrationId,
         )) ?? undefined;
+    }
+
+    // #54 — the form preselects the deep-linked event only when it is among
+    // the options, and the list holds only the newest 200. Add an older one
+    // (one tenant-scoped read; a miss or a failed read leaves the list as is).
+    // Marked with a second line saying why it is there (and archived, when it
+    // is). A throw degrades like the list read above: never the whole page.
+    if (initialEventId && !events.some((e) => e.eventId === initialEventId)) {
+      try {
+        const found = (await runListEventNamesByIds(tenantCtx.slug, [initialEventId])).get(
+          initialEventId,
+        );
+        if (found) {
+          const tPicker = await getTranslations('admin.invoices.eventFeeForm.eventPicker');
+          events = withDeepLinkedEvent(
+            events,
+            toEventOption(
+              { eventId: initialEventId, name: found.name, startDateIso: found.startDateIso },
+              tPicker(found.archived ? 'fromLinkArchived' : 'fromLink'),
+            ),
+          );
+        }
+      } catch (err) {
+        logger.warn(
+          { event: 'invoice_new_deep_link_event_load_failed', tenantId: tenantCtx.slug, err },
+          '[F4] /admin/invoices/new — deep-linked event read failed; Event tab opens without it',
+        );
+      }
     }
   }
 

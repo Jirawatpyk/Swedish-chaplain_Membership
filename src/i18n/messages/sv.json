@@ -3097,7 +3097,9 @@
           "placeholder": "Välj ett evenemang…",
           "search": "Sök evenemang…",
           "empty": "Inga evenemang matchar.",
-          "noEvents": "Inga evenemang tillgängliga"
+          "noEvents": "Inga evenemang tillgängliga",
+          "fromLink": "Från din länk (finns inte i listan över senaste)",
+          "fromLinkArchived": "Från din länk (arkiverat evenemang)"
         },
         "attendeePicker": {
           "label": "Deltagare",

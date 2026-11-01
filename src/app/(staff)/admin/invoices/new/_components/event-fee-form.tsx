@@ -99,6 +99,12 @@ export type EventOption = {
   readonly eventId: string;
   /** Display label — event name + CE start date (YYYY-MM-DD). */
   readonly label: string;
+  /**
+   * #54 — a second line under the label. Set only on the deep-linked event the
+   * page adds when it is not among the newest 200, so the admin sees why it is
+   * there (and that it is archived, when it is).
+   */
+  readonly description?: string;
 };
 
 const MAX_THB = 1_000_000;
@@ -507,7 +513,12 @@ export function EventFeeForm({
   }, []);
 
   const eventOptions: ComboboxOption[] = useMemo(
-    () => events.map((e) => ({ value: e.eventId, label: e.label })),
+    () =>
+      events.map((e) => ({
+        value: e.eventId,
+        label: e.label,
+        ...(e.description ? { description: e.description } : {}),
+      })),
     [events],
   );
 
@@ -931,6 +942,11 @@ export function EventFeeForm({
           id="eventId"
           label={t('eventPicker.label')}
           options={eventOptions}
+          // #54 — AURA lists at most `limit` (default 200) options. The page
+          // loads 200 and may append the deep-linked event as the 201st, so
+          // list them all or that selected option is missing from the list.
+          limit={Math.max(200, eventOptions.length)}
+          touchHeight
           value={eventId || null}
           onChange={(v) => handleEventChange(v ?? '')}
           placeholder={noEvents ? t('eventPicker.noEvents') : t('eventPicker.placeholder')}
