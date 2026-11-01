@@ -1009,8 +1009,9 @@ function rowIds(broadcast: Broadcast): RowIds {
  * (and refuses an unreadable status), so any broadcast id on the row is one
  * the probe said this tick was `draft` / `cancelled` / gone.
  *
- * **The row is the mutex** (2026-10-29). The dispatch cron holds no lease past
- * its scan, so a sibling tick may be sending from this row right now, and
+ * **The row is the mutex** (2026-10-29). Since spec 140 s2b this tick holds
+ * the row's dispatch lease and checks it before each delete below, but a
+ * holder whose lease expired mid-run may still be sending from this row, and
  * DELETE of an audience whose broadcast is `queued` turns that broadcast
  * `failed` with no mail while our row goes `sending` (measured 2026-10-29). The
  * import leg's send is fenced on `audience_import_id` (`attachBroadcastId`), so:

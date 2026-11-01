@@ -1592,6 +1592,39 @@ With the import flag OFF the dispatch cron's due scan leaves out rows holding
 | `cron.broadcasts.dispatch.import_row_skipped` | info | `tenantId`, `broadcastId` | The route's line for the same outcome, counted in the response summary's `import_row_skipped` (never `concurrent_skip`, never `unknown_error`). Expected only when a row gained import columns between the scan and the lock; a row that waits with the flag OFF is visible through `broadcasts.approved_overdue_count` (runbook `broadcast-audience-build.md` § C step 1). |
 | `erase-member: subprocessor Resend propagate deadline reached` | warn | `memberId`, `requestId`, `untriedPairs`, `cascade` | The erasure cascade deadline left less than one 10 s request budget; the remaining (audience, email) pairs were not tried and count in `resend_contacts_failed_count` (RoPA 8a). |
 
+### 22.15 Spec 140 s2b — the dispatch lease
+
+The import leg's dispatch tick claims a per-row lease (migration 0322:
+`broadcasts.dispatch_lease_token` + `dispatch_lease_expires_at`, CHECK
+`broadcasts_dispatch_lease_pair`) in its step-1 lock tx for `LEASE_TTL_MS`
+(330 s, `_dispatch-lease.ts`), re-checks it before every irreversible Resend
+call with `CALL_HEADROOM_MS` (`RESEND_CALL_TIMEOUT_MS` + `LEASE_MARGIN_MS` =
+25 s) of lease left — `IMPORT_HEADROOM_MS` (`IMPORT_CALL_TIMEOUT_MS` +
+`LEASE_MARGIN_MS` = 45 s) before the import POST — carries the token in every
+row write, and releases it at the end of the tick. Any non-holder status change
+(staff cancel, withdraw, a new version, the erasure cancel) clears the lease.
+The due scan leaves out a row with a live lease on every flag state, and no
+row starts after `ROW_START_CUTOFF_MS` (131 s) into the invocation, on either
+leg (DL9). A dead holder's row is picked up again once its lease expires:
+the next tick (+300 s) skips it, the one after (+600 s) takes it over.
+
+No new metric. `broadcasts_dispatch_resolve_failed_total` gains the label
+`phase="lease"` (a pre-call check could not be read; no Resend call was made).
+The cron response summary — and the route span, as `cron.deferred_past_cutoff`
+— gains `deferred_past_cutoff`; the lease skips land in `concurrent_skip`.
+
+| Log line | Level | Fields | Meaning |
+|---|---|---|---|
+| `broadcasts.audience_import.lease_claimed` | info | `tenantId`, `broadcastId` | The tick claimed the row's lease in its step-1 lock tx. |
+| `broadcasts.audience_import.lease_held` | info | `tenantId`, `broadcastId` | Another tick holds a live lease on the row: no Resend call, no write; the cron counts a `concurrent_skip` (state-table row 3). |
+| `broadcasts.dispatch.lease_held` | info | `tenantId`, `broadcastId` | The legacy leg met a row holding a live lease (an import tick at work) and left it alone under its row lock (cell 23). |
+| `broadcasts.audience_import.lease_lost` | info | `tenantId`, `broadcastId`, `step` | The row no longer carries this tick's token — taken over after expiry, or a non-holder exit cleared it. `step` names the call that was NOT made (`createAudience`, `createContactImport`, `createBroadcast`, `sendBroadcast`, `delete_broadcast`, `delete_audience`, `deleteBroadcastOnce`) or `terminal_write` (the tick wrote no `failed_to_dispatch` and emailed nobody). A concurrent skip. |
+| `broadcasts.audience_import.lease_expiring` | info | `tenantId`, `broadcastId`, `step`, `headroomMs` | The lease is still this tick's but ends inside `headroomMs` (`CALL_HEADROOM_MS`, or `IMPORT_HEADROOM_MS` before the import POST): no call is made, the lease is released, the next tick resumes. |
+| `broadcasts.audience_import.lease_check_failed` | warn | `tenantId`, `broadcastId`, `step`, `err` | A pre-call check could not be read (a DB fault): no call is made; `dispatch.server_error` with `phase: 'lease'` (retryable). |
+| `broadcasts.audience_import.lease_lost_after_send` | info | `tenantId`, `broadcastId`, `resendBroadcastId`, `importId`, `step` | The lease was lost AFTER `/send` (`step` = `attach_ids`, `sending_transition` or `completion_stamp`). The mail is out and correct; the next holder's probe finds it handed and catches the row up. Not the critical `sent_but_transition_lost` (A4). |
+| `broadcasts.audience_import.lease_released` | info | `tenantId`, `broadcastId`, `released` | The end-of-tick release; `released: false` (0 rows) is not an error — a non-holder exit or a takeover already cleared it. |
+| `broadcasts.audience_import.lease_release_failed` | warn | `tenantId`, `broadcastId`, `err` | The release write failed; the lease then expires `LEASE_TTL_MS` after the claim (about two ticks). |
+
 ---
 
 ## 23. F8 Renewal Tracking + Smart Reminders — observability

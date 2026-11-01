@@ -78,7 +78,10 @@ export const LEASE_LOST = 'lease_lost' as const;
  * One adapter-owned write is deliberately OFF this tuple: the adapter resets
  * `dispatchFirstFailedAt` (F119 PR-E, 0311) to NULL on a status change or a
  * re-time by itself. No caller sets it; only `markDispatchRetryStarted` stamps it
- * and only `clearDispatchRetryClock` resets it outside a transition.
+ * and only `clearDispatchRetryClock` resets it outside a transition. Spec 140
+ * s2b adds two more adapter-owned columns off this tuple: a status change with
+ * `lease: null` NULLs `dispatchLeaseToken` + `dispatchLeaseExpiresAt` (only
+ * the lease methods otherwise write them).
  */
 export const TRANSITION_FIELDS = [
   'submittedAt',
@@ -635,10 +638,12 @@ export interface BroadcastsRepo {
    * finds it handed and catches the row up; erasure and `cleanup-audiences`
    * find the audience through its column until it is gone.
    *
-   * **The row is the mutex** (2026-10-29). The dispatch cron holds no lease
-   * past its scan (`FOR UPDATE SKIP LOCKED` ends with the scan tx and
-   * `maxDuration` equals the cadence), so a sibling tick can be sending into
-   * this audience — and DELETE of an audience whose broadcast is `queued`
+   * **The row is the mutex** (2026-10-29). Until spec 140 s2b the dispatch
+   * cron held no lease past its scan (`FOR UPDATE SKIP LOCKED` ends with the
+   * scan tx and `maxDuration` equals the cadence); since then one import tick
+   * holds the row's dispatch lease, but a holder whose lease expired mid-run
+   * can still be sending into this audience — and DELETE of an audience whose
+   * broadcast is `queued`
    * makes that broadcast `failed` with no mail (measured 2026-10-29). The
    * import leg's pre-send `attachBroadcastId` is fenced on
    * `audience_import_id`, so this claim and that attach exclude each other on

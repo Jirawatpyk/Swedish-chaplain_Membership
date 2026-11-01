@@ -237,7 +237,9 @@ handed over and cancel / re-time answer `sending_started` — wait one tick (5 m
   min) stays on for the whole hold. `broadcasts_dispatch_standing_held_total` climbing for the
   same tenant means "waiting for payment", not "stuck".
 - **Import leg only** (`FEATURE_F7_IMPORT_AUDIENCE` on): a hold **abandons the audience build**,
-  in an order that makes the row the mutex (2026-10-29 — the dispatch cron holds no lease, and
+  in an order that makes the row the mutex (2026-10-29 — the dispatch cron then held no lease; since
+  spec 140 s2b one import tick holds the row's dispatch lease, but a holder whose lease expired can
+  still be mid-send, and
   deleting the audience of a `queued` broadcast turns it `failed` with no mail): it first CLAIMS
   the row (a compare-and-set that NULLs only `audience_import_id` and its submit stamp — the
   column a sending tick's pre-send write is fenced on), and only a won claim goes on to delete a
