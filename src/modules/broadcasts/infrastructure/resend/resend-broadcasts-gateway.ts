@@ -1357,8 +1357,9 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = createResendBroadc
  * the legacy dispatch leg's gateway: its `createBroadcast` retries a 5xx or a
  * network failure inside the 10 s budget, as before s2a, so one 5xx does not
  * end the tick and re-push every contact. Wired ONLY by
- * `makeDispatchScheduledBroadcastDeps`. A retried 5xx that did mint leaves a
- * draft at Resend (RoPA 8d). DELETED with the legacy leg in slice 4.
+ * `makeDispatchScheduledBroadcastDeps`. Each failed attempt (5xx or network
+ * failure) that did mint leaves a draft whose id we never received, up to 3 per
+ * call (RoPA 8d). DELETED with the legacy leg in slice 4.
  */
 export const legacyResendBroadcastsGateway: BroadcastsGatewayPort = createResendBroadcastsGateway({
   createBroadcastRetry: 'retryable',
