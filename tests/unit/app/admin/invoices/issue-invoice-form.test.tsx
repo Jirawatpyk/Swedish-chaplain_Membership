@@ -634,7 +634,8 @@ describe('IssueInvoiceForm — the connection drops (#48)', () => {
       fireEvent.click(confirm);
 
       const alert = await screen.findByTestId('issue-invoice-error');
-      expect(alert).toHaveClass('aura-alert--warning');
+      // The wrapper is the focused live region; the AURA alert inside draws it.
+      expect(alert.querySelector('.aura-alert--warning')).not.toBeNull();
       expect(alert).toHaveTextContent(
         enMessages.admin.invoices.issue.errors.unconfirmed,
       );

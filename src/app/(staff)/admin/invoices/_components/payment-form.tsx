@@ -90,7 +90,11 @@ export function PaymentForm({
   // the admin cannot miss that the mint did not complete. A concurrent 409 is
   // shown as an inline "already paid — refresh", not a red error.
   const [formError, setFormError] = useState<
-    { readonly kind: 'concurrent' } | { readonly kind: 'failure'; readonly message: string } | null
+    | { readonly kind: 'concurrent' }
+    // #48 — the connection dropped: the payment may have been recorded.
+    | { readonly kind: 'unconfirmed' }
+    | { readonly kind: 'failure'; readonly message: string }
+    | null
   >(null);
   const errorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -129,16 +133,25 @@ export function PaymentForm({
       // Held after a success: the dialog closes and this form unmounts.
       let recorded = false;
       try {
-        const res = await fetch(`/api/invoices/${invoiceId}/pay`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            paymentMethod,
-            paymentReference: paymentReference.trim() || undefined,
-            paymentNotes: paymentNotes.trim() || undefined,
-            paymentDate,
-          }),
-        });
+        let res: Response;
+        try {
+          res = await fetch(`/api/invoices/${invoiceId}/pay`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paymentMethod,
+              paymentReference: paymentReference.trim() || undefined,
+              paymentNotes: paymentNotes.trim() || undefined,
+              paymentDate,
+            }),
+          });
+        } catch {
+          // #48 — no response: the payment (and its RC receipt) may have
+          // committed. A retry is safe (the server answers invalid_status),
+          // but check first.
+          setFormError({ kind: 'unconfirmed' });
+          return;
+        }
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           const code = (body as { error?: { code?: string } })?.error?.code;
@@ -226,19 +239,23 @@ export function PaymentForm({
           ref={errorRef}
           tabIndex={-1}
           // A stale-write 409 is not the admin's error → info, not danger.
-          tone={formError.kind === 'failure' ? 'danger' : 'info'}
+          tone={formError.kind === 'failure' ? 'danger' : formError.kind === 'unconfirmed' ? 'warning' : 'info'}
           role="alert"
           className="outline-none"
           data-testid="record-payment-error"
           action={
-            formError.kind === 'concurrent' ? (
+            formError.kind !== 'failure' ? (
               <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => router.refresh()}>
                 {t('errors.refreshAction')}
               </Button>
             ) : undefined
           }
         >
-          {formError.kind === 'concurrent' ? t('errors.concurrent') : formError.message}
+          {formError.kind === 'concurrent'
+            ? t('errors.concurrent')
+            : formError.kind === 'unconfirmed'
+              ? t('errors.unconfirmed')
+              : formError.message}
         </Alert>
       )}
       <Select

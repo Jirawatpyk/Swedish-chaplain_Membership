@@ -129,6 +129,8 @@ export function IssueInvoiceForm({
   const [formError, setFormError] = useState<
     | { readonly kind: 'concurrent' }
     | { readonly kind: 'stale' }
+    // #48 — the connection dropped: the issue may have committed.
+    | { readonly kind: 'unconfirmed' }
     | { readonly kind: 'failure'; readonly message: string }
     | null
   >(null);
@@ -267,16 +269,24 @@ export function IssueInvoiceForm({
       // Held after a success: the dialog closes and this form unmounts.
       let issued = false;
       try {
-        const res = await fetch(
-          `/api/invoices/${invoiceId}/issue`,
-          body
-            ? {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify(body),
-              }
-            : { method: 'POST' },
-        );
+        let res: Response;
+        try {
+          res = await fetch(
+            `/api/invoices/${invoiceId}/issue`,
+            body
+              ? {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify(body),
+                }
+              : { method: 'POST' },
+          );
+        } catch {
+          // #48 — no response: the issue may have committed. A retry is safe
+          // (the server answers invoice_already_issued), but check first.
+          setFormError({ kind: 'unconfirmed' });
+          return;
+        }
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
           const code = (errBody as { error?: { code?: string } })?.error?.code;
@@ -598,13 +608,15 @@ export function IssueInvoiceForm({
           ref={errorRef}
           tabIndex={-1}
           role="alert"
-          data-tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
+          data-tone={
+            formError.kind === 'failure' ? 'destructive' : formError.kind === 'unconfirmed' ? 'warning' : 'neutral'
+          }
           className="outline-none"
           data-testid="issue-invoice-error"
         >
           <Alert
             role="none"
-            tone={formError.kind === 'failure' ? 'danger' : 'info'}
+            tone={formError.kind === 'failure' ? 'danger' : formError.kind === 'unconfirmed' ? 'warning' : 'info'}
             action={
               formError.kind !== 'failure' ? (
                 <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => router.refresh()}>
@@ -617,7 +629,9 @@ export function IssueInvoiceForm({
               ? t('errors.concurrent')
               : formError.kind === 'stale'
                 ? t('errors.issue_total_changed')
-                : formError.message}
+                : formError.kind === 'unconfirmed'
+                  ? t('errors.unconfirmed')
+                  : formError.message}
           </Alert>
         </div>
       )}
