@@ -680,6 +680,31 @@ The branch ran on :3400 with the import flag OFF, against dev Neon, tenant `swec
 
 Finding for review: the route logs a DL7 skip at **WARN**, as `cron.broadcasts.dispatch.concurrent_skip`, after the INFO `import_row_skipped`.
 
+### Slice 2a — review round 1 (`/code-review high 719`, security APPROVE, reliability MERGEABLE, pdpa APPROVE WITH CONDITIONS; 1 Nov 2026)
+
+**Review metrics:** round 1 · 6 + 3 + 3 + 2 items (code-review, security, reliability, pdpa) · cap: ≥ 2 full + ≤ 2 targeted.
+
+**Plan rows added before the fixes (D-043).** Two of the fixes are new mechanisms:
+
+| Mechanism (asked by) | State / rule | Test that goes red first |
+|---|---|---|
+| `propagate` takes the caller's `deadlineAt` (pdpa H-1, reliability L2) | Before each pair: if the time left is under C, stop. Each pair not attempted counts as `failed`, so the `subprocessor_erasure_propagated` row is always written before `maxDuration` and is never a false `ok` | adapter unit · "propagate stops at the deadline and counts the untried pairs as failed"; `erase-member` unit · "propagate receives the cascade deadline" |
+| The flag-OFF scan excludes import rows; the DL7 skip has its own outcome (code-review #3, reliability M1) | With the import flag OFF, the due scan adds `audience_import_id IS NULL AND audience_import_submitted_at IS NULL`. The use-case check stays as a backstop. A backstop skip returns a distinct kind, `import_row_skipped`: the route counts it under its own key and logs it at INFO, not as `concurrent_skip` WARN | `cron-dispatch-scheduled.contract` · "flag OFF: the scan excludes import rows" + "a backstop import-row skip is counted as import_row_skipped at info" |
+
+**Closures:**
+
+| # | Finding | Closure |
+|---|---|---|
+| CR#1 | `retry:false` on creates also stops the retry on a 429, which created nothing | **Fix:** creates still retry on a 429 (`subKind: 'api'`) inside the budget; 5xx, network and timeout make one attempt. Test: "a create retries a 429 but not a 5xx or a timeout" |
+| CR#2 + security M | A loop of port calls (`addContactsToAudience` per contact, `listAudiences` per page) runs N × C, not C | **Docs fix:** DL8 and the docblocks say "per request". **Carried to s2b** (Medium; s2b names the cron time budget, D-043): a per-invocation budget for multi-request port calls |
+| CR#3 + reliability M1 | A DL7-skipped row strands silently and starves the scan | **Fix:** the plan row above |
+| pdpa H-1 + reliability L2 | `propagate`'s total time is not tied to the route deadline; a kill before the audit row leads to a false `ok` on re-drive | **Fix:** the plan row above |
+| CR#4 | P6 has about 100 ms of slack and can flake on CI | **Fix:** C = 3,000 ms with bounds relative to C |
+| CR#5 + pdpa L-1 | Stale `withRetry` / "safe to retry" / "six times" text | **Fix:** the text |
+| CR#6 | Two-layer factory | **Fix:** one factory |
+| reliability L1 | A create slower than 10 s can leave an orphan segment | **Accepted, with a mechanism already there:** `reclaim-orphan-audiences` (daily, `vercel.json:13`) reaps named `broadcast-<tenant>-<id>` segments; a 10 s create against a 0.48 s RTT is rare |
+| security L1–L3 | The `addContactsToAudience` POST retry; propagate pair count; tick-1 rows without import columns | L1 accepted (it mints nothing sendable); L2 is covered by the propagate deadline; L3 is closed by s2b cell 23 (lease) |
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
