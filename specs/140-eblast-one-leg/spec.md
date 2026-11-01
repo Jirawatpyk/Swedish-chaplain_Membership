@@ -1,7 +1,7 @@
 # 140 — E-Blast keeps one dispatch leg (Contacts-Import), behind a dispatch lease; erasure deletes the drafts it can reach
 
 **Size**: L (`docs/workflow.md` § Sizes). It has a migration (slice 2), touches erasure and PII (RoPA 8d), and spans broadcasts, members (the erasure cascade) and the dispatch cron, in four slices.
-**Status**: plan agreed by the maintainer on 31 Oct 2026. Slice 1 is in build.
+**Status**: plan agreed by the maintainer on 31 Oct 2026. Slice 1 merged (#713), slice 2a merged (#719), slice 2b in review (#723); slices 2c, 3 and 4 open.
 **Source**:
 - D-038: spec 140 owns import-leg tick concurrency.
 - The maintainer's decision of 30 Oct 2026 to keep only the import leg (to be recorded as D-042).
@@ -111,7 +111,7 @@ As the chamber, an E-Blast is built and sent by one cron invocation at a time. A
   - one import;
   - one broadcast;
   - one `/send`.
-- **DL2.** A holder whose lease expired mid-run makes no Resend call after the expiry and writes no column. Every CAS and every pre-call check refuses a stale token.
+- **DL2.** A holder whose lease was taken over makes no irreversible Resend call and writes no column after that. Every CAS and every pre-call check refuses a stale token (reads such as a status probe are not fenced).
 - **DL3.** The claim waits behind an erasure's row lock, then skips the cancelled row.
 - **DL4.** With two tenants holding the same broadcast uuid, claim and release each touch only their own row (run as `chamber_app`).
 - **DL5a** (slice 2a). On the default gateway (the import leg, erasure, cleanup), a `createBroadcast`, `createAudience` or `createContactImport` that hits a 5xx or a timeout makes exactly one request: it is not retried in-process. The exception (maintainer, 1 Nov 2026): the legacy leg's `createBroadcast` retries inside its 10 s budget until s4 deletes that leg.
@@ -119,7 +119,7 @@ As the chamber, an E-Blast is built and sent by one cron invocation at a time. A
 - **DL6** (slice 2c). A failed reclaim writes an orphan-id row, and the cleanup cron deletes it at Resend.
 - **DL7.** The legacy leg skips a row that holds import columns. (Slice 2a. In slice 2b it also skips a row holding a live lease: cell 23.)
 - **DL8.** Every broadcasts gateway request aborts at its timeout: one budget per request, its retries included. A port call that makes several requests (`addContactsToAudience` per contact, `listAudiences` per page) can therefore run N × the timeout. The per-invocation budget has three homes (D-043): the import leg's tick is bounded by DL9 (slice 2b); `addContactsToAudience` is legacy-only, a residual moved to slice 4, which deletes it; `listAudiences` is DT5 (slice 3).
-- **DL9** (slice 2b). No row starts after the cutoff `maxDuration − W_max − M`, on either leg. W_max is the larger of the two longest paths (tick 1 with the import POST at `IMPORT_CALL_TIMEOUT_MS`, tick 2 at N × `RESEND_CALL_TIMEOUT_MS`), computed from the exported constants, and the lease TTL exceeds `maxDuration`.
+- **DL9** (slice 2b). No import-leg row starts after the cutoff `maxDuration − W_max − M` (the legacy leg is not bounded by it: its contact push is not in W_max; review round 1). W_max is the larger of the two longest paths (tick 1 with the import POST at `IMPORT_CALL_TIMEOUT_MS`, tick 2 at N × `RESEND_CALL_TIMEOUT_MS`), computed from the exported constants, and the lease TTL exceeds `maxDuration`.
 
 ### US3 — The import leg reads Resend correctly (slice 3)
 

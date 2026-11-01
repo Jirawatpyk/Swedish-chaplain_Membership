@@ -87,7 +87,7 @@ Also: the new ceiling env, the Segments names, `docs/decisions.md` D-042, go-liv
 | 2a | Bounded Resend calls (one signal spans every attempt, C = 10 s); no in-process retry on creates; the legacy leg skips import rows; `propagate` bounded | DL5a, DL7, DL8, carry R3 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2` | #719 · done |
 | 2b | Lease + fencing token + pre-call check + row-start cutoff; migration 0322 (lease columns + trigger list); the live-lease legacy skip | DL1–DL4, DL9, cell 23, carry R4 | drizzle-migration, security, reliability, spec-compliance | `140-eblast-one-leg-s2b` | #723 · done |
 | 2c | Orphan-id table (migration 0323) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | — · open |
-| 3 | Error classes + import-leg table fixes | DT1–DT5 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
+| 3 | Error classes + import-leg table fixes; `listAudiences` per-invocation time budget | DT1–DT5 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
 | 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | — · open |
 
 ## Test plan
@@ -971,6 +971,58 @@ Run because `route.ts` changed after `147bf6150` (the span attribute `757d7d01f`
 | 6 | The span test compares attributes with a body built from the same `summary`, so it cannot catch an unbucketed outcome | **Accepted (Low, maintainer):** it pins that every bucket reaches the span, which was the R2-15 / CR#5 class; an outcome with no bucket is a separate class |
 | 7 | The `typeof === 'number'` filter is dead, and future numeric response fields would become `cron.*` attributes | **Accepted (Low, maintainer):** s2b, which adds the time-budget fields, owns the summary's shape |
 | 8 | The test file's header still gives the old timing | **Fixed** |
+
+### Slice 2b — review round 1 (`/code-review high 723`, drizzle-migration MERGEABLE, security APPROVE WITH FIXES, reliability MERGEABLE, spec-compliance PARTIAL; 1 Nov 2026)
+
+**Review metrics:** round 1 · 7 + 3 + 7 + 8 + 10 items (code-review, migration, security, reliability, spec-compliance) · cap: ≥ 2 full + ≤ 2 targeted.
+
+**Plan rows added before the fixes (D-043).** Five fixes are new mechanisms:
+
+| Mechanism (asked by) | State / rule | Test that goes red first |
+|---|---|---|
+| A lost lease after `/send` reads the row's real status (CR#1, security M1, reliability M1) | `BroadcastConcurrentMutationError` for `lease_lost` carries the probed `rowStatus`. After `/send`: `approved` or `sending` → INFO `lease_lost_after_send`; any other status → the critical `sent_but_transition_lost`. Both count `broadcasts_dispatch_lease_lost_after_send_total{step}` | tick unit · "a lease cleared by a cancel after /send still logs sent_but_transition_lost" (attach_ids and sending_transition) |
+| The completion stamp after `/send` is not token-fenced once the row is `sending` or `sent` (CR#2, reliability L1) | `markAudienceImportCompleted`: with a token, `AND (dispatch_lease_token = $t OR status IN ('sending','sent'))`. The mail is out, so the token guards nothing; a webhook's `sending → sent` cannot strand the stamp | repo · "a webhook sent-transition before the stamp still lets the stamp land"; tick unit · the completion-stamp A4 case (spec L4) |
+| A re-time clears the lease (CR#3) | `applyTransition` with `lease: null` clears the lease when the status changes **or** `fields.scheduledFor !== undefined` (the same condition that resets `dispatchFirstFailedAt`) | repo · "a same-status re-time (new scheduledFor) clears the lease"; row 21 becomes "a same-status write without scheduledFor keeps the lease" |
+| A lease expiring on its own holder is a budget breach, not a concurrent skip (CR#4) | The tick returns a distinct kind `lease_expiring`. The route counts it in its own bucket and logs it at WARN; metric `broadcasts_dispatch_lease_expiring_total` | contract · "a lease_expiring outcome has its own bucket and WARN"; tick unit · kind |
+| The pre-call check waits at most E + 5 s for the row lock (reliability L2) | `checkDispatchLease` runs `SET LOCAL lock_timeout = '28s'` (`ERASURE_LOCK_HOLD_MS` + 5 s, named from the constant). A timeout is the existing `lease_check_failed` → retryable | repo · "a check behind a lock held longer than E + 5 s fails as lease_check_failed" (lock_timeout lowered for the test via a parameter) |
+
+**Decided by the main session** (the maintainer asked on 1 Nov 2026 to act on judgment and report):
+- **The row-start cutoff applies to the import leg only** (CR#5). The legacy leg's push loop (`addContactsToAudience`, one request per contact) is not in W_max, so the cutoff bounded nothing there, while it delayed live rows by a tick. DL9 is amended to the import leg; the legacy cutoff is removed with its test, and the build-plan line "on both legs" is superseded.
+
+**Closures:**
+
+| # | Finding | Closure |
+|---|---|---|
+| CR#1 / sec M1 / rel M1 | lost lease after `/send` downgraded to INFO whatever the row says | **Fix:** row 1 above |
+| CR#2 / rel L1 | the completion stamp can be stranded by a webhook | **Fix:** row 2 above |
+| CR#3 | a re-time keeps a live lease, so the holder sends at the replaced time | **Fix:** row 3 above |
+| CR#4 | `expiring` is reported as an ordinary concurrent skip | **Fix:** row 4 above |
+| CR#5 | the cutoff on the legacy leg bounds nothing | **Fix:** import leg only (decided above) |
+| CR#6 | `tickBudget` default in both makers is dead and duplicates `maxDuration` | **Fix:** `tickBudget` becomes a required parameter of the makers; the route passes it; `DISPATCH_MAX_DURATION_MS` is read from one place |
+| CR#7 | `hasLiveDispatchLease` is an extra SELECT per legacy row; the route loop keeps iterating past the cutoff | **Fix:** the route stops scanning rows after the first `deferred_past_cutoff`. **Accepted (Low):** the extra SELECT stays; the legacy leg is deleted in s4 and holds the row lock for milliseconds |
+| sec L2 / rel L3 | `failTerminally` logs ERROR `failed` before the fenced write | **Fix:** the log moves after the commit; a lost lease logs only `lease_lost` |
+| sec L3 | `hasLiveDispatchLease` fails open on an unexpected driver shape | **Fix:** a non-boolean answer throws (fail closed, like the check) |
+| sec L4 | owner-role DL4 covers claim and release only | **Fix:** check and hasLive statement builders get the BYPASSRLS-owner case |
+| sec I5 | `onRetryable` with a lost token is labelled `unknown_or_already_processed` | **Fix:** labelled `lease_lost` |
+| migration L1 | the trigger test changes both lease columns at once on a NULL row | **Fix:** seed a leased row; probe expiry-only, token-only and drop-to-NULL under the GUC, each expecting the redaction refusal |
+| migration L2 | the header md5 is of the CRLF dev body | **Fix:** the comment says so and gives the LF md5 |
+| migration L3 | `(whitelist)` comment predates the PR | **Accepted (Low):** pre-existing; not touched |
+| spec M1 | the s2a carries have no "closed" lines; the s3 row names DT5 by id only | **Fix (docs):** the s3 row names the concern in words; the carries-closed list below |
+| spec M2 | cell 18 (cascade undecided, lease untouched) has no test | **Fix:** `dispatch-lease-erasure-order` · "an undecided cascade leaves the lease and the holder continues" |
+| spec L1 | DL2 wording is stronger than the fence | **Fix (docs):** "a holder whose lease was taken over makes no irreversible Resend call and writes no column" |
+| spec L2 | DL1 "both orders" swaps names only | **Accepted (Low):** the claim ordering under the row lock is DL3 row 16's subject |
+| spec L3 | cell 16 has no live-other variant | **Fix:** one more case in `dispatch-lease-erasure-order` |
+| spec L4 | the completion-stamp A4 site has no unit case | **Fix:** with row 2 above |
+| spec L5 | D's docblock calls an estimate MEASURED | **Fix (docs):** "a MEASURED single run (3.7 s at 20,000) plus an ESTIMATE (~15 statements × ~220 ms)" |
+| spec L6 | `spec.md` status line is stale | **Fix (docs)** |
+| rel L4 | live-Neon coverage of mint → lost CAS → reclaim was lost | **Fix:** `erasure-vs-dispatch-begun` · a cascade cancel parked inside `createBroadcast`, asserting one mint and one reclaim |
+| rel NITs | clock mixing in `rowStartAllowed`; unguarded exported statements; `>` vs `<` at equal µs; `asLeaseToken` brand-only | **Accepted (Low):** prod-neutral; the exported builders get a `*Unguarded` suffix only if touched again (the 2c cleanup) |
+
+**Carries closed in 2b (spec M1).**
+- **R4:** closed by `already-sent-evidence.test.ts`, two concurrent recorders in both orders, mutation-RED.
+- **s2a round-1 CR#2 + security M:** the import leg's per-invocation budget is closed by DL9 (the cutoff and the W_max pin). `addContactsToAudience` is a residual moved to s4, which deletes it. `listAudiences` is DT5 in s3.
+- **s2a round-3 #3 + security INFO** (30 s × 50 rows against `maxDuration`): closed by the cutoff, since no import row starts after `maxDuration − W_max − M`.
+- **Re-homed by the maintainer's approval of the 2b / 2c split (1 Nov 2026):** R1 #5, DL5b and DL6 → 2c; `listAudiences` → s3 DT5.
 
 ## Rollout
 
