@@ -541,7 +541,12 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
         );
       expect((refused as BroadcastConcurrentMutationError).observedStatus).toBe('lease_held');
       expect((refused as BroadcastConcurrentMutationError).rowStatus).toBe('approved');
+    });
 
+    // Review round 4 (reliability LOW-2) — drift names the status the probe
+    // READ, not the one the caller expected.
+    it('a real drift reports the probed status', async () => {
+      const later = new Date(Date.now() + 3_600_000);
       const drifted = await seed(tenantA, {});
       const drift = await repoA()
         .withTx((tx) =>
@@ -551,7 +556,8 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
           () => null,
           (e: unknown) => e,
         );
-      expect((drift as BroadcastConcurrentMutationError).observedStatus).toBe('member_approved');
+      expect(drift).toBeInstanceOf(BroadcastConcurrentMutationError);
+      expect((drift as BroadcastConcurrentMutationError).observedStatus).toBe('approved');
     });
   });
 

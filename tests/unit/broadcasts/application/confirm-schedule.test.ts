@@ -110,6 +110,40 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
     expect(audit.events).toHaveLength(0);
   });
 
+  // Spec 140 s2b review round 4 (code-review #2, #3; reliability LOW-2) — the
+  // use case asks first, under its row lock (`hasLiveDispatchLease`, fail
+  // closed): a live lease answers dispatch_in_progress before any write. The
+  // repo's refusal stays as the backstop. A cancel is a status change, which
+  // ends the lease by design, so it is not pre-checked.
+  it('a live lease answers dispatch_in_progress before any write', async () => {
+    const row = makeApprovalBroadcast({ status: 'approved', currentRound: 1, approvedVersionId: APPROVED.id });
+    const { store, audit, run } = setup(row);
+    vi.mocked(store.broadcastsRepo.hasLiveDispatchLease).mockResolvedValueOnce(true);
+    expect(await run({ mode: { mode: 'schedule', scheduledFor: new Date('2026-10-05T03:00:00Z') } })).toEqual({
+      ok: false,
+      error: { kind: 'dispatch_in_progress' },
+    });
+    expect(store.broadcastsRepo.hasLiveDispatchLease).toHaveBeenCalledWith(FAKE_TX, 'test-tenant', row.broadcastId);
+    expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
+    expect(store.outbox.rows()).toHaveLength(0);
+    expect(audit.events).toHaveLength(0);
+  });
+
+  it('the lease pre-check is made under the row lock, and a cancel is not pre-checked', async () => {
+    const row = makeApprovalBroadcast({ status: 'approved', currentRound: 1, approvedVersionId: APPROVED.id });
+    const { store, run } = setup(row);
+    await run({ mode: { mode: 'send_now' } });
+    const lockAt = vi.mocked(store.broadcastsRepo.lockForUpdate).mock.invocationCallOrder[0]!;
+    const checkAt = vi.mocked(store.broadcastsRepo.hasLiveDispatchLease).mock.invocationCallOrder[0]!;
+    expect(checkAt).toBeGreaterThan(lockAt);
+
+    const cancelled = setup(makeApprovalBroadcast({ status: 'approved', currentRound: 1, approvedVersionId: APPROVED.id }));
+    vi.mocked(cancelled.store.broadcastsRepo.hasLiveDispatchLease).mockResolvedValue(true);
+    const res = await cancelled.run({ mode: { mode: 'cancel' } });
+    expect(res.ok).toBe(true);
+    expect(cancelled.store.broadcastsRepo.hasLiveDispatchLease).not.toHaveBeenCalled();
+  });
+
   it('status drift at the re-time keeps its sending_started mapping', async () => {
     const row = makeApprovalBroadcast({ status: 'approved', currentRound: 1, approvedVersionId: APPROVED.id });
     const { store, run } = setup(row);

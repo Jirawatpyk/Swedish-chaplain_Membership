@@ -568,7 +568,7 @@ export interface ApprovalStoreState {
 
 /** Every method is a `vi.fn` (so a test can override one arm), plus the live rows. */
 export type FakeApprovalBroadcastsRepo = Mocked<ApprovalBroadcastsRepo> &
-  Mocked<Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'releaseAudienceImport' | 'releaseResendAudience'>> & {
+  Mocked<Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'releaseAudienceImport' | 'releaseResendAudience' | 'hasLiveDispatchLease'>> & {
   readonly rows: Map<string, Broadcast>;
 };
 
@@ -790,11 +790,15 @@ export function makeFakeApprovalStore(
         return true;
       },
     ),
+    // Spec 140 s2b review round 4 — confirm-schedule's pre-check under the row
+    // lock: no fake row carries a dispatch lease, so `false` unless a test
+    // overrides it (`mockResolvedValueOnce(true)`).
+    hasLiveDispatchLease: vi.fn(async (_tx: unknown, _tenantId: TenantSlug, _broadcastId: BroadcastId): Promise<boolean> => false),
     // `withTx` is generic on the port and a `vi.fn` cannot carry the type
     // parameter, so it is checked by presence; every other method is checked
     // against the port's signature.
   } satisfies Omit<ApprovalBroadcastsRepo, 'withTx'> &
-    Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'releaseAudienceImport' | 'releaseResendAudience'> &
+    Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'releaseAudienceImport' | 'releaseResendAudience' | 'hasLiveDispatchLease'> &
     Record<'withTx', unknown> & { rows: Map<string, Broadcast> };
 
   // T083 — the member's own E-Blasts, for the two DSAR reads.
