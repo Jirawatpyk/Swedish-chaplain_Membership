@@ -12,11 +12,14 @@
  * `tests/unit/broadcasts/application/dispatch-lease-budget.test.ts`, which
  * computes both longest paths from `LEASE_BUDGET_INPUTS` (A5):
  *
- *   tick 1 = k·E + D + 5·C + I + P = 46 + 15 + 50 + 30 + 3 = 144 s
- *   tick 2 = k·E + N·C + P + D     = 46 + 90 + 3 + 15       = 154 s
- *   W_max  = max(tick 1, tick 2)                            = 154 s  (W_MAX_MS)
- *   cutoff = maxDuration − W_max − M = 300 − 154 − 15        = 131 s  (ROW_START_CUTOFF_MS)
- *   TTL    = 330 s > maxDuration 300 s, and ≥ W_max + M = 169 s (LEASE_TTL_MS)
+ *   tick 1 = k·L + D + 5·C + I + P = 56 + 15 + 50 + 30 + 3 = 154 s
+ *   tick 2 = k·L + N·C + P + D     = 56 + 90 + 3 + 15       = 164 s
+ *   W_max  = max(tick 1, tick 2)                            = 164 s  (W_MAX_MS)
+ *   cutoff = maxDuration − W_max − M = 300 − 164 − 15        = 121 s  (ROW_START_CUTOFF_MS)
+ *   TTL    = 330 s > maxDuration 300 s, and ≥ W_max + M = 179 s (LEASE_TTL_MS)
+ *
+ * L = `CHECK_LOCK_TIMEOUT_MS` (28 s): each row-lock wait is charged at the
+ * longest a pre-call check may wait, not at E (review round 2, code-review #2).
  *
  * C = `RESEND_CALL_TIMEOUT_MS`, I = `IMPORT_CALL_TIMEOUT_MS` (both in the
  * gateway port, so infrastructure reads them from there), P =
@@ -72,6 +75,14 @@ export const DB_AND_RESOLVE_MS = 15_000;
  * is a stuck holder, and the check fails as `lease_check_failed` (retryable)
  * rather than hang on a branch with no `statement_timeout`.
  */
+/**
+ * L — the longest a pre-call check (`checkDispatchLease`) or the release
+ * (`releaseDispatchLease`) waits for the row lock: `ERASURE_ROW_LOCK_HOLD_MS`
+ * + 5 s (review rounds 1–2, reliability L2 / LOW-1). An erasure cascade holds
+ * the lock at most E; longer is a stuck holder, and the wait fails (55P03)
+ * rather than hang on a branch with no `statement_timeout`. The budget charges
+ * each of the k waits at L.
+ */
 export const CHECK_LOCK_TIMEOUT_MS = ERASURE_ROW_LOCK_HOLD_MS + 5_000;
 
 /** M — the margin a pre-call check demands beyond the call's own timeout: ≥ C, + 5 s for the post-call CAS. */
@@ -86,21 +97,22 @@ export const IMPORT_HEADROOM_MS = IMPORT_CALL_TIMEOUT_MS + LEASE_MARGIN_MS;
 /** The dispatch cron route's `maxDuration` (300 s), in ms — pinned to the route's literal by the budget test. */
 export const DISPATCH_MAX_DURATION_MS = 300_000;
 
-/** W_max — the longer of the two longest paths (tick 2, 154 s). */
-export const W_MAX_MS = 154_000;
+/** W_max — the longer of the two longest paths (tick 2, 164 s). */
+export const W_MAX_MS = 164_000;
 
 /** How long a claim holds: > `DISPATCH_MAX_DURATION_MS` and ≥ `W_MAX_MS` + `LEASE_MARGIN_MS`. */
 export const LEASE_TTL_MS = 330_000;
 
 /** No row starts later than this into a tick: `DISPATCH_MAX_DURATION_MS` − `W_MAX_MS` − `LEASE_MARGIN_MS`. */
-export const ROW_START_CUTOFF_MS = 131_000;
+export const ROW_START_CUTOFF_MS = 121_000;
 
 /** The terms of the budget, in one object so the test can vary one at a time. */
 export interface LeaseBudgetInputs {
   readonly callTimeoutMs: number;
   readonly importCallTimeoutMs: number;
   readonly reprobePauseMs: number;
-  readonly erasureRowLockHoldMs: number;
+  /** L — each row-lock wait is charged at `CHECK_LOCK_TIMEOUT_MS`. */
+  readonly checkLockTimeoutMs: number;
   readonly lockWaitsPerRow: number;
   readonly tick1BoundedCalls: number;
   readonly tick2ResendCalls: number;
@@ -112,7 +124,7 @@ export const LEASE_BUDGET_INPUTS: LeaseBudgetInputs = {
   callTimeoutMs: RESEND_CALL_TIMEOUT_MS,
   importCallTimeoutMs: IMPORT_CALL_TIMEOUT_MS,
   reprobePauseMs: REPROBE_PAUSE_MS,
-  erasureRowLockHoldMs: ERASURE_ROW_LOCK_HOLD_MS,
+  checkLockTimeoutMs: CHECK_LOCK_TIMEOUT_MS,
   lockWaitsPerRow: LOCK_WAITS_PER_ROW,
   tick1BoundedCalls: TICK1_BOUNDED_CALLS,
   tick2ResendCalls: TICK2_RESEND_CALLS,
@@ -122,7 +134,7 @@ export const LEASE_BUDGET_INPUTS: LeaseBudgetInputs = {
 
 /** Both longest paths, from the inputs (A5). */
 export function longestPathsMs(i: LeaseBudgetInputs): { readonly tick1: number; readonly tick2: number } {
-  const lockWaits = i.lockWaitsPerRow * i.erasureRowLockHoldMs;
+  const lockWaits = i.lockWaitsPerRow * i.checkLockTimeoutMs;
   return {
     tick1: lockWaits + i.dbAndResolveMs + i.tick1BoundedCalls * i.callTimeoutMs + i.importCallTimeoutMs + i.reprobePauseMs,
     tick2: lockWaits + i.tick2ResendCalls * i.callTimeoutMs + i.reprobePauseMs + i.dbAndResolveMs,
@@ -138,7 +150,7 @@ export function leaseBudgetViolations(i: LeaseBudgetInputs, ttlMs: number, maxDu
   const { tick1, tick2 } = longestPathsMs(i);
   const wMax = Math.max(tick1, tick2);
   const cutoff = maxDurationMs - wMax - i.marginMs;
-  const beforeImportPost = i.lockWaitsPerRow * i.erasureRowLockHoldMs + i.dbAndResolveMs + i.tick1BoundedCalls * i.callTimeoutMs + i.reprobePauseMs;
+  const beforeImportPost = i.lockWaitsPerRow * i.checkLockTimeoutMs + i.dbAndResolveMs + i.tick1BoundedCalls * i.callTimeoutMs + i.reprobePauseMs;
   const out: string[] = [];
   if (!(ttlMs > maxDurationMs)) out.push('TTL > maxDuration');
   if (!(ttlMs >= wMax + i.marginMs)) out.push('TTL ≥ W_max + M');
@@ -161,10 +173,12 @@ export interface TickBudget {
 }
 
 /**
- * DL9 — may a row START at `nowMs`? Only up to `maxDurationMs − W_MAX_MS −
- * LEASE_MARGIN_MS` into the invocation; a later row stays `approved`,
- * unleased, for the next tick.
+ * DL9 — may an import row START at `nowMs`? Only up to `ROW_START_CUTOFF_MS`
+ * (`DISPATCH_MAX_DURATION_MS` − `W_MAX_MS` − `LEASE_MARGIN_MS`, pinned by the
+ * budget test) into the invocation; a later row stays `approved`, unleased,
+ * for the next tick. Reads the one literal rather than recomputing it (review
+ * round 2, code-review #9).
  */
 export function rowStartAllowed(budget: TickBudget, nowMs: number): boolean {
-  return nowMs - budget.tickStartedAt <= budget.maxDurationMs - W_MAX_MS - LEASE_MARGIN_MS;
+  return nowMs - budget.tickStartedAt <= ROW_START_CUTOFF_MS;
 }
