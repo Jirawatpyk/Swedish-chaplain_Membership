@@ -25,6 +25,12 @@ import { rateLimiter } from '@/lib/auth-deps';
 import { createServerTiming, type ServerTiming } from '@/lib/server-timing';
 
 /**
+ * #58 — the run limit, stated here so the dialog's client timeout
+ * (`MONEY_POST_TIMEOUT_MS`, 75 s) always outlasts it.
+ */
+export const maxDuration = 60;
+
+/**
  * Every response carries a `Server-Timing` header (DevTools → Network →
  * Timing) and the same numbers land in one `pay.timing` log line (Vercel
  * runtime logs), so a slow mark-paid can be attributed to a step — auth,
@@ -223,5 +229,8 @@ async function handlePay(
   return NextResponse.json({
     ...serialiseInvoice(result.value),
     email_dispatch: result.value.emailDispatch,
+    // #59 — true when the invoice was already paid and this was a replay
+    // (nothing new recorded); the dialog then says "already recorded".
+    replayed,
   });
 }

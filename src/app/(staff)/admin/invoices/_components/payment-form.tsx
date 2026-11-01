@@ -11,6 +11,9 @@ import { toast } from '@/lib/toast';
 import { type MoneyDialogFooterState, useReportMoneyDialogFooter } from './money-dialog-footer';
 import { routeRecordPaymentError } from './record-payment-error-routing';
 import { refreshWhenOnline } from './refresh-when-online';
+import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from './unknown-outcome';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 
 const METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
 
@@ -26,6 +29,13 @@ const PAYMENT_ERROR_TONE = {
   unconfirmed: 'warning',
   failure: 'danger',
 } as const satisfies Record<PaymentFormError['kind'], FeedbackTone>;
+
+/** The `data-tone` the issue form's wrapper uses, so tests and styles read both alike. */
+const PAYMENT_ERROR_WRAPPER_TONE = {
+  concurrent: 'neutral',
+  unconfirmed: 'warning',
+  failure: 'destructive',
+} as const satisfies Record<PaymentFormError['kind'], string>;
 
 export function PaymentForm({
   invoiceId,
@@ -87,6 +97,7 @@ export function PaymentForm({
 }) {
   const t = useTranslations('admin.invoices.pay');
   const router = useRouter();
+  const readOnlyToast = useReadOnlyToast();
   const [pending, startTransition] = useTransition();
   // The submit validates the date itself, so it is enabled until in flight.
   useReportMoneyDialogFooter(onFooterChange, {
@@ -162,17 +173,29 @@ export function PaymentForm({
               paymentNotes: paymentNotes.trim() || undefined,
               paymentDate,
             }),
+            signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
           });
         } catch {
-          // #48 — no response: the payment (and its RC receipt) may have
+          // #48 / #58 — no response (a drop or the timeout): the payment (and its RC receipt) may have
           // committed. A retry is safe (the server replays the recorded
           // payment: 200, no second RC), but check first.
           setFormError({ kind: 'unconfirmed' });
           return;
         }
         if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
+          const body: unknown = await res.json().catch(() => ({}));
+          // The write freeze refused it: nothing ran (its flat body names no code).
+          if (isReadOnlyRefusal(res.status, body)) {
+            setFormError({ kind: 'failure', message: readOnlyToast() });
+            return;
+          }
           const code = (body as { error?: { code?: string } })?.error?.code;
+          // #57 — a 5xx naming no refusal may come after the payment (and its
+          // RC) committed.
+          if (isUnknownOutcome(res.status, code)) {
+            setFormError({ kind: 'unconfirmed' });
+            return;
+          }
           // FR-028/FR-032 — irreversible §87-mint failure → INLINE focused
           // role="alert" (never a transient toast); a concurrent 409 →
           // inline "already paid — refresh". The dialog stays open (no
@@ -196,6 +219,9 @@ export function PaymentForm({
           receipt_document_number_raw?: string | null;
           // Cluster 5 (Finding 1) — auto-email dispatch outcome.
           email_dispatch?: string;
+          // #59 — the invoice was already paid: the server replayed the
+          // recorded payment and recorded nothing new.
+          replayed?: boolean;
         };
         const rc =
           typeof body.receipt_document_number_raw === 'string' && body.receipt_document_number_raw
@@ -208,7 +234,7 @@ export function PaymentForm({
           body.email_dispatch === 'skipped_no_email' ? t('successNoEmailWarning') : null;
         if (rc) {
           toast.success(
-            t('successReceipt', { number: rc }),
+            body.replayed === true ? t('successAlreadyRecorded', { number: rc }) : t('successReceipt', { number: rc }),
             noEmailWarning ? { description: noEmailWarning } : undefined,
           );
         } else {
@@ -258,6 +284,7 @@ export function PaymentForm({
           tabIndex={-1}
           // A stale-write 409 is not the admin's error → info, not danger.
           tone={PAYMENT_ERROR_TONE[formError.kind]}
+          data-tone={PAYMENT_ERROR_WRAPPER_TONE[formError.kind]}
           role="alert"
           className="outline-none"
           data-testid="record-payment-error"

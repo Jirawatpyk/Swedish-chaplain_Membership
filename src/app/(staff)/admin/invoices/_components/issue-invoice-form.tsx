@@ -59,6 +59,9 @@ import { routeIssueError } from './issue-error-routing';
 import { ZeroRateCertUploader } from './zero-rate-cert-uploader';
 import { type MoneyDialogFooterState, useReportMoneyDialogFooter } from './money-dialog-footer';
 import { refreshWhenOnline } from './refresh-when-online';
+import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from './unknown-outcome';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 
 export type IssueInvoiceFormProps = {
   readonly invoiceId: string;
@@ -141,6 +144,7 @@ export function IssueInvoiceForm({
   const tDetail = useTranslations('admin.invoices.detail');
   const locale = useLocale();
   const router = useRouter();
+  const readOnlyToast = useReadOnlyToast();
   const [typed, setTyped] = useState('');
   const [pending, startTransition] = useTransition();
 
@@ -295,18 +299,30 @@ export function IssueInvoiceForm({
                   method: 'POST',
                   headers: { 'content-type': 'application/json' },
                   body: JSON.stringify(body),
+                  signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
                 }
-              : { method: 'POST' },
+              : { method: 'POST', signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS) },
           );
         } catch {
-          // #48 — no response: the issue may have committed. A retry is safe
+          // #48 / #58 — no response (a drop or the timeout): the issue may
+          // have committed. A retry is safe
           // (the server answers invoice_already_issued), but check first.
           setFormError({ kind: 'unconfirmed' });
           return;
         }
         if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
+          const errBody: unknown = await res.json().catch(() => ({}));
+          // The write freeze refused it: nothing ran (its flat body names no code).
+          if (isReadOnlyRefusal(res.status, errBody)) {
+            setFormError({ kind: 'failure', message: readOnlyToast() });
+            return;
+          }
           const code = (errBody as { error?: { code?: string } })?.error?.code;
+          // #57 — a 5xx naming no refusal may come after the issue committed.
+          if (isUnknownOutcome(res.status, code)) {
+            setFormError({ kind: 'unconfirmed' });
+            return;
+          }
           const routing = routeIssueError(code);
           if (routing.kind === 'concurrent' || routing.kind === 'stale') {
             setFormError({ kind: routing.kind });

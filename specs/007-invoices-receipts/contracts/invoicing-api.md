@@ -179,10 +179,12 @@ All endpoints are JSON over HTTPS, run inside Next.js route handlers, require au
 
 **Response 200**: `{ ok: true, data: { invoice: { status: "paid", paid_at: "…", /* + receipt PDF hash */ } } }`.
 
+The body also carries `email_dispatch` (the receipt email outcome) and `replayed: boolean` (#59). `replayed: true` means the invoice was already paid: the route replayed the recorded payment (the same RC number) and recorded nothing new. The record-payment dialog then says "already recorded".
+
 **RBAC**: `admin` only.
 **Audit**: `invoice_paid`.
 **Errors**:
-- `conflict` (409) — already paid (idempotent replay returns original response), void, or credited.
+- `conflict` (409) — void or credited (`invalid_status`), or changed under the lock (`concurrent_state_change`). Already paid is not a 409: it is the 200 replay above.
 
 ### 1.8 `POST /api/invoices/[invoiceId]/void` — Void
 
