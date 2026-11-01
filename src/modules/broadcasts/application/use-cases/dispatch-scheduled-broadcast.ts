@@ -107,6 +107,13 @@ export type DispatchScheduledBroadcastError =
       readonly observedStatus: string;
     }
   | { readonly kind: 'broadcast_audience_post_suppression_empty' }
+  /**
+   * Spec 140 s2a (DL7; review round 1, code-review #3) — the row holds import
+   * columns, so the import leg owns it; nothing was called or written. A
+   * backstop: with the import flag OFF the cron's due scan already leaves such
+   * rows out. Its own kind so the route counts it apart, at info.
+   */
+  | { readonly kind: 'import_row_skipped' }
   | {
       readonly kind: 'gateway_retryable';
       readonly subKind: RetryableSubKind;
@@ -490,6 +497,7 @@ export async function dispatchScheduledBroadcast(
 
   // Step 1: lock row + verify eligibility
   let broadcast: Broadcast | null = null;
+  let importRowSkipped = false;
   try {
     broadcast = await deps.broadcastsRepo.withTx(async (tx) => {
       const lockedStatus = await deps.broadcastsRepo.lockForUpdate(
@@ -509,13 +517,16 @@ export async function dispatchScheduledBroadcast(
       );
       // Spec 140 s2a, DL7 (decision 8): a row the import leg has started is
       // never worked here. Skipped under the row lock, before any Resend call,
-      // so reverting the leg retirement is safe with no env change. The route
-      // buckets the skip as `concurrent_skip`: no failure, no email.
+      // so reverting the leg retirement is safe with no env change. A
+      // backstop since review round 1: the cron's flag-OFF due scan leaves
+      // these rows out. The route counts `import_row_skipped` at info: no
+      // failure, no email.
       if (row !== null && (row.audienceImportId !== null || row.audienceImportSubmittedAt !== null)) {
         logger.info(
           { tenantId: deps.tenant.slug, broadcastId: input.broadcastId },
           'broadcasts.dispatch.import_row_skipped',
         );
+        importRowSkipped = true;
         return null;
       }
       return row;
@@ -532,6 +543,7 @@ export async function dispatchScheduledBroadcast(
     });
   }
 
+  if (importRowSkipped) return err({ kind: 'import_row_skipped' });
   if (broadcast === null) {
     return err({
       kind: 'broadcast_invalid_state_transition',
