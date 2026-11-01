@@ -36,7 +36,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, refresh: refreshMock, replace: vi.fn() }),
 }));
 const { toastSuccess } = vi.hoisted(() => ({ toastSuccess: vi.fn() }));
-vi.mock('@/lib/toast', () => ({ toast: { success: toastSuccess, error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: toastSuccess, error: vi.fn(), warning: vi.fn() } }));
 
 // useTransition / async-transition interactions need real timers
 // (tests/setup.ts installs fakes).
@@ -112,7 +112,12 @@ describe('PaymentForm — concurrent 409 inline recovery (FR-032)', () => {
       expect(alert).toHaveClass('aura-alert--info');
       expect(alert).toHaveAttribute('role', 'alert');
       expect(alert).toHaveTextContent(
-        'This invoice was already paid or changed in another session. Refresh to see the latest status and the receipt (RC) number.',
+        enMessages.admin.invoices.pay.errors.concurrent,
+      );
+      // #59 — a same-session retry lands here too: no "another session".
+      expect(alert).not.toHaveTextContent(/another session/);
+      expect(alert).toHaveTextContent(
+        'This invoice has already been paid or changed. Refresh to see its status and the receipt (RC) number.',
       );
 
       // The recovery affordance is the whole point of the concurrent branch.
@@ -329,6 +334,94 @@ describe('PaymentForm — the connection drops (#48)', () => {
       expect(refreshMock).toHaveBeenCalledTimes(1);
     } finally {
       onLine.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('PaymentForm — an unknown outcome is not a failure (#57, #58, #59)', () => {
+  function respond(status: number, body: unknown, json = true) {
+    return vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: status < 400,
+      status,
+      json: async () => {
+        if (!json) throw new Error('Unexpected token < in JSON');
+        return body;
+      },
+    }));
+  }
+
+  it('a 504 with an HTML body shows the unconfirmed warning, tone warning', async () => {
+    vi.stubGlobal('fetch', respond(504, null, false));
+    try {
+      renderForm();
+      submitPayment();
+      const alert = await screen.findByTestId('record-payment-error');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a 500 internal_error shows the unconfirmed warning', async () => {
+    vi.stubGlobal('fetch', respond(500, { error: { code: 'internal_error' } }));
+    try {
+      renderForm();
+      submitPayment();
+      const alert = await screen.findByTestId('record-payment-error');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the READ_ONLY_MODE 503 (nothing written) is the read-only message, not unconfirmed', async () => {
+    vi.stubGlobal('fetch', respond(503, { error: 'read-only-mode' }));
+    try {
+      renderForm();
+      submitPayment();
+      const alert = await screen.findByTestId('record-payment-error');
+      expect(alert).toHaveTextContent(enMessages.errors.readOnlyMode);
+      expect(alert).not.toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
+      expect(alert).toHaveAttribute('data-tone', 'destructive');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the POST carries a timeout signal, and a timeout reads as unconfirmed', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => {
+      throw new DOMException('The operation timed out.', 'TimeoutError');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      submitPayment();
+      const alert = await screen.findByTestId('record-payment-error');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
+      const [, init] = fetchMock.mock.calls[0]!;
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a replayed 200 says the payment was already recorded, with its RC number', async () => {
+    vi.stubGlobal(
+      'fetch',
+      respond(200, { receipt_document_number_raw: 'RC-2030-000011', email_dispatch: 'sent', replayed: true }),
+    );
+    const onSuccess = vi.fn();
+    toastSuccess.mockClear();
+    try {
+      renderForm(onSuccess);
+      submitPayment();
+      await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+      expect(toastSuccess.mock.calls[0]?.[0]).toBe(
+        enMessages.admin.invoices.pay.successAlreadyRecorded.replace('{number}', 'RC-2030-000011'),
+      );
+    } finally {
       vi.unstubAllGlobals();
     }
   });

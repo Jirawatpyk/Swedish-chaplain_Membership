@@ -29,7 +29,7 @@ const refreshMock = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: refreshMock, replace: vi.fn() }),
 }));
-vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
 // RHF/transition interactions need real timers (tests/setup.ts installs fakes).
 beforeEach(() => {
@@ -510,7 +510,7 @@ describe('IssueInvoiceForm — concurrent 409 inline recovery (FR-032)', () => {
       expect(alert).toHaveAttribute('data-tone', 'neutral');
       expect(alert).toHaveAttribute('role', 'alert');
       expect(alert).toHaveTextContent(
-        'This invoice was already issued in another session. Refresh to see the latest status and its number.',
+        'This invoice has already been issued. Refresh to see its status and number.',
       );
 
       expect(refreshMock).not.toHaveBeenCalled();
@@ -745,6 +745,66 @@ describe('IssueInvoiceDialog — focus after a refresh close (#48)', () => {
       await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('main-content-stub')));
     } finally {
       refreshMock.mockReset();
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('IssueInvoiceForm — an unknown outcome is not a failure (#57, #58)', () => {
+  function respond(status: number, body: unknown, json = true) {
+    return vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: status < 400,
+      status,
+      json: async () => {
+        if (!json) throw new Error('Unexpected token < in JSON');
+        return body;
+      },
+    }));
+  }
+  function confirmIssue() {
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: 'ISSUE' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ }));
+  }
+
+  it('a 504 with an HTML body shows the unconfirmed warning', async () => {
+    vi.stubGlobal('fetch', respond(504, null, false));
+    try {
+      renderForm();
+      confirmIssue();
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.issue.errors.unconfirmed);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the READ_ONLY_MODE 503 (nothing written) is the read-only message, not unconfirmed', async () => {
+    vi.stubGlobal('fetch', respond(503, { error: 'read-only-mode' }));
+    try {
+      renderForm();
+      confirmIssue();
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'destructive');
+      expect(alert).toHaveTextContent(enMessages.errors.readOnlyMode);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the POST carries a timeout signal, and a timeout reads as unconfirmed', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => {
+      throw new DOMException('The operation timed out.', 'TimeoutError');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      confirmIssue();
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.issue.errors.unconfirmed);
+      const [, init] = fetchMock.mock.calls[0]!;
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    } finally {
       vi.unstubAllGlobals();
     }
   });
