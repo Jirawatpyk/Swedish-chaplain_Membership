@@ -697,6 +697,14 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(deps.blob.delete).toHaveBeenCalledWith(EXPECTED_ISSUE_BLOB_KEY);
   });
 
+  it('#60 — the invoice PDF upload overwrites its key (under the row lock): a queued retry never reuses a rolled-back attempt\'s bytes', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    await issueInvoice(deps, input);
+    expect(deps.blob.uploadPdf).toHaveBeenCalledWith(
+      expect.objectContaining({ key: EXPECTED_ISSUE_BLOB_KEY, allowOverwrite: true }),
+    );
+  });
+
   it('#60 parity: an ambiguous COMMIT (the locked re-read shows the row owns the key) keeps the invoice PDF', async () => {
     const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
     deps.outbox.enqueue = vi.fn(async () => {
