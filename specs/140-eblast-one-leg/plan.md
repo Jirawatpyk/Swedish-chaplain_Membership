@@ -695,15 +695,21 @@ Finding for review: the route logs a DL7 skip at **WARN**, as `cron.broadcasts.d
 
 | # | Finding | Closure |
 |---|---|---|
-| CR#1 | `retry:false` on creates also stops the retry on a 429, which created nothing | **Fix:** creates still retry on a 429 (`subKind: 'api'`) inside the budget; 5xx, network and timeout make one attempt. Test: "a create retries a 429 but not a 5xx or a timeout" |
-| CR#2 + security M | A loop of port calls (`addContactsToAudience` per contact, `listAudiences` per page) runs N × C, not C | **Docs fix:** DL8 and the docblocks say "per request". **Carried to s2b** (Medium; s2b names the cron time budget, D-043): a per-invocation budget for multi-request port calls |
-| CR#3 + reliability M1 | A DL7-skipped row strands silently and starves the scan | **Fix:** the plan row above |
-| pdpa H-1 + reliability L2 | `propagate`'s total time is not tied to the route deadline; a kill before the audit row leads to a false `ok` on re-drive | **Fix:** the plan row above |
-| CR#4 | P6 has about 100 ms of slack and can flake on CI | **Fix:** C = 3,000 ms with bounds relative to C |
-| CR#5 + pdpa L-1 | Stale `withRetry` / "safe to retry" / "six times" text | **Fix:** the text |
-| CR#6 | Two-layer factory | **Fix:** one factory |
+| CR#1 | `retry:false` on creates also stops the retry on a 429, which created nothing | **Fix:** creates still retry on a 429 (`subKind: 'api'`) inside the budget; 5xx, network and timeout make one attempt. Test: "a create retries a 429 but not a 5xx or a timeout". **Done:** RED `6741e22cb`, GREEN `82b804b1e` |
+| CR#2 + security M | A loop of port calls (`addContactsToAudience` per contact, `listAudiences` per page) runs N × C, not C | **Docs fix:** DL8 and the docblocks say "per request". **Carried to s2b** (Medium; s2b names the cron time budget, D-043): a per-invocation budget for multi-request port calls. **Docs done:** `0554c615e` (factory docblock), `043a72c9c` (spec DL8, broadcasts rule), `2b9ef241b` (observability § 22.14) |
+| CR#3 + reliability M1 | A DL7-skipped row strands silently and starves the scan | **Fix:** the plan row above. **Done:** RED `6741e22cb`, GREEN `2b9ef241b` (scan filter, `import_row_skipped` kind and route bucket, runbook line) |
+| pdpa H-1 + reliability L2 | `propagate`'s total time is not tied to the route deadline; a kill before the audit row leads to a false `ok` on re-drive | **Fix:** the plan row above. **Done:** RED `6741e22cb`, GREEN `47cdb9050` (port `deadlineAt`, adapter stop, `erase-member` threading, RoPA 8a, runbook) |
+| CR#4 | P6 has about 100 ms of slack and can flake on CI | **Fix:** C = 3,000 ms with bounds relative to C. **Done:** `6741e22cb` (test only; sentinel 1.25 C, case (a) < 1.2 C, case (b) < 0.75 C) |
+| CR#5 + pdpa L-1 | Stale `withRetry` / "safe to retry" / "six times" text | **Fix:** the text. **Done:** `0554c615e` |
+| CR#6 | Two-layer factory | **Fix:** one factory. **Done:** `0554c615e` (refactor, no behaviour change) |
 | reliability L1 | A create slower than 10 s can leave an orphan segment | **Accepted, with a mechanism already there:** `reclaim-orphan-audiences` (daily, `vercel.json:13`) reaps named `broadcast-<tenant>-<id>` segments; a 10 s create against a 0.48 s RTT is rare |
 | security L1–L3 | The `addContactsToAudience` POST retry; propagate pair count; tick-1 rows without import columns | L1 accepted (it mints nothing sendable); L2 is covered by the propagate deadline; L3 is closed by s2b cell 23 (lease) |
+
+
+**Round-1 fix notes.**
+- Mutation proofs (from `043a72c9c`, each restored byte for byte): creates retrying every retryable → CR#1 5xx phase red; creates never retrying → CR#1 429 phase red; propagate ignoring the deadline, or not counting untried pairs → both deadline cases red; `deadlineAt` not threaded → "propagate receives the cascade deadline" red; the scan filter dropped → "flag OFF: the scan excludes import rows" red; the backstop returning the old kind → both DL7 cases red; the route bucketing it as `concurrent_skip` → the backstop contract case red.
+- **Contradiction found (runbook):** "cancel the row" is not always available. `cancel-broadcast.ts` refuses an `approved` row once `audience_import_id` is set (`hasDispatchBegun` → `sending_started`), so for such a row re-enabling the flag is the only route; a row with only `audience_import_submitted_at` can be cancelled. `broadcast-audience-build.md` says so.
+- The flag is now read once per tick, above the due scan (it was read after it); the filter fragment is hoisted out of the scan template.
 
 ## Rollout
 
