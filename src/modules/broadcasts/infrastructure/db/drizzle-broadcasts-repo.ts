@@ -1130,9 +1130,11 @@ export function makeDrizzleBroadcastsRepo(
       // lease on the row (staff cancel, confirm-schedule cancel, withdraw, a
       // new working copy, the erasure cancel): the tick holding it stops at its
       // next pre-call check or fenced write. The holder's own transitions pass
-      // its token instead and leave the columns for its release. A same-status
-      // write (a re-time) leaves the lease alone.
-      if (lease === null && target !== expectedFromStatus) {
+      // its token instead and leave the columns for its release. A re-time
+      // (`scheduledFor` set, review round 1 CR#3) ends it too — the holder was
+      // working to the replaced time; the same condition resets the retry
+      // clock above. Any other same-status write leaves the lease alone.
+      if (lease === null && (target !== expectedFromStatus || fields.scheduledFor !== undefined)) {
         setClause['dispatchLeaseToken'] = null;
         setClause['dispatchLeaseExpiresAt'] = null;
       }
