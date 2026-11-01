@@ -67,6 +67,10 @@ interface Opts {
   readonly completionStampThrows?: 'lease_lost';
   /** The pre-call check itself throws (e.g. its lock_timeout, 55P03). */
   readonly checkThrows?: boolean;
+  /** `createAudience` answers a retryable network failure. */
+  readonly createAudienceRetryable?: boolean;
+  /** What `markDispatchRetryStarted` answers (`null` = no row matched: here, a lost token). */
+  readonly retryStampReturns?: Date | null;
 }
 
 function harness(opts: Opts = {}) {
@@ -181,7 +185,7 @@ function harness(opts: Opts = {}) {
       },
       async markDispatchRetryStarted(_tx: unknown, _t: unknown, _b: unknown, at: Date, lease: unknown) {
         write('markDispatchRetryStarted', lease);
-        return at;
+        return opts.retryStampReturns === undefined ? at : opts.retryStampReturns;
       },
       async clearDispatchRetryClock(_tx: unknown, _t: unknown, _b: unknown, lease: unknown) {
         write('clearDispatchRetryClock', lease);
@@ -206,6 +210,7 @@ function harness(opts: Opts = {}) {
       },
       async createAudience() {
         events.push('gw:createAudience');
+        if (opts.createAudienceRetryable === true) throw { kind: 'retryable', subKind: 'network', reason: 'fetch failed' };
         return { audienceId: 'aud-new' };
       },
       async createContactImport() {
@@ -382,6 +387,31 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     expect(h.memberEmails).toEqual([]);
     expect(logged(error, 'broadcasts.audience_import.cleanup_failed')).toBe(false);
     expect(h.releases).toEqual([TOKEN]);
+  });
+
+  // Review round 1 (security L2, reliability L3) — the ERROR `failed` line is
+  // written only once the terminal write committed; a lost lease logs only
+  // `lease_lost`.
+  it('row 9 — a lost lease at the terminal write logs only lease_lost, never the ERROR failed line', async () => {
+    const h = harness({ row: TICK2_ROW, importStatus: 'failed', terminalTransitionThrows: 'lease_lost' });
+    await h.run();
+    expect(logged(error, 'broadcasts.audience_import.failed')).toBe(false);
+    expect(logged(info, 'broadcasts.audience_import.lease_lost')).toBe(true);
+  });
+
+  it('a terminal write that commits still logs the ERROR failed line (after the commit)', async () => {
+    const h = harness({ row: TICK2_ROW, importStatus: 'failed' });
+    await h.run();
+    expect(logged(error, 'broadcasts.audience_import.failed')).toBe(true);
+    expect(h.writeLeases.map((w) => w.method)).toContain('applyTransition:failed_to_dispatch');
+  });
+
+  // Review round 1 (security I5) — a retryable failure whose retry-clock stamp
+  // matched no row: under the lease that is a lost token, so it is labelled so.
+  it('onRetryable with a lost token is labelled lease_lost', async () => {
+    const h = harness({ createAudienceRetryable: true, retryStampReturns: null });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' });
   });
 
   it('row 9 on the resolver path — a lost lease at the too_large terminal write is a skip, not broadcast_audience_too_large', async () => {
