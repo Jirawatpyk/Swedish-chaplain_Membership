@@ -196,6 +196,47 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
   });
 
   describe('release', () => {
+    // Review round 2 (reliability LOW-1) — the release waits at most
+    // `CHECK_LOCK_TIMEOUT_MS` for the row lock (lowered here to 500 ms); a
+    // 55P03 is the tick's existing `lease_release_failed`, and the lease then
+    // expires on its own. Bounded at 8 s: the dev branch has no
+    // statement_timeout, so a release with no lock_timeout would hang.
+    it('a release behind a held lock fails as lease_release_failed within its lock_timeout', async () => {
+      const token = randomUUID();
+      const id = await seed(tenantA, { dispatchLeaseToken: token, dispatchLeaseExpiresAt: new Date(Date.now() + 120_000) });
+      const repo = repoA();
+      let release!: () => void;
+      const released = new Promise<void>((r) => (release = r));
+      let markLocked!: () => void;
+      const locked = new Promise<void>((r) => (markLocked = r));
+      const holder = repo.withTx(async (tx) => {
+        await repo.lockForUpdate(tx, tenantA.ctx.slug, id);
+        markLocked();
+        await released;
+      });
+      await locked;
+      try {
+        const outcome = await Promise.race([
+          runInTenant(tenantA.ctx, (tx) =>
+            (releaseDispatchLeaseStatement as unknown as (...a: unknown[]) => Promise<boolean>)(tx, tenantA.ctx.slug, id, token, 500),
+          ).then(
+            (v) => ({ kind: 'resolved' as const, v }),
+            (e: unknown) => ({ kind: 'rejected' as const, e }),
+          ),
+          new Promise<{ kind: 'hung' }>((r) => setTimeout(() => r({ kind: 'hung' }), 8_000)),
+        ]);
+        expect(outcome.kind).toBe('rejected');
+        const e = (outcome as { e?: unknown }).e;
+        expect(JSON.stringify(e, Object.getOwnPropertyNames(e as object)) + String((e as { cause?: unknown })?.cause)).toMatch(/55P03|lock timeout/i);
+      } finally {
+        release();
+        await holder;
+      }
+      // The lease is untouched; it expires on its own.
+      expect((await readRow(tenantA, id)).dispatchLeaseToken).toBe(token);
+    });
+
+
     it('row 14 — clears MY token at any status; a stale token is 0 rows (false), not an error, and leaves the holder alone', async () => {
       const repo = repoA();
       const mine = randomUUID();
