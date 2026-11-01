@@ -224,7 +224,7 @@ async function handlePay(
     ...serialiseInvoice(result.value),
     email_dispatch: result.value.emailDispatch,
     // #59 — true when the invoice was already paid and this was a replay
-    // (nothing new recorded); the dialog then says "already recorded".
+    // (nothing new recorded); the dialog then warns "already paid".
     replayed,
   });
 }

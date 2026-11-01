@@ -3586,8 +3586,8 @@
         "success": "Betalning registrerad",
         "successDetail": "Faktura {number} är nu betald.",
         "successReceipt": "Skattekvitto {number} utfärdat (ใบกำกับภาษี/ใบเสร็จรับเงิน)",
-        "alreadyPaid": "Fakturan var redan betald (skattekvitto {number}) — inget nytt har registrerats. Om medlemmen betalade två gånger, återbetala den extra betalningen.",
-        "alreadyPaidNoNumber": "Fakturan var redan betald — inget nytt har registrerats. Om medlemmen betalade två gånger, återbetala den extra betalningen.",
+        "alreadyPaid": "Fakturan var redan betald (skattekvitto {number}) — inget nytt har registrerats. Om du just försökte igen är detta ditt tidigare försök. Om medlemmen verkligen betalade två gånger, återbetala överskottet utanför systemet — kreditera inte den här fakturan.",
+        "alreadyPaidNoNumber": "Fakturan var redan betald — inget nytt har registrerats. Om du just försökte igen är detta ditt tidigare försök. Om medlemmen verkligen betalade två gånger, återbetala överskottet utanför systemet — kreditera inte den här fakturan.",
         "successNoEmailWarning": "Ingen e-postadress finns registrerad — kvittot skickades inte. Leverera det till medlemmen manuellt.",
         "cancelDialog": "Avbryt",
         "errors": {

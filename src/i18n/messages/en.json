@@ -3586,8 +3586,8 @@
         "success": "Payment recorded",
         "successDetail": "Invoice {number} is now paid.",
         "successReceipt": "Tax receipt {number} issued",
-        "alreadyPaid": "This invoice was already paid (tax receipt {number}). Nothing new was recorded. If the member paid twice, refund the extra payment.",
-        "alreadyPaidNoNumber": "This invoice was already paid. Nothing new was recorded. If the member paid twice, refund the extra payment.",
+        "alreadyPaid": "This invoice was already paid (tax receipt {number}), so nothing new was recorded. If you just retried, this is your earlier attempt. If the member really paid twice, return the extra money outside the system — don't credit this invoice.",
+        "alreadyPaidNoNumber": "This invoice was already paid, so nothing new was recorded. If you just retried, this is your earlier attempt. If the member really paid twice, return the extra money outside the system — don't credit this invoice.",
         "successNoEmailWarning": "No email on file — the receipt was not sent. Deliver it to the member manually.",
         "cancelDialog": "Cancel",
         "errors": {

@@ -12,7 +12,7 @@ import { type MoneyDialogFooterState, useReportMoneyDialogFooter } from './money
 import { routeRecordPaymentError } from './record-payment-error-routing';
 import { refreshWhenOnline } from './refresh-when-online';
 import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from './unknown-outcome';
-import { isReadOnlyRefusal, problemCode } from '@/lib/http/read-only-refusal';
+import { isReadOnlyRefusal, readProblemCode } from '@/lib/http/read-only-refusal';
 import { useStillWorking } from './use-still-working';
 
 const METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
@@ -181,8 +181,8 @@ export function PaymentForm({
             signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
           });
         } catch {
-          // #48 / #58 — no response (a drop or the timeout): the payment (and its RC receipt) may have
-          // committed. A retry is safe (the server replays the recorded
+          // #48 / #58 — no response (a drop or the timeout): the payment (and
+          // its RC receipt) may have committed. A retry is safe (the server replays the recorded
           // payment: 200, no second RC), but check first.
           setFormError({ kind: 'unconfirmed' });
           return;
@@ -194,10 +194,12 @@ export function PaymentForm({
             setFormError({ kind: 'readOnly' });
             return;
           }
-          const code = problemCode(body);
+          const problem = readProblemCode(body);
+          // Route codes are nested; a flat string is not one (read-only aside).
+          const code = problem?.shape === 'nested' ? problem.code : undefined;
           // #57 — a 5xx naming no refusal may come after the payment (and its
           // RC) committed.
-          if (isUnknownOutcome(res.status, code)) {
+          if (isUnknownOutcome(res.status, problem)) {
             setFormError({ kind: 'unconfirmed' });
             return;
           }
@@ -335,7 +337,9 @@ export function PaymentForm({
       )}
       {/* #48 — the offline wait, and #724 the 10 s "still working" note:
           announced once, outside the alert region. */}
-      <div role="status" aria-live="polite" className="sr-only">
+      {/* Visible too (#724 review): sighted admins are the ones who might close
+          the window during a long wait. */}
+      <div role="status" aria-live="polite" className="min-h-5 text-sm text-[var(--aura-fg-secondary)]">
         {waitingForConnection
           ? t('errors.waitingForConnection')
           : stillWorking
