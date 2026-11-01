@@ -412,7 +412,7 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
   it('A4 — a lease lost after /send (the ids attach) logs lease_lost_after_send at INFO, not sent_but_transition_lost', async () => {
     const h = harness({ row: TICK2_ROW, attachResendIdsThrows: 'lease_lost', lostRowStatus: 'approved' });
     const res = await h.run();
-    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' });
+    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost', rowStatus: 'approved' });
     expect(h.gatewayCalls()).toContain('gw:sendBroadcast');
     expect(logged(info, 'broadcasts.audience_import.lease_lost_after_send')).toBe(true);
     expect(logged(error, 'broadcasts.audience_import.sent_but_transition_lost')).toBe(false);
@@ -435,7 +435,7 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
   ])('a lease cleared by a cancel after /send still logs sent_but_transition_lost (%s)', async (_step, throws) => {
     const h = harness({ row: TICK2_ROW, ...throws, lostRowStatus: 'cancelled' });
     const res = await h.run();
-    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' });
+    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost', rowStatus: 'cancelled' });
     expect(logged(error, 'broadcasts.audience_import.sent_but_transition_lost')).toBe(true);
     expect(logged(info, 'broadcasts.audience_import.lease_lost_after_send')).toBe(false);
   });

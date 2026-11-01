@@ -221,6 +221,12 @@ export class BroadcastConcurrentMutationError extends Error {
      * so a holder reads `lease_lost` first; every caller maps it to a skip.
      */
     public readonly observedStatus: BroadcastStatus | typeof LEASE_LOST,
+    /**
+     * Spec 140 s2b review round 1 (CR#1) — on a `LEASE_LOST`, the status the
+     * repo's probe read on the row (`null` otherwise): after `/send` only an
+     * `approved` (a takeover) or `sending` (a sibling flipped it) row is benign.
+     */
+    public readonly rowStatus: BroadcastStatus | null = null,
   ) {
     super(
       `Concurrent mutation on broadcast ${broadcastId}: observed status ${observedStatus}`,

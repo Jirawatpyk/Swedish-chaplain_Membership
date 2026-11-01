@@ -371,7 +371,7 @@ async function throwConcurrentMutation(
     throw new BroadcastNotFoundError(tenantIdArg, broadcastId);
   }
   if (lease !== null && probeRow.leaseToken !== lease) {
-    throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, LEASE_LOST);
+    throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, LEASE_LOST, probeRow.status);
   }
   throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, probeRow.status);
 }
@@ -1688,7 +1688,7 @@ export function makeDrizzleBroadcastsRepo(
         // longer carries this tick's token was taken over or exited, so the
         // stamp is not this tick's to write, stamped or not.
         if (lease !== null && probeRow.leaseToken !== lease) {
-          throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, LEASE_LOST);
+          throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, LEASE_LOST, probeRow.status);
         }
         if (probeRow.completedAt === null) {
           // The row exists and is NOT stamped, yet the UPDATE matched nothing —

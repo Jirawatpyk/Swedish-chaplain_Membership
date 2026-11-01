@@ -253,7 +253,12 @@ export type MemberFacingFailureReason =
 
 export type BuildAudienceTickError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
-  | { readonly kind: 'broadcast_invalid_state_transition'; readonly observedStatus: string }
+  | {
+      readonly kind: 'broadcast_invalid_state_transition';
+      readonly observedStatus: string;
+      /** Spec 140 s2b review round 1 (CR#1) — on a `lease_lost`, the row status the repo probed. */
+      readonly rowStatus?: string;
+    }
   /** Same two the single-tick path uses — these mean the same thing whichever
    *  way the audience is pushed, and forking them would fork the cron's switch
    *  and its alerting for no gain. */
@@ -575,6 +580,39 @@ async function leaseGate(
 /** A fenced write refused this tick's token (A3). */
 function isLeaseLost(e: BuildAudienceTickError): boolean {
   return e.kind === 'broadcast_invalid_state_transition' && e.observedStatus === LEASE_LOST;
+}
+
+/**
+ * Spec 140 s2b (A4, review round 1 CR#1) — after `/send`, a lost lease is
+ * benign only when the row still says the mail is going: `approved` (the lease
+ * was taken over; the next holder's probe catches the row up) or `sending` (a
+ * sibling flipped it). Any other status — a cancel that cleared the lease after
+ * the mail went out — is the critical `sent_but_transition_lost`.
+ */
+function leaseLostAfterSendIsBenign(rowStatus: string | undefined): boolean {
+  return rowStatus === 'approved' || rowStatus === 'sending';
+}
+
+/**
+ * The A4 arm for a lost lease at the ids attach or the `sending` transition:
+ * counted by `step` either way, then INFO when benign, else critical.
+ */
+function answerLeaseLostAfterSend(
+  deps: LeasedTickDeps,
+  input: BuildAudienceTickInput,
+  error: BuildAudienceTickError,
+  fields: { readonly resendBroadcastId: string; readonly importId: string | null; readonly recipientCount: number },
+  step: 'attach_ids' | 'sending_transition',
+): Result<BuildAudienceTickOutput, BuildAudienceTickError> {
+  const rowStatus = error.kind === 'broadcast_invalid_state_transition' ? error.rowStatus : undefined;
+  broadcastsMetrics.dispatchLeaseLostAfterSend(deps.tenant.slug, step);
+  const ids = { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId: fields.resendBroadcastId, importId: fields.importId, step, rowStatus: rowStatus ?? null };
+  if (leaseLostAfterSendIsBenign(rowStatus)) {
+    logger.info(ids, 'broadcasts.audience_import.lease_lost_after_send');
+  } else {
+    logger.error({ ...ids, recipientCount: fields.recipientCount, severity: 'critical' }, 'broadcasts.audience_import.sent_but_transition_lost');
+  }
+  return err(error);
 }
 
 /**
@@ -1311,6 +1349,7 @@ async function viaRepoConcurrency<T>(
       return err({
         kind: 'broadcast_invalid_state_transition',
         observedStatus: e.observedStatus,
+        ...(e.rowStatus === null ? {} : { rowStatus: e.rowStatus }),
       });
     }
     if (e instanceof BroadcastNotFoundError) {
@@ -2262,13 +2301,13 @@ async function advanceToSending(
     );
     return err(idsAttached.error);
   }
-  // Spec 140 s2b (A4) — the lease was lost AFTER the mail went out (it expired
-  // and was taken over, or a non-holder exit cleared it). Nothing is wrong
-  // with the send: the next holder's probe finds it handed and catches the
-  // row up. INFO, not the critical `sent_but_transition_lost`.
+  // Spec 140 s2b (A4, review round 1 CR#1) — the lease was lost AFTER the
+  // mail went out. Read by the row status the repo probed: `approved` (taken
+  // over) or `sending` (a sibling flipped it) is INFO `lease_lost_after_send`,
+  // since the next holder's probe catches the row up; anything else (a cancel
+  // that cleared the lease) is the critical `sent_but_transition_lost`.
   if (!idsAttached.ok && isLeaseLost(idsAttached.error)) {
-    logger.info({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId, importId, step: 'attach_ids' }, 'broadcasts.audience_import.lease_lost_after_send');
-    return err(idsAttached.error);
+    return answerLeaseLostAfterSend(deps, input, idsAttached.error, { resendBroadcastId, importId, recipientCount }, 'attach_ids');
   }
 
   // A lost attach CAS (ED5) is a lost transition: it takes the re-read below,
@@ -2291,9 +2330,8 @@ async function advanceToSending(
     }),
   );
   if (!transitioned.ok && isLeaseLost(transitioned.error)) {
-    // Spec 140 s2b (A4) — as for the ids above.
-    logger.info({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId, importId, step: 'sending_transition' }, 'broadcasts.audience_import.lease_lost_after_send');
-    return err(transitioned.error);
+    // Spec 140 s2b (A4, CR#1) — as for the ids above.
+    return answerLeaseLostAfterSend(deps, input, transitioned.error, { resendBroadcastId, importId, recipientCount }, 'sending_transition');
   }
   if (!transitioned.ok) {
     // A sibling tick that sent the SAME resource and flipped the row first (two
@@ -2473,10 +2511,13 @@ async function advanceToSending(
         );
       });
     } catch (stampErr) {
-      // Spec 140 s2b (A4) — a lease lost after the send: the stamp is not this
-      // tick's to write any more (the stamp's only fence is the token).
-      if (stampErr instanceof BroadcastConcurrentMutationError && stampErr.observedStatus === LEASE_LOST) {
-        logger.info({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, step: 'completion_stamp' }, 'broadcasts.audience_import.lease_lost_after_send');
+      // Spec 140 s2b (A4, CR#1) — a lease lost after the send, counted; INFO
+      // while the row still says the mail is going (`approved` / `sending`),
+      // else the stamp failure below names it.
+      const leaseLost = stampErr instanceof BroadcastConcurrentMutationError && stampErr.observedStatus === LEASE_LOST;
+      if (leaseLost) broadcastsMetrics.dispatchLeaseLostAfterSend(deps.tenant.slug, 'completion_stamp');
+      if (leaseLost && leaseLostAfterSendIsBenign(stampErr.rowStatus ?? undefined)) {
+        logger.info({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, step: 'completion_stamp', rowStatus: stampErr.rowStatus }, 'broadcasts.audience_import.lease_lost_after_send');
       } else logger.error(
         {
           err: errKind(stampErr),
