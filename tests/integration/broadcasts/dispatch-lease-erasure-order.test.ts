@@ -136,7 +136,7 @@ describe('spec 140 s2b DL3 — the dispatch lease behind the erasure cascade\'s 
    * report the lock is held, wait for `release`, then cancel as a NON-holder
    * (`lease: null`) and commit.
    */
-  function cascadeHoldingTheRow(id: string) {
+  function cascadeHoldingTheRow(id: string, mode: 'cancel' | 'undecided' = 'cancel') {
     let markLocked!: () => void;
     const locked = new Promise<void>((r) => (markLocked = r));
     let release!: () => void;
@@ -146,6 +146,8 @@ describe('spec 140 s2b DL3 — the dispatch lease behind the erasure cascade\'s 
       await repo.lockForUpdate(tx, tenant.ctx.slug, asBroadcastId(id));
       markLocked();
       await released;
+      // An undecided cascade (cell 18) writes nothing and lets the lock go.
+      if (mode === 'undecided') return;
       await repo.applyTransition(
         tx,
         tenant.ctx.slug,
@@ -180,6 +182,66 @@ describe('spec 140 s2b DL3 — the dispatch lease behind the erasure cascade\'s 
     expect(resend.calls).toEqual([]);
     const row = await readRow(id);
     expect(row.status).toBe('cancelled');
+    expect(row.dispatchLeaseToken).toBeNull();
+  });
+
+  // Spec 140 s2b review round 1 (spec L3) — cell 16 with a live FOREIGN lease
+  // on the row: the claim still waits behind the lock, reads `cancelled`, and
+  // the cancel (a non-holder status change) cleared the foreign lease.
+  it('row 16, live-other — a row an earlier tick holds: the claim waits behind the erasure lock, then skips the cancelled row', async () => {
+    const id = await seed({ dispatchLeaseToken: randomUUID(), dispatchLeaseExpiresAt: new Date(Date.now() + 120_000) });
+    const cascade = cascadeHoldingTheRow(id);
+    await within(cascade.locked, 20_000, 'the cascade taking the row lock');
+    const resend = recordingResend();
+    let tickDone = false;
+    const tickP = buildAudienceTick(depsFor(resend.port) as never, { broadcastId: asBroadcastId(id) }).then((r) => {
+      tickDone = true;
+      return r;
+    });
+    await pause(750);
+    expect(tickDone).toBe(false);
+    cascade.release();
+    await within(cascade.done, 20_000, 'the cascade committing');
+    const tick = await within(tickP, 20_000, 'the tick after the cascade');
+    expect(tick).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
+    expect(resend.calls).toEqual([]);
+    const row = await readRow(id);
+    expect(row.status).toBe('cancelled');
+    expect(row.dispatchLeaseToken).toBeNull();
+  });
+
+  // Spec 140 s2b review round 1 (spec M2) — cell 18: a cascade that decides
+  // nothing (undecided at Resend) writes nothing; the holder's lease is
+  // untouched, its check waits behind the lock and then holds, and it goes on.
+  it('cell 18 — an undecided cascade leaves the lease and the holder continues', async () => {
+    const id = await seed({
+      resendAudienceId: `aud-dl3-${randomUUID().slice(0, 8)}`,
+      audienceImportId: `imp-dl3-${randomUUID().slice(0, 8)}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 120_000),
+    });
+    const parkPoll = gate();
+    const resend = recordingResend({ method: 'getContactImport', gate: parkPoll });
+    const tickP = buildAudienceTick(depsFor(resend.port) as never, { broadcastId: asBroadcastId(id) });
+    await within(parkPoll.reached, 20_000, 'the tick reaching its poll');
+    const claimed = (await readRow(id)).dispatchLeaseToken;
+    expect(claimed).not.toBeNull();
+
+    const cascade = cascadeHoldingTheRow(id, 'undecided');
+    await within(cascade.locked, 20_000, 'the cascade taking the row lock');
+    parkPoll.open();
+    await pause(1_500);
+    expect(resend.calls).not.toContain('createBroadcast');
+    // Under the cascade's lock the lease is still the holder's (a plain read).
+    expect((await readRow(id)).dispatchLeaseToken).toBe(claimed);
+    cascade.release();
+    await within(cascade.done, 20_000, 'the cascade committing');
+    const tick = await within(tickP, 20_000, 'the tick after the cascade');
+
+    expect(tick.ok ? tick.value.kind : tick.error).toBe('sent');
+    expect(resend.calls).toContain('createBroadcast');
+    expect(resend.calls).toContain('sendBroadcast');
+    const row = await readRow(id);
+    expect(row.status).toBe('sending');
     expect(row.dispatchLeaseToken).toBeNull();
   });
 

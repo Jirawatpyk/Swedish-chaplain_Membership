@@ -367,6 +367,63 @@ describe('F119 T036 — broadcasts_immutable_after_submit_fn after 0308 (FR-012a
     expect(misses).toEqual([]);
   });
 
+  /**
+   * Spec 140 s2b review round 1 (migration L1) — the case above moves both
+   * lease columns at once on an unleased row. Here the row already HOLDS a
+   * lease, and each column moves alone, or both drop to NULL: under the GUC
+   * every one is refused by the trigger; without it every one is admitted
+   * (the control that the trigger, not the pair CHECK, is what answers).
+   */
+  it('a leased row under the erasure GUC: expiry-only, token-only and drop-to-NULL are each refused (0322)', async () => {
+    const leasedId = randomUUID();
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(broadcasts).values({
+        ...seedRow('approved'),
+        broadcastId: leasedId,
+        dispatchLeaseToken: randomUUID(),
+        dispatchLeaseExpiresAt: new Date(Date.now() + 120_000),
+      }),
+    );
+    const CHANGES: ReadonlyArray<readonly [string, ReturnType<typeof sql>]> = [
+      ['expiry only', sql`dispatch_lease_expires_at = dispatch_lease_expires_at + interval '1 minute'`],
+      ['token only', sql`dispatch_lease_token = gen_random_uuid()`],
+      ['drop to NULL', sql`dispatch_lease_token = NULL, dispatch_lease_expires_at = NULL`],
+    ];
+    async function probeLeased(tx: Tx, set: ReturnType<typeof sql>): Promise<string> {
+      try {
+        await tx.transaction(async (sp) => {
+          const rows = (await sp.execute(sql`
+            UPDATE broadcasts SET ${set}
+             WHERE tenant_id = ${tenant.ctx.slug} AND broadcast_id = ${leasedId}::uuid
+            RETURNING broadcast_id
+          `)) as unknown as unknown[];
+          if (rows.length !== 1) throw new Error(`probe matched ${rows.length} rows`);
+          throw new Rollback();
+        });
+      } catch (e) {
+        if (e instanceof Rollback) return 'ok';
+        const message = errorChainMessage(e);
+        if (message.includes('broadcast_redaction_only_pii_cols')) return 'redaction';
+        return `other: ${message.slice(0, 160)}`;
+      }
+      return 'unreachable';
+    }
+    const misses = await runInTenant(tenant.ctx, async (tx) => {
+      const out: string[] = [];
+      for (const [what, set] of CHANGES) {
+        const got = await probeLeased(tx, set);
+        if (got !== 'ok') out.push(`no GUC ${what}: want ok, got ${got}`);
+      }
+      await tx.execute(REDACTION_GUC);
+      for (const [what, set] of CHANGES) {
+        const got = await probeLeased(tx, set);
+        if (got !== 'redaction') out.push(`GUC ${what}: want redaction, got ${got}`);
+      }
+      return out;
+    });
+    expect(misses).toEqual([]);
+  });
+
   // --- the two child tables' own triggers (data-model §§ 1–2) --------------
   describe('broadcast_versions + broadcast_member_decisions triggers', () => {
     /** One E-Blast awaiting the member, with a sent version and a decision on it. */
