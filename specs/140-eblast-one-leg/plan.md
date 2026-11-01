@@ -791,6 +791,38 @@ Mutation proofs (from `5f8fe56a2`, each file restored byte for byte, tree clean)
 - the erased wrapper's log call made inert: 3 red (the gate test and both legs).
 - the baseline count put back inside the candidate tx: 2 red.
 
+### Slice 2b — build notes (1 Nov 2026)
+
+- **Column names:** `dispatch_lease_token` / `dispatch_lease_expires_at`. The 2b prose says `lease_*`; the Approach SQL and the sibling `dispatch_first_failed_at` use `dispatch_`. The migration header records this.
+- **Trigger:** 0322 starts from 0311's text, which matches the live dev definition (`md5(prosrc)` 44592cc4…). Its only change is the two GUC-arm lines and their comment.
+- **Dev applied 0322 ahead of main.** The columns are nullable and inert. `db:verify` on this branch has 27 canaries; main's tree reports 26 against dev.
+- **RED evidence that is a mutation, not an earlier commit** (disclosed). DL1 (`import-leg-lease-pair`), DL3 rows 16–17 (`dispatch-lease-erasure-order`), R4 (`already-sent-evidence`) and the SQL-shape gate were written after the tick GREEN `d8078a925`. The RED for each is a mutation run from a committed base, restored byte for byte:
+  - the claim without its "no live lease" predicate → DL1 red in both orders;
+  - the check ignoring the token → DL3 row 17 red;
+  - no `broadcasts-evidence:` lock → both R4 cases red;
+  - a CAS without its token → the SQL-shape gate and the stale-token case red.
+
+  The unit rows and the repo rows went RED in their own commits first (`61ff5accd`, `fcde879cd`, `73949d5a8`, `d2bcf837d`, `760b4d307`).
+- **Three existing integration tests changed their expectation, not the property they test:**
+  - `erasure-vs-dispatch-begun`, "re-mint window": it now mints nothing. The pre-call check waits on the cascade lock, then reads the cleared lease. It is effectively row 17's integration case.
+  - `eblast-send-time-standing` CR#4: the import reads `lease_lost`, because the cancel clears the token in the same UPDATE (A3).
+  - P4: the import ignores `updated_at`, because the claim and the release are writes.
+- **`updated_at` now moves on every tick for a held row.** The claim and the release fire `broadcasts_set_updated_at`. Every reader was grepped. Prune reads drafts only; cleanup and retention read terminal rows; retention anchors on `RETENTION_ANCHOR_FIELD`; no gauge reads it. No reader treats an approved row's `updated_at` as a timer.
+- **D (A10) is bounded by MEASURED figures**, so no seeder was written:
+  - a 20,000-recipient resolve took 3.7 s from a Bangkok workstation, about 220 ms RTT to Neon Singapore (2026-09-07, `audience-pagination-20k.test.ts`);
+  - 900 recipients fit in one 5,000-row page;
+  - about 15 statements at ~220 ms each come to ~3.3 s;
+  - that is under 8 s in total, so 15 s keeps about 2× headroom. The prod p99 is SLO-F7-013.
+- **Gates:** run in the main session, on `ca966ef3c` plus the D label, after a clean `pnpm install` (the builder had found `node_modules` truncated).
+  - `pnpm check`: exit 0.
+  - contract: 260 files, 2,942 tests.
+  - unit:
+    - broadcasts: 152 files, 2,405 tests;
+    - members: 217 files, 1,972 tests;
+    - broadcast + lib: 353 files, 4,537 tests;
+    - architecture: 861 tests.
+  - integration: 151 files (every broadcasts file, plus every file that mentions broadcast), run as 19 chunks of 8, one at a time. 900 passed, 19 skipped (the `RUN_SCALE_TESTS` / env-gated perf and virus-scan files).
+
 ### Slice 2a — build notes (decisions made while building)
 
 Commits: `1c69a7611` test (RED: DL5a, DL8, P6, R3, the contract rows), `b9c554d29` fix (GREEN), `3246521af` test (RED: DL7), `68831a89c` fix (GREEN). RED ran first: 40 failures across `resend-gateway-bounded-calls.test.ts`, `subprocessor-erasure-propagate-bound.test.ts` and the new `broadcasts-sdk.contract.test.ts` block (e.g. "createAudience aborts at callTimeoutMs on a hung fetch (50 ms)" → `expected 'still running' to deeply equal { thrown: { kind: 'retryable', …(1) } }`; "createAudience answered 5xx sends one request" → 6 attempts), then 2 for DL7 ("the legacy leg skips a row that holds import columns (audience_import_id)" → `expected { ok: true, …(1) } to deeply equal { ok: false, error: { …(2) } }`).

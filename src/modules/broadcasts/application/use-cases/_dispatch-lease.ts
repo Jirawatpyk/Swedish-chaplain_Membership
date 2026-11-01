@@ -51,9 +51,15 @@ export const TICK1_BOUNDED_CALLS = 5;
 
 /**
  * D — DB statements plus one `resolveRecipients` for one row: ~15 short
- * statements and a resolve at the 900-recipient ceiling. **ASSUMED** — the
- * main session measures the p99 on the dev branch and replaces this label
- * (plan.md § Slice 2b, A10).
+ * statements and a resolve at the 900-recipient ceiling. **Bounded by
+ * MEASURED figures** (plan.md § Slice 2b, A10), from a Bangkok workstation
+ * (~220 ms RTT to Neon Singapore, slower than Vercel `sin1`):
+ * - a 20,000-recipient resolve took 3.7 s (2026-09-07,
+ *   `tests/integration/broadcasts/audience-pagination-20k.test.ts`); 900
+ *   recipients are one 5,000-row page;
+ * - ~15 statements × ~220 ms ≈ 3.3 s.
+ * Together that is under 8 s, so 15 s keeps about 2× headroom. The prod p99 is
+ * SLO-F7-013 (`broadcasts_recipient_count_ms`).
  */
 export const DB_AND_RESOLVE_MS = 15_000;
 
