@@ -327,6 +327,8 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
         );
         expect(thrown).toBeInstanceOf(BroadcastConcurrentMutationError);
         expect((thrown as BroadcastConcurrentMutationError).observedStatus).toBe('lease_lost');
+        // Review round 1 (CR#1) — and the status the probe read on the row.
+        expect((thrown as BroadcastConcurrentMutationError).rowStatus).toBe(c.seed.status ?? 'approved');
       } else if (c.signal === 'null') {
         expect(await stale).toBeNull();
       } else if (c.signal === 'false') {
@@ -362,6 +364,7 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
           (e: unknown) => e,
         );
       expect((thrown as BroadcastConcurrentMutationError).observedStatus).toBe('lease_lost');
+      expect((thrown as BroadcastConcurrentMutationError).rowStatus).toBe('cancelled');
     });
   });
 
