@@ -1229,6 +1229,30 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     );
   });
 
+  it('#60: a failed locked re-read (DB unavailable) logs WARN, is not counted, deletes nothing, keeps the original error', async () => {
+    const metric = vi.spyOn(invoicingMetrics, 'orphanBlobCleanupFailed');
+    metric.mockClear();
+    const warnLog = vi.spyOn(logger, 'warn');
+    const deps = makeDeps(makeEventDraft(), makeSettings(), null);
+    const boom = new Error('apply failed');
+    deps.invoiceRepo.applyIssueAsPaid = vi.fn(async () => {
+      throw boom;
+    });
+    let reads = 0;
+    deps.invoiceRepo.findByIdInTxForUpdate = vi.fn(async () => {
+      reads += 1;
+      // 1st = the use case's own locked draft read; 2nd = the cleanup's.
+      if (reads === 1) return makeEventDraft();
+      throw new Error('current transaction is aborted');
+    });
+    await expect(issueEventInvoiceAsPaid(deps, input)).rejects.toBe(boom);
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+    expect(metric).not.toHaveBeenCalled();
+    expect(
+      warnLog.mock.calls.some((c) => String(c[1]).startsWith('issue-as-paid: orphan blob cleanup skipped')),
+    ).toBe(true);
+  });
+
   it('#60 parity: an ambiguous COMMIT (the locked re-read shows the row owns the key) keeps the PDF', async () => {
     const deps = makeDeps(makeEventDraft(), makeSettings(), null);
     const KEY = `invoicing/test-swecham/2026/${INVOICE_ID}_v1.pdf`;
