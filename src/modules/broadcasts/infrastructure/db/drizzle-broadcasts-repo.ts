@@ -484,7 +484,14 @@ export async function hasLiveDispatchLeaseStatement(
          WHERE tenant_id = ${tenantIdArg}
            AND broadcast_id = ${broadcastId}`,
   )) as unknown as Array<{ live: unknown }>;
-  return isTrue(rows[0]?.live);
+  const row = rows[0];
+  if (row === undefined) return false;
+  // Review round 1 (security L3) — fail CLOSED: an answer that is not a
+  // boolean (a driver or schema surprise) must not read as "no live lease",
+  // which would let the legacy leg work a row an import tick holds.
+  if (row.live === true || row.live === 't') return true;
+  if (row.live === false || row.live === 'f') return false;
+  throw new Error(`hasLiveDispatchLease: expected a boolean, got ${typeof row.live}`);
 }
 
 /**
