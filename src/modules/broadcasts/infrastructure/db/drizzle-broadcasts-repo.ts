@@ -450,11 +450,7 @@ export async function checkDispatchLeaseStatement(
   headroomMs: number,
   lockTimeoutMs: number = CHECK_LOCK_TIMEOUT_MS,
 ): Promise<LeaseCheck> {
-  if (!Number.isInteger(lockTimeoutMs) || lockTimeoutMs <= 0) {
-    throw new Error(`checkDispatchLeaseStatement: lockTimeoutMs must be a positive integer, got ${lockTimeoutMs}`);
-  }
-  // A literal, not a bind parameter: SET takes none. Validated just above.
-  await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${lockTimeoutMs}ms'`));
+  await setLocalLockTimeout(tx, lockTimeoutMs, 'checkDispatchLeaseStatement');
   const rows = (await tx.execute(
     sql`SELECT (dispatch_lease_token IS NOT DISTINCT FROM ${lease}::uuid) AS mine,
                (dispatch_lease_expires_at > clock_timestamp() + make_interval(secs => ${headroomMs / 1000}::double precision)) AS fresh
@@ -495,6 +491,18 @@ export async function hasLiveDispatchLeaseStatement(
 }
 
 /**
+ * `SET LOCAL lock_timeout` for the rest of the caller's tx (the lease check and
+ * the release each run in their own). A literal, not a bind parameter: SET
+ * takes none, so the value is validated as a positive integer first.
+ */
+async function setLocalLockTimeout(tx: TenantTx, lockTimeoutMs: number, callerName: string): Promise<void> {
+  if (!Number.isInteger(lockTimeoutMs) || lockTimeoutMs <= 0) {
+    throw new Error(`${callerName}: lockTimeoutMs must be a positive integer, got ${lockTimeoutMs}`);
+  }
+  await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${lockTimeoutMs}ms'`));
+}
+
+/**
  * Spec 140 s2b — the RELEASE statement (`releaseDispatchLease`), exported for
  * the same DL4 owner-role case. No status predicate: by the end of a tick the
  * row may be `sending` or `failed_to_dispatch`, and the token is the fence.
@@ -504,7 +512,14 @@ export async function releaseDispatchLeaseStatement(
   tenantIdArg: string,
   broadcastId: BroadcastId,
   lease: LeaseToken,
+  /**
+   * Review round 2 (reliability LOW-1) — the release waits at most this long
+   * for the row lock (default `CHECK_LOCK_TIMEOUT_MS`); a 55P03 is the tick's
+   * `lease_release_failed`, and the lease then expires on its own.
+   */
+  lockTimeoutMs: number = CHECK_LOCK_TIMEOUT_MS,
 ): Promise<boolean> {
+  await setLocalLockTimeout(tx, lockTimeoutMs, 'releaseDispatchLeaseStatement');
   const rows = await tx
     .update(broadcasts)
     .set({ dispatchLeaseToken: null, dispatchLeaseExpiresAt: null, updatedAt: new Date() })
