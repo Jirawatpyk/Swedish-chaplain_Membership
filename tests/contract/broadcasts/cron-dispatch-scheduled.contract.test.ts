@@ -118,7 +118,8 @@ vi.mock('@/modules/broadcasts', () => ({
   buildAudienceTick: (...args: unknown[]) => buildAudienceTickMock(...args),
   makeBuildAudienceTickDeps: async (...args: unknown[]) => {
     buildDepsArgs.push(args);
-    return { kind: 'build-deps-stub' };
+    // Like the real maker: the tick budget (its third argument) rides the deps.
+    return { kind: 'build-deps-stub', tickBudget: args[2] };
   },
 }));
 
@@ -792,6 +793,23 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     expect(body['succeeded']).toBe(0);
     expect(body['import_pending']).toBe(0);
     expect(body['unknown_error']).toBe(0);
+  });
+
+  // Review round 1 (CR#6) — the tick budget is a REQUIRED maker parameter the
+  // route passes (no `Date.now()` default in the maker, no second copy of
+  // maxDuration): the maker hands it to the use case unchanged.
+  it('the route passes its tick budget to the import deps maker', async () => {
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    captureScan([{ broadcast_id: BROADCAST_ID }]);
+    buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'import_pending', importId: 'imp-1' } });
+    const before = Date.now();
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const budget = buildDepsArgs[0]?.[2] as { tickStartedAt: number; maxDurationMs: number } | undefined;
+    expect(budget?.maxDurationMs).toBe(300_000);
+    expect(budget?.tickStartedAt).toBeGreaterThanOrEqual(before);
+    const [importDeps] = buildAudienceTickMock.mock.calls[0] as [{ tickBudget?: unknown }];
+    expect(importDeps.tickBudget).toBe(budget);
   });
 
   // Review round 1 (CR#7) — past the cutoff no later row can start either, so
