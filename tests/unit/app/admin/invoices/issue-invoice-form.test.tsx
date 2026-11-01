@@ -781,6 +781,32 @@ describe('IssueInvoiceForm — an unknown outcome is not a failure (#57, #58)', 
     }
   });
 
+  it('a 500 with a flat body (no route code) is unconfirmed, not "Error code"', async () => {
+    vi.stubGlobal('fetch', respond(500, { error: 'server-error' }));
+    try {
+      renderForm();
+      confirmIssue();
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.issue.errors.unconfirmed);
+      expect(alert).not.toHaveTextContent(/Error code/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a named 5xx the route rolled back (pdf_render_failed) stays a failure', async () => {
+    vi.stubGlobal('fetch', respond(500, { error: { code: 'pdf_render_failed' } }));
+    try {
+      renderForm();
+      confirmIssue();
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'destructive');
+      expect(alert).not.toHaveTextContent(enMessages.admin.invoices.issue.errors.unconfirmed);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('the READ_ONLY_MODE 503 (nothing written) is the read-only message, not unconfirmed', async () => {
     vi.stubGlobal('fetch', respond(503, { error: 'read-only-mode' }));
     try {
@@ -812,6 +838,9 @@ describe('IssueInvoiceForm — an unknown outcome is not a failure (#57, #58)', 
         vi.advanceTimersByTime(1_500);
       });
       expect(hasStill()).toBe(true);
+      // Sighted admins see it too, not only screen readers.
+      const line = screen.queryAllByRole('status').find((el) => el.textContent === still)!;
+      expect(line).not.toHaveClass('sr-only');
     } finally {
       vi.useRealTimers();
       vi.unstubAllGlobals();

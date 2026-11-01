@@ -11,18 +11,20 @@ import {
 
 describe('isUnknownOutcome', () => {
   it('a 5xx with no code is unknown', () => {
-    expect(isUnknownOutcome(504, undefined)).toBe(true);
-    expect(isUnknownOutcome(502, null)).toBe(true);
+    expect(isUnknownOutcome(504, null)).toBe(true);
   });
   it('a 5xx internal_error is unknown', () => {
-    expect(isUnknownOutcome(500, 'internal_error')).toBe(true);
+    expect(isUnknownOutcome(500, { code: 'internal_error', shape: 'nested' })).toBe(true);
   });
-  it('a 5xx with a named code is not', () => {
-    expect(isUnknownOutcome(503, 'pdf_render_failed')).toBe(false);
+  it('a 5xx whose body is a flat string (not a route code) is unknown', () => {
+    expect(isUnknownOutcome(500, { code: 'server-error', shape: 'flat' })).toBe(true);
+  });
+  it('a 5xx with a named route code is not', () => {
+    expect(isUnknownOutcome(500, { code: 'pdf_render_failed', shape: 'nested' })).toBe(false);
   });
   it('a 4xx is not, coded or not', () => {
-    expect(isUnknownOutcome(409, 'invalid_status')).toBe(false);
-    expect(isUnknownOutcome(400, undefined)).toBe(false);
+    expect(isUnknownOutcome(409, { code: 'invalid_status', shape: 'nested' })).toBe(false);
+    expect(isUnknownOutcome(400, null)).toBe(false);
   });
 });
 
