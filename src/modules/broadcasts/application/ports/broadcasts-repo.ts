@@ -620,8 +620,11 @@ export interface BroadcastsRepo {
    * a broadcast to a partly-built or empty audience.
    *
    * `lease` (spec 140 s2b, REQUIRED): this write has no status CAS (it runs
-   * after `sending`), so the token is its only fence; its 0-row probe reports
-   * a lost token as `observedStatus: 'lease_lost'` (A3).
+   * after `sending`), so the token is its fence — `dispatch_lease_token = $t
+   * OR status IN ('sending','sent')` (review round 1, CR#2: once the row says
+   * the mail is out the token guards nothing, and a webhook's `sent` must not
+   * strand the stamp). Its 0-row probe reports a lost token on a row in any
+   * other status as `observedStatus: 'lease_lost'` (A3).
    */
   markAudienceImportCompleted(
     tx: unknown,

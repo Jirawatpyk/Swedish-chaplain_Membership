@@ -1652,8 +1652,13 @@ export function makeDrizzleBroadcastsRepo(
             // the shape 0299 forbids. 0 rows → the probe below names it.
             isNotNull(broadcasts.audienceImportId),
             // Spec 140 s2b — this write has no status CAS (it runs after
-            // `sending`), so the token is its only fence.
-            leaseFence(lease),
+            // `sending`), so the token is its only fence — until the row says
+            // the mail is out (review round 1, CR#2): once `sending` or `sent`
+            // the token guards nothing, and a webhook's `sending → sent` (a
+            // non-holder change that clears the lease) must not strand the stamp.
+            lease === null
+              ? undefined
+              : or(eq(broadcasts.dispatchLeaseToken, lease), inArray(broadcasts.status, ['sending', 'sent'])),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
@@ -1687,7 +1692,7 @@ export function makeDrizzleBroadcastsRepo(
         // Spec 140 s2b (A3) — the probe learns `lease_lost`: a row that no
         // longer carries this tick's token was taken over or exited, so the
         // stamp is not this tick's to write, stamped or not.
-        if (lease !== null && probeRow.leaseToken !== lease) {
+        if (lease !== null && probeRow.leaseToken !== lease && probeRow.status !== 'sending' && probeRow.status !== 'sent') {
           throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, LEASE_LOST, probeRow.status);
         }
         if (probeRow.completedAt === null) {
