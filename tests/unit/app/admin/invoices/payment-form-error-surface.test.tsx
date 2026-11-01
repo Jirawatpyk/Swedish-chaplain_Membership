@@ -35,7 +35,8 @@ const pushMock = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, refresh: refreshMock, replace: vi.fn() }),
 }));
-vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const { toastSuccess } = vi.hoisted(() => ({ toastSuccess: vi.fn() }));
+vi.mock('@/lib/toast', () => ({ toast: { success: toastSuccess, error: vi.fn() } }));
 
 // useTransition / async-transition interactions need real timers
 // (tests/setup.ts installs fakes).
@@ -52,7 +53,7 @@ const DOC_NUMBER = 'SC-2026-000048';
 const ISSUE_DATE = '2030-03-14';
 const TODAY_ISO = '2030-03-15';
 
-function renderForm() {
+function renderForm(onSuccess?: () => void) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <WithMoneyDialogFooter config={RECORD_PAYMENT_FOOTER}>
@@ -62,6 +63,7 @@ function renderForm() {
             documentNumber={DOC_NUMBER}
             issueDate={ISSUE_DATE}
             todayIso={TODAY_ISO}
+            {...(onSuccess ? { onSuccess } : {})}
             {...wire}
           />
         )}
@@ -243,29 +245,77 @@ describe('PaymentForm — the POST is unchanged on AURA (T804)', () => {
 });
 
 describe('PaymentForm — the connection drops (#48)', () => {
-  it('shows an inline warning to refresh before retrying, stays open, and allows a retry', async () => {
-    const fetchMock = vi.fn(async () => {
+  function droppingFetch() {
+    return vi.fn(async () => {
       throw new TypeError('Failed to fetch');
     });
+  }
+
+  it('shows an inline warning, stays open, and a retry replays the recorded payment', async () => {
+    // First POST: no response. Retry: the server replays the committed
+    // payment (200) — nothing new is recorded.
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ receipt_document_number_raw: 'RC-2030-000009', email_dispatch: 'sent' }),
+      });
     vi.stubGlobal('fetch', fetchMock);
+    const onSuccess = vi.fn();
+    toastSuccess.mockClear();
     try {
-      renderForm();
+      renderForm(onSuccess);
       submitPayment();
 
       const alert = await screen.findByTestId('record-payment-error');
       expect(alert).toHaveClass('aura-alert--warning');
       expect(alert).toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
       await waitFor(() => expect(alert).toHaveFocus());
-      expect(pushMock).not.toHaveBeenCalled();
+      expect(onSuccess).not.toHaveBeenCalled();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-      expect(refreshMock).toHaveBeenCalledTimes(1);
-
-      // The server refuses a second payment, so a retry stays possible.
       await waitFor(() => expect(screen.getByRole('button', { name: 'Record payment' })).toBeEnabled());
       submitPayment();
-      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(toastSuccess.mock.calls[0]?.[0]).toContain('RC-2030-000009');
     } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('Refresh closes the dialog first, then refreshes the page', async () => {
+    vi.stubGlobal('fetch', droppingFetch());
+    const onSuccess = vi.fn();
+    try {
+      renderForm(onSuccess);
+      submitPayment();
+      await screen.findByTestId('record-payment-error');
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+      expect(onSuccess.mock.invocationCallOrder[0]!).toBeLessThan(refreshMock.mock.invocationCallOrder[0]!);
+      expect(pushMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('Refresh while still offline waits for the connection before refreshing', async () => {
+    vi.stubGlobal('fetch', droppingFetch());
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    const onSuccess = vi.fn();
+    try {
+      renderForm(onSuccess);
+      submitPayment();
+      await screen.findByTestId('record-payment-error');
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+      expect(refreshMock).not.toHaveBeenCalled();
+      window.dispatchEvent(new Event('online'));
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+    } finally {
+      onLine.mockRestore();
       vi.unstubAllGlobals();
     }
   });
