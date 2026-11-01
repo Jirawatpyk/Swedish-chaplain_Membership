@@ -75,6 +75,18 @@ export const LEASE_LOST = 'lease_lost' as const;
 export const LEASE_HELD = 'lease_held' as const;
 
 /**
+ * Spec 140 s2b review round 4 (code-review #4) — what the restart's two
+ * release CASes (`releaseAudienceImport`, `releaseResendAudience`) answer.
+ * `ok` — the write landed. On 0 rows the row's token is probed, the way
+ * `throwConcurrentMutation` does for the throwing writers: `lease_lost` — a
+ * token was passed and the row no longer carries it (a takeover, or a
+ * non-holder exit that cleared it); `cas_lost` — anything else (an id or the
+ * status moved, an unfenced call, or the row is gone). Neither miss is an
+ * error, and the caller deletes nothing more.
+ */
+export type ReleaseOutcome = 'ok' | 'lease_lost' | 'cas_lost';
+
+/**
  * #400 item 1 — the ONLY `Broadcast` fields `applyTransition` writes besides
  * `status` / `updated_at`. The Drizzle adapter loops over this tuple, so a
  * key off the list used to be silently DROPPED; typing the parameter as
@@ -681,7 +693,7 @@ export interface BroadcastsRepo {
    * error, and the caller must then delete NOTHING.
    *
    * `lease` (spec 140 s2b, REQUIRED): with a token the CAS also requires
-   * `dispatch_lease_token = $t`; a lost token is the existing `false` (A3).
+   * `dispatch_lease_token = $t`. See {@link ReleaseOutcome} for the answer.
    */
   releaseAudienceImport(
     tx: unknown,
@@ -693,7 +705,7 @@ export interface BroadcastsRepo {
       readonly resendBroadcastId: string | null;
     },
     lease: LeaseToken | null,
-  ): Promise<boolean>;
+  ): Promise<ReleaseOutcome>;
 
   /**
    * Import leg — the restart's last write, once the caller has deleted the
@@ -704,11 +716,11 @@ export interface BroadcastsRepo {
    * A compare-and-set: both columns still equal to `expected` (the broadcast
    * id NULL-safe), the row still `approved`, and NO `audience_import_id` —
    * the shape nothing can send from (the import leg's send is fenced on a
-   * non-null import id). `false` = zero rows matched; NOT an error. The
+   * non-null import id). A miss is NOT an error ({@link ReleaseOutcome}). The
    * released row runs a fresh tick 1 on its next tick.
    *
    * `lease` (spec 140 s2b, REQUIRED): with a token the CAS also requires
-   * `dispatch_lease_token = $t`; a lost token is the existing `false` (A3).
+   * `dispatch_lease_token = $t`.
    */
   releaseResendAudience(
     tx: unknown,
@@ -716,7 +728,7 @@ export interface BroadcastsRepo {
     broadcastId: BroadcastId,
     expected: { readonly resendAudienceId: string; readonly resendBroadcastId: string | null },
     lease: LeaseToken | null,
-  ): Promise<boolean>;
+  ): Promise<ReleaseOutcome>;
 
   /**
    * Spec 139 review round 1 (P7) — the erasure cascade's residual-8c evidence,

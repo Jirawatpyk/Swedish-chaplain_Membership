@@ -197,10 +197,10 @@ function makeRepo(opts: FixtureOpts): {
       async markAudienceImportCompleted() {},
       async markDispatchRetryStarted() { return null; },
       async releaseAudienceImport() {
-        return false;
+        return 'cas_lost' as const;
       },
       async releaseResendAudience() {
-        return false;
+        return 'cas_lost' as const;
       },
       async readAlreadySentEvidenceInTx() {
         return { broadcastRecorded: false, memberBroadcastCount: 0 };

@@ -76,7 +76,7 @@ import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
 import { rereadAfterLostRace } from './_reread-after-lost-race';
 import { isHandedStatus, probeRefusedSend } from './_probe-refused-send';
-import type { BroadcastsRepo, LeaseCheck, LeaseToken } from '../ports/broadcasts-repo';
+import type { BroadcastsRepo, LeaseCheck, LeaseToken, ReleaseOutcome } from '../ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
   BroadcastNotFoundError,
@@ -1245,7 +1245,7 @@ async function restartAudienceBuild(
 
   // 1. CLAIM.
   if (importId !== null) {
-    let claimed: boolean;
+    let claimed: ReleaseOutcome;
     try {
       claimed = await deps.broadcastsRepo.withTx((tx) =>
         deps.broadcastsRepo.releaseAudienceImport(tx, deps.tenant.slug, input.broadcastId, {
@@ -1257,7 +1257,8 @@ async function restartAudienceBuild(
     } catch (e) {
       return failed('release_import', e);
     }
-    if (!claimed) return lost('release_import', 'cas_lost');
+    // Review round 4 (code-review #4) — the repo probed the token on a miss.
+    if (claimed !== 'ok') return lost('release_import', claimed === 'lease_lost' ? 'lost' : 'cas_lost');
   }
   // 2. The broadcast resource (an empty id is not an id).
   if (resendBroadcastId !== null && resendBroadcastId !== '') {
@@ -1286,7 +1287,7 @@ async function restartAudienceBuild(
     return failed('delete_audience', e);
   }
   // 4. RELEASE.
-  let released: boolean;
+  let released: ReleaseOutcome;
   try {
     released = await deps.broadcastsRepo.withTx((tx) =>
       deps.broadcastsRepo.releaseResendAudience(tx, deps.tenant.slug, input.broadcastId, {
@@ -1297,7 +1298,7 @@ async function restartAudienceBuild(
   } catch (e) {
     return failed('release_audience', e);
   }
-  if (!released) return lost('release_audience', 'cas_lost');
+  if (released !== 'ok') return lost('release_audience', released === 'lease_lost' ? 'lost' : 'cas_lost');
 
   if (why === 'hold') {
     broadcastsMetrics.audienceImportAbandonedOnHold(deps.tenant.slug);

@@ -42,6 +42,7 @@ import type {
   ListByTenantStatusResult,
   ListByTenantStatusSort,
   NewBroadcastDraftInput,
+  ReleaseOutcome,
   TerminalBroadcastDraftRef,
   TransitionFields,
 } from '../../application/ports/broadcasts-repo';
@@ -349,6 +350,27 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
  * Left as-is and recorded rather than silently repaired — it is a separate
  * change with its own callers.)
  */
+/**
+ * Spec 140 s2b review round 4 (code-review #4) — why a release CAS matched no
+ * row ({@link ReleaseOutcome}): a token was passed and the row no longer
+ * carries it → `lease_lost`; anything else (an unfenced call, a moved id or
+ * status, a vanished row) → `cas_lost`. One PK read on the miss only.
+ */
+async function releaseMissOutcome(
+  tx: TenantTx,
+  tenantIdArg: TenantSlug,
+  broadcastId: BroadcastId,
+  lease: LeaseToken | null,
+): Promise<ReleaseOutcome> {
+  if (lease === null) return 'cas_lost';
+  const [probe] = await tx
+    .select({ leaseToken: broadcasts.dispatchLeaseToken })
+    .from(broadcasts)
+    .where(and(eq(broadcasts.tenantId, tenantIdArg), eq(broadcasts.broadcastId, broadcastId)))
+    .limit(1);
+  return probe !== undefined && probe.leaseToken !== lease ? 'lease_lost' : 'cas_lost';
+}
+
 async function throwConcurrentMutation(
   tx: TenantTx,
   tenantIdArg: TenantSlug,
@@ -1628,7 +1650,7 @@ export function makeDrizzleBroadcastsRepo(
         readonly resendBroadcastId: string | null;
       },
       lease: LeaseToken | null,
-    ): Promise<boolean> {
+    ): Promise<ReleaseOutcome> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'releaseAudienceImport');
       const updated = await tx
@@ -1647,12 +1669,12 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.resendAudienceId, expected.resendAudienceId),
             sql`${broadcasts.resendBroadcastId} IS NOT DISTINCT FROM ${expected.resendBroadcastId}`,
             isNull(broadcasts.audienceImportCompletedAt),
-            // Spec 140 s2b — a lost token is the existing `false` (A3).
+            // Spec 140 s2b — the token fence (A3); a miss is probed below.
             leaseFence(lease),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
-      return updated.length === 1;
+      return updated.length === 1 ? 'ok' : releaseMissOutcome(tx, tenantIdArg, broadcastId, lease);
     },
 
     /**
@@ -1668,7 +1690,7 @@ export function makeDrizzleBroadcastsRepo(
       broadcastId: BroadcastId,
       expected: { readonly resendAudienceId: string; readonly resendBroadcastId: string | null },
       lease: LeaseToken | null,
-    ): Promise<boolean> {
+    ): Promise<ReleaseOutcome> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'releaseResendAudience');
       const updated = await tx
@@ -1682,12 +1704,12 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.resendAudienceId, expected.resendAudienceId),
             isNull(broadcasts.audienceImportId),
             sql`${broadcasts.resendBroadcastId} IS NOT DISTINCT FROM ${expected.resendBroadcastId}`,
-            // Spec 140 s2b — a lost token is the existing `false` (A3).
+            // Spec 140 s2b — the token fence (A3); a miss is probed below.
             leaseFence(lease),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
-      return updated.length === 1;
+      return updated.length === 1 ? 'ok' : releaseMissOutcome(tx, tenantIdArg, broadcastId, lease);
     },
 
     /**

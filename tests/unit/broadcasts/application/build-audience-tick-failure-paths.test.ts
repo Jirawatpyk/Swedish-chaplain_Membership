@@ -631,7 +631,7 @@ function makeDeps(opts: {
           if (opts.releaseImportThrows === true) {
             throw new Error('57P01 terminating connection due to administrator command');
           }
-          return opts.releaseImportLoses !== true;
+          return opts.releaseImportLoses === true ? ('cas_lost' as const) : ('ok' as const);
         },
         async releaseResendAudience(
           _tx: unknown,
@@ -640,7 +640,7 @@ function makeDeps(opts: {
           expected: { resendAudienceId: string; resendBroadcastId: string | null },
         ) {
           rec.releases.push({ method: 'releaseResendAudience', expected, afterGatewayCalls: rec.gatewayCalls.length });
-          return opts.releaseAudienceLoses !== true;
+          return opts.releaseAudienceLoses === true ? ('cas_lost' as const) : ('ok' as const);
         },
         async readAlreadySentEvidenceInTx() {
           return { broadcastRecorded: false, memberBroadcastCount: 0 };

@@ -217,11 +217,11 @@ function harness(opts: Opts = {}) {
       },
       async releaseAudienceImport(_tx: unknown, _t: unknown, _b: unknown, _e: unknown, lease: unknown) {
         write('releaseAudienceImport', lease);
-        return opts.releaseImportAnswers ?? true;
+        return opts.releaseImportAnswers ?? 'ok';
       },
       async releaseResendAudience(_tx: unknown, _t: unknown, _b: unknown, _e: unknown, lease: unknown) {
         write('releaseResendAudience', lease);
-        return true;
+        return 'ok' as const;
       },
       async readAlreadySentEvidenceInTx() {
         return { broadcastRecorded: false, memberBroadcastCount: 0 };

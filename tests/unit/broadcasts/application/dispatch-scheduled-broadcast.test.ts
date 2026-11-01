@@ -332,10 +332,10 @@ function makeRepo(opts: RepoOpts): {
         return opts.broadcast?.dispatchFirstFailedAt ?? at;
       },
       async releaseAudienceImport() {
-        return false;
+        return 'cas_lost' as const;
       },
       async releaseResendAudience() {
-        return false;
+        return 'cas_lost' as const;
       },
       async readAlreadySentEvidenceInTx() {
         return { broadcastRecorded: false, memberBroadcastCount: 0 };
