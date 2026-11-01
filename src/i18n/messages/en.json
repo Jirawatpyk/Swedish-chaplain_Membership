@@ -3512,6 +3512,8 @@
         "errors": {
           "failed": "Issue failed",
           "concurrent": "This invoice was already issued in another session. Refresh to see the latest status and its number.",
+          "unconfirmed": "The connection dropped before we heard back, so we can't tell whether the invoice was issued. Refresh to check its status before you try again — if it was issued, trying again issues nothing new.",
+          "waitingForConnection": "Waiting for the connection…",
           "issue_total_changed": "The total changed after this page loaded, so nothing was issued. Refresh to see the current total, then issue again.",
           "refreshAction": "Refresh",
           "event_no_tin_requires_paid_issue": "This buyer is not recorded as VAT-registered — the ticket fee must be recorded as paid (issuing a receipt), not billed first. If they are VAT-registered, tick that on the member record first.",
@@ -3593,6 +3595,8 @@
           "membership_terminated": "This member's membership has been terminated — use \"Renew member\" to reactivate and re-invoice, then record the payment against the new invoice. If the member's previous open invoice is still there, void it.",
           "new_flow_bill_requires_flag_on": "This invoice was created for the tax-at-payment flow, which is currently switched off. Re-enable it, or void and re-issue the invoice, before recording payment.",
           "concurrent": "This invoice was already paid or changed in another session. Refresh to see the latest status and the receipt (RC) number.",
+          "unconfirmed": "The connection dropped before we heard back, so we can't tell whether the payment was recorded. Refresh to check before you try again — if it was recorded, trying again records nothing new.",
+          "waitingForConnection": "Waiting for the connection…",
           "refreshAction": "Refresh",
           "dateRange": "Payment date must be on or after the issue date ({min}) and not in the future ({max}).",
           "codeFallback": "Error code: {code}",

@@ -38,6 +38,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import type { FeedbackTone } from '@jirawatpyk/aura-react';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { toast } from '@/lib/toast';
 import { Alert, Badge, Button, RadioGroup, TextField } from '@jirawatpyk/aura-react';
@@ -57,6 +58,7 @@ import {
 import { routeIssueError } from './issue-error-routing';
 import { ZeroRateCertUploader } from './zero-rate-cert-uploader';
 import { type MoneyDialogFooterState, useReportMoneyDialogFooter } from './money-dialog-footer';
+import { refreshWhenOnline } from './refresh-when-online';
 
 export type IssueInvoiceFormProps = {
   readonly invoiceId: string;
@@ -92,14 +94,33 @@ export type IssueInvoiceFormProps = {
   readonly hasNoPaymentPath?: boolean;
   /** Bill-number stream prefix for the review copy (SC). */
   readonly billNumberPrefix?: string;
-  /** Close the enclosing dialog (wired by the wrapper to `setOpen(false)`). */
-  readonly onClose: () => void;
+  /**
+   * Close the enclosing dialog (wired by the wrapper to `setOpen(false)`).
+   * `'refresh'`: a page refresh follows that may unmount the trigger, so the
+   * dialog sends focus to `#main-content` instead (#48).
+   */
+  readonly onClose: (reason?: 'refresh') => void;
   /**
    * The state of the buttons the dialog draws in its footer (PR N2): in
    * flight (no Escape or scrim close), whether the phrase matches, the label.
    */
   readonly onFooterChange?: (state: MoneyDialogFooterState) => void;
 };
+
+type IssueFormError =
+  | { readonly kind: 'concurrent' }
+  | { readonly kind: 'stale' }
+  // #48 — the connection dropped: the issue may have committed.
+  | { readonly kind: 'unconfirmed' }
+  | { readonly kind: 'failure'; readonly message: string };
+
+/** One tone per kind; a new kind must pick one (the wrapper's `data-tone` follows). */
+const ISSUE_ERROR_TONE = {
+  concurrent: { alert: 'info', wrapper: 'neutral' },
+  stale: { alert: 'info', wrapper: 'neutral' },
+  unconfirmed: { alert: 'warning', wrapper: 'warning' },
+  failure: { alert: 'danger', wrapper: 'destructive' },
+} as const satisfies Record<IssueFormError['kind'], { alert: FeedbackTone; wrapper: string }>;
 
 export function IssueInvoiceForm({
   invoiceId,
@@ -126,12 +147,9 @@ export function IssueInvoiceForm({
   // 088 T021a / FR-032 — issue failure surfaces INLINE via a focused
   // role="alert" (never a transient toast); a concurrent 409 shows an inline
   // "already issued — refresh" prompt.
-  const [formError, setFormError] = useState<
-    | { readonly kind: 'concurrent' }
-    | { readonly kind: 'stale' }
-    | { readonly kind: 'failure'; readonly message: string }
-    | null
-  >(null);
+  const [formError, setFormError] = useState<IssueFormError | null>(null);
+  // #48 — Refresh was pressed offline: it runs once the connection is back.
+  const [waitingForConnection, setWaitingForConnection] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (formError) errorRef.current?.focus();
@@ -231,6 +249,7 @@ export function IssueInvoiceForm({
   function confirm() {
     if (!matches || inFlightRef.current) return;
     setFormError(null);
+    setWaitingForConnection(false);
     // 088 T061b/T061g — fail-closed layer 1: block submit BEFORE any POST when
     // a zero-rated issue has a blank cert number (or a malformed date). Move
     // focus to the first invalid field. The server 422 + DB CHECK are layers
@@ -267,16 +286,24 @@ export function IssueInvoiceForm({
       // Held after a success: the dialog closes and this form unmounts.
       let issued = false;
       try {
-        const res = await fetch(
-          `/api/invoices/${invoiceId}/issue`,
-          body
-            ? {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify(body),
-              }
-            : { method: 'POST' },
-        );
+        let res: Response;
+        try {
+          res = await fetch(
+            `/api/invoices/${invoiceId}/issue`,
+            body
+              ? {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify(body),
+                }
+              : { method: 'POST' },
+          );
+        } catch {
+          // #48 — no response: the issue may have committed. A retry is safe
+          // (the server answers invoice_already_issued), but check first.
+          setFormError({ kind: 'unconfirmed' });
+          return;
+        }
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
           const code = (errBody as { error?: { code?: string } })?.error?.code;
@@ -314,7 +341,7 @@ export function IssueInvoiceForm({
         );
         issued = true;
         setTyped('');
-        onClose();
+        onClose('refresh');
         router.refresh();
       } finally {
         if (!issued) inFlightRef.current = false;
@@ -598,17 +625,36 @@ export function IssueInvoiceForm({
           ref={errorRef}
           tabIndex={-1}
           role="alert"
-          data-tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
+          data-tone={ISSUE_ERROR_TONE[formError.kind].wrapper}
           className="outline-none"
           data-testid="issue-invoice-error"
         >
           <Alert
             role="none"
-            tone={formError.kind === 'failure' ? 'danger' : 'info'}
+            tone={ISSUE_ERROR_TONE[formError.kind].alert}
             action={
               formError.kind !== 'failure' ? (
-                <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => router.refresh()}>
-                  {t('errors.refreshAction')}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  touchHeight
+                  aria-disabled={waitingForConnection || undefined}
+                  onClick={() => {
+                    if (waitingForConnection) return;
+                    // Nothing was issued on a stale total: refresh in place so
+                    // the open dialog picks up the new figure. Otherwise the
+                    // invoice may be issued and the refresh may unmount the
+                    // trigger, so close first (#48).
+                    if (formError.kind === 'stale') {
+                      router.refresh();
+                      return;
+                    }
+                    const outcome = refreshWhenOnline(router, () => onClose('refresh'));
+                    if (outcome === 'waiting') setWaitingForConnection(true);
+                  }}
+                >
+                  {waitingForConnection ? t('errors.waitingForConnection') : t('errors.refreshAction')}
                 </Button>
               ) : undefined
             }
@@ -617,10 +663,16 @@ export function IssueInvoiceForm({
               ? t('errors.concurrent')
               : formError.kind === 'stale'
                 ? t('errors.issue_total_changed')
-                : formError.message}
+                : formError.kind === 'unconfirmed'
+                  ? t('errors.unconfirmed')
+                  : formError.message}
           </Alert>
         </div>
       )}
+      {/* #48 — the offline wait, announced once (outside the alert region). */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {waitingForConnection ? t('errors.waitingForConnection') : ''}
+      </div>
 
       <div className="flex flex-col gap-1">
         <TextField

@@ -6,12 +6,26 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { Alert, Button, Select, TextField, Textarea } from '@jirawatpyk/aura-react';
+import { Alert, Button, Select, TextField, Textarea, type FeedbackTone } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { type MoneyDialogFooterState, useReportMoneyDialogFooter } from './money-dialog-footer';
 import { routeRecordPaymentError } from './record-payment-error-routing';
+import { refreshWhenOnline } from './refresh-when-online';
 
 const METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
+
+type PaymentFormError =
+  | { readonly kind: 'concurrent' }
+  // #48 — the connection dropped: the payment may have been recorded.
+  | { readonly kind: 'unconfirmed' }
+  | { readonly kind: 'failure'; readonly message: string };
+
+/** One tone per kind; a new kind must pick one. A stale write is not the admin's error. */
+const PAYMENT_ERROR_TONE = {
+  concurrent: 'info',
+  unconfirmed: 'warning',
+  failure: 'danger',
+} as const satisfies Record<PaymentFormError['kind'], FeedbackTone>;
 
 export function PaymentForm({
   invoiceId,
@@ -19,6 +33,7 @@ export function PaymentForm({
   issueDate,
   todayIso,
   onSuccess,
+  onRefreshClose,
   formId,
   onFooterChange,
 }: {
@@ -53,6 +68,12 @@ export function PaymentForm({
    * fall back to the previous navigate-and-refresh behaviour.
    */
   onSuccess?: () => void;
+  /**
+   * #48 — close the dialog for a page refresh from the inline alert (the
+   * outcome is unknown or already changed, never a success). Absent on the
+   * legacy full-page caller, where Refresh only refreshes.
+   */
+  onRefreshClose?: () => void;
   /** The form element's id, which the dialog footer's submit button names (PR N2). */
   formId?: string;
   /**
@@ -89,9 +110,9 @@ export function PaymentForm({
   // be a transient toast: it is surfaced INLINE via a focused role="alert" so
   // the admin cannot miss that the mint did not complete. A concurrent 409 is
   // shown as an inline "already paid — refresh", not a red error.
-  const [formError, setFormError] = useState<
-    { readonly kind: 'concurrent' } | { readonly kind: 'failure'; readonly message: string } | null
-  >(null);
+  const [formError, setFormError] = useState<PaymentFormError | null>(null);
+  // #48 — Refresh was pressed offline: it runs once the connection is back.
+  const [waitingForConnection, setWaitingForConnection] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (formError) errorRef.current?.focus();
@@ -120,6 +141,7 @@ export function PaymentForm({
     if (inFlightRef.current) return;
     setSubmitAttempted(true);
     setFormError(null);
+    setWaitingForConnection(false);
     if (dateInvalid) {
       dateInputRef.current?.focus();
       return;
@@ -129,16 +151,25 @@ export function PaymentForm({
       // Held after a success: the dialog closes and this form unmounts.
       let recorded = false;
       try {
-        const res = await fetch(`/api/invoices/${invoiceId}/pay`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            paymentMethod,
-            paymentReference: paymentReference.trim() || undefined,
-            paymentNotes: paymentNotes.trim() || undefined,
-            paymentDate,
-          }),
-        });
+        let res: Response;
+        try {
+          res = await fetch(`/api/invoices/${invoiceId}/pay`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paymentMethod,
+              paymentReference: paymentReference.trim() || undefined,
+              paymentNotes: paymentNotes.trim() || undefined,
+              paymentDate,
+            }),
+          });
+        } catch {
+          // #48 — no response: the payment (and its RC receipt) may have
+          // committed. A retry is safe (the server replays the recorded
+          // payment: 200, no second RC), but check first.
+          setFormError({ kind: 'unconfirmed' });
+          return;
+        }
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           const code = (body as { error?: { code?: string } })?.error?.code;
@@ -226,21 +257,43 @@ export function PaymentForm({
           ref={errorRef}
           tabIndex={-1}
           // A stale-write 409 is not the admin's error → info, not danger.
-          tone={formError.kind === 'failure' ? 'danger' : 'info'}
+          tone={PAYMENT_ERROR_TONE[formError.kind]}
           role="alert"
           className="outline-none"
           data-testid="record-payment-error"
           action={
-            formError.kind === 'concurrent' ? (
-              <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => router.refresh()}>
-                {t('errors.refreshAction')}
+            formError.kind !== 'failure' ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                touchHeight
+                aria-disabled={waitingForConnection || undefined}
+                // #48 — close first: the refresh may unmount the trigger, and
+                // the dialog then skips it for focus.
+                onClick={() => {
+                  if (waitingForConnection) return;
+                  if (refreshWhenOnline(router, () => onRefreshClose?.()) === 'waiting') {
+                    setWaitingForConnection(true);
+                  }
+                }}
+              >
+                {waitingForConnection ? t('errors.waitingForConnection') : t('errors.refreshAction')}
               </Button>
             ) : undefined
           }
         >
-          {formError.kind === 'concurrent' ? t('errors.concurrent') : formError.message}
+          {formError.kind === 'concurrent'
+            ? t('errors.concurrent')
+            : formError.kind === 'unconfirmed'
+              ? t('errors.unconfirmed')
+              : formError.message}
         </Alert>
       )}
+      {/* #48 — the offline wait, announced once (outside the alert region). */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {waitingForConnection ? t('errors.waitingForConnection') : ''}
+      </div>
       <Select
         id="method"
         label={t('fields.method')}
