@@ -127,6 +127,8 @@ function scheduleErrorResponse(error: ConfirmScheduleError, correlationId: strin
       return errorResponse(409, 'sending_started', correlationId, {
         details: { stage: stageOf(error.status), status: error.status },
       });
+    case 'dispatch_in_progress':
+      return errorResponse(409, 'dispatch_in_progress', correlationId);
     case 'no_proposal':
       return errorResponse(409, 'no_proposal', correlationId);
     case 'member_halted':

@@ -4040,6 +4040,7 @@
           "test_copy_unavailable": "E-posttjänsten är inte tillgänglig. Försök skicka testexemplaret igen om en stund.",
           "internal_error": "Något gick fel hos oss. Försök igen.",
           "sending_started": "Det här utskicket har redan börjat skickas, så sändningstiden kan inte längre ändras.",
+          "dispatch_in_progress": "Det här utskicket förbereds för att skickas just nu. Försök igen om några minuter.",
           "member_halted": "Sändningstiden bekräftades inte: medlemmens utskick är spärrade i väntan på administratörsgranskning.",
           "member_not_in_good_standing": "Sändningstiden bekräftades inte: medlemmens medlemskap är avstängt eller avslutat, så utskicket kan inte skickas."
         }

@@ -4040,6 +4040,7 @@
           "test_copy_unavailable": "The email service is unavailable. Try the test copy again in a moment.",
           "internal_error": "Something went wrong on our side. Please try again.",
           "sending_started": "Sending has already started for this E-Blast, so its send time can no longer be changed.",
+          "dispatch_in_progress": "This E-Blast is being prepared for sending right now. Try again in a few minutes.",
           "member_halted": "The send time was not confirmed: this member's E-Blasts are halted pending admin review.",
           "member_not_in_good_standing": "The send time was not confirmed: this member's membership is suspended or terminated, so the E-Blast cannot be sent."
         }

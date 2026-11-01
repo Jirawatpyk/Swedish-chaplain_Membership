@@ -86,7 +86,7 @@ import {
 import type { BroadcastStatus } from '../../../domain/value-objects/broadcast-status';
 import type { AuditPort } from '../../ports/audit-port';
 import type { BroadcastsRepo, TransitionFields } from '../../ports/broadcasts-repo';
-import { BroadcastConcurrentMutationError, LEASE_LOST } from '../../ports/broadcasts-repo';
+import { BroadcastConcurrentMutationError, LEASE_HELD, LEASE_LOST } from '../../ports/broadcasts-repo';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
 import type { ClockPort } from '../../ports/clock-port';
 import type { EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
@@ -164,6 +164,12 @@ export type ConfirmScheduleError =
   | { readonly kind: 'round_zero' }
   /** T166 R-H1 — the dispatcher already handed the row to the provider (`hasDispatchBegun`). */
   | { readonly kind: 'sending_started'; readonly status: BroadcastStatus }
+  /**
+   * Spec 140 s2b review round 3 — a re-time refused because a dispatch tick
+   * holds a live lease on the row: the send may be under way at the old time.
+   * Retryable once the tick ends (a dead holder blocks it ≤ `LEASE_TTL_MS`).
+   */
+  | { readonly kind: 'dispatch_in_progress' }
   | { readonly kind: 'no_proposal' }
   /** T166 S-H1 — the owning member's broadcasts are halted pending admin review. */
   | { readonly kind: 'member_halted'; readonly memberId: string }
@@ -307,12 +313,15 @@ export async function confirmSchedule(
       }),
     );
   } catch (e) {
-    // Spec 140 s2b review round 2 (reliability MED-1) — under the row lock the
-    // only way the transition matches 0 rows is a re-time of a row a dispatch
-    // tick holds a live lease on: the dispatch is at work, so the staff answer
-    // is the existing 409 `sending_started` (retry after the tick), not a 500.
-    // Nothing was written (the tx rolled back) and no email was queued.
+    // Spec 140 s2b review rounds 2–3 (reliability MED-1; code-review #2, #3) —
+    // a re-time of a row a dispatch tick holds a live lease on is refused by
+    // the repo as `LEASE_HELD`: the dispatch is at work, so staff get its own
+    // 409 `dispatch_in_progress` (try again in a few minutes), not a 500 and
+    // not `sending_started`. Any other refusal is status drift and keeps the
+    // existing `sending_started`. Nothing was written (the tx rolled back) and
+    // no email was queued.
     if (e instanceof BroadcastConcurrentMutationError) {
+      if (e.observedStatus === LEASE_HELD) return err({ kind: 'dispatch_in_progress' });
       return err({ kind: 'sending_started', status: e.observedStatus === LEASE_LOST ? 'approved' : e.observedStatus });
     }
     if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: approvalErrKind(e) });

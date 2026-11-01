@@ -49,6 +49,7 @@ import {
   asLeaseToken,
   BroadcastConcurrentMutationError,
   BroadcastNotFoundError,
+  LEASE_HELD,
   LEASE_LOST,
   TRANSITION_FIELDS,
 } from '../../application/ports/broadcasts-repo';
@@ -1212,6 +1213,10 @@ export function makeDrizzleBroadcastsRepo(
       // WHERE clause. Returning 0 rows means the row drifted (TOCTOU)
       // OR doesn't exist; either way → BroadcastConcurrentMutationError
       // (caller maps to broadcast_concurrent_action_blocked / 409).
+      const retimeRefusal =
+        lease === null && target === expectedFromStatus && fields.scheduledFor !== undefined
+          ? or(isNull(broadcasts.dispatchLeaseToken), lt(broadcasts.dispatchLeaseExpiresAt, sql`clock_timestamp()`))
+          : undefined;
       const [row] = await tx
         .update(broadcasts)
         .set(setClause)
@@ -1228,13 +1233,27 @@ export function makeDrizzleBroadcastsRepo(
             // cleared lease would leave a sent row `approved` with a new time.
             // 0 rows → the caller's concurrent-mutation answer; a dead holder
             // blocks it for at most `LEASE_TTL_MS`.
-            lease === null && target === expectedFromStatus && fields.scheduledFor !== undefined
-              ? or(isNull(broadcasts.dispatchLeaseToken), lt(broadcasts.dispatchLeaseExpiresAt, sql`clock_timestamp()`))
-              : undefined,
+            retimeRefusal,
           ),
         )
         .returning();
       if (!row) {
+        // Review round 3 (code-review #2, #3) — a refused re-time names itself
+        // (`LEASE_HELD`) when the row is where the caller expected it and a
+        // live lease is what refused it; anything else is status drift.
+        if (retimeRefusal !== undefined) {
+          const [probe] = await tx
+            .select({
+              status: broadcasts.status,
+              live: sql<unknown>`(${broadcasts.dispatchLeaseToken} IS NOT NULL AND ${broadcasts.dispatchLeaseExpiresAt} > clock_timestamp())`,
+            })
+            .from(broadcasts)
+            .where(and(eq(broadcasts.tenantId, tenantIdArg), eq(broadcasts.broadcastId, broadcastId)))
+            .limit(1);
+          if (probe !== undefined && probe.status === expectedFromStatus && isTrue(probe.live)) {
+            throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, LEASE_HELD, probe.status);
+          }
+        }
         // Spec 140 s2b — a fenced transition names a lost token (A3). The
         // unfenced path keeps reporting the status it expected (see
         // `throwConcurrentMutation`'s docblock for why that is recorded, not

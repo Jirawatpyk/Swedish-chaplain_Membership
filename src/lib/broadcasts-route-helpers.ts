@@ -148,6 +148,9 @@ export type F7RouteErrorCode =
   | 'reason_required'
   | 'stale_version'
   | 'sending_started'
+  // Spec 140 s2b review round 3 — `…/schedule` (409): a re-time refused while a
+  // dispatch tick holds a live lease on the row; retryable in a few minutes.
+  | 'dispatch_in_progress'
   // F119 T166 S-H1 — the send-time standing rules, re-read at approve-as-
   // submitted and at the approval-round promotion (409 — the E-Blast is not
   // approved; submit keeps its own 422 codes above).
@@ -422,6 +425,10 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     message: 'This E-Blast is already being sent and can no longer be withdrawn or stopped.',
     messageThai: 'E-Blast นี้กำลังถูกส่งแล้ว จึงไม่สามารถถอนหรือหยุดได้อีก',
   },
+  dispatch_in_progress: {
+    message: 'This E-Blast is being prepared for sending right now. Try again in a few minutes.',
+    messageThai: 'ระบบกำลังเตรียมส่ง E-Blast นี้อยู่ในขณะนี้ โปรดลองอีกครั้งในอีกไม่กี่นาที',
+  },
   member_halted: {
     message:
       "This member's E-Blasts are paused pending admin review, so it cannot be sent. Clear the pause first, or leave it unsent.",
@@ -670,6 +677,7 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   reason_required: 422,
   stale_version: 409,
   sending_started: 409,
+  dispatch_in_progress: 409,
   member_halted: 409,
   member_not_in_good_standing: 409,
   internal_error: 500,

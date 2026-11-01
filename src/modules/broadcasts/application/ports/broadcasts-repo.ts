@@ -66,6 +66,15 @@ export type LeaseCheck = 'held' | 'expiring' | 'lost';
 export const LEASE_LOST = 'lease_lost' as const;
 
 /**
+ * Spec 140 s2b review round 3 (code-review #2, #3) — the `observedStatus` a
+ * NON-holder same-status re-time reports when it was refused because a tick
+ * holds a live lease on the row. Not a row status, and not status drift: the
+ * row is where the caller expected it, and a dispatch tick is at work.
+ * confirm-schedule answers it `dispatch_in_progress` (409).
+ */
+export const LEASE_HELD = 'lease_held' as const;
+
+/**
  * #400 item 1 — the ONLY `Broadcast` fields `applyTransition` writes besides
  * `status` / `updated_at`. The Drizzle adapter loops over this tuple, so a
  * key off the list used to be silently DROPPED; typing the parameter as
@@ -219,12 +228,15 @@ export class BroadcastConcurrentMutationError extends Error {
      * fenced write (a token passed) found the row no longer carrying it. A
      * non-holder cancel clears the token and moves the status in one UPDATE,
      * so a holder reads `lease_lost` first; every caller maps it to a skip.
+     * `LEASE_HELD` (review round 3) — a non-holder re-time refused for a live
+     * lease (`rowStatus` then names the status the row holds).
      */
-    public readonly observedStatus: BroadcastStatus | typeof LEASE_LOST,
+    public readonly observedStatus: BroadcastStatus | typeof LEASE_LOST | typeof LEASE_HELD,
     /**
-     * Spec 140 s2b review round 1 (CR#1) — on a `LEASE_LOST`, the status the
-     * repo's probe read on the row (`null` otherwise): after `/send` only an
-     * `approved` (a takeover) or `sending` (a sibling flipped it) row is benign.
+     * Spec 140 s2b review round 1 (CR#1) — on a `LEASE_LOST` or `LEASE_HELD`,
+     * the status the repo's probe read on the row (`null` otherwise): after
+     * `/send` only an `approved` (a takeover) or `sending` (a sibling flipped
+     * it) row is benign.
      */
     public readonly rowStatus: BroadcastStatus | null = null,
   ) {
