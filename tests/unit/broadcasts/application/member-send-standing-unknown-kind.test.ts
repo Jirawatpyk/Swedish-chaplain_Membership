@@ -109,10 +109,19 @@ describe('an unknown MemberSendStanding kind is never read as "may send"', () =>
     const r = await useCase(
       {
         tenant,
-        broadcastsRepo: store.broadcastsRepo,
+        // Spec 140 s2b — the dispatch lease: the import leg claims (always
+        // granted here) and releases; the legacy leg reads no live lease.
+        broadcastsRepo: {
+          ...store.broadcastsRepo,
+          claimDispatchLease: async () => 'lease-token-test',
+          checkDispatchLease: async () => 'held' as const,
+          releaseDispatchLease: async () => true,
+          hasLiveDispatchLease: async () => false,
+        },
         broadcastsGateway: gateway,
         sendStanding: makeFakeSendStanding(),
         clock: { now: () => store.now },
+        tickBudget: { tickStartedAt: store.now.getTime(), maxDurationMs: 300_000 },
       } as never,
       { broadcastId: row.broadcastId },
     );
