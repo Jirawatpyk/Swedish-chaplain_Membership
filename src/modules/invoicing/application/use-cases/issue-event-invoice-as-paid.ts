@@ -586,9 +586,7 @@ export async function issueEventInvoiceAsPaid(
       // id can be in this section, and any pre-existing bytes at the key
       // are stale orphans of a rolled-back attempt (no committed row can
       // reference them — a committed row exits at the `status !== 'draft'`
-      // guard before any upload). issueInvoice deliberately keeps the
-      // default (its retries are same-day deterministic re-renders; its 065
-      // L-3 cleanup parity + drift metric cover the residual).
+      // guard before any upload). issueInvoice overwrites too since #60.
       const rendered = await renderAndUploadPdf(
         { pdfRender: deps.pdfRender, blob: deps.blob },
         {
@@ -903,7 +901,7 @@ export async function issueEventInvoiceAsPaid(
       // re-read shows a row pointing at it (an ambiguous COMMIT), and
       // conditional on this upload's etag (a delete Blob applies late cannot
       // remove a successor's bytes). A failed locked read is a WARN: it is a
-      // database problem, and the bytes stay for the next attempt.
+      // database problem, and the next attempt overwrites the key.
       try {
         const outcome = await deleteOrphanPdfUnderLock(deps, {
           invoiceId,

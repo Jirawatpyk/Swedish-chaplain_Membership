@@ -726,6 +726,13 @@ export async function issueInvoice(
     const rendered = await renderAndUploadPdf(
       { pdfRender: deps.pdfRender, blob: deps.blob },
       {
+        // #60 (065 H-1a parity) — overwrite. Safe: `lockForUpdate` above holds
+        // the draft row for the whole render + upload, and a non-draft row
+        // exits before any upload, so any bytes already at the key belong to a
+        // rolled-back attempt. Without it the adapter's "already exists" arm
+        // hands a queued retry those OLD bytes (possibly printed with another
+        // number) while the row commits the NEW bytes' sha256.
+        allowOverwrite: true,
         renderInput: {
           kind: pdfKind,
           templateVersion: deps.currentTemplateVersion,
@@ -1023,7 +1030,7 @@ export async function issueInvoice(
       // re-read shows a row pointing at it (an ambiguous COMMIT), and
       // conditional on this upload's etag (a delete Blob applies late cannot
       // remove a successor's bytes). A failed locked read is a WARN: it is a
-      // database problem, and the bytes stay for the next attempt.
+      // database problem, and the next attempt overwrites the key.
       try {
         const outcome = await deleteOrphanPdfUnderLock(deps, {
           invoiceId,

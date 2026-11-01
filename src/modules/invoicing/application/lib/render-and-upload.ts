@@ -84,7 +84,7 @@ export async function renderAndUploadPdf(
     throw wrap('pdf_render_failed', reason);
   }
 
-  let uploaded: { readonly etag?: string };
+  let uploaded: { readonly etag?: string } | undefined;
   try {
     uploaded = await deps.blob.uploadPdf({
       key: input.blobKey,
@@ -100,5 +100,6 @@ export async function renderAndUploadPdf(
   }
 
   // #60 — the stored etag lets a catch-path cleanup delete conditionally.
-  return uploaded.etag !== undefined ? { ...rendered, etag: uploaded.etag } : rendered;
+  const etag = uploaded?.etag;
+  return etag !== undefined ? { ...rendered, etag } : rendered;
 }
