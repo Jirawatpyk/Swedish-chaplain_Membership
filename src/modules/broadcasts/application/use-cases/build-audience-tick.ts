@@ -326,7 +326,14 @@ export type BuildAudienceTickError =
          * fault): no Resend call was made, the row stays `approved` and the
          * lease expires or is released; the next tick tries again.
          */
-        | 'lease';
+        | 'lease'
+        /**
+         * Spec 140 s2b review round 4 (reliability LOW-3) — the write that
+         * attaches a just-created audience faulted (a DB blip, not a refusal).
+         * The audience was read back and reclaimed or kept; nothing was sent
+         * and the next tick runs tick 1 again.
+         */
+        | 'attach_audience';
     }
   /**
    * Spec 140 s2b review round 1 (CR#4) — this tick's OWN lease would end
@@ -1791,10 +1798,15 @@ async function submitImport(
       );
     } catch (attachFault) {
       // A DB fault: the throw cannot say whether the write committed (a lost
-      // ack looks the same), so the reclaim reads the row back first. The
-      // tick's answer is unchanged — the fault still escapes.
+      // ack looks the same), so the reclaim reads the row back first. Review
+      // round 4 (reliability LOW-3) — then the transient answer, not a thrown
+      // `uncaught_error` (the bug bucket that pages): nothing was sent.
       await reclaimUnattachedAudience(deps, input, audienceId, 'read_back');
-      throw attachFault;
+      logger.warn(
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendAudienceId: audienceId, err: errKind(attachFault) },
+        'broadcasts.audience_import.attach_audience_failed',
+      );
+      return err({ kind: 'dispatch.server_error', message: 'attach_audience_failed', errClass: errKind(attachFault), phase: 'attach_audience' });
     }
     if (!attached.ok) {
       await reclaimUnattachedAudience(deps, input, audienceId, isLeaseLost(attached.error) ? 'lease_lost' : 'read_back');

@@ -1889,6 +1889,15 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
         casThrow: 'other',
       });
 
+      // Spec 140 s2b review round 4 (reliability LOW-3) — at attachAudienceId
+      // the fault is no longer a throw but the transient, counted
+      // `dispatch.server_error` (phase `attach_audience`, after the audience
+      // reclaim): still never a benign skip, which is what this control guards.
+      if (method === 'attachAudienceId') {
+        const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+        expect(res).toMatchObject({ ok: false, error: { kind: 'dispatch.server_error', phase: 'attach_audience' } });
+        return;
+      }
       await expect(
         buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID }),
       ).rejects.toThrow(/40001/);

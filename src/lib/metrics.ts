@@ -2968,7 +2968,9 @@ export const broadcastsMetrics = {
    * F119 PR-A) — a terminal `failed_to_dispatch` write did not commit, so the
    * row is still `approved` (observability.md § 29). `lease` (spec 140 s2b,
    * import leg) — a pre-call dispatch-lease check could not be read, so no
-   * Resend call was made.
+   * Resend call was made. `attach_audience` (spec 140 s2b review round 4,
+   * import leg) — the write attaching a just-created audience faulted; the
+   * audience was read back and reclaimed or kept, nothing was sent.
    */
   dispatchResolveFailedTotal(
     tenantId: string,
@@ -2981,7 +2983,8 @@ export const broadcastsMetrics = {
       | 'gateway'
       | 'terminal_write'
       | 'audience_restart'
-      | 'lease',
+      | 'lease'
+      | 'attach_audience',
   ): void {
     safeMetric(() => {
       counter(
