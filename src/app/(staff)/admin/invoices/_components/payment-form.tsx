@@ -33,6 +33,7 @@ export function PaymentForm({
   issueDate,
   todayIso,
   onSuccess,
+  onRefreshClose,
   formId,
   onFooterChange,
 }: {
@@ -67,6 +68,12 @@ export function PaymentForm({
    * fall back to the previous navigate-and-refresh behaviour.
    */
   onSuccess?: () => void;
+  /**
+   * #48 — close the dialog for a page refresh from the inline alert (the
+   * outcome is unknown or already changed, never a success). Absent on the
+   * legacy full-page caller, where Refresh only refreshes.
+   */
+  onRefreshClose?: () => void;
   /** The form element's id, which the dialog footer's submit button names (PR N2). */
   formId?: string;
   /**
@@ -253,12 +260,15 @@ export function PaymentForm({
           data-testid="record-payment-error"
           action={
             formError.kind !== 'failure' ? (
-              <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => {
-                  // #48 — close first: the refresh may unmount the trigger,
-                  // and the dialog then skips it for focus.
-                  onSuccess?.();
-                  refreshWhenOnline(router);
-                }}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                touchHeight
+                // #48 — close first: the refresh may unmount the trigger, and
+                // the dialog then skips it for focus.
+                onClick={() => refreshWhenOnline(router, () => onRefreshClose?.())}
+              >
                 {t('errors.refreshAction')}
               </Button>
             ) : undefined

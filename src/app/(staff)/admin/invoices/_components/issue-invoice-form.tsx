@@ -631,11 +631,21 @@ export function IssueInvoiceForm({
             tone={ISSUE_ERROR_TONE[formError.kind].alert}
             action={
               formError.kind !== 'failure' ? (
-                <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => {
-                    // #48 — close first: the refresh may unmount the trigger.
-                    onClose('refresh');
-                    refreshWhenOnline(router);
-                  }}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  touchHeight
+                  onClick={() =>
+                    // Nothing was issued on a stale total: refresh in place so
+                    // the open dialog picks up the new figure. Otherwise the
+                    // invoice may be issued and the refresh may unmount the
+                    // trigger, so close first (#48).
+                    formError.kind === 'stale'
+                      ? router.refresh()
+                      : refreshWhenOnline(router, () => onClose('refresh'))
+                  }
+                >
                   {t('errors.refreshAction')}
                 </Button>
               ) : undefined

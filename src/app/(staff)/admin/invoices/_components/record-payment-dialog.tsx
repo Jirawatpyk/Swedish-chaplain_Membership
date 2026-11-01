@@ -222,6 +222,12 @@ export function RecordPaymentDialog({
             closedViaSuccessRef.current = true;
             setOpen(false);
           }}
+          // The refresh that follows may unmount the trigger, so focus skips
+          // it exactly as after a success (#48).
+          onRefreshClose={() => {
+            closedViaSuccessRef.current = true;
+            setOpen(false);
+          }}
           formId={formId}
           onFooterChange={setFooter}
         />

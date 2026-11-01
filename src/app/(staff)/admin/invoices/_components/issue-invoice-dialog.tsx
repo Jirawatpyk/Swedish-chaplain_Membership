@@ -31,7 +31,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button, Dialog } from '@jirawatpyk/aura-react';
-import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import { IssueInvoiceForm, type IssueInvoiceFormProps } from './issue-invoice-form';
 import {
   initialMoneyDialogFooter,
@@ -64,15 +63,9 @@ export function IssueInvoiceDialog(props: Props) {
   // its inline alert): the refresh can unmount the trigger, so focus skips it
   // for #main-content (WCAG 2.4.3, #48).
   const closedForRefreshRef = useRef(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  // null hands focus back to AURA's own default, the trigger.
   const finalFocus = useCallback(
-    (): HTMLElement | null =>
-      resolveDialogFinalFocus({
-        closedViaSuccess: closedForRefreshRef.current,
-        trigger: triggerRef.current,
-        fallback: null,
-        mainContent: document.getElementById('main-content'),
-      }),
+    (): HTMLElement | null => (closedForRefreshRef.current ? document.getElementById('main-content') : null),
     [],
   );
   const [footer, setFooter] = useState<MoneyDialogFooterState>(() =>
@@ -92,7 +85,7 @@ export function IssueInvoiceDialog(props: Props) {
       dismissible={!footer.pending}
       finalFocus={finalFocus}
       trigger={
-        <Button ref={triggerRef} variant="primary" touchHeight>
+        <Button variant="primary" touchHeight>
           {tDetail('actions.issue')}
         </Button>
       }
