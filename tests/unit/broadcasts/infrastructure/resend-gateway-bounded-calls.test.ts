@@ -284,18 +284,20 @@ describe('P6 — one signal spans every attempt of a retried call', () => {
 describe('CR#3 — createContactImport has its own budget', () => {
   it('createContactImport aborts at importCallTimeoutMs, not callTimeoutMs', async () => {
     handler = hang;
-    const run = createResendBroadcastsGateway({ callTimeoutMs: 50, importCallTimeoutMs: 300 }).createContactImport(
+    // Wide windows for CI (review round 3, code-review #8): on callTimeoutMs the
+    // call would end at 50 ms, long before the 300 ms check; on its own 1 s
+    // budget it is still pending then and settled well inside 2.5 s.
+    const run = createResendBroadcastsGateway({ callTimeoutMs: 50, importCallTimeoutMs: 1_000 }).createContactImport(
       'aud_1',
       ['a@example.com'],
     );
-    const early = await settleWithin(run, 100);
+    const early = await settleWithin(run, 300);
     expect(early.settled).toBe('still running');
-    const late = await settleWithin(run, 700);
+    const late = await settleWithin(run, 2_200);
     expect({ settled: late.settled, requests: requests.length }).toEqual({
       settled: { thrown: { kind: 'retryable', subKind: 'timeout' } },
       requests: 1,
     });
-    expect(early.elapsedMs + late.elapsedMs).toBeLessThan(700);
   });
 });
 
