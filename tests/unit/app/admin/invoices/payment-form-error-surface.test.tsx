@@ -53,7 +53,7 @@ const DOC_NUMBER = 'SC-2026-000048';
 const ISSUE_DATE = '2030-03-14';
 const TODAY_ISO = '2030-03-15';
 
-function renderForm(onSuccess?: () => void) {
+function renderForm(onSuccess?: () => void, onRefreshClose?: () => void) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <WithMoneyDialogFooter config={RECORD_PAYMENT_FOOTER}>
@@ -64,6 +64,7 @@ function renderForm(onSuccess?: () => void) {
             issueDate={ISSUE_DATE}
             todayIso={TODAY_ISO}
             {...(onSuccess ? { onSuccess } : {})}
+            {...(onRefreshClose ? { onRefreshClose } : {})}
             {...wire}
           />
         )}
@@ -284,35 +285,38 @@ describe('PaymentForm — the connection drops (#48)', () => {
     }
   });
 
-  it('Refresh closes the dialog first, then refreshes the page', async () => {
+  it('Refresh closes the dialog for a refresh (not as a success), then refreshes the page', async () => {
     vi.stubGlobal('fetch', droppingFetch());
     const onSuccess = vi.fn();
+    const onRefreshClose = vi.fn();
     try {
-      renderForm(onSuccess);
+      renderForm(onSuccess, onRefreshClose);
       submitPayment();
       await screen.findByTestId('record-payment-error');
       fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-      expect(onSuccess).toHaveBeenCalledTimes(1);
+      expect(onRefreshClose).toHaveBeenCalledTimes(1);
+      expect(onSuccess).not.toHaveBeenCalled();
       expect(refreshMock).toHaveBeenCalledTimes(1);
-      expect(onSuccess.mock.invocationCallOrder[0]!).toBeLessThan(refreshMock.mock.invocationCallOrder[0]!);
+      expect(onRefreshClose.mock.invocationCallOrder[0]!).toBeLessThan(refreshMock.mock.invocationCallOrder[0]!);
       expect(pushMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it('Refresh while still offline waits for the connection before refreshing', async () => {
+  it('Refresh while still offline keeps the warning open, then closes and refreshes once online', async () => {
     vi.stubGlobal('fetch', droppingFetch());
     const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
-    const onSuccess = vi.fn();
+    const onRefreshClose = vi.fn();
     try {
-      renderForm(onSuccess);
+      renderForm(undefined, onRefreshClose);
       submitPayment();
       await screen.findByTestId('record-payment-error');
       fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-      expect(onSuccess).toHaveBeenCalledTimes(1);
+      expect(onRefreshClose).not.toHaveBeenCalled();
       expect(refreshMock).not.toHaveBeenCalled();
       window.dispatchEvent(new Event('online'));
+      expect(onRefreshClose).toHaveBeenCalledTimes(1);
       expect(refreshMock).toHaveBeenCalledTimes(1);
     } finally {
       onLine.mockRestore();

@@ -151,6 +151,15 @@ describe('RecordPaymentDialog — review fixes (US8 T809)', () => {
 });
 
 describe('RecordPaymentDialog — Refresh after a dropped connection (#48)', () => {
+  // waitFor polls on real timers; tests/setup.ts fakes them by default.
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    refreshSpy.mockReset();
+  });
+
   it('closes, and focus lands on the fallback when the refresh unmounts the trigger', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
     function Harness() {

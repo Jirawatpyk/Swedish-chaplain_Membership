@@ -530,7 +530,8 @@ describe('IssueInvoiceForm — stale total 409 inline recovery', () => {
     const fetchMock = rejectingFetch('issue_total_changed');
     vi.stubGlobal('fetch', fetchMock);
     try {
-      renderForm();
+      const onClose = vi.fn();
+      renderForm({ onClose });
       confirmAndSubmit();
 
       const alert = await screen.findByTestId('issue-invoice-error');
@@ -540,6 +541,8 @@ describe('IssueInvoiceForm — stale total 409 inline recovery', () => {
       );
       fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
       expect(refreshMock).toHaveBeenCalledTimes(1);
+      // Nothing was issued: the dialog stays open to pick up the new total.
+      expect(onClose).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -670,15 +673,20 @@ describe('IssueInvoiceForm — the connection drops (#48)', () => {
     }
   });
 
-  it('Refresh while still offline waits for the connection before refreshing', async () => {
+  it('Refresh while still offline keeps the warning open, then closes and refreshes once online', async () => {
     vi.stubGlobal('fetch', rejectingFetch());
     const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     try {
       const { onClose } = await confirmAndDrop();
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-      expect(onClose).toHaveBeenCalledWith('refresh');
+      const refresh = screen.getByRole('button', { name: 'Refresh' });
+      fireEvent.click(refresh);
+      fireEvent.click(refresh);
+      expect(onClose).not.toHaveBeenCalled();
       expect(refreshMock).not.toHaveBeenCalled();
+      expect(screen.getByTestId('issue-invoice-error')).toBeInTheDocument();
       window.dispatchEvent(new Event('online'));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledWith('refresh');
       expect(refreshMock).toHaveBeenCalledTimes(1);
       window.dispatchEvent(new Event('online'));
       expect(refreshMock).toHaveBeenCalledTimes(1);
