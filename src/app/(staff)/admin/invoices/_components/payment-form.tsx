@@ -111,6 +111,8 @@ export function PaymentForm({
   // the admin cannot miss that the mint did not complete. A concurrent 409 is
   // shown as an inline "already paid — refresh", not a red error.
   const [formError, setFormError] = useState<PaymentFormError | null>(null);
+  // #48 — Refresh was pressed offline: it runs once the connection is back.
+  const [waitingForConnection, setWaitingForConnection] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (formError) errorRef.current?.focus();
@@ -139,6 +141,7 @@ export function PaymentForm({
     if (inFlightRef.current) return;
     setSubmitAttempted(true);
     setFormError(null);
+    setWaitingForConnection(false);
     if (dateInvalid) {
       dateInputRef.current?.focus();
       return;
@@ -265,11 +268,17 @@ export function PaymentForm({
                 variant="secondary"
                 size="sm"
                 touchHeight
+                aria-disabled={waitingForConnection || undefined}
                 // #48 — close first: the refresh may unmount the trigger, and
                 // the dialog then skips it for focus.
-                onClick={() => refreshWhenOnline(router, () => onRefreshClose?.())}
+                onClick={() => {
+                  if (waitingForConnection) return;
+                  if (refreshWhenOnline(router, () => onRefreshClose?.()) === 'waiting') {
+                    setWaitingForConnection(true);
+                  }
+                }}
               >
-                {t('errors.refreshAction')}
+                {waitingForConnection ? t('errors.waitingForConnection') : t('errors.refreshAction')}
               </Button>
             ) : undefined
           }
@@ -281,6 +290,10 @@ export function PaymentForm({
               : formError.message}
         </Alert>
       )}
+      {/* #48 — the offline wait, announced once (outside the alert region). */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {waitingForConnection ? t('errors.waitingForConnection') : ''}
+      </div>
       <Select
         id="method"
         label={t('fields.method')}

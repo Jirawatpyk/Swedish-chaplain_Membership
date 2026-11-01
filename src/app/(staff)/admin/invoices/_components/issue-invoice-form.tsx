@@ -148,6 +148,8 @@ export function IssueInvoiceForm({
   // role="alert" (never a transient toast); a concurrent 409 shows an inline
   // "already issued — refresh" prompt.
   const [formError, setFormError] = useState<IssueFormError | null>(null);
+  // #48 — Refresh was pressed offline: it runs once the connection is back.
+  const [waitingForConnection, setWaitingForConnection] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (formError) errorRef.current?.focus();
@@ -247,6 +249,7 @@ export function IssueInvoiceForm({
   function confirm() {
     if (!matches || inFlightRef.current) return;
     setFormError(null);
+    setWaitingForConnection(false);
     // 088 T061b/T061g — fail-closed layer 1: block submit BEFORE any POST when
     // a zero-rated issue has a blank cert number (or a malformed date). Move
     // focus to the first invalid field. The server 422 + DB CHECK are layers
@@ -636,17 +639,22 @@ export function IssueInvoiceForm({
                   variant="secondary"
                   size="sm"
                   touchHeight
-                  onClick={() =>
+                  aria-disabled={waitingForConnection || undefined}
+                  onClick={() => {
+                    if (waitingForConnection) return;
                     // Nothing was issued on a stale total: refresh in place so
                     // the open dialog picks up the new figure. Otherwise the
                     // invoice may be issued and the refresh may unmount the
                     // trigger, so close first (#48).
-                    formError.kind === 'stale'
-                      ? router.refresh()
-                      : refreshWhenOnline(router, () => onClose('refresh'))
-                  }
+                    if (formError.kind === 'stale') {
+                      router.refresh();
+                      return;
+                    }
+                    const outcome = refreshWhenOnline(router, () => onClose('refresh'));
+                    if (outcome === 'waiting') setWaitingForConnection(true);
+                  }}
                 >
-                  {t('errors.refreshAction')}
+                  {waitingForConnection ? t('errors.waitingForConnection') : t('errors.refreshAction')}
                 </Button>
               ) : undefined
             }
@@ -661,6 +669,10 @@ export function IssueInvoiceForm({
           </Alert>
         </div>
       )}
+      {/* #48 — the offline wait, announced once (outside the alert region). */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {waitingForConnection ? t('errors.waitingForConnection') : ''}
+      </div>
 
       <div className="flex flex-col gap-1">
         <TextField

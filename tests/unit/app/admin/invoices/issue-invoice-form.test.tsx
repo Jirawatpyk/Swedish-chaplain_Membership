@@ -689,9 +689,11 @@ describe('IssueInvoiceForm — the connection drops (#48)', () => {
         name: enMessages.admin.invoices.issue.errors.waitingForConnection,
       });
       expect(waiting).toHaveAttribute('aria-disabled', 'true');
-      expect(screen.getByRole('status')).toHaveTextContent(
-        enMessages.admin.invoices.issue.errors.waitingForConnection,
-      );
+      expect(
+        screen
+          .getAllByRole('status')
+          .some((el) => el.textContent === enMessages.admin.invoices.issue.errors.waitingForConnection),
+      ).toBe(true);
       window.dispatchEvent(new Event('online'));
       expect(onClose).toHaveBeenCalledTimes(1);
       expect(onClose).toHaveBeenCalledWith('refresh');

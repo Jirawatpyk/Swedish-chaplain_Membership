@@ -319,9 +319,11 @@ describe('PaymentForm — the connection drops (#48)', () => {
         name: enMessages.admin.invoices.pay.errors.waitingForConnection,
       });
       expect(waiting).toHaveAttribute('aria-disabled', 'true');
-      expect(screen.getByRole('status')).toHaveTextContent(
-        enMessages.admin.invoices.pay.errors.waitingForConnection,
-      );
+      expect(
+        screen
+          .getAllByRole('status')
+          .some((el) => el.textContent === enMessages.admin.invoices.pay.errors.waitingForConnection),
+      ).toBe(true);
       window.dispatchEvent(new Event('online'));
       expect(onRefreshClose).toHaveBeenCalledTimes(1);
       expect(refreshMock).toHaveBeenCalledTimes(1);
