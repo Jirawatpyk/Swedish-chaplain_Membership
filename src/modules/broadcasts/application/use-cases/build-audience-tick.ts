@@ -610,6 +610,57 @@ async function leaseGate(
   return leaseStopAnswer(stop);
 }
 
+/**
+ * Spec 140 s2b review rounds 2–3 (code-review #1) — the audience twin of A2:
+ * `createAudience` succeeded and its attach did not, so the audience may be on
+ * no row. Nothing else deletes it while the row exists (`reclaim-orphan-
+ * audiences` deletes only audiences whose row is GONE, `cleanup-orphaned-
+ * audiences` only the id a terminal row holds), so it is reclaimed here, with
+ * NO pre-call check (after a lost lease a check would always fail and leak it).
+ *
+ * - `lease_lost` — the fenced write refused this tick's token: the id is not
+ *   on the row, delete at once.
+ * - `read_back` — any other failure (a DB fault, a status-drift refusal, a
+ *   vanished row): read the row back in a new tx, as
+ *   `_persist-minted-broadcast-id.ts` does. The id on the row → the write
+ *   committed, keep it (the next tick inherits it); absent → delete; a
+ *   read-back that fails keeps it.
+ *
+ * An audience that is kept unread, or whose delete is undecided, is the leak
+ * an operator must see: `audience_leaked` at ERROR, with the id.
+ */
+async function reclaimUnattachedAudience(
+  deps: LeasedTickDeps,
+  input: BuildAudienceTickInput,
+  audienceId: string,
+  mode: 'lease_lost' | 'read_back',
+): Promise<void> {
+  const ids = { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, resendAudienceId: audienceId };
+  if (mode === 'read_back') {
+    let onRow: boolean;
+    try {
+      const row = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+      onRow = row?.resendAudienceId === audienceId;
+    } catch (e) {
+      logger.error({ ...ids, step: 'read_back', err: errKind(e), severity: 'critical' }, 'broadcasts.audience_import.audience_leaked');
+      return;
+    }
+    if (onRow) {
+      logger.warn(ids, 'broadcasts.audience_import.attach_ack_lost_audience_kept');
+      return;
+    }
+  }
+  try {
+    await deps.broadcastsGateway.deleteAudience(audienceId);
+    logger.info({ ...ids, mode }, 'broadcasts.audience_import.audience_reclaimed');
+  } catch (e) {
+    logger.error(
+      { ...ids, step: 'delete_audience', err: errKind(e), errorKind: classifyThrown(e).kind, severity: 'critical' },
+      'broadcasts.audience_import.audience_leaked',
+    );
+  }
+}
+
 /** A fenced write refused this tick's token (A3). */
 function isLeaseLost(e: BuildAudienceTickError): boolean {
   return e.kind === 'broadcast_invalid_state_transition' && e.observedStatus === LEASE_LOST;
@@ -1699,37 +1750,28 @@ async function submitImport(
     );
     if (!created.ok) return onGatewayFailure(deps, input, broadcast, created.error, null);
     audienceId = created.value.audienceId;
-    const attached = await viaRepoConcurrency(input.broadcastId, () =>
-      deps.broadcastsRepo.withTx(async (tx) => {
-        await deps.broadcastsRepo.attachAudienceId(
-          tx,
-          deps.tenant.slug,
-          input.broadcastId,
-          audienceId,
-          deps.lease,
-        );
-      }),
-    );
-    if (!attached.ok) {
-      // Spec 140 s2b review round 2 (code-review #1) — the audience twin of A2.
-      // The lease was lost between `createAudience` and its attach, so the
-      // audience is on no row: no tick can be using it, and nothing else
-      // deletes it while the row exists. Reclaim it now, with NO pre-call check (a check would
-      // always fail at this moment and leak it). An undecided delete is the
-      // leak an operator must see: while the row exists no cron reaches it
-      // (`reclaim-orphan-audiences` deletes only audiences whose row is GONE,
-      // `cleanup-orphaned-audiences` only the id a terminal row holds).
-      if (isLeaseLost(attached.error)) {
-        try {
-          await deps.broadcastsGateway.deleteAudience(audienceId);
-          logger.info({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendAudienceId: audienceId }, 'broadcasts.audience_import.audience_reclaimed');
-        } catch (e) {
-          logger.error(
-            { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendAudienceId: audienceId, err: errKind(e), errorKind: classifyThrown(e).kind, severity: 'critical' },
-            'broadcasts.audience_import.audience_leaked',
+    let attached: Result<void, BuildAudienceTickError>;
+    try {
+      attached = await viaRepoConcurrency(input.broadcastId, () =>
+        deps.broadcastsRepo.withTx(async (tx) => {
+          await deps.broadcastsRepo.attachAudienceId(
+            tx,
+            deps.tenant.slug,
+            input.broadcastId,
+            audienceId,
+            deps.lease,
           );
-        }
-      }
+        }),
+      );
+    } catch (attachFault) {
+      // A DB fault: the throw cannot say whether the write committed (a lost
+      // ack looks the same), so the reclaim reads the row back first. The
+      // tick's answer is unchanged — the fault still escapes.
+      await reclaimUnattachedAudience(deps, input, audienceId, 'read_back');
+      throw attachFault;
+    }
+    if (!attached.ok) {
+      await reclaimUnattachedAudience(deps, input, audienceId, isLeaseLost(attached.error) ? 'lease_lost' : 'read_back');
       return err(attached.error);
     }
   }
