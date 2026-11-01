@@ -977,7 +977,10 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
         { broadcastId: asBroadcastId(row.broadcastId!) },
       );
 
-      expect(r).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
+      // Spec 140 s2b (A3) — the cascade's cancel (a non-holder status change)
+      // cleared the tick's dispatch lease in the same UPDATE, so the fenced
+      // terminal write reads `lease_lost` first: the same concurrent skip.
+      expect(r).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' } });
       expect(cleanupFailedLogged(errorSpy)).toBe(false);
     } finally {
       errorSpy.mockRestore();
@@ -1068,7 +1071,11 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       warnSpy.mockRestore();
     }
     expect(gw.calls.map((c) => c.method)).toEqual(['retrieveBroadcast']);
-    expect(await readRow(row.broadcastId!)).toEqual(before);
+    // Spec 140 s2b — the import tick claims the row's dispatch lease and
+    // releases it, and `broadcasts_set_updated_at` stamps both writes, so
+    // `updated_at` moves; every other column (the lease included, NULL again)
+    // is as it was.
+    expect({ ...(await readRow(row.broadcastId!)), updatedAt: null }).toEqual({ ...before, updatedAt: null });
     expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
   });
 });

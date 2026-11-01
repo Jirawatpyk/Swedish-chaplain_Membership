@@ -499,6 +499,8 @@ function makeDeps(opts: {
     deps: {
       tenant,
       clock: { now: () => NOW },
+      // Spec 140 s2b (DL9) — a tick that has just begun: every row may start.
+      tickBudget: { tickStartedAt: NOW.getTime(), maxDurationMs: 300_000 },
       fromEmail: 'noreply@example.com',
       tenantDisplayName: 'Test Chamber',
       locale: 'en' as const,
@@ -569,6 +571,10 @@ function makeDeps(opts: {
           txSeq += 1;
           return fn({ txId: txSeq });
         },
+        // Spec 140 s2b — the dispatch lease: claimed, always held, released.
+        async claimDispatchLease() { return 'lease-token-test'; },
+        async checkDispatchLease() { return 'held' as const; },
+        async releaseDispatchLease() { return true; },
         async lockForUpdate() {
           rec.rowLocks += 1;
           if (opts.lockStatus === 'not_found') return null;

@@ -2966,7 +2966,9 @@ export const broadcastsMetrics = {
    * `standing` (F119 PR-A) — the member-standing read (F3 halt list or F8
    * access) failed, so nothing was sent; `terminal_write` (the live leg since
    * F119 PR-A) — a terminal `failed_to_dispatch` write did not commit, so the
-   * row is still `approved` (observability.md § 29).
+   * row is still `approved` (observability.md § 29). `lease` (spec 140 s2b,
+   * import leg) — a pre-call dispatch-lease check could not be read, so no
+   * Resend call was made.
    */
   dispatchResolveFailedTotal(
     tenantId: string,
@@ -2978,7 +2980,8 @@ export const broadcastsMetrics = {
       | 'persist_broadcast_id'
       | 'gateway'
       | 'terminal_write'
-      | 'audience_restart',
+      | 'audience_restart'
+      | 'lease',
   ): void {
     safeMetric(() => {
       counter(

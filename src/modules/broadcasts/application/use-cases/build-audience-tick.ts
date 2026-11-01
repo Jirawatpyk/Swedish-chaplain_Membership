@@ -76,11 +76,19 @@ import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
 import { rereadAfterLostRace } from './_reread-after-lost-race';
 import { isHandedStatus, probeRefusedSend } from './_probe-refused-send';
-import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import type { BroadcastsRepo, LeaseCheck, LeaseToken } from '../ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
   BroadcastNotFoundError,
+  LEASE_LOST,
 } from '../ports/broadcasts-repo';
+import {
+  CALL_HEADROOM_MS,
+  IMPORT_HEADROOM_MS,
+  LEASE_TTL_MS,
+  rowStartAllowed,
+  type TickBudget,
+} from './_dispatch-lease';
 import type { ClockPort } from '../ports/clock-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
@@ -120,7 +128,13 @@ export type BuildAudienceTickOutput =
    * reused — `stale_audience`). Nothing sent, nothing terminal, nobody told —
    * neither a success nor a failure.
    */
-  | { readonly kind: 'audience_restarted' };
+  | { readonly kind: 'audience_restarted' }
+  /**
+   * Spec 140 s2b (DL9) — the cron invocation is past `ROW_START_CUTOFF_MS`, so
+   * this row was not started: nothing locked, claimed, called or written. It
+   * stays `approved`, unleased, for the next tick.
+   */
+  | { readonly kind: 'deferred_past_cutoff' };
 
 /**
  * Why a build stopped for good. Each value is a DIFFERENT sentence in the audit
@@ -301,7 +315,13 @@ export type BuildAudienceTickError =
          * (a DB fault, or a step that must stop); the row is where it was and
          * the next tick re-meets the same 404 and tries again.
          */
-        | 'audience_restart';
+        | 'audience_restart'
+        /**
+         * Spec 140 s2b — a pre-call lease check could not be READ (a DB
+         * fault): no Resend call was made, the row stays `approved` and the
+         * lease expires or is released; the next tick tries again.
+         */
+        | 'lease';
     };
 
 /**
@@ -412,7 +432,21 @@ export interface BuildAudienceTickDeps {
   readonly sendStanding: DispatchStandingDeps;
   /** Waits `ms` before the `not_found` re-probe (`REPROBE_PAUSE_MS`); tests pass a recorder. Default: a timer. */
   readonly pauseBeforeReprobe?: (ms: number) => Promise<void>;
+  /**
+   * Spec 140 s2b (DL9) — when the cron invocation began and its `maxDuration`.
+   * REQUIRED: no row starts after `ROW_START_CUTOFF_MS` (`_dispatch-lease.ts`),
+   * so a row started at the cutoff finishes its longest path (`W_MAX_MS`) plus
+   * the margin before the function is killed. The dispatch route sets it.
+   */
+  readonly tickBudget: TickBudget;
 }
+
+/**
+ * Spec 140 s2b — the tick's deps once it HOLDS the row's dispatch lease: every
+ * fenced write and every pre-call check carries `lease`. Only `buildAudienceTick`
+ * builds one, after a successful claim.
+ */
+type LeasedTickDeps = BuildAudienceTickDeps & { readonly lease: LeaseToken };
 
 export interface BuildAudienceTickInput {
   readonly broadcastId: BroadcastId;
@@ -425,16 +459,28 @@ export async function buildAudienceTick(
   const now = deps.clock.now();
   const tenantSlug = deps.tenant.slug;
 
-  // Step 1 — lock and verify eligibility. Same shape as the single-tick path:
-  // the row must still be `approved` when we act on it, or a concurrent cancel
-  // has already won.
+  // Spec 140 s2b (DL9) — no row STARTS after the cutoff: a row begun later
+  // could outrun the invocation's `maxDuration` on its longest path. Nothing
+  // is locked, claimed or called; the row waits for the next tick.
+  if (!rowStartAllowed(deps.tickBudget, now.getTime())) {
+    return ok({ kind: 'deferred_past_cutoff' });
+  }
+
+  // Step 1 — lock, verify eligibility and CLAIM the row's dispatch lease. Same
+  // shape as the single-tick path: the row must still be `approved` when we act
+  // on it, or a concurrent cancel has already won. The claim (spec 140 s2b)
+  // runs under the row lock, so it waits behind an erasure cascade's lock
+  // (D-040) and then reads what the cascade left; it is the only write here,
+  // and it comes after every refusal guard (an `err` would commit it).
   const loaded = await deps.broadcastsRepo.withTx(async (tx) => {
     const status = await deps.broadcastsRepo.lockForUpdate(tx, tenantSlug, input.broadcastId);
     if (status === null) return { kind: 'not_found' as const };
     if (status !== 'approved') return { kind: 'wrong_status' as const, status };
     const row = await deps.broadcastsRepo.findByIdInTx(tx, tenantSlug, input.broadcastId);
     if (row === null) return { kind: 'not_found' as const };
-    return { kind: 'ok' as const, broadcast: row };
+    const lease = await deps.broadcastsRepo.claimDispatchLease(tx, tenantSlug, input.broadcastId, LEASE_TTL_MS);
+    if (lease === null) return { kind: 'lease_held' as const };
+    return { kind: 'ok' as const, broadcast: row, lease };
   });
 
   if (loaded.kind === 'not_found') {
@@ -443,7 +489,104 @@ export async function buildAudienceTick(
   if (loaded.kind === 'wrong_status') {
     return err({ kind: 'broadcast_invalid_state_transition', observedStatus: loaded.status });
   }
-  const broadcast = loaded.broadcast;
+  const leaseIds = { tenantId: tenantSlug, broadcastId: input.broadcastId as unknown as string };
+  if (loaded.kind === 'lease_held') {
+    // Row 3 — another tick holds a live lease on this row: it is working it.
+    // No Resend call, no write; the cron counts a concurrent skip.
+    logger.info(leaseIds, 'broadcasts.audience_import.lease_held');
+    return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_held' });
+  }
+  logger.info(leaseIds, 'broadcasts.audience_import.lease_claimed');
+  const leased: LeasedTickDeps = { ...deps, lease: loaded.lease };
+  try {
+    return await runLeasedTick(leased, input, loaded.broadcast, now);
+  } finally {
+    await releaseLease(leased, input);
+  }
+}
+
+/**
+ * Spec 140 s2b — release the lease at the end of the tick, whatever happened
+ * (row 14). Own tx; 0 rows is not an error (a non-holder exit or a takeover
+ * already cleared it). A failed release is logged and swallowed: the lease
+ * then expires `LEASE_TTL_MS` after the claim (about two ticks).
+ */
+async function releaseLease(deps: LeasedTickDeps, input: BuildAudienceTickInput): Promise<void> {
+  const ids = { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string };
+  try {
+    const released = await deps.broadcastsRepo.withTx((tx) =>
+      deps.broadcastsRepo.releaseDispatchLease(tx, deps.tenant.slug, input.broadcastId, deps.lease),
+    );
+    logger.info({ ...ids, released }, 'broadcasts.audience_import.lease_released');
+  } catch (e) {
+    logger.warn({ ...ids, err: errKind(e) }, 'broadcasts.audience_import.lease_release_failed');
+  }
+}
+
+/** What a pre-call lease check read, or the DB fault that kept it from reading. */
+type LeaseRead = LeaseCheck | { readonly failed: unknown };
+
+/**
+ * Spec 140 s2b — the pre-call check, before each irreversible Resend call:
+ * the lease must still be this tick's and outlive `headroomMs` (C + M;
+ * I + M before the import POST). Own short tx (`SELECT … FOR UPDATE`).
+ * Logs `lease_lost` / `lease_expiring` / `lease_check_failed` with the step.
+ */
+async function checkLeaseBefore(
+  deps: LeasedTickDeps,
+  input: BuildAudienceTickInput,
+  step: string,
+  headroomMs: number = CALL_HEADROOM_MS,
+): Promise<LeaseRead> {
+  const ids = { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, step };
+  let read: LeaseCheck;
+  try {
+    read = await deps.broadcastsRepo.withTx((tx) =>
+      deps.broadcastsRepo.checkDispatchLease(tx, deps.tenant.slug, input.broadcastId, deps.lease, headroomMs),
+    );
+  } catch (e) {
+    logger.warn({ ...ids, err: errKind(e) }, 'broadcasts.audience_import.lease_check_failed');
+    return { failed: e };
+  }
+  if (read === 'lost') logger.info(ids, 'broadcasts.audience_import.lease_lost');
+  if (read === 'expiring') logger.info({ ...ids, headroomMs }, 'broadcasts.audience_import.lease_expiring');
+  return read;
+}
+
+/**
+ * `checkLeaseBefore` as the tick's answer: `null` = held, make the call;
+ * otherwise NO call is made — a lost or expiring lease is a concurrent skip
+ * (never a failure write), a check that could not be read a transient error.
+ */
+async function leaseGate(
+  deps: LeasedTickDeps,
+  input: BuildAudienceTickInput,
+  step: string,
+  headroomMs: number = CALL_HEADROOM_MS,
+): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError> | null> {
+  const read = await checkLeaseBefore(deps, input, step, headroomMs);
+  if (read === 'held') return null;
+  if (typeof read === 'object') {
+    return err({ kind: 'dispatch.server_error', message: 'lease_check_failed', errClass: errKind(read.failed), phase: 'lease' });
+  }
+  return err({ kind: 'broadcast_invalid_state_transition', observedStatus: read === 'lost' ? LEASE_LOST : 'lease_expiring' });
+}
+
+/** A fenced write refused this tick's token (A3). */
+function isLeaseLost(e: BuildAudienceTickError): boolean {
+  return e.kind === 'broadcast_invalid_state_transition' && e.observedStatus === LEASE_LOST;
+}
+
+/**
+ * Steps 1a onwards, while this tick holds the lease. `buildAudienceTick`
+ * claimed it and releases it in a `finally`, whatever this answers.
+ */
+async function runLeasedTick(
+  deps: LeasedTickDeps,
+  input: BuildAudienceTickInput,
+  broadcast: Broadcast,
+  now: Date,
+): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
 
   // Step 1a (S8) — the inherited-id probe, BEFORE the standing gate and before
   // anything else touches Resend: the legacy leg's Step 1b, the same answers.
@@ -527,7 +670,7 @@ export async function buildAudienceTick(
  * `null`: nothing resolved them on this tick.
  */
 function catchUpHanded(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
   now: Date,
@@ -606,7 +749,7 @@ type InheritedProbe =
  *   the same. An `AuditPortInvariantError` (a wiring bug) still throws.
  */
 async function probeInheritedBroadcast(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
   resendBroadcastId: string,
@@ -707,7 +850,7 @@ async function probeInheritedBroadcast(
  *   again. Fail CLOSED: an unknown decision lands here too, never at the send.
  */
 async function applySendStanding(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
   probe: InheritedProbe | null,
@@ -721,7 +864,7 @@ async function applySendStanding(
   if (standing.kind === 'hold') {
     recordDispatchHold(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
     // Outside every tx: the Step-1 lock tx has committed.
-    await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed', null);
+    await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed', deps.lease);
     // Best-effort: the hold is already the decided answer, whatever this says.
     await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold', { bidIsDead: isDeadProbe(probe) });
     return ok({ kind: 'dispatch_held_member_suspended' });
@@ -731,6 +874,13 @@ async function applySendStanding(
     broadcast.resendBroadcastId === null
       ? null
       : { resendBroadcastId: broadcast.resendBroadcastId, probedStatus: probe !== null && !probe.handed ? probe.status : null };
+  // Spec 140 s2b (A8) — both refusal arms DELETE the row's draft at Resend
+  // (`deleteDraftBeforeRefusal`): an irreversible call, so the lease is checked
+  // first. Here, not inside the shared gate: the legacy leg holds no lease.
+  if ((standing.kind === 'refuse' || standing.kind === 'refuse_erased') && rowDraft !== null && rowDraft.resendBroadcastId !== '') {
+    const gated = await leaseGate(deps, input, 'deleteBroadcastOnce');
+    if (gated !== null) return gated;
+  }
   if (standing.kind === 'refuse') {
     const cleared = await deleteDraftBeforeStandingRefusal(
       deps.broadcastsGateway,
@@ -906,7 +1056,7 @@ const RESTART_LOG_NAMES: Readonly<Record<RestartReason, { failed: string; lost: 
 };
 
 async function restartAudienceBuild(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   row: RowIds,
   why: RestartReason,
@@ -934,6 +1084,15 @@ async function restartAudienceBuild(
     logger.info({ ...ids, step }, `broadcasts.audience_import.${names.lost}`);
     return 'lost';
   };
+  // Spec 140 s2b (CAS 12) — each delete below is irreversible, so the lease is
+  // checked first; a lost or expiring lease stops the restart where it is (the
+  // shape the next tick redoes from), a check that cannot be read fails it.
+  const leaseGateStep = async (step: string): Promise<'lost' | 'failed' | null> => {
+    const read = await checkLeaseBefore(deps, input, step);
+    if (read === 'held') return null;
+    if (typeof read === 'object') return failed(step, read.failed);
+    return lost(step);
+  };
 
   // 1. CLAIM.
   if (importId !== null) {
@@ -944,7 +1103,7 @@ async function restartAudienceBuild(
           importId,
           resendAudienceId: audienceId,
           resendBroadcastId,
-        }, null),
+        }, deps.lease),
       );
     } catch (e) {
       return failed('release_import', e);
@@ -953,6 +1112,8 @@ async function restartAudienceBuild(
   }
   // 2. The broadcast resource (an empty id is not an id).
   if (resendBroadcastId !== null && resendBroadcastId !== '') {
+    const stopped = await leaseGateStep('delete_broadcast');
+    if (stopped !== null) return stopped;
     try {
       await deps.broadcastsGateway.deleteBroadcast(resendBroadcastId);
     } catch (e) {
@@ -968,6 +1129,8 @@ async function restartAudienceBuild(
     }
   }
   // 3. The audience.
+  const stopped = await leaseGateStep('delete_audience');
+  if (stopped !== null) return stopped;
   try {
     await deps.broadcastsGateway.deleteAudience(audienceId);
   } catch (e) {
@@ -980,7 +1143,7 @@ async function restartAudienceBuild(
       deps.broadcastsRepo.releaseResendAudience(tx, deps.tenant.slug, input.broadcastId, {
         resendAudienceId: audienceId,
         resendBroadcastId,
-      }, null),
+      }, deps.lease),
     );
   } catch (e) {
     return failed('release_audience', e);
@@ -1022,7 +1185,7 @@ function isAudienceMissing(failure: GatewayFailure): boolean {
  * the row where the next tick meets the same 404 and tries again.
  */
 async function selfHealMissingAudience(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   row: RowIds,
   bidIsDead: boolean,
@@ -1254,7 +1417,7 @@ function importReasonToFailureMetric(
  * transport class.
  */
 async function onRetryable(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
   message: string,
@@ -1274,7 +1437,7 @@ async function onRetryable(
     broadcast,
     now,
     'broadcasts.audience_import.retry_epoch_stamp_failed',
-    null,
+    deps.lease,
   );
   if (epoch === null) {
     // Review L3 — the stamp matched no `approved` row: another writer moved it
@@ -1346,7 +1509,7 @@ async function onRetryable(
  * operator nor the member could act on.
  */
 async function onGatewayFailure(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
   failure: GatewayFailure,
@@ -1426,7 +1589,7 @@ async function onGatewayFailure(
 
 /** Tick 1 — hand the audience over. Sends nothing. */
 async function submitImport(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
   probe: InheritedProbe | null,
@@ -1448,6 +1611,8 @@ async function submitImport(
 
   let audienceId = '';
   {
+    const gated = await leaseGate(deps, input, 'createAudience');
+    if (gated !== null) return gated;
     const created = await viaGateway(() =>
       deps.broadcastsGateway.createAudience(
         `broadcast-${deps.tenant.slug}-${input.broadcastId as unknown as string}`,
@@ -1462,7 +1627,7 @@ async function submitImport(
           deps.tenant.slug,
           input.broadcastId,
           audienceId,
-          null,
+          deps.lease,
         );
       }),
     );
@@ -1472,6 +1637,9 @@ async function submitImport(
   // S48 — time the one call the whole design rests on. Nothing measured it
   // before, so neither the ~412 ms it is sized against nor the 30-minute stuck
   // threshold derived from it was checkable in production.
+  // Spec 140 s2b — the import POST has its own budget (I), so it demands I + M.
+  const importGated = await leaseGate(deps, input, 'createContactImport', IMPORT_HEADROOM_MS);
+  if (importGated !== null) return importGated;
   const submitStartedAt = Date.now();
   const submitted = await viaGateway(() =>
     deps.broadcastsGateway.createContactImport(audienceId, resolved.value.recipients),
@@ -1498,7 +1666,7 @@ async function submitImport(
         deps.tenant.slug,
         input.broadcastId,
         submitted.value.importId,
-        null,
+        deps.lease,
         { expectedResendAudienceId: audienceId },
       );
     }),
@@ -1528,7 +1696,7 @@ async function submitImport(
 
 /** Tick 2+ — poll, apply the completion rule, and only then send. */
 async function confirmImport(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
   importId: string,
@@ -1822,6 +1990,8 @@ async function confirmImport(
     // F119 T031 — read outside the gateway retry wrapper: a brand read is not a
     // provider call and must not be classified as one.
     const brand = await loadBrandChrome(deps.brandChrome, deps.tenant, 'audience_tick');
+    const gated = await leaseGate(deps, input, 'createBroadcast');
+    if (gated !== null) return gated;
     const createdRb = await viaGateway(() =>
       deps.broadcastsGateway.createBroadcast({
         audienceId,
@@ -1857,7 +2027,7 @@ async function confirmImport(
     resendBroadcastId,
     resendAudienceId: audienceId,
     minted,
-    lease: null,
+    lease: deps.lease,
     fence: {
       expectedAudienceImportId: importId,
       ...(inheritedDead ? { replacesResendBroadcastId: inheritedId } : {}),
@@ -1880,6 +2050,8 @@ async function confirmImport(
   // gateway sends it via `post()`'s third argument). The key dedupes nothing;
   // Resend's own 422 on any second `/send` does (MEASURED 2026-10-29,
   // `_probe-refused-send.ts`), and the loser's 422 is probed below.
+  const sendGated = await leaseGate(deps, input, 'sendBroadcast');
+  if (sendGated !== null) return sendGated;
   const sent = await viaGateway(() =>
     deps.broadcastsGateway.sendBroadcast(
       resendBroadcastId,
@@ -1960,7 +2132,7 @@ async function confirmImport(
  * failed: the ordinary `resource_missing` arm (an admin must look).
  */
 async function sendLostToHold(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   sendId: string,
   importId: string,
@@ -2014,7 +2186,7 @@ interface SendHandOff {
  * so everything here is a record of a delivery, never a reason to undo one.
  */
 async function advanceToSending(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
   now: Date,
@@ -2027,7 +2199,7 @@ async function advanceToSending(
   // A stamp surviving a delivered send would otherwise be inherited by any
   // later budgeted failure on the row; the probe's retryable throw is kept off
   // the clock for the same reason. Own tx, best-effort (never throws).
-  await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed', null);
+  await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed', deps.lease);
 
   // ## Round 3 finding 3-6 — the cancel window, and why the ids ride their own tx
   //
@@ -2060,7 +2232,7 @@ async function advanceToSending(
   const idsAttached = await viaRepoConcurrency(input.broadcastId, () =>
     deps.broadcastsRepo.withTx(async (tx) => {
       if (audienceId === null) {
-        await deps.broadcastsRepo.attachBroadcastId(tx, deps.tenant.slug, input.broadcastId, resendBroadcastId, null);
+        await deps.broadcastsRepo.attachBroadcastId(tx, deps.tenant.slug, input.broadcastId, resendBroadcastId, deps.lease);
         return;
       }
       await deps.broadcastsRepo.attachResendIds(
@@ -2069,7 +2241,7 @@ async function advanceToSending(
         input.broadcastId,
         audienceId,
         resendBroadcastId,
-        null,
+        deps.lease,
       );
     }),
   );
@@ -2089,6 +2261,14 @@ async function advanceToSending(
     );
     return err(idsAttached.error);
   }
+  // Spec 140 s2b (A4) — the lease was lost AFTER the mail went out (it expired
+  // and was taken over, or a non-holder exit cleared it). Nothing is wrong
+  // with the send: the next holder's probe finds it handed and catches the
+  // row up. INFO, not the critical `sent_but_transition_lost`.
+  if (!idsAttached.ok && isLeaseLost(idsAttached.error)) {
+    logger.info({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId, importId, step: 'attach_ids' }, 'broadcasts.audience_import.lease_lost_after_send');
+    return err(idsAttached.error);
+  }
 
   // A lost attach CAS (ED5) is a lost transition: it takes the re-read below,
   // and no transition is attempted on a row that already left `approved`.
@@ -2105,10 +2285,15 @@ async function advanceToSending(
       // handed path that estimate IS the number in hand — see Step 1a.)
         { sendingStartedAt: now, estimatedRecipientCount: recipientCount },
         'approved',
-        null,
+        deps.lease,
       );
     }),
   );
+  if (!transitioned.ok && isLeaseLost(transitioned.error)) {
+    // Spec 140 s2b (A4) — as for the ids above.
+    logger.info({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId, importId, step: 'sending_transition' }, 'broadcasts.audience_import.lease_lost_after_send');
+    return err(transitioned.error);
+  }
   if (!transitioned.ok) {
     // A sibling tick that sent the SAME resource and flipped the row first (two
     // senders on one inherited draft; the loser's 422 probes as accepted) is no
@@ -2283,11 +2468,15 @@ async function advanceToSending(
           tx,
           deps.tenant.slug,
           input.broadcastId,
-          null,
+          deps.lease,
         );
       });
     } catch (stampErr) {
-      logger.error(
+      // Spec 140 s2b (A4) — a lease lost after the send: the stamp is not this
+      // tick's to write any more (the stamp's only fence is the token).
+      if (stampErr instanceof BroadcastConcurrentMutationError && stampErr.observedStatus === LEASE_LOST) {
+        logger.info({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, step: 'completion_stamp' }, 'broadcasts.audience_import.lease_lost_after_send');
+      } else logger.error(
         {
           err: errKind(stampErr),
           tenantId: deps.tenant.slug,
@@ -2330,7 +2519,7 @@ async function advanceToSending(
  * finished, and re-polling it produces the same answer.
  */
 async function failTerminally(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
   error: Extract<
@@ -2438,7 +2627,7 @@ async function failTerminally(
         // only inside an audit payload and a pino line.
         { failedToDispatchAt: now, failureReason: reason },
         'approved',
-        null,
+        deps.lease,
       );
       // RAW emit, not `safeAuditEmit` — the opposite call from the send path
       // above, for the opposite reason (round 3 finding 3-8). NOTHING has been
@@ -2470,6 +2659,17 @@ async function failTerminally(
       }
     });
   } catch (cleanupErr) {
+    // Spec 140 s2b (row 9) — the lease was lost before the terminal write (a
+    // takeover, or a non-holder exit that cleared it): this tick no longer
+    // owns the row, so no `failed_to_dispatch`, no member email — a concurrent
+    // skip, whatever `concurrentLossIsSkip` says (that flag is the erased arm's).
+    if (cleanupErr instanceof BroadcastConcurrentMutationError && cleanupErr.observedStatus === LEASE_LOST) {
+      logger.info(
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, step: 'terminal_write', dispatchFailureKind: reason },
+        'broadcasts.audience_import.lease_lost',
+      );
+      return err({ kind: 'broadcast_invalid_state_transition', observedStatus: LEASE_LOST });
+    }
     if (opts.concurrentLossIsSkip === true && cleanupErr instanceof BroadcastConcurrentMutationError) {
       // Review round 2 — the shared LOCKING re-read (it waits for a cascade
       // still deciding the row); a row still `approved`, gone, or a failed
@@ -2578,7 +2778,7 @@ async function failTerminally(
  * comment claimed parity with it while doing the opposite.
  */
 async function onResolveFailure(
-  deps: BuildAudienceTickDeps,
+  deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
   e: ResolveAudienceError,

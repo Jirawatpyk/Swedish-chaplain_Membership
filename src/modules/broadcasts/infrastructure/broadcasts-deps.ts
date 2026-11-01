@@ -50,6 +50,7 @@ import { runInTenant } from '@/lib/db';
 import { resolveSegmentRecipients } from '../application/use-cases/resolve-segment-recipients';
 import type { MembersBridgePort } from '../application/ports/members-bridge-port';
 import type { BuildAudienceTickDeps } from '../application/use-cases/build-audience-tick';
+import { DISPATCH_MAX_DURATION_MS } from '../application/use-cases/_dispatch-lease';
 import type { Broadcast } from '../domain/broadcast';
 import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
 import type { ReconcileStuckSendingDeps } from '../application/use-cases/reconcile-stuck-sending';
@@ -1229,6 +1230,9 @@ export async function makeBuildAudienceTickDeps(
     broadcastsGateway: resendBroadcastsGateway,
     audit: f7AuditAdapter,
     clock: systemClock,
+    // Spec 140 s2b (DL9) — the tick starts when its deps are built (once per
+    // cron invocation); the dispatch route passes its own entry instant over it.
+    tickBudget: { tickStartedAt: Date.now(), maxDurationMs: DISPATCH_MAX_DURATION_MS },
     fromEmail: env.broadcasts.fromEmail,
     tenantDisplayName,
     locale: tenantDefaultLocaleFor(tenantId),

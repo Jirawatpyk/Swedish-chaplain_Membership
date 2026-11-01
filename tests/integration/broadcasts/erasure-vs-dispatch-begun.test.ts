@@ -299,6 +299,8 @@ describe('spec 139 DE3 — the erasure cascade vs a dispatch tick past its persi
     broadcastsGateway: gateway,
     audit: f7AuditAdapter,
     clock: { now: () => new Date() },
+    // Spec 140 s2b (DL9) — a tick that has just begun.
+    tickBudget: { tickStartedAt: Date.now(), maxDurationMs: 300_000 },
     fromEmail: 'noreply@test.invalid-but-test-only',
     tenantDisplayName: 'Test Chamber',
     locale: 'en' as const,
@@ -359,7 +361,13 @@ describe('spec 139 DE3 — the erasure cascade vs a dispatch tick past its persi
     expect((await readRow(broadcastId)).status).toBe('cancelled');
   });
 
-  it('import leg, the re-mint window: the tick re-mints over the id the cascade just deleted, its persist CAS waits on the cascade lock, sees cancelled, and the fresh draft is reclaimed — nothing is sent', async () => {
+  // Spec 140 s2b (state-table row 17) — this window used to end in a mint and a
+  // reclaim: the tick minted over the id the cascade had just deleted, its
+  // persist CAS waited on the cascade's lock, saw `cancelled`, and reclaimed
+  // the fresh draft. Under the dispatch lease the tick's pre-call check before
+  // `createBroadcast` waits on that lock instead (`SELECT … FOR UPDATE`), then
+  // reads the lease the cascade's cancel cleared — so nothing is minted at all.
+  it('import leg, the re-mint window: the pre-call check before the re-mint waits on the cascade lock, sees its lease cleared, and mints nothing — nothing is sent', async () => {
     const inherited = `rb-de3-inherited-${randomUUID()}`;
     const { memberId, broadcastId } = await seed({
       resendAudienceId: `aud-de3-${randomUUID().slice(0, 8)}`,
@@ -386,21 +394,22 @@ describe('spec 139 DE3 — the erasure cascade vs a dispatch tick past its persi
       await tickP;
     }
     expect(deletedUnderLock).toBe(true);
-    // The tick now probes `not_found` twice, mints afresh and tries to persist:
-    // that UPDATE waits on the cascade's lock.
+    // The tick now probes `not_found` twice and checks its lease before the
+    // re-mint: that `SELECT … FOR UPDATE` waits on the cascade's lock.
     parkFirstProbe.open();
     await new Promise((resolve) => setTimeout(resolve, 2_000));
-    expect(resend.calls).toContain('createBroadcast');
+    expect(resend.calls).not.toContain('createBroadcast');
     parkDelete.open();
     const [cascaded, tick] = await Promise.all([cascadeP, tickP]);
 
     expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 1, resendCopiesRetained: 0, deferredCount: 0 } });
-    expect(tick.ok).toBe(false);
+    expect(tick).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' } });
     expect(resend.accepted).toEqual([]);
+    expect(resend.calls).not.toContain('createBroadcast');
     expect(resend.calls).not.toContain('sendBroadcast');
     const minted = [...resend.state.keys()].filter((id) => id !== inherited);
-    expect(minted).toHaveLength(1);
-    expect(resend.reclaimed).toEqual(minted);
+    expect(minted).toEqual([]);
+    expect(resend.reclaimed).toEqual([]);
     expect(await readRow(broadcastId)).toMatchObject({ status: 'cancelled', resendBroadcastId: inherited });
   });
 });

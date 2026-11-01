@@ -116,6 +116,10 @@ export const maxDuration = 300;
 export const GET = POST;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  // Spec 140 s2b (DL9) — the invocation's start, for the row-start cutoff
+  // (`ROW_START_CUTOFF_MS`): no row starts so late that its longest path could
+  // outrun `maxDuration`.
+  const tickBudget = { tickStartedAt: Date.now(), maxDurationMs: maxDuration * 1000 };
   // Verify-fix R3 (Code-M2, 2026-05-02): constant-time Bearer check
   // via shared `verifyCronBearer` helper (matches F4 outbox + F5
   // sweep-stale-pending-refunds). Avoids timing side-channel.
@@ -344,6 +348,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           // Share the tick memo: several broadcasts on one segment resolve it
           // once, exactly as the single-tick path does.
           tenant: deps.tenant,
+          tickBudget,
         }
       : null;
 
