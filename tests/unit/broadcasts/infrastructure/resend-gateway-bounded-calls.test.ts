@@ -18,8 +18,12 @@ vi.hoisted(() => {
   delete process.env['RESEND_BASE_URL'];
   delete process.env['RESEND_USER_AGENT'];
 });
-import { createResendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
 import {
+  createResendBroadcastsGateway,
+  legacyResendBroadcastsGateway,
+} from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
+import {
+  IMPORT_CALL_TIMEOUT_MS,
   RESEND_CALL_TIMEOUT_MS,
   type BroadcastsGatewayPort,
   type CreateBroadcastInput,
@@ -154,7 +158,7 @@ describe('DL8 — every broadcasts gateway call aborts at callTimeoutMs on a hun
 
   it.each(THROWING)('%s aborts at callTimeoutMs on a hung fetch (50 ms)', async (_name, run) => {
     handler = hang;
-    const { settled } = await settleWithin(run(createResendBroadcastsGateway({ callTimeoutMs: C })), 1_000);
+    const { settled } = await settleWithin(run(createResendBroadcastsGateway({ callTimeoutMs: C, importCallTimeoutMs: C })), 1_000);
     expect(settled).toEqual({ thrown: { kind: 'retryable', subKind: 'timeout' } });
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((r) => r.signal instanceof AbortSignal)).toBe(true);
@@ -162,7 +166,7 @@ describe('DL8 — every broadcasts gateway call aborts at callTimeoutMs on a hun
 
   it.each(ONCE)('%s aborts at callTimeoutMs on a hung fetch (50 ms) and answers retryable', async (_name, run) => {
     handler = hang;
-    const { settled } = await settleWithin(run(createResendBroadcastsGateway({ callTimeoutMs: C })), 1_000);
+    const { settled } = await settleWithin(run(createResendBroadcastsGateway({ callTimeoutMs: C, importCallTimeoutMs: C })), 1_000);
     expect(settled).toEqual({ value: { kind: 'retryable' } });
   });
 
@@ -175,12 +179,13 @@ describe('DL8 — every broadcasts gateway call aborts at callTimeoutMs on a hun
     ['retrieveBroadcastOnce (raw body)', ((g) => g.retrieveBroadcastOnce('bc_1')) as Run, { value: { kind: 'retryable' } }],
   ])('%s: a body that stalls mid-read is a timeout', async (_name, run, expected) => {
     handler = hangBody;
-    const { settled } = await settleWithin(run(createResendBroadcastsGateway({ callTimeoutMs: C })), 1_000);
+    const { settled } = await settleWithin(run(createResendBroadcastsGateway({ callTimeoutMs: C, importCallTimeoutMs: C })), 1_000);
     expect(settled).toEqual(expected);
   });
 
-  it('the production budget is 10 s', () => {
+  it('the production budget is 10 s, and 30 s for a contact import', () => {
     expect(RESEND_CALL_TIMEOUT_MS).toBe(10_000);
+    expect(IMPORT_CALL_TIMEOUT_MS).toBe(30_000);
   });
 });
 
@@ -198,7 +203,7 @@ describe('DL5a — a create is not retried in-process on a 5xx or a timeout', ()
 
   it.each(CREATES)('%s: one request on a timeout', async (_name, run) => {
     handler = hang;
-    const { settled } = await settleWithin(run(createResendBroadcastsGateway({ callTimeoutMs: 50 })), 1_000);
+    const { settled } = await settleWithin(run(createResendBroadcastsGateway({ callTimeoutMs: 50, importCallTimeoutMs: 50 })), 1_000);
     expect({ settled, requests: requests.length }).toEqual({
       settled: { thrown: { kind: 'retryable', subKind: 'timeout' } },
       requests: 1,
@@ -231,7 +236,7 @@ describe('CR#1 — a create retries a 429 but not a 5xx or a timeout', () => {
 
     requests = [];
     handler = hang;
-    const afterTimeout = await settleWithin(run(createResendBroadcastsGateway({ callTimeoutMs: 50 })), 1_000);
+    const afterTimeout = await settleWithin(run(createResendBroadcastsGateway({ callTimeoutMs: 50, importCallTimeoutMs: 50 })), 1_000);
     expect({ settled: afterTimeout.settled, requests: requests.length }).toEqual({
       settled: { thrown: { kind: 'retryable', subKind: 'timeout' } },
       requests: 1,
@@ -270,5 +275,57 @@ describe('P6 — one signal spans every attempt of a retried call', () => {
       requests: 2,
     });
     expect(elapsedMs).toBeLessThan(C * 0.75);
+  });
+});
+
+// Review round 2, CR#3: a contact import uploads the whole CSV (up to the
+// 5,000 / 50,000 ceiling), so it has its own budget, 30 s by default; it is
+// still one attempt.
+describe('CR#3 — createContactImport has its own budget', () => {
+  it('createContactImport aborts at importCallTimeoutMs, not callTimeoutMs', async () => {
+    handler = hang;
+    const run = createResendBroadcastsGateway({ callTimeoutMs: 50, importCallTimeoutMs: 300 }).createContactImport(
+      'aud_1',
+      ['a@example.com'],
+    );
+    const early = await settleWithin(run, 100);
+    expect(early.settled).toBe('still running');
+    const late = await settleWithin(run, 700);
+    expect({ settled: late.settled, requests: requests.length }).toEqual({
+      settled: { thrown: { kind: 'retryable', subKind: 'timeout' } },
+      requests: 1,
+    });
+    expect(early.elapsedMs + late.elapsedMs).toBeLessThan(700);
+  });
+});
+
+// Review round 2, CR#2 (maintainer decision, 1 Nov 2026): the legacy dispatch
+// leg's createBroadcast retries any retryable error inside the budget, as it
+// did before s2a. Only the legacy instance does; it is deleted with the leg in
+// slice 4.
+describe('CR#2 — the legacy instance retries a createBroadcast 5xx', () => {
+  it('the legacy instance retries a createBroadcast 5xx; the default instance does not', async () => {
+    handler = async (call) => (call === 1 ? server5xx() : json(201, { id: 'bc_1' }));
+    const legacy = await settleWithin(
+      createResendBroadcastsGateway({ createBroadcastRetry: 'retryable' }).createBroadcast(INPUT),
+      2_500,
+    );
+    expect({ settled: legacy.settled, requests: requests.length }).toEqual({
+      settled: { value: { broadcastId: 'bc_1' } },
+      requests: 2,
+    });
+
+    requests = [];
+    const byDefault = await settleWithin(createResendBroadcastsGateway().createBroadcast(INPUT), 2_500);
+    expect({ settled: byDefault.settled, requests: requests.length }).toEqual({
+      settled: { thrown: { kind: 'retryable', subKind: 'server_5xx' } },
+      requests: 1,
+    });
+  });
+
+  it('the exported legacy instance is the retrying one', async () => {
+    handler = async (call) => (call === 1 ? server5xx() : json(201, { id: 'bc_2' }));
+    const { settled } = await settleWithin(legacyResendBroadcastsGateway.createBroadcast(INPUT), 2_500);
+    expect({ settled, requests: requests.length }).toEqual({ settled: { value: { broadcastId: 'bc_2' } }, requests: 2 });
   });
 });

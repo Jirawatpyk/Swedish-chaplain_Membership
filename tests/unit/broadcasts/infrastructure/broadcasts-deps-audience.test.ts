@@ -252,3 +252,26 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
     expect(fresh.currentAudienceCeiling()).toBe(50_000);
   });
 });
+
+// Spec 140 s2a review round 2, CR#2 (maintainer decision, 1 Nov 2026): only the
+// legacy dispatch leg gets the gateway instance whose createBroadcast retries a
+// 5xx; the import leg keeps the default one-attempt instance.
+describe('broadcasts-deps — the legacy gateway instance (spec 140 s2a)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('makeDispatchScheduledBroadcastDeps wires the legacy instance', async () => {
+    stubEnv({ contactMarketing: 'false', importAudience: false });
+    const deps = await loadDeps();
+    const gateway = await import('@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway');
+    const dispatch = await deps.makeDispatchScheduledBroadcastDeps('swecham');
+    expect(gateway.legacyResendBroadcastsGateway).toBeDefined();
+    expect(dispatch.broadcastsGateway).toBe(gateway.legacyResendBroadcastsGateway);
+    const importLeg = await deps.makeBuildAudienceTickDeps('swecham', dispatch.membersBridge);
+    expect(importLeg.broadcastsGateway).toBe(gateway.resendBroadcastsGateway);
+  });
+});
