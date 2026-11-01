@@ -816,6 +816,30 @@ Mutation proofs (from `5f8fe56a2`, each file restored byte for byte, tree clean)
 - **The scan exclusion holds on every flag state (A7):** with the flag OFF after a restart, `processed:0`, and R-LIVE was unchanged. R-EXP is left out by the s2a import-row scan filter. The command had expected an `import_row_skipped` log, but no row reaches the use case.
 - **Teardown:** the Resend audience was deleted (200, segments back to `General`), both rows deleted, the due count back to 0.
 
+### Slice 2b — re-Verify on the final HEAD: the maintainer's `/verify` (2 Nov 2026, on `604e7ac7b`): PASS
+
+:3400, Neon dev, tenant swecham. The import flag was set in the worktree's `.env.local` only and restored afterwards. Resend went to the sink address only, and no `/send` ran.
+- **Safety:** before seeding, 0 due rows and only the `General` segment.
+- **A, lease mechanics, flag ON.**
+  - A wrong Bearer → 401, and nothing changed.
+  - The tick answered `processed:1, import_submitted:1`.
+    - R-LIVE (another tick's live lease): untouched.
+    - R-EXP (expired lease): claimed, imported, and released to NULL.
+  - Log: `lease_claimed → … → lease_released`. 0 send lines.
+- **B, the staff re-time refusal UI.** The schedule dialog was driven as the admin persona.
+  - The answer was 409 `dispatch_in_progress`, and the dialog stayed open.
+  - The picked time was kept, and focus moved to the `InlineWarning`.
+  - EN, TH ("กำลังเตรียมส่ง … กรุณาลองอีกครั้ง") and SV: no `MISSING_MESSAGE`.
+  - 320 px: `scrollWidth` 305, no horizontal scroll.
+  - The row was byte-identical after 4 refusals.
+  - On a well-formed row (with an approved version): refused twice, then the lease was cleared, and the re-time answered 200 with `scheduled_for` at the picked time.
+- **C, flag OFF after a restart:** `processed:0`, and R-LIVE was unchanged.
+- **Teardown:**
+  - the audience deleted (200), segments back to `General`;
+  - the seeds deleted, the due count back to 0;
+  - the pending `eblast_schedule_confirmed_member` outbox row deleted.
+- **Noted:** a malformed seed (an `approved` row without an approved version) answers 500 from the existing confirm-schedule guard. Production never has that shape; the lease refusal comes before that read.
+
 ### Slice 2b — build notes (1 Nov 2026)
 
 - **Column names:** `dispatch_lease_token` / `dispatch_lease_expires_at`. The 2b prose says `lease_*`; the Approach SQL and the sibling `dispatch_first_failed_at` use `dispatch_`. The migration header records this.
