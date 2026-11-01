@@ -684,6 +684,14 @@ describe('IssueInvoiceForm — the connection drops (#48)', () => {
       expect(onClose).not.toHaveBeenCalled();
       expect(refreshMock).not.toHaveBeenCalled();
       expect(screen.getByTestId('issue-invoice-error')).toBeInTheDocument();
+      // The wait is visible and announced, and the button stops inviting clicks.
+      const waiting = screen.getByRole('button', {
+        name: enMessages.admin.invoices.issue.errors.waitingForConnection,
+      });
+      expect(waiting).toHaveAttribute('aria-disabled', 'true');
+      expect(screen.getByRole('status')).toHaveTextContent(
+        enMessages.admin.invoices.issue.errors.waitingForConnection,
+      );
       window.dispatchEvent(new Event('online'));
       expect(onClose).toHaveBeenCalledTimes(1);
       expect(onClose).toHaveBeenCalledWith('refresh');

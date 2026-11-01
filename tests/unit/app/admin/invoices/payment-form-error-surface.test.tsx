@@ -315,6 +315,13 @@ describe('PaymentForm — the connection drops (#48)', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
       expect(onRefreshClose).not.toHaveBeenCalled();
       expect(refreshMock).not.toHaveBeenCalled();
+      const waiting = screen.getByRole('button', {
+        name: enMessages.admin.invoices.pay.errors.waitingForConnection,
+      });
+      expect(waiting).toHaveAttribute('aria-disabled', 'true');
+      expect(screen.getByRole('status')).toHaveTextContent(
+        enMessages.admin.invoices.pay.errors.waitingForConnection,
+      );
       window.dispatchEvent(new Event('online'));
       expect(onRefreshClose).toHaveBeenCalledTimes(1);
       expect(refreshMock).toHaveBeenCalledTimes(1);
