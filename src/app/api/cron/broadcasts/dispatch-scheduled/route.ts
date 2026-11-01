@@ -636,23 +636,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // is the one trace an operator opens on the first real send, and tick 1
     // legitimately succeeding looks identical to tick 1 silently failing.
     //
-    // Every bucket the summary counts is now an attribute, so the trace says
-    // WHICH outcome happened. `import_submitted` and `import_pending` are the two
-    // that used to be invisible.
-    cronSpan.setAttribute('cron.processed', summary.processed);
-    cronSpan.setAttribute('cron.succeeded', summary.succeeded);
-    cronSpan.setAttribute('cron.import_submitted', summary.import_submitted);
-    cronSpan.setAttribute('cron.import_pending', summary.import_pending);
-    cronSpan.setAttribute('cron.held', summary.held);
-    cronSpan.setAttribute('cron.audience_restarted', summary.audience_restarted);
-    cronSpan.setAttribute('cron.retryable', summary.retryable);
-    cronSpan.setAttribute('cron.permanent_failed', summary.permanent_failed);
-    cronSpan.setAttribute('cron.concurrent_skip', summary.concurrent_skip);
-    // Spec 140 s2a review round 2 (CR#5): every summary bucket is a span attribute.
-    cronSpan.setAttribute('cron.import_row_skipped', summary.import_row_skipped);
-    cronSpan.setAttribute('cron.resource_missing', summary.resource_missing);
-    cronSpan.setAttribute('cron.unknown_error', summary.unknown_error);
-    cronSpan.setAttribute('cron.uncaught_error', summary.uncaught_error);
+    // The span attributes are DERIVED from the summary: every bucket it counts
+    // is `cron.<key>`, so the trace says WHICH outcome happened and a new bucket
+    // cannot be left off it (spec 140 s2a review round 3; round 2 had to add
+    // `import_row_skipped` by hand). `import_submitted` and `import_pending`
+    // were the two that used to be invisible.
+    for (const [key, value] of Object.entries(summary)) {
+      if (typeof value === 'number') cronSpan.setAttribute(`cron.${key}`, value);
+    }
     if (summary.uncaught_error > 0 || summary.unknown_error > 0) {
       cronSpan.setStatus({
         code: SpanStatusCode.ERROR,
