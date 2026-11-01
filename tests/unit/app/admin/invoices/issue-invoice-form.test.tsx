@@ -15,7 +15,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { IssueInvoiceForm } from '@/app/(staff)/admin/invoices/_components/issue-invoice-form';
@@ -774,6 +774,8 @@ describe('IssueInvoiceForm — an unknown outcome is not a failure (#57, #58)', 
       const alert = await screen.findByTestId('issue-invoice-error');
       expect(alert).toHaveAttribute('data-tone', 'warning');
       expect(alert).toHaveTextContent(enMessages.admin.invoices.issue.errors.unconfirmed);
+      // A 504 is not a dropped connection: the copy names no cause.
+      expect(alert).not.toHaveTextContent(/connection/i);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -785,9 +787,33 @@ describe('IssueInvoiceForm — an unknown outcome is not a failure (#57, #58)', 
       renderForm();
       confirmIssue();
       const alert = await screen.findByTestId('issue-invoice-error');
-      expect(alert).toHaveAttribute('data-tone', 'destructive');
+      expect(alert).toHaveAttribute('data-tone', 'warning');
       expect(alert).toHaveTextContent(enMessages.errors.readOnlyMode);
+      expect(alert).toHaveTextContent(enMessages.errors.readOnlyNothingChanged);
+      expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
     } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('after 10 s with no answer, a status line says it is still working', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)));
+    try {
+      renderForm();
+      confirmIssue();
+      const still = enMessages.admin.invoices.issue.errors.stillWorking;
+      const hasStill = () => screen.queryAllByRole('status').some((el) => el.textContent === still);
+      await act(async () => {
+        vi.advanceTimersByTime(9_000);
+      });
+      expect(hasStill()).toBe(false);
+      await act(async () => {
+        vi.advanceTimersByTime(1_500);
+      });
+      expect(hasStill()).toBe(true);
+    } finally {
+      vi.useRealTimers();
       vi.unstubAllGlobals();
     }
   });

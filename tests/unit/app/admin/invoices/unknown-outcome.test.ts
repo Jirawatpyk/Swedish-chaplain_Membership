@@ -27,7 +27,8 @@ describe('isUnknownOutcome', () => {
 });
 
 describe('MONEY_POST_TIMEOUT_MS', () => {
-  it('outlasts the routes’ 60 s maxDuration', () => {
-    expect(MONEY_POST_TIMEOUT_MS).toBeGreaterThan(60_000);
+  it('is well past the ~10 s a money POST takes, and under the 300 s platform limit', () => {
+    expect(MONEY_POST_TIMEOUT_MS).toBeGreaterThan(30_000);
+    expect(MONEY_POST_TIMEOUT_MS).toBeLessThan(300_000);
   });
 });
