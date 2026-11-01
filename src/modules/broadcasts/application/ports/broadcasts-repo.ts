@@ -35,6 +35,37 @@ export interface TerminalBroadcastDraftRef {
 }
 
 /**
+ * Spec 140 s2b (migration 0322) — the import leg's dispatch-lease FENCING
+ * TOKEN: what `claimDispatchLease` minted for one tick on one row. Branded so a
+ * raw string (an audience id, an import id) can never be passed where a token
+ * is expected — every writer below takes `lease: LeaseToken | null` as a
+ * REQUIRED positional parameter (an optional one is the "forgotten at a call
+ * site" class), so an old call site fails to compile instead of writing
+ * unfenced. `null` is a NON-holder: the legacy leg, staff, the cascade.
+ */
+export type LeaseToken = string & { readonly __brand: 'DispatchLeaseToken' };
+
+export function asLeaseToken(raw: string): LeaseToken {
+  return raw as LeaseToken;
+}
+
+/**
+ * What the pre-call check (`checkDispatchLease`) read: `held` — the token is
+ * this tick's and the lease outlives the call's headroom; `expiring` — still
+ * this tick's, but it ends inside the headroom (no call is made: a call that
+ * outlived the lease could race the next holder); `lost` — another token, none,
+ * or no row (a takeover, a non-holder exit, an erasure cancel).
+ */
+export type LeaseCheck = 'held' | 'expiring' | 'lost';
+
+/**
+ * The `observedStatus` a fenced writer reports when the row no longer carries
+ * the caller's token (A3). It is not a row status: every caller maps it to a
+ * concurrent skip, never a failure write.
+ */
+export const LEASE_LOST = 'lease_lost' as const;
+
+/**
  * #400 item 1 — the ONLY `Broadcast` fields `applyTransition` writes besides
  * `status` / `updated_at`. The Drizzle adapter loops over this tuple, so a
  * key off the list used to be silently DROPPED; typing the parameter as
@@ -180,7 +211,13 @@ export class BroadcastConcurrentMutationError extends Error {
   constructor(
     public readonly tenantId: TenantSlug,
     public readonly broadcastId: BroadcastId,
-    public readonly observedStatus: BroadcastStatus,
+    /**
+     * The status the row was read at, or — spec 140 s2b — `LEASE_LOST` when a
+     * fenced write (a token passed) found the row no longer carrying it. A
+     * non-holder cancel clears the token and moves the status in one UPDATE,
+     * so a holder reads `lease_lost` first; every caller maps it to a skip.
+     */
+    public readonly observedStatus: BroadcastStatus | typeof LEASE_LOST,
   ) {
     super(
       `Concurrent mutation on broadcast ${broadcastId}: observed status ${observedStatus}`,
@@ -305,6 +342,69 @@ export interface BroadcastsRepo {
   ): Promise<BroadcastStatus | null>;
 
   /**
+   * Spec 140 s2b (migration 0322) — CLAIM the row's dispatch lease for one
+   * import tick. Called in the tick's step-1 tx, AFTER `lockForUpdate`, so it
+   * runs under the row lock (and so waits behind an erasure cascade's lock,
+   * D-040, then reads what the cascade left).
+   *
+   * Writes a fresh token and `expires = clock_timestamp() + ttlMs` only while
+   * the row is `approved` and holds no LIVE lease (none, or one that expired —
+   * a dead holder's lease is taken over). `clock_timestamp()`, never `now()`:
+   * `now()` is the tx start, and the row lock can be waited on for ~23 s
+   * (D-040's figure), which would stamp the lease that much short.
+   *
+   * `null` — nothing was claimed: the row is not `approved`, or another tick
+   * holds a live lease (`lease_held`). The caller reads the status first, so a
+   * `null` on an `approved` row means the lease is held.
+   */
+  claimDispatchLease(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    ttlMs: number,
+  ): Promise<LeaseToken | null>;
+
+  /**
+   * Spec 140 s2b — the pre-call check, made right before each irreversible
+   * Resend call. `SELECT … FOR UPDATE` on the row (it writes nothing, so
+   * `broadcasts_set_updated_at` does not fire): it queues behind an erasure's
+   * row lock and then reads the token the cascade's cancel cleared. In its own
+   * short tx. `headroomMs` is how much lease the call needs left (C + M; I + M
+   * before the import POST — `_dispatch-lease.ts`).
+   */
+  checkDispatchLease(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    lease: LeaseToken,
+    headroomMs: number,
+  ): Promise<LeaseCheck>;
+
+  /**
+   * Spec 140 s2b — RELEASE: NULL both lease columns on a row still carrying
+   * `lease`, at ANY status (the row may be `sending` or `failed_to_dispatch` by
+   * the end of the tick). `false` = 0 rows, not an error: a non-holder exit or a
+   * takeover already cleared it.
+   */
+  releaseDispatchLease(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    lease: LeaseToken,
+  ): Promise<boolean>;
+
+  /**
+   * Spec 140 s2b (cell 23) — the legacy leg's read, inside its step-1 lock tx:
+   * does the row carry a lease that has not expired (`clock_timestamp()`)? A
+   * live lease is an import tick at work; the legacy leg must not touch it.
+   */
+  hasLiveDispatchLease(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+  ): Promise<boolean>;
+
+  /**
    * Apply a status transition. Caller has already validated the
    * transition via the Domain `transition()` policy. Adapter sets
    * the corresponding lifecycle timestamp + actor field per status.
@@ -324,6 +424,17 @@ export interface BroadcastsRepo {
    * default). Required now: callers who don't have a source state
    * to verify either (a) don't need this method, or (b) should
    * acquire one via `lockForUpdate()` first.
+   *
+   * **`lease` is REQUIRED too** (spec 140 s2b, A9 — there is no separate
+   * "under lease" method; this is the only status writer):
+   *   - a `LeaseToken` (the import tick's own transitions) adds
+   *     `AND dispatch_lease_token = $t`; the lease columns are left for the
+   *     tick's release. A lost token throws `BroadcastConcurrentMutationError`
+   *     with `observedStatus: 'lease_lost'`.
+   *   - `null` (every other writer: staff, the approval flow, the cascade, the
+   *     legacy leg) — a STATUS CHANGE also NULLs both lease columns, so a
+   *     tick holding the row stops at its next check or fenced write. A
+   *     same-status write (a re-time) leaves the lease alone.
    */
   applyTransition(
     tx: unknown,
@@ -332,6 +443,7 @@ export interface BroadcastsRepo {
     target: BroadcastStatus,
     fields: TransitionFields,
     expectedFromStatus: BroadcastStatus,
+    lease: LeaseToken | null,
   ): Promise<Broadcast>;
 
   /**
@@ -343,6 +455,11 @@ export interface BroadcastsRepo {
    * attach on a row that left it writes nothing and throws
    * `BroadcastConcurrentMutationError` (the row moved) or
    * `BroadcastNotFoundError` (the row is gone).
+   *
+   * `lease` (spec 140 s2b, REQUIRED): with a token the write also requires
+   * `dispatch_lease_token = $t`, and a lost token throws
+   * `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'`
+   * (A3). `null` = a non-holder (the legacy leg).
    */
   attachResendIds(
     tx: unknown,
@@ -350,6 +467,7 @@ export interface BroadcastsRepo {
     broadcastId: BroadcastId,
     resendAudienceId: string,
     resendBroadcastId: string,
+    lease: LeaseToken | null,
   ): Promise<void>;
 
   /**
@@ -377,12 +495,18 @@ export interface BroadcastsRepo {
    * cancelled, re-opened for a new version — throws
    * `BroadcastConcurrentMutationError` naming its real status. The same holds
    * for `attachBroadcastId` and `attachAudienceImport`.
+   *
+   * `lease` (spec 140 s2b, REQUIRED): with a token the write also requires
+   * `dispatch_lease_token = $t`, and a lost token throws
+   * `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'`
+   * (A3). `null` = a non-holder (the legacy leg).
    */
   attachAudienceId(
     tx: unknown,
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     resendAudienceId: string,
+    lease: LeaseToken | null,
   ): Promise<void>;
 
   /**
@@ -419,12 +543,18 @@ export interface BroadcastsRepo {
    *   - `replacesResendBroadcastId`: also admit a row still carrying exactly
    *     this DEAD id (the probe answered `not_found`), so a fresh resource can
    *     replace it — never any other id.
+   *
+   * `lease` (spec 140 s2b, REQUIRED): with a token the write also requires
+   * `dispatch_lease_token = $t`, and a lost token throws
+   * `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'`
+   * (A3). `null` = a non-holder (the legacy leg).
    */
   attachBroadcastId(
     tx: unknown,
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     resendBroadcastId: string,
+    lease: LeaseToken | null,
     fence?: { readonly expectedAudienceImportId: string; readonly replacesResendBroadcastId?: string },
   ): Promise<void>;
 
@@ -454,12 +584,18 @@ export interface BroadcastsRepo {
    * build, which is what keeps it cancellable (`cancelBroadcast` accepts only
    * submitted/approved) — migration 0298 records why no `audience_building`
    * status exists.
+   *
+   * `lease` (spec 140 s2b, REQUIRED): with a token the write also requires
+   * `dispatch_lease_token = $t`, and a lost token throws
+   * `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'`
+   * (A3). `null` = a non-holder (the legacy leg).
    */
   attachAudienceImport(
     tx: unknown,
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     importId: string,
+    lease: LeaseToken | null,
     fence: { readonly expectedResendAudienceId: string },
   ): Promise<void>;
 
@@ -473,11 +609,16 @@ export interface BroadcastsRepo {
    * `failed: 0` and `total: 0` and had attached nothing (research R9 V2 (c)).
    * This stamp is the gate `sendBroadcast` waits on, so a premature one sends
    * a broadcast to a partly-built or empty audience.
+   *
+   * `lease` (spec 140 s2b, REQUIRED): this write has no status CAS (it runs
+   * after `sending`), so the token is its only fence; its 0-row probe reports
+   * a lost token as `observedStatus: 'lease_lost'` (A3).
    */
   markAudienceImportCompleted(
     tx: unknown,
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
+    lease: LeaseToken | null,
   ): Promise<void>;
 
   /**
@@ -509,6 +650,9 @@ export interface BroadcastsRepo {
    * no completion stamp. `false` = zero rows matched — another writer moved
    * the row since the read (a sibling's fenced attach, a cancel); NOT an
    * error, and the caller must then delete NOTHING.
+   *
+   * `lease` (spec 140 s2b, REQUIRED): with a token the CAS also requires
+   * `dispatch_lease_token = $t`; a lost token is the existing `false` (A3).
    */
   releaseAudienceImport(
     tx: unknown,
@@ -519,6 +663,7 @@ export interface BroadcastsRepo {
       readonly resendAudienceId: string;
       readonly resendBroadcastId: string | null;
     },
+    lease: LeaseToken | null,
   ): Promise<boolean>;
 
   /**
@@ -532,12 +677,16 @@ export interface BroadcastsRepo {
    * the shape nothing can send from (the import leg's send is fenced on a
    * non-null import id). `false` = zero rows matched; NOT an error. The
    * released row runs a fresh tick 1 on its next tick.
+   *
+   * `lease` (spec 140 s2b, REQUIRED): with a token the CAS also requires
+   * `dispatch_lease_token = $t`; a lost token is the existing `false` (A3).
    */
   releaseResendAudience(
     tx: unknown,
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     expected: { readonly resendAudienceId: string; readonly resendBroadcastId: string | null },
+    lease: LeaseToken | null,
   ): Promise<boolean>;
 
   /**
@@ -584,12 +733,16 @@ export interface BroadcastsRepo {
    *   and in every case there is no attempt left to time — the caller stops
    *   without a terminal write. Those siblings throw because a lost CAS there
    *   means a Resend resource must be reclaimed; nothing is minted here.
+   * - `lease` (spec 140 s2b, REQUIRED): with a token the stamp also requires
+   *   `dispatch_lease_token = $t`; a lost token is the same `null` (A3), so the
+   *   caller stops without a terminal write and logs no stamp failure.
    */
   markDispatchRetryStarted(
     tx: unknown,
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     at: Date,
+    lease: LeaseToken | null,
   ): Promise<Date | null>;
 
   /**
@@ -603,11 +756,15 @@ export interface BroadcastsRepo {
    * Matches only a STAMPED row (`dispatch_first_failed_at IS NOT NULL`), so a
    * hold on a clean row writes nothing — no `broadcasts_set_updated_at` bump
    * every five minutes for a days-long hold. Zero rows matched is not an error.
+   *
+   * `lease` (spec 140 s2b, REQUIRED): with a token the reset also requires
+   * `dispatch_lease_token = $t`; a lost token is 0 rows, not an error (A3).
    */
   clearDispatchRetryClock(
     tx: unknown,
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
+    lease: LeaseToken | null,
   ): Promise<void>;
 
   /**

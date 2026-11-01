@@ -261,7 +261,7 @@ export async function confirmSchedule(
           fields = timing.kind === 'cancel' ? { scheduledFor: null, approvedVersionId: null } : { scheduledFor: confirmed };
         }
         const target = timing.kind === 'cancel' ? 'changes_requested' : 'approved';
-        await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, target, fields, broadcast.status);
+        await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, target, fields, broadcast.status, null);
 
         const proposed = broadcast.proposedSendAt;
         const common = {

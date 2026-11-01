@@ -158,14 +158,14 @@ describe('F119 PR-E — broadcasts.dispatch_first_failed_at (mig 0311)', () => {
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
 
     const first = await runInTenant(tenant.ctx, (tx) =>
-      repo.markDispatchRetryStarted(tx, tenant.ctx.slug, approved, FIRST_FAILURE),
+      repo.markDispatchRetryStarted(tx, tenant.ctx.slug, approved, FIRST_FAILURE, null),
     );
     const later = await runInTenant(tenant.ctx, (tx) =>
-      repo.markDispatchRetryStarted(tx, tenant.ctx.slug, approved, LATER_FAILURE),
+      repo.markDispatchRetryStarted(tx, tenant.ctx.slug, approved, LATER_FAILURE, null),
     );
     // A row outside `approved` is not in a dispatch attempt: no stamp, no error.
     const outside = await runInTenant(tenant.ctx, (tx) =>
-      repo.markDispatchRetryStarted(tx, tenant.ctx.slug, submitted, FIRST_FAILURE),
+      repo.markDispatchRetryStarted(tx, tenant.ctx.slug, submitted, FIRST_FAILURE, null),
     );
 
     // RETURNING answers the stamp the row carries: the first failure, both times.
@@ -185,15 +185,15 @@ describe('F119 PR-E — broadcasts.dispatch_first_failed_at (mig 0311)', () => {
     const retimed = await seed('approved');
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
     for (const id of [leaving, retimed]) {
-      await runInTenant(tenant.ctx, (tx) => repo.markDispatchRetryStarted(tx, tenant.ctx.slug, id, FIRST_FAILURE));
+      await runInTenant(tenant.ctx, (tx) => repo.markDispatchRetryStarted(tx, tenant.ctx.slug, id, FIRST_FAILURE, null));
       expect(await readStamp(id)).not.toBeNull();
     }
 
     const left = await runInTenant(tenant.ctx, (tx) =>
-      repo.applyTransition(tx, tenant.ctx.slug, leaving, 'changes_requested', {}, 'approved'),
+      repo.applyTransition(tx, tenant.ctx.slug, leaving, 'changes_requested', {}, 'approved', null),
     );
     const moved = await runInTenant(tenant.ctx, (tx) =>
-      repo.applyTransition(tx, tenant.ctx.slug, retimed, 'approved', { scheduledFor: LATER_FAILURE }, 'approved'),
+      repo.applyTransition(tx, tenant.ctx.slug, retimed, 'approved', { scheduledFor: LATER_FAILURE }, 'approved', null),
     );
 
     expect(left.dispatchFirstFailedAt).toBeNull();
@@ -206,14 +206,14 @@ describe('F119 PR-E — broadcasts.dispatch_first_failed_at (mig 0311)', () => {
     const id = await seed('approved');
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
     // The dispatcher's Step-1 read would see this 61-minute-old stamp …
-    await runInTenant(tenant.ctx, (tx) => repo.markDispatchRetryStarted(tx, tenant.ctx.slug, id, FIRST_FAILURE));
+    await runInTenant(tenant.ctx, (tx) => repo.markDispatchRetryStarted(tx, tenant.ctx.slug, id, FIRST_FAILURE, null));
     // … then an admin re-times the row (it stays approved; the clock clears) …
     await runInTenant(tenant.ctx, (tx) =>
-      repo.applyTransition(tx, tenant.ctx.slug, id, 'approved', { scheduledFor: LATER_FAILURE }, 'approved'),
+      repo.applyTransition(tx, tenant.ctx.slug, id, 'approved', { scheduledFor: LATER_FAILURE }, 'approved', null),
     );
     // … and the same tick fails: the epoch the budget uses is the returned one.
     const epoch = await runInTenant(tenant.ctx, (tx) =>
-      repo.markDispatchRetryStarted(tx, tenant.ctx.slug, id, LATER_FAILURE),
+      repo.markDispatchRetryStarted(tx, tenant.ctx.slug, id, LATER_FAILURE, null),
     );
 
     expect(epoch?.toISOString()).toBe(LATER_FAILURE.toISOString());
@@ -223,10 +223,10 @@ describe('F119 PR-E — broadcasts.dispatch_first_failed_at (mig 0311)', () => {
     const stamped = await seed('approved');
     const clean = await seed('approved');
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
-    await runInTenant(tenant.ctx, (tx) => repo.markDispatchRetryStarted(tx, tenant.ctx.slug, stamped, FIRST_FAILURE));
+    await runInTenant(tenant.ctx, (tx) => repo.markDispatchRetryStarted(tx, tenant.ctx.slug, stamped, FIRST_FAILURE, null));
 
-    await runInTenant(tenant.ctx, (tx) => repo.clearDispatchRetryClock(tx, tenant.ctx.slug, stamped));
-    await runInTenant(tenant.ctx, (tx) => repo.clearDispatchRetryClock(tx, tenant.ctx.slug, clean));
+    await runInTenant(tenant.ctx, (tx) => repo.clearDispatchRetryClock(tx, tenant.ctx.slug, stamped, null));
+    await runInTenant(tenant.ctx, (tx) => repo.clearDispatchRetryClock(tx, tenant.ctx.slug, clean, null));
 
     expect(await readStamp(stamped)).toBeNull();
     expect(await readStamp(clean)).toBeNull();

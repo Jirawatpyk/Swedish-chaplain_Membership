@@ -45,7 +45,7 @@ import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
-import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import type { BroadcastsRepo, LeaseToken } from '../ports/broadcasts-repo';
 
 /** FR-021 — how long retryable gateway failures may continue before the row goes terminal. */
 export const RETRY_BUDGET_MS = 60 * 60 * 1000;
@@ -73,6 +73,10 @@ type RetryClockDeps = { readonly tenant: TenantContext; readonly broadcastsRepo:
  *   failure into a permanent one, and must never extend a spent budget either:
  *   a row whose snapshot carries a 61-minute-old stamp is still measured from
  *   it.
+ * - `lease` (spec 140 s2b): the import tick passes its token, the legacy leg
+ *   `null`. A LOST token is the same `null` answer (no throw), so a stale
+ *   holder stops without a terminal write and without a stamp-failure line:
+ *   nothing failed, the row is simply no longer its to time (A3).
  */
 export async function dispatchRetryEpoch(
   deps: RetryClockDeps,
@@ -81,10 +85,11 @@ export async function dispatchRetryEpoch(
   now: Date,
   /** The leg's own log event, so an operator can tell the two apart. */
   stampFailedEvent: string,
+  lease: LeaseToken | null,
 ): Promise<Date | null> {
   try {
     return await deps.broadcastsRepo.withTx((tx) =>
-      deps.broadcastsRepo.markDispatchRetryStarted(tx, deps.tenant.slug, broadcastId, now),
+      deps.broadcastsRepo.markDispatchRetryStarted(tx, deps.tenant.slug, broadcastId, now, lease),
     );
   } catch (e) {
     logger.warn(
@@ -118,10 +123,12 @@ export async function resetDispatchRetryClock(
   broadcastId: BroadcastId,
   /** The leg's own log event, so an operator can tell the two apart. */
   clearFailedEvent: string,
+  /** Spec 140 s2b — the import tick's token, or `null` (the legacy leg). */
+  lease: LeaseToken | null,
 ): Promise<void> {
   try {
     await deps.broadcastsRepo.withTx((tx) =>
-      deps.broadcastsRepo.clearDispatchRetryClock(tx, deps.tenant.slug, broadcastId),
+      deps.broadcastsRepo.clearDispatchRetryClock(tx, deps.tenant.slug, broadcastId, lease),
     );
   } catch (e) {
     logger.warn(

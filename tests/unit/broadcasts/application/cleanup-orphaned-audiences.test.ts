@@ -110,6 +110,10 @@ function makeRepo(opts: {
     },
     async deleteExpiredForRetention() { throw new Error('not used in cleanup-orphaned-audiences fixture'); },
     async listExpiredForRetention() { throw new Error('not used in cleanup-orphaned-audiences fixture'); },
+    async claimDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    async checkDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    async releaseDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    async hasLiveDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
     async existingBroadcastIds() { throw new Error('not used in cleanup-orphaned-audiences fixture'); },
   };
 

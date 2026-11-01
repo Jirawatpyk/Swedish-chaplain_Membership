@@ -80,6 +80,7 @@ describe('submit quota TOCTOU — bug #4 (advisory lock prevents over-subscripti
           'submitted',
           { submittedAt: new Date(), estimatedRecipientCount: 1 },
           'draft',
+          null,
         );
         return 'inserted';
       });

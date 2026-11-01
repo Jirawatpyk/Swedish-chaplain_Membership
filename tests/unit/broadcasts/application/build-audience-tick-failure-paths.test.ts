@@ -585,6 +585,7 @@ function makeDeps(opts: {
           _t: unknown,
           _b: unknown,
           id: string,
+          _lease: unknown,
           fence?: { readonly expectedResendAudienceId?: string },
         ) {
           maybeCasThrow('attachAudienceImport');
@@ -643,6 +644,7 @@ function makeDeps(opts: {
           _t: unknown,
           _b: unknown,
           rbId: string,
+          _lease: unknown,
           fence?: { readonly expectedAudienceImportId?: string; readonly replacesResendBroadcastId?: string },
         ) {
           rec.broadcastIdAttaches.push({

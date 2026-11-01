@@ -910,6 +910,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
                   'cancelled',
                   { cancelledAt: new Date(), cancelledByUserId: null, cancellationReason: 'gdpr_erasure_request' },
                   'approved',
+                  null,
                 ),
               );
               return (Reflect.get(target, prop, receiver) as (rid: string) => Promise<unknown>)(id);

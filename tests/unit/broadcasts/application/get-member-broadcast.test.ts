@@ -102,6 +102,10 @@ function makeRepoMocks(opts: {
     markAudienceDeletedInTx: async () => { throw new Error('not used in get-member-broadcast fixture'); },
     deleteExpiredForRetention: async () => { throw new Error('not used in get-member-broadcast fixture'); },
     listExpiredForRetention: async () => { throw new Error('not used in get-member-broadcast fixture'); },
+    claimDispatchLease: async (): Promise<never> => { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    checkDispatchLease: async (): Promise<never> => { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    releaseDispatchLease: async (): Promise<never> => { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    hasLiveDispatchLease: async (): Promise<never> => { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
     existingBroadcastIds: async () => { throw new Error('not used in get-member-broadcast fixture'); },
   };
 }

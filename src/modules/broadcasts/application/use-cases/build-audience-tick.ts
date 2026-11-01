@@ -721,7 +721,7 @@ async function applySendStanding(
   if (standing.kind === 'hold') {
     recordDispatchHold(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
     // Outside every tx: the Step-1 lock tx has committed.
-    await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed');
+    await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed', null);
     // Best-effort: the hold is already the decided answer, whatever this says.
     await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold', { bidIsDead: isDeadProbe(probe) });
     return ok({ kind: 'dispatch_held_member_suspended' });
@@ -944,7 +944,7 @@ async function restartAudienceBuild(
           importId,
           resendAudienceId: audienceId,
           resendBroadcastId,
-        }),
+        }, null),
       );
     } catch (e) {
       return failed('release_import', e);
@@ -980,7 +980,7 @@ async function restartAudienceBuild(
       deps.broadcastsRepo.releaseResendAudience(tx, deps.tenant.slug, input.broadcastId, {
         resendAudienceId: audienceId,
         resendBroadcastId,
-      }),
+      }, null),
     );
   } catch (e) {
     return failed('release_audience', e);
@@ -1274,6 +1274,7 @@ async function onRetryable(
     broadcast,
     now,
     'broadcasts.audience_import.retry_epoch_stamp_failed',
+    null,
   );
   if (epoch === null) {
     // Review L3 — the stamp matched no `approved` row: another writer moved it
@@ -1461,6 +1462,7 @@ async function submitImport(
           deps.tenant.slug,
           input.broadcastId,
           audienceId,
+          null,
         );
       }),
     );
@@ -1496,6 +1498,7 @@ async function submitImport(
         deps.tenant.slug,
         input.broadcastId,
         submitted.value.importId,
+        null,
         { expectedResendAudienceId: audienceId },
       );
     }),
@@ -1854,6 +1857,7 @@ async function confirmImport(
     resendBroadcastId,
     resendAudienceId: audienceId,
     minted,
+    lease: null,
     fence: {
       expectedAudienceImportId: importId,
       ...(inheritedDead ? { replacesResendBroadcastId: inheritedId } : {}),
@@ -2023,7 +2027,7 @@ async function advanceToSending(
   // A stamp surviving a delivered send would otherwise be inherited by any
   // later budgeted failure on the row; the probe's retryable throw is kept off
   // the clock for the same reason. Own tx, best-effort (never throws).
-  await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed');
+  await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed', null);
 
   // ## Round 3 finding 3-6 — the cancel window, and why the ids ride their own tx
   //
@@ -2056,7 +2060,7 @@ async function advanceToSending(
   const idsAttached = await viaRepoConcurrency(input.broadcastId, () =>
     deps.broadcastsRepo.withTx(async (tx) => {
       if (audienceId === null) {
-        await deps.broadcastsRepo.attachBroadcastId(tx, deps.tenant.slug, input.broadcastId, resendBroadcastId);
+        await deps.broadcastsRepo.attachBroadcastId(tx, deps.tenant.slug, input.broadcastId, resendBroadcastId, null);
         return;
       }
       await deps.broadcastsRepo.attachResendIds(
@@ -2065,6 +2069,7 @@ async function advanceToSending(
         input.broadcastId,
         audienceId,
         resendBroadcastId,
+        null,
       );
     }),
   );
@@ -2100,6 +2105,7 @@ async function advanceToSending(
       // handed path that estimate IS the number in hand — see Step 1a.)
         { sendingStartedAt: now, estimatedRecipientCount: recipientCount },
         'approved',
+        null,
       );
     }),
   );
@@ -2277,6 +2283,7 @@ async function advanceToSending(
           tx,
           deps.tenant.slug,
           input.broadcastId,
+          null,
         );
       });
     } catch (stampErr) {
@@ -2431,6 +2438,7 @@ async function failTerminally(
         // only inside an audit payload and a pino line.
         { failedToDispatchAt: now, failureReason: reason },
         'approved',
+        null,
       );
       // RAW emit, not `safeAuditEmit` — the opposite call from the send path
       // above, for the opposite reason (round 3 finding 3-8). NOTHING has been

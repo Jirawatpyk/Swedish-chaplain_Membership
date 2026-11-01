@@ -179,19 +179,19 @@ describe('eblast-approval-fakes — the FR-021 retry clock mirrors the adapter (
     const tenantId = row.tenantId as never;
     const at = (m: number) => new Date(NOW.getTime() + m * 60_000);
     const read = () => repo.rows.get([...repo.rows.keys()][0] as string)?.dispatchFirstFailedAt;
-    const stamp = (m: number) => repo.markDispatchRetryStarted(FAKE_TX, tenantId, row.broadcastId, at(m));
+    const stamp = (m: number) => repo.markDispatchRetryStarted(FAKE_TX, tenantId, row.broadcastId, at(m), null);
 
     expect(await stamp(1)).toEqual(at(1));
     expect(await stamp(5)).toEqual(at(1));
-    await repo.clearDispatchRetryClock(FAKE_TX, tenantId, row.broadcastId);
+    await repo.clearDispatchRetryClock(FAKE_TX, tenantId, row.broadcastId, null);
     expect(read()).toBeNull();
 
     await stamp(7);
-    await repo.applyTransition(FAKE_TX, tenantId, row.broadcastId, 'approved', { scheduledFor: at(60) }, 'approved');
+    await repo.applyTransition(FAKE_TX, tenantId, row.broadcastId, 'approved', { scheduledFor: at(60) }, 'approved', null);
     expect(read()).toBeNull();
 
     await stamp(9);
-    await repo.applyTransition(FAKE_TX, tenantId, row.broadcastId, 'cancelled', {}, 'approved');
+    await repo.applyTransition(FAKE_TX, tenantId, row.broadcastId, 'cancelled', {}, 'approved', null);
     expect(read()).toBeNull();
     expect(await stamp(11)).toBeNull();
   });

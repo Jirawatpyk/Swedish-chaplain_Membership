@@ -245,6 +245,7 @@ async function processRow(
         'expired_no_member_response',
         { memberExpiryNotifiedAt: now },
         'awaiting_member_approval',
+        null,
       );
       await deps.audit.emitTyped(tx, {
         eventType: 'broadcast_approval_expired',
@@ -273,6 +274,7 @@ async function processRow(
       'awaiting_member_approval',
       { memberReminderStage: REMINDER_STAGE[step] },
       'awaiting_member_approval',
+      null,
     );
     if (step === 'day23') {
       const sent = await notify(deps, tx, broadcast, version.id, step, { member: true, staff: staffOf(roster) });

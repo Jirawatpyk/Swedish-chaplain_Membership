@@ -293,7 +293,7 @@ describe('spec 140 s1 — the erasure cascade deletes the drafts its terminal ro
     const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
 
     const thrown = await repo
-      .withTx((tx) => repo.attachResendIds(tx, tenantA.ctx.slug, asBroadcastId(broadcastId), 'aud-ed5', 'rb-ed5'))
+      .withTx((tx) => repo.attachResendIds(tx, tenantA.ctx.slug, asBroadcastId(broadcastId), 'aud-ed5', 'rb-ed5', null))
       .catch((e: unknown) => e);
 
     expect(thrown).toBeInstanceOf(BroadcastConcurrentMutationError);

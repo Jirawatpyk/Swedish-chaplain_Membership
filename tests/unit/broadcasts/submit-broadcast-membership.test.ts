@@ -267,6 +267,10 @@ function makeBroadcastsRepo(counters: CallCounters): BroadcastsRepo {
     },
     async deleteExpiredForRetention() { throw new Error('not used in submit-broadcast-membership fixture'); },
     async listExpiredForRetention() { throw new Error('not used in submit-broadcast-membership fixture'); },
+    async claimDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    async checkDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    async releaseDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    async hasLiveDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
     async existingBroadcastIds() {
       throw new Error('not used in membership-access fixture');
     },

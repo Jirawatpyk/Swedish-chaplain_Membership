@@ -223,9 +223,9 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
       const bid = asBroadcastId(id);
 
       for (const attach of [
-        (tx: unknown) => repo.attachAudienceId(tx, tenant.ctx.slug, bid, 'aud-late'),
-        (tx: unknown) => repo.attachBroadcastId(tx, tenant.ctx.slug, bid, 'rb-late'),
-        (tx: unknown) => repo.attachAudienceImport(tx, tenant.ctx.slug, bid, 'imp-late', { expectedResendAudienceId: 'aud-late' }),
+        (tx: unknown) => repo.attachAudienceId(tx, tenant.ctx.slug, bid, 'aud-late', null),
+        (tx: unknown) => repo.attachBroadcastId(tx, tenant.ctx.slug, bid, 'rb-late', null),
+        (tx: unknown) => repo.attachAudienceImport(tx, tenant.ctx.slug, bid, 'imp-late', null, { expectedResendAudienceId: 'aud-late' }),
       ]) {
         const thrown = await repo.withTx(attach).then(
           () => null,
@@ -355,7 +355,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
       // The dispatcher's attach: its UPDATE runs (holding the row lock), then
       // the tx stays open until the cancel below has started.
       const attach = repo.withTx(async (tx) => {
-        await repo.attachBroadcastId(tx, tenant.ctx.slug, bid, resendId);
+        await repo.attachBroadcastId(tx, tenant.ctx.slug, bid, resendId, null);
         attached();
         await releaseP;
       });
@@ -419,7 +419,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
       let release!: () => void;
       const releaseP = new Promise<void>((resolve) => (release = resolve));
       const attach = repo.withTx(async (tx) => {
-        await repo.attachBroadcastId(tx, tenant.ctx.slug, bid, resendId);
+        await repo.attachBroadcastId(tx, tenant.ctx.slug, bid, resendId, null);
         attached();
         await releaseP;
       });

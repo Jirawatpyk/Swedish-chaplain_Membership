@@ -384,6 +384,7 @@ async function failDispatchAndAudit(
         // try/catch + logged as cleanup_failed (acceptable: the cancel
         // succeeded, our terminal-fail intent was correctly skipped).
         'approved',
+        null,
       );
       await deps.audit.emit(tx, {
         tenantId: deps.tenant.slug,
@@ -811,7 +812,7 @@ export async function dispatchScheduledBroadcast(
       // clock, so a failure → a two-day hold → the member pays → one blip is
       // not `retry_budget_exhausted`. Own tx, no row lock held (the Step-1 tx
       // committed); a stamped row only, and best-effort — still held on failure.
-      await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.dispatch.retry_clock_clear_failed');
+      await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.dispatch.retry_clock_clear_failed', null);
       return ok({ kind: 'dispatch_held_member_suspended' });
     }
     // The draft the row carries, if any — the probe above said it was never
@@ -1169,6 +1170,7 @@ export async function dispatchScheduledBroadcast(
           deps.tenant.slug,
           input.broadcastId,
           resendAudienceId,
+          null,
         );
       });
     }
@@ -1280,6 +1282,7 @@ export async function dispatchScheduledBroadcast(
         resendBroadcastId,
         resendAudienceId,
         minted: true,
+        lease: null,
         logPrefix: 'broadcasts.dispatch',
       });
       if (persistRefused !== null) return err(persistRefused);
@@ -1553,7 +1556,7 @@ async function advanceToSending(ctx: {
   // best-effort (never throws). It cannot close M1 alone — in a DB fault it
   // fails with that write — which is why the probe's retryable throw is not
   // budgeted either.
-  await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.dispatch.retry_clock_clear_failed');
+  await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.dispatch.retry_clock_clear_failed', null);
   try {
     const sentRow = await deps.broadcastsRepo.withTx(async (tx) => {
       await deps.broadcastsRepo.attachResendIds(
@@ -1562,6 +1565,7 @@ async function advanceToSending(ctx: {
         input.broadcastId,
         resendAudienceId,
         resendBroadcastId,
+        null,
       );
       // G1 closure (verify-fix 2026-05-02) — pass `expectedFromStatus:
       // 'approved'` so the UPDATE serializes against any concurrent
@@ -1595,6 +1599,7 @@ async function advanceToSending(ctx: {
           estimatedRecipientCount: recipientCount,
         },
         'approved',
+        null,
       );
       // E1 closure (verify-fix 2026-05-02) — AS1 audit payload now
       // includes the spec-required `scheduledFor` + `actualSendAt` +
@@ -1894,6 +1899,7 @@ async function applyRetryBudget(
     broadcast,
     now,
     'broadcasts.dispatch.retry_epoch_stamp_failed',
+    null,
   );
   if (epochForBudget === null) {
     // Review L3 — the stamp matched no `approved` row: another writer moved it
