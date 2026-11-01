@@ -189,6 +189,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // (audience_import_submitted_at IS NULL)`, so either one alone is enough
   // today; the redundant one costs nothing and is the path `/verify` drove
   // (review round 2, CR#4).
+  //
+  // Spec 140 s2b (row 13, A7) — and on EVERY flag state the scan leaves out a
+  // row whose dispatch lease is live, written inline below (not in this
+  // fragment, which exists only flag OFF): a row an import tick is working
+  // must not take a `LIMIT` slot, and a dead holder's row is picked up again
+  // once its lease expires (`LEASE_TTL_MS` after the claim, about two ticks).
   const importRowsFilter = importEnabled
     ? sql``
     : sql`AND audience_import_id IS NULL AND audience_import_submitted_at IS NULL`;
@@ -202,6 +208,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           AND status = 'approved'
           AND scheduled_for IS NOT NULL
           AND scheduled_for <= now()
+          AND (dispatch_lease_token IS NULL OR dispatch_lease_expires_at < now())
           ${importRowsFilter}
         ORDER BY scheduled_for ASC
         LIMIT ${MAX_PER_TICK}
@@ -246,6 +253,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      * `broadcasts.dispatch_standing_held.total`.
      */
     held: 0,
+    /**
+     * Spec 140 s2b (DL9) — rows NOT started because the invocation was past
+     * `ROW_START_CUTOFF_MS` (either leg). Nothing was locked, called or
+     * written; they stay `approved`, unleased, for the next tick. Neither a
+     * success nor a failure.
+     */
+    deferred_past_cutoff: 0,
     /**
      * Import leg — the tick-1 Resend audience was gone (`404 not_found`), the
      * row's columns were released and the next tick runs a fresh tick 1.
@@ -334,6 +348,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // here (the seam lives in src/lib) so the delivered email carries the
       // logo, colour and address the preview showed.
       brandChrome: brandChromePort,
+      // Spec 140 s2b (DL9) — this invocation's own start, over the maker's.
+      tickBudget,
     };
     // T087 — with the import flag ON, the whole audience goes to Resend in ONE
     // call and is confirmed on a later tick, so this cron drives
@@ -368,6 +384,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             else if (built.value.kind === 'import_submitted') summary.import_submitted++;
             else if (built.value.kind === 'dispatch_held_member_suspended') summary.held++;
             else if (built.value.kind === 'audience_restarted') summary.audience_restarted++;
+            else if (built.value.kind === 'deferred_past_cutoff') summary.deferred_past_cutoff++;
             else summary.import_pending++;
             continue;
           }
@@ -470,6 +487,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (result.ok) {
           // F119 PR-A R1 — a held row sent nothing; it is not a success.
           if (result.value.kind === 'dispatch_held_member_suspended') summary.held++;
+          else if (result.value.kind === 'deferred_past_cutoff') summary.deferred_past_cutoff++;
           else summary.succeeded++;
           continue;
         }
