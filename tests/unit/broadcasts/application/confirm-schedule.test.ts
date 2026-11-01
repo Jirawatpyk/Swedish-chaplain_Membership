@@ -14,6 +14,7 @@ import {
   type ConfirmScheduleInput,
 } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
 import {
+  FAKE_TX,
   makeApprovalBroadcast,
   makeApprovalVersion,
   makeFakeApprovalStore,

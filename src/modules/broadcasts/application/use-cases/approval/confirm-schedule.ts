@@ -117,7 +117,7 @@ export type ScheduleMode =
 export interface ConfirmScheduleDeps {
   readonly tenant: TenantContext;
   /** `findById` — the non-locking pre-read the standing read keys on (T166 follow-up). */
-  readonly broadcastsRepo: ApprovalBroadcastsRepo & Pick<BroadcastsRepo, 'findById'>;
+  readonly broadcastsRepo: ApprovalBroadcastsRepo & Pick<BroadcastsRepo, 'findById' | 'hasLiveDispatchLease'>;
   readonly versionsRepo: BroadcastVersionsRepo;
   readonly imageAllowlist: ImageAllowlistPort;
   readonly portalRecipients: MemberPortalRecipientPort;
@@ -229,6 +229,16 @@ export async function confirmSchedule(
         // a promotion over an inherited id would let the next dispatch record
         // this version as sent without sending it.
         if (hasDispatchBegun(broadcast)) refuse({ kind: 'sending_started', status: broadcast.status });
+        // Spec 140 s2b review round 4 (code-review #2, #3; reliability LOW-2) — a
+        // re-time of a row a dispatch tick holds a live lease on: the send may
+        // be under way at the old time. Asked first, under the row lock
+        // (`hasLiveDispatchLease` fails closed), so it is answered before any
+        // write; the repo's refusal (`LEASE_HELD`) stays as the backstop. A
+        // cancel is a status change, which ends the lease by design, and a
+        // promotion leaves `member_approved`, which no tick can hold.
+        if (!promoting && mode.mode !== 'cancel' && (await deps.broadcastsRepo.hasLiveDispatchLease(tx, slug, input.broadcastId))) {
+          refuse({ kind: 'dispatch_in_progress' });
+        }
         // A row the approval round produced always names the version the
         // member approved (only a void / withdrawal clears it, and both leave
         // these two stages). Missing ⇒ an invariant breach, not a refusal.

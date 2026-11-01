@@ -1238,20 +1238,23 @@ export function makeDrizzleBroadcastsRepo(
         )
         .returning();
       if (!row) {
-        // Review round 3 (code-review #2, #3) — a refused re-time names itself
-        // (`LEASE_HELD`) when the row is where the caller expected it and a
-        // live lease is what refused it; anything else is status drift.
+        // Review rounds 3–4 (code-review #2, #3; reliability LOW-2) — the
+        // backstop behind confirm-schedule's pre-check. A refused re-time names
+        // itself (`LEASE_HELD`) when the probe finds the row where the caller
+        // expected it with a token set; it reads NO clock, so a lease that ended
+        // between the UPDATE and the probe is still the lease that refused it.
+        // Anything else is drift, reported with the PROBED status.
         if (retimeRefusal !== undefined) {
           const [probe] = await tx
-            .select({
-              status: broadcasts.status,
-              live: sql<unknown>`(${broadcasts.dispatchLeaseToken} IS NOT NULL AND ${broadcasts.dispatchLeaseExpiresAt} > clock_timestamp())`,
-            })
+            .select({ status: broadcasts.status, leaseToken: broadcasts.dispatchLeaseToken })
             .from(broadcasts)
             .where(and(eq(broadcasts.tenantId, tenantIdArg), eq(broadcasts.broadcastId, broadcastId)))
             .limit(1);
-          if (probe !== undefined && probe.status === expectedFromStatus && isTrue(probe.live)) {
-            throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, LEASE_HELD, probe.status);
+          if (probe !== undefined) {
+            if (probe.status === expectedFromStatus && probe.leaseToken !== null) {
+              throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, LEASE_HELD, probe.status);
+            }
+            throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, probe.status);
           }
         }
         // Spec 140 s2b — a fenced transition names a lost token (A3). The
