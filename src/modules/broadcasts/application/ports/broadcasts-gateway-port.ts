@@ -31,10 +31,14 @@ import type { BrandSettings } from '../../domain/brand/brand-settings';
 export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'api';
 
 /**
- * Spec 140 s2a (DL8) — the most time one gateway call may take, retries and
- * their backoff included: one `AbortSignal.timeout` spans every attempt. 10 s
- * against a measured round trip of ~0.5 s. Exported so the dispatch lease
- * (slice 2b) can size its TTL and cutoff from the same number.
+ * Spec 140 s2a (DL8) — the budget of one gateway REQUEST, retries and their
+ * backoff included: one `AbortSignal.timeout` spans every attempt. 10 s against
+ * a measured round trip of ~0.5 s. It bounds every method except
+ * `createContactImport`, which has {@link IMPORT_CALL_TIMEOUT_MS} (30 s); a
+ * port call that loops (`addContactsToAudience`, `listAudiences`) takes it per
+ * request. Exported so the dispatch lease (slice 2b) can size W_max, the TTL
+ * and the cutoff from the MAX of the two on any path that holds the lease
+ * across the import POST (plan.md, review round 3).
  */
 export const RESEND_CALL_TIMEOUT_MS = 10_000;
 
