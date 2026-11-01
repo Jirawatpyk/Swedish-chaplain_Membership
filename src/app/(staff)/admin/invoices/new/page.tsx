@@ -175,14 +175,29 @@ export default async function NewInvoiceDraftPage({
     // #54 — the form preselects the deep-linked event only when it is among
     // the options, and the list holds only the newest 200. Add an older one
     // (one tenant-scoped read; a miss or a failed read leaves the list as is).
+    // Marked with a second line saying why it is there (and archived, when it
+    // is). A throw degrades like the list read above: never the whole page.
     if (initialEventId && !events.some((e) => e.eventId === initialEventId)) {
-      const found = (await runListEventNamesByIds(tenantCtx.slug, [initialEventId])).get(
-        initialEventId,
-      );
-      events = withDeepLinkedEvent(
-        events,
-        found ? toEventOption({ eventId: initialEventId, ...found }) : null,
-      );
+      try {
+        const found = (await runListEventNamesByIds(tenantCtx.slug, [initialEventId])).get(
+          initialEventId,
+        );
+        if (found) {
+          const tPicker = await getTranslations('admin.invoices.eventFeeForm.eventPicker');
+          events = withDeepLinkedEvent(
+            events,
+            toEventOption(
+              { eventId: initialEventId, name: found.name, startDateIso: found.startDateIso },
+              tPicker(found.archived ? 'fromLinkArchived' : 'fromLink'),
+            ),
+          );
+        }
+      } catch (err) {
+        logger.warn(
+          { event: 'invoice_new_deep_link_event_load_failed', tenantId: tenantCtx.slug, err },
+          '[F4] /admin/invoices/new — deep-linked event read failed; Event tab opens without it',
+        );
+      }
     }
   }
 

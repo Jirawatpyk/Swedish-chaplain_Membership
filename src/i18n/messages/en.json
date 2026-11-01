@@ -3097,7 +3097,9 @@
           "placeholder": "Pick an event…",
           "search": "Search events…",
           "empty": "No events match.",
-          "noEvents": "No events available"
+          "noEvents": "No events available",
+          "fromLink": "From your link (not in the recent list)",
+          "fromLinkArchived": "From your link (archived event)"
         },
         "attendeePicker": {
           "label": "Attendee",

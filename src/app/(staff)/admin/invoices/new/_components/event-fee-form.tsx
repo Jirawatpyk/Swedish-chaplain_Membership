@@ -513,7 +513,12 @@ export function EventFeeForm({
   }, []);
 
   const eventOptions: ComboboxOption[] = useMemo(
-    () => events.map((e) => ({ value: e.eventId, label: e.label })),
+    () =>
+      events.map((e) => ({
+        value: e.eventId,
+        label: e.label,
+        ...(e.description ? { description: e.description } : {}),
+      })),
     [events],
   );
 
@@ -937,6 +942,11 @@ export function EventFeeForm({
           id="eventId"
           label={t('eventPicker.label')}
           options={eventOptions}
+          // #54 — AURA lists at most `limit` (default 200) options. The page
+          // loads 200 and may append the deep-linked event as the 201st, so
+          // list them all or that selected option is missing from the list.
+          limit={Math.max(200, eventOptions.length)}
+          touchHeight
           value={eventId || null}
           onChange={(v) => handleEventChange(v ?? '')}
           placeholder={noEvents ? t('eventPicker.noEvents') : t('eventPicker.placeholder')}

@@ -213,7 +213,7 @@ export async function runResolveRegistrationEventId(
 export async function runListEventNamesByIds(
   tenantSlug: string,
   eventIds: ReadonlyArray<string>,
-): Promise<ReadonlyMap<string, { name: string; startDateIso: string }>> {
+): Promise<ReadonlyMap<string, { name: string; startDateIso: string; archived: boolean }>> {
   if (eventIds.length === 0) return new Map();
   const ctx = asTenantContext(tenantSlug);
   const tenantId: TenantId = asTenantId(tenantSlug);
@@ -225,7 +225,7 @@ export async function runListEventNamesByIds(
     const e = tryEventId(id);
     if (e !== null) branded.push(e);
   }
-  const out = new Map<string, { name: string; startDateIso: string }>();
+  const out = new Map<string, { name: string; startDateIso: string; archived: boolean }>();
   if (branded.length === 0) return out;
   return runInTenant(ctx, async (tx) => {
     const lookup = makeEventDetailsBatchLookupForTenant(tx);
@@ -235,6 +235,8 @@ export async function runListEventNamesByIds(
       out.set(String(eventId), {
         name: event.name,
         startDateIso: event.startDate.toISOString(),
+        // #54 — the invoice-new deep link marks an archived event as such.
+        archived: event.archivedAt !== null,
       });
     }
     return out;

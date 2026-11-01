@@ -86,6 +86,7 @@ describe('runListEventNamesByIds — batched lookup + cross-tenant probe (live N
     expect(map.get(eventA1Id)).toEqual({
       name: 'TSCC Gala Dinner',
       startDateIso: '2026-06-15T13:00:00.000Z',
+      archived: false,
     });
     expect(map.get(eventA2Id)?.name).toBe('Midsummer Networking');
   });

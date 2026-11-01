@@ -10,12 +10,15 @@ import { bangkokLocalDate } from '@/lib/fiscal-year';
 import type { EventOption } from '../_components/event-fee-form';
 
 /** Label: name + CE start date in Asia/Bangkok (BE is display-only, later). */
-export function toEventOption(e: {
-  readonly eventId: string;
-  readonly name: string;
-  readonly startDateIso: string;
-}): EventOption {
-  return { eventId: e.eventId, label: `${e.name} (${bangkokLocalDate(e.startDateIso)})` };
+export function toEventOption(
+  e: { readonly eventId: string; readonly name: string; readonly startDateIso: string },
+  description?: string,
+): EventOption {
+  return {
+    eventId: e.eventId,
+    label: `${e.name} (${bangkokLocalDate(e.startDateIso)})`,
+    ...(description ? { description } : {}),
+  };
 }
 
 /**
