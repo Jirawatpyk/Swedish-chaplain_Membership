@@ -251,7 +251,6 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
         eventAttendees: eventAttendeesStub,
         audit: f7AuditAdapter,
         clock: { now: () => new Date() },
-        tickBudget: { tickStartedAt: Date.now(), maxDurationMs: 300_000 },
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,

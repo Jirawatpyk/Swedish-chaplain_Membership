@@ -99,7 +99,6 @@ import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './
 import { probeRefusedSend } from './_probe-refused-send';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
 import { rereadAfterLostRace } from './_reread-after-lost-race';
-import { rowStartAllowed, type TickBudget } from './_dispatch-lease';
 
 export type DispatchScheduledBroadcastError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
@@ -241,14 +240,6 @@ export interface DispatchScheduledBroadcastDeps {
    * sets `haltReadFresh` to the raw bridge for the re-read before a refusal.
    */
   readonly sendStanding: DispatchStandingDeps;
-  /**
-   * Spec 140 s2b (DL9) — when the cron invocation began and its `maxDuration`.
-   * REQUIRED: no row starts after `ROW_START_CUTOFF_MS` on this leg either
-   * (one rule for both legs; this leg's calls are bounded at
-   * `RESEND_CALL_TIMEOUT_MS` each too). The deps maker sets it once per tick;
-   * the dispatch route passes its own entry instant.
-   */
-  readonly tickBudget: TickBudget;
 }
 
 export interface DispatchScheduledBroadcastInput {
@@ -271,13 +262,7 @@ export type DispatchScheduledBroadcastOutput =
       readonly resendBroadcastId: string;
       readonly recipientCount: number;
     }
-  | { readonly kind: 'dispatch_held_member_suspended' }
-  /**
-   * Spec 140 s2b (DL9) — the invocation is past `ROW_START_CUTOFF_MS`: the row
-   * was not started (nothing locked, called or written) and stays `approved`
-   * for the next tick. The cron counts it `deferred_past_cutoff`.
-   */
-  | { readonly kind: 'deferred_past_cutoff' };
+  | { readonly kind: 'dispatch_held_member_suspended' };
 
 function buildIdempotencyKey(tenantId: string, broadcastId: string): string {
   return `broadcast-${tenantId}-${broadcastId}`;
@@ -511,11 +496,10 @@ export async function dispatchScheduledBroadcast(
 > {
   const now = deps.clock.now();
 
-  // Spec 140 s2b (DL9) — no row STARTS after the cutoff, on this leg as on the
-  // import leg. Nothing is locked or called; the row waits for the next tick.
-  if (!rowStartAllowed(deps.tickBudget, now.getTime())) {
-    return ok({ kind: 'deferred_past_cutoff' });
-  }
+  // Spec 140 s2b review round 1 (CR#5) — NO row-start cutoff on this leg: its
+  // push loop (`addContactsToAudience`, one request per contact) is not in
+  // `W_MAX_MS`, so a cutoff here bounded nothing while it delayed live rows by
+  // a tick. DL9 is the import leg's.
 
   // Step 1: lock row + verify eligibility
   let broadcast: Broadcast | null = null;

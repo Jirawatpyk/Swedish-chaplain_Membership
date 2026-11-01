@@ -356,8 +356,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // here (the seam lives in src/lib) so the delivered email carries the
       // logo, colour and address the preview showed.
       brandChrome: brandChromePort,
-      // Spec 140 s2b (DL9) — this invocation's own start, over the maker's.
-      tickBudget,
     };
     // T087 — with the import flag ON, the whole audience goes to Resend in ONE
     // call and is confirmed on a later tick, so this cron drives
@@ -388,11 +386,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             // `import_pending` and a HOLD are NOT successes: nothing has been
             // delivered, and folding them into `succeeded` would have the
             // dashboard claim sends that have not happened.
+            // Spec 140 s2b (DL9; review round 1 CR#7) — past the cutoff no
+            // later row can start either: stop here and count every row left.
+            if (built.value.kind === 'deferred_past_cutoff') {
+              summary.deferred_past_cutoff += eligible.length - summary.processed + 1;
+              break;
+            }
             if (built.value.kind === 'sent') summary.succeeded++;
             else if (built.value.kind === 'import_submitted') summary.import_submitted++;
             else if (built.value.kind === 'dispatch_held_member_suspended') summary.held++;
             else if (built.value.kind === 'audience_restarted') summary.audience_restarted++;
-            else if (built.value.kind === 'deferred_past_cutoff') summary.deferred_past_cutoff++;
             else summary.import_pending++;
             continue;
           }
@@ -503,7 +506,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (result.ok) {
           // F119 PR-A R1 — a held row sent nothing; it is not a success.
           if (result.value.kind === 'dispatch_held_member_suspended') summary.held++;
-          else if (result.value.kind === 'deferred_past_cutoff') summary.deferred_past_cutoff++;
           else summary.succeeded++;
           continue;
         }

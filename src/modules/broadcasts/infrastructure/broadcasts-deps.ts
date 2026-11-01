@@ -509,9 +509,6 @@ export async function makeDispatchScheduledBroadcastDeps(
     // not split.
     audit: f7AuditAdapter,
     clock: systemClock,
-    // Spec 140 s2b (DL9) — the tick starts when its deps are built (once per
-    // cron invocation); the dispatch route passes its own entry instant over it.
-    tickBudget: { tickStartedAt: Date.now(), maxDurationMs: DISPATCH_MAX_DURATION_MS },
     fromEmail: env.broadcasts.fromEmail,
     tenantDisplayName,
     locale: tenantDefaultLocaleFor(tenantId),
