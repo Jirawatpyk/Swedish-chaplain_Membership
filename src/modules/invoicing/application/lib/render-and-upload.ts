@@ -73,7 +73,7 @@ export async function renderAndUploadPdf(
   deps: RenderAndUploadDeps,
   input: RenderAndUploadInput,
   wrap: (kind: RenderAndUploadFailureKind, reason: string) => Error,
-): Promise<PdfRenderResult> {
+): Promise<PdfRenderResult & { readonly etag?: string }> {
   let rendered: PdfRenderResult;
   try {
     rendered = await deps.pdfRender.render(input.renderInput);
@@ -84,8 +84,9 @@ export async function renderAndUploadPdf(
     throw wrap('pdf_render_failed', reason);
   }
 
+  let uploaded: { readonly etag?: string };
   try {
-    await deps.blob.uploadPdf({
+    uploaded = await deps.blob.uploadPdf({
       key: input.blobKey,
       body: rendered.bytes,
       contentType: 'application/pdf',
@@ -98,5 +99,6 @@ export async function renderAndUploadPdf(
     throw wrap('blob_upload_failed', reason);
   }
 
-  return rendered;
+  // #60 — the stored etag lets a catch-path cleanup delete conditionally.
+  return uploaded.etag !== undefined ? { ...rendered, etag: uploaded.etag } : rendered;
 }

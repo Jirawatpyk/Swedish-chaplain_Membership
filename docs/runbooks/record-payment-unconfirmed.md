@@ -44,8 +44,11 @@ released, but the PDF printed with that number would stay in Blob. Since #60:
   `pdf_render_failed`, when nothing was uploaded). It deletes under the
   invoice row lock and only when the locked re-read shows no committed receipt
   at that key, so an ambiguous COMMIT or a retry that won the lock keeps its
-  file. It logs `recordPayment: orphan receipt blob cleanup` with `outcome`
-  `deleted` or `kept_committed_owner`;
+  file. The delete is conditional on the etag this attempt uploaded, so a
+  delete Blob applies late cannot remove a successor's bytes. It logs
+  `recordPayment: orphan receipt blob cleanup` with `outcome` `deleted`,
+  `kept_row_owns_key` or `kept_changed_since_upload`. A failed locked re-read
+  logs a WARN (`… cleanup skipped`) and is not counted;
 - every upload overwrites the key (`allowOverwrite: true`, under the row lock),
   so a retry of the same invoice replaces any stale bytes, even when the delete
   never ran (for example after a function kill).
@@ -56,7 +59,23 @@ key changes), and a caller-owned transaction (F5 webhook, F8 offline mark) that
 rolls back after `recordPayment` returned ok. In each, a PDF carrying a
 released RC number can stay in Blob. It was never sent (the email outbox row
 rolled back too). Finding them needs an orphan sweep: Blob keys matching
-`_receipt_` that no `invoices.receipt_pdf_blob_key` references.
+`_receipt_` that no `invoices.receipt_pdf_blob_key` references (tracked follow-up: the orphan PDF sweeper).
+
+`kept_row_owns_key` means the locked re-read found a row pointing at the key.
+On the admin route that row is committed. Inside a caller-owned transaction
+(F5 webhook, F8 offline mark) it can be that transaction's own uncommitted row,
+which may still roll back, so treat it as a possible orphan there. On those
+rails a failed locked re-read usually means the caller's transaction was
+already aborted (WARN, not counted); the caller's retry overwrites the key.
+
+Blob deletes are bounded at 10 s. The bound only abandons the client request,
+which is why the delete carries `ifMatch`: a late delete cannot remove bytes
+written after this attempt's upload.
+
+The issue and issue-as-paid paths use the same locked, etag-conditional
+delete (`use_case="issue"` / `"issue_as_paid"`, log prefixes `issueInvoice:` /
+`issue-as-paid:`), and the same steps below apply with `pdf_blob_key` /
+`pdf_sha256` in place of the receipt columns.
 
 **When the alarm fires** (`use_case="record_payment"`): the delete failed, so a
 PDF carrying a released RC number may still be in Blob.

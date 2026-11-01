@@ -16,6 +16,7 @@ import {
 } from '@/modules/invoicing/application/lib/delete-orphan-pdf';
 import { BlobChangedSinceUploadError } from '@/modules/invoicing/application/ports/blob-storage-port';
 import type { Invoice } from '@/modules/invoicing/domain/invoice';
+import type { InvoiceRepo } from '@/modules/invoicing/application/ports/invoice-repo';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 
 const KEY = 'invoicing/t/2026/inv_receipt_v1.pdf';
@@ -25,12 +26,12 @@ function deps(row: Partial<Invoice> | null, order: string[] = []) {
   const tx = { tag: 'cleanup-tx' };
   return {
     invoiceRepo: {
-      withTx: vi.fn(async <T,>(fn: (t: unknown) => Promise<T>) => {
+      withTx: vi.fn(async (fn: (t: unknown) => Promise<unknown>) => {
         order.push('tx-open');
         const out = await fn(tx);
         order.push('tx-close');
         return out;
-      }),
+      }) as unknown as InvoiceRepo['withTx'],
       findByIdInTxForUpdate: vi.fn(async () => {
         order.push('locked-read');
         return row as Invoice | null;

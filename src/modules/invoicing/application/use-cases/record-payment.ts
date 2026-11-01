@@ -70,6 +70,7 @@ import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
+import { deleteOrphanPdfUnderLock, OrphanCleanupLockReadError } from '../lib/delete-orphan-pdf';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
 
 export const recordPaymentSchema = z.object({
@@ -455,6 +456,7 @@ export async function recordPayment(
   // Set just before the in-tx upload so the outer catch can delete the bytes
   // a rolled-back attempt left behind (065 L-3 parity with issueInvoice).
   let receiptBlobKeyForCleanup: string | null = null;
+  let receiptBlobEtag: string | null = null;
   let result: Result<RecordPaymentSuccess, RecordPaymentError>;
   try {
   result = await time('tx', () => deps.invoiceRepo.withTx(async (tx) => {
@@ -974,6 +976,7 @@ export async function recordPayment(
               (code, reason) => new RecordPaymentInternalError({ code, reason }),
             ),
           );
+    receiptBlobEtag = rendered?.etag ?? null;
 
     // Atomic issued→paid UPDATE with payment fields + receipt PDF
     // metadata. The repo throws `applyPayment: no row updated` when
@@ -1436,28 +1439,40 @@ export async function recordPayment(
     // printed with that number stays at the key. Skipped only after
     // `pdf_render_failed`: the render runs before the upload, so this attempt
     // wrote nothing. Every other error (including `concurrent_state_change`)
-    // goes through the locked check in `deleteOrphanReceipt`, because the
-    // overwrite above means the bytes at the key are this attempt's unless a
-    // committed row now owns them. Best-effort: a failure is logged at ERROR
-    // and counted, and the original error is never masked. A retry also
-    // overwrites, so a missed delete cannot drift the stored file from
-    // `receipt_pdf_sha256`.
+    // goes through `deleteOrphanPdfUnderLock`: a locked re-read, then a delete
+    // under that lock conditional on this upload's etag. Best-effort: a failed
+    // delete is logged at ERROR and counted; a failed locked read (aborted
+    // caller tx, DB down) is a WARN, since the next attempt's overwrite covers
+    // it. The original error is never masked.
     const orphanKey = receiptBlobKeyForCleanup;
     const skipOrphanCleanup =
       e instanceof RecordPaymentInternalError && e.error.code === 'pdf_render_failed';
     if (orphanKey !== null && !skipOrphanCleanup) {
       try {
-        const outcome = await deleteOrphanReceipt(deps, invoiceId, input.tenantId, orphanKey);
+        const outcome = await deleteOrphanPdfUnderLock(deps, {
+          invoiceId,
+          tenantId: input.tenantId,
+          blobKey: orphanKey,
+          etag: receiptBlobEtag,
+          rowOwnsKey: (row) => row.receiptPdf?.blobKey === orphanKey,
+        });
         logger.info(
           { invoiceId: input.invoiceId, blobKey: orphanKey, outcome },
           'recordPayment: orphan receipt blob cleanup',
         );
       } catch (delErr) {
-        logger.error(
-          { err: errKind(delErr), invoiceId: input.invoiceId, blobKey: orphanKey },
-          'recordPayment: orphan receipt blob cleanup failed',
-        );
-        invoicingMetrics.orphanBlobCleanupFailed('record_payment');
+        if (delErr instanceof OrphanCleanupLockReadError) {
+          logger.warn(
+            { err: errKind(delErr.cause), invoiceId: input.invoiceId, blobKey: orphanKey },
+            'recordPayment: orphan receipt blob cleanup skipped — the locked re-read failed (caller tx aborted or DB unavailable); the next attempt overwrites the key',
+          );
+        } else {
+          logger.error(
+            { err: errKind(delErr), invoiceId: input.invoiceId, blobKey: orphanKey },
+            'recordPayment: orphan receipt blob cleanup failed',
+          );
+          invoicingMetrics.orphanBlobCleanupFailed('record_payment');
+        }
       }
     }
     if (e instanceof RecordPaymentInternalError) {
@@ -1501,34 +1516,6 @@ export async function recordPayment(
   }
 
   return result;
-}
-
-/**
- * #60 review round 1 — delete a rolled-back attempt's receipt PDF only while
- * holding the invoice row lock, and only when no committed row owns the key.
- *
- * Both races the reviews found close here:
- *   - an ambiguous COMMIT (the commit landed, its acknowledgement was lost):
- *     the locked re-read sees `paid` with this key → keep;
- *   - the next lock waiter: an attempt queued on `lockForUpdate` cannot reach
- *     its own upload until this lock is released, so it overwrites AFTER the
- *     delete instead of being deleted by it.
- * Inside a caller-owned `externalTx` the same re-read sees that tx's own
- * uncommitted `paid` row and keeps the bytes; the overwrite on the next
- * attempt is the net there.
- */
-async function deleteOrphanReceipt(
-  deps: Pick<RecordPaymentDeps, 'invoiceRepo' | 'blob'>,
-  invoiceId: InvoiceId,
-  tenantId: string,
-  blobKey: string,
-): Promise<'deleted' | 'kept_committed_owner'> {
-  return deps.invoiceRepo.withTx(async (tx) => {
-    const row = await deps.invoiceRepo.findByIdInTxForUpdate(tx, invoiceId, tenantId);
-    if (row?.receiptPdf?.blobKey === blobKey) return 'kept_committed_owner' as const;
-    await deps.blob.delete(blobKey);
-    return 'deleted' as const;
-  });
 }
 
 /**

@@ -105,6 +105,8 @@ import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
+import { deleteOrphanPdfUnderLock, OrphanCleanupLockReadError } from '../lib/delete-orphan-pdf';
+import { errKind } from '@/lib/log-id';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { resolveInvoiceBuyerForIssue } from '../lib/resolve-invoice-buyer';
 import { enqueueInvoiceAutoEmail } from '../lib/enqueue-invoice-email';
@@ -317,6 +319,7 @@ export async function issueEventInvoiceAsPaid(
   // that outlive the rollback (orphan-blob mitigation, reliability L-1 +
   // review Important #1).
   let blobKeyForCleanup: string | null = null;
+  let blobEtagForCleanup: string | null = null;
   // Hoisted for the post-rollback pdf_render_failed forensic audit: the
   // failed render is `receipt_combined` on the TIN arm but `receipt_separate`
   // on the no-TIN β arm — the forensic row must not lie about which document
@@ -616,6 +619,7 @@ export async function issueEventInvoiceAsPaid(
         },
         (code, reason) => new IssueAsPaidInternalError({ code, reason }),
       );
+      blobEtagForCleanup = rendered.etag ?? null;
 
       // J. Single UPDATE draft→paid.
       let paid: Invoice;
@@ -887,30 +891,46 @@ export async function issueEventInvoiceAsPaid(
     // Best-effort delete (awaited, failure logged, never masks the original
     // error).
     //
-    // Residual (wave-3 S33, accepted): this post-rollback delete can race a
-    // SUCCESSOR issuance of the same invoice re-uploading to the SAME
-    // deterministic key — a late delete may remove the successor's fresh
-    // bytes, leaving its committed row with a dangling key. Accepted
-    // because the key is deterministic (a re-render/resend restores
-    // byte-identical content and the invoice-detail Blob-miss recovery
-    // tolerates a dangling key), and the in-tx winner case is already
-    // covered by the conflict-translation exemption above.
+    // The wave-3 S33 residual (a late delete removing a SUCCESSOR's fresh
+    // bytes at the same key) is closed by #60: the delete runs under the row
+    // lock, after a locked re-read, and only if the etag still matches.
     const orphanBlobKey = blobKeyForCleanup;
     const skipOrphanCleanup =
       e instanceof IssueAsPaidInternalError &&
       (e.error.code === 'invoice_already_issued' || e.error.code === 'pdf_render_failed');
     if (orphanBlobKey !== null && !skipOrphanCleanup) {
-      await deps.blob.delete(orphanBlobKey).catch((delErr: unknown) => {
-        // 065 H-1b — ERROR (not warn) + alertable counter: a failed cleanup
-        // leaves stale bytes at the deterministic key. The H-1a
-        // allowOverwrite retry defuses the drift on THIS path, but ops still
-        // needs the key to sweep the orphan (the row may never be retried).
-        logger.error(
-          { err: delErr, invoiceId: input.invoiceId, blobKey: orphanBlobKey },
-          'issue-as-paid: orphan blob cleanup failed',
+      // #60 — under the invoice row lock, keeping the file when the locked
+      // re-read shows a row pointing at it (an ambiguous COMMIT), and
+      // conditional on this upload's etag (a delete Blob applies late cannot
+      // remove a successor's bytes). A failed locked read is a WARN: it is a
+      // database problem, and the bytes stay for the next attempt.
+      try {
+        const outcome = await deleteOrphanPdfUnderLock(deps, {
+          invoiceId,
+          tenantId: input.tenantId,
+          blobKey: orphanBlobKey,
+          etag: blobEtagForCleanup,
+          rowOwnsKey: (row) => row.pdf?.blobKey === orphanBlobKey,
+        });
+        logger.info(
+          { invoiceId: input.invoiceId, blobKey: orphanBlobKey, outcome },
+          'issue-as-paid: orphan blob cleanup',
         );
-        invoicingMetrics.orphanBlobCleanupFailed('issue_as_paid');
-      });
+      } catch (delErr) {
+        if (delErr instanceof OrphanCleanupLockReadError) {
+          logger.warn(
+            { err: errKind(delErr.cause), invoiceId: input.invoiceId, blobKey: orphanBlobKey },
+            'issue-as-paid: orphan blob cleanup skipped — the locked re-read failed',
+          );
+        } else {
+          // 065 H-1b — ERROR + alertable counter: stale bytes remain at the key.
+          logger.error(
+            { err: delErr, invoiceId: input.invoiceId, blobKey: orphanBlobKey },
+            'issue-as-paid: orphan blob cleanup failed',
+          );
+          invoicingMetrics.orphanBlobCleanupFailed('issue_as_paid');
+        }
+      }
     }
     if (e instanceof IssueAsPaidInternalError) {
       // 065 M-4 — severity split: overflow (tenant-wide §87 number-space
