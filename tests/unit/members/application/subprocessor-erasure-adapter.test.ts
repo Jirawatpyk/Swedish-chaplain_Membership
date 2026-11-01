@@ -306,9 +306,11 @@ describe('subprocessorErasureAdapter.propagate — the caller deadline', () => {
   });
 
   it('the untried audience ids are deduplicated and capped at 50', async () => {
+    // The duplicate sits inside the first 50, so only deduplication keeps
+    // `aud-49` in the capped list.
     const many = [
-      ...Array.from({ length: 60 }, (_, i) => ({ audienceId: `aud-${i}`, email: 'a@example.com' })),
       { audienceId: 'aud-0', email: 'b@example.com' },
+      ...Array.from({ length: 60 }, (_, i) => ({ audienceId: `aud-${i}`, email: 'a@example.com' })),
     ];
     await subprocessorErasureAdapter.propagate({ ...inputWith(many), deadlineAt: new Date(Date.now() + 1) });
     const payload = loggerWarn.mock.calls[0]![0] as { untriedPairs: number; untriedAudienceIds: string[]; untriedAudienceIdsTruncated: boolean };
