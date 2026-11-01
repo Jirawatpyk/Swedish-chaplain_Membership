@@ -451,9 +451,15 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     );
   });
 
-  it('a DB fault at attachAudienceId still escapes the tick after the reclaim (its answer is unchanged)', async () => {
+  // Review round 4 (reliability LOW-3) — a DB blip at the attach is the
+  // transient answer, not a thrown `uncaught_error` (which pages as a bug):
+  // `dispatch.server_error`, phase `attach_audience`, after the reclaim.
+  it('a DB fault at attachAudienceId answers dispatch.server_error after the reclaim', async () => {
     const h = harness({ attachAudienceIdThrows: 'db_fault' });
-    await expect(h.run()).rejects.toThrow('08006');
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'dispatch.server_error', phase: 'attach_audience', errClass: 'Error' });
+    const afterCreate = h.events.slice(h.events.indexOf('gw:createAudience') + 1);
+    expect(afterCreate.filter((e) => e.startsWith('gw:') || e === 'readBack')).toEqual(['readBack', 'gw:deleteAudience:aud-new']);
     expect(h.releases).toEqual([TOKEN]);
   });
 
