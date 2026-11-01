@@ -2019,6 +2019,37 @@ describe('recordPayment — #60 receipt blob: overwrite + post-rollback cleanup'
     expect(order).toEqual(['locked-read', 'delete']);
   });
 
+  it('the cleanup delete is conditional on the etag this attempt uploaded', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    deps.blob.uploadPdf = vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}`, etag: '"etag-a"' }));
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw new Error('apply failed');
+    });
+    await expect(recordPayment(deps, input)).rejects.toThrow('apply failed');
+    expect(deps.blob.delete).toHaveBeenCalledWith(RECEIPT_KEY, { ifMatch: '"etag-a"' });
+  });
+
+  it('a failed locked read (aborted caller tx) logs WARN, is NOT counted as a cleanup failure, keeps the original error', async () => {
+    const metric = vi.spyOn(invoicingMetrics, 'orphanBlobCleanupFailed');
+    metric.mockClear();
+    const { logger } = await import('@/lib/logger');
+    const warnLog = vi.spyOn(logger, 'warn');
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const boom = new Error('apply failed');
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw boom;
+    });
+    deps.invoiceRepo.findByIdInTxForUpdate = vi.fn(async () => {
+      throw new Error('current transaction is aborted');
+    });
+    await expect(recordPayment(deps, input)).rejects.toBe(boom);
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+    expect(metric).not.toHaveBeenCalled();
+    expect(
+      warnLog.mock.calls.some((c) => String(c[1]).startsWith('recordPayment: orphan receipt blob cleanup skipped')),
+    ).toBe(true);
+  });
+
   it('an idempotent replay never uploads or deletes', async () => {
     const deps = makeDeps(true, makeIssuedInvoice({ status: 'paid' }), makeSettings());
     const r = await recordPayment(deps, input);

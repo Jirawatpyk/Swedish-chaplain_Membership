@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const headMock = vi.fn();
 const delMock = vi.fn();
+const putMock = vi.fn();
 const fetchMock = vi.fn();
 
 vi.mock('@vercel/blob', async () => {
@@ -24,7 +25,7 @@ vi.mock('@vercel/blob', async () => {
   return {
     ...actual,
     head: (...args: unknown[]) => headMock(...args),
-    put: vi.fn(),
+    put: (...args: unknown[]) => putMock(...args),
     del: (...args: unknown[]) => delMock(...args),
     list: vi.fn(),
   };
@@ -49,6 +50,7 @@ beforeEach(() => {
   vi.resetModules();
   headMock.mockReset();
   delMock.mockReset();
+  putMock.mockReset();
   fetchMock.mockReset();
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -171,6 +173,39 @@ describe('vercelBlobAdapter.delete — bounded', () => {
     expect(delMock).toHaveBeenCalledWith(
       KEY,
       expect.objectContaining({ token: 'test-token', abortSignal: expect.any(AbortSignal) }),
+    );
+  });
+});
+
+describe('vercelBlobAdapter — #60 conditional delete', () => {
+  it('uploadPdf returns the stored etag', async () => {
+    putMock.mockResolvedValue({ url: 'https://blob.test/x', etag: '"etag-a"' });
+    const { vercelBlobAdapter } = await loadAdapter();
+    const r = await vercelBlobAdapter.uploadPdf({
+      key: KEY,
+      body: new Uint8Array([1]),
+      contentType: 'application/pdf',
+      allowOverwrite: true,
+    });
+    expect(r.etag).toBe('"etag-a"');
+  });
+
+  it('delete with ifMatch passes it to del', async () => {
+    delMock.mockResolvedValue(undefined);
+    const { vercelBlobAdapter } = await loadAdapter();
+    await vercelBlobAdapter.delete(KEY, { ifMatch: '"etag-a"' });
+    expect(delMock).toHaveBeenCalledWith(KEY, expect.objectContaining({ ifMatch: '"etag-a"' }));
+  });
+
+  it("the SDK's BlobPreconditionFailedError → the port's BlobChangedSinceUploadError", async () => {
+    const { BlobPreconditionFailedError } = await vi.importActual<typeof import('@vercel/blob')>('@vercel/blob');
+    delMock.mockRejectedValue(new BlobPreconditionFailedError());
+    const { vercelBlobAdapter } = await loadAdapter();
+    const { BlobChangedSinceUploadError } = await import(
+      '@/modules/invoicing/application/ports/blob-storage-port'
+    );
+    await expect(vercelBlobAdapter.delete(KEY, { ifMatch: '"etag-a"' })).rejects.toBeInstanceOf(
+      BlobChangedSinceUploadError,
     );
   });
 });

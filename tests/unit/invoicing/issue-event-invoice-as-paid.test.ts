@@ -1229,6 +1229,29 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     );
   });
 
+  it('#60 parity: an ambiguous COMMIT (the locked re-read shows the row owns the key) keeps the PDF', async () => {
+    const deps = makeDeps(makeEventDraft(), makeSettings(), null);
+    const KEY = `invoicing/test-swecham/2026/${INVOICE_ID}_v1.pdf`;
+    deps.invoiceRepo.applyIssueAsPaid = vi.fn(async () => {
+      throw new Error('connection terminated during COMMIT');
+    });
+    let reads = 0;
+    deps.invoiceRepo.findByIdInTxForUpdate = vi.fn(async () => {
+      reads += 1;
+      // First read = the use case's own locked draft read; the next one is
+      // the cleanup's re-read, which sees the committed row owning the key.
+      return reads === 1
+        ? makeEventDraft()
+        : makeEventDraft({
+            status: 'paid',
+            pdf: { blobKey: KEY, sha256: Sha256Hex.ofUnsafe('b'.repeat(64)), templateVersion: 1 },
+          } as InvoiceFixtureOverrides);
+    });
+    await expect(issueEventInvoiceAsPaid(deps, input)).rejects.toThrow('connection terminated during COMMIT');
+    expect(reads).toBeGreaterThanOrEqual(2);
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
+
   it('blob.delete failure during orphan cleanup is swallowed (best-effort) — original error surfaces + ERROR logged with the key + drift metric', async () => {
     // 065 H-1b — a failed cleanup leaves stale bytes at the deterministic
     // key (tax-document drift risk class), so it logs at ERROR severity and

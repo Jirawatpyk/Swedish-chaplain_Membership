@@ -697,6 +697,22 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(deps.blob.delete).toHaveBeenCalledWith(EXPECTED_ISSUE_BLOB_KEY);
   });
 
+  it('#60 parity: an ambiguous COMMIT (the locked re-read shows the row owns the key) keeps the invoice PDF', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    deps.outbox.enqueue = vi.fn(async () => {
+      throw new Error('connection terminated during COMMIT');
+    });
+    deps.invoiceRepo.findByIdInTxForUpdate = vi.fn(async () =>
+      makeDraftInvoice({
+        status: 'issued',
+        pdf: { blobKey: EXPECTED_ISSUE_BLOB_KEY, sha256: Sha256Hex.ofUnsafe('b'.repeat(64)), templateVersion: 1 },
+      } as InvoiceFixtureOverrides),
+    );
+    await expect(issueInvoice(deps, input)).rejects.toThrow('connection terminated during COMMIT');
+    expect(deps.invoiceRepo.findByIdInTxForUpdate).toHaveBeenCalled();
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
+
   it('L-3: throw AFTER upload (outbox.enqueue) → promise REJECTS + orphan blob deleted', async () => {
     const deps = makeDeps(
       makeDraftInvoice({ autoEmailOnIssue: true }),
