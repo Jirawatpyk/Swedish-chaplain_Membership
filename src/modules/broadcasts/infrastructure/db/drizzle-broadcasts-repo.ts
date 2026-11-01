@@ -441,6 +441,13 @@ export async function claimDispatchLeaseStatement(
  * for that lock; a timeout throws 55P03, which the tick answers as
  * `lease_check_failed`. `SET LOCAL` lasts to the end of the caller's tx (the
  * tick runs each check in its own).
+ *
+ * Review round 2 (security I2) — `fresh` can be stale by up to the lock wait
+ * (≤ `lockTimeoutMs`): the row can be read before the lock is granted, and
+ * Postgres re-reads it only when the blocker changed it. The limit is inert
+ * while `LEASE_TTL_MS` (330 s) exceeds the function's `maxDuration` (300 s):
+ * the holder is killed before its lease can end, and once another tick takes
+ * over, every write the old holder makes is fenced off by the token.
  */
 export async function checkDispatchLeaseStatement(
   tx: TenantTx,
