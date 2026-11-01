@@ -747,6 +747,25 @@ Finding for review: the route logs a DL7 skip at **WARN**, as `cron.broadcasts.d
 
 **Round-2 fix notes.** Mutation proofs (each restored byte for byte): `createBroadcast` ignoring `createBroadcastRetry` → both CR#2 gateway cases red; `createContactImport` on `callTimeoutMs` → the CR#3 case red; the dispatch deps wiring the default instance → "makeDispatchScheduledBroadcastDeps wires the legacy instance" red; the untried ids uncapped → the cap case red; the ids not deduplicated → survived at first (the duplicate sat past the cap), red after `b0f5a2f0c`.
 
+### Slice 2a — review round 3 (targeted; `/code-review high 719`, security, pdpa; 1 Nov 2026)
+
+**Review metrics:** round 3 · targeted · 10 + 3 + 1 items (code-review, security, pdpa) · cap: ≥ 2 full (reached) + ≤ 2 targeted.
+
+**Closures:**
+
+| # | Finding | Closure |
+|---|---|---|
+| code-review #1 | `RESEND_CALL_TIMEOUT_MS`'s docstring says "the most time one gateway call may take" | **Fixed** `0a2c127d5` (docs): per request for every method except `createContactImport` (`IMPORT_CALL_TIMEOUT_MS`, 30 s, already exported next to it in the port); s2b sizes W_max / TTL / cutoff from the max of the two on any path that holds the lease across the import POST |
+| code-review #2, pdpa M-2, security L-1/L-2 | Wording | **Fixed** in aec3e3f5f (docs). |
+| code-review #3 | 30 s × 50 rows vs maxDuration 300 | **Carried to s2b** (Medium; the s2b row names the per-invocation cron time budget, the round-1 CR#2 carry). The import leg is dark (flag OFF). |
+| code-review #4 + #5 | The span attributes are hand-listed, so a new bucket can be left off | **Fixed:** test `91604ecaf` (the OTel mock records `setAttribute`; every numeric summary key must be `cron.<key>`), refactor `93953fa01` (one loop over the summary). The test was green on the pre-refactor code because round 2 had already added `import_row_skipped` by hand, so the RED evidence is a positive control: dropping the `cron.import_row_skipped` line → `cron.import_row_skipped: expected undefined to be 1`. After the refactor, a loop that skips that key fails the same way. The attribute names are unchanged (the summary keys are already snake_case) |
+| code-review #6 | A second gateway singleton | **Accepted (Low):** the gateway holds no per-instance state (`client()` is module-level), and s4's Delete list names the instance and the option. |
+| code-review #7 | The 50-id cap | **Accepted (Low):** pdpa round 3 found it unreachable (Free plan, 3 segments); the runbook gives the fallback. |
+| code-review #8 | The CR#3 timing test can flake on CI | **Fixed** `e93cf07cd`: `importCallTimeoutMs` 1 000 with `callTimeoutMs` 50, still pending at 300 ms, settled within 2.5 s, no summed-elapsed bound. Mutation: `createContactImport` on `callTimeoutMs` → `expected { thrown: … } to be 'still running'` |
+| code-review #9 | A real 1 s backoff in the CR#2 tests | **Accepted (Low):** about 2 s of suite time, and the second half pins the instance split, which CR#1 does not. |
+| code-review #10 | A redundant `toBeDefined()` in the deps case | **Fixed** `e93cf07cd` |
+| security INFO | The per-tick bound | Same as code-review #3, carried. |
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
