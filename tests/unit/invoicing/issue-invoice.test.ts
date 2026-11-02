@@ -408,8 +408,12 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     // "already issued" would send the admin to refresh into the same draft.
     if (!r.ok) expect(r.error.code).toBe('membership_coverage_overlap');
     // This attempt owns the bytes it uploaded (the row stays draft): the
-    // locked, etag-conditional cleanup runs.
-    expect(deps.blob.delete).toHaveBeenCalled();
+    // locked cleanup deletes THIS invoice's key (the upload mock returns no
+    // etag, so the call carries no ifMatch).
+    expect(deps.blob.delete).toHaveBeenCalledTimes(1);
+    expect(deps.blob.delete).toHaveBeenCalledWith(
+      `invoicing/test-swecham/2026/${INVOICE_ID}_v1.pdf`,
+    );
   });
 
   it('a 23P01 on a DIFFERENT exclusion constraint is NOT mapped to invoice_already_issued (constraint-specific)', async () => {
