@@ -572,6 +572,24 @@ describe('IssueInvoiceForm — failure branch is focused + destructive (FR-032)'
     }
   });
 
+  it('#62 a coverage-overlap 409 names the real cause, destructive and focused, with no Refresh', async () => {
+    const fetchMock = rejectingFetch('membership_coverage_overlap');
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      confirmAndSubmit();
+
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'destructive');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.issue.errors.membership_coverage_overlap);
+      expect(alert).not.toHaveTextContent(enMessages.admin.invoices.issue.errors.concurrent);
+      await waitFor(() => expect(alert).toHaveFocus());
+      expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('interpolates the raw code into codeFallback for an unrouted failure', async () => {
     const fetchMock = rejectingFetch('some_unmapped_code');
     vi.stubGlobal('fetch', fetchMock);

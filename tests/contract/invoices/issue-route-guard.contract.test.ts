@@ -245,6 +245,15 @@ describe('contract: POST /api/invoices/[invoiceId]/issue — expectedTotalSatang
     );
   });
 
+  it('#62 409 membership_coverage_overlap — bare code (another bill covers the period)', async () => {
+    issueInvoiceMock.mockResolvedValueOnce(err({ code: 'membership_coverage_overlap' }));
+    const { POST } = await importRoute();
+    const res = await POST(postWithBody({ expectedTotalSatang: '107000' }), routeParams);
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: Record<string, unknown> };
+    expect(body.error).toEqual({ code: 'membership_coverage_overlap' });
+  });
+
   it('409 issue_total_changed — bare code', async () => {
     issueInvoiceMock.mockResolvedValueOnce(err({ code: 'issue_total_changed' }));
     const { POST } = await importRoute();
