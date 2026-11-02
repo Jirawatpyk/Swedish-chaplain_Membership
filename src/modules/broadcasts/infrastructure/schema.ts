@@ -302,6 +302,18 @@ export const broadcasts = pgTable(
       withTimezone: true,
     }),
 
+    // Spec 140 s2b (migration 0322) — the import leg's per-row dispatch lease:
+    // a fencing token and its expiry, both or neither
+    // (`broadcasts_dispatch_lease_pair`). Claimed in the tick's step-1 lock tx,
+    // carried in every write the holder makes, released at the end of the
+    // tick; any non-holder status change clears both (`applyTransition` with
+    // `lease: null`). Forbidden under the erasure GUC, like 0311's column.
+    // Infrastructure-only: the Domain `Broadcast` does not carry them.
+    dispatchLeaseToken: uuid('dispatch_lease_token'),
+    dispatchLeaseExpiresAt: timestamp('dispatch_lease_expires_at', {
+      withTimezone: true,
+    }),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -439,6 +451,12 @@ export const broadcasts = pgTable(
       .where(
         sql`audience_import_id IS NOT NULL AND audience_import_completed_at IS NULL`,
       ),
+
+    // Spec 140 s2b (migration 0322) — a lease is a token AND an expiry.
+    check(
+      'broadcasts_dispatch_lease_pair',
+      sql`(${table.dispatchLeaseToken} IS NULL) = (${table.dispatchLeaseExpiresAt} IS NULL)`,
+    ),
 
     // F119 PR-2 (migration 0308, data-model § 3).
     check(

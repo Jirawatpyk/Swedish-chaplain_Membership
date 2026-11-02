@@ -265,6 +265,7 @@ export async function approveBroadcast(
             scheduledFor,
           },
           'submitted', // R4 Types-#5 — race-guard against concurrent action
+          null,
         );
       } catch (e) {
         // R7 staff-review HIGH-1 fix — narrow catch to the concurrency

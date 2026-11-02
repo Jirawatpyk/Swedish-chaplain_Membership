@@ -271,6 +271,9 @@ Rules:
   edge case: `keep_proposal` with a past proposal is refused with the same code and the client
   falls back to picking a time.
 - `keep_proposal` requires `proposed_send_at IS NOT NULL` → else **409 `no_proposal`**.
+- A re-time (`schedule` / `send_now` from `approved`) while a dispatch tick holds a live lease on
+  the row (spec 140 s2b) → **409 `dispatch_in_progress`**, nothing written: the send may be under
+  way at the old time. Staff try again in a few minutes; a dead tick blocks it for at most 330 s.
 - **Promotion re-checks the images**: before the approved version is copied into the sending record,
   every image in it must still resolve to an allow-listed host. A host removed from the allow-list
   since approval refuses the promotion with **422 `image_source_not_allowlisted`** naming the image;

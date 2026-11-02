@@ -227,6 +227,29 @@ describe('F119 T064 — the schedule confirmation dialog', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
+  // Spec 140 s2b review round 4 (enterprise-ux; code-review #1) — a re-time
+  // refused while a dispatch tick holds the row is nobody's error and the page
+  // is not stale: the warning is said INSIDE the dialog (title + "nothing was
+  // changed"), focused, and the dialog stays open with the picked time, as the
+  // READ_ONLY_MODE refusal does. Not a toast, not a close-and-refresh.
+  it('a 409 dispatch_in_progress keeps the dialog open with the picked time and an alert', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => refusal(409, 'dispatch_in_progress')));
+    renderAction({ status: 'approved', proposedSendAt: null, scheduledFor: new Date(Date.now() + 3 * HOUR_MS).toISOString() });
+    open();
+    const dialog = await screen.findByRole('alertdialog');
+    const picked = (screen.getByTestId('schedule-confirm-when') as HTMLInputElement).value;
+    expect(picked).not.toBe('');
+    fireEvent.click(screen.getByTestId('schedule-confirm-submit'));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(tSchedule.dispatchInProgress.title);
+    expect(alert).toHaveTextContent(tSchedule.dispatchInProgress.description);
+    await waitFor(() => expect(alert).toHaveFocus());
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+    expect((screen.getByTestId('schedule-confirm-when') as HTMLInputElement).value).toBe(picked);
+  });
+
   it('H1: a repeated refusal is a NEW alert node (cleared at the start of each request), so it is announced again', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => refusal(429, 'broadcast_rate_limit_exceeded')));
     renderAction({ status: 'approved', proposedSendAt: null });

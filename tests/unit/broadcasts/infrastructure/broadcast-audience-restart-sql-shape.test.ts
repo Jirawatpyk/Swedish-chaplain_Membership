@@ -99,7 +99,7 @@ describe('releaseAudienceImport (the restart\'s claim) — SQL shape', () => {
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await expect(repo.releaseAudienceImport(tx, TENANT as never, BROADCAST_ID, EXPECTED)).resolves.toBe(true);
+    await expect(repo.releaseAudienceImport(tx, TENANT as never, BROADCAST_ID, EXPECTED, null)).resolves.toBe('ok');
 
     expect(sent[0]?.sql).toContain("current_setting('app.current_tenant'");
     const update = theUpdate(sent);
@@ -124,16 +124,16 @@ describe('releaseAudienceImport (the restart\'s claim) — SQL shape', () => {
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await repo.releaseAudienceImport(tx, TENANT as never, BROADCAST_ID, { ...EXPECTED, resendBroadcastId: null });
+    await repo.releaseAudienceImport(tx, TENANT as never, BROADCAST_ID, { ...EXPECTED, resendBroadcastId: null }, null);
 
     expect(nullSafeParam(theUpdate(sent), 'resend_broadcast_id')).toBeNull();
   });
 
-  it('matching no row (the claim lost) answers false, not a throw', async () => {
+  it('matching no row (the claim lost) answers cas_lost, not a throw', async () => {
     const { tx } = recordingTx();
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await expect(repo.releaseAudienceImport(tx, TENANT as never, BROADCAST_ID, EXPECTED)).resolves.toBe(false);
+    await expect(repo.releaseAudienceImport(tx, TENANT as never, BROADCAST_ID, EXPECTED, null)).resolves.toBe('cas_lost');
   });
 });
 
@@ -142,7 +142,7 @@ describe('releaseResendAudience (after both deletes) — SQL shape', () => {
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await expect(repo.releaseResendAudience(tx, TENANT as never, BROADCAST_ID, DELETED)).resolves.toBe(true);
+    await expect(repo.releaseResendAudience(tx, TENANT as never, BROADCAST_ID, DELETED, null)).resolves.toBe('ok');
 
     expect(sent[0]?.sql).toContain("current_setting('app.current_tenant'");
     const update = theUpdate(sent);
@@ -166,16 +166,16 @@ describe('releaseResendAudience (after both deletes) — SQL shape', () => {
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await repo.releaseResendAudience(tx, TENANT as never, BROADCAST_ID, { ...DELETED, resendBroadcastId: null });
+    await repo.releaseResendAudience(tx, TENANT as never, BROADCAST_ID, { ...DELETED, resendBroadcastId: null }, null);
 
     expect(nullSafeParam(theUpdate(sent), 'resend_broadcast_id')).toBeNull();
   });
 
-  it('matching no row answers false, not a throw', async () => {
+  it('matching no row answers cas_lost, not a throw', async () => {
     const { tx } = recordingTx();
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await expect(repo.releaseResendAudience(tx, TENANT as never, BROADCAST_ID, DELETED)).resolves.toBe(false);
+    await expect(repo.releaseResendAudience(tx, TENANT as never, BROADCAST_ID, DELETED, null)).resolves.toBe('cas_lost');
   });
 });
 
@@ -184,7 +184,7 @@ describe('attachBroadcastId — the empty-id arm, the import-id fence, the dead-
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await repo.attachBroadcastId(tx, TENANT as never, BROADCAST_ID, 'rb-new');
+    await repo.attachBroadcastId(tx, TENANT as never, BROADCAST_ID, 'rb-new', null);
 
     const update = theUpdate(sent);
     expect(broadcastIdArms(update)).toEqual(expect.arrayContaining(['', 'rb-new']));
@@ -195,7 +195,7 @@ describe('attachBroadcastId — the empty-id arm, the import-id fence, the dead-
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await repo.attachBroadcastId(tx, TENANT as never, BROADCAST_ID, 'rb-new');
+    await repo.attachBroadcastId(tx, TENANT as never, BROADCAST_ID, 'rb-new', null);
 
     const update = theUpdate(sent);
     expect(whereOf(update)).not.toMatch(/"audience_import_id"/);
@@ -206,7 +206,7 @@ describe('attachBroadcastId — the empty-id arm, the import-id fence, the dead-
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await repo.attachBroadcastId(tx, TENANT as never, BROADCAST_ID, 'rb-new', { expectedAudienceImportId: 'imp-held' });
+    await repo.attachBroadcastId(tx, TENANT as never, BROADCAST_ID, 'rb-new', null, { expectedAudienceImportId: 'imp-held' });
 
     const update = theUpdate(sent);
     const slot = /"broadcasts"\."audience_import_id"\s*=\s*\$(\d+)/.exec(whereOf(update));
@@ -219,7 +219,7 @@ describe('attachBroadcastId — the empty-id arm, the import-id fence, the dead-
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await repo.attachBroadcastId(tx, TENANT as never, BROADCAST_ID, 'rb-new', {
+    await repo.attachBroadcastId(tx, TENANT as never, BROADCAST_ID, 'rb-new', null, {
       expectedAudienceImportId: 'imp-held',
       replacesResendBroadcastId: 'rb-dead',
     });
@@ -235,7 +235,7 @@ describe('attachAudienceImport — the audience fence', () => {
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await repo.attachAudienceImport(tx, TENANT as never, BROADCAST_ID, 'imp-new', { expectedResendAudienceId: 'aud-held' });
+    await repo.attachAudienceImport(tx, TENANT as never, BROADCAST_ID, 'imp-new', null, { expectedResendAudienceId: 'aud-held' });
 
     const update = theUpdate(sent);
     const slot = /"broadcasts"\."resend_audience_id"\s*=\s*\$(\d+)/.exec(whereOf(update));
@@ -255,7 +255,7 @@ describe('markAudienceImportCompleted — only an import that is still there', (
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await repo.markAudienceImportCompleted(tx, TENANT as never, BROADCAST_ID);
+    await repo.markAudienceImportCompleted(tx, TENANT as never, BROADCAST_ID, null);
 
     const where = whereOf(theUpdate(sent));
     expect(where).toMatch(/"broadcasts"\."audience_import_id"\s+is\s+not\s+null/i);

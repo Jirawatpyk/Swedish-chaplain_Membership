@@ -105,7 +105,7 @@ describe('attachResendIds — SQL shape (ED5)', () => {
 
     // 0 rows matched (the recording db returns none) → the typed concurrent throw.
     await expect(
-      repo.attachResendIds(db as never, TENANT as never, BROADCAST_ID, 'aud-1', 'rb-1'),
+      repo.attachResendIds(db as never, TENANT as never, BROADCAST_ID, 'aud-1', 'rb-1', null),
     ).rejects.toBeInstanceOf(Error);
 
     const update = rec.statements.find((s) => /^update "broadcasts"/i.test(s.sql));
@@ -128,7 +128,7 @@ describe('attachResendIds — SQL shape (ED5)', () => {
       return { rows: [] };
     });
     const repo = makeDrizzleBroadcastsRepo(TENANT);
-    const thrown = await repo.attachResendIds(tx as never, TENANT as never, BROADCAST_ID, 'aud-1', 'rb-1').catch((e: unknown) => e);
+    const thrown = await repo.attachResendIds(tx as never, TENANT as never, BROADCAST_ID, 'aud-1', 'rb-1', null).catch((e: unknown) => e);
     expect(thrown).toBeInstanceOf(BroadcastConcurrentMutationError);
     expect((thrown as { observedStatus: string }).observedStatus).toBe('cancelled');
   });

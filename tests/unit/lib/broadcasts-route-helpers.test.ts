@@ -93,6 +93,7 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   reason_required: 422,
   stale_version: 409,
   sending_started: 409,
+  dispatch_in_progress: 409,
   member_halted: 409,
   member_not_in_good_standing: 409,
   internal_error: 500,

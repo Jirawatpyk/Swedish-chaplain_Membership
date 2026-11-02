@@ -65,7 +65,7 @@ describe('markDispatchRetryStarted — SQL shape', () => {
     const { tx, sent } = recordingTx();
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await repo.markDispatchRetryStarted(tx, TENANT as never, BROADCAST_ID, AT);
+    await repo.markDispatchRetryStarted(tx, TENANT as never, BROADCAST_ID, AT, null);
 
     // Tenant binding is probed BEFORE the write, as on every tx-taking method.
     expect(sent[0]?.sql).toContain("current_setting('app.current_tenant'");
@@ -90,7 +90,7 @@ describe('markDispatchRetryStarted — SQL shape', () => {
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
     await expect(
-      repo.markDispatchRetryStarted(tx, TENANT as never, BROADCAST_ID, AT),
+      repo.markDispatchRetryStarted(tx, TENANT as never, BROADCAST_ID, AT, null),
     ).resolves.toBeNull();
   });
 
@@ -99,7 +99,7 @@ describe('markDispatchRetryStarted — SQL shape', () => {
     const { tx, sent } = recordingTx([[earlier]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    const stamp = await repo.markDispatchRetryStarted(tx, TENANT as never, BROADCAST_ID, AT);
+    const stamp = await repo.markDispatchRetryStarted(tx, TENANT as never, BROADCAST_ID, AT, null);
 
     expect(theUpdate(sent).sql).toMatch(/\breturning\s+"dispatch_first_failed_at"/i);
     expect(stamp).toEqual(new Date(earlier));
@@ -111,7 +111,7 @@ describe('clearDispatchRetryClock — SQL shape', () => {
     const { tx, sent } = recordingTx();
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
-    await expect(repo.clearDispatchRetryClock(tx, TENANT as never, BROADCAST_ID)).resolves.toBeUndefined();
+    await expect(repo.clearDispatchRetryClock(tx, TENANT as never, BROADCAST_ID, null)).resolves.toBeUndefined();
 
     expect(sent[0]?.sql).toContain("current_setting('app.current_tenant'");
     const update = theUpdate(sent);
@@ -140,7 +140,7 @@ describe('applyTransition — resets the retry anchor', () => {
     // The recorder returns no row, so the adapter reports a lost CAS AFTER the
     // statement was sent — which is all this test reads.
     await expect(
-      repo.applyTransition(tx, TENANT as never, BROADCAST_ID, 'changes_requested', {}, 'approved'),
+      repo.applyTransition(tx, TENANT as never, BROADCAST_ID, 'changes_requested', {}, 'approved', null),
     ).rejects.toBeInstanceOf(BroadcastConcurrentMutationError);
 
     const update = theUpdate(sent);
@@ -155,7 +155,7 @@ describe('applyTransition — resets the retry anchor', () => {
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
     await expect(
-      repo.applyTransition(tx, TENANT as never, BROADCAST_ID, 'approved', { scheduledFor: AT }, 'approved'),
+      repo.applyTransition(tx, TENANT as never, BROADCAST_ID, 'approved', { scheduledFor: AT }, 'approved', null),
     ).rejects.toBeInstanceOf(BroadcastConcurrentMutationError);
 
     expect(setClause(theUpdate(sent).sql)).toMatch(/"dispatch_first_failed_at"\s*=/);
@@ -174,6 +174,7 @@ describe('applyTransition — resets the retry anchor', () => {
         'awaiting_member_approval',
         { memberReminderStage: 1 },
         'awaiting_member_approval',
+        null,
       ),
     ).rejects.toBeInstanceOf(BroadcastConcurrentMutationError);
 

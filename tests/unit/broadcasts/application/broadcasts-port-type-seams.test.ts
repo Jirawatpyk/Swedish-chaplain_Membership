@@ -62,7 +62,7 @@ describe('#400 item 1 — applyTransition accepts only the fields the adapter wr
     // column would have compiled and been dropped by the adapter.
     const loose: Partial<Broadcast> = { scheduledFor: null };
     // @ts-expect-error — a Partial<Broadcast> variable may carry any column; the parameter refuses it
-    const call = () => repo.applyTransition(null, 'test-tenant' as TenantSlug, id, 'approved', loose, 'member_approved');
+    const call = () => repo.applyTransition(null, 'test-tenant' as TenantSlug, id, 'approved', loose, 'member_approved', null);
     // @ts-expect-error — the same through an assignment
     const widened: TransitionFields = loose;
     expect([call, widened]).toHaveLength(2);
@@ -206,7 +206,7 @@ describe('#400 T5 — the approval fake applies only TRANSITION_FIELDS, like the
     const at = new Date('2026-09-25T00:00:00.000Z');
     // Cast past the port type on purpose — the point is what the FAKE does with it.
     const fields = { resendAudienceId: 'aud-1', stageEnteredAt: at } as unknown as TransitionFields;
-    const next = await store.broadcastsRepo.applyTransition(null, 'test-tenant' as TenantSlug, row.broadcastId, 'in_design', fields, 'in_design');
+    const next = await store.broadcastsRepo.applyTransition(null, 'test-tenant' as TenantSlug, row.broadcastId, 'in_design', fields, 'in_design', null);
     expect(next.resendAudienceId).toBeNull();
     expect(next.stageEnteredAt).toEqual(at);
   });

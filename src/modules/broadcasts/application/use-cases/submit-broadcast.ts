@@ -941,6 +941,7 @@ export async function submitBroadcast(
           proposedSendAt: input.scheduledFor,
         },
         'draft', // R4 Types-#5 — race-guard
+        null,
       );
 
       // Atomic audit emit (same tx). FR-022 (F7.1a US7): payload

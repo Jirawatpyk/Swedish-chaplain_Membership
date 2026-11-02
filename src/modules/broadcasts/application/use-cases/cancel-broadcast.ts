@@ -319,6 +319,7 @@ export async function cancelBroadcast(
             cancellationReason: input.cancellationReason,
           },
           existing.status,
+          null,
         );
       } catch (e) {
         // R6 staff-review W-R2 fix — narrow catch to the concurrency

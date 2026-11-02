@@ -48,6 +48,7 @@ import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
   BroadcastNotFoundError,
+  LEASE_HELD_BY_ANOTHER_TICK,
 } from '../ports/broadcasts-repo';
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
@@ -384,6 +385,7 @@ async function failDispatchAndAudit(
         // try/catch + logged as cleanup_failed (acceptable: the cancel
         // succeeded, our terminal-fail intent was correctly skipped).
         'approved',
+        null,
       );
       await deps.audit.emit(tx, {
         tenantId: deps.tenant.slug,
@@ -495,9 +497,15 @@ export async function dispatchScheduledBroadcast(
 > {
   const now = deps.clock.now();
 
+  // Spec 140 s2b review round 1 (CR#5) — NO row-start cutoff on this leg: its
+  // push loop (`addContactsToAudience`, one request per contact) is not in
+  // `W_MAX_MS`, so a cutoff here bounded nothing while it delayed live rows by
+  // a tick. DL9 is the import leg's.
+
   // Step 1: lock row + verify eligibility
   let broadcast: Broadcast | null = null;
   let importRowSkipped = false;
+  let leaseHeld = false;
   try {
     broadcast = await deps.broadcastsRepo.withTx(async (tx) => {
       const lockedStatus = await deps.broadcastsRepo.lockForUpdate(
@@ -529,6 +537,19 @@ export async function dispatchScheduledBroadcast(
         importRowSkipped = true;
         return null;
       }
+      // Spec 140 s2b, cell 23 (premise P3) — an import tick holds a LIVE
+      // dispatch lease on the row: it is working it. A tick-1 row has the
+      // lease and a `resend_audience_id` but no import yet, so the check above
+      // misses it, and this leg would reuse that audience. Skipped under the
+      // same row lock, before any Resend call; a concurrent skip at info.
+      if (row !== null && (await deps.broadcastsRepo.hasLiveDispatchLease(tx, deps.tenant.slug, input.broadcastId))) {
+        logger.info(
+          { tenantId: deps.tenant.slug, broadcastId: input.broadcastId },
+          'broadcasts.dispatch.lease_held',
+        );
+        leaseHeld = true;
+        return null;
+      }
       return row;
     });
   } catch (e) {
@@ -544,6 +565,7 @@ export async function dispatchScheduledBroadcast(
   }
 
   if (importRowSkipped) return err({ kind: 'import_row_skipped' });
+  if (leaseHeld) return err({ kind: 'broadcast_invalid_state_transition', observedStatus: LEASE_HELD_BY_ANOTHER_TICK });
   if (broadcast === null) {
     return err({
       kind: 'broadcast_invalid_state_transition',
@@ -811,7 +833,7 @@ export async function dispatchScheduledBroadcast(
       // clock, so a failure → a two-day hold → the member pays → one blip is
       // not `retry_budget_exhausted`. Own tx, no row lock held (the Step-1 tx
       // committed); a stamped row only, and best-effort — still held on failure.
-      await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.dispatch.retry_clock_clear_failed');
+      await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.dispatch.retry_clock_clear_failed', null);
       return ok({ kind: 'dispatch_held_member_suspended' });
     }
     // The draft the row carries, if any — the probe above said it was never
@@ -1169,6 +1191,7 @@ export async function dispatchScheduledBroadcast(
           deps.tenant.slug,
           input.broadcastId,
           resendAudienceId,
+          null,
         );
       });
     }
@@ -1280,6 +1303,7 @@ export async function dispatchScheduledBroadcast(
         resendBroadcastId,
         resendAudienceId,
         minted: true,
+        lease: null,
         logPrefix: 'broadcasts.dispatch',
       });
       if (persistRefused !== null) return err(persistRefused);
@@ -1553,7 +1577,7 @@ async function advanceToSending(ctx: {
   // best-effort (never throws). It cannot close M1 alone — in a DB fault it
   // fails with that write — which is why the probe's retryable throw is not
   // budgeted either.
-  await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.dispatch.retry_clock_clear_failed');
+  await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.dispatch.retry_clock_clear_failed', null);
   try {
     const sentRow = await deps.broadcastsRepo.withTx(async (tx) => {
       await deps.broadcastsRepo.attachResendIds(
@@ -1562,6 +1586,7 @@ async function advanceToSending(ctx: {
         input.broadcastId,
         resendAudienceId,
         resendBroadcastId,
+        null,
       );
       // G1 closure (verify-fix 2026-05-02) — pass `expectedFromStatus:
       // 'approved'` so the UPDATE serializes against any concurrent
@@ -1595,6 +1620,7 @@ async function advanceToSending(ctx: {
           estimatedRecipientCount: recipientCount,
         },
         'approved',
+        null,
       );
       // E1 closure (verify-fix 2026-05-02) — AS1 audit payload now
       // includes the spec-required `scheduledFor` + `actualSendAt` +
@@ -1894,6 +1920,7 @@ async function applyRetryBudget(
     broadcast,
     now,
     'broadcasts.dispatch.retry_epoch_stamp_failed',
+    null,
   );
   if (epochForBudget === null) {
     // Review L3 — the stamp matched no `approved` row: another writer moved it

@@ -4019,6 +4019,10 @@
           "tooSoon": "Välj en tid minst 5 minuter från nu.",
           "differs": "Det här är inte medlemmens föreslagna tid ({time}). Medlemmen får veta om ändringen.",
           "close": "Stäng",
+          "dispatchInProgress": {
+            "title": "Förbereds för utskick",
+            "description": "Inget har ändrats. Det här utskicket förbereds för att skickas just nu. Försök igen om några minuter – har det skickats då kan sändningstiden inte längre ändras."
+          },
           "confirm": "Bekräfta",
           "confirmCancel": "Avbryt tiden",
           "confirmSendNow": "Skicka nu",

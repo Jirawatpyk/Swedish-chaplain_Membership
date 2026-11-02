@@ -568,7 +568,7 @@ export interface ApprovalStoreState {
 
 /** Every method is a `vi.fn` (so a test can override one arm), plus the live rows. */
 export type FakeApprovalBroadcastsRepo = Mocked<ApprovalBroadcastsRepo> &
-  Mocked<Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'releaseAudienceImport' | 'releaseResendAudience'>> & {
+  Mocked<Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'releaseAudienceImport' | 'releaseResendAudience' | 'hasLiveDispatchLease'>> & {
   readonly rows: Map<string, Broadcast>;
 };
 
@@ -749,7 +749,7 @@ export function makeFakeApprovalStore(
           readonly resendAudienceId: string;
           readonly resendBroadcastId: string | null;
         },
-      ): Promise<boolean> => {
+      ): Promise<'ok' | 'lease_lost' | 'cas_lost'> => {
         const key = keyOf(tenantId as string, broadcastId);
         const row = state.broadcasts.get(key);
         if (
@@ -760,10 +760,10 @@ export function makeFakeApprovalStore(
           (row.resendBroadcastId ?? null) !== expected.resendBroadcastId ||
           row.audienceImportCompletedAt !== null
         ) {
-          return false;
+          return 'cas_lost';
         }
         state.broadcasts.set(key, { ...row, audienceImportId: null, audienceImportSubmittedAt: null, updatedAt: store.now });
-        return true;
+        return 'ok';
       },
     ),
     // The last step, after both deletes — NULL the audience AND the broadcast
@@ -774,7 +774,7 @@ export function makeFakeApprovalStore(
         tenantId: TenantSlug,
         broadcastId: BroadcastId,
         expected: { readonly resendAudienceId: string; readonly resendBroadcastId: string | null },
-      ): Promise<boolean> => {
+      ): Promise<'ok' | 'lease_lost' | 'cas_lost'> => {
         const key = keyOf(tenantId as string, broadcastId);
         const row = state.broadcasts.get(key);
         if (
@@ -784,17 +784,21 @@ export function makeFakeApprovalStore(
           row.audienceImportId !== null ||
           (row.resendBroadcastId ?? null) !== expected.resendBroadcastId
         ) {
-          return false;
+          return 'cas_lost';
         }
         state.broadcasts.set(key, { ...row, resendAudienceId: null, resendBroadcastId: null, updatedAt: store.now });
-        return true;
+        return 'ok';
       },
     ),
+    // Spec 140 s2b review round 4 — confirm-schedule's pre-check under the row
+    // lock: no fake row carries a dispatch lease, so `false` unless a test
+    // overrides it (`mockResolvedValueOnce(true)`).
+    hasLiveDispatchLease: vi.fn(async (_tx: unknown, _tenantId: TenantSlug, _broadcastId: BroadcastId): Promise<boolean> => false),
     // `withTx` is generic on the port and a `vi.fn` cannot carry the type
     // parameter, so it is checked by presence; every other method is checked
     // against the port's signature.
   } satisfies Omit<ApprovalBroadcastsRepo, 'withTx'> &
-    Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'releaseAudienceImport' | 'releaseResendAudience'> &
+    Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'releaseAudienceImport' | 'releaseResendAudience' | 'hasLiveDispatchLease'> &
     Record<'withTx', unknown> & { rows: Map<string, Broadcast> };
 
   // T083 — the member's own E-Blasts, for the two DSAR reads.

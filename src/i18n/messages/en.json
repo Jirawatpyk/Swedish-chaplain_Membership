@@ -4019,6 +4019,10 @@
           "tooSoon": "Choose a time at least 5 minutes from now.",
           "differs": "This is not the member's proposed time ({time}). The member will be told about the change.",
           "close": "Close",
+          "dispatchInProgress": {
+            "title": "Being prepared for sending",
+            "description": "Nothing was changed. This E-Blast is being prepared for sending right now. Try again in a few minutes — if it has been sent by then, its time can no longer be changed."
+          },
           "confirm": "Confirm",
           "confirmCancel": "Cancel the time",
           "confirmSendNow": "Send now",

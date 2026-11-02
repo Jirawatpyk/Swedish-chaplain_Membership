@@ -116,6 +116,10 @@ export const maxDuration = 300;
 export const GET = POST;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  // Spec 140 s2b (DL9) — the invocation's start, for the row-start cutoff
+  // (`ROW_START_CUTOFF_MS`): no row starts so late that its longest path could
+  // outrun `maxDuration`.
+  const tickBudget = { tickStartedAt: Date.now() };
   // Verify-fix R3 (Code-M2, 2026-05-02): constant-time Bearer check
   // via shared `verifyCronBearer` helper (matches F4 outbox + F5
   // sweep-stale-pending-refunds). Avoids timing side-channel.
@@ -185,6 +189,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // (audience_import_submitted_at IS NULL)`, so either one alone is enough
   // today; the redundant one costs nothing and is the path `/verify` drove
   // (review round 2, CR#4).
+  //
+  // Spec 140 s2b (row 13, A7) — and on EVERY flag state the scan leaves out a
+  // row whose dispatch lease is live, written inline below (not in this
+  // fragment, which exists only flag OFF): a row an import tick is working
+  // must not take a `LIMIT` slot, and a dead holder's row is picked up again
+  // once its lease expires (`LEASE_TTL_MS` after the claim, about two ticks).
   const importRowsFilter = importEnabled
     ? sql``
     : sql`AND audience_import_id IS NULL AND audience_import_submitted_at IS NULL`;
@@ -198,6 +208,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           AND status = 'approved'
           AND scheduled_for IS NOT NULL
           AND scheduled_for <= now()
+          AND (dispatch_lease_token IS NULL OR dispatch_lease_expires_at < now())
           ${importRowsFilter}
         ORDER BY scheduled_for ASC
         LIMIT ${MAX_PER_TICK}
@@ -243,6 +254,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      */
     held: 0,
     /**
+     * Spec 140 s2b (DL9) — import rows NOT started because the invocation was
+     * past `ROW_START_CUTOFF_MS`: the first one deferred and every row after it
+     * (the loop stops there, review round 1 CR#7). Nothing was locked, called or
+     * written; they stay `approved`, unleased, for the next tick. Neither a
+     * success nor a failure.
+     */
+    deferred_past_cutoff: 0,
+    /**
      * Import leg — the tick-1 Resend audience was gone (`404 not_found`), the
      * row's columns were released and the next tick runs a fresh tick 1.
      * Neither a success nor a failure: nothing sent, nothing terminal.
@@ -266,6 +285,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      * (`metrics.ts:2544`), which draws the same line for the same reason.
      */
     concurrent_skip: 0,
+    /**
+     * Spec 140 s2b review round 1 (CR#4) — an import tick whose OWN dispatch
+     * lease would have ended inside the headroom of its next irreversible call
+     * (`CALL_HEADROOM_MS`, or `IMPORT_HEADROOM_MS` before the import POST): no
+     * call was made and the row resumes next tick. A budget breach, not a race
+     * — so not `concurrent_skip`; WARN + `broadcasts_dispatch_lease_expiring_total`.
+     */
+    lease_expiring: 0,
     /**
      * Spec 140 s2a (DL7; review round 1, code-review #3) — the legacy leg's
      * backstop met a row holding import columns and left it alone. Not a race
@@ -339,7 +366,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // flag-OFF path. (`importEnabled` is read once, above the due scan.)
     const importDeps = importEnabled
       ? {
-          ...(await makeBuildAudienceTickDeps(tenant.slug, deps.membersBridge)),
+          ...(await makeBuildAudienceTickDeps(tenant.slug, deps.membersBridge, tickBudget)),
           brandChrome: brandChromePort,
           // Share the tick memo: several broadcasts on one segment resolve it
           // once, exactly as the single-tick path does.
@@ -347,8 +374,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
       : null;
 
-    for (const row of eligible) {
-      summary.processed++;
+    for (const [rowIndex, row] of eligible.entries()) {
+      // Review rounds 2–3 (CR#5, CR#8) — `processed` counts every row reached
+      // except a deferred one, once, in the `finally` below (every `continue`,
+      // the `break` and the catch pass through it): processed +
+      // deferred_past_cutoff = the rows reached.
+      let deferred = false;
       try {
         if (importDeps !== null) {
           const built = await buildAudienceTick(importDeps, {
@@ -359,6 +390,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             // `import_pending` and a HOLD are NOT successes: nothing has been
             // delivered, and folding them into `succeeded` would have the
             // dashboard claim sends that have not happened.
+            // Spec 140 s2b (DL9; review round 1 CR#7) — past the cutoff no
+            // later row can start either: stop here and count every row left.
+            if (built.value.kind === 'deferred_past_cutoff') {
+              deferred = true;
+              summary.deferred_past_cutoff += eligible.length - rowIndex;
+              break;
+            }
             if (built.value.kind === 'sent') summary.succeeded++;
             else if (built.value.kind === 'import_submitted') summary.import_submitted++;
             else if (built.value.kind === 'dispatch_held_member_suspended') summary.held++;
@@ -427,6 +465,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               // sent, so re-polling produces the same answer. The use case has
               // already moved the row to `failed_to_dispatch` and audited it.
               summary.permanent_failed++;
+              break;
+            case 'lease_expiring':
+              summary.lease_expiring++;
+              broadcastsMetrics.dispatchLeaseExpiring(tenant.slug);
+              logger.warn(
+                { tenantId: tenant.slug, broadcastId: row.broadcast_id, step: built.error.step },
+                'cron.broadcasts.dispatch.lease_expiring',
+              );
               break;
             case 'broadcast_invalid_state_transition':
             case 'broadcast_not_found':
@@ -623,6 +669,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           },
           'cron.broadcasts.dispatch.uncaught_error',
         );
+      } finally {
+        if (!deferred) summary.processed++;
       }
     }
 

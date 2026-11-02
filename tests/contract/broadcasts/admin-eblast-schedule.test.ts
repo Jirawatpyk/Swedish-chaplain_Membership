@@ -17,6 +17,7 @@
  * through the route over the in-memory approval store.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { makeApprovalBroadcast, makeApprovalVersion, FAKE_TX } from '../../helpers/eblast-approval-fakes';
 import {
   HARNESS_MEMBER_ID,
@@ -253,6 +254,20 @@ describe('T060 — from approved: change the time, or cancel it', () => {
       expect(rowOf()).toEqual(handedOver);
       expect(harness.store.outbox.rows()).toHaveLength(0);
     }
+  });
+
+  // Spec 140 s2b review round 3 (code-review #2, #3) — a re-time refused
+  // because a dispatch tick holds the row is its own 409, not sending_started.
+  it('a re-time refused for a live dispatch lease → 409 dispatch_in_progress, nothing changes', async () => {
+    resetVersionHarness({ broadcasts: [SCHEDULED_ALREADY], versions: [V0, APPROVED_VERSION] });
+    harness.store.broadcastsRepo.applyTransition.mockRejectedValueOnce(
+      new BroadcastConcurrentMutationError('test-tenant' as never, SCHEDULED_ALREADY.broadcastId, 'lease_held' as never, 'approved'),
+    );
+    const res = await schedule({ mode: 'schedule', scheduledFor: inMinutes(60).toISOString() });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe('dispatch_in_progress');
+    expect(rowOf()).toEqual(SCHEDULED_ALREADY);
+    expect(harness.store.outbox.rows()).toHaveLength(0);
   });
 
   it.each([

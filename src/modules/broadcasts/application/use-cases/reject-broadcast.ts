@@ -168,6 +168,7 @@ export async function rejectBroadcast(
             rejectionReason: input.rejectionReason,
           },
           lockedStatus, // R4 Types-#5 — race-guard against concurrent action
+          null,
         );
       } catch (e) {
         // S1-P1-21: narrow to the concurrency sentinel only (mirrors

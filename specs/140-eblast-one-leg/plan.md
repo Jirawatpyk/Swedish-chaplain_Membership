@@ -85,8 +85,9 @@ Also: the new ceiling env, the Segments names, `docs/decisions.md` D-042, go-liv
 |---|---|---|---|---|---|
 | 1 | Erasure deletes reachable drafts; refusals delete their draft | ED1–ED5 | pdpa-gdpr, security, reliability, spec-compliance | `140-eblast-one-leg-s1` | #713 · done |
 | 2a | Bounded Resend calls (one signal spans every attempt, C = 10 s); no in-process retry on creates; the legacy leg skips import rows; `propagate` bounded | DL5a, DL7, DL8, carry R3 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2` | #719 · done |
-| 2b | Lease + fencing token + pre-call check + budget; migration 0322; orphan-id table + drain; `failTerminally` choke point; the live-lease legacy skip | DL1–DL4, DL5b, DL6, carries R4 + R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2b` | — · open |
-| 3 | Error classes + import-leg table fixes | DT1–DT4 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
+| 2b | Lease + fencing token + pre-call check + row-start cutoff; migration 0322 (lease columns + trigger list); the live-lease legacy skip | DL1–DL4, DL9, cell 23, carry R4 | drizzle-migration, security, reliability, spec-compliance | `140-eblast-one-leg-s2b` | #723 · done |
+| 2c | Orphan-id table (migration 0323) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; an audience whose reclaim was undecided (`audience_leaked`, s2b round 2) gets an orphan row and is drained; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | — · open |
+| 3 | Error classes + import-leg table fixes; `listAudiences` per-invocation time budget | DT1–DT5 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
 | 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | — · open |
 
 ## Test plan
@@ -213,19 +214,19 @@ The full state table and the s2b plan follow.
    | `P` = `REPROBE_PAUSE_MS` | 3 000 | existing | code |
    | `N` Resend calls, longest path | 9 | probe, re-probe, `getContactImport`, `getAudienceContactCount`, `createBroadcast`, `sendBroadcast`, refused-send probe, then `failTerminally`'s reclaim: `deleteBroadcastOnce` + `retrieveBroadcastOnce` | counted from the code |
    | `k` lock waits per row | 2 | the claim, plus one pre-call check (one cascade per row per tick) | ASSUMED |
-   | `D` DB + resolve, one row | 15 000 | ~15 short statements + one `resolveRecipients` at the 900 ceiling | **ASSUMED**: build step measures p99 on dev (seeded 900) and replaces it |
-   | `W_max` | 154 000 | k·E + N·C + P + D = 46 + 90 + 3 + 15 | derived |
+   | `D` DB + resolve, one row | 15 000 | ~15 short statements + one `resolveRecipients` at the 900 ceiling | a MEASURED single run plus an ESTIMATE (s2b build notes, A10) |
+   | `W_max` | 164 000 | k·L + N·C + P + D = 56 + 90 + 3 + 15, with L = `CHECK_LOCK_TIMEOUT_MS` 28 s (s2b review round 2; was k·E = 46, 154 000) | derived |
    | (s2a round 2) | — | `createContactImport` now has its own budget `IMPORT_CALL_TIMEOUT_MS` = 30 000, not C. **s2b recomputes W_max at build time**: only the import-POST term takes 30 s (not N × 30 s), and the pre-call check before `createContactImport` demands ≥ 30 s + M of lease left, not C + M (review round 4) | note |
    | `M` = `LEASE_MARGIN_MS` | 15 000 | ≥ C (design rule) + 5 s for the post-call CAS | derived |
    | pre-call headroom | 25 000 | C + M | derived |
-   | `LEASE_TTL_MS` | 330 000 | > `maxDuration` 300 s (second line) and ≥ W_max + M = 169 s | derived |
-   | row-start cutoff | 131 000 | maxDuration − W_max − M = 300 − 154 − 15 | derived |
+   | `LEASE_TTL_MS` | 330 000 | > `maxDuration` 300 s (second line) and ≥ W_max + M = 179 s (164 + 15; review round 3, spec L2) | derived |
+   | row-start cutoff | 121 000 | maxDuration − W_max − M = 300 − 164 − 15 (s2b review round 2; was 131 000) | derived |
 
    - The route passes `{ tickStartedAt, maxDurationMs }` into deps and starts no row after the cutoff (the rest stay `approved`, unleased, for the next tick). `MAX_PER_TICK` stays 50.
    - A dead holder: claimed at t, expires t + 330 s, so the t + 300 tick skips the row and the t + 600 tick reclaims it: about 2 ticks, documented in `broadcast-audience-build.md`.
    - D-040's 23 s figure does not change (C = the `*Once` bound).
 
-6. **Bounded calls** (`resend-broadcasts-gateway.ts`):
+6. **Bounded calls** (`resend-broadcasts-gateway.ts`). **Done in s2a (#719).** Superseded detail: creates retry a 429 only, `createContactImport` has its own 30 s budget, and the legacy leg's `createBroadcast` retries (the maintainer's exception, review round 2).
    - **One signal per call**, `AbortSignal.timeout(C)`, spanning every attempt. `withRetry` (`:227-271`, 6 attempts + 31 s backoff) backs off only while the remaining budget exceeds the next backoff + 1 s. A per-attempt timeout would make a retried call 6C + 31 s and break "call timeout ≤ margin".
    - SDK calls pass `{ signal }` through `RequestOptions` (resend 6.35: `post` / `get` / `delete` spread `options` into `fetch`, `index.mjs:1764-1819`). An aborted SDK call comes back as `application_error`, `statusCode: null` (`index.mjs` outer catch), which `httpStatusOf` reads as retryable `network`. An abort while reading the body rethrows `signal.reason` (`index.mjs:1707`): the adapter maps a `TimeoutError` / `AbortError` to retryable `timeout`.
    - `importFetch` drops from 30 s (`:1091`) to C.
@@ -268,7 +269,7 @@ The full state table and the s2b plan follow.
 
     The two refuse arms already delete first and pass `draftSettled`, so nothing is deleted twice. `enqueueDispatchFailureNotification` (`:2541`) still runs only after the CAS commits.
 
-11. **The legacy leg skips import rows** (decision 8). In `dispatchScheduledBroadcast` step 1 (`:494-511`), inside the lock tx: a row with `audience_import_id` or `audience_import_submitted_at` set → `broadcasts.dispatch.import_row_skipped`, return `broadcast_invalid_state_transition`, no Resend call. **Extension (P3):** a live lease token is skipped too (`lease_held`).
+11. **The legacy leg skips import rows** (decision 8). **Done in s2a (#719)**, at the scan and in the use case; the live-lease extension (cell 23) is slice 2b. In `dispatchScheduledBroadcast` step 1 (`:494-511`), inside the lock tx: a row with `audience_import_id` or `audience_import_submitted_at` set → `broadcasts.dispatch.import_row_skipped`, return `broadcast_invalid_state_transition`, no Resend call. **Extension (P3):** a live lease token is skipped too (`lease_held`).
 
 12. **Docs** (in the slice's diff):
     - RoPA 8d: the residual narrows to `create_unconfirmed` plus the DB-down and crash-between-mint-and-persist cases, with a Review-by date; also the `:255` item the design names.
@@ -279,7 +280,7 @@ The full state table and the s2b plan follow.
 
 #### State table: slice 2 (writers × row status × lease × Resend answer)
 
-Lease: none / live-mine / live-other / expired. "Holder" = the tick that claimed. 29 cells; identical cells are collapsed.
+Lease: none / live-mine / live-other / expired. "Holder" = the tick that claimed. 35 cells (rows 30–35 added by review rounds 1–2); identical cells are collapsed.
 
 | # | Writer | Status | Lease | Resend / other | Decision | Test (file · name) | Split |
 |---|---|---|---|---|---|---|---|
@@ -288,7 +289,7 @@ Lease: none / live-mine / live-other / expired. "Holder" = the tick that claimed
 | 3 | tick A / B (overlap) | approved | live-other | — | `lease_held`, 0 gateway calls, 0 writes | `import-leg-lease-pair.test.ts` · DL1 both orders (new); unit `build-audience-tick-lease.test.ts` · "a held lease skips with no gateway call" (new) | a |
 | 4 | tick A | not approved | any | — | `wrong_status` skip | `dispatch-lease-repo.test.ts` · "claim refuses a non-approved row" (new) | a |
 | 5 | holder | approved | live-mine, headroom ≥ C+M | — | irreversible call made | `build-audience-tick-lease.test.ts` · "pre-call check passes → call made" (new) | a |
-| 6 | holder | approved | live-mine, headroom < C+M | — | no call, `lease_expiring`, release | same · "within C+M of expiry no call is made" (new) + repo "check refuses inside the headroom" | a |
+| 6 | holder | approved | live-mine, headroom < C+M (I+M before the import POST) | — | no call; the `lease_expiring` kind (WARN, its own cron bucket and `broadcasts_dispatch_lease_expiring_total`, never a concurrent skip; review round 1 CR#4); release. Inside a restart (the hold, the self-heal) the same stop is the tick's answer (round 2, CR#3) | same · "row 6 — within C + M of expiry no call is made: the lease_expiring kind, WARN, and the lease is still released"; "the hold arm passes the restart’s expiring lease through"; repo "held when the token is mine … expiring inside it" | a |
 | 7 | stale holder (lease expired + retaken) | any | live-other | — | every pre-call check false; every CAS 0 rows; no column written | `dispatch-lease-repo.test.ts` · it.each "stale token → 0 rows" over the 12 CAS + the check (new) | a |
 | 8 | holder, after a mint | approved | live-other at attach | — | concurrent skip; reclaim; orphan row if the reclaim fails | `build-audience-tick-lease.test.ts` · "a lost-token attach is a concurrent skip and the mint is reclaimed" (new) | a |
 | 9 | holder → `failTerminally` | approved | lost | — | no terminal write, no email, concurrent skip | same · "a lost lease never writes failed_to_dispatch" (new) | a |
@@ -300,10 +301,10 @@ Lease: none / live-mine / live-other / expired. "Holder" = the tick that claimed
 | 15 | holder → `createBroadcast` | approved | live-mine | timeout / retryable | one attempt; orphan `create_unconfirmed` (id NULL); FR-021 path | gateway `resend-gateway-bounded-calls.test.ts` · "createBroadcast is not retried" (new) **(b)** + `build-audience-tick-lease.test.ts` · "a retryable create writes create_unconfirmed" **(a)** | **a+b** |
 | 16 | erasure (D-040) | approved | none / live-other | holds the row lock, then cancels | claim waits ≤ 23 s, then `wrong_status` skip | `dispatch-lease-erasure-order.test.ts` · DL3 (new, `chamber_app`) | a |
 | 17 | erasure | approved | live-mine (A mid-tick) | cancels (`applyTransition` clears the lease) | A's next check waits, sees no token → no call; A's CAS → 0 rows | same · "a cascade cancel mid-tick ends the holder" (new) | a |
-| 18 | erasure | approved | live-mine | undecided, no write | lease untouched; A continues after the lock | `erasure-vs-dispatch-begun.test.ts` (existing, re-run) | a |
+| 18 | erasure | approved | live-mine | undecided, no write | lease untouched; A's check waits at most `CHECK_LOCK_TIMEOUT_MS` (28 s = E + 5 s) behind the lock, then continues; past it, 55P03 → `lease_check_failed` (no call, retried next tick; review round 1, reliability L2) | `erasure-vs-dispatch-begun.test.ts` (existing, re-run); repo "a check behind a lock held longer than its lock_timeout fails (55P03), so the tick answers lease_check_failed" | a |
 | 19 | staff exit (cancel, schedule-cancel, withdraw, new version) | approved | any; `hasDispatchBegun` true | — | refused `sending_started` (existing) | existing `eblast-approved-exit-vs-dispatch.test.ts` | — |
 | 20 | staff exit | approved | live-mine; `hasDispatchBegun` false (tick-1 window) | — | exit allowed; lease cleared; A stops at its next check / CAS; a left audience is torn down by cleanup (terminal) or by the next tick 1 (`stale_audience`) | `dispatch-lease-repo.test.ts` · "a non-holder status change clears the lease" (new) | a |
-| 21 | staff re-time (approved → approved) | approved | live-mine | — | lease kept (no status change) | same · "a same-status write keeps the lease" (new) | a |
+| 21 | staff re-time (approved → approved) | approved | live-other (a tick holds it) / expired | — | **refused** while the lease is live: confirm-schedule asks `hasLiveDispatchLease` under its row lock and answers 409 `dispatch_in_progress` before any write (round 4); the repo backstop's 0 rows → `BroadcastConcurrentMutationError` with `observedStatus: 'lease_held'` (one probe, no clock read; round 3; round 2 answered `sending_started`), nothing written; the dialog keeps the picked time with an inline warning (round 4); status drift keeps `sending_started`; allowed once it expired. Never clears the lease (round 2, reliability MED-1; supersedes round 1's "a re-time clears the lease"). A same-status write without `scheduledFor` keeps the lease | repo · "a same-status re-time is refused while a live lease is held, and allowed once it expired", "row 21 — a same-status write without scheduledFor keeps the lease"; repo · "a refused re-time reports observedStatus lease_held; status drift keeps the status it expected"; confirm-schedule unit · "lease_held maps to dispatch_in_progress (409), nothing written, no email", "status drift at the re-time keeps its sending_started mapping"; schedule route contract · "a re-time refused for a live dispatch lease → 409 dispatch_in_progress, nothing changes" | a |
 | 22 | legacy leg | approved | any | import columns set | `import_row_skipped`, no call | `dispatch-scheduled-broadcast.test.ts` · DL7 (new case) | b |
 | 23 | legacy leg | approved | live-other; no import columns | — | `lease_held` skip (P3 extension) | same · "legacy skips a live lease" (new) | a (needs 0322) |
 | 24 | legacy leg | approved | none / expired; no import columns | — | unchanged | existing suite | b |
@@ -312,6 +313,12 @@ Lease: none / live-mine / live-other / expired. "Holder" = the tick that claimed
 | 27 | drain | — | — | 403 + canceled / failed → retained; + queued / sent → handed | settled | same · it.each (new) | a |
 | 28 | drain | — | — | retryable / other / 403 + draft | left for next tick | same · it.each (new) | a |
 | 29 | drain | — | — | id NULL (`create_unconfirmed`) | never drained; counted in the gauge | same · "unconfirmed rows are counted, not drained" (new) | a |
+| 30 | holder, after `/send` (ids attach, `sending` transition) | `sending` / `approved` | lost | — | not critical, counted `{step}` (review round 1, CR#1): `sending` (a sibling flipped it) INFO `lease_lost_after_send`; `approved` WARN, "unexpected" — no live holder can be taken over (round 3, reliability LOW-B) | `build-audience-tick-lease.test.ts` · "A4 — a lease lost after /send (the ids attach) on an approved row logs lease_lost_after_send at WARN…", "A4 — the same for a lease lost at the sending transition" | a |
+| 31 | same, plus the completion stamp | any other (a cancel after the mail went out; at the stamp only `failed_to_dispatch`, after `reconcile-stuck-sending` > 24 h) | lost | — | critical: `sent_but_transition_lost` (ids attach, transition) / `completion_stamp_failed` (stamp), counted `{step}`; an `approved` row at the stamp is a dead arm, pinned at WARN | same · "a lease cleared by a cancel after /send still logs sent_but_transition_lost (%s)", "A4 — a lease lost at the completion stamp on a failed_to_dispatch row logs completion_stamp_failed and counts it…", "dead-arm pin — a lease lost at the completion stamp on an approved row is the WARN line, counted" | a |
+| 32 | completion stamp (no status CAS) | `SENDING_STARTED_BROADCAST_STATUSES` | none (a webhook cleared it) | — | the stamp lands: fenced `token OR status IN SENDING_STARTED` (round 1 CR#2; round 2 spec L-e) | repo · "a webhook %s-transition before the stamp still lets the stamp land (no lease on the row)" × sending, sent, partially_sent, partial_delivery_accepted | a |
+| 33 | holder, end of tick | any | live-mine | the row lock is held past `CHECK_LOCK_TIMEOUT_MS` | the release fails 55P03 → `lease_release_failed` (WARN); the lease expires on its own (round 2, reliability LOW-1) | repo · "a release behind a held lock fails as lease_release_failed within its lock_timeout" | a |
+| 34 | holder, tick 1 | approved | lost at `attachAudienceId`, or any other attach failure | the audience was just created | a lost lease: deleted with NO pre-call check (`audience_reclaimed`). Any other failure: the row is read back (round 3) — the id on it keeps the audience (`attach_ack_lost_audience_kept`; the next tick's `stale_audience` self-heal replaces it, round 4), absent deletes it, a failed read-back keeps it with `audience_leaked`. A DB fault (not a refusal) then answers `dispatch.server_error`, phase `attach_audience` (round 4). An undecided delete is the critical `audience_leaked` with the id (round 2, code-review #1) | `build-audience-tick-lease.test.ts` · "a lost lease at attachAudienceId deletes the audience it just created (no lease check first)", "an undecided delete of that audience logs audience_leaked at ERROR with the id" | a |
+| 35 | holder, the hold or the self-heal restart | approved | lost mid-restart | — | a lease check that reads lost, or a release CAS whose token was cleared (round 4, the repo probes the token) → `lease_lost`; any other claim / release CAS miss → `cas_lost`, answered `unknown_or_already_processed` (round 3, CR#5). Either way not a hold: nothing more deleted, the hold not recorded and the retry clock not reset (round 3, CR#4) | same · "the hold arm passes the restart’s lost lease through", "a self-heal restart that loses the lease answers lease_lost…"; `build-audience-tick-failure-paths.test.ts` · the three lost-CAS cases | a |
 | — | `reconcile-stuck-sending` | sending > 24 h (`route.ts:110`) | — | — | **disjoint**: no live lease outlives 330 s; no cell | — | — |
 | — | retention sweep | terminal only | — | — | **disjoint**; it hard-deletes rows, hence no FK on the orphan table | — | — |
 
@@ -342,9 +349,15 @@ RED first: every row below except the two marked *already green* (they pin exist
 | CAS 11 `markAudienceImportCompleted` | same pair | |
 | CAS 12 the no-import restart's deletes | tick unit · "the stale-audience restart checks the lease before each delete" | unit |
 | claim / release | rows 1, 2, 4, 14 above | integration |
-| plain `applyTransition` clears the lease | `dispatch-lease-repo.test.ts` · rows 20, 21 | integration |
+| plain `applyTransition` clears the lease | `dispatch-lease-repo.test.ts` · row 20 (a same-status write keeps it: row 21) | integration |
+| the re-time refusal (row 21) | `dispatch-lease-repo.test.ts` · "a same-status re-time is refused while a live lease is held, and allowed once it expired", "a refused re-time reports observedStatus lease_held…"; `confirm-schedule.test.ts` · "lease_held maps to dispatch_in_progress (409)…"; `admin-eblast-schedule.test.ts` · "a re-time refused for a live dispatch lease → 409 dispatch_in_progress…" | integration + unit + contract |
+| lost after send, by row status (rows 30, 31) | `build-audience-tick-lease.test.ts` · the A4 cases | unit |
+| the stamp fence (row 32) | `dispatch-lease-repo.test.ts` · "the completion stamp after /send" it.each | integration |
+| the check and release lock timeout (rows 18, 33) | `dispatch-lease-repo.test.ts` · the two 55P03 cases | integration |
+| the audience reclaim (row 34) | `build-audience-tick-lease.test.ts` · the `attachAudienceId` cases (round 2: a lost lease; round 3: a DB fault or drift with the read-back showing no id / the id / failing) | unit |
+| a deferred row is not processed | `cron-dispatch-scheduled.contract` · "DL9 — one row runs and the rest defer: processed 1, deferred_past_cutoff 2" | contract |
 | scan filter + cutoff | `cron-dispatch-scheduled.contract` · "the scan excludes a live lease" · "no row starts after maxDuration − W_max − M" | contract |
-| TTL / budget pin | `tests/unit/broadcasts/application/dispatch-lease-budget.test.ts` · "TTL > maxDuration", "TTL ≥ W_max + M", "cutoff = 300 − 154 − 15 s", "C ≤ M"; positive control: a TTL of 300 s and a cutoff of maxDuration − M each fail | unit |
+| TTL / budget pin | `tests/unit/broadcasts/application/dispatch-lease-budget.test.ts` · "TTL > maxDuration", "TTL ≥ W_max + M", "C ≤ M"; since review round 2 the cutoff (300 − 164 − 15 s) is pinned by "the literal constants equal their derivation: cutoff = maxDuration − W_max − M, headroom = C + M and I + M" and the lock waits by "review round 2 — lock waits are charged at CHECK_LOCK_TIMEOUT_MS: tick 1 = k·L + D + 5·C + I + P and tick 2 = k·L + N·C + P + D; W_max is the larger (tick 2 today)"; positive control: a TTL of 300 s and a cutoff of maxDuration − M each fail | unit |
 | migration 0322 | `pnpm db:migrate` on dev + `db:verify`; `eblast-immutability-trigger.test.ts` · "the redaction GUC cannot move the lease columns" (new); the pair CHECK and the orphan CHECKs (`eblast-0308-check-constraints.test.ts` pattern) | integration |
 | positive controls | SQL-shape gate fails when its parse yields 0 CAS (`;\r?\n`, rules.md); mutation: drop the token from one CAS → its stale-token case goes red | unit |
 | two-tick happy path *already green* | `audience-import-two-tick.test.ts` (re-run with the lease) | integration |
@@ -414,6 +427,145 @@ Split. The cells fall into two lifecycles that share one cell:
   - `cleanup-audiences` declares no `maxDuration`.
   - The plan's `deleted_at` becomes `settled_at` + `outcome`.
   - The cleanup log line writes `cause: e.message` (`cleanup-orphaned-audiences.ts:147`), against the log-hygiene rule. It predates s2, but s2 touches the file.
+
+### Slice 2b — build plan (agreed 1 Nov 2026; the maintainer approved the 2b / 2c split)
+
+Drafted from the code at `0363936f2` and read by `chamber-os-architect`; its findings are marked (A1)–(A10). It supersedes the design above where they differ (A2 reclaim exemption, A3 lost-signals per writer, A4 lost-after-send, A5 two-path W_max, A9 no `applyTransitionUnderLease`).
+
+#### Split: 2b and 2c (approving this plan approves the split)
+s2a was 2 cells and still reached the review cap. The remaining 25 cells split along the dependency. The architect confirmed the cut (A-a): no cell in 2b needs the orphan table, and 2c needs only the token and the pre-call check from 2b.
+
+| Slice | Covers | Migration | Cells |
+|---|---|---|---|
+| **2b — lease** | lease columns, plus the trigger GUC list; claim, release and the pre-call check (`clock_timestamp()`); the token in every row writer; `applyTransition` clears the lease on any status change; the row-start cutoff and the TTL; the scan excludes a live lease; the legacy leg skips a live lease (cell 23); a lost lease is a concurrent skip; carry **R4** | 0322 | 1–9, 13, 14, 16–18, 20, 21, 23 |
+| **2c — orphan ids** | `broadcast_orphaned_resend_ids` (RLS + FORCE); the eight writers, including `create_unconfirmed` with a NULL id (a 5xx is included, matching RoPA 8d: "a 5xx, a network failure, or our own timeout"); the drain in `cleanup-audiences` (`maxDuration` 300, stops at 240 s); the `failTerminally` reclaim choke point; the unconfirmed gauge; carry **R1 #5**; **#699 closes** | 0323 | 10–12, 15 (DL5b), 25–29 |
+
+- In 2b, cell 8 keeps today's critical `minted_broadcast_leaked` log (`_reclaim-minted-broadcast.ts:66`); 2c replaces it with an orphan row.
+- DL5b and DL6 move to 2c.
+
+#### First docs commit (before any code)
+1. **plan.md Slices table:** rows 2b and 2c. Approach items 6 and 11 are marked **done in s2a (#719)**. Item 6's "never retried … both legs" now points to the legacy exception.
+2. **Carry homes (D-043; A1).** s3 has no row for `listAudiences` yet, so this commit adds **DT5** to s3: "`listAudiences` gets a per-invocation time budget" (`reclaim-orphaned-audiences.ts:169`). DL8 (`spec.md:121`) then names three homes:
+   - the import leg → 2b, via the cutoff and the W_max pin;
+   - `addContactsToAudience` → s4. That is a deletion of a leg that is still live in prod, so it is recorded as a residual moved to s4, not as a closure;
+   - `listAudiences` → s3 DT5.
+3. **Constants (A5).** The budget test computes both longest paths from the exported constants and asserts that W_max is the larger one:
+   - tick 2 = k·E + N·C + P + D = 154 s;
+   - tick 1 = k·E + D + 5C + I + P = 144 s, where I = `IMPORT_CALL_TIMEOUT_MS` (ASSUMED).
+   - *(Superseded by s2b review round 2: each lock wait is charged at `CHECK_LOCK_TIMEOUT_MS` L = 28 s, not E, so tick 2 = k·L + N·C + P + D = 164 s, tick 1 = k·L + D + 5C + I + P = 154 s, W_max 164 s, cutoff 121 s.)*
+
+   It also asserts:
+   - TTL > maxDuration;
+   - TTL ≥ W_max + M;
+   - cutoff = maxDuration − W_max − M > 0;
+   - C ≤ M;
+   - (time spent before the import POST) + I + M ≤ TTL. This replaces "headroom ≥ 30 s + M", which is true by definition.
+
+   The pre-call headroom is C + M before every call, and I + M before `createContactImport`. Positive controls: a TTL of 300 s fails; an I that makes tick 1 the longest path changes W_max.
+4. **D (A10).** No seeder exists. A throwaway scratch script, never committed:
+   - seeds 900 members in a tenant whose prefix `scripts/lib/leaked-test-tenants.ts` already sweeps;
+   - times `resolveRecipients` 20 times, and the tick's ~15 statements;
+   - then deletes its tenant.
+
+   The p99 is labelled **MEASURED (dev, workstation, date)**, because a workstation is not the sin1 → Neon path. If the p99 is ≤ 15 s, D stays at 15 s with that label. *(Superseded at build: no seeder was written; D is labelled "a MEASURED single run plus an ESTIMATE", s2b build notes.)*
+5. **Verify command (A6),** see below.
+
+#### Build (2b)
+- **Branch** `140-eblast-one-leg-s2b` from `origin/main` `0363936f2`, in the existing f142 worktree (a real install, with `.husky/_`).
+- **Migration 0322** (`new-migration` skill):
+  - The journal `when` must be above 1798545400000 (0321's). No branch claims 0322 (Explore).
+  - `lease_token uuid NULL` and `lease_expires_at timestamptz NULL`, with a both-or-neither CHECK. A catalogue-only ADD COLUMN.
+  - The trigger is re-created from 0311's `CREATE OR REPLACE` (`0311:83`, the newest), checked against the live `pg_get_functiondef` on dev. The two columns go into the GUC-arm list (`:100-157`), as 0299, 0308 and 0311 did. Under the GUC, status cannot change, so a cancel's lease clear is not blocked (A-b).
+  - `SET LOCAL lock_timeout '5s'`.
+  - `pnpm db:migrate` on dev and `db:verify`, before the migration commit.
+- **Repo** (`drizzle-broadcasts-repo.ts`):
+  - **New methods:** `claimDispatchLease`, `releaseDispatchLease`, `checkDispatchLease` (`SELECT … FOR UPDATE`). Each is tenant-fenced in `runInTenant` and calls `assertTenantBoundTx` first.
+  - **No new `applyTransitionUnderLease` (A9).** `applyTransition` (`:934`, the only status writer) takes a **required** `lease: LeaseToken | null`. With a token, the token goes in the WHERE and the columns stay for the release. With `null`, a status change clears both columns, next to the `dispatchFirstFailedAt` reset at `:978-980`.
+  - **The token goes into each row writer, and each reports a lost lease its own way (A3):**
+
+    | Writer | On a lost token |
+    |---|---|
+    | `attachAudienceId` :1070, `attachAudienceImport` :1191, `attachBroadcastId` :1146, `attachResendIds` :1008, `applyTransition` :934 | throw `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'` |
+    | `markDispatchRetryStarted` :1275 | return `null`; `_dispatch-retry-epoch.ts:89-99` must not log a stamp failure |
+    | `releaseAudienceImport` :1341, `releaseResendAudience` :1382 | the existing `false` |
+    | `clearDispatchRetryClock` :1307 | 0 rows (not an error) |
+    | `markAudienceImportCompleted` :1442 | its 0-row probe (`:1472`) learns `lease_lost`. It has no status CAS, so the token is its only fence |
+
+- **Use cases:**
+  - **`build-audience-tick.ts`:**
+    - Claim in the step-1 tx (`:431-438`).
+    - A pre-call check before every irreversible call:
+      - `createAudience` :1451, `createContactImport` :1475 (headroom I + M), `createBroadcast` :1823, `sendBroadcast`;
+      - the restart's deletes, `:957` and `:972`;
+      - the standing gate's `deleteBroadcastOnce` (`_dispatch-standing-gate.ts:218`; design item 4, A8).
+    - **Exempt (A2):** the reclaim of an id this tick just minted (`_reclaim-minted-broadcast.ts:42`, called from `_persist-minted-broadcast-id.ts:107-110`). That id is on no row, so no other tick can be sending it. A check there would always fail at the very moment the lease is lost, and the draft would leak.
+    - Release in a `finally`.
+    - **A lease lost after `/send` (A4):** in `advanceToSending` (`:2056-2139`) this logs its own INFO event, `lease_lost_after_send`, not the critical `sent_but_transition_lost`. The next tick's probe catches up.
+  - **`failTerminally`** (`:2325`): a `lease_lost` throw is a concurrent skip in its catch (`:2464`), so there is no terminal write and no member email (the enqueue is at `:2542`).
+  - **`dispatch-scheduled-broadcast.ts`:** the legacy leg skips a live lease (cell 23), inside its lock tx.
+- **Route** (`dispatch-scheduled/route.ts`):
+  - The lease exclusion goes into the scan (`:194-205`) **for every flag state**, never inside `importRowsFilter` (`:188`) (A7).
+  - `{ tickStartedAt, maxDurationMs }` go into deps.
+  - **No row starts after the cutoff, on both legs.** The legacy leg's row cost is also bounded by C per call, and one rule is simpler than two. *(Superseded by s2b review round 1, CR#5: the import leg only; the legacy leg has no cutoff.)*
+- **Docs in the slice:**
+  - `observability.md`: `lease_claimed`, `lease_held`, `lease_lost`, `lease_expiring`, `lease_release_failed`, `lease_lost_after_send`;
+  - `broadcast-audience-build.md`: the lease, the ~2-tick delay after a dead holder, and the stale "lease ruled out" line;
+  - the broadcasts rule; the changelog.
+  - Every bound in that prose names its constant (the 1 Nov retro rule).
+- **Who does what:**
+  - One `software-engineer` builder with the complete brief: this slice's state-table rows, the anchors above, A1–A10 and the R4 finding text. It runs scoped tests and one `pnpm check`.
+  - The main session runs the gates one folder at a time, in the foreground.
+
+#### Test plan (2b) — RED first, one row per behaviour
+- **`dispatch-lease-repo.test.ts`** (integration):
+  - rows 1, 2, 4, 7, 14, 20, 21;
+  - an it.each "stale token → lost" over every writer, each asserting its own lost-signal (A3);
+  - DL4: two tenants with one uuid, as `chamber_app`, plus the BYPASSRLS-owner case.
+- **`import-leg-lease-pair.test.ts`:** DL1, both orders (Neon pair).
+- **`dispatch-lease-erasure-order.test.ts`:** DL3, rows 16 and 17, as `chamber_app`.
+- **`build-audience-tick-lease.test.ts`** (unit):
+  - rows 3, 5, 6, 8, 9;
+  - the restart deletes are checked first;
+  - **"the reclaim of a just-minted id runs although the lease is lost" (A2);**
+  - **"a lease lost after /send logs lease_lost_after_send, not sent_but_transition_lost" (A4);**
+  - the import POST demands I + M of headroom.
+- **`_dispatch-retry-epoch` unit:** "a lost lease on markDispatchRetryStarted is not a stamp failure" (A3).
+- **`dispatch-scheduled-broadcast.test.ts`:** cell 23, the legacy leg skips a live lease.
+- **`cron-dispatch-scheduled.contract`:**
+  - row 13, the scan excludes a live lease with the flag ON and OFF (A7);
+  - no row starts after the cutoff, on either leg. *(Superseded by s2b review round 1, CR#5: the import leg only; the legacy leg has no cutoff.)*
+- **`dispatch-lease-budget.test.ts`:** the derived two-path inequalities, plus the positive controls (A5).
+- **`broadcast-lease-sql-shape.test.ts`:** tenant + token in every writer. It fails if its parse yields 0 (`;\r?\n`). Mutation check: drop one token, and its stale case goes red.
+- **Migration:** the immutability trigger test (the GUC cannot move the lease) and the pair CHECK.
+- **R4:** `already-sent-evidence.test.ts`, two concurrent recorders give one evidence row, both orders.
+- **Already green, re-run:** `audience-import-two-tick`, `erasure-vs-dispatch-begun`.
+
+#### Verify (D-044; A6)
+The maintainer runs `/verify` on :3400. The flags are set in `.env.local` only. Claude prepares the seeds and hands over the command.
+
+0. **Safety:**
+   - The due-row count on dev must equal the seeds; stop on any other row.
+   - The Resend account holds ≤ 1 non-General segment.
+   - Sink address only, and stop at tick 1 (no `/send`).
+1. **Flag ON:**
+   - a row with a live foreign lease is not picked up, and its token is unchanged;
+   - a row with an expired lease is claimed, makes its tick-1 import, and is released (token NULL, `audience_import_id` set).
+2. A wrong Bearer → 401, and nothing changes.
+3. **Flag OFF:** the live-lease row is still excluded by the scan.
+4. **Teardown:** the tick-1 row goes to terminal. After `GRACE_MS` (1 h), `cleanup-audiences` frees the segment.
+
+Cell 23 is test-only: the scan already excludes a leased row before it reaches the use case. DL1–DL4 and the lost-lease cases are test-only as well.
+
+#### Review (D-043; L, sensitive)
+- At least 2 full `/code-review high <pr>` rounds, then at most 2 targeted rounds.
+- Reviewers: drizzle-migration-reviewer, security, reliability, spec-compliance. pdpa only if RoPA 8d changes (it should not in 2b).
+- Staff review: security + senior-tester.
+- A mechanism a reviewer asks for gets its plan rows before GREEN.
+- Merge only on the maintainer's word.
+
+#### Risks
+- **The live legacy leg gains three behaviours:** the cell-23 skip, cleared-lease writes, and the cutoff. *(Superseded by s2b review round 1, CR#5: the import leg only; the legacy leg has no cutoff.)* Prod held 0 `broadcasts` rows on 30 Oct 2026. The import leg stays dark (flag OFF).
+- **The migration is catalogue-only.** The trigger is re-created from the newest definition and checked against the live one.
 
 ## Constitution Check
 
@@ -652,6 +804,74 @@ Mutation proofs (from `5f8fe56a2`, each file restored byte for byte, tree clean)
 - the erased wrapper's log call made inert: 3 red (the gate test and both legs).
 - the baseline count put back inside the candidate tx: 2 red.
 
+### Slice 2b — Verify: the maintainer's `/verify` (1 Nov 2026, on `b0783995a`): PASS
+
+:3400, Neon dev with 0322 applied, tenant swecham. The import flag was ON in the worktree's `.env.local` only, and the file was restored afterwards. Resend went to the sink address only, and no `/send` ran.
+- **Safety:** 0 due rows and only the `General` segment before seeding. Seeds: R-LIVE (another tick's lease, valid until +24 h) and R-EXP (another tick's lease, expired 1 minute ago). Both are `custom` rows to the sink address.
+- **Wrong Bearer → 401.** Both rows were unchanged, `updated_at` included.
+- **DL1/DL2 mechanics, flag ON:** `processed:1, import_submitted:1`.
+  - R-LIVE was not picked up: its token, expiry and `updated_at` did not change.
+  - R-EXP was claimed and its import submitted; the token and expiry were NULL after the release.
+  - The log reads `lease_claimed → audience_created → contact_import_submitted → submitted → lease_released`, with 0 send lines.
+- **The scan exclusion holds on every flag state (A7):** with the flag OFF after a restart, `processed:0`, and R-LIVE was unchanged. R-EXP is left out by the s2a import-row scan filter. The command had expected an `import_row_skipped` log, but no row reaches the use case.
+- **Teardown:** the Resend audience was deleted (200, segments back to `General`), both rows deleted, the due count back to 0.
+
+### Slice 2b — re-Verify on the final HEAD: the maintainer's `/verify` (2 Nov 2026, on `604e7ac7b`): PASS
+
+:3400, Neon dev, tenant swecham. The import flag was set in the worktree's `.env.local` only and restored afterwards. Resend went to the sink address only, and no `/send` ran.
+- **Safety:** before seeding, 0 due rows and only the `General` segment.
+- **A, lease mechanics, flag ON.**
+  - A wrong Bearer → 401, and nothing changed.
+  - The tick answered `processed:1, import_submitted:1`.
+    - R-LIVE (another tick's live lease): untouched.
+    - R-EXP (expired lease): claimed, imported, and released to NULL.
+  - Log: `lease_claimed → … → lease_released`. 0 send lines.
+- **B, the staff re-time refusal UI.** The schedule dialog was driven as the admin persona.
+  - The answer was 409 `dispatch_in_progress`, and the dialog stayed open.
+  - The picked time was kept, and focus moved to the `InlineWarning`.
+  - EN, TH ("กำลังเตรียมส่ง … กรุณาลองอีกครั้ง") and SV: no `MISSING_MESSAGE`.
+  - 320 px: `scrollWidth` 305, no horizontal scroll.
+  - The row was byte-identical after 4 refusals.
+  - On a well-formed row (with an approved version): refused twice, then the lease was cleared, and the re-time answered 200 with `scheduled_for` at the picked time.
+- **C, flag OFF after a restart:** `processed:0`, and R-LIVE was unchanged.
+- **Teardown:**
+  - the audience deleted (200), segments back to `General`;
+  - the seeds deleted, the due count back to 0;
+  - the pending `eblast_schedule_confirmed_member` outbox row deleted.
+- **Noted:** a malformed seed (an `approved` row without an approved version) answers 500 from the existing confirm-schedule guard. Production never has that shape; the lease refusal comes before that read.
+
+### Slice 2b — build notes (1 Nov 2026)
+
+- **Column names:** `dispatch_lease_token` / `dispatch_lease_expires_at`. The 2b prose says `lease_*`; the Approach SQL and the sibling `dispatch_first_failed_at` use `dispatch_`. The migration header records this.
+- **Trigger:** 0322 starts from 0311's text, which matches the live dev definition (`md5(prosrc)` 44592cc4…). Its only change is the two GUC-arm lines and their comment.
+- **Dev applied 0322 ahead of main.** The columns are nullable and inert. `db:verify` on this branch has 27 canaries; main's tree reports 26 against dev.
+- **RED evidence that is a mutation, not an earlier commit** (disclosed). DL1 (`import-leg-lease-pair`), DL3 rows 16–17 (`dispatch-lease-erasure-order`), R4 (`already-sent-evidence`) and the SQL-shape gate were written after the tick GREEN `d8078a925`. The RED for each is a mutation run from a committed base, restored byte for byte:
+  - the claim without its "no live lease" predicate → DL1 red in both orders;
+  - the check ignoring the token → DL3 row 17 red;
+  - no `broadcasts-evidence:` lock → both R4 cases red;
+  - a CAS without its token → the SQL-shape gate and the stale-token case red.
+
+  The unit rows and the repo rows went RED in their own commits first (`61ff5accd`, `fcde879cd`, `73949d5a8`, `d2bcf837d`, `760b4d307`).
+- **Three existing integration tests changed their expectation, not the property they test:**
+  - `erasure-vs-dispatch-begun`, "re-mint window": it now mints nothing. The pre-call check waits on the cascade lock, then reads the cleared lease. It is effectively row 17's integration case.
+  - `eblast-send-time-standing` CR#4: the import reads `lease_lost`, because the cancel clears the token in the same UPDATE (A3).
+  - P4: the import ignores `updated_at`, because the claim and the release are writes.
+- **`updated_at` now moves on every tick for a held row.** The claim and the release fire `broadcasts_set_updated_at`. Every reader was grepped. Prune reads drafts only; cleanup and retention read terminal rows; retention anchors on `RETENTION_ANCHOR_FIELD`; no gauge reads it. No reader treats an approved row's `updated_at` as a timer.
+- **D (A10) is a MEASURED single run plus an ESTIMATE**, so no seeder was written:
+  - a 20,000-recipient resolve took 3.7 s from a Bangkok workstation, about 220 ms RTT to Neon Singapore (2026-09-07, `audience-pagination-20k.test.ts`);
+  - 900 recipients fit in one 5,000-row page;
+  - about 15 statements at ~220 ms each come to ~3.3 s;
+  - that is under 8 s in total, so 15 s keeps about 2× headroom. The prod p99 is SLO-F7-013.
+- **Gates:** run in the main session, on `ca966ef3c` plus the D label, after a clean `pnpm install` (the builder had found `node_modules` truncated).
+  - `pnpm check`: exit 0.
+  - contract: 260 files, 2,942 tests.
+  - unit:
+    - broadcasts: 152 files, 2,405 tests;
+    - members: 217 files, 1,972 tests;
+    - broadcast + lib: 353 files, 4,537 tests;
+    - architecture: 861 tests.
+  - integration: 151 files (every broadcasts file, plus every file that mentions broadcast), run as 19 chunks of 8, one at a time. 900 passed, 19 skipped (the `RUN_SCALE_TESTS` / env-gated perf and virus-scan files).
+
 ### Slice 2a — build notes (decisions made while building)
 
 Commits: `1c69a7611` test (RED: DL5a, DL8, P6, R3, the contract rows), `b9c554d29` fix (GREEN), `3246521af` test (RED: DL7), `68831a89c` fix (GREEN). RED ran first: 40 failures across `resend-gateway-bounded-calls.test.ts`, `subprocessor-erasure-propagate-bound.test.ts` and the new `broadcasts-sdk.contract.test.ts` block (e.g. "createAudience aborts at callTimeoutMs on a hung fetch (50 ms)" → `expected 'still running' to deeply equal { thrown: { kind: 'retryable', …(1) } }`; "createAudience answered 5xx sends one request" → 6 attempts), then 2 for DL7 ("the legacy leg skips a row that holds import columns (audience_import_id)" → `expected { ok: true, …(1) } to deeply equal { ok: false, error: { …(2) } }`).
@@ -788,6 +1008,201 @@ Run because `route.ts` changed after `147bf6150` (the span attribute `757d7d01f`
 | 6 | The span test compares attributes with a body built from the same `summary`, so it cannot catch an unbucketed outcome | **Accepted (Low, maintainer):** it pins that every bucket reaches the span, which was the R2-15 / CR#5 class; an outcome with no bucket is a separate class |
 | 7 | The `typeof === 'number'` filter is dead, and future numeric response fields would become `cron.*` attributes | **Accepted (Low, maintainer):** s2b, which adds the time-budget fields, owns the summary's shape |
 | 8 | The test file's header still gives the old timing | **Fixed** |
+
+### Slice 2b — review round 1 (`/code-review high 723`, drizzle-migration MERGEABLE, security APPROVE WITH FIXES, reliability MERGEABLE, spec-compliance PARTIAL; 1 Nov 2026)
+
+**Review metrics:** round 1 · 7 + 3 + 7 + 8 + 10 items (code-review, migration, security, reliability, spec-compliance) · cap: ≥ 2 full + ≤ 2 targeted.
+
+**Plan rows added before the fixes (D-043).** Five fixes are new mechanisms:
+
+| Mechanism (asked by) | State / rule | Test that goes red first |
+|---|---|---|
+| A lost lease after `/send` reads the row's real status (CR#1, security M1, reliability M1) | `BroadcastConcurrentMutationError` for `lease_lost` carries the probed `rowStatus`. After `/send`: `approved` or `sending` → INFO `lease_lost_after_send`; any other status → the critical `sent_but_transition_lost`. Both count `broadcasts_dispatch_lease_lost_after_send_total{step}` | tick unit · "a lease cleared by a cancel after /send still logs sent_but_transition_lost" (attach_ids and sending_transition) |
+| The completion stamp after `/send` is not token-fenced once the row is `sending` or `sent` (CR#2, reliability L1) | `markAudienceImportCompleted`: with a token, `AND (dispatch_lease_token = $t OR status IN ('sending','sent'))`. The mail is out, so the token guards nothing; a webhook's `sending → sent` cannot strand the stamp | repo · "a webhook sent-transition before the stamp still lets the stamp land"; tick unit · the completion-stamp A4 case (spec L4) |
+| A re-time clears the lease (CR#3) | `applyTransition` with `lease: null` clears the lease when the status changes **or** `fields.scheduledFor !== undefined` (the same condition that resets `dispatchFirstFailedAt`) | repo · "a same-status re-time (new scheduledFor) clears the lease"; row 21 becomes "a same-status write without scheduledFor keeps the lease" |
+| A lease expiring on its own holder is a budget breach, not a concurrent skip (CR#4) | The tick returns a distinct kind `lease_expiring`. The route counts it in its own bucket and logs it at WARN; metric `broadcasts_dispatch_lease_expiring_total` | contract · "a lease_expiring outcome has its own bucket and WARN"; tick unit · kind |
+| The pre-call check waits at most E + 5 s for the row lock (reliability L2) | `checkDispatchLease` runs `SET LOCAL lock_timeout = '28s'` (`ERASURE_LOCK_HOLD_MS` + 5 s, named from the constant). A timeout is the existing `lease_check_failed` → retryable | repo · "a check behind a lock held longer than E + 5 s fails as lease_check_failed" (lock_timeout lowered for the test via a parameter) |
+
+**Decided by the main session** (the maintainer asked on 1 Nov 2026 to act on judgment and report):
+- **The row-start cutoff applies to the import leg only** (CR#5). The legacy leg's push loop (`addContactsToAudience`, one request per contact) is not in W_max, so the cutoff bounded nothing there, while it delayed live rows by a tick. DL9 is amended to the import leg; the legacy cutoff is removed with its test, and the build-plan line "on both legs" is superseded.
+
+**Closures:**
+
+| # | Finding | Closure |
+|---|---|---|
+| CR#1 / sec M1 / rel M1 | lost lease after `/send` downgraded to INFO whatever the row says | **Fix:** row 1 above |
+| CR#2 / rel L1 | the completion stamp can be stranded by a webhook | **Fix:** row 2 above |
+| CR#3 | a re-time keeps a live lease, so the holder sends at the replaced time | **Fix:** row 3 above |
+| CR#4 | `expiring` is reported as an ordinary concurrent skip | **Fix:** row 4 above |
+| CR#5 | the cutoff on the legacy leg bounds nothing | **Fix:** import leg only (decided above) |
+| CR#6 | `tickBudget` default in both makers is dead and duplicates `maxDuration` | **Fix:** `tickBudget` becomes a required parameter of the makers; the route passes it; `DISPATCH_MAX_DURATION_MS` is read from one place |
+| CR#7 | `hasLiveDispatchLease` is an extra SELECT per legacy row; the route loop keeps iterating past the cutoff | **Fix:** the route stops scanning rows after the first `deferred_past_cutoff`. **Accepted (Low):** the extra SELECT stays; the legacy leg is deleted in s4 and holds the row lock for milliseconds |
+| sec L2 / rel L3 | `failTerminally` logs ERROR `failed` before the fenced write | **Fix:** the log moves after the commit; a lost lease logs only `lease_lost` |
+| sec L3 | `hasLiveDispatchLease` fails open on an unexpected driver shape | **Fix:** a non-boolean answer throws (fail closed, like the check) |
+| sec L4 | owner-role DL4 covers claim and release only | **Fix:** check and hasLive statement builders get the BYPASSRLS-owner case |
+| sec I5 | `onRetryable` with a lost token is labelled `unknown_or_already_processed` | **Fix:** labelled `lease_lost` |
+| migration L1 | the trigger test changes both lease columns at once on a NULL row | **Fix:** seed a leased row; probe expiry-only, token-only and drop-to-NULL under the GUC, each expecting the redaction refusal |
+| migration L2 | the header md5 is of the CRLF dev body | **Fix:** the comment says so and gives the LF md5 |
+| migration L3 | `(whitelist)` comment predates the PR | **Accepted (Low):** pre-existing; not touched |
+| spec M1 | the s2a carries have no "closed" lines; the s3 row names DT5 by id only | **Fix (docs):** the s3 row names the concern in words; the carries-closed list below |
+| spec M2 | cell 18 (cascade undecided, lease untouched) has no test | **Fix:** `dispatch-lease-erasure-order` · "an undecided cascade leaves the lease and the holder continues" |
+| spec L1 | DL2 wording is stronger than the fence | **Fix (docs):** "a holder whose lease was taken over makes no irreversible Resend call and writes no column" |
+| spec L2 | DL1 "both orders" swaps names only | **Accepted (Low):** the claim ordering under the row lock is DL3 row 16's subject |
+| spec L3 | cell 16 has no live-other variant | **Fix:** one more case in `dispatch-lease-erasure-order` |
+| spec L4 | the completion-stamp A4 site has no unit case | **Fix:** with row 2 above |
+| spec L5 | D's docblock calls an estimate MEASURED | **Fix (docs):** "a MEASURED single run (3.7 s at 20,000) plus an ESTIMATE (~15 statements × ~220 ms)" |
+| spec L6 | `spec.md` status line is stale | **Fix (docs)** |
+| rel L4 | live-Neon coverage of mint → lost CAS → reclaim was lost | **Fix:** `erasure-vs-dispatch-begun` · a cascade cancel parked inside `createBroadcast`, asserting one mint and one reclaim |
+| rel NITs | clock mixing in `rowStartAllowed`; unguarded exported statements; `>` vs `<` at equal µs; `asLeaseToken` brand-only | **Accepted (Low):** prod-neutral; the exported builders get a `*Unguarded` suffix only if touched again (the 2c cleanup) |
+
+**Carries closed in 2b (spec M1).**
+- **R4:** closed by `already-sent-evidence.test.ts`, two concurrent recorders in both orders, mutation-RED.
+- **s2a round-1 CR#2 + security M:** the import leg's per-invocation budget is closed by DL9 (the cutoff and the W_max pin). `addContactsToAudience` is a residual moved to s4, which deletes it. `listAudiences` is DT5 in s3.
+- **s2a round-3 #3 + security INFO** (30 s × 50 rows against `maxDuration`): closed by the cutoff, since no import row starts after `maxDuration − W_max − M`.
+- **Re-homed by the maintainer's approval of the 2b / 2c split (1 Nov 2026):** R1 #5, DL5b and DL6 → 2c; `listAudiences` → s3 DT5.
+
+### Slice 2b — review round 2 (`/code-review high 723`, security APPROVE, reliability MERGEABLE, spec-compliance PARTIAL; 1 Nov 2026)
+
+**Review metrics:** round 2 (full) · 9 + 2 + 3 + 9 items (code-review, security, reliability, spec-compliance) · cap: 2 full (reached) + ≤ 2 targeted.
+
+**Plan rows added before the fixes (D-043).** Round 1's "a re-time clears the lease" caused two of this round's findings: code-review #1, an orphan audience, and reliability MED-1, a sent row left `approved` with a future `scheduled_for`. It is **replaced** rather than patched:
+
+| Mechanism (asked by) | State / rule | Test that goes red first |
+|---|---|---|
+| **A re-time is refused while a live lease is held** (reliability MED-1, option (a); supersedes round-1 row 3) | `applyTransition` with `lease: null`, the same status and a `scheduledFor` adds `AND (dispatch_lease_token IS NULL OR dispatch_lease_expires_at < clock_timestamp())`. A held row therefore answers 0 rows → `BroadcastConcurrentMutationError` → the caller's existing concurrent-mutation answer (staff retry after the tick; a dead holder blocks for ≤ `LEASE_TTL_MS`). The re-time no longer clears the lease. Status-changing exits still clear it (unchanged) | repo · "a same-status re-time is refused while a live lease is held, and allowed once it expired"; confirm-schedule unit · the refusal maps to its existing conflict answer |
+| **A just-created audience is deleted when its attach loses the lease** (code-review #1) | When `attachAudienceId` throws `lease_lost` after `createAudience`, the tick deletes that audience with no pre-call check. The A2 exemption extends to it: the id is on no row, so no tick can be using it. An undecided delete logs `audience_leaked` at ERROR with the id | tick unit · "a lost lease at attachAudienceId deletes the audience it just created" |
+| **The budget charges the check's lock wait at `CHECK_LOCK_TIMEOUT_MS`** (code-review #2, reliability LOW-2) | `longestPathsMs` uses k × `CHECK_LOCK_TIMEOUT_MS` (28 s), not k × E. W_max = 164 s (tick 2), cutoff = 300 − 164 − 15 = **121 s**, TTL 330 s still holds. The literals follow the derivation | budget test · "lock waits are charged at CHECK_LOCK_TIMEOUT_MS" (the shipped literals go red first) |
+| **The release waits at most `CHECK_LOCK_TIMEOUT_MS` for the row lock** (reliability LOW-1) | `releaseDispatchLeaseStatement` runs `SET LOCAL lock_timeout`; a 55P03 is the existing `lease_release_failed` WARN, and the lease expires on its own | repo · "a release behind a held lock fails as lease_release_failed within its lock_timeout" |
+
+**Closures:**
+
+| # | Finding | Closure |
+|---|---|---|
+| CR#1 | an orphan audience when the lease is lost between `createAudience` and the attach | **Fix:** row 2 above. With row 1 a re-time can no longer cause it; a status-changing exit in tick 1 still can, and row 2 covers that too |
+| CR#2 / rel LOW-2 | the budget charges E, not the check's 28 s lock timeout | **Fix:** row 3 above |
+| CR#3 / rel NIT | the hold arm drops the restart's `{expiring}` / `'lost'` | **Fix:** the hold arm passes the restart's answer through: `lease_expiring` or the concurrent skip |
+| CR#4 | the claim and the release bump `updated_at` every tick (576 writes/day for a held row) | **Accepted (Low):** `broadcasts_set_updated_at` fires on any UPDATE, and no reader uses an `approved` row's `updated_at` as a timer (reliability round 1 grepped every reader). Prod held 0 rows on 30 Oct 2026. The `clearDispatchRetryClock` rule protects the retry clock, which the lease does not touch. Revisit in s4 if a reader appears |
+| CR#5 / rel NIT | the first deferred row is counted as processed too | **Fix:** a deferred row is not `processed`; `processed + deferred_past_cutoff = eligible` rows reached; a case where one row runs and the rest defer (spec L-d) |
+| CR#6 / spec L-f | the lost-after-send metric docblock sits on the wrong method | **Fix** |
+| CR#7 | `leaseGateStep` duplicates `leaseGate`'s outcome mapping | **Fix:** one mapper, with an adapter for the restart path |
+| CR#8 | `hasLiveDispatchLeaseStatement` re-implements `isTrue` | **Fix:** it calls `isTrue` (keeping the non-boolean throw) |
+| CR#9 | `rowStartAllowed` recomputes the cutoff | **Fix:** it reads `ROW_START_CUTOFF_MS`. **Accepted (Low):** `tickStartedAt` (route `Date.now()`) against `deps.clock.now()` is wall time on both sides in prod |
+| rel MED-1 | a re-time after `/send` leaves a sent row `approved` with a future time, logged at INFO | **Fix:** row 1 above. A re-time cannot land under a live lease, so after `/send` the only lease-clearers are status-changing exits, which round 1's critical branch already covers |
+| sec L1 / spec F2 / rel NIT | the completion-stamp A4 unit case uses an unreachable `rowStatus: 'sending'`; the reachable branch is untested | **Fix:** the case uses `cancelled` and asserts `completion_stamp_failed` plus the counter; a second case uses `approved` (benign INFO) |
+| spec L-e | the stamp fence admits `sending` and `sent` only | **Fix:** it admits `SENDING_STARTED_BROADCAST_STATUSES` (adds `partially_sent` and `partial_delivery_accepted`) |
+| spec F1 | the state table and the test-plan rows were not updated for round 1's mechanisms | **Fix (docs):** rows 6, 18 and 21 updated; rows added for lost-after-send by row status, the stamp fence, the check and release lock timeout, the re-time refusal and the audience reclaim |
+| spec L-a | the A4 text says every other status logs `sent_but_transition_lost`; at the completion stamp it is `completion_stamp_failed`; the changelog contradicts itself | **Fix (docs)** |
+| spec L-b | `plan.md` lines still say the cutoff is on both legs | **Fix (docs):** marked superseded in place |
+| spec L5 | D carries three labels | **Fix (docs):** one label everywhere: "a MEASURED single run plus an ESTIMATE" |
+| spec L-c | the lock_timeout RED was a missing builder, not missing behaviour | **Fix:** a mutation run (drop `SET LOCAL lock_timeout`, and the case fails or hangs), recorded |
+| spec L-g | `selfHealMissingAudience`'s `'lost'` is labelled `unknown_or_already_processed` | **Fix:** labelled `lease_lost` |
+| sec I2 | `fresh` in the check can be stale by up to the lock wait | **Fix (docs):** the `checkDispatchLeaseStatement` docblock names the limit; TTL > `maxDuration` keeps it inert |
+| rel NIT | `cleanup_failed` lacks `errorKind` and the ids | **Fix:** the ERROR line carries `errorKind`, `importId` and the expected/observed statuses |
+| rel NIT | the 55P03 test passes 500 ms directly, so the 28 s default is not proven | **Accepted (Low):** the budget test pins `CHECK_LOCK_TIMEOUT_MS`, and the repo method's default is the constant (one line) |
+
+### Slice 2b — review round 2 build notes (1 Nov 2026)
+
+- **RED → GREEN per mechanism:**
+  - re-time refused: `5f7f83ff4` → `7f9f246b1` (red: "expected null to be an instance of BroadcastConcurrentMutationError"; confirm-schedule `server_error` ≠ `sending_started`);
+  - audience reclaim: `69d55dda9` → `2a4384a14` (red: "expected [] to deeply equal [ 'gw:deleteAudience:aud-new' ]");
+  - budget at `CHECK_LOCK_TIMEOUT_MS`: `207b593f0` → `369aae12b` (red: "expected undefined to be 28000", "expected 131000 to be 121000");
+  - release lock timeout: `d098969c7` → `43baf4171` (red: "expected 'hung' to be 'rejected'");
+  - the rest (CR#3, CR#5, spec L-e, L-g, rel NIT): `c557ea125` → `7a57cc1c7`. CR#6, CR#7 and CR#8 are refactors inside that GREEN. The two completion-stamp cases (sec L1) pass on shipped code: they replace the unreachable `sending` case and pin the reachable arms.
+- **Mutations, each from a committed base and restored byte for byte (`git diff --exit-code src/` = 0):**
+  - (a, spec L-c) the check without `SET LOCAL lock_timeout` → "a check behind a lock held longer than its lock_timeout fails (55P03)…" times out at 30 s;
+  - (b) `applyTransition` without the re-time refusal term → "a same-status re-time is refused while a live lease is held…" red ("expected null to be an instance of BroadcastConcurrentMutationError");
+  - (c) the attach-lost arm without `deleteAudience` → both audience-reclaim cases red.
+- **Three `build-audience-tick-failure-paths` cases changed their expected answer, not their property:** a lost restart CAS on the hold (claim, final release) and on the self-heal answered `held` / `unknown_or_already_processed`. Under the lease every restart write carries the token and a status change clears it, so a lost CAS is a lost lease: they now expect `lease_lost`. Their no-delete, not-counted and logged assertions are unchanged.
+- **`audience_leaked` has no automatic backstop while the row exists:** `reclaim-orphan-audiences` deletes only audiences whose broadcast row is gone, and `cleanup-orphaned-audiences` only the id a terminal row holds. The ERROR line with the id is the operator's only record (observability § 22.15, runbook § C).
+
+### Slice 2b — review round 3 (targeted; `/code-review high d4ab7b62d..4d31f68e3`, reliability MERGEABLE, spec-compliance PARTIAL; 1 Nov 2026)
+
+**Review metrics:** round 3 (targeted) · 9 + 2 + 4 items (code-review, reliability, spec-compliance) · cap: 2 full + 1 of ≤ 2 targeted used.
+
+**Plan rows added before the fixes (D-043).**
+
+| Mechanism (asked by) | State / rule | Test that goes red first |
+|---|---|---|
+| **The just-created audience is reclaimed on any failed attach, with a read-back** (code-review #1) | When `attachAudienceId` fails after `createAudience`: on `lease_lost` delete at once (round 2). On any other failure, read the row back in a new tx. If it holds this audience id, the write committed and the audience is kept. Otherwise delete it. A read-back that itself fails keeps the audience and logs `audience_leaked` at ERROR. This is the `_persist-minted-broadcast-id.ts` pattern | tick unit · "a DB fault at attachAudienceId whose read-back shows no id deletes the audience"; · "… whose read-back shows the id keeps it" |
+| **A re-time refused for a live lease is its own answer** (code-review #2, #3) | The repo refusal throws `BroadcastConcurrentMutationError` with `observedStatus: 'lease_held'`, distinct from status drift. confirm-schedule maps it to a new kind `dispatch_in_progress` (409), not `sending_started`. Staff see: "This E-Blast is being prepared for sending right now. Try again in a few minutes." (EN/TH/SV). Status drift keeps its existing mapping | repo · "a refused re-time reports observedStatus lease_held"; confirm-schedule unit · "lease_held maps to dispatch_in_progress"; schedule route contract · 409 + code |
+
+**Closures:**
+
+| # | Finding | Closure |
+|---|---|---|
+| CR#1 | an audience is left on no row after a non-lease attach failure | **Fix:** row 1 above |
+| CR#2, CR#3 | a lease-held refusal is reported as `sending_started`, and cannot be told from drift | **Fix:** row 2 above (copy reviewed by i18n and enterprise-ux in round 4) |
+| CR#4 / rel NIT | the hold arm records the hold and resets the retry clock before a restart that then loses the lease | **Fix:** `recordDispatchHold` and the clock reset run only after the restart succeeds |
+| CR#5 | every `'lost'` from `restartAudienceBuild` is labelled `lease_lost`, including a status or id CAS miss | **Fix:** the restart returns `lease_lost` for a lease check and `cas_lost` for a CAS miss; `cas_lost` keeps the old `unknown_or_already_processed` label |
+| CR#6 | a stale orphan docblock above `CHECK_LOCK_TIMEOUT_MS` | **Fix** |
+| CR#7 | `TickBudget.maxDurationMs` is a dead field | **Fix:** removed from `TickBudget` and the route; the cutoff is `ROW_START_CUTOFF_MS` |
+| CR#8 | `processed++` then `processed--` | **Fix:** the increment moves below the deferral check |
+| CR#9 | a token with a NULL expiry could block a re-time for ever | **Accepted:** impossible. The CHECK `broadcasts_dispatch_lease_pair` (0322) makes the two columns both-or-neither |
+| rel LOW-A | the release's lock wait is outside the budget, and the claim's wait is not bounded by `lock_timeout` | **Accepted (Low), documented:** the `_dispatch-lease.ts` docblock says the release is outside W_max on purpose. A kill mid-release only delays the row one tick (the lease expires at TTL); safety rests on TTL > `maxDuration`. The claim's wait stays the ASSUMED k term |
+| rel LOW-B | the benign `approved` arm after `/send` has no remaining cause | **Fix:** it logs at WARN (`lease_lost_after_send`, `rowStatus: approved`, "unexpected: no live holder can be taken over"); the counter is unchanged |
+| spec F2 | the completion-stamp unit cases name statuses the stamp cannot reach | **Fix (docs/test):** the comment says the reachable status is `failed_to_dispatch` (after `reconcile-stuck-sending`, more than 24 h); the `approved` case is relabelled a dead-arm pin; "completion stamp" is removed from row 30 |
+| spec M (Verify) | the maintainer's `/verify` (`b0783995a`) predates the release `lock_timeout` and the route loop change | **Fix:** a re-Verify on the final HEAD, handed to the maintainer after round 4 |
+| spec L2 | `plan.md` says TTL ≥ W_max + M = 169 s | **Fix (docs):** 179 s |
+| spec L3 | the test-plan row "plain applyTransition clears the lease · rows 20, 21" | **Fix (docs):** row 20 only; the re-time has its own row |
+| spec L4 | three failure-path expectation changes landed in a GREEN commit | **Accepted (Low):** the property has its own case in RED `c557ea125`; recorded in the round-2 build notes |
+
+### Slice 2b — review round 3 build notes (1 Nov 2026)
+
+- **RED → GREEN:**
+  - plan row 1, the audience read-back: `e408b3899` → `4c155d1aa` (red: "expected [] to deeply equal [ 'readBack', 'gw:deleteAudience:aud-new' ]"; "… to include 'readBack'"; "expected "LOG" to be called with … audience_leaked");
+  - plan row 2, `lease_held` → `dispatch_in_progress`: `aa1567913` → `ab03415e4` (red: repo "expected 'approved' to be 'lease_held'"; confirm-schedule `sending_started` ≠ `dispatch_in_progress`; route "expected 'sending_started' to be 'dispatch_in_progress'");
+  - CR#4, CR#5, rel LOW-B, spec F2: `4be3ad74a` → `cc2e7ff54` (red: "expected "dispatchStandingHeldTotal" to not be called at all, but actually been called 1 times"; "expected 0 to be greater than 1"; the three cas_lost cases; "expected false to be true" for WARN). CR#6, CR#7, CR#8 and the rel LOW-A docblock are refactors and docs inside that GREEN.
+- **Mutations, from a committed base, restored byte for byte:**
+  - (a) the read-back arm returning before its delete → both "… whose read-back shows no id deletes the audience" cases red ("expected [ 'readBack' ] to deeply equal [ 'readBack', … ]");
+  - (b) `LEASE_HELD` mapped back to `sending_started` → the confirm-schedule and the schedule-route cases red.
+- **A DB fault at `attachAudienceId` still escapes the tick** (the route's `uncaught_error`), after the reclaim: only the cleanup was added, not a new answer.
+- **One existing expectation changed with the behaviour it pins:** `build-audience-tick-failure-paths` H1 asserted the clock reset BEFORE the tick-2 delete; CR#4 moves it after the restart, so it now asserts after.
+- **CR#4 reading:** "after the restart succeeds" is read as "whenever the hold is the answer". A restart that FAILED (a DB fault) still answers the hold, as before, so it still records it and resets the clock; only a lease or CAS stop skips both.
+- **CR#8:** the route's loop has three exits (`continue`, the deferral `break`, the catch), so `processed` is counted once in a `finally`, skipped for the deferred row, rather than moved into one branch.
+- **`dispatch_in_progress` in the UI:** *(superseded by review round 4, plan row 4: the code has its own branch, an inline warning that keeps the dialog open with the picked time; the single errors key was split into `admin.broadcasts.approval.schedule.dispatchInProgress.{title,description}`.)* Round 3 rendered it through `approvalErrorMessage` (`t.has(code)`), so a 409 closed the dialog with a toast and refreshed the page, as for every other 409 there.
+
+### Slice 2b — review round 4 (targeted; the last under the cap. `/code-review high f4f4528b0..06bdfc63a`, reliability MERGEABLE, i18n ship, enterprise-ux ship with follow-ups; 1 Nov 2026) — cap reached
+
+**Review metrics:** round 4 (targeted) · 7 + 3 + 2 + 3 items (code-review, reliability, i18n, enterprise-ux) · cap: 2 full + 2 targeted, **reached**. No High remained. The main session decided, as the maintainer asked on 1 Nov 2026 (act on judgment and report): fix every item, and run no further review round. The fixes are each named below with their test. The gates run on the final HEAD, and the maintainer's re-Verify covers the driven path.
+
+**Plan rows added before the fixes (D-043).**
+
+| Mechanism (asked by) | State / rule | Test that goes red first |
+|---|---|---|
+| **confirm-schedule checks the lease before the write** (code-review #2, #3; reliability LOW-2) | Under its `lockForUpdate` row lock, confirm-schedule calls `hasLiveDispatchLease(tx, …)`; this is fail-closed, so a non-boolean throws. A live lease returns `dispatch_in_progress` before any write. The repo's re-time predicate stays as a backstop. On a 0-row same-status re-time it reports `LEASE_HELD` whenever the probed status equals the expected one and the token is set, with no second clock read. Otherwise it reports drift with the **probed** status | confirm-schedule unit · "a live lease answers dispatch_in_progress before any write"; repo · "a refused re-time whose lease expires before the probe still reports lease_held"; · "a real drift reports the probed status" |
+| **A 0-row restart CAS probes the token** (code-review #4) | `releaseAudienceImport` / `releaseResendAudience` return `'ok' \| 'lease_lost' \| 'cas_lost'`, probing the token on 0 rows the way `throwConcurrentMutation` does. The restart's `lease_lost` and `cas_lost` therefore follow the real cause | repo · "a release whose token was cleared reports lease_lost; an id drift reports cas_lost" |
+| **A DB fault at the audience attach is `dispatch.server_error`** (reliability LOW-3) | After the read-back reclaim, a non-lease, non-not-found attach failure returns `dispatch.server_error` with phase `attach_audience` (retryable), not a thrown `uncaught_error` | tick unit · "a DB fault at attachAudienceId answers dispatch.server_error after the reclaim" |
+| **The `dispatch_in_progress` refusal stays inside the dialog** (enterprise-ux, code-review #1) | `schedule-confirm-dialog.tsx`: a 409 `dispatch_in_progress` renders an `InlineWarning` (`tone="warning"`, title and description) with focus moved to it, and keeps the dialog open with the picked time, as READ_ONLY_MODE does. Copy, EN: title "Being prepared for sending"; description "Nothing was changed. This E-Blast is being prepared for sending right now. Try again in a few minutes — if it has been sent by then, its time can no longer be changed." TH and SV follow, with TH using กรุณา (i18n). UI presentation, so D-023's shared commit is allowed, with the failing run recorded | component · "a 409 dispatch_in_progress keeps the dialog open with the picked time and an alert" |
+
+**Closures:**
+
+| # | Finding | Closure |
+|---|---|---|
+| CR#1 / ux | the new 409 closes the dialog and loses the picked time | **Fix:** row 4 above |
+| CR#2 / rel LOW-2 | the probe's second clock read can fall back to drift, and drift reports the expected status | **Fix:** row 1 above |
+| CR#3 | the inline probe duplicates `hasLiveDispatchLeaseStatement` without fail-closed | **Fix:** row 1 above (the pre-check uses the existing method; the repo backstop no longer re-reads the clock) |
+| CR#4 | a cleared token at the restart's release CAS is labelled `cas_lost` | **Fix:** row 2 above |
+| CR#5 / rel LOW-1 | the docblock says an audience kept after a lost attach ack is inherited; the next tick's `stale_audience` self-heal deletes it | **Fix (docs):** the docblock, observability § 22.15 and the runbook say the next tick's self-heal replaces it. The read-back-before-visibility race is documented and self-heals the same way |
+| CR#6 | the restart-outcome mapping is copied in two places | **Fix:** one `restartStopAnswer(outcome)` beside `leaseStopAnswer` |
+| CR#7 | the `'lease_held'` literal has two meanings | **Fix:** the claim's and the legacy leg's skip use a separate named constant `LEASE_HELD_BY_ANOTHER_TICK`; `LEASE_HELD` stays the staff re-time refusal; the port docblock lists each producer |
+| rel LOW-3 | a DB blip at the attach alerts as `uncaught_error` | **Fix:** row 3 above |
+| i18n | TH uses โปรด and a doubled progressive | **Fix:** with row 4's copy, TH uses กรุณา and drops ขณะนี้; `messageThai` matches |
+
+### Slice 2b — review round 4 build notes (1 Nov 2026)
+
+- **Plan row 4 (UI presentation, D-023 shared commit) — the failing run, on the old dialog code** (the copy keys and the test added, `schedule-confirm-dialog.tsx` unchanged):
+  `× F119 T064 — the schedule confirmation dialog > a 409 dispatch_in_progress keeps the dialog open with the picked time and an alert` → `Unable to find role="alert"` (the old code closed the dialog with a toast).
+- **RED → GREEN:**
+  - plan row 1, the confirm-schedule pre-check and the clock-free backstop: `86cf642f0` → `60fb7c720` (red: confirm-schedule "expected { ok: true, value: { …(5) } } to deeply equal { ok: false, …(1) }"; probe "expected 'approved' to be 'lease_held'" and "expected 'approved' to be 'cancelled'"; repo "expected 'member_approved' to be 'approved'"). The probe case drives the real repo over `pg-proxy`, because the race (a lease ending between the UPDATE and the probe) cannot be staged on live Postgres. The RED commit's new unit case lacked its `FAKE_TX` import; its RED line came before that line, and GREEN adds the import;
+  - plan row 2, the release outcome: `dd43f7bad` → `9eee64c96` (red: repo "expected false to be 'lease_lost'"; SQL shape "expected true to be 'ok'" / "expected false to be 'cas_lost'"; tick "expected { Object (kind) } to deeply equal { …(2) }"). Every test fake of the two releases moved from a boolean to `ReleaseOutcome` in GREEN;
+  - plan row 3, the attach DB fault: `eac2ae584` → `680d73693` (red: "08006 connection failure", the fault escaping). The failure-paths positive control "attachAudienceId throwing something that is NOT a lost race still propagates" now pins the non-benign `dispatch.server_error` for that method; `attachAudienceImport` still propagates;
+  - CR#7: `830f235b1` → `573aee691` (red: row 3 "expected { …(2) } to deeply equal { …(2) }", cell 23 likewise); CR#6 is a refactor inside that GREEN;
+  - plan row 4: `f7ac15a2e` (D-023, the failing run above).
+- **Mutations, from a committed base, restored byte for byte:**
+  - (a) confirm-schedule's pre-check made inert (base `60fb7c720`) → "a live lease answers dispatch_in_progress before any write" and "the lease pre-check is made under the row lock…" red (2 failed, 22 passed);
+  - (b) the release miss answers `cas_lost` on a cleared token (base `9eee64c96`) → both stale-token release cases and "a release whose token was cleared reports lease_lost; an id drift reports cas_lost" red ("expected 'cas_lost' to be 'lease_lost'"; 3 failed).
+- **Decisions:** the pre-check covers a re-time only (`schedule` / `send_now` from `approved`): a cancel is a status change that ends the lease by design, and a promotion leaves `member_approved`, which no tick can hold. The claim skip's new value `held_by_another_tick` reaches no reader but the cron's `concurrent_skip` bucket.
+
 
 ## Rollout
 

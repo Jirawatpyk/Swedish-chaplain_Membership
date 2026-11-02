@@ -71,7 +71,7 @@ describe('assertTenantBoundTx — the application layer of Principle I', () => {
         // compare-and-set to, so this also pins that the guard runs FIRST — a
         // cross-tenant write must be refused by the application before the CAS
         // gets a chance to report a concurrency problem instead.
-        await repoForA.attachAudienceId(tx, TENANT_A, BROADCAST_ID, 'aud-x');
+        await repoForA.attachAudienceId(tx, TENANT_A, BROADCAST_ID, 'aud-x', null);
       }),
     ).rejects.toThrow(/tx tenant mismatch/);
   });
@@ -82,7 +82,7 @@ describe('assertTenantBoundTx — the application layer of Principle I', () => {
 
     const err = await runInTenant(CTX_B, async (tx) =>
       repoForA
-        .attachAudienceId(tx, TENANT_A, BROADCAST_ID, 'aud-x')
+        .attachAudienceId(tx, TENANT_A, BROADCAST_ID, 'aud-x', null)
         .then(() => null)
         .catch((e: unknown) => (e instanceof Error ? e.message : String(e))),
     );
@@ -116,6 +116,7 @@ describe('assertTenantBoundTx — the application layer of Principle I', () => {
           TENANT_A,
           BROADCAST_ID,
           'aud-x',
+          null,
         );
       }),
     ).rejects.toThrow(/NOT inside a runInTenant scope/);
@@ -141,7 +142,7 @@ describe('assertTenantBoundTx — the application layer of Principle I', () => {
         // own concurrency error — which is proof the guard let us through, since
         // a mismatch would have thrown a different message first.
         await repoForA
-          .attachAudienceId(tx, TENANT_A, BROADCAST_ID, 'aud-x')
+          .attachAudienceId(tx, TENANT_A, BROADCAST_ID, 'aud-x', null)
           .catch((e: unknown) => {
             const msg = e instanceof Error ? e.message : String(e);
             expect(msg).not.toMatch(/tenant mismatch|NOT inside a runInTenant/);

@@ -580,6 +580,7 @@ export async function processWebhookEvent(
                 quotaConsumedAt: now,
               },
               'sending', // R4 Types-#5 — webhook only fires on 'sending' rows
+              null,
             );
             transitionedToSent = true;
 
