@@ -53,6 +53,9 @@ const DEDICATED_MESSAGE_CODES: ReadonlySet<string> = new Set([
   'member_not_found',
   'no_buyer_snapshot',
   'invalid_lines',
+  // #62 — another committed membership bill covers this period (DB EXCLUDE).
+  // NOT `concurrent`: this draft was not issued, and a refresh shows it again.
+  'membership_coverage_overlap',
   // §87 sequential numbers exhausted is a PERMANENT condition until the fiscal
   // year rolls — "please try again" (the transient copy) fails every retry, so
   // route it to dedicated `errors.overflow` copy ("...exhausted. Contact

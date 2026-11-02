@@ -176,6 +176,14 @@ export type IssueInvoiceInput = z.infer<typeof issueInvoiceSchema>;
 export type IssueInvoiceError =
   | { code: 'invoice_not_found' }
   | { code: 'invoice_already_issued'; status: InvoiceStatus }
+  /**
+   * #62 — the draft→issued flip hit the mig-0281 DB EXCLUDE
+   * `invoices_membership_coverage_no_overlap`: another COMMITTED membership
+   * bill already covers this period. The draft is still a draft (the tx rolled
+   * back, no §87 number consumed) — distinct from `invoice_already_issued`, so
+   * the admin is not told to refresh into the same draft.
+   */
+  | { code: 'membership_coverage_overlap' }
   | { code: 'settings_missing' }
   | { code: 'member_not_found' }
   | { code: 'member_archived' }
@@ -852,16 +860,14 @@ export async function issueInvoice(
       // COMMITTED membership §86/4 already covers the same period. This is the
       // concurrency backstop the pre-flight read cannot close (two mints that
       // both pass the read before either commits — or a void-on-reissue
-      // reactivation of a same-period bill). Map it to the SAME typed
-      // duplicate error the lock-conflict path uses so the route answers 409
-      // `invoice_already_issued` (renewals surface it as "already billed")
-      // instead of a raw 500 — the whole tx rolls back, so no §87 number is
-      // burned. (23P01 is wrapped on `.cause` by Drizzle 0.45 — walk it.)
+      // reactivation of a same-period bill). #62 — map it to its OWN typed
+      // error, `membership_coverage_overlap` (409), not `invoice_already_issued`:
+      // THIS draft is still a draft, so "already issued — refresh" would send the
+      // admin back to the same draft. The whole tx rolls back, so no §87 number
+      // is burned, and the orphan-PDF cleanup runs (this attempt owns the bytes
+      // it uploaded). (23P01 is wrapped on `.cause` by Drizzle 0.45 — walk it.)
       if (isExclusionViolationOnConstraint(e, 'invoices_membership_coverage_no_overlap')) {
-        throw new IssueInvoiceInternalError({
-          code: 'invoice_already_issued',
-          status: 'issued',
-        });
+        throw new IssueInvoiceInternalError({ code: 'membership_coverage_overlap' });
       }
       throw e;
     }
@@ -1016,6 +1022,8 @@ export async function issueInvoice(
     // stored document. Clean up on every caught error EXCEPT:
     //   - `invoice_already_issued` (applyIssue conflict translation): the
     //     race WINNER may legitimately own bytes at that key; and
+    //     (#62: a `membership_coverage_overlap` IS cleaned up — the other,
+    //     committed bill has its own key, and this row stays a draft)
     //   - `pdf_render_failed`: the render runs BEFORE the upload inside
     //     renderAndUploadPdf — THIS attempt wrote nothing at the key.
     // Best-effort (awaited, failure logged + counted, never masks the
