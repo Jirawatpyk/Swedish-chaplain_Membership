@@ -19,6 +19,13 @@ describe('routeIssueError (FR-032)', () => {
     expect(routeIssueError('invoice_already_issued')).toEqual({ kind: 'concurrent' });
   });
 
+  it('#62 a coverage overlap is a dedicated failure, not "already issued — refresh"', () => {
+    expect(routeIssueError('membership_coverage_overlap')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.membership_coverage_overlap',
+    });
+  });
+
   it('a stale confirmed total is classified as stale (refresh to see the real figure)', () => {
     expect(routeIssueError('issue_total_changed')).toEqual({ kind: 'stale' });
   });

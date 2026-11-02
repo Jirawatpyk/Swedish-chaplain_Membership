@@ -31,6 +31,8 @@ describe('issueErrorStatus — shared issuance-route status map (wave-4 S16)', (
       invoice_not_found: 404,
       member_not_found: 404,
       invoice_already_issued: 409,
+      // #62 — another committed membership bill covers the period (DB EXCLUDE).
+      membership_coverage_overlap: 409,
       // The confirmed total no longer matches the priced one (draft lines or
       // tenant VAT rate changed after the Issue dialog rendered).
       issue_total_changed: 409,
@@ -106,6 +108,7 @@ describe('isIssuanceServerFault — 065 M-4 route-level log-severity split', () 
       'invoice_not_found',
       'member_not_found',
       'invoice_already_issued',
+      'membership_coverage_overlap',
       'member_archived',
       'settings_missing',
       'registration_refunded',

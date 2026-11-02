@@ -383,7 +383,7 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     if (!r.ok) expect(r.error.code).toBe('invoice_already_issued');
   });
 
-  it('invoice_already_issued — the mig-0281 coverage EXCLUDE 23P01 at applyIssue maps to the typed 409, not a raw 500', async () => {
+  it('#62 membership_coverage_overlap — the mig-0281 coverage EXCLUDE 23P01 at applyIssue maps to its own typed 409 (not "already issued"), and the orphan PDF is cleaned up', async () => {
     // membership-coverage-exclude-guard: the draft→issued flip makes this bill's
     // blocks_coverage true, so the DB EXCLUDE rejects when another committed
     // membership §86/4 already covers the period. Drizzle 0.45 WRAPS the
@@ -404,7 +404,16 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     });
     const r = await issueInvoice(deps, input);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('invoice_already_issued');
+    // Another COMMITTED bill covers the period; this draft is still a draft —
+    // "already issued" would send the admin to refresh into the same draft.
+    if (!r.ok) expect(r.error.code).toBe('membership_coverage_overlap');
+    // This attempt owns the bytes it uploaded (the row stays draft): the
+    // locked cleanup deletes THIS invoice's key (the upload mock returns no
+    // etag, so the call carries no ifMatch).
+    expect(deps.blob.delete).toHaveBeenCalledTimes(1);
+    expect(deps.blob.delete).toHaveBeenCalledWith(
+      `invoicing/test-swecham/2026/${INVOICE_ID}_v1.pdf`,
+    );
   });
 
   it('a 23P01 on a DIFFERENT exclusion constraint is NOT mapped to invoice_already_issued (constraint-specific)', async () => {

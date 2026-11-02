@@ -3525,6 +3525,7 @@
           "no_buyer_snapshot": "This draft has no buyer details — delete it and recreate it with the buyer filled in.",
           "invalid_lines": "This draft's line items are invalid — delete it and recreate it.",
           "buyer_tax_id_required_for_registrant": "This member is registered for VAT but has no tax ID on file — add their tax ID, or clear the VAT-registered checkbox on the member record if the number isn't known yet.",
+          "membership_coverage_overlap": "Another invoice already covers this membership period, so this one was not issued — nothing was created. Check the member's invoices: if the other one is unpaid, void it first; if it has been paid, issue a credit note for the remaining amount instead.",
           "temporary": "A temporary problem stopped the invoice from being issued — nothing was created. Please try again, and contact support if it keeps happening.",
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again.",

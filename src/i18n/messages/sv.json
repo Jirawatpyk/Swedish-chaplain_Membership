@@ -3525,6 +3525,7 @@
           "no_buyer_snapshot": "Det här utkastet saknar köparuppgifter — ta bort det och skapa ett nytt med köparen ifylld.",
           "invalid_lines": "Det här utkastets rader är ogiltiga — ta bort det och skapa ett nytt.",
           "buyer_tax_id_required_for_registrant": "Den här medlemmen är momsregistrerad men saknar skatte-ID — lägg till skatte-ID:t, eller avmarkera kryssrutan för momsregistrering på medlemsposten om numret inte är känt ännu.",
+          "membership_coverage_overlap": "En annan faktura täcker redan den här medlemsperioden, så den här utfärdades inte — inget skapades. Kontrollera medlemmens fakturor: om den andra är obetald, annullera den först; om den är betald, utfärda en kreditnota för det återstående beloppet i stället.",
           "temporary": "Ett tillfälligt problem stoppade utfärdandet av fakturan — inget skapades. Försök igen och kontakta supporten om det fortsätter.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen.",

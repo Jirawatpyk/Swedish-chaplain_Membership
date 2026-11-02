@@ -49,6 +49,8 @@ export const ISSUE_ERROR_STATUS_BASE: Readonly<Record<string, number>> = {
   invoice_not_found: 404,
   member_not_found: 404,
   invoice_already_issued: 409,
+  // #62 — another committed membership bill covers the period (mig-0281 EXCLUDE).
+  membership_coverage_overlap: 409,
   // The Issue dialog's confirmed total is stale (lines / VAT rate changed
   // after it rendered) — a refresh-and-reconfirm conflict, nothing issued.
   issue_total_changed: 409,

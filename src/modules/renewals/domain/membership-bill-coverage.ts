@@ -21,7 +21,7 @@
  *     and closes the read-decide-write concurrency race the read-guard cannot
  *     (two mints that both pass the read before either commits, or a
  *     void-on-reissue reactivation of a same-period bill). A 23P01 from the
- *     EXCLUDE at mint time is mapped to the typed `invoice_already_issued`
+ *     EXCLUDE at mint time is mapped to the typed `membership_coverage_overlap`
  *     (issue-invoice.ts) so the caller sees a 409, not a raw 500.
  *
  * Correctness (vs the two rejected read-guard designs): those approximated a

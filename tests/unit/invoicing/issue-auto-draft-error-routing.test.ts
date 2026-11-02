@@ -84,6 +84,17 @@ describe('routeIssueAutoDraftError', () => {
     });
   });
 
+  it('#62 issue_failed carrying error_code membership_coverage_overlap → the duplicateLiveBill reason (the designed auto-draft race), not a generic retry', () => {
+    expect(
+      routeIssueAutoDraftError({ code: 'issue_failed', error_code: 'membership_coverage_overlap' }),
+    ).toEqual({ kind: 'refusal_reason', reasonKey: 'duplicateLiveBill' });
+    // Any other F4 error_code stays the generic copy.
+    expect(routeIssueAutoDraftError({ code: 'issue_failed', error_code: 'pdf_render_failed' })).toEqual({
+      kind: 'generic',
+      messageKey: 'issueFailed',
+    });
+  });
+
   it('an unrecognised or missing code falls back to the generic issueFailed copy', () => {
     expect(routeIssueAutoDraftError({ code: 'something_new' })).toEqual({
       kind: 'generic',
