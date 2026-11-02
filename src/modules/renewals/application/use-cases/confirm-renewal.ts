@@ -838,7 +838,8 @@ export async function confirmRenewal(
   //     renewal (the L2 over-block). `[periodFrom, periodTo)` is ADJACENT (half-open)
   //     to the next renewal → no over-block; and a duplicate first-payment
   //     (double-confirm) stamps the SAME window → the DB EXCLUDE rejects it at issue
-  //     (23P01 → `invoice_already_issued` → 409), so no dedup is lost. Matches
+  //     (23P01 → `membership_coverage_overlap`; on this path `mapInvoiceError`
+  //     wraps it as `invoice_creation_failed`, a 502), so no dedup is lost. Matches
   //     `admin-renew-lapsed-member.ts:596`. (coverage-hardening-report.md § L2/L3.)
   const coverageWindow = omitMembershipCoverage
     ? {

@@ -98,7 +98,8 @@
  * the sibling auto-draft sweep clears the rest, so a coexisting draft is not a
  * duplicate. Money-safety does not depend on draft-blocking — the DB EXCLUDE on
  * committed rows rejects any concurrent double-ISSUE regardless (mapped to
- * `invoice_already_issued`).
+ * `membership_coverage_overlap`, forwarded as `issue_failed` + `error_code`;
+ * the queue names it as the duplicate-live-bill reason).
  *
  * `void` + fully-`credited` never block — the refunded period is re-billable —
  * and a NULL-coverage bill (legacy/first-payment) never participates, exactly
