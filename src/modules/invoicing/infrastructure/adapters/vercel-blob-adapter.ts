@@ -7,12 +7,16 @@
  *
  * Uses `@vercel/blob` SDK; BLOB_READ_WRITE_TOKEN from env.
  */
-import { BlobNotFoundError, put, head, del, list } from '@vercel/blob';
+import { BlobNotFoundError, BlobPreconditionFailedError, put, head, del, list } from '@vercel/blob';
 import {
+  BlobChangedSinceUploadError,
   BlobKeyNotFoundError,
   type BlobStoragePort,
 } from '../../application/ports/blob-storage-port';
 import { env } from '@/lib/env';
+
+/** #60 — upper bound on one Blob delete, retries included. */
+const BLOB_DELETE_TIMEOUT_MS = 10_000;
 
 /**
  * `head()` for a READ, with NOT-FOUND classified by the SDK's own class and
@@ -39,7 +43,7 @@ export const vercelBlobAdapter: BlobStoragePort = {
     readonly body: Uint8Array;
     readonly contentType: 'application/pdf';
     readonly allowOverwrite?: boolean;
-  }): Promise<{ readonly key: string; readonly url: string }> {
+  }): Promise<{ readonly key: string; readonly url: string; readonly etag?: string }> {
     // Default path (allowOverwrite=false): guards against accidental
     // silent mutation of a historical tax document. PDF rendering is
     // deterministic (FR-016), so a re-upload with the same content-
@@ -63,7 +67,7 @@ export const vercelBlobAdapter: BlobStoragePort = {
         addRandomSuffix: false,
         allowOverwrite,
       });
-      return { key: input.key, url: result.url };
+      return { key: input.key, url: result.url, etag: result.etag };
     } catch (e) {
       // Deterministic-re-upload convenience applies ONLY when
       // allowOverwrite was false. When the caller explicitly opted
@@ -74,7 +78,7 @@ export const vercelBlobAdapter: BlobStoragePort = {
       const isConflict = /already exists|overwrite/i.test(msg);
       if (!isConflict) throw e;
       const existing = await head(input.key, { token: env.blob.readWriteToken });
-      return { key: input.key, url: existing.url };
+      return { key: input.key, url: existing.url, etag: existing.etag };
     }
   },
 
@@ -137,8 +141,25 @@ export const vercelBlobAdapter: BlobStoragePort = {
     return new Uint8Array(ab);
   },
 
-  async delete(key: string): Promise<void> {
-    await del(key, { token: env.blob.readWriteToken });
+  async delete(key: string, options?: { readonly ifMatch?: string }): Promise<void> {
+    // #60 — bounded. The SDK retries a 5xx / network error with backoff for
+    // minutes, and the orphan cleanup deletes while holding the invoice row
+    // lock; a Blob outage must not hold that lock (or the failing request)
+    // open. The abort only abandons the client request, so the cleanup also
+    // passes `ifMatch`: a delete Blob applies late still cannot remove bytes a
+    // successor wrote (different etag).
+    try {
+      await del(key, {
+        token: env.blob.readWriteToken,
+        abortSignal: AbortSignal.timeout(BLOB_DELETE_TIMEOUT_MS),
+        ...(options?.ifMatch !== undefined ? { ifMatch: options.ifMatch } : {}),
+      });
+    } catch (e) {
+      if (e instanceof BlobPreconditionFailedError) {
+        throw new BlobChangedSinceUploadError({ cause: e });
+      }
+      throw e;
+    }
   },
 
   async list(prefix: string, limit: number): Promise<readonly string[]> {

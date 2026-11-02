@@ -1887,3 +1887,187 @@ describe('cancelPendingPaymentsAfterManualPayment (#452 review M1)', () => {
     expect(JSON.stringify(errorLog.mock.calls)).not.toContain('secret_column');
   });
 });
+
+// #60 — a rolled-back payment must not leave a stale §86/4 receipt PDF at the
+// deterministic key, and a retry must replace whatever an earlier rolled-back
+// attempt left there (065 H-1a / L-3 parity with issue / issue-as-paid).
+describe('recordPayment — #60 receipt blob: overwrite + post-rollback cleanup', () => {
+  const RECEIPT_KEY = `invoicing/test-swecham/2026/${INVOICE_ID}_receipt_v1.pdf`;
+
+  it('the sync receipt upload overwrites the key (allowOverwrite: true — runs under the row lock)', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.blob.uploadPdf).toHaveBeenCalledWith(
+      expect.objectContaining({ key: RECEIPT_KEY, allowOverwrite: true }),
+    );
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
+
+  it('a raw failure AFTER the upload (applyPayment) deletes the receipt key once; the original error surfaces', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const boom = new Error('canceling statement due to statement timeout');
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw boom;
+    });
+    await expect(recordPayment(deps, input)).rejects.toBe(boom);
+    expect(deps.blob.delete).toHaveBeenCalledTimes(1);
+    expect(deps.blob.delete).toHaveBeenCalledWith(RECEIPT_KEY);
+  });
+
+  it('a failure later in the tx (outbox enqueue) also deletes the receipt key', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    deps.outbox.enqueue = vi.fn(async () => {
+      throw new Error('outbox insert failed');
+    });
+    await expect(recordPayment(deps, input)).rejects.toThrow('outbox insert failed');
+    expect(deps.blob.delete).toHaveBeenCalledTimes(1);
+    expect(deps.blob.delete).toHaveBeenCalledWith(RECEIPT_KEY);
+  });
+
+  it('blob_upload_failed → typed error AND a best-effort delete of whatever the failed upload left', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    deps.blob.uploadPdf = vi.fn(async () => {
+      throw new Error('blob 503');
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('blob_upload_failed');
+    expect(deps.blob.delete).toHaveBeenCalledWith(RECEIPT_KEY);
+  });
+
+  it('concurrent_state_change → the overwrite made the bytes ours, so they ARE deleted (the locked re-read guards a committed owner)', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw new InvoiceApplyConflictError('applyPayment');
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('concurrent_state_change');
+    expect(deps.blob.delete).toHaveBeenCalledWith(RECEIPT_KEY);
+  });
+
+  it('pdf_render_failed → NO delete (the render runs before the upload; nothing was written)', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings(), {
+      pdfRender: {
+        render: vi.fn(async () => {
+          throw new Error('font load failed');
+        }),
+      },
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    expect(deps.blob.uploadPdf).not.toHaveBeenCalled();
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
+
+  it('a rejected delete is logged at ERROR + counted, and never masks the original error', async () => {
+    const metric = vi.spyOn(invoicingMetrics, 'orphanBlobCleanupFailed');
+    const { logger } = await import('@/lib/logger');
+    const errorLog = vi.spyOn(logger, 'error');
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const boom = new Error('apply failed');
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw boom;
+    });
+    deps.blob.delete = vi.fn(async () => {
+      throw new Error('blob delete 500');
+    });
+    await expect(recordPayment(deps, input)).rejects.toBe(boom);
+    expect(metric).toHaveBeenCalledWith('record_payment');
+    expect(
+      errorLog.mock.calls.some((c) => String(c[1]).startsWith('recordPayment: orphan receipt blob cleanup failed')),
+    ).toBe(true);
+  });
+
+  it('cleanup re-reads the row under its lock: a committed receipt at the key (ambiguous COMMIT / a later attempt) is KEPT', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const boom = new Error('connection terminated during COMMIT');
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw boom;
+    });
+    // The re-read sees the payment committed after all, owning this key.
+    deps.invoiceRepo.findByIdInTxForUpdate = vi.fn(async () =>
+      makeIssuedInvoice({
+        status: 'paid',
+        receiptPdf: { blobKey: RECEIPT_KEY, sha256: Sha256Hex.ofUnsafe('b'.repeat(64)), templateVersion: 1 },
+      } as InvoiceFixtureOverrides),
+    );
+    await expect(recordPayment(deps, input)).rejects.toBe(boom);
+    expect(deps.invoiceRepo.findByIdInTxForUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      INVOICE_ID,
+      'test-swecham',
+    );
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
+
+  it('cleanup deletes only after the locked re-read shows no committed receipt at the key', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const order: string[] = [];
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw new Error('apply failed');
+    });
+    deps.invoiceRepo.findByIdInTxForUpdate = vi.fn(async () => {
+      order.push('locked-read');
+      return makeIssuedInvoice();
+    });
+    deps.blob.delete = vi.fn(async () => {
+      order.push('delete');
+    });
+    await expect(recordPayment(deps, input)).rejects.toThrow('apply failed');
+    expect(order).toEqual(['locked-read', 'delete']);
+  });
+
+  it('the cleanup delete is conditional on the etag this attempt uploaded', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    deps.blob.uploadPdf = vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}`, etag: '"etag-a"' }));
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw new Error('apply failed');
+    });
+    await expect(recordPayment(deps, input)).rejects.toThrow('apply failed');
+    expect(deps.blob.delete).toHaveBeenCalledWith(RECEIPT_KEY, { ifMatch: '"etag-a"' });
+  });
+
+  it('a failed locked read (aborted caller tx) logs WARN, is NOT counted as a cleanup failure, keeps the original error', async () => {
+    const metric = vi.spyOn(invoicingMetrics, 'orphanBlobCleanupFailed');
+    metric.mockClear();
+    const { logger } = await import('@/lib/logger');
+    const warnLog = vi.spyOn(logger, 'warn');
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings());
+    const boom = new Error('apply failed');
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw boom;
+    });
+    deps.invoiceRepo.findByIdInTxForUpdate = vi.fn(async () => {
+      throw new Error('current transaction is aborted');
+    });
+    await expect(recordPayment(deps, input)).rejects.toBe(boom);
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+    expect(metric).not.toHaveBeenCalled();
+    expect(
+      warnLog.mock.calls.some((c) => String(c[1]).startsWith('recordPayment: orphan receipt blob cleanup skipped')),
+    ).toBe(true);
+  });
+
+  it('an idempotent replay never uploads or deletes', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice({ status: 'paid' }), makeSettings());
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.blob.uploadPdf).not.toHaveBeenCalled();
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
+
+  it('the async-PDF path (nothing uploaded in-tx) never deletes on a rollback', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings(), {
+      asyncReceiptPdf: true,
+      receiptPdfRenderEnqueue: { enqueue: vi.fn(async () => {}) },
+    });
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw new Error('apply failed');
+    });
+    await expect(recordPayment(deps, input)).rejects.toThrow('apply failed');
+    expect(deps.blob.uploadPdf).not.toHaveBeenCalled();
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
+});

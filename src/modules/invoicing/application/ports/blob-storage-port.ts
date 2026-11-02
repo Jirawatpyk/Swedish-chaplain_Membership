@@ -23,6 +23,18 @@ export class BlobKeyNotFoundError extends Error {
   }
 }
 
+/**
+ * #60 — a conditional delete (`ifMatch`) found different bytes at the key:
+ * someone wrote after this attempt's upload, so the object is not this
+ * attempt's to delete. Callers keep it.
+ */
+export class BlobChangedSinceUploadError extends Error {
+  constructor(options?: { readonly cause?: unknown }) {
+    super('blob storage: the object changed since it was uploaded', options);
+    this.name = 'BlobChangedSinceUploadError';
+  }
+}
+
 export interface BlobStoragePort {
   /**
    * Upload a PDF buffer. Returns the stable Blob URL / key.
@@ -47,7 +59,11 @@ export interface BlobStoragePort {
      * and FR-016 integrity breaks.
      */
     readonly allowOverwrite?: boolean;
-  }): Promise<{ readonly key: string; readonly url: string }>;
+    /**
+     * #60 — the stored object's etag when the adapter knows it, so a later
+     * cleanup can delete conditionally (`delete(key, { ifMatch })`).
+     */
+  }): Promise<{ readonly key: string; readonly url: string; readonly etag?: string }>;
 
   /**
    * R7-B2 — upload a tenant logo image. Distinct from uploadPdf so
@@ -88,10 +104,11 @@ export interface BlobStoragePort {
 
   /**
    * Delete a key. No background sweeper exists (accepted residual, 064
-   * design §3.2 L-1) — the only production caller today is
-   * issueEventInvoiceAsPaid's best-effort catch-path orphan delete.
+   * design §3.2 L-1). The catch-path orphan deletes go through
+   * `deleteOrphanPdfUnderLock`. With `ifMatch`, delete only if the stored
+   * etag still matches; otherwise throw `BlobChangedSinceUploadError`.
    */
-  delete(key: string): Promise<void>;
+  delete(key: string, options?: { readonly ifMatch?: string }): Promise<void>;
 
   /**
    * T092b — list keys under a prefix. Used by the logo-upload use case

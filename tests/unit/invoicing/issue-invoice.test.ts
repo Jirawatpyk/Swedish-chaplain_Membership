@@ -697,6 +697,50 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(deps.blob.delete).toHaveBeenCalledWith(EXPECTED_ISSUE_BLOB_KEY);
   });
 
+  it('#60 — the invoice PDF upload overwrites its key (under the row lock): a queued retry never reuses a rolled-back attempt\'s bytes', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    await issueInvoice(deps, input);
+    expect(deps.blob.uploadPdf).toHaveBeenCalledWith(
+      expect.objectContaining({ key: EXPECTED_ISSUE_BLOB_KEY, allowOverwrite: true }),
+    );
+  });
+
+  it('#60: a failed locked re-read (DB unavailable) logs WARN, is not counted, deletes nothing, keeps the original error', async () => {
+    const metric = vi.spyOn(invoicingMetrics, 'orphanBlobCleanupFailed');
+    metric.mockClear();
+    const warnLog = vi.spyOn(logger, 'warn');
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    const boom = new Error('outbox insert failed');
+    deps.outbox.enqueue = vi.fn(async () => {
+      throw boom;
+    });
+    deps.invoiceRepo.findByIdInTxForUpdate = vi.fn(async () => {
+      throw new Error('current transaction is aborted');
+    });
+    await expect(issueInvoice(deps, input)).rejects.toBe(boom);
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+    expect(metric).not.toHaveBeenCalled();
+    expect(
+      warnLog.mock.calls.some((c) => String(c[1]).startsWith('issueInvoice: orphan blob cleanup skipped')),
+    ).toBe(true);
+  });
+
+  it('#60 parity: an ambiguous COMMIT (the locked re-read shows the row owns the key) keeps the invoice PDF', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    deps.outbox.enqueue = vi.fn(async () => {
+      throw new Error('connection terminated during COMMIT');
+    });
+    deps.invoiceRepo.findByIdInTxForUpdate = vi.fn(async () =>
+      makeDraftInvoice({
+        status: 'issued',
+        pdf: { blobKey: EXPECTED_ISSUE_BLOB_KEY, sha256: Sha256Hex.ofUnsafe('b'.repeat(64)), templateVersion: 1 },
+      } as InvoiceFixtureOverrides),
+    );
+    await expect(issueInvoice(deps, input)).rejects.toThrow('connection terminated during COMMIT');
+    expect(deps.invoiceRepo.findByIdInTxForUpdate).toHaveBeenCalled();
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
+
   it('L-3: throw AFTER upload (outbox.enqueue) → promise REJECTS + orphan blob deleted', async () => {
     const deps = makeDeps(
       makeDraftInvoice({ autoEmailOnIssue: true }),

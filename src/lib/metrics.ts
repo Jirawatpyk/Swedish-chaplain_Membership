@@ -745,17 +745,15 @@ export const invoicingMetrics = {
 
   /**
    * 065 H-1b — post-rollback orphan-blob cleanup delete FAILED. Stale
-   * bytes remain at the deterministic key (`invoicing/{tenant}/{fy}/
-   * {invoiceId}_v{ver}.pdf`) after the issuance tx rolled back. On the
-   * as-paid path the retry now overwrites them (`allowOverwrite: true`,
-   * 065 H-1a), but on the plain-issue path a NEXT-DAY retry renders
-   * different bytes (issueDate moves) while the conflict-as-success
-   * adapter arm returns the OLD bytes — committing a row whose
-   * `pdf_sha256` does not match the stored document (silent
-   * tax-document drift). Alert: any non-zero rate — ops must sweep the
-   * logged key before the next issuance attempt of that invoice.
+   * bytes remain at a deterministic key (`invoicing/{tenant}/{fy}/
+   * {invoiceId}_v{ver}.pdf`, or `_receipt_v{ver}.pdf` for record payment)
+   * after the tx rolled back, possibly printed with a released document
+   * number. Since #60 all three paths overwrite on retry, so the stored file
+   * cannot drift from the committed sha256, but an invoice that is never
+   * retried keeps the orphan. Alert: any non-zero rate — ops checks the
+   * logged key (runbook `record-payment-unconfirmed.md` § 2).
    */
-  orphanBlobCleanupFailed(useCase: 'issue' | 'issue_as_paid'): void {
+  orphanBlobCleanupFailed(useCase: 'issue' | 'issue_as_paid' | 'record_payment'): void {
     safeMetric(() => {
       counter(
         'invoicing_orphan_blob_cleanup_failed_total',

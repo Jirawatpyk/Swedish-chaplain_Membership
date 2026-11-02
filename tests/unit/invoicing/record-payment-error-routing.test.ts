@@ -43,10 +43,16 @@ describe('routeRecordPaymentError (FR-028/FR-032)', () => {
       messageKey: 'errors.codeFallback',
       codeArg: 'overflow',
     });
+  });
+
+  it('#62(2) — render / upload failures read as a temporary problem (the tx rolled back; nothing was recorded)', () => {
     expect(routeRecordPaymentError('pdf_render_failed')).toEqual({
       kind: 'failure',
-      messageKey: 'errors.codeFallback',
-      codeArg: 'pdf_render_failed',
+      messageKey: 'errors.temporary',
+    });
+    expect(routeRecordPaymentError('blob_upload_failed')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.temporary',
     });
   });
 

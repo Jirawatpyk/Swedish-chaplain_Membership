@@ -20,8 +20,14 @@
  *     VOID re-stamp path depends on.
  *   - `signDownloadUrl` / `downloadBytes` throw `BlobKeyNotFoundError` on a
  *     missing key, as the adapter does for a real store's `head()` miss.
+ *   - every write gets a fresh etag, returned by `uploadPdf`; `delete` with a
+ *     stale `ifMatch` throws `BlobChangedSinceUploadError` (#60).
  */
-import { BlobKeyNotFoundError, type BlobStoragePort } from '@/modules/invoicing';
+import {
+  BlobChangedSinceUploadError,
+  BlobKeyNotFoundError,
+  type BlobStoragePort,
+} from '@/modules/invoicing';
 
 export interface InMemoryBlobStorage extends BlobStoragePort {
   /** Keys currently held, sorted — for assertions like "exactly ONE blob". */
@@ -31,7 +37,9 @@ export interface InMemoryBlobStorage extends BlobStoragePort {
 }
 
 export function createInMemoryBlobStorage(): InMemoryBlobStorage {
-  const store = new Map<string, { body: Uint8Array; contentType: string }>();
+  const store = new Map<string, { body: Uint8Array; contentType: string; etag: string }>();
+  let writes = 0;
+  const nextEtag = () => `"mem-${++writes}"`;
 
   const requireBlob = (key: string) => {
     const blob = store.get(key);
@@ -48,15 +56,17 @@ export function createInMemoryBlobStorage(): InMemoryBlobStorage {
   return {
     async uploadPdf(input) {
       const exists = store.has(input.key);
-      if (exists && input.allowOverwrite !== true) {
-        return { key: input.key, url: urlFor(input.key) };
+      const current = store.get(input.key);
+      if (exists && current && input.allowOverwrite !== true) {
+        return { key: input.key, url: urlFor(input.key), etag: current.etag };
       }
-      store.set(input.key, { body: input.body, contentType: input.contentType });
-      return { key: input.key, url: urlFor(input.key) };
+      const etag = nextEtag();
+      store.set(input.key, { body: input.body, contentType: input.contentType, etag });
+      return { key: input.key, url: urlFor(input.key), etag };
     },
 
     async uploadLogo(input) {
-      store.set(input.key, { body: input.body, contentType: input.contentType });
+      store.set(input.key, { body: input.body, contentType: input.contentType, etag: nextEtag() });
       return { key: input.key, url: urlFor(input.key) };
     },
 
@@ -69,7 +79,11 @@ export function createInMemoryBlobStorage(): InMemoryBlobStorage {
       return requireBlob(key).body;
     },
 
-    async delete(key) {
+    async delete(key, options) {
+      const current = store.get(key);
+      if (options?.ifMatch !== undefined && current && current.etag !== options.ifMatch) {
+        throw new BlobChangedSinceUploadError();
+      }
       store.delete(key);
     },
 

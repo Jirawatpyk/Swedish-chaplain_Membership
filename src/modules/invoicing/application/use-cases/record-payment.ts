@@ -70,6 +70,7 @@ import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
+import { deleteOrphanPdfUnderLock, OrphanCleanupLockReadError } from '../lib/delete-orphan-pdf';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
 
 export const recordPaymentSchema = z.object({
@@ -451,6 +452,11 @@ export async function recordPayment(
     }
   }
 
+  // #60 — the receipt key this attempt is about to write (sync path only).
+  // Set just before the in-tx upload so the outer catch can delete the bytes
+  // a rolled-back attempt left behind (065 L-3 parity with issueInvoice).
+  let receiptBlobKeyForCleanup: string | null = null;
+  let receiptBlobEtag: string | null = null;
   let result: Result<RecordPaymentSuccess, RecordPaymentError>;
   try {
   result = await time('tx', () => deps.invoiceRepo.withTx(async (tx) => {
@@ -950,7 +956,16 @@ export async function recordPayment(
                   : {}),
               },
               blobKey: receiptBlobKey,
+              // #60 (065 H-1a parity) — overwrite. Safe: this runs after
+              // `lockForUpdate` on an `issued` row (a paid row returned as a
+              // replay above), so one attempt per invoice reaches here at a
+              // time, and any bytes already at the key belong to a
+              // rolled-back attempt whose RC number was released. Without it
+              // the adapter's "already exists" arm keeps those OLD bytes while
+              // the row commits a new RC number and the NEW bytes' sha256.
+              allowOverwrite: true,
             };
+    if (receiptRenderRequest !== null) receiptBlobKeyForCleanup = receiptBlobKey;
     const rendered =
       receiptRenderRequest === null
         ? null
@@ -961,6 +976,7 @@ export async function recordPayment(
               (code, reason) => new RecordPaymentInternalError({ code, reason }),
             ),
           );
+    receiptBlobEtag = rendered?.etag ?? null;
 
     // Atomic issued→paid UPDATE with payment fields + receipt PDF
     // metadata. The repo throws `applyPayment: no row updated` when
@@ -1418,6 +1434,47 @@ export async function recordPayment(
     return ok({ ...updated, emailDispatch, replayed: false });
   }));
   } catch (e) {
+    // #60 — orphan receipt cleanup (065 L-3 parity). Any failure after the
+    // upload rolled the tx back and released the RC number, but the PDF
+    // printed with that number stays at the key. Skipped only after
+    // `pdf_render_failed`: the render runs before the upload, so this attempt
+    // wrote nothing. Every other error (including `concurrent_state_change`)
+    // goes through `deleteOrphanPdfUnderLock`: a locked re-read, then a delete
+    // under that lock conditional on this upload's etag. Best-effort: a failed
+    // delete is logged at ERROR and counted; a failed locked read (aborted
+    // caller tx, DB down) is a WARN, since the next attempt's overwrite covers
+    // it. The original error is never masked.
+    const orphanKey = receiptBlobKeyForCleanup;
+    const skipOrphanCleanup =
+      e instanceof RecordPaymentInternalError && e.error.code === 'pdf_render_failed';
+    if (orphanKey !== null && !skipOrphanCleanup) {
+      try {
+        const outcome = await deleteOrphanPdfUnderLock(deps, {
+          invoiceId,
+          tenantId: input.tenantId,
+          blobKey: orphanKey,
+          etag: receiptBlobEtag,
+          rowOwnsKey: (row) => row.receiptPdf?.blobKey === orphanKey,
+        });
+        logger.info(
+          { invoiceId: input.invoiceId, blobKey: orphanKey, outcome },
+          'recordPayment: orphan receipt blob cleanup',
+        );
+      } catch (delErr) {
+        if (delErr instanceof OrphanCleanupLockReadError) {
+          logger.warn(
+            { err: errKind(delErr.cause), invoiceId: input.invoiceId, blobKey: orphanKey },
+            'recordPayment: orphan receipt blob cleanup skipped — the locked re-read failed (caller tx aborted or DB unavailable); the next attempt overwrites the key',
+          );
+        } else {
+          logger.error(
+            { err: errKind(delErr), invoiceId: input.invoiceId, blobKey: orphanKey },
+            'recordPayment: orphan receipt blob cleanup failed',
+          );
+          invoicingMetrics.orphanBlobCleanupFailed('record_payment');
+        }
+      }
+    }
     if (e instanceof RecordPaymentInternalError) {
       logger.warn(
         {

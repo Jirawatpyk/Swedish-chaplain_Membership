@@ -3598,6 +3598,7 @@
           "membership_terminated": "This member's membership has been terminated — use \"Renew member\" to reactivate and re-invoice, then record the payment against the new invoice. If the member's previous open invoice is still there, void it.",
           "new_flow_bill_requires_flag_on": "This invoice was created for the tax-at-payment flow, which is currently switched off. Re-enable it, or void and re-issue the invoice, before recording payment.",
           "concurrent": "This invoice has already been paid or changed. Refresh to see its status and the receipt (RC) number.",
+          "temporary": "A temporary problem stopped the payment from being recorded — nothing was recorded. Please try again, and contact support if it keeps happening.",
           "unconfirmed": "We couldn't confirm whether the payment was recorded. Refresh to check before you try again — if it was recorded, trying again records nothing new.",
           "waitingForConnection": "Waiting for the connection…",
           "stillWorking": "Still working — keep this window open.",

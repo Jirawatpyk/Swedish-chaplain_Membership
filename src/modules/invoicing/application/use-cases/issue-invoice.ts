@@ -107,6 +107,8 @@ import { isExclusionViolationOnConstraint } from '@/lib/db-errors';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
+import { deleteOrphanPdfUnderLock, OrphanCleanupLockReadError } from '../lib/delete-orphan-pdf';
+import { errKind } from '@/lib/log-id';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { resolveInvoiceBuyerForIssue } from '../lib/resolve-invoice-buyer';
 import { enqueueInvoiceAutoEmail } from '../lib/enqueue-invoice-email';
@@ -340,6 +342,7 @@ export async function issueInvoice(
   // (fy depends on the in-tx settings read) but is deterministic, so the
   // hoisted copy is exact.
   let blobKeyForCleanup: string | null = null;
+  let blobEtagForCleanup: string | null = null;
 
   try {
   return await deps.invoiceRepo.withTx(async (tx) => {
@@ -723,6 +726,13 @@ export async function issueInvoice(
     const rendered = await renderAndUploadPdf(
       { pdfRender: deps.pdfRender, blob: deps.blob },
       {
+        // #60 (065 H-1a parity) — overwrite. Safe: `lockForUpdate` above holds
+        // the draft row for the whole render + upload, and a non-draft row
+        // exits before any upload, so any bytes already at the key belong to a
+        // rolled-back attempt. Without it the adapter's "already exists" arm
+        // hands a queued retry those OLD bytes (possibly printed with another
+        // number) while the row commits the NEW bytes' sha256.
+        allowOverwrite: true,
         renderInput: {
           kind: pdfKind,
           templateVersion: deps.currentTemplateVersion,
@@ -769,6 +779,7 @@ export async function issueInvoice(
       },
       (code, reason) => new IssueInvoiceInternalError({ code, reason }),
     );
+    blobEtagForCleanup = rendered.etag ?? null;
 
     // J. UPDATE invoices row. The repo throws if the status guard
     // (WHERE status='draft') doesn't match — treat that as a
@@ -1008,23 +1019,45 @@ export async function issueInvoice(
     //   - `pdf_render_failed`: the render runs BEFORE the upload inside
     //     renderAndUploadPdf — THIS attempt wrote nothing at the key.
     // Best-effort (awaited, failure logged + counted, never masks the
-    // original error). The wave-3 S33 successor-race residual accepted on
-    // the as-paid path applies here identically.
+    // original error). The wave-3 S33 successor race is closed by #60 (see
+    // deleteOrphanPdfUnderLock).
     const orphanBlobKey = blobKeyForCleanup;
     const skipOrphanCleanup =
       e instanceof IssueInvoiceInternalError &&
       (e.error.code === 'invoice_already_issued' || e.error.code === 'pdf_render_failed');
     if (orphanBlobKey !== null && !skipOrphanCleanup) {
-      await deps.blob.delete(orphanBlobKey).catch((delErr: unknown) => {
-        // 065 H-1b parity — ERROR + alertable counter: stale bytes remain at
-        // the key and (unlike as-paid) THIS path has no allowOverwrite
-        // retry, so the drift risk stands until the orphan is swept.
-        logger.error(
-          { err: delErr, invoiceId: input.invoiceId, blobKey: orphanBlobKey },
-          'issueInvoice: orphan blob cleanup failed',
+      // #60 — under the invoice row lock, keeping the file when the locked
+      // re-read shows a row pointing at it (an ambiguous COMMIT), and
+      // conditional on this upload's etag (a delete Blob applies late cannot
+      // remove a successor's bytes). A failed locked read is a WARN: it is a
+      // database problem, and the next attempt overwrites the key.
+      try {
+        const outcome = await deleteOrphanPdfUnderLock(deps, {
+          invoiceId,
+          tenantId: input.tenantId,
+          blobKey: orphanBlobKey,
+          etag: blobEtagForCleanup,
+          rowOwnsKey: (row) => row.pdf?.blobKey === orphanBlobKey,
+        });
+        logger.info(
+          { invoiceId: input.invoiceId, blobKey: orphanBlobKey, outcome },
+          'issueInvoice: orphan blob cleanup',
         );
-        invoicingMetrics.orphanBlobCleanupFailed('issue');
-      });
+      } catch (delErr) {
+        if (delErr instanceof OrphanCleanupLockReadError) {
+          logger.warn(
+            { err: errKind(delErr.cause), invoiceId: input.invoiceId, blobKey: orphanBlobKey },
+            'issueInvoice: orphan blob cleanup skipped — the locked re-read failed',
+          );
+        } else {
+          // 065 H-1b — ERROR + alertable counter: stale bytes remain at the key.
+          logger.error(
+            { err: delErr, invoiceId: input.invoiceId, blobKey: orphanBlobKey },
+            'issueInvoice: orphan blob cleanup failed',
+          );
+          invoicingMetrics.orphanBlobCleanupFailed('issue');
+        }
+      }
     }
     if (e instanceof IssueInvoiceInternalError) {
       // 065 M-4 — severity split: overflow (tenant-wide §87 number-space
