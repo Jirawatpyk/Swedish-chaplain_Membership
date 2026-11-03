@@ -19,6 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runInTenant } from '@/lib/db';
 import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
 import {
   broadcastOrphanedResendIds,
   broadcasts,
@@ -392,6 +393,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
       const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email]));
       const audiences = [...new Set(pairs.map((p) => p.audienceId))].sort();
       // attempts 0 and 1 are past the cap.
+      expect(ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT).toBe(10);
       expect(audiences).toEqual(ids.slice(2).sort());
       expect(audiences).not.toContain(otherTenant);
     } finally {

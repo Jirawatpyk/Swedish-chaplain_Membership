@@ -55,6 +55,7 @@ import {
   TRANSITION_FIELDS,
 } from '../../application/ports/broadcasts-repo';
 import { CASCADE_CANCELLATION_REASONS } from '../../domain/value-objects/cascade-cancellation-reason';
+import { ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT } from '../../domain/value-objects/orphaned-resend-id';
 import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
@@ -2685,6 +2686,18 @@ export function makeDrizzleBroadcastsRepo(
      * with the tenant's UNSETTLED audience orphans (`broadcast_orphaned_resend_ids`,
      * `resource_type = 'audience'`): a leaked audience the drain has not yet
      * settled, a stuck one included, may hold the address.
+     *
+     * Review round 3 (code-review #3) — that arm reads at most
+     * `ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT` (10) orphans, most attempts first,
+     * then the oldest, so the pairs stay `addresses × 10` at worst. An orphan
+     * past the cap is not detached; the erasure's audience pass and the drain
+     * delete its audience outright (RoPA 8d names the residual).
+     *
+     * Review round 3 (security INFO-2) — this SELECT runs INSIDE the members
+     * scrub transaction (`broadcasts-audience-derivation-adapter.ts`), so a
+     * grant or RLS regression on `broadcast_orphaned_resend_ids` aborts the
+     * scrub, not just this arm; `verify-schema` pins its RLS + FORCE and
+     * the `chamber_app` DELETE / UPDATE grants (the 0325 check).
      */
     async listMemberResendAudienceContactsInTx(txUnknown, tenantIdArg, emails) {
       const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
@@ -2774,14 +2787,24 @@ export function makeDrizzleBroadcastsRepo(
         -- a failure resend_contacts_failed_count, and neither blocks the
         -- erasure (the propagation is best-effort). Settled rows are gone at
         -- Resend or never were. NO BACKTICKS in this comment (sql template).
+        -- Review round 3 (code-review #3) — at most
+        -- ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT orphans, the most-attempted
+        -- first (the stuck ones), then the oldest; past the cap, pass (b) and
+        -- the drain delete the audience outright. Every name in the capped
+        -- subquery is qualified (alias capped) and fenced on the tenant.
         SELECT DISTINCT o.resource_id AS audience_id,
                         e.email AS email
-        FROM broadcast_orphaned_resend_ids o
+        FROM (
+          SELECT capped.resource_id
+          FROM broadcast_orphaned_resend_ids capped
+          WHERE capped.tenant_id = ${tenantIdArg}
+            AND capped.resource_type = 'audience'
+            AND capped.settled_at IS NULL
+            AND capped.resource_id IS NOT NULL
+          ORDER BY capped.attempts DESC, capped.created_at ASC, capped.orphan_id ASC
+          LIMIT ${ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT}
+        ) o
         CROSS JOIN unnest(${emailArray}) AS e(email)
-        WHERE o.tenant_id = ${tenantIdArg}
-          AND o.resource_type = 'audience'
-          AND o.settled_at IS NULL
-          AND o.resource_id IS NOT NULL
       `)) as unknown as Array<{ audience_id: string; email: string }>;
       return rows.map((r) => ({ audienceId: r.audience_id, email: r.email }));
     },

@@ -119,6 +119,15 @@ export const ORPHAN_STUCK_MIN_AGE_MS = 2 * 60 * 60 * 1000;
  */
 export const AUDIENCE_CLEANUP_GRACE_MS = 60 * 60 * 1000;
 
+/**
+ * Review round 3 (code-review #3) — the 8a detach derivation's leaked-audience
+ * arm reads at most this many unsettled audience orphans of the tenant, the
+ * most-attempted first, so an erasure's detach pairs stay bounded. An orphan
+ * past the cap is not detached: the erasure's audience pass and the drain
+ * delete the whole audience (RoPA 8d, the detach-cap residual).
+ */
+export const ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT = 10;
+
 /** [A7] The window of the `create_unconfirmed` gauge: rows created in the last 24 h. */
 export const ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS = 24;
 
