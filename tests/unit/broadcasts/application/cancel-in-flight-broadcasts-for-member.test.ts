@@ -38,7 +38,9 @@ import {
   ERASURE_AUDIENCE_ORPHAN_LIMIT,
   cancelInFlightBroadcastsForMember,
 } from '@/modules/broadcasts/application/use-cases/cancel-in-flight-broadcasts-for-member';
-import { ORPHAN_STUCK_ATTEMPTS } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
+import { ORPHAN_STUCK_ATTEMPTS, ORPHAN_SUPERSEDING_STATUSES } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
+import { TERMINAL_BROADCAST_STATUSES } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import { logger } from '@/lib/logger';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { REPROBE_PAUSE_MS } from '@/modules/broadcasts/application/use-cases/_reprobe-pause';
 import { asTenantContext } from '@/modules/tenants';
@@ -1567,6 +1569,37 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       const result = await cancelInFlightBroadcastsForMember(deps as never, { ...erasureInput, deadlineAt: new Date('2026-05-02T00:00:00Z') });
       expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, deferredCount: 1, audienceOrphansStuckCount: 1 } });
       expect(deps.orphanCalls.filter((c) => c.startsWith('deleteAudience'))).toEqual([]);
+    });
+  });
+
+  /**
+   * Spec 140 s2c review round 3 — code-review #5: a run whose only news is a
+   * released stuck audience orphan still logs `broadcasts.cascade.completed`;
+   * reliability nit: a superseding status is TERMINAL (a non-terminal holder
+   * already hides the orphan from every list, so it could never supersede).
+   */
+  describe('spec 140 s2c review round 3 — the summary log and the superseding statuses', () => {
+    const erasureInput = { tenant, memberId, requestId: 'req-1', onDispatchBegun: 'delete_then_cancel' as const };
+
+    it('[code-review #5] a released stuck audience orphan alone still logs broadcasts.cascade.completed', async () => {
+      vi.mocked(logger.info).mockClear();
+      const stuck = {
+        orphanId: 'o-aud-1',
+        broadcastId: broadcastIdB,
+        resourceId: 'aud-1',
+        resourceType: 'audience' as const,
+        attempts: ORPHAN_STUCK_ATTEMPTS,
+        createdAt: new Date('2026-05-02T00:00:00Z'),
+      };
+      const deps = makeDeps({ audienceOrphans: [stuck], deleteAudienceThrows: ['aud-1'] });
+      await cancelInFlightBroadcastsForMember(deps, erasureInput);
+      const line = vi.mocked(logger.info).mock.calls.find((c) => c[1] === 'broadcasts.cascade.completed');
+      expect(line?.[0]).toMatchObject({ audienceOrphansStuckCount: 1, unexpectedErrorCount: 0 });
+    });
+
+    it('[reliability nit] every ORPHAN_SUPERSEDING_STATUSES member is terminal', () => {
+      const terminal: ReadonlyArray<string> = TERMINAL_BROADCAST_STATUSES;
+      expect(ORPHAN_SUPERSEDING_STATUSES.filter((s) => !terminal.includes(s))).toEqual([]);
     });
   });
 });
