@@ -1820,6 +1820,7 @@ describe('issueCreditNote — #66 idempotency key (admin notes)', () => {
         null,
       ),
       originalInvoiceId: asInvoiceId(INVOICE_ID),
+      reason: baseInput.reason,
       ...overrides,
     };
   }
@@ -1870,6 +1871,47 @@ describe('issueCreditNote — #66 idempotency key (admin notes)', () => {
       expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
       expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
     }
+  });
+
+  // #728 review (financial M1) — the key answers THIS request only when the
+  // whole credit matches: a different reason or membership effect under the
+  // same key is not the same note.
+  it('the same key with a different reason or membership effect is refused as concurrent_state_change', async () => {
+    for (const [hit, input] of [
+      [existingCn({ reason: 'another reason' }), baseInput],
+      [existingCn({ membershipEffect: 'cancel_membership' }), { ...baseInput, membershipEffect: 'keep' as const }],
+      [existingCn({ membershipEffect: 'keep' }), baseInput],
+    ] as const) {
+      const { deps } = depsWithKeyHit(hit);
+      const r = await issueCreditNote(deps, { ...input, idempotencyKey: KEY });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('concurrent_state_change');
+      expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+    }
+  });
+
+  it('the same reason (trimmed) and the same membership effect still replay', async () => {
+    const { deps } = depsWithKeyHit(existingCn({ membershipEffect: 'keep' }));
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      reason: '  duplicate charge ',
+      membershipEffect: 'keep',
+      idempotencyKey: KEY,
+    });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (r.ok) expect(r.value.replayed).toBe(true);
+  });
+
+  // #728 review (financial L2) — the pre-read hit skipped the manual guards; if
+  // the locked read then misses, issuing would bypass them. Refuse instead.
+  it('a pre-read hit followed by a miss under the lock issues nothing (concurrent_state_change)', async () => {
+    const { deps, findByIdempotencyKey } = depsWithKeyHit(null);
+    findByIdempotencyKey.mockResolvedValueOnce(existingCn()).mockResolvedValue(null);
+    const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('concurrent_state_change');
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
   });
 
   it('a first attempt with a key issues normally, stores the key on the row and is not a replay', async () => {

@@ -340,6 +340,41 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
     ).rejects.toThrow(/immutable/);
   }, 60_000);
 
+  // #728 review (Thai-tax M-1) — two invoices lock independently, so both
+  // attempts reach the insert and the loser hits the real 23505 on the key
+  // index; its reconcile finds a winner for ANOTHER invoice and refuses. The
+  // loser's §87 number rolls back with it.
+  it('one key raced on two invoices → one note; the other is refused and its number is not consumed', async () => {
+    const invA = await seedPaidInvoice(tenant, user, planId);
+    const invB = await seedPaidInvoice(tenant, user, planId);
+    const key = randomUUID();
+    const before = await readCreditNoteSeq(tenant);
+    const results = await Promise.all([issue(tenant, invA, key), issue(tenant, invB, key)]);
+    const oks = results.filter((r) => r.ok);
+    const errs = results.filter((r) => !r.ok);
+    expect(oks.length, JSON.stringify(results)).toBe(1);
+    expect(errs.length).toBe(1);
+    const lost = errs[0];
+    if (lost && !lost.ok) expect(lost.error.code).toBe('concurrent_state_change');
+    expect((await countNotes(tenant, invA)) + (await countNotes(tenant, invB))).toBe(1);
+    expect((await readCreditNoteSeq(tenant)) - before).toBe(1);
+  }, 60_000);
+
+  it('the trigger refuses a change of idempotency_key under the PII-redaction exemption too', async () => {
+    const invoiceId = await seedPaidInvoice(tenant, user, planId);
+    const r = await issue(tenant, invoiceId, randomUUID());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    await expect(
+      runInTenant(tenant.ctx, async (tx) => {
+        await tx.execute(sql`SET LOCAL app.allow_pii_redaction = 'true'`);
+        await tx.execute(
+          sql`UPDATE credit_notes SET idempotency_key = ${randomUUID()} WHERE tenant_id = ${tenant.ctx.slug} AND credit_note_id = ${r.value.creditNote.creditNoteId}`,
+        );
+      }),
+    ).rejects.toThrow(/only member_identity_snapshot may change/);
+  }, 60_000);
+
   it('keys are per tenant: the same key in another tenant is its own note', async () => {
     const key = randomUUID();
     const a = await issue(tenant, await seedPaidInvoice(tenant, user, planId), key);

@@ -37,6 +37,10 @@ const labelled = (text: string) => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\
 
 const cnMessages = enMessages.admin.creditNotes.new;
 
+/** #728 review — the unknown-outcome copy names the attempt's amount. */
+const UNCONFIRMED_500 =
+  "We couldn't confirm whether the credit note for 500.00 THB was issued. Try again — if it was already issued, trying again issues nothing new. Or open the invoice to check.";
+
 const refreshMock = vi.fn();
 const pushMock = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -48,6 +52,7 @@ vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 // (tests/setup.ts installs fakes).
 beforeEach(() => {
   vi.useRealTimers();
+  window.sessionStorage.clear();
   refreshMock.mockClear();
   pushMock.mockClear();
 });
@@ -201,8 +206,7 @@ describe('CreditNoteForm — failure branch is focused + destructive (FR-032)', 
 // SECOND note. So the copy never invites a retry and the submit stays locked
 // until the page reloads.
 describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
-  const UNCONFIRMED =
-    "We couldn't confirm whether the credit note was issued. Try again — if it was issued, trying again issues nothing new — or open the invoice to check.";
+  const UNCONFIRMED = UNCONFIRMED_500;
 
   function respond(status: number, body: unknown) {
     return vi.fn(async (_url: string, _init: RequestInit) => ({
@@ -317,14 +321,12 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
 });
 
 // #66 — the key outlives a reload (sessionStorage per invoice) until the server
-// gives a definite answer, so a resubmit after a reload is deduplicated too; a
-// replay says the note was already issued.
+// gives a definite answer. #728 review: the stored attempt is the whole
+// request, so a reload restores it LOCKED (no new amount under an old key) and
+// "Try again" resends exactly what the first attempt sent.
 describe('CreditNoteForm — #66 the idempotency key', () => {
   const STORE_KEY = `cn-attempt:${INVOICE_ID}`;
-
-  beforeEach(() => {
-    window.sessionStorage.clear();
-  });
+  const LOCKED_HINT = 'Finish this credit note with Try again in the message above, or open the invoice.';
 
   function okFetch(body: Record<string, unknown>) {
     return vi.fn(async (_url: string, _init: RequestInit) => ({
@@ -333,35 +335,154 @@ describe('CreditNoteForm — #66 the idempotency key', () => {
       json: async () => body,
     }));
   }
+  function refusal(status: number, body: unknown) {
+    return { ok: false, status, json: async () => body };
+  }
+  const dropped = () => {
+    throw new TypeError('Failed to fetch');
+  };
+  /** Try again is `aria-disabled` while a request runs; wait it out, then click. */
+  async function clickTryAgain() {
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Try again' })).not.toHaveAttribute('aria-disabled', 'true'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  }
+  function bodyOf(fetchMock: ReturnType<typeof vi.fn>, call: number): Record<string, unknown> {
+    return JSON.parse(String((fetchMock.mock.calls[call] as [string, RequestInit])[1].body)) as Record<string, unknown>;
+  }
 
-  it('after an unknown outcome a reload keeps the key: the next submit sends the same one', async () => {
-    const dropped = vi.fn(async (_url: string, _init: RequestInit) => {
-      throw new TypeError('Failed to fetch');
-    });
-    vi.stubGlobal('fetch', dropped);
+  it('after an unknown outcome a reload restores the attempt locked, pre-filled, and Try again resends it exactly', async () => {
+    const first = vi.fn(async (_url: string, _init: RequestInit) => dropped());
+    vi.stubGlobal('fetch', first);
     try {
       const view = renderForm();
       fillAndSubmit();
       await screen.findByTestId('credit-note-error');
-      const key = (JSON.parse(String(dropped.mock.calls[0]?.[1]?.body)) as { idempotencyKey: string })
-        .idempotencyKey;
-      expect(window.sessionStorage.getItem(STORE_KEY)).toBe(key);
+      const sent = String((first.mock.calls[0] as [string, RequestInit])[1].body);
+      const stored = JSON.parse(window.sessionStorage.getItem(STORE_KEY) ?? 'null') as { key: string; body: string };
+      expect(stored.body).toBe(sent);
+      expect(stored.key).toBe((JSON.parse(sent) as { idempotencyKey: string }).idempotencyKey);
       view.unmount();
 
       const ok = okFetch({ document_number: 'CN-2026-000009', replayed: true });
       vi.stubGlobal('fetch', ok);
       renderForm();
-      fillAndSubmit();
+      const alert = await screen.findByTestId('credit-note-error');
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveTextContent(UNCONFIRMED_500);
+      expect(screen.getByLabelText(labelled(cnMessages.amountLabel))).toHaveValue(500);
+      expect(screen.getByLabelText(labelled(cnMessages.reasonLabel))).toHaveValue('duplicate charge');
+      expect(screen.getByLabelText(labelled(cnMessages.amountLabel))).toHaveAttribute('readonly');
+      expect(screen.getByRole('button', { name: cnMessages.submit })).toBeDisabled();
+      expect(screen.getByTestId('cn-locked-hint')).toHaveTextContent(LOCKED_HINT);
+      await clickTryAgain();
       await waitFor(() => expect(ok).toHaveBeenCalledTimes(1));
-      expect((JSON.parse(String(ok.mock.calls[0]?.[1]?.body)) as { idempotencyKey: string }).idempotencyKey).toBe(key);
-      // A definite answer ends the attempt.
+      expect(String((ok.mock.calls[0] as [string, RequestInit])[1].body)).toBe(sent);
       await waitFor(() => expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull());
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it('a replay says the note was already issued and nothing new was created', async () => {
+  it('while the outcome is unknown every field is read-only and the locked note says why', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => dropped()));
+    try {
+      renderForm();
+      fillAndSubmit();
+      await screen.findByTestId('credit-note-error');
+      expect(screen.getByLabelText(labelled(cnMessages.amountLabel))).toHaveAttribute('readonly');
+      expect(screen.getByLabelText(labelled(cnMessages.reasonLabel))).toHaveAttribute('readonly');
+      expect(screen.getByLabelText(new RegExp(cnMessages.confirmCopy.split('{phrase}')[0]!))).toHaveAttribute('readonly');
+      expect(screen.getByTestId('cn-locked-hint')).toHaveTextContent(LOCKED_HINT);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // Thai-tax H-1 / UX H2 — these refusals come before the key is looked up, so
+  // they say nothing about whether the first attempt issued a note. Dropping the
+  // key would let the next submit mint a second one.
+  it.each([
+    ['a 429 rate limit', 429, { error: { code: 'rate_limited' } }],
+    ['a read-only 503', 503, { error: 'read-only-mode' }],
+    ['a 401 expired session', 401, { error: { code: 'unauthorized' } }],
+    ['a 409 refund_in_progress', 409, { error: { code: 'refund_in_progress' } }],
+  ] as const)('after an unknown outcome, Try again refused by %s keeps the key and the lock', async (_l, status, body) => {
+    const fetchMock = vi
+      .fn(async (_url: string, _init: RequestInit) => refusal(status, body))
+      .mockImplementationOnce(async () => dropped());
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      fillAndSubmit();
+      await screen.findByTestId('credit-note-error');
+      const stored = window.sessionStorage.getItem(STORE_KEY);
+      await clickTryAgain();
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Try again' })).not.toHaveAttribute('aria-disabled', 'true'),
+      );
+      expect(window.sessionStorage.getItem(STORE_KEY)).toBe(stored);
+      const alert = screen.getByTestId('credit-note-error');
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveTextContent(UNCONFIRMED_500);
+      expect(screen.getByRole('button', { name: cnMessages.submit })).toBeDisabled();
+      await clickTryAgain();
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+      expect(bodyOf(fetchMock, 2)).toEqual(bodyOf(fetchMock, 0));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('after an unknown outcome, a refusal made after the key lookup ends the attempt', async () => {
+    const fetchMock = vi
+      .fn(async (_url: string, _init: RequestInit) => refusal(409, { error: { code: 'invalid_status' } }))
+      .mockImplementationOnce(async () => dropped());
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      fillAndSubmit();
+      await screen.findByTestId('credit-note-error');
+      await clickTryAgain();
+      await waitFor(() =>
+        expect(screen.getByTestId('credit-note-error')).toHaveAttribute('data-tone', 'neutral'),
+      );
+      expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a retry keeps the alert on screen while it runs, and offline it waits for the connection', async () => {
+    let release: (v: unknown) => void = () => {};
+    const fetchMock = vi
+      .fn((_url: string, _init: RequestInit) => new Promise((r) => { release = r; }))
+      .mockImplementationOnce(async () => dropped());
+    vi.stubGlobal('fetch', fetchMock);
+    const onLine = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      renderForm();
+      onLine.mockReturnValue(true);
+      fillAndSubmit();
+      await screen.findByTestId('credit-note-error');
+      onLine.mockReturnValue(false);
+      await clickTryAgain();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(screen.getAllByText('Waiting for the connection…').length).toBeGreaterThan(0);
+      onLine.mockReturnValue(true);
+      window.dispatchEvent(new Event('online'));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      expect(screen.getByTestId('credit-note-error')).toBeInTheDocument();
+      release(refusal(504, undefined));
+    } finally {
+      onLine.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a replay says the note had already been issued and no new one was', async () => {
     const { toast } = await import('@/lib/toast');
     vi.mocked(toast.success).mockClear();
     vi.stubGlobal('fetch', okFetch({ document_number: 'CN-2026-000009', replayed: true }));
@@ -370,7 +491,7 @@ describe('CreditNoteForm — #66 the idempotency key', () => {
       fillAndSubmit();
       await waitFor(() => expect(toast.success).toHaveBeenCalled());
       expect(vi.mocked(toast.success).mock.calls[0]?.[0]).toBe(
-        'Credit note CN-2026-000009 was already issued — nothing new was created.',
+        'Credit note CN-2026-000009 had already been issued — no new credit note was issued.',
       );
       expect(pushMock).toHaveBeenCalledWith(`/admin/invoices/${INVOICE_ID}`);
     } finally {
@@ -378,17 +499,14 @@ describe('CreditNoteForm — #66 the idempotency key', () => {
     }
   });
 
-  it('a definite refusal also ends the attempt (the next submit gets a new key)', async () => {
-    const PENDING = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
-    window.sessionStorage.setItem(STORE_KEY, PENDING);
+  it('before any unknown outcome, a refusal ends the attempt (the next submit gets a new key)', async () => {
     const refused = rejectingFetch('invalid_status');
     vi.stubGlobal('fetch', refused);
     try {
       renderForm();
       fillAndSubmit();
       await screen.findByTestId('credit-note-error');
-      // The pending attempt's key is reused, then dropped on the definite answer.
-      expect((JSON.parse(String(refused.mock.calls[0]?.[1]?.body)) as { idempotencyKey: string }).idempotencyKey).toBe(PENDING);
+      expect(bodyOf(refused, 0).idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
       expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull();
     } finally {
       vi.unstubAllGlobals();
