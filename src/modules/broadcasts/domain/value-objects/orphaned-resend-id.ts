@@ -91,8 +91,8 @@ export const ORPHAN_PRUNE_SKEW_MARGIN_MS = 60 * 60 * 1000;
  * longer withholds another member's `member_erased` (erasure pass (b), at
  * every exit: undecided, past the deadline, over the limit): it is reported
  * (`broadcasts.cascade.orphan_stuck`), counted on `member_erased`
- * (`audience_orphans_stuck_count`) and by
- * `broadcasts_cascade_orphan_stuck_total`, still counted by the unsettled
+ * (`audience_orphans_stuck_count`) and, once that is written, by
+ * `broadcasts_cascade_orphan_stuck_total` (review round 3), still counted by the unsettled
  * gauge, and owned by the runbook. A member's OWN broadcast orphans always
  * withhold.
  *

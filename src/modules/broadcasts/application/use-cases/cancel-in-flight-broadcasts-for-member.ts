@@ -327,8 +327,9 @@ export interface CancelInFlightForMemberOutput {
   /**
    * Spec 140 s2c review round 2 (security F2, pdpa M-3) — the STUCK tenant
    * audience orphans pass (b) released this run without withholding
-   * `member_erased` (each also `broadcasts_cascade_orphan_stuck_total`). The
-   * copies are still at Resend. Per run, not derived: the completing run's
+   * `member_erased`. The copies are still at Resend; review round 3
+   * (code-review #4) — `broadcasts_cascade_orphan_stuck_total` adds this
+   * count when `member_erased` is written (`erase-member.ts`), not here. Per run, not derived: the completing run's
    * value is what it released. Always 0 in the `'skip'` mode.
    * Review round 3 (code-review #1) — a MINIMUM: it counts the listed stuck
    * rows; stuck rows past the list's limit are released but not counted.
@@ -959,7 +960,6 @@ export async function cancelInFlightBroadcastsForMember(
         deps.clock.now().getTime() - orphan.createdAt.getTime() >= ORPHAN_STUCK_MIN_AGE_MS;
       const reportStuck = (orphan: OrphanedResendIdRef, exit: 'undecided' | 'deadline' | 'over_limit', extra: Record<string, unknown> = {}) => {
         audienceOrphansStuckCount += 1;
-        broadcastsMetrics.cascadeOrphanStuck(input.tenant.slug);
         logger.warn(
           { ...logBase, orphanId: orphan.orphanId, resourceType: orphan.resourceType, resourceId: orphan.resourceId, attempts: orphan.attempts, exit, ...extra },
           'broadcasts.cascade.orphan_stuck',

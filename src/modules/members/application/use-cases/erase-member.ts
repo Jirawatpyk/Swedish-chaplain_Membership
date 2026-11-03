@@ -1315,6 +1315,12 @@ export async function eraseMember(
             cause: 'cause' in done.error ? done.error.cause : undefined,
           });
       });
+      // Spec 140 s2c review round 3 (code-review #4, reliability LOW-2) — the
+      // stuck counter counts RELEASED erasures: once, after member_erased is
+      // written, never on a withheld run.
+      if (audienceOrphansStuckCount > 0) {
+        erasureMetrics.orphanStuckReleased(audienceOrphansStuckCount, deps.tenant.slug);
+      }
     } catch (e) {
       allCascadesClean = false;
       logger.error(

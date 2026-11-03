@@ -10,12 +10,11 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { cascadeOutcomeSpy, auditEmitFailedSpy, auditEmitCountSpy, cascadeOrphanStuckSpy } =
+const { cascadeOutcomeSpy, auditEmitFailedSpy, auditEmitCountSpy } =
   vi.hoisted(() => ({
     cascadeOutcomeSpy: vi.fn(),
     auditEmitFailedSpy: vi.fn(),
     auditEmitCountSpy: vi.fn(),
-    cascadeOrphanStuckSpy: vi.fn(),
   }));
 vi.mock('@/lib/metrics', async () => {
   const actual =
@@ -27,7 +26,6 @@ vi.mock('@/lib/metrics', async () => {
       cascadeOutcome: cascadeOutcomeSpy,
       auditEmitFailed: auditEmitFailedSpy,
       auditEmitCount: auditEmitCountSpy,
-      cascadeOrphanStuck: cascadeOrphanStuckSpy,
     },
   };
 });
@@ -1516,7 +1514,8 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
    * (2 h, by the injected clock against `created_at`). Pass (b) applies the
    * rule at every exit — undecided, past the deadline, over the limit — and a
    * stuck row never withholds: it is counted (`audienceOrphansStuckCount`, the
-   * `member_erased` field) and metered (`broadcasts_cascade_orphan_stuck_total`).
+   * `member_erased` field; review round 3 moved the counter to the emit in
+   * `erase-member.ts`).
    */
   describe('spec 140 s2c review round 2 — the stuck rule needs age, at every pass (b) exit', () => {
     const erasureInput = { tenant, memberId, requestId: 'req-1', onDispatchBegun: 'delete_then_cancel' as const };
@@ -1531,8 +1530,6 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       attempts: ORPHAN_STUCK_ATTEMPTS,
       createdAt,
     });
-    beforeEach(() => cascadeOrphanStuckSpy.mockReset());
-
     // Review round 3 (code-review #1, security LOW, reliability LOW-1) — the
     // over-limit exit judges only the marker row (LIMIT + 1). The list sorts
     // stuck rows LAST, by a cutoff from the same clock as the stuck rule, so a
@@ -1563,7 +1560,6 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       const deps = makeDeps({ audienceOrphans: [stuckAud(1, YOUNG)], deleteAudienceThrows: ['aud-1'] });
       const result = await cancelInFlightBroadcastsForMember(deps, erasureInput);
       expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, audienceOrphansStuckCount: 0 } });
-      expect(cascadeOrphanStuckSpy).not.toHaveBeenCalled();
     });
 
     it('a stuck audience orphan past the deadline does not withhold; a young one is deferred', async () => {

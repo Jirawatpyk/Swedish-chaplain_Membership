@@ -995,6 +995,28 @@ export const erasureMetrics = {
   },
 
   /**
+   * `broadcasts_cascade_orphan_stuck_total{tenant}` — spec 140 s2c review
+   * round 2 (security F2, pdpa M-3), moved here by review round 3
+   * (code-review #4, reliability LOW-2): the STUCK tenant audience orphans
+   * (`ORPHAN_STUCK_ATTEMPTS` tries and older than `ORPHAN_STUCK_MIN_AGE_MS`)
+   * that COMPLETED erasures released. One add of
+   * `member_erased.audience_orphans_stuck_count` (a minimum) per written
+   * `member_erased`, only when it is above 0; a withheld run or a re-drive
+   * that does not complete adds nothing. Each copy is still at Resend and its
+   * row unsettled. Alarm at any increase; runbook
+   * `docs/runbooks/member-erasure.md` step 4. The name keeps its
+   * `broadcasts_` prefix: the alert rows read it.
+   */
+  orphanStuckReleased(count: number, tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_cascade_orphan_stuck_total',
+        'Stuck tenant audience orphans released by completed erasures (member_erased written), a minimum',
+      ).add(count, { tenant: tenantId });
+    });
+  },
+
+  /**
    * COMP-1 US3-C — sub-processor erasure propagation outcome, per tenant.
    * Fired once per `eraseMember` post-commit cascade. `resendOutcome` is the
    * Resend audience-contact removal aggregate (`ok` = every captured pair
@@ -3369,24 +3391,6 @@ export const broadcastsMetrics = {
         'broadcasts_cascade_outcome_total',
         'F3 archival/erasure cascade outcome per broadcast',
       ).add(1, { tenant: tenantId, outcome });
-    });
-  },
-
-  /**
-   * `broadcasts_cascade_orphan_stuck_total{tenant}` — spec 140 s2c review
-   * round 2 (security F2, pdpa M-3): an erasure's pass (b) released a STUCK
-   * tenant audience orphan (`ORPHAN_STUCK_ATTEMPTS` tries and older than
-   * `ORPHAN_STUCK_MIN_AGE_MS`) without withholding `member_erased`. The copy
-   * is still at Resend and the row still unsettled; `member_erased` carries
-   * the count (`audience_orphans_stuck_count`). Alarm at any increase;
-   * runbook `docs/runbooks/broadcast-audience-build.md` § E.
-   */
-  cascadeOrphanStuck(tenantId: string): void {
-    safeMetric(() => {
-      counter(
-        'broadcasts_cascade_orphan_stuck_total',
-        'Stuck tenant audience orphans an erasure released without withholding member_erased',
-      ).add(1, { tenant: tenantId });
     });
   },
 
