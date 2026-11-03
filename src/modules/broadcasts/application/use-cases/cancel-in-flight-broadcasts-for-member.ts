@@ -184,7 +184,9 @@
  *       (`ORPHAN_STUCK_ATTEMPTS` tries and older than `ORPHAN_STUCK_MIN_AGE_MS`,
  *       review round 2) never withholds, at any exit — undecided, past the
  *       deadline, over the limit: it is counted in `audienceOrphansStuckCount`
- *       instead.
+ *       instead. The list sorts stuck rows last (review round 3), so the
+ *       over-limit exit, which sees only the marker row, judges every unlisted
+ *       row with it.
  * Undecided, unreached or unreadable → `unexpectedErrorCount`, so
  * `member_erased` is withheld and `reconcile-erasures` drives the erasure
  * again. An orphan written after this pass is drained by the cron within one
@@ -328,6 +330,8 @@ export interface CancelInFlightForMemberOutput {
    * `member_erased` (each also `broadcasts_cascade_orphan_stuck_total`). The
    * copies are still at Resend. Per run, not derived: the completing run's
    * value is what it released. Always 0 in the `'skip'` mode.
+   * Review round 3 (code-review #1) — a MINIMUM: it counts the listed stuck
+   * rows; stuck rows past the list's limit are released but not counted.
    */
   readonly audienceOrphansStuckCount: number;
 }
@@ -1046,9 +1050,14 @@ export async function cancelInFlightBroadcastsForMember(
       // (b) The tenant's leaked audiences [P H-1]: deleted, not counted.
       let audienceOrphans: ReadonlyArray<OrphanedResendIdRef> = [];
       try {
+        // Review round 3 (code-review #1) — the list sorts stuck rows last, by
+        // the cutoff of the rule isStuck applies (same clock), so a stuck
+        // marker row (the LIMIT + 1st) means every unlisted row is stuck too.
+        const listedAtMs = deps.clock.now().getTime();
         audienceOrphans = await deps.orphans.listUnsettledAudienceOrphans(
           ERASURE_AUDIENCE_ORPHAN_LIMIT + 1,
-          new Date(deps.clock.now().getTime() - AUDIENCE_CLEANUP_GRACE_MS),
+          new Date(listedAtMs - AUDIENCE_CLEANUP_GRACE_MS),
+          new Date(listedAtMs - ORPHAN_STUCK_MIN_AGE_MS),
         );
       } catch (e) {
         orphanUnexpected(e, null, 'broadcasts.cascade.audience_orphan_list_failed');

@@ -29,6 +29,8 @@ import { createTestTenant, createTwoTestTenants, type TestTenant } from '../help
 const HOUR = 60 * 60 * 1000;
 /** The cleanup route's 1 h `GRACE_MS`, as the drain passes it. */
 const GRACE_CUTOFF = () => new Date(Date.now() - HOUR);
+/** The erasure's stuck cutoff (`ORPHAN_STUCK_MIN_AGE_MS`, 2 h), as the use case passes it (review round 3). */
+const STUCK_CUTOFF = () => new Date(Date.now() - 2 * HOUR);
 
 describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
   let tenantA: TestTenant;
@@ -100,7 +102,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
 
     const mine = (await repo.listMemberOrphans(member)).map((o) => o.resourceId).sort();
     expect(mine).toEqual([crossTyped, heldByTerminal].sort());
-    const audiences = (await repo.listUnsettledAudienceOrphans(50, GRACE_CUTOFF())).map((o) => o.resourceId);
+    const audiences = (await repo.listUnsettledAudienceOrphans(50, GRACE_CUTOFF(), STUCK_CUTOFF())).map((o) => o.resourceId);
     expect(audiences).not.toContain(audHeldByApproved);
   });
 
@@ -125,7 +127,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     const again = await repo.listMemberOrphans(member);
     expect(again.map((o) => o.outcome)).toEqual(['deleted']);
     expect((await repo.listDrainableOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId)).not.toContain(id);
-    expect((await repo.listUnsettledAudienceOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId)).toContain(aud);
+    expect((await repo.listUnsettledAudienceOrphans(500, GRACE_CUTOFF(), STUCK_CUTOFF())).map((o) => o.resourceId)).toContain(aud);
     for (const o of await repo.listDrainableOrphans(500, GRACE_CUTOFF())) expect(o.reason).not.toBe('create_unconfirmed');
   });
 
@@ -141,7 +143,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
 
     expect(await repoA.listMemberOrphans(member)).toEqual([]);
     expect((await repoA.listDrainableOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId)).not.toContain(id);
-    expect((await repoA.listUnsettledAudienceOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId)).not.toContain(aud);
+    expect((await repoA.listUnsettledAudienceOrphans(500, GRACE_CUTOFF(), STUCK_CUTOFF())).map((o) => o.resourceId)).not.toContain(aud);
     const bRows = await repoB.listMemberOrphans(member);
     expect(bRows).toHaveLength(1);
     expect(await repoA.settleOrphan(bRows[0]!.orphanId, 'deleted')).toBe(false);
@@ -208,7 +210,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     const drainable = (await repo.listDrainableOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId);
     expect(drainable).toContain(stale);
     expect(drainable).not.toContain(fresh);
-    const erasureList = (await repo.listUnsettledAudienceOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId);
+    const erasureList = (await repo.listUnsettledAudienceOrphans(500, GRACE_CUTOFF(), STUCK_CUTOFF())).map((o) => o.resourceId);
     expect(erasureList).toContain(stale);
     expect(erasureList).not.toContain(fresh);
   });
@@ -266,9 +268,9 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
       for (const id of ids) {
         await repo.recordOrphanedResendId({ broadcastId: randomUUID(), requestedByMemberId: randomUUID(), resourceType: 'audience', resourceId: id, reason: 'audience_leaked' });
       }
-      const first = await repo.listUnsettledAudienceOrphans(10, GRACE_CUTOFF());
+      const first = await repo.listUnsettledAudienceOrphans(10, GRACE_CUTOFF(), STUCK_CUTOFF());
       expect(await repo.markOrphanAttempted(first.find((o) => o.resourceId === ids[0])!.orphanId)).toBe(true);
-      const again = (await repo.listUnsettledAudienceOrphans(10, GRACE_CUTOFF())).map((o) => o.resourceId);
+      const again = (await repo.listUnsettledAudienceOrphans(10, GRACE_CUTOFF(), STUCK_CUTOFF())).map((o) => o.resourceId);
       expect(again).toEqual([ids[1], ids[2], ids[0]]);
     } finally {
       await solo.cleanup().catch(() => {});
@@ -294,7 +296,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
             VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${id}, 'audience_leaked', ${new Date(Date.now() - ageMs).toISOString()}::timestamptz, ${attempts})`),
         );
       }
-      const listed = await repo.listUnsettledAudienceOrphans(10, GRACE_CUTOFF(), new Date(Date.now() - 2 * HOUR));
+      const listed = await repo.listUnsettledAudienceOrphans(10, GRACE_CUTOFF(), STUCK_CUTOFF());
       expect(listed.map((o) => o.resourceId)).toEqual([youngTried, oldStuck]);
     } finally {
       await solo.cleanup().catch(() => {});
@@ -322,7 +324,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     await rec(orphansA, 'audience', settled);
     await rec(orphansA, 'broadcast', bcast);
     await rec(orphansB, 'audience', otherTenant);
-    const settledRow = (await orphansA.listUnsettledAudienceOrphans(500, GRACE_CUTOFF())).find((o) => o.resourceId === settled);
+    const settledRow = (await orphansA.listUnsettledAudienceOrphans(500, GRACE_CUTOFF(), STUCK_CUTOFF())).find((o) => o.resourceId === settled);
     expect(await orphansA.settleOrphan(settledRow!.orphanId, 'deleted')).toBe(true);
 
     const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);

@@ -42,7 +42,7 @@ describe('broadcast orphans repo — D-029 tenant predicates', () => {
       recordOrphanedResendId: [{ broadcastId: ID, requestedByMemberId: ID, resourceType: 'broadcast', resourceId: 'rb-1', reason: 'attach_lost' }],
       listDrainableOrphans: [20, new Date('2026-01-01T00:00:00Z')],
       listMemberOrphans: [ID],
-      listUnsettledAudienceOrphans: [20, new Date('2026-01-01T00:00:00Z')],
+      listUnsettledAudienceOrphans: [20, new Date('2026-01-01T00:00:00Z'), new Date('2025-12-31T23:00:00Z')],
       settleOrphan: [ID, 'deleted'],
       markOrphanAttempted: [ID],
       pruneOrphans: [new Date('2026-01-01T00:00:00Z')],

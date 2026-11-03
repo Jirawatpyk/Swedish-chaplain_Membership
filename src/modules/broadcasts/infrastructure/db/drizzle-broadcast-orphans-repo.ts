@@ -13,6 +13,7 @@ import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
 import {
+  ORPHAN_STUCK_ATTEMPTS,
   ORPHAN_SUPERSEDING_STATUSES,
   type OrphanOutcome,
   type OrphanReason,
@@ -189,7 +190,7 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
       });
     },
 
-    async listUnsettledAudienceOrphans(limit, audienceGraceCutoff) {
+    async listUnsettledAudienceOrphans(limit, audienceGraceCutoff, stuckAgeCutoff) {
       return bound('listUnsettledAudienceOrphans', async (tx) => {
         const rows = await tx
           .select(columns(ctx.slug))
@@ -203,7 +204,16 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
               notHeldByLiveRow(ctx.slug, audienceGraceCutoff),
             ),
           )
-          .orderBy(asc(orphans.attempts), asc(orphans.createdAt), asc(orphans.orphanId))
+          // Review round 3 (code-review #1) — stuck rows last (false < true),
+          // the same rule as the caller's isStuck.
+          .orderBy(
+            asc(
+              sql`(${orphans.attempts} >= ${ORPHAN_STUCK_ATTEMPTS}::int AND ${orphans.createdAt} <= ${stuckAgeCutoff.toISOString()}::timestamptz)`,
+            ),
+            asc(orphans.attempts),
+            asc(orphans.createdAt),
+            asc(orphans.orphanId),
+          )
           .limit(limit);
         return rows.map(toRef);
       });

@@ -107,8 +107,19 @@ export interface BroadcastOrphansRepo {
    * a leaked audience holds recipients' contacts. The same holder rule as the
    * drain, the terminal-holder grace (`audienceGraceCutoff`) included; no grace
    * on the orphan itself. At most `limit`, `ORDER BY attempts, created_at`.
+   *
+   * Review round 3 (code-review #1, security LOW, reliability LOW-1) — STUCK
+   * rows sort last: the first key is `(attempts >= ORPHAN_STUCK_ATTEMPTS AND
+   * created_at <= stuckAgeCutoff)` ascending. The caller passes
+   * `stuckAgeCutoff = now - ORPHAN_STUCK_MIN_AGE_MS` from the clock its stuck
+   * rule reads, so when the row after its limit is stuck, every row it did not
+   * list is stuck too.
    */
-  listUnsettledAudienceOrphans(limit: number, audienceGraceCutoff: Date): Promise<ReadonlyArray<OrphanedResendIdRef>>;
+  listUnsettledAudienceOrphans(
+    limit: number,
+    audienceGraceCutoff: Date,
+    stuckAgeCutoff: Date,
+  ): Promise<ReadonlyArray<OrphanedResendIdRef>>;
 
   /**
    * Settle one row: a CAS on `settled_at IS NULL`, writing `settled_at = now()`

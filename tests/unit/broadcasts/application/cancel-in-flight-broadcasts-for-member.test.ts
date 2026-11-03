@@ -1388,7 +1388,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       const many = Array.from({ length: ERASURE_AUDIENCE_ORPHAN_LIMIT + 1 }, (_, i) => ({ ...aud, orphanId: `o-aud-${i}`, resourceId: `aud-${i}` }));
       const deps = makeDeps({ audienceOrphans: many }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(deps.orphans.listUnsettledAudienceOrphans).toHaveBeenCalledWith(ERASURE_AUDIENCE_ORPHAN_LIMIT + 1, expect.any(Date));
+      expect(deps.orphans.listUnsettledAudienceOrphans).toHaveBeenCalledWith(ERASURE_AUDIENCE_ORPHAN_LIMIT + 1, expect.any(Date), expect.any(Date));
       expect(deps.settles).toHaveLength(ERASURE_AUDIENCE_ORPHAN_LIMIT);
       expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, deferredCount: 1 } });
     });

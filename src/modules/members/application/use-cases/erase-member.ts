@@ -1298,7 +1298,8 @@ export async function eraseMember(
             // Spec 140 s2c review round 2 (security F2, pdpa M-3) — the tenant's
             // STUCK audience orphans this run released without withholding
             // (RoPA 8d): each copy is still at Resend, its row unsettled and
-            // owned by the runbook. Per run, unlike the counts above.
+            // owned by the runbook. Per run, unlike the counts above, and a
+            // minimum (review round 3): only the stuck rows the pass listed.
             audience_orphans_stuck_count: audienceOrphansStuckCount,
             // L4 (DPO-log honesty): on a re-drive completion (alreadyErased) the
             // first pass already stamped contacts.removed_at, so this pass's

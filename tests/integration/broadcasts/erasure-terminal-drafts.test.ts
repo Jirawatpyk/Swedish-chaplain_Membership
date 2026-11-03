@@ -368,6 +368,6 @@ describe('spec 140 s1 — the erasure cascade deletes the drafts its terminal ro
     `)) as unknown as unknown[];
     expect(evidence).toEqual([]);
     // Tenant B's leaked audience is untouched and still unsettled.
-    expect((await orphansB.listUnsettledAudienceOrphans(50, new Date(Date.now() - 60 * 60 * 1000))).map((o) => o.resourceId)).toContain(audB);
+    expect((await orphansB.listUnsettledAudienceOrphans(50, new Date(Date.now() - 60 * 60 * 1000), new Date(Date.now() - 2 * 60 * 60 * 1000))).map((o) => o.resourceId)).toContain(audB);
   });
 });

@@ -141,6 +141,7 @@ export type CascadeResult =
       /**
        * Spec 140 s2c review round 2 — STUCK tenant audience orphans the erasure
        * released without withholding `member_erased` (0 outside erasure).
+       * Review round 3 — a minimum: the listed stuck rows only.
        */
       readonly audienceOrphansStuckCount: number;
     }
