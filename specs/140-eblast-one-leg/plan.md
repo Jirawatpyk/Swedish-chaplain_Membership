@@ -86,7 +86,7 @@ Also: the new ceiling env, the Segments names, `docs/decisions.md` D-042, go-liv
 | 1 | Erasure deletes reachable drafts; refusals delete their draft | ED1–ED5 | pdpa-gdpr, security, reliability, spec-compliance | `140-eblast-one-leg-s1` | #713 · done |
 | 2a | Bounded Resend calls (one signal spans every attempt, C = 10 s); no in-process retry on creates; the legacy leg skips import rows; `propagate` bounded | DL5a, DL7, DL8, carry R3 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2` | #719 · done |
 | 2b | Lease + fencing token + pre-call check + row-start cutoff; migration 0322 (lease columns + trigger list); the live-lease legacy skip | DL1–DL4, DL9, cell 23, carry R4 | drizzle-migration, security, reliability, spec-compliance | `140-eblast-one-leg-s2b` | #723 · done |
-| 2c | Orphan-id table (migration 0325) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; an audience whose reclaim was undecided (`audience_leaked`, s2b round 2) gets an orphan row and is drained; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | — · open |
+| 2c | Orphan-id table (migration 0325) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; an audience whose reclaim was undecided (`audience_leaked`, s2b round 2) gets an orphan row and is drained; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | — · open (PR below) |
 | 3 | Error classes + import-leg table fixes; `listAudiences` per-invocation time budget | DT1–DT5 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
 | 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | — · open |
 
@@ -1452,6 +1452,19 @@ Run because `route.ts` changed after `147bf6150` (the span attribute `757d7d01f`
   - (b) the release miss answers `cas_lost` on a cleared token (base `9eee64c96`) → both stale-token release cases and "a release whose token was cleared reports lease_lost; an id drift reports cas_lost" red ("expected 'cas_lost' to be 'lease_lost'"; 3 failed).
 - **Decisions:** the pre-check covers a re-time only (`schedule` / `send_now` from `approved`): a cancel is a status change that ends the lease by design, and a promotion leaves `member_approved`, which no tick can hold. The claim skip's new value `held_by_another_tick` reaches no reader but the cron's `concurrent_skip` bucket.
 
+
+### Slice 2c — Verify: the maintainer's `/verify` (3 Nov 2026, on `abbe0bbb4`, then the finding re-driven on `19abd92d4`): PASS
+
+:3400, Neon dev (0325 applied), tenant swecham, flag OFF. Resend used the sink address only; no `/send`, no cancel.
+- **Drain:** a seeded orphan (`attach_lost`, a random id, 2 h old) → `cleanup-audiences` → `orphans {listed:1, settled:1}`, and the row settled `absent` (Resend 404).
+- **Wrong Bearer → 401;** the row was unchanged.
+- **A second run → `listed:0`;** nothing re-settled.
+- **Erasure:**
+  - A real sink draft was held by the member's `persist_failed` orphan.
+  - Erase → 200 `cascadesComplete`. The draft answered 404, the orphan settled `deleted`, and `member_erased.resend_drafts_cleared: 1`.
+  - Re-erase → a second `member_erased` (`re_drive: true`), still `resend_drafts_cleared: 1`, so the count is stable (A6a).
+- **Teardown:** clean; segments back to `General`.
+- **Finding (fixed):** the old audience loop failed every run on dev row `d9818abc…`. The cause and its plan row are below. After the fix (`b88b821d3` RED → `4432c9b30` GREEN), the cleanup answered `{deleted:1, failed:0}` and logged `audience_already_absent` with `via: probe_after_403`. The row got `audience_deleted_at`, and the next run had `processed:0`.
 
 ### Slice 2c — Verify finding (the maintainer's `/verify`, 3 Nov 2026): a deleted audience answers 403 on DELETE
 
