@@ -1487,6 +1487,57 @@ Dev and prod share the broadcasts key, so the account state matches.
 **Also (docs):**
 - The cleanup response's top-level `processed` / `deleted` / `failed` count the audience loop; `orphans` counts the drain. Written in `observability.md`.
 
+### Slice 2c — review round 1 (`/code-review high 734`, migration MERGEABLE-with-conditions, security APPROVE WITH FIXES, pdpa APPROVE WITH CONDITIONS, reliability MERGEABLE, spec-compliance PARTIAL; 3 Nov 2026)
+
+**Review metrics:** round 1 · 10 + 5 + 5 + 6 + 10 + 11 items (code-review, migration, security, pdpa, reliability, spec-compliance) · cap: ≥ 2 full + ≤ 2 targeted.
+
+**Merge order (the maintainer, 3 Nov 2026):** #734 merges BEFORE #733. #733's `0326` has `when` 1798545900000; if it landed first, prod's migrator would skip 0325 and `vercel-build` would fail (migration HIGH).
+
+**Plan rows added before the fixes (D-043).** Each names the existing writers and readers it touches (the 3 Nov retro rule).
+
+| Mechanism (asked by) | State / rule | Neighbours | Test that goes red first |
+|---|---|---|---|
+| **Attempt counter + rotation** (code-review #2, security M, reliability M-3, pdpa L-A) | 0325 gains `attempts int NOT NULL DEFAULT 0` and `last_attempted_at timestamptz NULL`. Every undecided settle increments both (a CAS on `settled_at IS NULL`). The drain lists `ORDER BY attempts, created_at`, so a permanently undecided row cannot hold the head | the drain, the erasure passes (a) and (b), and the prune (which ignores both columns) | repo integration · "20 undecided rows do not starve a 21st" |
+| **A stuck tenant audience orphan stops blocking other members' erasures** (code-review #1, reliability M-2, pdpa M-B) | In erasure pass (b), a tenant audience orphan with `attempts ≥ ORPHAN_STUCK_ATTEMPTS` (= 8, about 2 h of cron runs) is **reported, not withheld**: it is logged `cascade.orphan_stuck`, counted in the unsettled gauge, and runbook-owned. A member's OWN orphans (pass a) still withhold. Pass (b) settles at concurrency 5 | erasure pass (b), the gauge, the runbook, RoPA 8d | cascade unit · "a stuck tenant audience orphan does not withhold; a fresh one does" |
+| **Unsettled-orphan gauge** (security M, reliability M-3) | `broadcasts_orphaned_resend_ids_unsettled{tenant}`: rows with `settled_at IS NULL AND resource_id IS NOT NULL AND created_at < now() − 24 h`, plus `…_oldest_age_seconds`. It is in its own try, so a failure cannot dark the sibling gauges (code-review #10, applies to the unconfirmed gauge too). `observability.md` alarm: ≥ 1 | the gauges route | gauge integration (real DB) · "counts a 25 h unsettled row, not a 23 h one" (also pins the unconfirmed 24 h window, spec M4) |
+| **Audience orphans honour the post-terminal grace** (code-review #3, security L2) | For `resource_type = 'audience'`, the NOT EXISTS also treats a TERMINAL holder whose `updated_at` is within `GRACE_MS` (1 h) as live. This applies to the drain and to erasure pass (b) | the existing audience loop's grace (same `GRACE_MS`) | repo integration · "an audience a row just went terminal with is not drained" |
+| **The drain runs even when the audience loop's list fails** (code-review #4) | `cleanupOrphanedAudiences` runs `drainOrphans` after a failed audience list and still answers `cleanup.server_error`, now with the drain's counts | the route | cleanup unit · "a failed audience list still drains" |
+| **Handed at the choke point catches the row up** (code-review #5) | When the choke point reads `handed` on a row still `approved`, it goes through the existing `catchUpHanded` (→ `sending`) instead of a bare skip, so the row cannot loop. If the catch-up loses, the answer is a concurrent skip | `catchUpHanded` (:809), tick 2's handed probe | tick unit · "a handed draft at the choke point catches the row up to sending" |
+| **`onResolveFailure` passes every non-terminal stop through** (reliability M-1) | `if (!terminal.ok && terminal.error.kind !== 'audience_import_failed') return terminal;` so `lease_expiring` and the handed skip are not counted `permanent_failed` | the cron route's buckets | failure-paths it.each (expiring, handed) |
+| **Prune keeps `handed` rows** (pdpa M-A, option a) | The prune's settled arm adds `AND outcome <> 'handed'`. A handed row is the durable disclosure record, kept like an unsettled row | RoPA 8c / 8d retention line | orphaned-resend-ids integration · "a handed row is not pruned" |
+
+**Migration hardening (migration M1, M2):**
+- `search_path = pg_catalog, public, pg_temp` (0293 pattern). The canary checks the full value. A test runs the prune with a `CREATE TEMP TABLE` shadow present.
+- `GRANT UPDATE ("settled_at","outcome","attempts","last_attempted_at")` replaces the table-level UPDATE, after a `REVOKE UPDATE`. A test: `UPDATE … SET reason/created_at` as `chamber_app` → 42501.
+- On dev, the file's DDL is re-applied by a guarded one-off script (ADD COLUMN IF NOT EXISTS, REVOKE / GRANT, CREATE OR REPLACE). The ledger is not touched, because #733's 0326 is the newest row on dev. CI and prod run the file fresh.
+
+**Fixes (no new mechanism):**
+- code-review #6 / reliability L-1: the drain and the cascade count a settle only when its CAS won.
+- code-review #8: the stacked docblock.
+- code-review #9 / spec Low: `broadcast-retention-sweep.test.ts` back to LF.
+- pdpa L-B: `requestedByMemberId` on `orphan_record_failed`.
+- reliability L-2: counter `broadcasts_retention_orphan_prune_failed_total{tenant}`.
+- reliability nit: `step: 'terminal_reclaim'` on the choke point's `terminal_reread_failed`.
+
+**Docs:**
+- pdpa M-B: the `member-erasure.md` step-4 tenant audience query; the stuck rule; manual settle.
+- pdpa M-C: the DSR count covers `ORPHAN_ROW_RETENTION_DAYS`, so the answer is "at least N".
+- spec M1: the state-table Test column for cells 10–12, 15, 25–29.
+- spec M2: DL5b scoped to the import leg.
+- spec M3: the stale `audience_leaked` / `dead_broadcast_*` "only record" lines in `observability.md` and `broadcast-audience-build.md` (:67, :76).
+- spec M5: a Test-only line in the 2c Verify block.
+- Migration L1: the 0325 header and build note 13 (no gaps now).
+- Every number names its constant (changelog, metrics help, runbook "15 minutes").
+
+**Accepted (Low):**
+- code-review #7: the three Resend settle tables. They behave the same today. Collapsing them touches s1's pinned erasure path; a follow-up issue is opened.
+- security L3: erasure orphan pass lengths. Each item is bounded by C; the pre-item deadline check matches s1.
+- reliability L-3: a handed `read_back_failed_kept` row over-counts `broadcasts_already_sent_count` by one. The direction is safe (it over-reports a disclosure); RoPA notes it.
+- reliability L-4: a drain deletion has no `audit_log` row. The orphan row (`settled_at` + `outcome`) is the record, and handed rows are now kept indefinitely; non-handed settled rows live 90 days, as RoPA 8d states.
+- reliability nit: the budget-exhausted page before a handed choke point. It is one false page, and the next tick catches up.
+- migration L3 / L4: reason↔type pairing and the prune index. The writers own the pairing; the table is small.
+- security INFO: RLS masks the app predicates in the tests. This is a known class (s1).
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
