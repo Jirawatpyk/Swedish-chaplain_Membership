@@ -357,7 +357,10 @@ function keyHitMatches(
     existing.originalInvoiceId === invoiceId &&
     existing.total.satang === input.creditTotalSatang &&
     existing.reason === input.reason.trim() &&
-    (existing.membershipEffect ?? null) === (input.membershipEffect ?? null)
+    // A stored null: the effect had no part in that note (only a full credit
+    // of a membership invoice stores one), so any request matches it (#728
+    // round 2, financial LOW-1). A stored effect must be resent as is.
+    (existing.membershipEffect == null || existing.membershipEffect === input.membershipEffect)
   );
 }
 

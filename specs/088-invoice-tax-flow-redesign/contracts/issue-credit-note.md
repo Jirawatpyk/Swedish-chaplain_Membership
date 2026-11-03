@@ -36,7 +36,8 @@ time; it does **not** move to payment).
 - **Headers**: session cookie. Rate limit `f4:credit-note:{tenant}:{actor}` — 20 / 5 min.
 - **#66 `idempotencyKey`** (optional, uuid): one per ADMIN issue attempt; the admin form keeps it
   (sessionStorage per invoice, with the exact request) until a definite answer. A repeat with the
-  same key, invoice, `creditTotalSatang`, trimmed `reason` and `membershipEffect` answers with the
+  same key, invoice, `creditTotalSatang`, trimmed `reason` and `membershipEffect` (compared only when
+  the note stored one: a full credit of a membership invoice) answers with the
   note already issued — no second §86/10 note, no second §87 number, no audit, no email. The same key
   for any other credit → `concurrent_state_change` (409); so is a key seen by the non-locking pre-read
   but not under the invoice lock (the pre-tx guards were skipped for it, so nothing is issued). The

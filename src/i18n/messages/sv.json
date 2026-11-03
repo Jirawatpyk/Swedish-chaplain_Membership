@@ -2514,7 +2514,7 @@
         "successWithNumber": "Kreditnota {number} utfärdad.",
         "successAlreadyIssued": "Kreditnota {number} var redan utfärdad — ingen ny kreditnota utfärdades.",
         "successAlreadyIssuedNoNumber": "Kreditnotan var redan utfärdad — ingen ny kreditnota utfärdades.",
-        "submitLockedHint": "Slutför kreditnotan med Försök igen i meddelandet ovan, eller öppna fakturan.",
+        "submitLockedHint": "Slutför kreditnotan med ”Försök igen” i meddelandet ovan, eller öppna fakturan.",
         "emailSkippedNoRecipient": "Köparen har ingen e-post registrerad — skicka kreditnotan manuellt.",
         "membershipEnd": {
           "ended": "Medlemskapet har avslutats — medlemmens åtkomst upphör nu.",
@@ -2535,7 +2535,8 @@
         },
         "errors": {
           "concurrent": "Denna faktura har redan krediterats eller annullerats. Öppna den för att se dess senaste status.",
-          "unconfirmed": "Vi kunde inte bekräfta om kreditnotan på {amount} utfärdades. Försök igen — om den redan är utfärdad utfärdas ingen ny. Eller öppna fakturan och kontrollera.",
+          "unconfirmed": "Vi kunde inte bekräfta om kreditnotan på {amount} utfärdades. Försök igen — om den redan har utfärdats, utfärdas ingen ny. Du kan också öppna fakturan och kontrollera.",
+          "retryRefused": "Det här försöket nekades: {reason}",
           "retryAction": "Försök igen",
           "openInvoiceAction": "Öppna fakturan",
           "stillWorking": "Arbetar fortfarande — håll det här fönstret öppet.",

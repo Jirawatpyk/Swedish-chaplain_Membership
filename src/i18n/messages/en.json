@@ -2514,7 +2514,7 @@
         "successWithNumber": "Credit note {number} issued.",
         "successAlreadyIssued": "Credit note {number} had already been issued — no new credit note was issued.",
         "successAlreadyIssuedNoNumber": "This credit note had already been issued — no new credit note was issued.",
-        "submitLockedHint": "Finish this credit note with Try again in the message above, or open the invoice.",
+        "submitLockedHint": "Finish this credit note with “Try again” in the message above, or open the invoice.",
         "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
         "membershipEnd": {
           "ended": "The membership has ended — the member's access stops now.",
@@ -2538,6 +2538,7 @@
           "unknown": "An unknown error occurred. Please try again.",
           "concurrent": "This invoice has already been credited or voided. Open it to see its latest status.",
           "unconfirmed": "We couldn't confirm whether the credit note for {amount} was issued. Try again — if it was already issued, trying again issues nothing new. Or open the invoice to check.",
+          "retryRefused": "This try was refused: {reason}",
           "retryAction": "Try again",
           "openInvoiceAction": "Open invoice",
           "stillWorking": "Still working — keep this window open.",

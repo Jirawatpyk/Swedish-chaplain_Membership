@@ -71,7 +71,8 @@ type Attempt = { readonly key: string; readonly body: string; readonly request: 
 /**
  * #728 review — after an unknown outcome, only these refusals end the attempt:
  * the use case makes them under the invoice lock, after the key lookup missed,
- * so no note exists under the key. Anything else (a rate limit, the session,
+ * so no note exists under the key. `invoice_not_found` can come before the
+ * lookup, but a note's invoice is its RESTRICT FK parent: no invoice, no note. Anything else (a rate limit, the session,
  * the write freeze, the pre-tx refund guards, a 5xx) keeps the key and the lock.
  */
 const ENDS_ATTEMPT_AFTER_UNKNOWN: ReadonlySet<string> = new Set([
@@ -242,7 +243,11 @@ export function CreditNoteForm({
   // `exceedsRemainder` check above already blocks anything greater).
   // Mirrors the use-case's own `isFullCredit` derivation server-side.
   const isFullCredit = proposedSatang !== null && proposedSatang === remainingBi;
-  const showMembershipEffect = invoiceSubject === 'membership' && isFullCredit;
+  // #728 round 2 (UX M-B) — a locked attempt shows the choice it carries even
+  // when the remainder read after a reload no longer makes it a full credit.
+  const [attemptEffect, setAttemptEffect] = useState<MembershipEffect | null>(null);
+  const showMembershipEffect =
+    invoiceSubject === 'membership' && (isFullCredit || (outcomeUnknown && attemptEffect !== null));
   // Any amount, not just a full credit: a partial CN of X makes X of the
   // online payment unrefundable the same way.
   const requiresOnlineAck = onlineRefundState !== 'none';
@@ -305,6 +310,7 @@ export function CreditNoteForm({
     (attempt: Attempt, refusal?: string) => {
       unknownRef.current = true;
       setOutcomeUnknown(true);
+      setAttemptEffect(attempt.request.membershipEffect ?? null);
       setFormError({ kind: 'unconfirmed', amount: formatAmount(attempt), ...(refusal ? { refusal } : {}) });
       setAlertSeq((n) => n + 1);
     },
@@ -389,7 +395,9 @@ export function CreditNoteForm({
           // freeze, the pre-tx refund guards) says nothing about the first
           // attempt: keep the key and the lock, and say what refused this try.
           if (unknownRef.current && (readOnly || code === undefined || !ENDS_ATTEMPT_AFTER_UNKNOWN.has(code))) {
-            markUnknown(attempt, failureText(failure));
+            // Named as this try's refusal, so "nothing was changed" is not read
+            // as "no note was issued" (UX L-4).
+            markUnknown(attempt, t('errors.retryRefused', { reason: failureText(failure) }));
             return;
           }
           // A definite answer for this attempt: no note under its key.
@@ -668,12 +676,14 @@ export function CreditNoteForm({
               onChange={(e) => setAmountThb(e.target.value)}
               suffix={currencySymbol}
               aria-describedby="cn-amount-help"
-              aria-invalid={exceedsRemainder || (amountThb.length > 0 && !amountValid)}
+              // A locked attempt's amount is not an input error: after a reload
+              // the remainder may already reflect the note it issued (UX M-A).
+              aria-invalid={!outcomeUnknown && (exceedsRemainder || (amountThb.length > 0 && !amountValid))}
             />
             <p id="cn-amount-help" className="text-xs text-[var(--aura-fg-secondary)]">
               {t('amountHelp')}
             </p>
-            {exceedsRemainder && (
+            {exceedsRemainder && !outcomeUnknown && (
               <p role="alert" className="text-xs text-[var(--aura-fg-danger)]">
                 {t('exceedsRemainder', {
                   remaining: formatRemaining(remainingSatang, locale, currencySymbol),
@@ -782,12 +792,12 @@ export function CreditNoteForm({
       </div>
       {/* A disabled button can't take focus, so say why it is disabled. */}
       {outcomeUnknown && (
-        <p className="-mt-4 text-end text-xs text-[var(--aura-fg-secondary)]" data-testid="cn-locked-hint">
+        <p className="-mt-4 text-end text-xs text-[var(--aura-fg-secondary)] max-sm:text-start" data-testid="cn-locked-hint">
           {t('submitLockedHint')}
         </p>
       )}
       {requiresOnlineAck && !onlineRefundAcknowledged && !outcomeUnknown && (
-        <p className="-mt-4 text-end text-xs text-[var(--aura-fg-secondary)]" data-testid="cn-ack-required-hint">
+        <p className="-mt-4 text-end text-xs text-[var(--aura-fg-secondary)] max-sm:text-start" data-testid="cn-ack-required-hint">
           {t('onlinePayment.ackRequiredHint')}
         </p>
       )}
