@@ -260,6 +260,33 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     }
   });
 
+  /**
+   * Spec 140 s2c review round 3 (code-review #2) — the in-grace-only list
+   * (`{ inGraceOnly: true }`): rows created at or after the cutoff, oldest
+   * first, so 20 failing past-grace rows cannot hide an erased requester's
+   * young row from the drain.
+   */
+  it('[code-review #2] the in-grace-only list holds only the rows inside the grace, oldest first', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      const ids = { old: `rb-old-${randomUUID()}`, mid: `rb-mid-${randomUUID()}`, fresh: `rb-fresh-${randomUUID()}` };
+      for (const [id, ageMs] of [[ids.old, 3 * HOUR], [ids.fresh, 10 * 60 * 1000], [ids.mid, HOUR / 2]] as const) {
+        await runInTenant(solo.ctx, (tx) =>
+          tx.execute(sql`
+            INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at)
+            VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'broadcast', ${id}, 'attach_lost', ${new Date(Date.now() - ageMs).toISOString()}::timestamptz)`),
+        );
+      }
+      const young = await repo.listDrainableOrphans(20, GRACE_CUTOFF(), { inGraceOnly: true });
+      expect(young.map((o) => o.resourceId)).toEqual([ids.mid, ids.fresh]);
+      // The default list is unchanged: past-grace first.
+      expect((await repo.listDrainableOrphans(20, GRACE_CUTOFF()))[0]?.resourceId).toBe(ids.old);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
+
   it('[spec N4] the erasure audience list orders by attempts, then age', async () => {
     const solo = await createTestTenant('test-swecham');
     try {
