@@ -257,12 +257,34 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
         AND settled_at IS NULL;
      ```
 
+     **The tenant's leaked audiences** (review round 1, pdpa M-B). The
+     erasure also settles every unsettled AUDIENCE orphan of the tenant,
+     whoever requested it (they hold recipients' contacts). One tried
+     `ORPHAN_STUCK_ATTEMPTS` (8) times or more is reported
+     (`broadcasts.cascade.orphan_stuck`) and does not withhold this erasure;
+     list them, settle each by hand, and record it on the DSR ticket:
+
+     ```sql
+     -- the step-4 TENANT AUDIENCE query (read-only)
+     SELECT orphan_id, resource_id, attempts, last_attempted_at, created_at
+       FROM broadcast_orphaned_resend_ids
+      WHERE tenant_id = '<tenant>' AND resource_type = 'audience'
+        AND settled_at IS NULL
+      ORDER BY attempts DESC, created_at;
+     ```
+
+     **Manual settle:** delete the audience in the Resend dashboard (or
+     confirm it answers 404); the next `cleanup-audiences` run reads the 404
+     and settles the row `deleted` itself — do not write the row by hand.
+
      A `create_unconfirmed` row (no `resource_id`) is never settled: it is the
      unknown-id mint of RoPA 8d. Give the DSR its count, and follow "How to
      find one" there:
 
      ```sql
-     -- the DSR count query
+     -- the DSR count query. Rows are pruned after ORPHAN_ROW_RETENTION_DAYS
+     -- (90 days), so for an older E-Blast history the answer is "at least N"
+     -- (review round 1, pdpa M-C).
      SELECT count(*) AS create_unconfirmed
        FROM broadcast_orphaned_resend_ids
       WHERE tenant_id = '<tenant>' AND requested_by_member_id = '<member_id>'
@@ -271,8 +293,8 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
 
      A row with an id written after the cascade's pass (a tick in flight) is
      drained by `cleanup-audiences` within one tick (an erased requester's row
-     skips the grace); re-run the ORPHAN query after 15 minutes if the first
-     run returned one;
+     skips the grace); re-run the ORPHAN query after one cron interval
+     (`*/15 * * * *`, `vercel.json`) if the first run returned one;
    - **run the step 3b STATE query on every erasure, whatever the count says**
      (`sent_at >= member_erasure_requested`, statuses `sending` / `sent` /
      `partially_sent` / `partial_delivery_accepted`). Any row it returns is

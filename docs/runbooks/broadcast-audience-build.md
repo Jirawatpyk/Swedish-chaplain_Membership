@@ -73,7 +73,7 @@ Never raise `audienceCeiling` by hand for one member: the ceiling is a Resend-fa
    - **A staff re-time refused while the row is leased** (review rounds 2–4): confirm-schedule checks the lease under its row lock and answers 409 `dispatch_in_progress` while an import tick holds a live lease, writes nothing and emails nobody; the re-time no longer clears the lease. The schedule dialog stays open with the picked time and shows "Being prepared for sending — Nothing was changed. This E-Blast is being prepared for sending right now. Try again in a few minutes — if it has been sent by then, its time can no longer be changed." Retry after the tick (≤ 5 min). A dead holder blocks it for at most `LEASE_TTL_MS` (330 s).
    - `lease_expiring` (**warn**, with `step`; the cron's own bucket `lease_expiring` and `broadcasts_dispatch_lease_expiring_total`) — this tick's OWN lease would have ended inside the next call (`CALL_HEADROOM_MS`, or `IMPORT_HEADROOM_MS` before the import POST): the tick outran `LEASE_TTL_MS`. The next tick resumes; a steady rate means `W_MAX_MS` (and with it `D`, a MEASURED single run plus an ESTIMATE) is wrong for this tenant — raise it with the maintainer.
    - `lease_lost_after_send` (info for `sending`; **warn** for `approved`, which has no expected cause since review round 3 — no live holder can be taken over; look for a manual lease edit or a TTL drift) — the mail went out, then the lease was lost while the row still says `approved` or `sending`: the next tick's probe finds the broadcast handed and catches the row up. Any other `rowStatus` is critical (a cancel landed after the mail went out — reconcile by hand): `sent_but_transition_lost` at the ids attach and the `sending` transition, `completion_stamp_failed` at the completion stamp. Both arms count `broadcasts_dispatch_lease_lost_after_send_total{step}`.
-   - `audience_reclaimed` (info) — `createAudience` succeeded and its attach did not; the tick deleted the audience it had just made (it was on no row; after a non-lease failure the row was read back first). `attach_ack_lost_audience_kept` (warn) — the read-back found the id on the row, so it was kept; the next tick's `stale_audience` self-heal deletes it and starts a fresh tick 1 (it is replaced, not inherited). `attach_audience_failed` (warn) with `phase="attach_audience"` on `broadcasts_dispatch_resolve_failed_total` — the attach write faulted (Neon); the tick answers `dispatch.server_error` and the next tick retries. `audience_leaked` (**error**, critical, with `resendAudienceId`): `step: 'delete_audience'` — the delete did not land, delete the audience at Resend by its id; `step: 'read_back'` — the read-back failed and the audience was kept unread, so first check the row (`SELECT resend_audience_id FROM broadcasts WHERE tenant_id = '<slug>' AND broadcast_id = '<id>'`) and delete at Resend only if the row does not hold it. No cron reaches it while the broadcast row exists (`reclaim-orphan-audiences` deletes only audiences whose row is gone; `cleanup-orphaned-audiences` only the id a terminal row holds).
+   - `audience_reclaimed` (info) — `createAudience` succeeded and its attach did not; the tick deleted the audience it had just made (it was on no row; after a non-lease failure the row was read back first). `attach_ack_lost_audience_kept` (warn) — the read-back found the id on the row, so it was kept; the next tick's `stale_audience` self-heal deletes it and starts a fresh tick 1 (it is replaced, not inherited). `attach_audience_failed` (warn) with `phase="attach_audience"` on `broadcasts_dispatch_resolve_failed_total` — the attach write faulted (Neon); the tick answers `dispatch.server_error` and the next tick retries. `audience_leaked` (**error**, critical, with `resendAudienceId`): `step: 'delete_audience'` — the delete did not land, delete the audience at Resend by its id; `step: 'read_back'` — the read-back failed and the audience was kept unread, so first check the row (`SELECT resend_audience_id FROM broadcasts WHERE tenant_id = '<slug>' AND broadcast_id = '<id>'`) and delete at Resend only if the row does not hold it. Since spec 140 s2c the leak also writes an orphan row (`audience_leaked`), and the `cleanup-audiences` drain deletes it while no live row holds it (§ E); delete it by hand only when `orphan_record_failed` fired too.
    - `lease_check_failed` (warn) / `phase="lease"` on `broadcasts_dispatch_resolve_failed_total` — a check could not be read (Neon), or it waited `CHECK_LOCK_TIMEOUT_MS` (28 s = `ERASURE_ROW_LOCK_HOLD_MS` + 5 s) behind the row lock; no call was made, the next tick retries.
    - `lease_release_failed` (warn) — a DB fault, or the release waited `CHECK_LOCK_TIMEOUT_MS` behind the row lock (55P03); the lease stays until it expires.
    **A dead holder** (a killed invocation): its lease expires `LEASE_TTL_MS` after its claim, so the next tick (+300 s) still skips the row — the due scan leaves out a live lease on every flag state — and the one after (+600 s) takes it over: about two ticks. Do not clear a lease by hand; a lease left on a terminal row (a failed release) is inert, since only `approved` rows are claimed or scanned. Read-only check: `SELECT broadcast_id, status, dispatch_lease_token IS NOT NULL AS leased, dispatch_lease_expires_at FROM broadcasts WHERE tenant_id = '<slug>' AND status = 'approved' AND dispatch_lease_token IS NOT NULL;`.
@@ -183,21 +183,31 @@ and `refused_draft_undeleted` (a standing refusal), `audience_leaked` (both
 legs), and `create_unconfirmed` (no id: a `createBroadcast` that ended in a
 network failure, a timeout or a 5xx).
 
-- **Who settles it.** The `cleanup-audiences` cron drains up to
-  `ORPHAN_DRAIN_LIMIT` (20) rows per run, `ORPHAN_DRAIN_CONCURRENCY` (5) at a
-  time, past the route's 1-hour `GRACE_MS` (skipped when the requester is
-  erased), and starts no chunk after `ORPHAN_DRAIN_STOP_MS` (240 s of the
-  route's `maxDuration` 300 s). It never lists an id a NON-TERMINAL row holds
-  (type-matched), nor a `create_unconfirmed` row. The erasure cascade settles
+- **Who settles it.** The `cleanup-audiences` cron (`*/15 * * * *`,
+  `vercel.json`) drains up to `ORPHAN_DRAIN_LIMIT` (20) rows per run,
+  `ORPHAN_DRAIN_CONCURRENCY` (5) at a time, past the route's 1-hour `GRACE_MS`
+  (`AUDIENCE_CLEANUP_GRACE_MS`; skipped when the requester is erased), and
+  starts no chunk after `ORPHAN_DRAIN_STOP_MS` (240 s of the route's
+  `maxDuration` 300 s). It never lists an id a NON-TERMINAL row holds
+  (type-matched), an audience a row went terminal with less than `GRACE_MS`
+  ago (the audience loop's grace, review round 1), nor a `create_unconfirmed`
+  row. It reads `ORDER BY attempts, created_at`: every undecided answer
+  increments the row's `attempts`, so a row that never settles cannot hold
+  the head of the queue (review round 1). The erasure cascade settles
   the requester's broadcast orphans and the tenant's leaked audiences
   (`member-erasure.md` step 4).
 - **What a row's `outcome` means.** `deleted` / `absent` — gone; `retained` —
   canceled or failed at Resend (403, undeletable, never sendable); `handed` —
   queued or sent (a disclosure, RoPA 8c). `NULL` — not settled yet.
-- **Rows stuck unsettled** (`broadcasts.orphan_drain.undecided` for the same
-  `orphanId` every 15 minutes): a permanent Resend answer. Read the `answer`
-  token, check the id at Resend, delete it by hand if it is a draft or an
-  audience, and leave the row (the next run reads 404 → `absent`).
+- **Rows stuck unsettled** (`broadcasts_orphaned_resend_ids_unsettled` ≥ 1:
+  undecided more than `ORPHAN_UNSETTLED_GAUGE_AGE_HOURS` (24) after it was
+  written; `broadcasts.orphan_drain.undecided` with a rising `attempts`): a
+  permanent Resend answer. Read the `answer` token, check the id at Resend,
+  delete it by hand if it is a draft or an audience, and leave the row (the
+  next run reads 404 → `absent`). A tenant audience orphan at
+  `ORPHAN_STUCK_ATTEMPTS` (8, about 2 h of runs) or more no longer withholds
+  other members' erasures (`broadcasts.cascade.orphan_stuck`); this runbook
+  owns it from then on (`member-erasure.md` step 4 has the manual settle).
 - **A 403 on an audience DELETE** is not a refusal to act on: Resend answers
   a deleted audience's DELETE with 403 `validation_error` "Cannot delete last
   audience." (MEASURED 2026-11-03, the sink account holding only `General`),
@@ -223,6 +233,8 @@ SELECT tenant_id, broadcast_id, created_at
 - **Retention.** The daily retention sweep prunes settled rows and
   `create_unconfirmed` rows older than `ORPHAN_ROW_RETENTION_DAYS` (90 days)
   through `prune_orphaned_resend_ids` (`cron-jobs.md` § F7 retention-sweep).
+  A `handed` row is never pruned: it is the record of a disclosure (RoPA 8c;
+  review round 1, pdpa M-A).
 
 ## Why this matters
 
