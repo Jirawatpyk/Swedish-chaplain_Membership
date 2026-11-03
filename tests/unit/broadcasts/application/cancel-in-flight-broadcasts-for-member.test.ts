@@ -10,11 +10,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { cascadeOutcomeSpy, auditEmitFailedSpy, auditEmitCountSpy } =
+const { cascadeOutcomeSpy, auditEmitFailedSpy, auditEmitCountSpy, cascadeOrphanStuckSpy } =
   vi.hoisted(() => ({
     cascadeOutcomeSpy: vi.fn(),
     auditEmitFailedSpy: vi.fn(),
     auditEmitCountSpy: vi.fn(),
+    cascadeOrphanStuckSpy: vi.fn(),
   }));
 vi.mock('@/lib/metrics', async () => {
   const actual =
@@ -26,6 +27,7 @@ vi.mock('@/lib/metrics', async () => {
       cascadeOutcome: cascadeOutcomeSpy,
       auditEmitFailed: auditEmitFailedSpy,
       auditEmitCount: auditEmitCountSpy,
+      cascadeOrphanStuck: cascadeOrphanStuckSpy,
     },
   };
 });
@@ -270,6 +272,7 @@ interface OrphanFixture {
   readonly outcome?: 'deleted' | 'absent' | 'retained' | 'handed' | 'superseded' | null;
   readonly attempts?: number;
   readonly heldBySentRow?: boolean;
+  readonly createdAt?: Date;
 }
 
 function orphanRef(o: OrphanFixture) {
@@ -280,7 +283,7 @@ function orphanRef(o: OrphanFixture) {
     resourceType: o.resourceType ?? 'broadcast',
     resourceId: o.resourceId,
     reason: o.resourceType === 'audience' ? 'audience_leaked' : 'attach_lost',
-    createdAt: new Date('2026-05-02T00:00:00Z'),
+    createdAt: o.createdAt ?? new Date('2026-05-02T00:00:00Z'),
     outcome: o.outcome ?? null,
     attempts: o.attempts ?? 0,
     heldBySentRow: o.heldBySentRow ?? false,
@@ -1496,6 +1499,57 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, resendDraftsCleared: 0 } });
       expect(deps.settles).toEqual([]);
       expect(deps.calls.filter((c) => !c.startsWith('evidence'))).toEqual(['delete:rb-o1:no-lock', `pause:${REPROBE_PAUSE_MS}:no-lock`, 'probe:rb-o1:no-lock']);
+    });
+  });
+
+  /**
+   * Spec 140 s2c review round 2 (security F1/F2, code-review #1, reliability
+   * MED, pdpa M-3) — a tenant audience orphan is STUCK when it has been tried
+   * `ORPHAN_STUCK_ATTEMPTS` times AND is older than `ORPHAN_STUCK_MIN_AGE_MS`
+   * (2 h, by the injected clock against `created_at`). Pass (b) applies the
+   * rule at every exit — undecided, past the deadline, over the limit — and a
+   * stuck row never withholds: it is counted (`audienceOrphansStuckCount`, the
+   * `member_erased` field) and metered (`broadcasts_cascade_orphan_stuck_total`).
+   */
+  describe('spec 140 s2c review round 2 — the stuck rule needs age, at every pass (b) exit', () => {
+    const erasureInput = { tenant, memberId, requestId: 'req-1', onDispatchBegun: 'delete_then_cancel' as const };
+    // The harness clock is 2026-05-03T00:00Z.
+    const OLD = new Date('2026-05-02T00:00:00Z');
+    const YOUNG = new Date('2026-05-02T23:00:00Z');
+    const stuckAud = (n: number, createdAt = OLD) => ({
+      orphanId: `o-aud-${n}`,
+      broadcastId: broadcastIdB,
+      resourceId: `aud-${n}`,
+      resourceType: 'audience' as const,
+      attempts: ORPHAN_STUCK_ATTEMPTS,
+      createdAt,
+    });
+    beforeEach(() => cascadeOrphanStuckSpy.mockReset());
+
+    it('21 stuck audience orphans past the limit do not withhold', async () => {
+      const rows = Array.from({ length: ERASURE_AUDIENCE_ORPHAN_LIMIT + 1 }, (_, i) => stuckAud(i));
+      const deps = makeDeps({ audienceOrphans: rows, deleteAudienceThrows: rows.map((r) => r.resourceId) });
+      const result = await cancelInFlightBroadcastsForMember(deps, erasureInput);
+      expect(result).toMatchObject({
+        ok: true,
+        value: { unexpectedErrorCount: 0, deferredCount: 0, audienceOrphansStuckCount: ERASURE_AUDIENCE_ORPHAN_LIMIT + 1 },
+      });
+      expect(cascadeOrphanStuckSpy).toHaveBeenCalledTimes(ERASURE_AUDIENCE_ORPHAN_LIMIT + 1);
+      expect(cascadeOrphanStuckSpy).toHaveBeenCalledWith(tenant.slug);
+    });
+
+    it('attempts ≥ 8 but younger than 2 h still withholds', async () => {
+      const deps = makeDeps({ audienceOrphans: [stuckAud(1, YOUNG)], deleteAudienceThrows: ['aud-1'] });
+      const result = await cancelInFlightBroadcastsForMember(deps, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, audienceOrphansStuckCount: 0 } });
+      expect(cascadeOrphanStuckSpy).not.toHaveBeenCalled();
+    });
+
+    it('a stuck audience orphan past the deadline does not withhold; a young one is deferred', async () => {
+      const deps = makeDeps({ audienceOrphans: [stuckAud(1), stuckAud(2, YOUNG)] }) as unknown as { orphanCalls: string[] };
+      const result = await cancelInFlightBroadcastsForMember(deps as never, { ...erasureInput, deadlineAt: new Date('2026-05-02T00:00:00Z') });
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, deferredCount: 1, audienceOrphansStuckCount: 1 } });
+      expect(deps.orphanCalls.filter((c) => c.startsWith('deleteAudience'))).toEqual([]);
     });
   });
 });

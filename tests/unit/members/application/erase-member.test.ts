@@ -641,6 +641,32 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     });
   });
 
+  // Spec 140 s2c review round 2 (security F2, pdpa M-3) — a stuck tenant
+  // audience orphan released without withholding is on the completion proof.
+  it('spec 140 s2c: member_erased carries audience_orphans_stuck_count', async () => {
+    const deps = buildEraseDeps();
+    deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
+      async () =>
+        ({
+          outcome: 'ok',
+          cancelledCount: 0,
+          skippedConcurrentCount: 0,
+          alreadySentCount: 0,
+          resendDraftsCleared: 0,
+          resendCopiesRetained: 0,
+          audienceOrphansStuckCount: 2,
+        }) as const,
+    );
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    const erased = deps.audit.recordInTx.mock.calls.find(
+      (c) => (c[2] as { type: string }).type === 'member_erased',
+    );
+    expect((erased?.[2] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      audience_orphans_stuck_count: 2,
+    });
+  });
+
   it('records the discarded-draft count on the member_erased DPO payload', async () => {
     // Erasure is a compliance path — a silent discard is not acceptable. F4
     // emits `invoice_draft_deleted` per document; this count is the DPO-facing

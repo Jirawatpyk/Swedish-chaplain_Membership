@@ -252,6 +252,38 @@ describe('f7BroadcastsCascadeAdapter — spec 140 s1 review round 3', () => {
   });
 });
 
+describe('f7BroadcastsCascadeAdapter — spec 140 s2c review round 2', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Security F2 / pdpa M-3 — the stuck tenant audience orphans pass (b)
+  // released travel to `member_erased` on both arms.
+  it.each([
+    { unexpectedErrorCount: 0, outcome: 'ok' },
+    { unexpectedErrorCount: 1, outcome: 'cascade_partial_failure' },
+  ])('carries audienceOrphansStuckCount on the $outcome arm', async ({ unexpectedErrorCount, outcome }) => {
+    cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
+      ok({
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        unexpectedErrorCount,
+        alreadySentCount: 0,
+        resendDraftsCleared: 0,
+        resendCopiesRetained: 0,
+        deferredCount: 0,
+        audienceOrphansStuckCount: 4,
+      }),
+    );
+    const result = await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
+      initiatedByUserId: null,
+      requestId: 'req-7',
+      onDispatchBegun: 'delete_then_cancel',
+    });
+    expect(result).toMatchObject({ outcome, audienceOrphansStuckCount: 4 });
+  });
+});
+
 describe('noopBroadcastsCascadeAdapter', () => {
   it('returns outcome="ok" + zeros without invoking F7', async () => {
     const result = await noopBroadcastsCascadeAdapter.cancelInFlightForMember(
