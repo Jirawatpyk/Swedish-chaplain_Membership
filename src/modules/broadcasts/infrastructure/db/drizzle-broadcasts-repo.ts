@@ -2680,6 +2680,11 @@ export function makeDrizzleBroadcastsRepo(
      *
      * Note this DETACHES; per U1 it does not delete the contact record at the
      * processor. See residual 8a in `docs/compliance/processing-records.md`.
+     *
+     * Spec 140 s2c review round 2 (pdpa H-1) — a third arm pairs the addresses
+     * with the tenant's UNSETTLED audience orphans (`broadcast_orphaned_resend_ids`,
+     * `resource_type = 'audience'`): a leaked audience the drain has not yet
+     * settled, a stuck one included, may hold the address.
      */
     async listMemberResendAudienceContactsInTx(txUnknown, tenantIdArg, emails) {
       const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
@@ -2758,6 +2763,25 @@ export function makeDrizzleBroadcastsRepo(
           -- audience_deleted_at IS NULL above is the bound that actually
           -- matters: cleanup-orphaned-audiences deletes the audience at Resend
           -- before stamping it, so a stamped row has nothing left to detach.
+
+        UNION
+
+        -- Spec 140 s2c review round 2 (pdpa H-1) — the leaked-audience arm.
+        -- An UNSETTLED audience orphan of this tenant names an audience no
+        -- row carries any more (a leaked import, a replaced row), which may
+        -- still hold the address; a STUCK one can stay for days. Paired with
+        -- every address, as the arm above: a 404 is counted already_absent,
+        -- a failure resend_contacts_failed_count, and neither blocks the
+        -- erasure (the propagation is best-effort). Settled rows are gone at
+        -- Resend or never were. NO BACKTICKS in this comment (sql template).
+        SELECT DISTINCT o.resource_id AS audience_id,
+                        e.email AS email
+        FROM broadcast_orphaned_resend_ids o
+        CROSS JOIN unnest(${emailArray}) AS e(email)
+        WHERE o.tenant_id = ${tenantIdArg}
+          AND o.resource_type = 'audience'
+          AND o.settled_at IS NULL
+          AND o.resource_id IS NOT NULL
       `)) as unknown as Array<{ audience_id: string; email: string }>;
       return rows.map((r) => ({ audienceId: r.audience_id, email: r.email }));
     },
