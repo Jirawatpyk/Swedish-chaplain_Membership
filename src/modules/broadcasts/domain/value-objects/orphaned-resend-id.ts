@@ -108,6 +108,17 @@ export const ORPHAN_STUCK_ATTEMPTS = 8;
  */
 export const ORPHAN_STUCK_MIN_AGE_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * The audience loop's grace (1 h): a terminal row's audience is deleted only
+ * once its `updated_at` is this old, so a just-terminal broadcast does not race
+ * Resend's own post-send processing. The cleanup route passes it as `graceMs`;
+ * review round 1 (code-review #3) applies it to an audience ORPHAN whose
+ * terminal holder changed recently too, in the drain and in the erasure's
+ * audience pass. Review round 2 (code-review #8) moved it here, next to the
+ * other orphan constants.
+ */
+export const AUDIENCE_CLEANUP_GRACE_MS = 60 * 60 * 1000;
+
 /** [A7] The window of the `create_unconfirmed` gauge: rows created in the last 24 h. */
 export const ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS = 24;
 

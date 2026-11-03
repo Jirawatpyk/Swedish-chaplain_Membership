@@ -218,6 +218,7 @@ import type { ClockPort } from '../ports/clock-port';
 import type { TerminalBroadcastDraftRef } from '../ports/broadcasts-repo';
 import type { BroadcastOrphansRepo, OrphanedResendIdRef } from '../ports/broadcast-orphans-repo';
 import {
+  AUDIENCE_CLEANUP_GRACE_MS,
   ORPHAN_STUCK_ATTEMPTS,
   ORPHAN_STUCK_MIN_AGE_MS,
   type OrphanOutcome,
@@ -225,7 +226,6 @@ import {
 import { asBroadcastId } from '../../domain/broadcast';
 import { isHandedStatus } from './_probe-refused-send';
 import { settleOrphanAtResend } from './_settle-orphan-at-resend';
-import { AUDIENCE_CLEANUP_GRACE_MS } from './cleanup-orphaned-audiences';
 import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
 export type CancelInFlightForMemberError =

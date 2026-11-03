@@ -28,7 +28,8 @@
  * writer is listed in the migration 0325 header), with the outcome table of
  * `_settle-orphan-at-resend.ts`, and writes each answer by a settle CAS:
  *   - at most `ORPHAN_DRAIN_LIMIT` rows per run, `ORPHAN_DRAIN_CONCURRENCY` at
- *     a time, oldest first; a row is never listed while a NON-TERMINAL
+ *     a time, past-grace rows first, then by attempts and age (review round
+ *     2); a row is never listed while a NON-TERMINAL
  *     `broadcasts` row holds its id (type-matched, [A1]) and `create_unconfirmed`
  *     (no id) never is;
  *   - the grace (`graceMs`, the same as the audience pass) holds a young row
@@ -66,19 +67,13 @@ import type { ClockPort } from '../ports/clock-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import { settleOrphanAtResend } from './_settle-orphan-at-resend';
 
+// Review round 2 (code-review #8) — the grace lives with the other orphan
+// constants in the Domain; re-exported here for this module's callers.
+export { AUDIENCE_CLEANUP_GRACE_MS } from '../../domain/value-objects/orphaned-resend-id';
+
 // ---------------------------------------------------------------------------
 // Bounds (spec 140 s2c, plan.md § Slice 2c, item 5)
 // ---------------------------------------------------------------------------
-
-/**
- * The audience loop's grace (1 h): a terminal row's audience is deleted only
- * once its `updated_at` is this old, so a just-terminal broadcast does not race
- * Resend's own post-send processing. The cleanup route passes it as `graceMs`;
- * review round 1 (code-review #3) applies it to an audience ORPHAN whose
- * terminal holder changed recently too, in the drain and in the erasure's
- * audience pass.
- */
-export const AUDIENCE_CLEANUP_GRACE_MS = 60 * 60 * 1000;
 
 /** The cleanup route's `maxDuration` (300 s), in ms — pinned to the route's literal by the drain test. */
 export const CLEANUP_MAX_DURATION_MS = 300_000;
@@ -273,27 +268,27 @@ async function drainOrphans(
     return { listed: 0, settled: 0, undecided: 0, waiting: 0, deferred: 0, listFailed: true };
   }
 
-  // [P H-2] — one erased read per requester, and only for rows inside the grace.
-  const erasedByMember = new Map<string, Promise<boolean>>();
-  const isErased = (memberId: string): Promise<boolean> => {
-    let read = erasedByMember.get(memberId);
-    if (read === undefined) {
-      read = deps.membersBridge
-        .getMemberErasedAt(deps.tenant, memberId)
-        .then((r) => r !== null && r.erasedAt !== null)
-        .catch((e: unknown) => {
-          logger.warn({ tenantId, err: errKind(e) }, 'broadcasts.orphan_drain.erased_read_failed');
-          return false;
-        });
-      erasedByMember.set(memberId, read);
-    }
-    return read;
-  };
+  // [P H-2] — one erased read per DISTINCT requester of a row inside the
+  // grace, all at once (review round 2, code-review #9: at most
+  // ORPHAN_DRAIN_LIMIT reads). A failed read counts as not erased: the row waits.
+  const inGrace = (row: OrphanedResendIdRef) => row.createdAt.getTime() >= graceCutoff.getTime();
+  const requesters = [...new Set(listed.filter(inGrace).map((row) => row.requestedByMemberId))];
+  const erasedRequesters = new Set<string>();
+  await Promise.all(
+    requesters.map(async (memberId) => {
+      try {
+        const r = await deps.membersBridge.getMemberErasedAt(deps.tenant, memberId);
+        if (r !== null && r.erasedAt !== null) erasedRequesters.add(memberId);
+      } catch (e) {
+        logger.warn({ tenantId, err: errKind(e) }, 'broadcasts.orphan_drain.erased_read_failed');
+      }
+    }),
+  );
 
   const due: OrphanedResendIdRef[] = [];
   let waiting = 0;
   for (const row of listed) {
-    if (row.createdAt.getTime() < graceCutoff.getTime() || (await isErased(row.requestedByMemberId))) {
+    if (!inGrace(row) || erasedRequesters.has(row.requestedByMemberId)) {
       due.push(row);
     } else {
       waiting += 1;
