@@ -567,6 +567,216 @@ Cell 23 is test-only: the scan already excludes a leased row before it reaches t
 - **The live legacy leg gains three behaviours:** the cell-23 skip, cleared-lease writes, and the cutoff. *(Superseded by s2b review round 1, CR#5: the import leg only; the legacy leg has no cutoff.)* Prod held 0 `broadcasts` rows on 30 Oct 2026. The import leg stays dark (flag OFF).
 - **The migration is catalogue-only.** The trigger is re-created from the newest definition and checked against the live one.
 
+### Slice 2c — build plan (agreed 3 Nov 2026)
+
+Drafted from the code at `e477b3337`. `chamber-os-architect` and `pdpa-gdpr-compliance-officer` read it before approval; their findings are marked [Ax] / [Px]. It supersedes design items 1, 8, 9 and 10 where they differ (the generalised `resource_type` / `resource_id`; the drain's NOT EXISTS against non-terminal rows only [A1]; the choke point's helper and re-read [A2, A3]; the erasure extension).
+
+#### Decision: the erasure cascade settles the member's orphans
+The maintainer asked the main session to consult the advisor and pick best practice.
+
+**Why.** s1's `member_erased.resend_drafts_cleared` / `resend_copies_retained` state that every DB-reachable Resend copy was settled or counted, and that an undecided one withholds `member_erased`. Once orphan rows exist, those ids are DB-reachable. Leaving them to the cron would make the evidence overstate. pdpa confirmed this is the right Art. 17 / PDPA §33 answer.
+
+**What it means:**
+- The cascade settles the member's known-id orphans; the cron stays the backstop.
+- The row stores `requested_by_member_id`, a snapshot with no FK and no content.
+- `create_unconfirmed`, which has no id, stays outside: it is covered by a gauge and the DSR caveat.
+
+#### Build
+**Branch:** `140-eblast-one-leg-s2c` from `e477b3337`, in f142 (clean install, `.husky/_`).
+
+##### 1. Migration 0323
+`new-migration` skill; journal `when` 1798545600000; template 0308 (no DELETE grant).
+
+**Table `broadcast_orphaned_resend_ids`:**
+- columns: `tenant_id`, `orphan_id uuid DEFAULT gen_random_uuid()`, `broadcast_id uuid NOT NULL`, `requested_by_member_id uuid NOT NULL` (neither has an FK), `resource_type text CHECK IN ('broadcast','audience')`, `resource_id text NULL`, `reason text CHECK IN (…)`, `created_at`, `settled_at timestamptz NULL`, `outcome text NULL CHECK IN ('deleted','absent','retained','handed')`;
+- `reason` values: `attach_lost`, `row_vanished`, `persist_failed`, `read_back_failed_kept`, `dead_broadcast_replaced`, `dead_broadcast_kept`, `terminal_reclaim_undecided`, `refused_draft_undeleted`, `audience_leaked`, `create_unconfirmed`.
+
+**Keys and CHECKs:**
+- PK `(tenant_id, orphan_id)`.
+- Partial UNIQUE `(tenant_id, resource_type, resource_id) WHERE resource_id IS NOT NULL`.
+- Partial index `(tenant_id, created_at) WHERE settled_at IS NULL`.
+- `(resource_id IS NULL) = (reason = 'create_unconfirmed')`.
+- `create_unconfirmed` ⇒ `resource_type = 'broadcast'`.
+- `btrim(resource_id) <> ''`.
+- `(settled_at IS NULL) = (outcome IS NULL)`.
+
+**Access:**
+- RLS ENABLE + FORCE, with the policy on `app.current_tenant`.
+- `chamber_app` gets SELECT, INSERT and UPDATE.
+- `lock_timeout` 5 s.
+- A `db:verify` canary.
+
+**Retention [P M-1]:**
+- A `SECURITY DEFINER` function `prune_orphaned_resend_ids(tenant, cutoff)`, following the 0310 pattern with `search_path` pinned.
+- It deletes settled rows and `create_unconfirmed` rows older than `ORPHAN_ROW_RETENTION_DAYS = 90`.
+- The retention sweep calls it.
+
+**Deviation (record it):** the design's `resend_broadcast_id` becomes `resource_type` + `resource_id`, so audiences fit [A8: sound].
+
+##### 2. Repo port + adapter
+Every method is tenant-fenced, runs in `runInTenant`, and calls `assertTenantBoundTx`.
+
+**`recordOrphanedResendId`**
+- Own tx, best-effort, `ON CONFLICT DO NOTHING`.
+- On a failed insert it logs at ERROR critical with `resource_type`, `resource_id`, `broadcast_id` and `reason`, never content [P M-3].
+
+**`listDrainableOrphans`**
+- Rows that are unsettled, have a non-null id, and are past the grace period. **The grace is skipped when the requester's `erased_at IS NOT NULL`** [P H-2: a row written after `member_erased` is drained on the next 15-minute tick].
+- **AND NOT EXISTS a NON-TERMINAL `broadcasts` row in the same tenant holding that id, type-matched**: `broadcast` ↔ `resend_broadcast_id`, `audience` ↔ `resend_audience_id` [A1 BLOCKER, A8].
+- A terminal row cannot send again, and `deleteBroadcastOnce` is draft-only.
+
+**`listMemberOrphans`**
+- Settled and unsettled rows, so the counts are stable across a re-drive [A6a].
+- Same type-matched, non-terminal rule.
+
+**`settleOrphan`:** a CAS on `settled_at IS NULL`.
+
+**`countRecentUnconfirmedOrphans`:** for the gauge. It counts `create_unconfirmed` rows from the last 24 h, named as a constant [A7].
+
+##### 3. Writers
+Each writer is at the caller, which holds the repo and the member id. None goes inside a shared gateway helper [A2].
+
+| reason | Site | id |
+|---|---|---|
+| `attach_lost` / `row_vanished` / `persist_failed` | `_persist-minted-broadcast-id.ts` :117 / :122 / :152. Only when the reclaim leaked: `_reclaim-minted-broadcast.ts:40` returns `'reclaimed' \| 'leaked'`. The helper gains `requestedByMemberId` [A7] | minted |
+| `read_back_failed_kept` | `_persist-minted-broadcast-id.ts:148` | minted |
+| `dead_broadcast_replaced` | `build-audience-tick.ts:2239`. Only when the probe read `cancelled`, not `not_found` [A7] | replaced id |
+| `dead_broadcast_kept` | `build-audience-tick.ts:1305` | kept id |
+| `audience_leaked` | `reclaimUnattachedAudience` `build-audience-tick.ts:673` / `:685`, **and the legacy leg's `audience_attach_lost_leaked`** `dispatch-scheduled-broadcast.ts:1371-1397` [A5]. `resource_type = 'audience'` | audience id |
+| `refused_draft_undeleted` (R1 #5) | the refuse-arm callers of `deleteDraftBeforeStandingRefusal` (tick :1054, legacy :855) on `undeleted` | row's draft id |
+| `terminal_reclaim_undecided` | the choke point (item 4) | row's draft id |
+| `create_unconfirmed` | `build-audience-tick.ts`, just before `onGatewayFailure` (:2216), for `createBroadcast` subKind `network` \| `timeout` \| `server_5xx`, never `api`. 5xx is included, matching RoPA 8d. Import leg only: the legacy retry cannot see an intermediate mint, and s4 deletes that leg | NULL |
+
+The shared persist helper also runs on the legacy leg, at :1302.
+
+##### 4. Choke point in `failTerminally`
+Pdpa M-1; design item 10; `build-audience-tick.ts:2720`.
+
+**When it runs:**
+- `failTerminally` gains `draftSettled?: true`. The two refuse arms (:1064, :1103) pass it, so nothing is deleted twice.
+- For every other caller, it **re-reads the row** with `findById` [A3] and acts when the row holds `resend_broadcast_id`.
+- If that read fails, the answer is retryable `dispatch.server_error` with no terminal write.
+
+**Sequence:** a pre-call lease check, then `deleteDraftBeforeStandingRefusal` (`_dispatch-standing-gate.ts:300`, which has the full outcome set [A2]), **before** the terminal tx. The lease check answers [A4]:
+
+| Lease check | Answer |
+|---|---|
+| lost | row 9 |
+| expiring | `lease_expiring` |
+| failed | retryable |
+
+None of them writes a terminal row.
+
+**Outcomes of the delete:**
+
+| Outcome | Result |
+|---|---|
+| `deleted` / `absent` / `cancelled` / `failed` | terminal, with `resendDraftOutcome` |
+| `handed` | concurrent skip, labelled `unknown_or_already_processed` (as at :1062); no terminal write and no email |
+| `undeleted` | an orphan row `terminal_reclaim_undecided`, then terminal |
+
+**Documented, not fixed:** a successful delete followed by a lost CAS leaves the row `approved` holding a 404 id. The next tick re-mints it.
+
+**W_max is unchanged [A4]:**
+- tick 2 already counts the two calls (N = 9, `_dispatch-lease.ts:54-57`);
+- tick 1's 5C cannot double, because the standing gate's delete+GET and the choke point's are mutually exclusive (the refuse arms pass `draftSettled`);
+- the budget test pins that reasoning with a comment and assertion.
+
+##### 5. Drain
+In `cleanup-orphaned-audiences.ts`: a second pass after the audience loop, at concurrency 5, up to 20 rows.
+
+**Broadcast rows:**
+- `deleteBroadcastOnce`: `deleted` / `absent` settle as such.
+- `forbidden` → `retrieveBroadcastOnce`: canceled or failed → `retained`; queued or sent → `handed`.
+- Anything else is left for the next run.
+
+**Audience rows:** `deleteAudience`. A void answer (404 / 410 included) → `deleted`; a throw is left for the next run.
+
+**Never drained:** `create_unconfirmed`.
+
+**Other changes:**
+- The route gets `maxDuration = 300`, and the drain stops at 240 s.
+- `cause: e.message` (:108, :147) → `err: errKind(e)`, plus `tenantId`.
+- The port docblock (`broadcasts-gateway-port.ts:490-543`) gains a 4th documented exception: an id read from the orphan table.
+
+##### 6. Erasure
+In `cancel-in-flight-broadcasts-for-member.ts`, after the terminal-draft pass (:794-830). No row lock, so E is unchanged. Each call and its settle CAS run in their own short tx, under the cascade deadline; untried rows count as undecided [A6].
+
+**(a) The member's broadcast orphans (`listMemberOrphans`):**
+- The same outcome table as the drain. Settled outcomes count into the existing `resend_drafts_cleared` / `resend_copies_retained`.
+- `handed` → settle `handed`, and count it as already sent (8c) through the existing `broadcasts_already_sent_count` evidence. It is keyed on the snapshot `broadcast_id`, with no `recordAlreadySent` row write, because the row may be gone [P M-2, A6b].
+- Undecided → withhold `member_erased`; `reconcile-erasures` drives the erasure again.
+
+**(b) The tenant's unsettled audience orphans** [P H-1]. A leaked audience holds the recipients' contacts, so this is not keyed on the requester:
+- they are deleted, which is always correct because no non-terminal row holds them;
+- they are **not** counted into the draft fields [P L-1, A6c];
+- an undecided one withholds `member_erased`.
+
+**Race [A6d, P H-2]:** an orphan written after the pass is drained by the cron within one tick, because erased requesters skip the grace. RoPA states this window.
+
+##### 7. Gauge
+- `broadcasts_orphaned_resend_ids_unconfirmed{tenant}`: the last-24 h count, in `broadcasts-gauges/route.ts`, following the `audienceImportStuck` template (:256, :327, :355).
+- After migrating dev, run one `pnpm db:query` to confirm the route's role reads the FORCE-RLS table as it reads `broadcasts`.
+
+##### 8. Docs
+**RoPA 8d:**
+- The known-id leaked-mint residual is CLOSED by the drain and erasure.
+- Named residuals that remain:
+  - the post-pass window (P H-2);
+  - a failed orphan insert, which is log-only and deleted by hand (P M-3);
+  - `create_unconfirmed` (Review-by 2027-01-31). The DSR caveat now gives a per-member count, and "how to find one" starts from these rows (P L-2);
+  - a timed-out `createAudience` on a live row, which no sweep reaches [A5];
+  - the legacy leg's terminal drafts without a choke point, until s4.
+- Fix the stale sentence "slice 2b records `create_unconfirmed`".
+- List the table's columns and retention, `requested_by_member_id` included.
+- State the recipient-audience path.
+
+**RoPA :262:** "the part still open" becomes "a draft whose id we never received, or whose orphan insert failed".
+
+**#699** closes on merge.
+
+**Other docs:**
+- `observability.md`.
+- Runbooks:
+  - `broadcast-audience-build.md`;
+  - `member-erasure.md`: the step-4 orphan query and the DSR count query;
+  - `cron-jobs.md`: the cleanup `maxDuration`;
+  - the retention runbook: the prune.
+- The broadcasts rule; the changelog; the plan.md Slices row 2c. Every number names its constant.
+- **One line in `docs/retro.md`:** s2b's rounds 2–3 came mostly from the previous round's fixes. Guard: a reviewer-asked mechanism names its interaction with every existing writer before GREEN.
+
+#### Test plan (RED first, one row per behaviour)
+| Behaviour | Test |
+|---|---|
+| CHECKs, unique, RLS cross-tenant, the prune function (settled + unconfirmed > 90 d only) | `orphaned-resend-ids.test.ts` (new, integration, `chamber_app`) |
+| A leaked reclaim writes a row; a reclaimed one does not; the member id is stored | persist-helper unit, per case |
+| `dead_broadcast_replaced` only on cancelled; `dead_broadcast_kept`; `audience_leaked` on both legs; `refused_draft_undeleted` at the callers | tick unit + legacy unit |
+| `create_unconfirmed` on network / timeout / 5xx, never on 429 | tick unit · it.each |
+| Choke point: re-read; read fails → retryable; lease lost / expiring / failed answers; deleted / absent / cancelled / failed → terminal; handed → skip with no email; undeleted → orphan row then terminal; `draftSettled` → no second delete | tick unit · it.each |
+| Budget: tick 1 C count unchanged by the choke point | `dispatch-lease-budget.test.ts` |
+| Drain: a non-terminal holder is skipped; a terminal holder is drained; type-matched; outcomes; `create_unconfirmed` never drained; erased requester skips the grace; stops at 240 s | cleanup unit + DL6 integration |
+| Erasure: member broadcast orphans settled and counted (stable on a re-drive); handed counted as already sent; tenant audience orphans deleted and not counted; undecided withholds | cascade unit + `erasure-terminal-drafts` integration (extended) |
+| Gauge (24 h window); cleanup log hygiene | unit |
+| Already green, re-run: `audience-import-two-tick`, `erasure-vs-dispatch-begun`, `dispatch-lease-*`, `import-leg-lease-pair` | integration |
+
+#### Verify (D-044, the maintainer's `/verify`)
+Flag OFF, Resend sink address only, no `/send`, no Vercel env.
+- A seeded broadcast orphan with a random uuid, past the grace → GET `cleanup-audiences` → `absent`.
+- A seeded orphan holding a real sink **draft**, for a seeded member → erase → the draft answers 404, `resend_drafts_cleared` counts it, and the row is settled.
+- A wrong Bearer → 401.
+- Teardown, minding the outbox and approved-version gotchas.
+
+#### Review (D-043; L, sensitive)
+- ≥ 2 full `/code-review high` rounds plus ≤ 2 targeted.
+- drizzle-migration, security, reliability, pdpa, spec-compliance; staff review by security and senior-tester.
+- The builder runs scoped tests and one `pnpm check`; the main session runs the gates one at a time.
+- Merge on the maintainer's word only.
+
+#### Risks
+- The live legacy leg now writes orphan rows: best-effort, in its own tx. Prod held 0 `broadcasts` rows on 30 Oct 2026.
+- Erasure gains Resend calls, bounded by the cascade deadline. Untried counts as undecided, which triggers a re-drive.
+- The drain deletes ids read from a table. It is guarded by type-matched NOT EXISTS against non-terminal rows, the grace period, and DELETE being draft-only.
+
 ## Constitution Check
 
 | Principle | Result |
