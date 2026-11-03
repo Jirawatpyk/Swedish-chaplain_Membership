@@ -40,6 +40,13 @@ vi.mock('@/lib/db', () => ({
   runInTenant: (_ctx: unknown, fn: (tx: never) => unknown) => fn({} as never),
 }));
 
+// Spec 140 s2c review round 3 (code-review #4) — the stuck-release counter.
+const { orphanStuckReleasedSpy } = vi.hoisted(() => ({ orphanStuckReleasedSpy: vi.fn() }));
+vi.mock('@/lib/metrics', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/metrics')>('@/lib/metrics');
+  return { ...actual, erasureMetrics: { ...actual.erasureMetrics, orphanStuckReleased: orphanStuckReleasedSpy } };
+});
+
 const META = { actorUserId: 'admin-1', requestId: 'req-1' };
 const MEMBER_ID = asMemberId('m-1');
 const MISSING_ID = asMemberId('missing');
@@ -665,6 +672,61 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     );
     expect((erased?.[2] as { payload: Record<string, unknown> }).payload).toMatchObject({
       audience_orphans_stuck_count: 2,
+    });
+  });
+
+  // Spec 140 s2c review round 3 (code-review #4, reliability LOW-2) —
+  // `broadcasts_cascade_orphan_stuck_total` counts RELEASED erasures: one add
+  // of the count when member_erased is written, nothing on a withheld run, a
+  // failed member_erased write, or a count of 0.
+  describe('spec 140 s2c review round 3 — the stuck counter counts released erasures', () => {
+    const cascade = (outcome: 'ok' | 'cascade_partial_failure', audienceOrphansStuckCount: number) =>
+      vi.fn(
+        async () =>
+          ({
+            outcome,
+            cancelledCount: 0,
+            skippedConcurrentCount: 0,
+            unexpectedErrorCount: outcome === 'ok' ? 0 : 1,
+            alreadySentCount: 0,
+            resendDraftsCleared: 0,
+            resendCopiesRetained: 0,
+            deferredCount: 0,
+            audienceOrphansStuckCount,
+          }) as never,
+      );
+
+    it('an emitted erasure adds the count once', async () => {
+      orphanStuckReleasedSpy.mockReset();
+      const deps = buildEraseDeps();
+      deps.broadcastsCascade.cancelInFlightForMember = cascade('ok', 2);
+      await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      expect(orphanStuckReleasedSpy).toHaveBeenCalledTimes(1);
+      expect(orphanStuckReleasedSpy).toHaveBeenCalledWith(2, deps.tenant.slug);
+    });
+
+    it('a withheld run adds nothing', async () => {
+      orphanStuckReleasedSpy.mockReset();
+      const deps = buildEraseDeps();
+      deps.broadcastsCascade.cancelInFlightForMember = cascade('cascade_partial_failure', 2);
+      await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+      expect(types).not.toContain('member_erased');
+      expect(orphanStuckReleasedSpy).not.toHaveBeenCalled();
+    });
+
+    it('a member_erased write that fails, or a count of 0, adds nothing', async () => {
+      orphanStuckReleasedSpy.mockReset();
+      const failed = buildEraseDeps();
+      failed.broadcastsCascade.cancelInFlightForMember = cascade('ok', 2);
+      failed.audit.recordInTx = vi.fn(async (_tx: unknown, _ctx: unknown, ev: { type: string }) =>
+        ev.type === 'member_erased' ? { ok: false, error: { kind: 'audit_failed' } } : ok(undefined),
+      ) as never;
+      await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, failed);
+      const zero = buildEraseDeps();
+      zero.broadcastsCascade.cancelInFlightForMember = cascade('ok', 0);
+      await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, zero);
+      expect(orphanStuckReleasedSpy).not.toHaveBeenCalled();
     });
   });
 
