@@ -1453,6 +1453,27 @@ Run because `route.ts` changed after `147bf6150` (the span attribute `757d7d01f`
 - **Decisions:** the pre-check covers a re-time only (`schedule` / `send_now` from `approved`): a cancel is a status change that ends the lease by design, and a promotion leaves `member_approved`, which no tick can hold. The claim skip's new value `held_by_another_tick` reaches no reader but the cron's `concurrent_skip` bucket.
 
 
+### Slice 2c — Verify finding (the maintainer's `/verify`, 3 Nov 2026): a deleted audience answers 403 on DELETE
+
+**MEASURED 2026-11-03** on the shared sink account, while it held only the `General` segment:
+- `GET /audiences/5081ce60…` → 404 `not_found`;
+- `DELETE` of the same id → **403 `validation_error` "Cannot delete last audience."**
+
+Resend checks for the last audience before it checks whether the id exists. `deleteAudience` treats only 404 / 410 as absent, so a 403 throws. The effects:
+- the existing cleanup re-fails a terminal row every 15 minutes (`d9818abc…` on dev);
+- the 2c audience-orphan drain and the erasure's tenant audience pass would leave a gone audience unsettled for ever.
+
+Dev and prod share the broadcasts key, so the account state matches.
+
+**Plan row (D-043), added before GREEN:**
+
+| Mechanism | State / rule | Test that goes red first |
+|---|---|---|
+| A 403 on `deleteAudience` is probed | `deleteAudience` answers a 403 with one bounded `GET /audiences/{id}`: 404 / 410 → absent (log `audience_already_absent`, `via: 'probe_after_403'`); anything else → throw as today. Neighbours: the cleanup loop, the 2c drain and the erasure's audience pass all call `deleteAudience` and treat void as deleted, so every one of them gains the absent path | gateway unit · "a 403 'last audience' whose probe answers 404 is absent"; · "a 403 whose probe finds the audience throws" |
+
+**Also (docs):**
+- The cleanup response's top-level `processed` / `deleted` / `failed` count the audience loop; `orphans` counts the drain. Written in `observability.md`.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
