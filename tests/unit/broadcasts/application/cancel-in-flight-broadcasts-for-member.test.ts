@@ -223,10 +223,15 @@ function makeDeps(overrides: {
       if (overrides.memberOrphans === 'throws') throw new Error('Neon: orphan list failed');
       return (overrides.memberOrphans ?? []).map(orphanRef);
     }),
-    listUnsettledAudienceOrphans: vi.fn(async (limit: number) => {
+    listUnsettledAudienceOrphans: vi.fn(async (limit: number, _audienceGraceCutoff?: Date, stuckAgeCutoff?: Date) => {
       orphanCalls.push(`listAudiences:${limit}`);
       if (overrides.audienceOrphans === 'throws') throw new Error('Neon: orphan list failed');
-      return (overrides.audienceOrphans ?? []).map(orphanRef).slice(0, limit);
+      // Review round 3 (code-review #1) — the repo's first sort key: stuck rows
+      // (by the caller's cutoff) last. A stable sort keeps the fixture order
+      // (the repo's attempts, created_at) within each group.
+      const stuck = (r: ReturnType<typeof orphanRef>) =>
+        stuckAgeCutoff !== undefined && r.attempts >= ORPHAN_STUCK_ATTEMPTS && r.createdAt.getTime() <= stuckAgeCutoff.getTime() ? 1 : 0;
+      return (overrides.audienceOrphans ?? []).map(orphanRef).sort((a, b) => stuck(a) - stuck(b)).slice(0, limit);
     }),
     settleOrphan: vi.fn(async (orphanId: string, outcome: string) => {
       if (overrides.settleThrows === true) throw new Error('57P01');
@@ -1528,16 +1533,30 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
     });
     beforeEach(() => cascadeOrphanStuckSpy.mockReset());
 
-    it('21 stuck audience orphans past the limit do not withhold', async () => {
+    // Review round 3 (code-review #1, security LOW, reliability LOW-1) — the
+    // over-limit exit judges only the marker row (LIMIT + 1). The list sorts
+    // stuck rows LAST, by a cutoff from the same clock as the stuck rule, so a
+    // stuck marker means every unlisted row is stuck too: a young row with more
+    // attempts is listed ahead of them and settled, never left unseen.
+    it('the audience list sorts stuck rows last: a stuck marker row means every unlisted row is stuck', async () => {
       const rows = Array.from({ length: ERASURE_AUDIENCE_ORPHAN_LIMIT + 1 }, (_, i) => stuckAud(i));
-      const deps = makeDeps({ audienceOrphans: rows, deleteAudienceThrows: rows.map((r) => r.resourceId) });
+      // Not stuck (1 h old); the pre-round-3 order (attempts, age) put it after all 21.
+      const young = { ...stuckAud(99, YOUNG), attempts: ORPHAN_STUCK_ATTEMPTS + 1 };
+      const deps = makeDeps({ audienceOrphans: [...rows, young], deleteAudienceThrows: rows.map((r) => r.resourceId) });
+      const seen = deps as unknown as { settles: Array<[string, string]>; orphans: { listUnsettledAudienceOrphans: ReturnType<typeof vi.fn> } };
       const result = await cancelInFlightBroadcastsForMember(deps, erasureInput);
+      expect(seen.settles).toEqual([['o-aud-99', 'deleted']]);
+      // The grace cutoff (now − 1 h) and the stuck cutoff (now − ORPHAN_STUCK_MIN_AGE_MS).
+      expect(seen.orphans.listUnsettledAudienceOrphans).toHaveBeenCalledWith(
+        ERASURE_AUDIENCE_ORPHAN_LIMIT + 1,
+        new Date('2026-05-02T23:00:00Z'),
+        new Date('2026-05-02T22:00:00Z'),
+      );
+      // 19 undecided + the marker; the 21st stuck row is unlisted, so the count is a minimum.
       expect(result).toMatchObject({
         ok: true,
-        value: { unexpectedErrorCount: 0, deferredCount: 0, audienceOrphansStuckCount: ERASURE_AUDIENCE_ORPHAN_LIMIT + 1 },
+        value: { unexpectedErrorCount: 0, deferredCount: 0, audienceOrphansStuckCount: ERASURE_AUDIENCE_ORPHAN_LIMIT },
       });
-      expect(cascadeOrphanStuckSpy).toHaveBeenCalledTimes(ERASURE_AUDIENCE_ORPHAN_LIMIT + 1);
-      expect(cascadeOrphanStuckSpy).toHaveBeenCalledWith(tenant.slug);
     });
 
     it('attempts ≥ 8 but younger than 2 h still withholds', async () => {

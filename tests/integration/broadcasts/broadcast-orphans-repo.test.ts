@@ -276,6 +276,32 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
   });
 
   /**
+   * Spec 140 s2c review round 3 (code-review #1, security LOW, reliability
+   * LOW-1) — the erasure audience list sorts STUCK rows last (attempts at
+   * `ORPHAN_STUCK_ATTEMPTS` or more AND `created_at` at or before the caller's
+   * `stuckAgeCutoff`), so a stuck marker row proves every unlisted row stuck.
+   */
+  it('[code-review #1] an old row with 8 attempts sorts after a young row with 9', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      const oldStuck = `aud-old-${randomUUID()}`;
+      const youngTried = `aud-young-${randomUUID()}`;
+      for (const [id, ageMs, attempts] of [[oldStuck, 3 * HOUR, 8], [youngTried, HOUR / 2, 9]] as const) {
+        await runInTenant(solo.ctx, (tx) =>
+          tx.execute(sql`
+            INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at, attempts)
+            VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${id}, 'audience_leaked', ${new Date(Date.now() - ageMs).toISOString()}::timestamptz, ${attempts})`),
+        );
+      }
+      const listed = await repo.listUnsettledAudienceOrphans(10, GRACE_CUTOFF(), new Date(Date.now() - 2 * HOUR));
+      expect(listed.map((o) => o.resourceId)).toEqual([youngTried, oldStuck]);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
+
+  /**
    * Spec 140 s2c review round 2 (pdpa H-1) — the 8a detach derivation
    * (`listMemberResendAudienceContactsInTx`) pairs the erased member's
    * addresses with every UNSETTLED audience orphan of the tenant: a stuck
