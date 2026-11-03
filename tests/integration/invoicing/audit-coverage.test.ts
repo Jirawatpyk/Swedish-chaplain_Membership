@@ -280,8 +280,10 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'invoice_buyer_identity_invalid',
       // 108 PR-A (migration 0292) — money email had no live primary contact.
       'auto_email_skipped_no_recipient',
+      // #67 (migration 0324) — a replayed admin credit-note issue attempt.
+      'credit_note_issue_replayed',
     ] as const;
-    expect(allF4Types).toHaveLength(28);
+    expect(allF4Types).toHaveLength(29);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -725,6 +727,12 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
           'tests/unit/invoicing/record-payment.test.ts (108 FR-001 block — no live primary → skipped_no_email + audited skip, emitted on the payment tx)',
         since: '2026-09-04',
       },
+      credit_note_issue_replayed: {
+        status: 'covered',
+        where:
+          'credit-note-idempotency-key.test.ts (the same key twice → one replay row, 10y) + tests/unit/invoicing/issue-credit-note.test.ts (#66 block: locked read and race reconcile)',
+        since: '2026-11-03',
+      },
       invoice_buyer_identity_invalid: {
         status: 'deferred',
         where:
@@ -774,6 +782,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'invoice_buyer_identity_invalid',
       // 108 PR-A (2026-09-04) — money email had no live primary contact.
       'auto_email_skipped_no_recipient',
+      // #67 (2026-11-03) — a replayed admin credit-note issue attempt.
+      'credit_note_issue_replayed',
     ] as const;
     // C4 — the inventory must reference REAL, CURRENT test files.
     // Previously `'covered'` entries were declarative-only: if a
@@ -840,6 +850,11 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       // (Fix #15 whole-feature review — flips the entry deferred → covered).
       'tests/integration/invoicing/bill-to-receipt.integration.test.ts':
         'tests/integration/invoicing/bill-to-receipt.integration.test.ts',
+      // #67 — the replay-row needles for `credit_note_issue_replayed`.
+      'credit-note-idempotency-key.test.ts':
+        'tests/integration/invoicing/credit-note-idempotency-key.test.ts',
+      'tests/unit/invoicing/issue-credit-note.test.ts':
+        'tests/unit/invoicing/issue-credit-note.test.ts',
     };
 
     for (const t of declared) {
@@ -892,7 +907,9 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     // (deferred; no live-Neon behavioral test yet — see the coverage entry).
     // 108 PR-A — bumped 28 → 29 for `auto_email_skipped_no_recipient` (covered:
     // the record-payment unit block asserts the audit row on the payment tx).
-    expect(coveredCount + deferredCount).toBe(29);
+    // #67 — bumped 29 → 30 for `credit_note_issue_replayed` (covered: the
+    // idempotency-key integration file reads the replay row).
+    expect(coveredCount + deferredCount).toBe(30);
     // Behavioral coverage target: 23/26. Remaining 4 are post-MVP/rare-path
     // deferrals: invoice_pdf_regenerated (Blob-outage auto-rerender),
     // receipt_rendered + pdf_render_permanently_failed (T166 async

@@ -1833,7 +1833,7 @@ describe('issueCreditNote — #66 idempotency key (admin notes)', () => {
     return { deps, findByIdempotencyKey };
   }
 
-  it('a repeat with the same key, invoice and amount returns the note already issued: replayed, no number, no PDF, no audit, no email', async () => {
+  it('a repeat with the same key, invoice and amount returns the note already issued: replayed, no number, no PDF, no issue audit, no email', async () => {
     const cn = existingCn();
     const { deps, findByIdempotencyKey } = depsWithKeyHit(cn);
     const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
@@ -1847,7 +1847,9 @@ describe('issueCreditNote — #66 idempotency key (admin notes)', () => {
     expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
     expect(deps.pdfRender.render).not.toHaveBeenCalled();
     expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
-    expect(deps.audit.emit).not.toHaveBeenCalled();
+    // #67 — only the replay's own row, never a second credit_note_issued.
+    const types = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1].eventType);
+    expect(types).toEqual(['credit_note_issue_replayed']);
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
   });
 

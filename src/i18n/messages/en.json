@@ -8011,6 +8011,7 @@
       "invoice_voided": "Invoice voided",
       "invoice_overdue_detected": "Invoice overdue",
       "credit_note_issued": "Credit note issued",
+      "credit_note_issue_replayed": "Credit note request repeated — existing note returned",
       "invoice_pdf_resent": "Invoice PDF resent",
       "receipt_pdf_resent": "Receipt PDF resent",
       "credit_note_pdf_resent": "Credit-note PDF resent",

@@ -362,6 +362,33 @@ function keyHitMatches(
 }
 
 /**
+ * #67 — the audit row a replayed admin issue attempt leaves: ids only, never
+ * the reason or any buyer data. Emitted in the tx that read the note.
+ */
+function replayAuditEvent(
+  input: IssueCreditNoteInput,
+  note: CreditNote,
+  idempotencyKey: string,
+  path: 'locked_read' | 'race_reconcile',
+) {
+  return {
+    tenantId: input.tenantId,
+    requestId: input.requestId ?? null,
+    eventType: 'credit_note_issue_replayed' as const,
+    actorUserId: input.actorUserId,
+    summary: `Credit note ${note.documentNumber.raw} request repeated; the existing note was returned`,
+    payload: {
+      credit_note_id: note.creditNoteId,
+      original_invoice_id: note.originalInvoiceId,
+      document_number: note.documentNumber.raw,
+      idempotency_key: idempotencyKey,
+      total_satang: note.total.satang.toString(),
+      path,
+    },
+  };
+}
+
+/**
  * CRITICAL-1 / RR-2 — thrown when the CN insert LOSES a concurrent race on the
  * `source_refund_id` partial unique index (23505). A winning racer already
  * committed a CN for this `(tenant_id, source_refund_id)`. The current tx is
@@ -617,6 +644,8 @@ export async function issueCreditNote(
             );
             return err({ code: 'concurrent_state_change' });
           }
+          // #67 — the replay leaves a trace (it commits with this tx).
+          await deps.audit.emit(tx, replayAuditEvent(input, existing, input.idempotencyKey, 'locked_read'));
           return ok({
             creditNote: existing,
             emailDelivery: 'not_requested',
@@ -1654,10 +1683,18 @@ export async function issueCreditNote(
     // #66 — the same fresh-tx reconcile for the admin idempotency-key race.
     if (e instanceof CreditNoteKeyRaceError) {
       let winner: CreditNote | null;
+      let matches = false;
       try {
-        winner = await deps.invoiceRepo.withTx((tx) =>
-          deps.creditNoteRepo.findByIdempotencyKey(tx, input.tenantId, e.idempotencyKey),
-        );
+        // #67 — the matching winner is answered as a replay, and its audit
+        // row lands in the same fresh tx as the read.
+        winner = await deps.invoiceRepo.withTx(async (tx) => {
+          const found = await deps.creditNoteRepo.findByIdempotencyKey(tx, input.tenantId, e.idempotencyKey);
+          matches = found !== null && keyHitMatches(found, invoiceId, input);
+          if (found && matches) {
+            await deps.audit.emit(tx, replayAuditEvent(input, found, e.idempotencyKey, 'race_reconcile'));
+          }
+          return found;
+        });
       } catch (reconcileErr) {
         logger.error(
           { err: reconcileErr, tenantId: input.tenantId, invoiceId: input.invoiceId },
@@ -1665,7 +1702,7 @@ export async function issueCreditNote(
         );
         return err({ code: 'concurrent_state_change' });
       }
-      if (winner && keyHitMatches(winner, invoiceId, input)) {
+      if (winner && matches) {
         return ok({
           creditNote: winner,
           emailDelivery: 'not_requested',

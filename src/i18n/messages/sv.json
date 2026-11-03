@@ -8011,6 +8011,7 @@
       "invoice_voided": "Faktura annullerad",
       "invoice_overdue_detected": "Faktura förfallen",
       "credit_note_issued": "Kreditnota utfärdad",
+      "credit_note_issue_replayed": "Begäran om kreditnota upprepad — befintlig kreditnota returnerad",
       "invoice_pdf_resent": "Faktura-PDF skickad igen",
       "receipt_pdf_resent": "Kvitto-PDF skickat igen",
       "credit_note_pdf_resent": "Kreditnota-PDF skickad igen",

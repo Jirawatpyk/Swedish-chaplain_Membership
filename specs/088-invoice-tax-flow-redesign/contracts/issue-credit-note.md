@@ -54,6 +54,9 @@ DTO's reference fields point at the **RC receipt number** and the receipt's (pay
 **#66 `replayed`** (boolean, sibling): `true` when the response is a note an earlier request
 already issued (same idempotency key, or same refund). A replay is still `201` and carries no
 `membership_end` (the end-membership step ran, or is covered by the hourly backstop, the first time).
+An admin key replay writes one `credit_note_issue_replayed` audit row (mig 0324; 10 y; ids only:
+`credit_note_id`, `original_invoice_id`, `document_number`, `idempotency_key`, `total_satang`, `path`
+`locked_read` | `race_reconcile`), never a second `credit_note_issued`.
 
 ## Preconditions
 

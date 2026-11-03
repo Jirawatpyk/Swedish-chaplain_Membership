@@ -8011,6 +8011,7 @@
       "invoice_voided": "ยกเลิกใบแจ้งหนี้",
       "invoice_overdue_detected": "ใบแจ้งหนี้เกินกำหนด",
       "credit_note_issued": "ออกใบลดหนี้",
+      "credit_note_issue_replayed": "คำขอออกใบลดหนี้ซ้ำ — ส่งคืนใบลดหนี้เดิม",
       "invoice_pdf_resent": "ส่ง PDF ใบแจ้งหนี้ซ้ำ",
       "receipt_pdf_resent": "ส่ง PDF ใบเสร็จรับเงินซ้ำ",
       "credit_note_pdf_resent": "ส่ง PDF ใบลดหนี้ซ้ำ",
