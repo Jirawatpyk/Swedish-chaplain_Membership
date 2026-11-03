@@ -162,6 +162,28 @@
  * `failed_to_dispatch` after `sent_but_transition_lost` says unsent while
  * Resend sent it.
  *
+ * Spec 140 s2c (DL10) — then the erasure mode settles the ORPHAN rows
+ * (`broadcast_orphaned_resend_ids`): ids this member's E-Blasts left at Resend
+ * on no live row. Each call and its settle CAS run on their own (no row lock,
+ * so E is unchanged), with the outcome table of `_settle-orphan-at-resend.ts`,
+ * under the caller's deadline:
+ *   (a) the member's BROADCAST orphans (`listMemberOrphans`: settled rows too,
+ *       so a re-drive counts the same set [A6a]; only unsettled rows are sent
+ *       to Resend). `deleted` / `absent` count into `resendDraftsCleared`,
+ *       `retained` into `resendCopiesRetained`, and `handed` into
+ *       `alreadySentCount`, keyed on the row's snapshot `broadcast_id` and
+ *       deduplicated against the evidence rows, with NO `recordAlreadySent`
+ *       write: the broadcast row may be gone [P M-2]. An id the terminal-draft
+ *       pass already listed is settled but not counted a second time.
+ *   (b) the tenant's UNSETTLED AUDIENCE orphans, whoever requested them: a
+ *       leaked audience holds recipients' contacts [P H-1]. Deleted, NOT
+ *       counted into the draft fields; at most `ERASURE_AUDIENCE_ORPHAN_LIMIT`
+ *       per run (one more pending is a deferral).
+ * Undecided, unreached or unreadable → `unexpectedErrorCount`, so
+ * `member_erased` is withheld and `reconcile-erasures` drives the erasure
+ * again. An orphan written after this pass is drained by the cron within one
+ * tick: an erased requester's row skips the drain's grace [P H-2].
+ *
  * An EMPTY id is not an id: the row is cancelled without a Resend call.
  * Any other exception is treated as
  * unexpected-error: the broadcast remains in flight, the cascade
@@ -188,7 +210,11 @@ import {
 } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import type { TerminalBroadcastDraftRef } from '../ports/broadcasts-repo';
+import type { BroadcastOrphansRepo, OrphanedResendIdRef } from '../ports/broadcast-orphans-repo';
+import type { OrphanOutcome } from '../../domain/value-objects/orphaned-resend-id';
+import { asBroadcastId } from '../../domain/broadcast';
 import { isHandedStatus } from './_probe-refused-send';
+import { settleOrphanAtResend } from './_settle-orphan-at-resend';
 import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
 export type CancelInFlightForMemberError =
@@ -291,8 +317,13 @@ export interface CancelInFlightForMemberDeps {
   readonly broadcastsRepo: BroadcastsRepo;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
-  /** Spec 139 — read only in the `'delete_then_cancel'` mode, under the row lock. */
-  readonly broadcastsGateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce' | 'retrieveBroadcastOnce'>;
+  /**
+   * Spec 139 — read only in the `'delete_then_cancel'` mode, under the row
+   * lock. Spec 140 s2c — `deleteAudience` for the tenant's leaked audiences.
+   */
+  readonly broadcastsGateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce' | 'retrieveBroadcastOnce' | 'deleteAudience'>;
+  /** Spec 140 s2c (DL10) — the orphan record, read and settled in the erasure mode only. */
+  readonly orphans: Pick<BroadcastOrphansRepo, 'listMemberOrphans' | 'listUnsettledAudienceOrphans' | 'settleOrphan'>;
   /**
    * Spec 139 review round 2 (code-review #1) — waits `REPROBE_PAUSE_MS` between
    * a DELETE 404 and its confirming GET, as the import leg waits before its own
@@ -328,6 +359,14 @@ const SYSTEM_ACTOR_USER_ID = 'system';
  * so re-driven by the US2 reconciler). Each retry is a fresh short tx.
  */
 export const CASCADE_CAS_RETRIES = 3;
+
+/**
+ * Spec 140 s2c [P H-1] — the tenant's leaked audiences one erasure run settles.
+ * The Free plan holds three audiences, so more than this means a backlog: the
+ * run settles this many, counts the rest as deferred (`member_erased` is
+ * withheld) and the re-drive continues.
+ */
+export const ERASURE_AUDIENCE_ORPHAN_LIMIT = 20;
 const DEFAULT_REASON = 'originator_member_deleted';
 
 function cascadeReasonSummary(reason: CascadeCancellationReason): string {
@@ -798,6 +837,8 @@ export async function cancelInFlightBroadcastsForMember(
     let resendDraftsCleared = 0;
     let resendCopiesRetained = 0;
     let deferredCount = 0;
+    /** Spec 140 s2c — the Resend ids the terminal pass counted; the orphan pass does not count them twice. */
+    const countedResendIds = new Set<string>();
     if (erasure) {
       let terminal: ReadonlyArray<TerminalBroadcastDraftRef> = [];
       try {
@@ -808,6 +849,7 @@ export async function cancelInFlightBroadcastsForMember(
         logger.error({ ...logBase, err: errKind(e) }, 'broadcasts.cascade.terminal_list_failed');
       }
       for (const row of terminal) {
+        countedResendIds.add(row.resendBroadcastId);
         const settledHere = settledAtResendThisRun.get(row.broadcastId as string);
         // Review round 3 (code-review #5) — the same metric label a re-drive's
         // DELETE of this row would emit, so both runs show the same series.
@@ -856,6 +898,93 @@ export async function cancelInFlightBroadcastsForMember(
       }
     }
 
+    // Spec 140 s2c (DL10) — the orphan pass (docblock): the member's broadcast
+    // orphans, then the tenant's leaked audiences.
+    const handedOrphanBroadcastIds = new Set<string>();
+    if (erasure) {
+      const pastDeadline = () => input.deadlineAt !== undefined && deps.clock.now().getTime() >= input.deadlineAt.getTime();
+      const orphanUnexpected = (e: unknown, orphan: OrphanedResendIdRef | null, msg: string, extra: Record<string, unknown> = {}) => {
+        unexpectedErrorCount += 1;
+        broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'unexpected_error');
+        logger.error(
+          {
+            ...logBase,
+            ...(e === null ? {} : { err: errKind(e) }),
+            ...(orphan === null ? {} : { orphanId: orphan.orphanId, resourceType: orphan.resourceType, resourceId: orphan.resourceId }),
+            ...extra,
+          },
+          msg,
+        );
+      };
+      const deferOrphan = (orphan: OrphanedResendIdRef) => {
+        deferredCount += 1;
+        unexpectedErrorCount += 1;
+        broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'deferred');
+        logger.debug({ ...logBase, orphanId: orphan.orphanId }, 'broadcasts.cascade.orphan_deferred');
+      };
+      /** Settle one unsettled orphan at Resend, then by CAS; `null` = undecided (already counted unexpected). */
+      const settleOrphan = async (orphan: OrphanedResendIdRef): Promise<OrphanOutcome | null> => {
+        const answer = await settleOrphanAtResend(deps.broadcastsGateway, orphan);
+        if (answer.kind === 'undecided') {
+          orphanUnexpected(null, orphan, 'broadcasts.cascade.orphan_unresolved', { answer: answer.answer });
+          return null;
+        }
+        try {
+          await deps.orphans.settleOrphan(orphan.orphanId, answer.outcome);
+        } catch (e) {
+          orphanUnexpected(e, orphan, 'broadcasts.cascade.orphan_settle_failed');
+          return null;
+        }
+        logger.info({ ...logBase, orphanId: orphan.orphanId, resourceType: orphan.resourceType, outcome: answer.outcome }, 'broadcasts.cascade.orphan_settled');
+        return answer.outcome;
+      };
+
+      // (a) The member's broadcast orphans.
+      let memberOrphans: ReadonlyArray<OrphanedResendIdRef> = [];
+      try {
+        memberOrphans = await deps.orphans.listMemberOrphans(input.memberId as string);
+      } catch (e) {
+        orphanUnexpected(e, null, 'broadcasts.cascade.orphan_list_failed');
+      }
+      for (const orphan of memberOrphans) {
+        let outcome = orphan.outcome;
+        if (outcome === null) {
+          if (pastDeadline()) {
+            deferOrphan(orphan);
+            continue;
+          }
+          outcome = await settleOrphan(orphan);
+          if (outcome === null) continue;
+        }
+        if (countedResendIds.has(orphan.resourceId)) continue;
+        countedResendIds.add(orphan.resourceId);
+        if (outcome === 'handed') {
+          handedOrphanBroadcastIds.add(orphan.broadcastId);
+        } else if (outcome === 'retained') {
+          resendCopiesRetained += 1;
+          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'terminal_copy_retained');
+        } else {
+          resendDraftsCleared += 1;
+          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'terminal_draft_cleared');
+        }
+      }
+
+      // (b) The tenant's leaked audiences [P H-1]: deleted, not counted.
+      let audienceOrphans: ReadonlyArray<OrphanedResendIdRef> = [];
+      try {
+        audienceOrphans = await deps.orphans.listUnsettledAudienceOrphans(ERASURE_AUDIENCE_ORPHAN_LIMIT + 1);
+      } catch (e) {
+        orphanUnexpected(e, null, 'broadcasts.cascade.audience_orphan_list_failed');
+      }
+      for (const [i, orphan] of audienceOrphans.entries()) {
+        if (i >= ERASURE_AUDIENCE_ORPHAN_LIMIT || pastDeadline()) {
+          deferOrphan(orphan);
+          continue;
+        }
+        await settleOrphan(orphan);
+      }
+    }
+
     // P7 — DERIVED, never accumulated: every E-Blast of this member Resend had
     // already accepted, from the evidence rows, so a re-drive with nothing
     // left in flight still reports it. Erasure mode only (archive never writes
@@ -871,6 +1000,20 @@ export async function cancelInFlightBroadcastsForMember(
           }),
         );
         alreadySentCount = evidence.memberBroadcastCount;
+        // Spec 140 s2c [P M-2] — a handed orphan is a disclosure too: counted
+        // once per broadcast, unless that broadcast already has evidence.
+        for (const broadcastId of handedOrphanBroadcastIds) {
+          const seen = await deps.broadcastsRepo.withTx((tx) =>
+            deps.broadcastsRepo.readAlreadySentEvidenceInTx(tx, input.tenant.slug, {
+              memberId: input.memberId as string,
+              broadcastId: asBroadcastId(broadcastId),
+            }),
+          );
+          if (!seen.broadcastRecorded) {
+            alreadySentCount += 1;
+            broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'already_sent');
+          }
+        }
       } catch (e) {
         unexpectedErrorCount += 1;
         broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'unexpected_error');

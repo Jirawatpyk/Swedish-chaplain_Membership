@@ -635,6 +635,9 @@ export function makeCancelInFlightBroadcastsForMemberDeps(tenantId: string) {
     // ONE `deleteBroadcastOnce` and, after a 404 / 403, ONE
     // `retrieveBroadcastOnce`, both under the row lock.
     broadcastsGateway: resendBroadcastsGateway,
+    // Spec 140 s2c (DL10) — the erasure mode settles the member's orphan rows
+    // and the tenant's leaked audiences (`deleteAudience`).
+    orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
   };
 }
 

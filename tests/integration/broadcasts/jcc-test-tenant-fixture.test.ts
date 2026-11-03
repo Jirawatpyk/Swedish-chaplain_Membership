@@ -178,6 +178,21 @@ describe('T179 — JCC-test tenant fixture (multi-tenant readiness invariant)', 
             retrieveBroadcastOnce: async (): Promise<never> => {
               throw new Error('not used in the archive mode');
             },
+            deleteAudience: async (): Promise<never> => {
+              throw new Error('not used in the archive mode');
+            },
+          },
+          // Spec 140 s2c — read only in the erasure mode.
+          orphans: {
+            listMemberOrphans: async (): Promise<never> => {
+              throw new Error('not used in the archive mode');
+            },
+            listUnsettledAudienceOrphans: async (): Promise<never> => {
+              throw new Error('not used in the archive mode');
+            },
+            settleOrphan: async (): Promise<never> => {
+              throw new Error('not used in the archive mode');
+            },
           },
         },
         {
