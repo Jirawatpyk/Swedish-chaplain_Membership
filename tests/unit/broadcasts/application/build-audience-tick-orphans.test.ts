@@ -492,3 +492,32 @@ describe('spec 140 s2c review round 1 — the choke point, continued', () => {
     expect(line?.[0]).toMatchObject({ step: 'terminal_reclaim' });
   });
 });
+
+/**
+ * Spec 140 s2c review round 2:
+ *   - code-review #5 — the choke point's DELETE is not a standing refusal, so
+ *     its log lines say `refusal: 'terminal'`;
+ *   - reliability nit — a handed draft caught up at the choke point carries
+ *     the GET's `sent_at` (the `broadcast_send_started` `actualSendAt`).
+ */
+describe('spec 140 s2c review round 2 — the choke point', () => {
+  const TERMINAL = { row: TICK2_ROW, importStatus: 'failed', reread: { resendBroadcastId: 'rb-late' } } as const;
+
+  it("[code-review #5] the choke point's undecided DELETE is logged refusal: 'terminal'", async () => {
+    const h = harness({ ...TERMINAL, deleteOnce: 'retryable' });
+    await h.run();
+    const lines = vi
+      .mocked(logger.warn)
+      .mock.calls.filter((c) => c[1] === 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]![0]).toMatchObject({ refusal: 'terminal', resendBroadcastId: 'rb-late' });
+  });
+
+  it("[reliability nit] a handed catch-up at the choke point carries the GET's sent_at", async () => {
+    const sentAt = '2026-11-03T10:00:00.000Z';
+    const h = harness({ ...TERMINAL, deleteOnce: 'forbidden', retrieveOnce: { kind: 'present', status: 'sent', sentAt } as never });
+    await h.run();
+    const started = h.audits.find((a) => a.eventType === 'broadcast_send_started');
+    expect(started?.payload).toMatchObject({ actualSendAt: sentAt });
+  });
+});
