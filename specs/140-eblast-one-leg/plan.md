@@ -1539,6 +1539,55 @@ Dev and prod share the broadcasts key, so the account state matches.
 - migration L3 / L4: reason↔type pairing and the prune index. The writers own the pairing; the table is small.
 - security INFO: RLS masks the app predicates in the tests. This is a known class (s1).
 
+### Slice 2c — review round 2 (`/code-review high 734`, security APPROVE WITH FIXES, pdpa APPROVE WITH CONDITIONS, reliability MERGEABLE, migration file OK, spec-compliance PARTIAL; 4 Nov 2026)
+
+**Review metrics:** round 2 (full) · 10 + 4 + 7 + 5 + 6 + 12 items (code-review, security, pdpa, reliability, migration, spec-compliance) · cap: 2 full (reached) + ≤ 2 targeted.
+
+**CI (migration review, BLOCKING, environment):**
+- The shared CI Neon branch already holds #733's `0326` (…900000), so the CI migrator skips 0325 and Phase 4 fails.
+- **Owner: the maintainer.** Reset the CI branch from its parent, or apply 0325 there and add its ledger row.
+- Prod is unaffected; main's highest migration is 0324.
+
+**Plan rows added before the fixes (D-043, neighbours named).**
+
+| Mechanism (asked by) | State / rule | Neighbours | Test that goes red first |
+|---|---|---|---|
+| **The stuck rule also covers deferral, and needs age** (security F1, code-review #1, reliability MED, security L3) | A tenant audience orphan is stuck when `attempts >= ORPHAN_STUCK_ATTEMPTS` **and** `created_at` is older than `ORPHAN_STUCK_MIN_AGE_MS` (2 h). Pass (b) applies the rule at every exit: undecided, past the deadline, and over the limit. A stuck row never withholds | pass (b), the docs that say "about 2 h" | cascade unit · "21 stuck audience orphans past the limit do not withhold"; · "attempts ≥ 8 but younger than 2 h still withholds" |
+| **A stuck release is recorded** (security F2, pdpa M-3) | `member_erased` gains `audience_orphans_stuck_count`, and the counter `broadcasts_cascade_orphan_stuck_total{tenant}` is added | cascade port contract, the `member_erased` payload readers, RoPA 8d | cascade unit + port contract · the field and the counter |
+| **The subject's contact is detached from unsettled audience orphans** (pdpa H-1) | The 8a detach derivation (`listMemberResendAudienceContactsInTx`) gains a UNION arm over unsettled `resource_type = 'audience'` orphans in the tenant. It is best-effort: failures count into `resend_contacts_failed_count`, and it never blocks | the 8a detach, `subprocessorErasure.propagate` | integration · "a stuck audience orphan's audience is in the detach pairs" |
+| **A broadcast orphan held by a sending-started row settles `superseded`** (code-review #2) | `superseded` is a new `outcome`. When the id sits on a `sent` / `partially_sent` / `partial_delivery_accepted` row, the drain and pass (a) settle it `superseded` without calling Resend: the copy was delivered normally and is not erasure evidence. It is never counted in the erasure fields, and it can be pruned. Other terminal holders are unchanged | migration 0325 (outcome CHECK), the prune, the erasure counts, the terminal pass | repo integration + cascade unit · "an orphan whose id a sent row holds is superseded, not handed" |
+| **Past-grace rows sort first** (code-review #3, reliability LOW) | The list orders by `(created_at >= graceCutoff), attempts, created_at`, so in-grace rows cannot fill the 20 | the drain | repo integration · "20 in-grace rows do not hide an older drainable row" |
+| **A broadcast DELETE 404 is confirmed** (code-review #4) | Before settling `absent`, wait `REPROBE_PAUSE_MS` and send one `retrieveBroadcastOnce`. Only `not_found` settles `absent`; anything else is left for the next run | the drain, pass (a), W_max (unaffected: the drain and the erasure are not dispatch) | settle unit · "a 404 then a GET draft is not absent" |
+| **Settled once, enforced in the DB** (migration LOW) | A BEFORE UPDATE trigger refuses a change of `settled_at` / `outcome` once `settled_at IS NOT NULL` | `settleOrphan` (a CAS already), the prune | orphaned-resend-ids integration · "re-settling a settled row is refused" |
+| **Handed rows have a bound** (pdpa L-3) | The prune deletes `handed` rows after `ORPHAN_HANDED_RETENTION_YEARS` = 5 (the 8c evidence horizon) | the prune, RoPA retention | orphaned-resend-ids integration |
+
+**Fixes:**
+- code-review #5: the choke point passes `refusal: 'terminal'` to the shared helper, so the log names are honest.
+- code-review #8: `AUDIENCE_CLEANUP_GRACE_MS` moves next to the other orphan constants.
+- code-review #9: `isErased` runs over distinct requesters with `Promise.all`.
+- reliability nit: `catchUpHanded` passes the GET's `sent_at`.
+- spec N3: the metrics docblock.
+- migration: the canary checks the prune body (`handed`, years) and the `attempts` CHECK; header index comment.
+- spec M4: the unconfirmed gauge fixture is asymmetric (2 in, 1 out).
+- spec N2: mutation proofs from a committed base for the column grant and the stuck rule.
+- spec N4: tests for catch-up lost, and for `listUnsettledAudienceOrphans` ordering.
+
+**Docs:**
+- pdpa M-1: RoPA 8d residual (5), DSR wording, the Art. 12(3) clock.
+- pdpa M-2: "own BROADCAST orphans".
+- pdpa L-1 and L-2: the runbook bound; the 8c cross-ref.
+- spec M3: RoPA :255.
+- spec N5: the 2–24 h gauge window note.
+- reliability: an alert row for `orphanGaugesOk=false`.
+- spec Lows: the state-table pipes, the cell 15(b) name, the plan's `onResolveFailure` text, the "24 h" help string, blank lines.
+
+**Accepted (Low):**
+- code-review #6: a frozen gauge on query failure. Same as the broadcasts half; the tick answers 500 and the new alert row covers it.
+- code-review #7: the `draftSettled` flag. Two callers; the budget test pins both.
+- code-review #10: the member uuid in `orphan_record_failed`. pdpa L-B asked for it; member ids are logged under the house convention; it is not a user id.
+
+**Verify:** a re-Verify on the final HEAD (spec N1), handed to the maintainer after the fixes.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
