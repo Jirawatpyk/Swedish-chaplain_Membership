@@ -2523,7 +2523,7 @@
           "done": "This credit note will not be issued. You can enter a new one.",
           "failed": "We couldn't start over. The credit note stays locked — choose Start over again, or open the invoice to check."
         },
-        "submitLockedHint": "Finish this credit note with “Try again” in the message above, or open the invoice.",
+        "submitLockedHint": "Finish this credit note with “Try again” in the message above, open the invoice, or choose “Start over”.",
         "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
         "membershipEnd": {
           "ended": "The membership has ended — the member's access stops now.",

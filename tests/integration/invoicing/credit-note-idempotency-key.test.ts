@@ -560,6 +560,12 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
     if (!r.ok) return;
     expect(r.value.outcome).toBe('issued');
     if (r.value.outcome === 'issued') expect(r.value.creditNote.creditNoteId).toBe(issued.value.creditNote.creditNoteId);
+    // #67 — returning the note leaves the replay trace, 10 y.
+    const rows = await db.execute<{ retention_years: number }>(
+      sql`SELECT retention_years FROM audit_log WHERE tenant_id = ${tenant.ctx.slug} AND event_type = 'credit_note_issue_replayed' AND payload->>'idempotency_key' = ${key} AND payload->>'path' = 'start_over'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.retention_years).toBe(10);
   }, 60_000);
 
   // The lock is the guarantee: an issue attempt that holds the invoice lock

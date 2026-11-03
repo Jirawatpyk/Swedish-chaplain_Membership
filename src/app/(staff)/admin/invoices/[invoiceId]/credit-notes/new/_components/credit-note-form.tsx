@@ -311,6 +311,13 @@ export function CreditNoteForm({
             : '',
     [t, tErrors],
   );
+  // After a closed attempt the next note needs its own typed confirmation and
+  // acknowledgement, and starts from no stored membership effect.
+  const disarmForNewNote = useCallback(() => {
+    setAttemptEffect(null);
+    setTyped('');
+    setOnlineRefundAcknowledged(false);
+  }, []);
   const markUnknown = useCallback(
     (attempt: Attempt, refusal?: string) => {
       unknownRef.current = true;
@@ -409,6 +416,8 @@ export function CreditNoteForm({
           // A definite answer for this attempt: no note under its key.
           endAttempt();
           setOutcomeUnknown(false);
+          // Closed by Start over in another tab: the same unlock as here.
+          if (code === 'attempt_abandoned') disarmForNewNote();
           setFormError(failure);
           return;
         }
@@ -475,7 +484,7 @@ export function CreditNoteForm({
         if (!issued) inFlightRef.current = false;
       }
     });
-  }, [endAttempt, failureText, invoiceId, markUnknown, router, saveAttempt, t]);
+  }, [disarmForNewNote, endAttempt, failureText, invoiceId, markUnknown, router, saveAttempt, t]);
 
   const submit = useCallback(() => {
     if (!canSubmit || proposedSatang === null) return;
@@ -575,10 +584,7 @@ export function CreditNoteForm({
         startedOverRef.current = true;
         setOutcomeUnknown(false);
         setFormError(null);
-        setAttemptEffect(null);
-        // A new note needs its own typed confirmation and acknowledgement.
-        setTyped('');
-        setOnlineRefundAcknowledged(false);
+        disarmForNewNote();
         setStartOverOpen(false);
         toast.success(t('startOver.done'), { duration: LASTING_TOAST_MS });
         return;
@@ -587,7 +593,7 @@ export function CreditNoteForm({
     } finally {
       setStartingOver(false);
     }
-  }, [endAttempt, invoiceId, markUnknown, router, startingOver, t, tErrors]);
+  }, [disarmForNewNote, endAttempt, invoiceId, markUnknown, router, startingOver, t, tErrors]);
 
   return (
     <form

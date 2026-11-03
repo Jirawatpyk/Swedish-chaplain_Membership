@@ -208,7 +208,8 @@ export type F4AuditEventType =
    * §86/10 note, no §87 number. Emitted in the tx that read the note (the
    * locked read, or the fresh-tx reconcile after a lost 23505 race). Payload,
    * ids only: `{ credit_note_id, original_invoice_id, document_number,
-   * idempotency_key, total_satang, path: 'locked_read' | 'race_reconcile' }`.
+   * idempotency_key, total_satang, path: 'locked_read' | 'race_reconcile' |
+   * 'start_over' }` (task 68: "Start over" found the note and returned it).
    * No `member_id`: a replay is not member activity. **10y**, as the
    * tax-document events it answers for (`credit_note_issued`,
    * `credit_note_pdf_resent`).

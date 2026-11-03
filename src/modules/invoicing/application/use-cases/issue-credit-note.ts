@@ -374,11 +374,11 @@ function keyHitMatches(
  * #67 — the audit row a replayed admin issue attempt leaves: ids only, never
  * the reason or any buyer data. Emitted in the tx that read the note.
  */
-function replayAuditEvent(
-  input: IssueCreditNoteInput,
+export function replayAuditEvent(
+  input: Pick<IssueCreditNoteInput, 'tenantId' | 'requestId' | 'actorUserId'>,
   note: CreditNote,
   idempotencyKey: string,
-  path: 'locked_read' | 'race_reconcile',
+  path: 'locked_read' | 'race_reconcile' | 'start_over',
 ) {
   return {
     tenantId: input.tenantId,

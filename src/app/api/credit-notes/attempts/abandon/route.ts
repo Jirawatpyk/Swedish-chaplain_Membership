@@ -56,6 +56,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const parsed = abandonCreditNoteAttemptSchema.safeParse({
     tenantId: tenantCtx.slug,
     actorUserId: ctx.current.user.id,
+    actorRole: ctx.current.user.role,
     requestId,
     invoiceId: rawBody.invoiceId,
     idempotencyKey: rawBody.idempotencyKey,

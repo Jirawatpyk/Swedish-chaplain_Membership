@@ -23,11 +23,14 @@ import { asInvoiceId } from '../../domain/invoice';
 import type { AuditPort } from '../ports/audit-port';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
 import type { InvoiceRepo } from '../ports/invoice-repo';
+import { replayAuditEvent } from './issue-credit-note';
 
 export const abandonCreditNoteAttemptSchema = z.object({
   tenantId: z.string().min(1),
   actorUserId: z.string().min(1),
   requestId: z.string().nullable().optional(),
+  // Recorded on a not-found probe, as issuing does.
+  actorRole: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
   idempotencyKey: z.string().uuid(),
 });
@@ -59,11 +62,30 @@ export async function abandonCreditNoteAttempt(
   return deps.invoiceRepo.withTx(async (tx) => {
     // The same lock every issue attempt on this invoice holds while it runs.
     const status = await deps.invoiceRepo.lockForUpdate(tx, invoiceId, input.tenantId);
-    if (status === null) return err({ code: 'invoice_not_found' as const });
+    if (status === null) {
+      // The probe trace issuing leaves for the same miss; `null` tx so the row
+      // survives whatever the outer transaction does.
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId ?? null,
+        eventType: 'credit_note_cross_tenant_probe',
+        actorUserId: input.actorUserId,
+        summary: `Probe on invoice ${invoiceId} (not found on credit-note Start over)`,
+        payload: {
+          attempted_invoice_id: invoiceId,
+          actor_role: input.actorRole ?? null,
+          route: 'abandon-credit-note-attempt',
+        },
+      });
+      return err({ code: 'invoice_not_found' as const });
+    }
 
     const note = await deps.creditNoteRepo.findByIdempotencyKey(tx, input.tenantId, input.idempotencyKey);
     if (note) {
       if (note.originalInvoiceId !== invoiceId) return err({ code: 'concurrent_state_change' as const });
+      // #67 — an existing §86/10 note returned in answer to the attempt: the
+      // same trace a replay leaves, in the tx that read it.
+      await deps.audit.emit(tx, replayAuditEvent(input, note, input.idempotencyKey, 'start_over'));
       return ok({ outcome: 'issued' as const, creditNote: note });
     }
 
