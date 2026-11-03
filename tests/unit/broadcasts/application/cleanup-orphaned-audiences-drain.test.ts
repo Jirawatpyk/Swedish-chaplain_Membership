@@ -80,6 +80,9 @@ function harness(opts: Opts) {
   const attempted: string[] = [];
   const calls: string[] = [];
   const listLimits: number[] = [];
+  const erasedReads: string[] = [];
+  let erasedInFlight = 0;
+  let erasedPeak = 0;
   let inFlight = 0;
   let peak = 0;
   const step = async (label: string) => {
@@ -122,6 +125,11 @@ function harness(opts: Opts) {
     },
     membersBridge: {
       async getMemberErasedAt(_t: unknown, memberId: string) {
+        erasedReads.push(memberId);
+        erasedInFlight += 1;
+        erasedPeak = Math.max(erasedPeak, erasedInFlight);
+        await Promise.resolve();
+        erasedInFlight -= 1;
         const e = opts.erased?.[memberId] ?? 'live';
         if (e === 'throws') throw new Error('members read failed');
         return { erasedAt: e === 'erased' ? new Date('2026-11-01T00:00:00Z') : null };
@@ -147,7 +155,7 @@ function harness(opts: Opts) {
     },
   };
   const run = () => cleanupOrphanedAudiences(deps as never, { graceMs: GRACE_MS, limit: 50 });
-  return { run, settled, attempted, calls, listLimits, peak: () => peak };
+  return { run, settled, attempted, calls, listLimits, peak: () => peak, erasedReads, erasedPeak: () => erasedPeak };
 }
 
 let warn: ReturnType<typeof vi.spyOn>;
@@ -336,5 +344,22 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     await h.run();
     expect(h.settled).toEqual([['o-1', 'superseded']]);
     expect(h.calls).toEqual([]);
+  });
+
+  it('[code-review #9] the erased reads run once per distinct requester, together (Promise.all)', async () => {
+    const h = harness({
+      orphans: [
+        orphan(1, { createdAt: YOUNG, requestedByMemberId: 'm-a' }),
+        orphan(2, { createdAt: YOUNG, requestedByMemberId: 'm-b' }),
+        orphan(3, { createdAt: YOUNG, requestedByMemberId: 'm-a' }),
+        orphan(4, { createdAt: OLD, requestedByMemberId: 'm-old' }),
+      ],
+      erased: { 'm-a': 'erased' },
+    });
+    await h.run();
+    // Only rows inside the grace need the read; one per requester, both in flight at once.
+    expect([...h.erasedReads].sort()).toEqual(['m-a', 'm-b']);
+    expect(h.erasedPeak()).toBe(2);
+    expect(h.settled.map(([id]) => id).sort()).toEqual(['o-1', 'o-3', 'o-4']);
   });
 });
