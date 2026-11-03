@@ -56,5 +56,14 @@ export type OrphanOutcome = (typeof ORPHAN_OUTCOMES)[number];
  */
 export const ORPHAN_ROW_RETENTION_DAYS = 90;
 
+/**
+ * How much older than `ORPHAN_ROW_RETENTION_DAYS` the retention sweep's cutoff
+ * is. The prune function compares the cutoff with the DATABASE clock
+ * (`now() - 90 days`) and refuses a younger one, so an app clock running ahead
+ * of Neon's would otherwise turn every daily prune into a refusal. One hour
+ * covers any plausible skew and only delays a prune by that long.
+ */
+export const ORPHAN_PRUNE_SKEW_MARGIN_MS = 60 * 60 * 1000;
+
 /** [A7] The window of the `create_unconfirmed` gauge: rows created in the last 24 h. */
 export const ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS = 24;

@@ -75,7 +75,7 @@ import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import { ORPHAN_ROW_RETENTION_DAYS } from '../../domain/value-objects/orphaned-resend-id';
+import { ORPHAN_PRUNE_SKEW_MARGIN_MS, ORPHAN_ROW_RETENTION_DAYS } from '../../domain/value-objects/orphaned-resend-id';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastOrphansRepo } from '../ports/broadcast-orphans-repo';
 import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
@@ -290,10 +290,14 @@ export async function sweepExpiredBroadcasts(
   }
 
   // Spec 140 s2c [P M-1] — the orphan record's prune (docblock): independent,
-  // best-effort, its cutoff ORPHAN_ROW_RETENTION_DAYS before the run began.
+  // best-effort, its cutoff ORPHAN_ROW_RETENTION_DAYS plus
+  // ORPHAN_PRUNE_SKEW_MARGIN_MS before the run began (the SQL floor reads the
+  // DB clock, so the margin keeps an app clock ahead of it from being refused).
   let orphanRowsPruned: number | null = null;
   try {
-    orphanRowsPruned = await deps.orphans.pruneOrphans(new Date(startedAtMs - ORPHAN_ROW_RETENTION_DAYS * DAY_MS));
+    orphanRowsPruned = await deps.orphans.pruneOrphans(
+      new Date(startedAtMs - ORPHAN_ROW_RETENTION_DAYS * DAY_MS - ORPHAN_PRUNE_SKEW_MARGIN_MS),
+    );
   } catch (e) {
     logger.warn({ tenantId: slug, err: errKind(e) }, 'broadcasts.retention_sweep.orphan_prune_failed');
   }
