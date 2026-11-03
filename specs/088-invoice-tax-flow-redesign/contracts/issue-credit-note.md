@@ -35,10 +35,14 @@ time; it does **not** move to payment).
   `BigInt(...)` at the route boundary.
 - **Headers**: session cookie. Rate limit `f4:credit-note:{tenant}:{actor}` — 20 / 5 min.
 - **#66 `idempotencyKey`** (optional, uuid): one per ADMIN issue attempt; the admin form keeps it
-  (sessionStorage per invoice) until a definite answer. A repeat with the same key, invoice and
-  `creditTotalSatang` answers with the note already issued — no second §86/10 note, no second §87
-  number, no audit, no email. The same key for another invoice or amount → `concurrent_state_change`
-  (409). A malformed key → 400 `invalid_body`. Stored as `credit_notes.idempotency_key` (mig 0323,
+  (sessionStorage per invoice, with the exact request) until a definite answer. A repeat with the
+  same key, invoice, `creditTotalSatang`, trimmed `reason` and `membershipEffect` answers with the
+  note already issued — no second §86/10 note, no second §87 number, no audit, no email. The same key
+  for any other credit → `concurrent_state_change` (409); so is a key seen by the non-locking pre-read
+  but not under the invoice lock (the pre-tx guards were skipped for it, so nothing is issued). The
+  key is looked up before the pre-tx refund guards, so a 429, 401/403, the read-only 503,
+  `refund_in_progress` and `online_payment_refundable` say nothing about an earlier attempt: after an
+  unknown outcome the form keeps the key for them. A malformed key → 400 `invalid_body`. Stored as `credit_notes.idempotency_key` (mig 0323,
   partial UNIQUE per tenant; a lost race reconciles to the winner). Refund-origin notes never send it.
 
 ## Response `201`

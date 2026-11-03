@@ -342,9 +342,23 @@ class CreditNoteKeyRaceError extends Error {
   }
 }
 
-/** #66 — a key hit answers THIS request only when it is the same credit. */
-function keyHitMatches(existing: CreditNote, invoiceId: InvoiceId, creditTotalSatang: bigint): boolean {
-  return existing.originalInvoiceId === invoiceId && existing.total.satang === creditTotalSatang;
+/**
+ * #66 — a key hit answers THIS request only when it is the same credit: the
+ * invoice, the amount, the reason (stored trimmed) and the membership choice
+ * (#728 review: a different reason or effect under one key is a client bug,
+ * not a repeat).
+ */
+function keyHitMatches(
+  existing: CreditNote,
+  invoiceId: InvoiceId,
+  input: Pick<IssueCreditNoteInput, 'creditTotalSatang' | 'reason' | 'membershipEffect'>,
+): boolean {
+  return (
+    existing.originalInvoiceId === invoiceId &&
+    existing.total.satang === input.creditTotalSatang &&
+    existing.reason === input.reason.trim() &&
+    (existing.membershipEffect ?? null) === (input.membershipEffect ?? null)
+  );
 }
 
 /**
@@ -591,7 +605,7 @@ export async function issueCreditNote(
           input.idempotencyKey,
         );
         if (existing) {
-          if (!keyHitMatches(existing, invoiceId, input.creditTotalSatang)) {
+          if (!keyHitMatches(existing, invoiceId, input)) {
             logger.warn(
               {
                 tenantId: input.tenantId,
@@ -609,6 +623,16 @@ export async function issueCreditNote(
             membershipCancellationRequested: false,
             replayed: true,
           });
+        }
+        // #728 review (financial L2) — the pre-read saw this key, so the
+        // manual guards above were skipped; the locked read no longer does.
+        // Issuing now would bypass them: refuse, issue nothing.
+        if (keyHitBeforeTx !== null) {
+          logger.warn(
+            { tenantId: input.tenantId, invoiceId },
+            'issueCreditNote: idempotency key seen before the lock but not under it — rejecting',
+          );
+          return err({ code: 'concurrent_state_change' });
         }
       }
 
@@ -1641,7 +1665,7 @@ export async function issueCreditNote(
         );
         return err({ code: 'concurrent_state_change' });
       }
-      if (winner && keyHitMatches(winner, invoiceId, input.creditTotalSatang)) {
+      if (winner && keyHitMatches(winner, invoiceId, input)) {
         return ok({
           creditNote: winner,
           emailDelivery: 'not_requested',

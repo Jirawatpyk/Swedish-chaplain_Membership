@@ -96,6 +96,10 @@ function rowToCreditNote(
     },
     // F5 extension — NULL for F4-manual CNs; non-NULL = refund-origin
     sourceRefundId: row.sourceRefundId,
+    membershipEffect:
+      row.membershipEffect === 'keep' || row.membershipEffect === 'cancel_membership'
+        ? row.membershipEffect
+        : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

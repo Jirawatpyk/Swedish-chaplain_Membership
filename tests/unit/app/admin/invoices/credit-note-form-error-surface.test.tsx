@@ -305,7 +305,10 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
   });
 
   it('the POST carries a timeout signal, and a double submit in one tick sends one POST', async () => {
-    const fetchMock = vi.fn((_url: string, _init: RequestInit) => new Promise<never>(() => {}));
+    // Settled at the end: React entangles async transitions, so a POST left
+    // hanging would keep every later test's form `pending`.
+    let settle: (v: unknown) => void = () => {};
+    const fetchMock = vi.fn((_url: string, _init: RequestInit) => new Promise((r) => { settle = r; }));
     vi.stubGlobal('fetch', fetchMock);
     try {
       const { container } = renderForm();
@@ -315,6 +318,7 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
     } finally {
+      settle({ ok: false, status: 409, json: async () => ({ error: { code: 'invalid_status' } }) });
       vi.unstubAllGlobals();
     }
   });
@@ -341,11 +345,16 @@ describe('CreditNoteForm — #66 the idempotency key', () => {
   const dropped = () => {
     throw new TypeError('Failed to fetch');
   };
-  /** Try again is `aria-disabled` while a request runs; wait it out, then click. */
-  async function clickTryAgain() {
+  /**
+   * Try again is `aria-disabled` while a request runs; wait it out, then click.
+   */
+  async function untilTryAgainReady() {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Try again' })).not.toHaveAttribute('aria-disabled', 'true'),
     );
+  }
+  async function clickTryAgain() {
+    await untilTryAgainReady();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
   }
   function bodyOf(fetchMock: ReturnType<typeof vi.fn>, call: number): Record<string, unknown> {
@@ -420,9 +429,7 @@ describe('CreditNoteForm — #66 the idempotency key', () => {
       const stored = window.sessionStorage.getItem(STORE_KEY);
       await clickTryAgain();
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Try again' })).not.toHaveAttribute('aria-disabled', 'true'),
-      );
+      await untilTryAgainReady();
       expect(window.sessionStorage.getItem(STORE_KEY)).toBe(stored);
       const alert = screen.getByTestId('credit-note-error');
       expect(alert).toHaveAttribute('data-tone', 'warning');
