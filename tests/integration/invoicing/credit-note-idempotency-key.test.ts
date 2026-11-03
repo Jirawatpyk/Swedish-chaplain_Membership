@@ -17,7 +17,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { asSatang } from '@/lib/money';
-import { runInTenant } from '@/lib/db';
+import { db, runInTenant } from '@/lib/db';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
@@ -292,6 +292,13 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
     expect(r2.value.creditNote.documentNumber.raw).toBe(r1.value.creditNote.documentNumber.raw);
     expect((await readCreditNoteSeq(tenant)) - before).toBe(1);
     expect(await countNotes(tenant, invoiceId)).toBe(1);
+    // #67 — the replay left one audit row, kept for the tax-document 10 years.
+    const replayRows = await db.execute<{ retention_years: number; payload: { credit_note_id: string } }>(
+      sql`SELECT retention_years, payload FROM audit_log WHERE tenant_id = ${tenant.ctx.slug} AND event_type = 'credit_note_issue_replayed' AND payload->>'idempotency_key' = ${key}`,
+    );
+    expect(replayRows).toHaveLength(1);
+    expect(replayRows[0]?.retention_years).toBe(10);
+    expect(replayRows[0]?.payload.credit_note_id).toBe(r1.value.creditNote.creditNoteId);
   }, 60_000);
 
   it('a race of two attempts with one key → ONE note, both answer it', async () => {

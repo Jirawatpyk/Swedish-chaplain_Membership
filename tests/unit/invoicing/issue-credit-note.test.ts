@@ -1851,6 +1851,60 @@ describe('issueCreditNote — #66 idempotency key (admin notes)', () => {
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
   });
 
+  // #67 (Thai-tax M-2 on #728) — a replay answers a §86/10 request with the
+  // existing note: it leaves one audit row saying so (ids only), and never a
+  // second `credit_note_issued`.
+  it('a replay writes one credit_note_issue_replayed row (locked read), and no credit_note_issued', async () => {
+    const cn = existingCn();
+    const { deps } = depsWithKeyHit(cn);
+    const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    const emits = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
+    expect(emits).toHaveLength(1);
+    expect(emits[0]).toMatchObject({
+      tenantId: 'test-swecham',
+      eventType: 'credit_note_issue_replayed',
+      actorUserId: 'actor-user',
+      payload: {
+        credit_note_id: cn.creditNoteId,
+        original_invoice_id: INVOICE_ID,
+        document_number: cn.documentNumber.raw,
+        idempotency_key: KEY,
+        total_satang: '1070',
+        path: 'locked_read',
+      },
+    });
+    expect(emits[0].payload).not.toHaveProperty('member_id');
+  });
+
+  it('a lost race reconciled to the winner writes the replay row with path race_reconcile', async () => {
+    const winner = existingCn();
+    const { deps, findByIdempotencyKey } = depsWithKeyHit(null);
+    findByIdempotencyKey.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValue(winner);
+    (deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>).mockRejectedValue(
+      Object.assign(new Error('duplicate key value violates unique constraint'), {
+        code: '23505',
+        constraint_name: 'credit_notes_tenant_idempotency_key_uniq',
+      }),
+    );
+    const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    const replays = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c[1])
+      .filter((e) => e.eventType === 'credit_note_issue_replayed');
+    expect(replays).toHaveLength(1);
+    expect(replays[0].payload).toMatchObject({ credit_note_id: winner.creditNoteId, path: 'race_reconcile' });
+  });
+
+  it('a first issue and a refused mismatch write no replay row', async () => {
+    for (const hit of [null, existingCn({ total: Money.fromSatangUnsafe(2_140n) })]) {
+      const { deps } = depsWithKeyHit(hit);
+      await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+      const types = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1].eventType);
+      expect(types).not.toContain('credit_note_issue_replayed');
+    }
+  });
+
   it('a repeat skips the pre-transaction manual guards (a refund now in flight must not refuse the replay)', async () => {
     const { deps } = depsWithKeyHit(existingCn());
     (deps.pendingRefundGuard.countPendingRefundsForInvoice as ReturnType<typeof vi.fn>).mockResolvedValue(1);
