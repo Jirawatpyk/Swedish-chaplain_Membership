@@ -62,15 +62,17 @@ const DOC_NUMBER = 'SC-2026-000001';
 /** 1,070.00 THB remaining (107,000 satang). */
 const REMAINING_SATANG = '107000';
 
-function renderForm() {
+function renderForm(
+  overrides: Partial<{ remainingSatang: string; invoiceSubject: 'membership' | 'event' }> = {},
+) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <CreditNoteForm
         invoiceId={INVOICE_ID}
         documentNumber={DOC_NUMBER}
-        remainingSatang={REMAINING_SATANG}
+        remainingSatang={overrides.remainingSatang ?? REMAINING_SATANG}
         currencySymbol="THB"
-        invoiceSubject="event"
+        invoiceSubject={overrides.invoiceSubject ?? 'event'}
         paymentChannel="bank_transfer"
         onlineRefundState="none"
       />
@@ -330,7 +332,7 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
 // "Try again" resends exactly what the first attempt sent.
 describe('CreditNoteForm — #66 the idempotency key', () => {
   const STORE_KEY = `cn-attempt:${INVOICE_ID}`;
-  const LOCKED_HINT = 'Finish this credit note with Try again in the message above, or open the invoice.';
+  const LOCKED_HINT = 'Finish this credit note with “Try again” in the message above, or open the invoice.';
 
   function okFetch(body: Record<string, unknown>) {
     return vi.fn(async (_url: string, _init: RequestInit) => ({
@@ -394,6 +396,41 @@ describe('CreditNoteForm — #66 the idempotency key', () => {
     }
   });
 
+  /** A stored attempt, as the form writes it before a POST. */
+  function storeAttempt(request: Record<string, unknown>) {
+    const key = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const body = JSON.stringify({ invoiceId: INVOICE_ID, reason: 'duplicate charge', ...request, idempotencyKey: key });
+    window.sessionStorage.setItem(STORE_KEY, JSON.stringify({ key, body }));
+    return body;
+  }
+
+  // #728 round 2 (UX M-A) — after a reload the remainder may already reflect
+  // the note the attempt issued; the locked amount is not an input error.
+  it('a restored attempt above the new remainder shows no exceeds-remainder error', async () => {
+    storeAttempt({ creditTotalSatang: '50000' });
+    renderForm({ remainingSatang: '20000' });
+    await screen.findByTestId('credit-note-error');
+    const amount = screen.getByLabelText(labelled(cnMessages.amountLabel));
+    expect(amount).toHaveValue(500);
+    expect(amount).not.toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText(/exceeds/i)).toBeNull();
+  });
+
+  // #728 round 2 (UX M-B) — the membership choice the attempt carries stays
+  // visible (locked) even when the new remainder no longer reads as a full
+  // credit, so nobody resends a choice they cannot see.
+  it('a restored full-credit attempt shows its membership choice, locked', async () => {
+    storeAttempt({ creditTotalSatang: '107000', membershipEffect: 'cancel_membership' });
+    renderForm({ remainingSatang: '0', invoiceSubject: 'membership' });
+    await screen.findByTestId('credit-note-error');
+    const fieldset = screen.getByTestId('cn-membership-effect-fieldset');
+    const radios = fieldset.querySelectorAll('input[type="radio"]');
+    expect(radios.length).toBe(2);
+    const checked = [...radios].find((r) => (r as HTMLInputElement).checked) as HTMLInputElement | undefined;
+    expect(checked?.value).toBe('cancel_membership');
+    for (const r of radios) expect(r).toBeDisabled();
+  });
+
   it('while the outcome is unknown every field is read-only and the locked note says why', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => dropped()));
     try {
@@ -434,6 +471,9 @@ describe('CreditNoteForm — #66 the idempotency key', () => {
       const alert = screen.getByTestId('credit-note-error');
       expect(alert).toHaveAttribute('data-tone', 'warning');
       expect(alert).toHaveTextContent(UNCONFIRMED_500);
+      // #728 round 2 (UX L-4) — this try's refusal is named as such, so
+      // "Nothing was changed" is not read as "no note was issued".
+      expect(alert).toHaveTextContent(/This try was refused: /);
       expect(screen.getByRole('button', { name: cnMessages.submit })).toBeDisabled();
       await clickTryAgain();
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));

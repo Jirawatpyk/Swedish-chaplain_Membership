@@ -72,7 +72,7 @@ vi.mock('@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter
 }));
 
 // Imports that depend on the mocked modules MUST come after the vi.mock calls.
-import { issueCreditNote } from '@/modules/invoicing/application/use-cases/issue-credit-note';
+import { issueCreditNote, issueCreditNoteSchema } from '@/modules/invoicing/application/use-cases/issue-credit-note';
 import { makeIssueCreditNoteDeps } from '@/modules/invoicing/application/invoicing-deps';
 
 const MATRIX: BenefitMatrix = {
@@ -347,24 +347,105 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
     ).rejects.toThrow(/immutable/);
   }, 60_000);
 
-  // #728 review (Thai-tax M-1) — two invoices lock independently, so both
-  // attempts reach the insert and the loser hits the real 23505 on the key
-  // index; its reconcile finds a winner for ANOTHER invoice and refuses. The
-  // loser's §87 number rolls back with it.
-  it('one key raced on two invoices → one note; the other is refused and its number is not consumed', async () => {
-    const invA = await seedPaidInvoice(tenant, user, planId);
-    const invB = await seedPaidInvoice(tenant, user, planId);
+  // #728 review (Thai-tax M-1, round 2) — deterministic: each attempt's
+  // in-tx key lookup (its 2nd lookup, after the pre-read) waits until BOTH
+  // have looked and missed, so both reach the insert. The §87 allocator's
+  // advisory lock serialises them; the second insert takes the real 23505 on
+  // `credit_notes_tenant_idempotency_key_uniq`, reconciles in a fresh tx (its
+  // 3rd lookup), finds a winner for ANOTHER invoice and refuses. Its §87 number
+  // rolls back with it.
+  it('one key raced on two invoices past the lookup → the loser takes the real 23505 and issues nothing', async () => {
+    const invoiceIds = [await seedPaidInvoice(tenant, user, planId), await seedPaidInvoice(tenant, user, planId)];
     const key = randomUUID();
     const before = await readCreditNoteSeq(tenant);
-    const results = await Promise.all([issue(tenant, invA, key), issue(tenant, invB, key)]);
-    const oks = results.filter((r) => r.ok);
-    const errs = results.filter((r) => !r.ok);
-    expect(oks.length, JSON.stringify(results)).toBe(1);
-    expect(errs.length).toBe(1);
-    const lost = errs[0];
-    if (lost && !lost.ok) expect(lost.error.code).toBe('concurrent_state_change');
-    expect((await countNotes(tenant, invA)) + (await countNotes(tenant, invB))).toBe(1);
+    let arrived = 0;
+    let release: () => void = () => {};
+    const bothLooked = new Promise<void>((r) => {
+      release = r;
+    });
+    const lookups = [0, 0];
+    const inserts = [0, 0];
+    function gatedDeps(i: 0 | 1) {
+      const deps = makeIssueCreditNoteDeps(tenant.ctx.slug);
+      const repo = deps.creditNoteRepo;
+      return {
+        ...deps,
+        creditNoteRepo: {
+          ...repo,
+          findByIdempotencyKey: async (...args: Parameters<typeof repo.findByIdempotencyKey>) => {
+            lookups[i] = (lookups[i] ?? 0) + 1;
+            const found = await repo.findByIdempotencyKey(...args);
+            if (lookups[i] === 2) {
+              arrived += 1;
+              if (arrived === 2) release();
+              await bothLooked;
+            }
+            return found;
+          },
+          insertCreditNote: async (...args: Parameters<typeof repo.insertCreditNote>) => {
+            inserts[i] = (inserts[i] ?? 0) + 1;
+            return repo.insertCreditNote(...args);
+          },
+        },
+      };
+    }
+    const results = await Promise.all(
+      ([0, 1] as const).map((i) =>
+        issueCreditNote(gatedDeps(i), {
+          tenantId: tenant.ctx.slug,
+          actorUserId: user.userId,
+          invoiceId: invoiceIds[i]!,
+          creditTotalSatang: asSatang(53_500n),
+          reason: 'duplicate charge',
+          idempotencyKey: key,
+        }),
+      ),
+    );
+    expect(results.filter((r) => r.ok).length, JSON.stringify(results)).toBe(1);
+    const loserIdx = results.findIndex((r) => !r.ok);
+    const loser = results[loserIdx];
+    if (loser && !loser.ok) expect(loser.error.code).toBe('concurrent_state_change');
+    // Both inserted; only the loser reconciled (pre-read, locked read, reconcile).
+    expect(inserts).toEqual([1, 1]);
+    expect(lookups[loserIdx]).toBe(3);
+    expect(lookups[1 - loserIdx]).toBe(2);
+    let notes = 0;
+    for (const id of invoiceIds) notes += await countNotes(tenant, id);
+    expect(notes).toBe(1);
     expect((await readCreditNoteSeq(tenant)) - before).toBe(1);
+  }, 60_000);
+
+  // #728 round 2 (financial tests) — a replay matches the stored row as the
+  // form resends it: a reason with outer spaces (trimmed by the schema and on
+  // insert), and a full membership credit with its membership effect (the
+  // repo's `membership_effect` mapping, read back from a real row).
+  it('a full membership credit with an effect and a padded reason replays under its key', async () => {
+    const invoiceId = await seedPaidInvoice(tenant, user, planId);
+    const key = randomUUID();
+    const send = () =>
+      issueCreditNote(makeIssueCreditNoteDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        invoiceId,
+        creditTotalSatang: asSatang(107_000n),
+        reason: issueCreditNoteSchema.parse({
+          tenantId: tenant.ctx.slug,
+          actorUserId: user.userId,
+          invoiceId,
+          creditTotalSatang: 107_000n,
+          reason: '  duplicate charge ',
+        }).reason,
+        membershipEffect: 'keep',
+        idempotencyKey: key,
+      });
+    const r1 = await send();
+    const r2 = await send();
+    expect(r1.ok && r2.ok, JSON.stringify([r1, r2])).toBe(true);
+    if (!r1.ok || !r2.ok) return;
+    expect(r2.value.replayed).toBe(true);
+    expect(r2.value.creditNote.creditNoteId).toBe(r1.value.creditNote.creditNoteId);
+    expect(r2.value.creditNote.membershipEffect).toBe('keep');
+    expect(await countNotes(tenant, invoiceId)).toBe(1);
   }, 60_000);
 
   it('the trigger refuses a change of idempotency_key under the PII-redaction exemption too', async () => {

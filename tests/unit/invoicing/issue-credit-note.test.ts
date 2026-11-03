@@ -1958,6 +1958,17 @@ describe('issueCreditNote — #66 idempotency key (admin notes)', () => {
     if (r.ok) expect(r.value.replayed).toBe(true);
   });
 
+  // #728 round 2 (financial LOW-1) — a note stores its membership effect only
+  // on a full credit of a membership invoice; a stored null means the effect
+  // had no part in it, so a request naming one still replays (refusing it would
+  // end the client's attempt as if nothing had been issued).
+  it('a stored null membership effect replays a request that names one', async () => {
+    const { deps } = depsWithKeyHit(existingCn({ membershipEffect: null }));
+    const r = await issueCreditNote(deps, { ...baseInput, membershipEffect: 'keep', idempotencyKey: KEY });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (r.ok) expect(r.value.replayed).toBe(true);
+  });
+
   // #728 review (financial L2) — the pre-read hit skipped the manual guards; if
   // the locked read then misses, issuing would bypass them. Refuse instead.
   it('a pre-read hit followed by a miss under the lock issues nothing (concurrent_state_change)', async () => {
