@@ -59,13 +59,25 @@
  * retention is being enforced, and also when a batch threw (`completed: false`,
  * with the count that DID commit).
  *
+ * THE ORPHAN RECORD (spec 140 s2c [P M-1]). After the run row, the run prunes
+ * `broadcast_orphaned_resend_ids` (`pruneOrphans` → the SECURITY DEFINER
+ * `prune_orphaned_resend_ids`, migration 0323): settled rows and
+ * `create_unconfirmed` rows older than `ORPHAN_ROW_RETENTION_DAYS` (90). An
+ * unsettled row with an id is never pruned (it still names a copy at Resend).
+ * Best-effort and independent of the E-Blast rows: it runs whatever the loop
+ * did, a failure is logged with its class, and the sweep's answer is unchanged
+ * (`orphanRowsPruned: null`). The run row's payload does not carry it.
+ *
  * Pure Application — only Domain types + ports (+ the shared logger, as
  * `cleanup-orphaned-audiences`).
  */
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
+import { ORPHAN_ROW_RETENTION_DAYS } from '../../domain/value-objects/orphaned-resend-id';
 import type { AuditPort } from '../ports/audit-port';
+import type { BroadcastOrphansRepo } from '../ports/broadcast-orphans-repo';
 import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { BroadcastsRepo, RetentionCandidate, RetentionCursor } from '../ports/broadcasts-repo';
@@ -82,6 +94,8 @@ export interface SweepExpiredBroadcastsDeps {
   /** Deletes the Resend copy of an expired E-Blast before its row goes. */
   readonly broadcastsGateway: Pick<BroadcastsGatewayPort, 'deleteBroadcast'>;
   readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedByOwners'>;
+  /** Spec 140 s2c [P M-1] — the orphaned Resend id record's retention prune. */
+  readonly orphans: Pick<BroadcastOrphansRepo, 'pruneOrphans'>;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   /** Correlates the audit rows with this cron tick. */
@@ -109,6 +123,8 @@ export interface SweepExpiredBroadcastsOutput {
   /** The oldest / newest retention anchor among the rows deleted; `null` when none. */
   readonly oldestAnchor: Date | null;
   readonly newestAnchor: Date | null;
+  /** Spec 140 s2c — orphan-record rows pruned; `null` when the prune failed (logged). */
+  readonly orphanRowsPruned: number | null;
 }
 
 export interface SweepExpiredBroadcastsError {
@@ -133,6 +149,8 @@ const DEFAULT_TIME_BUDGET_MS = 60_000;
  * inside the adapter, so an overshoot costs time, never a row.
  */
 const PROVIDER_CONCURRENCY = 5;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export async function sweepExpiredBroadcasts(
   deps: SweepExpiredBroadcastsDeps,
@@ -271,6 +289,15 @@ export async function sweepExpiredBroadcasts(
     failure ??= { cause: e };
   }
 
+  // Spec 140 s2c [P M-1] — the orphan record's prune (docblock): independent,
+  // best-effort, its cutoff ORPHAN_ROW_RETENTION_DAYS before the run began.
+  let orphanRowsPruned: number | null = null;
+  try {
+    orphanRowsPruned = await deps.orphans.pruneOrphans(new Date(startedAtMs - ORPHAN_ROW_RETENTION_DAYS * DAY_MS));
+  } catch (e) {
+    logger.warn({ tenantId: slug, err: errKind(e) }, 'broadcasts.retention_sweep.orphan_prune_failed');
+  }
+
   if (failure !== null) {
     return err({ kind: 'retention_sweep.server_error', cause: failure.cause, sweptCount });
   }
@@ -283,5 +310,6 @@ export async function sweepExpiredBroadcasts(
     providerCopyRetainedAtProcessor: retainedAtProcessor,
     oldestAnchor: oldest,
     newestAnchor: newest,
+    orphanRowsPruned,
   });
 }

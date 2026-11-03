@@ -577,6 +577,8 @@ export function makeSweepExpiredBroadcastsDeps(
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     broadcastsGateway: resendBroadcastsGateway,
     imagesRepo: drizzleBroadcastImagesRepo,
+    // Spec 140 s2c [P M-1] — the orphaned Resend id record's retention prune.
+    orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
     audit: f7AuditAdapter,
     clock: systemClock,
     requestId,
