@@ -39,6 +39,7 @@ import {
 import { REPROBE_PAUSE_MS } from '@/modules/broadcasts/application/use-cases/_reprobe-pause';
 
 const ROUTE = 'src/app/api/cron/broadcasts/dispatch-scheduled/route.ts';
+const TICK = 'src/modules/broadcasts/application/use-cases/build-audience-tick.ts';
 
 describe('spec 140 s2b — the dispatch lease budget (DL9, A5)', () => {
   it('the inputs are the exported constants they name (C, I, P from their homes)', () => {
@@ -95,6 +96,17 @@ describe('spec 140 s2b — the dispatch lease budget (DL9, A5)', () => {
 
   it('positive control — a margin shorter than the call timeout is refused (C ≤ M)', () => {
     expect(leaseBudgetViolations({ ...LEASE_BUDGET_INPUTS, marginMs: 5_000 }, LEASE_TTL_MS, DISPATCH_MAX_DURATION_MS)).toContain('C ≤ M');
+  });
+
+  it('spec 140 s2c [A4] — the failTerminally choke point leaves W_max unchanged: tick 2 already counts its delete + GET (N = 9), and on tick 1 they replace the standing gate’s two (5·C), because both refuse arms pass draftSettled', () => {
+    expect(LEASE_BUDGET_INPUTS.tick2ResendCalls).toBe(9);
+    expect(LEASE_BUDGET_INPUTS.tick1BoundedCalls).toBe(5);
+    expect(W_MAX_MS).toBe(164_000);
+    const src = readFileSync(TICK, 'utf8');
+    // Three delete sites: the refuse arm, the erased arm, the choke point.
+    expect((src.match(/deleteDraftBefore(?:Standing|Erased)Refusal\(/g) ?? []).length).toBe(3);
+    // The two gate arms skip the choke point, so no tick makes both pairs of calls.
+    expect((src.match(/draftSettled: true,/g) ?? []).length).toBe(2);
   });
 
   it('rowStartAllowed: a row may start up to the cutoff after the tick began, not after', () => {

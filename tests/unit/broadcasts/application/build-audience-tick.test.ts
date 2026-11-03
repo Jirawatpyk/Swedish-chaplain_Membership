@@ -196,6 +196,10 @@ function makeDeps(opts: {
         async findByIdInTx() {
           return broadcast;
         },
+        // Spec 140 s2c — the failTerminally choke point re-reads the row.
+        async findById() {
+          return broadcast;
+        },
         async attachAudienceId(_tx: unknown, _t: unknown, _b: unknown, id: string) {
           rec.createdAudiences.push(id);
         },

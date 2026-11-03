@@ -1115,6 +1115,8 @@ async function applySendStanding(
           actorRole: null,
           requestId: null,
         }),
+        // Spec 140 s2c — the gate's delete above IS this row's reclaim.
+        draftSettled: true,
       },
     );
   }
@@ -1143,6 +1145,8 @@ async function applySendStanding(
         notifyMember: false,
         payloadExtra: { standing: 'erased', resendDraftOutcome: cleared.draftOutcome },
         concurrentLossIsSkip: true,
+        // Spec 140 s2c — the erased wrapper's delete above IS this row's reclaim.
+        draftSettled: true,
       },
     );
   }
@@ -2806,6 +2810,78 @@ async function advanceToSending(
 }
 
 /**
+ * Spec 140 s2c, item 4 — delete the Resend draft the row holds before a
+ * terminal write (`failTerminally`'s choke point; plan.md § Slice 2c [A2–A4]).
+ *
+ * 1. RE-READ the row [A3]: the Step-1 snapshot can be stale (a sibling's
+ *    persist after it). A read that fails decides nothing: a retryable
+ *    `dispatch.server_error` (phase `terminal_write`), no Resend call, no
+ *    terminal write; the next tick tries again.
+ * 2. No id (or `''`) → nothing to delete; the terminal write goes ahead.
+ * 3. The pre-call lease check (`leaseGate`, step `terminal_reclaim`) [A4]: lost
+ *    → `lease_lost` (row 9), expiring → `lease_expiring`, a failed check →
+ *    retryable. None writes a terminal row.
+ * 4. `deleteDraftBeforeStandingRefusal` (`_dispatch-standing-gate.ts`, the full
+ *    outcome set) with no probed status, so a 403 is decided by its one GET:
+ *    - `cleared` (`deleted` / `absent` / `cancelled` / `failed`) → terminal,
+ *      `resendDraftOutcome` in the payload;
+ *    - `handed` → a sibling sent it: a concurrent skip labelled
+ *      `unknown_or_already_processed`, no terminal write, no member email;
+ *    - `undeleted` → an orphan row `terminal_reclaim_undecided` (the drain
+ *      reaches it once the row is terminal), then terminal with
+ *      `resendDraftOutcome: 'undeleted'` + `resendDraftErrClass`.
+ *    The helper's own log lines say `refusal: 'standing'`; this function adds
+ *    no line of its own beyond the orphan record.
+ *
+ * W_max is unchanged (`_dispatch-lease.ts`): tick 2 already counts these two
+ * calls in `TICK2_RESEND_CALLS`, and on tick 1 they replace the standing gate's
+ * two (the refuse arms pass `draftSettled`), so `TICK1_BOUNDED_CALLS` holds.
+ *
+ * Documented, not fixed: a delete that lands followed by a terminal CAS that
+ * loses leaves the row `approved` holding a 404 id; the next tick's probe reads
+ * `not_found` twice and re-mints.
+ */
+async function reclaimDraftBeforeTerminal(
+  deps: LeasedTickDeps,
+  input: BuildAudienceTickInput,
+  broadcast: Broadcast,
+): Promise<
+  | { readonly stop: Result<BuildAudienceTickOutput, BuildAudienceTickError> }
+  | { readonly payloadExtra?: Readonly<Record<string, string>> }
+> {
+  const ids = { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string };
+  let current: Broadcast | null;
+  try {
+    current = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+  } catch (e) {
+    logger.warn({ ...ids, err: errKind(e) }, 'broadcasts.audience_import.terminal_reread_failed');
+    return {
+      stop: err({ kind: 'dispatch.server_error', message: 'terminal_reread_failed', errClass: errKind(e), phase: 'terminal_write' }),
+    };
+  }
+  const draftId = current?.resendBroadcastId ?? '';
+  if (draftId === '') return {};
+  const gated = await leaseGate(deps, input, 'terminal_reclaim');
+  if (gated !== null) return { stop: gated };
+  const cleared = await deleteDraftBeforeStandingRefusal(
+    deps.broadcastsGateway,
+    { ...ids, leg: 'import' },
+    { resendBroadcastId: draftId, probedStatus: null },
+  );
+  if (cleared.kind === 'handed') {
+    return { stop: err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' }) };
+  }
+  if (cleared.kind === 'cleared') return { payloadExtra: { resendDraftOutcome: cleared.draftOutcome } };
+  await recordOrphan(deps, input, {
+    requestedByMemberId: broadcast.requestedByMemberId,
+    resourceType: 'broadcast',
+    resourceId: draftId,
+    reason: 'terminal_reclaim_undecided',
+  });
+  return { payloadExtra: { resendDraftOutcome: 'undeleted', resendDraftErrClass: cleared.errClass } };
+}
+
+/**
  * A terminal import failure: the row moves to `failed_to_dispatch` so it is not
  * re-polled forever, and the reason survives in the audit trail. Deliberately
  * NOT a retry — every reason here is a statement about a job that already
@@ -2863,8 +2939,23 @@ async function failTerminally(
       readonly resourceType: 'audience' | 'broadcast' | 'import';
       readonly resourceId: string;
     };
+    /**
+     * Spec 140 s2c — the two standing-refusal arms deleted the row's draft
+     * already (`deleteDraftBeforeStandingRefusal` / the erased wrapper, under
+     * their own lease check), so the choke point below must not delete it a
+     * second time. Every other caller leaves it unset.
+     */
+    readonly draftSettled?: true;
   } = {},
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
+  // Spec 140 s2c, item 4 (pdpa M-1) — THE CHOKE POINT: no terminal row on this
+  // leg keeps a Resend draft it could have deleted. Before the terminal tx.
+  let payloadExtra = opts.payloadExtra;
+  if (opts.draftSettled !== true) {
+    const reclaimed = await reclaimDraftBeforeTerminal(deps, input, broadcast);
+    if ('stop' in reclaimed) return reclaimed.stop;
+    if (reclaimed.payloadExtra !== undefined) payloadExtra = { ...(payloadExtra ?? {}), ...reclaimed.payloadExtra };
+  }
   const auditEventType = opts.auditEventType ?? 'broadcast_failed_to_dispatch';
   const notifyMember = opts.notifyMember ?? true;
   const now = deps.clock.now();
@@ -2913,7 +3004,7 @@ async function failTerminally(
           importId: error.importId,
           reason,
           failedAt: now.toISOString(),
-          ...(opts.payloadExtra ?? {}),
+          ...(payloadExtra ?? {}),
         },
         requestId: null,
       });
