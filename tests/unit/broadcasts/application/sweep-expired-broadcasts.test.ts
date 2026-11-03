@@ -32,7 +32,7 @@ import {
 import type { BroadcastImageRecord } from '@/modules/broadcasts/application/ports/broadcast-images-repo';
 import type { RetentionCandidate, RetentionCursor } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { asTenantContext } from '@/modules/tenants';
-import { ORPHAN_ROW_RETENTION_DAYS } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
+import { ORPHAN_PRUNE_SKEW_MARGIN_MS, ORPHAN_ROW_RETENTION_DAYS } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
 
 const tenant = asTenantContext('test-tenant');
 const NOW = new Date('2031-06-15T20:50:00.000Z');
@@ -548,12 +548,18 @@ describe('sweepExpiredBroadcasts — failures', () => {
  * best-effort: a failed prune is logged and the sweep's answer is unchanged.
  */
 describe('sweepExpiredBroadcasts — the orphan-record prune (spec 140 s2c)', () => {
-  it('prunes once per run with the cutoff ORPHAN_ROW_RETENTION_DAYS before the run, after the run row', async () => {
+  // The cutoff is a further ORPHAN_PRUNE_SKEW_MARGIN_MS older: the SQL floor
+  // compares it with the DB's now(), so an app clock ahead of Neon's must not
+  // make it "too recent" and turn every daily prune into a refusal.
+  it('prunes once per run with the cutoff ORPHAN_ROW_RETENTION_DAYS + ORPHAN_PRUNE_SKEW_MARGIN_MS before the run, after the run row', async () => {
     const { deps, events, pruneOrphans } = makeDeps({ pruned: 3 });
     const result = await sweepExpiredBroadcasts(deps);
     expect(result).toEqual({ ok: true, value: { ...ZERO_OUTPUT, orphanRowsPruned: 3 } });
     expect(pruneOrphans).toHaveBeenCalledTimes(1);
-    expect(pruneOrphans).toHaveBeenCalledWith(new Date(NOW.getTime() - ORPHAN_ROW_RETENTION_DAYS * 24 * 60 * 60 * 1000));
+    expect(ORPHAN_PRUNE_SKEW_MARGIN_MS).toBe(60 * 60 * 1000);
+    expect(pruneOrphans).toHaveBeenCalledWith(
+      new Date(NOW.getTime() - ORPHAN_ROW_RETENTION_DAYS * 24 * 60 * 60 * 1000 - ORPHAN_PRUNE_SKEW_MARGIN_MS),
+    );
     expect(events.at(-1)).toBe('prune');
   });
 

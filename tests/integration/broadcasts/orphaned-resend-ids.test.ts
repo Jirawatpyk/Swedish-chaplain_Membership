@@ -26,6 +26,7 @@ import {
   ORPHAN_OUTCOMES,
   ORPHAN_REASONS,
   ORPHAN_RESOURCE_TYPES,
+  ORPHAN_PRUNE_SKEW_MARGIN_MS,
   ORPHAN_ROW_RETENTION_DAYS,
 } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -212,7 +213,9 @@ describe('spec 140 s2c — 0323 broadcast_orphaned_resend_ids', () => {
       tx.execute(insertSql(other.ctx.slug, { resourceId: ids.otherSettledOld, createdAt: old, settledAt: old, outcome: 'deleted' })),
     );
 
-    const cutoff = new Date(now - ORPHAN_ROW_RETENTION_DAYS * DAY_MS);
+    // The sweep's cutoff: a margin older than the floor, so this workstation's
+    // clock running ahead of Neon's cannot make it "too recent".
+    const cutoff = new Date(now - ORPHAN_ROW_RETENTION_DAYS * DAY_MS - ORPHAN_PRUNE_SKEW_MARGIN_MS);
     // Another tenant's slug is refused: the function runs as the owner, so it fences itself.
     expect(
       await attempt(tenant, sql`SELECT prune_orphaned_resend_ids(${other.ctx.slug}, ${cutoff.toISOString()}::timestamptz)`),
