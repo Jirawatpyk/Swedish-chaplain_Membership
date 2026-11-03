@@ -202,7 +202,7 @@ describe('CreditNoteForm — failure branch is focused + destructive (FR-032)', 
 // until the page reloads.
 describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
   const UNCONFIRMED =
-    "We couldn't confirm whether the credit note was issued. Open the invoice and check its credit notes before you issue another — trying again could issue a second credit note.";
+    "We couldn't confirm whether the credit note was issued. Try again — if it was issued, trying again issues nothing new — or open the invoice to check.";
 
   function respond(status: number, body: unknown) {
     return vi.fn(async (_url: string, _init: RequestInit) => ({
@@ -215,7 +215,7 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
     }));
   }
 
-  it('a rejected fetch shows the warning, focused; the submit stays locked and the action opens the invoice', async () => {
+  it('a rejected fetch shows the warning, focused; the submit stays locked, Try again resends the same request and Open invoice opens it', async () => {
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => {
       throw new TypeError('Failed to fetch');
     });
@@ -233,14 +233,18 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
       expect(submit).toBeDisabled();
       fireEvent.click(submit);
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      // #727 review (UX M1) — the reason sits beside the disabled button.
-      expect(screen.getByTestId('cn-locked-hint')).toHaveTextContent(
-        'Issuing is paused until you check the invoice — this prevents a duplicate credit note.',
-      );
-      // The invoice detail lists its credit notes; leaving the form also ends
-      // the lock. No Refresh here: an in-place refresh would keep it.
+      // #66 — the attempt carries a uuid key the server dedupes on.
+      const first = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+      expect(first.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+      // The invoice detail lists its credit notes. No Refresh here: an
+      // in-place refresh would keep the form.
       expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
-      fireEvent.click(screen.getByRole('button', { name: 'Open invoice' }));
+      // #66 — Try again resends the SAME request, key included, so a note that
+      // was already issued comes back instead of a second one.
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      expect(fetchMock.mock.calls[1]?.[1]?.body).toBe(fetchMock.mock.calls[0]?.[1]?.body);
+      fireEvent.click(await screen.findByRole('button', { name: 'Open invoice' }));
       expect(pushMock).toHaveBeenCalledWith(`/admin/invoices/${INVOICE_ID}`);
     } finally {
       vi.unstubAllGlobals();
@@ -306,6 +310,86 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
       await waitFor(() => expect(fetchMock).toHaveBeenCalled());
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+// #66 — the key outlives a reload (sessionStorage per invoice) until the server
+// gives a definite answer, so a resubmit after a reload is deduplicated too; a
+// replay says the note was already issued.
+describe('CreditNoteForm — #66 the idempotency key', () => {
+  const STORE_KEY = `cn-attempt:${INVOICE_ID}`;
+
+  beforeEach(() => {
+    window.sessionStorage.clear();
+  });
+
+  function okFetch(body: Record<string, unknown>) {
+    return vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: true,
+      status: 201,
+      json: async () => body,
+    }));
+  }
+
+  it('after an unknown outcome a reload keeps the key: the next submit sends the same one', async () => {
+    const dropped = vi.fn(async (_url: string, _init: RequestInit) => {
+      throw new TypeError('Failed to fetch');
+    });
+    vi.stubGlobal('fetch', dropped);
+    try {
+      const view = renderForm();
+      fillAndSubmit();
+      await screen.findByTestId('credit-note-error');
+      const key = (JSON.parse(String(dropped.mock.calls[0]?.[1]?.body)) as { idempotencyKey: string })
+        .idempotencyKey;
+      expect(window.sessionStorage.getItem(STORE_KEY)).toBe(key);
+      view.unmount();
+
+      const ok = okFetch({ document_number: 'CN-2026-000009', replayed: true });
+      vi.stubGlobal('fetch', ok);
+      renderForm();
+      fillAndSubmit();
+      await waitFor(() => expect(ok).toHaveBeenCalledTimes(1));
+      expect((JSON.parse(String(ok.mock.calls[0]?.[1]?.body)) as { idempotencyKey: string }).idempotencyKey).toBe(key);
+      // A definite answer ends the attempt.
+      await waitFor(() => expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull());
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a replay says the note was already issued and nothing new was created', async () => {
+    const { toast } = await import('@/lib/toast');
+    vi.mocked(toast.success).mockClear();
+    vi.stubGlobal('fetch', okFetch({ document_number: 'CN-2026-000009', replayed: true }));
+    try {
+      renderForm();
+      fillAndSubmit();
+      await waitFor(() => expect(toast.success).toHaveBeenCalled());
+      expect(vi.mocked(toast.success).mock.calls[0]?.[0]).toBe(
+        'Credit note CN-2026-000009 was already issued — nothing new was created.',
+      );
+      expect(pushMock).toHaveBeenCalledWith(`/admin/invoices/${INVOICE_ID}`);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a definite refusal also ends the attempt (the next submit gets a new key)', async () => {
+    const PENDING = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    window.sessionStorage.setItem(STORE_KEY, PENDING);
+    const refused = rejectingFetch('invalid_status');
+    vi.stubGlobal('fetch', refused);
+    try {
+      renderForm();
+      fillAndSubmit();
+      await screen.findByTestId('credit-note-error');
+      // The pending attempt's key is reused, then dropped on the definite answer.
+      expect((JSON.parse(String(refused.mock.calls[0]?.[1]?.body)) as { idempotencyKey: string }).idempotencyKey).toBe(PENDING);
+      expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull();
     } finally {
       vi.unstubAllGlobals();
     }

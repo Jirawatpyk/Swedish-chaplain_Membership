@@ -483,4 +483,57 @@ describe('POST /api/credit-notes — contract', () => {
       expect(endMembershipCoverageNowMock).not.toHaveBeenCalled();
     });
   });
+  // #66 — an admin issue attempt carries one uuid; a repeat answers with the
+  // note already issued (201, `replayed: true`, no membership_end re-run).
+  describe('#66 idempotency key', () => {
+    const KEY = '11111111-2222-4333-8444-555555555555';
+
+    it('passes the body idempotencyKey to the use case', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+      issueCreditNoteMock.mockResolvedValueOnce(
+        ok({
+          creditNote: makeCreditNoteFixture(),
+          emailDelivery: 'sent',
+          membershipCancellationRequested: false,
+          replayed: false,
+        }),
+      );
+      const POST = await loadHandler();
+      const res = await POST(makeReq(makeBody({ idempotencyKey: KEY })));
+      expect(res.status).toBe(201);
+      expect(issueCreditNoteMock.mock.calls[0]?.[1]).toMatchObject({ idempotencyKey: KEY });
+      expect((await res.json()).replayed).toBe(false);
+    });
+
+    it('a replay answers 201 with the same note and replayed: true, and runs no membership end', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+      issueCreditNoteMock.mockResolvedValueOnce(
+        ok({
+          creditNote: makeCreditNoteFixture(),
+          emailDelivery: 'not_requested',
+          membershipCancellationRequested: false,
+          replayed: true,
+        }),
+      );
+      const POST = await loadHandler();
+      const res = await POST(makeReq(makeBody({ idempotencyKey: KEY })));
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.replayed).toBe(true);
+      expect(body.document_number).toBe('CN-2026-000001');
+      expect(body.membership_end).toBeUndefined();
+      expect(endMembershipCoverageNowMock).not.toHaveBeenCalled();
+    });
+
+    it('a malformed key is a 400 and never reaches the use case', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+      const POST = await loadHandler();
+      const res = await POST(makeReq(makeBody({ idempotencyKey: 'not-a-uuid' })));
+      expect(res.status).toBe(400);
+      expect(issueCreditNoteMock).not.toHaveBeenCalled();
+    });
+  });
 });
