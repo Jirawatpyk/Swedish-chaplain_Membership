@@ -180,7 +180,11 @@
  *   (b) the tenant's UNSETTLED AUDIENCE orphans, whoever requested them: a
  *       leaked audience holds recipients' contacts [P H-1]. Deleted, NOT
  *       counted into the draft fields; at most `ERASURE_AUDIENCE_ORPHAN_LIMIT`
- *       per run (one more pending is a deferral).
+ *       per run (one more pending is a deferral). A STUCK row
+ *       (`ORPHAN_STUCK_ATTEMPTS` tries and older than `ORPHAN_STUCK_MIN_AGE_MS`,
+ *       review round 2) never withholds, at any exit — undecided, past the
+ *       deadline, over the limit: it is counted in `audienceOrphansStuckCount`
+ *       instead.
  * Undecided, unreached or unreadable → `unexpectedErrorCount`, so
  * `member_erased` is withheld and `reconcile-erasures` drives the erasure
  * again. An orphan written after this pass is drained by the cron within one
@@ -213,7 +217,11 @@ import {
 import type { ClockPort } from '../ports/clock-port';
 import type { TerminalBroadcastDraftRef } from '../ports/broadcasts-repo';
 import type { BroadcastOrphansRepo, OrphanedResendIdRef } from '../ports/broadcast-orphans-repo';
-import { ORPHAN_STUCK_ATTEMPTS, type OrphanOutcome } from '../../domain/value-objects/orphaned-resend-id';
+import {
+  ORPHAN_STUCK_ATTEMPTS,
+  ORPHAN_STUCK_MIN_AGE_MS,
+  type OrphanOutcome,
+} from '../../domain/value-objects/orphaned-resend-id';
 import { asBroadcastId } from '../../domain/broadcast';
 import { isHandedStatus } from './_probe-refused-send';
 import { settleOrphanAtResend } from './_settle-orphan-at-resend';
@@ -314,6 +322,14 @@ export interface CancelInFlightForMemberOutput {
    * a pure deferral apart from broadcasts left in flight.
    */
   readonly deferredCount: number;
+  /**
+   * Spec 140 s2c review round 2 (security F2, pdpa M-3) — the STUCK tenant
+   * audience orphans pass (b) released this run without withholding
+   * `member_erased` (each also `broadcasts_cascade_orphan_stuck_total`). The
+   * copies are still at Resend. Per run, not derived: the completing run's
+   * value is what it released. Always 0 in the `'skip'` mode.
+   */
+  readonly audienceOrphansStuckCount: number;
 }
 
 export interface CancelInFlightForMemberDeps {
@@ -910,6 +926,7 @@ export async function cancelInFlightBroadcastsForMember(
     // Spec 140 s2c (DL10) — the orphan pass (docblock): the member's broadcast
     // orphans, then the tenant's leaked audiences.
     const handedOrphanBroadcastIds = new Set<string>();
+    let audienceOrphansStuckCount = 0;
     if (erasure) {
       const pastDeadline = () => input.deadlineAt !== undefined && deps.clock.now().getTime() >= input.deadlineAt.getTime();
       const orphanUnexpected = (e: unknown, orphan: OrphanedResendIdRef | null, msg: string, extra: Record<string, unknown> = {}) => {
@@ -931,6 +948,24 @@ export async function cancelInFlightBroadcastsForMember(
         broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'deferred');
         logger.debug({ ...logBase, orphanId: orphan.orphanId }, 'broadcasts.cascade.orphan_deferred');
       };
+      // Review round 2 — the stuck rule (`ORPHAN_STUCK_ATTEMPTS` docblock):
+      // tries AND age, by the injected clock.
+      const isStuck = (orphan: OrphanedResendIdRef) =>
+        orphan.attempts >= ORPHAN_STUCK_ATTEMPTS &&
+        deps.clock.now().getTime() - orphan.createdAt.getTime() >= ORPHAN_STUCK_MIN_AGE_MS;
+      const reportStuck = (orphan: OrphanedResendIdRef, exit: 'undecided' | 'deadline' | 'over_limit', extra: Record<string, unknown> = {}) => {
+        audienceOrphansStuckCount += 1;
+        broadcastsMetrics.cascadeOrphanStuck(input.tenant.slug);
+        logger.warn(
+          { ...logBase, orphanId: orphan.orphanId, resourceType: orphan.resourceType, resourceId: orphan.resourceId, attempts: orphan.attempts, exit, ...extra },
+          'broadcasts.cascade.orphan_stuck',
+        );
+      };
+      // Pass (b)'s non-settling exits: a stuck row is reported, any other deferred.
+      const deferOrReport = (orphan: OrphanedResendIdRef, exit: 'deadline' | 'over_limit') => {
+        if (isStuck(orphan)) reportStuck(orphan, exit);
+        else deferOrphan(orphan);
+      };
       /**
        * Settle one unsettled orphan at Resend, then by CAS; `null` = undecided
        * (already counted unexpected — or, for a STUCK tenant audience orphan,
@@ -938,9 +973,9 @@ export async function cancelInFlightBroadcastsForMember(
        * - an undecided answer marks the row attempted (code-review #2);
        * - a settle whose CAS LOST is undecided too: a concurrent settler won,
        *   and the re-drive counts the row it settled (code-review #6);
-       * - `stuckReported` (pass (b) only): a row already tried
-       *   `ORPHAN_STUCK_ATTEMPTS` times is logged `orphan_stuck` and does not
-       *   withhold (code-review #1, reliability M-2, pdpa M-B).
+       * - `stuckReported` (pass (b) only): a STUCK row (tries and age, review
+       *   round 2) is reported, not withheld (code-review #1, reliability M-2,
+       *   pdpa M-B).
        */
       const settleOrphan = async (
         orphan: OrphanedResendIdRef,
@@ -950,11 +985,8 @@ export async function cancelInFlightBroadcastsForMember(
           await deps.orphans.markOrphanAttempted(orphan.orphanId).catch((markErr: unknown) => {
             logger.warn({ ...logBase, orphanId: orphan.orphanId, err: errKind(markErr) }, 'broadcasts.cascade.orphan_attempt_mark_failed');
           });
-          if (stuckReported && orphan.attempts >= ORPHAN_STUCK_ATTEMPTS) {
-            logger.warn(
-              { ...logBase, orphanId: orphan.orphanId, resourceType: orphan.resourceType, resourceId: orphan.resourceId, attempts: orphan.attempts + 1, ...extra },
-              'broadcasts.cascade.orphan_stuck',
-            );
+          if (stuckReported && isStuck(orphan)) {
+            reportStuck(orphan, 'undecided', extra);
             return null;
           }
           orphanUnexpected(e, orphan, msg, extra);
@@ -1024,11 +1056,11 @@ export async function cancelInFlightBroadcastsForMember(
       // Review round 1 — five at a time (the drain's concurrency); the
       // deadline is checked before each chunk, and the rest are deferred.
       const due = audienceOrphans.slice(0, ERASURE_AUDIENCE_ORPHAN_LIMIT);
-      for (const orphan of audienceOrphans.slice(ERASURE_AUDIENCE_ORPHAN_LIMIT)) deferOrphan(orphan);
+      for (const orphan of audienceOrphans.slice(ERASURE_AUDIENCE_ORPHAN_LIMIT)) deferOrReport(orphan, 'over_limit');
       for (let i = 0; i < due.length; i += ERASURE_AUDIENCE_ORPHAN_CONCURRENCY) {
         const chunk = due.slice(i, i + ERASURE_AUDIENCE_ORPHAN_CONCURRENCY);
         if (pastDeadline()) {
-          for (const orphan of due.slice(i)) deferOrphan(orphan);
+          for (const orphan of due.slice(i)) deferOrReport(orphan, 'deadline');
           break;
         }
         await Promise.all(chunk.map((orphan) => settleOrphan(orphan, true)));
@@ -1089,6 +1121,7 @@ export async function cancelInFlightBroadcastsForMember(
           resendDraftsCleared,
           resendCopiesRetained,
           deferredCount,
+          audienceOrphansStuckCount,
           onDispatchBegun,
           cascade: 'f3_member_archival_or_erasure',
         },
@@ -1104,6 +1137,7 @@ export async function cancelInFlightBroadcastsForMember(
       resendDraftsCleared,
       resendCopiesRetained,
       deferredCount,
+      audienceOrphansStuckCount,
     });
   } catch (e) {
     return err({

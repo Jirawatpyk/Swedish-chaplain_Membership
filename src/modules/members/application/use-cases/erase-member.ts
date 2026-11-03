@@ -836,6 +836,8 @@ export async function eraseMember(
   // and the copies Resend would not delete (RoPA 8d); carried on `member_erased`.
   let resendDraftsCleared = 0;
   let resendCopiesRetained = 0;
+  // Spec 140 s2c review round 2 — stuck tenant audience orphans released.
+  let audienceOrphansStuckCount = 0;
 
   try {
     const r = await deps.broadcastsCascade.cancelInFlightForMember(deps.tenant, memberId, {
@@ -851,6 +853,7 @@ export async function eraseMember(
       broadcastsAlreadySentCount = r.alreadySentCount;
       resendDraftsCleared = r.resendDraftsCleared;
       resendCopiesRetained = r.resendCopiesRetained;
+      audienceOrphansStuckCount = r.audienceOrphansStuckCount;
     }
     // Broadcasts `cascade_partial_failure` is NOT benign (unlike F8 renewals
     // below): it means `unexpectedErrorCount > 0` — one or more broadcasts hit
@@ -872,6 +875,7 @@ export async function eraseMember(
         resendDraftsCleared: r.resendDraftsCleared,
         resendCopiesRetained: r.resendCopiesRetained,
         deferredCount: r.deferredCount,
+        audienceOrphansStuckCount: r.audienceOrphansStuckCount,
         cascade: 'f7_in_flight_broadcast_cancel',
       };
       // Spec 140 s1 review round 3 (code-review #3) — when every unexpected row
@@ -1291,6 +1295,11 @@ export async function eraseMember(
             // completing run's values are whole, re-drive or not.
             resend_drafts_cleared: resendDraftsCleared,
             resend_copies_retained: resendCopiesRetained,
+            // Spec 140 s2c review round 2 (security F2, pdpa M-3) — the tenant's
+            // STUCK audience orphans this run released without withholding
+            // (RoPA 8d): each copy is still at Resend, its row unsettled and
+            // owned by the runbook. Per run, unlike the counts above.
+            audience_orphans_stuck_count: audienceOrphansStuckCount,
             // L4 (DPO-log honesty): on a re-drive completion (alreadyErased) the
             // first pass already stamped contacts.removed_at, so this pass's
             // linked-user read is [] and the two counts above are 0/0. The flag

@@ -84,14 +84,29 @@ export const ORPHAN_HANDED_RETENTION_YEARS = 5;
 export const ORPHAN_PRUNE_SKEW_MARGIN_MS = 60 * 60 * 1000;
 
 /**
- * Review round 1 (code-review #1, reliability M-2, pdpa M-B) — after this many
- * undecided settles (`attempts`), a TENANT AUDIENCE orphan no longer withholds
- * another member's `member_erased` (erasure pass (b)): it is reported
- * (`broadcasts.cascade.orphan_stuck`), counted by the unsettled gauge, and
- * owned by the runbook. 8 ≈ two hours of the `cleanup-audiences` cron (every
- * 15 minutes, `vercel.json`). A member's OWN orphans always withhold.
+ * Review round 1 (code-review #1, reliability M-2, pdpa M-B), with review
+ * round 2 (security F1/L3, code-review #1, reliability MED) — a TENANT
+ * AUDIENCE orphan is STUCK once it has had this many undecided settles
+ * (`attempts`) AND is older than `ORPHAN_STUCK_MIN_AGE_MS`. A stuck row no
+ * longer withholds another member's `member_erased` (erasure pass (b), at
+ * every exit: undecided, past the deadline, over the limit): it is reported
+ * (`broadcasts.cascade.orphan_stuck`), counted on `member_erased`
+ * (`audience_orphans_stuck_count`) and by
+ * `broadcasts_cascade_orphan_stuck_total`, still counted by the unsettled
+ * gauge, and owned by the runbook. A member's OWN broadcast orphans always
+ * withhold.
+ *
+ * The count alone is not a time: the drain AND every erasure run add
+ * attempts, so eight can pile up in minutes. The age floor is the time.
  */
 export const ORPHAN_STUCK_ATTEMPTS = 8;
+
+/**
+ * Review round 2 — the age floor of the stuck rule (2 h), measured by the
+ * injected clock against the row's `created_at`: at least eight
+ * `cleanup-audiences` runs (every 15 minutes, `vercel.json`) have had it.
+ */
+export const ORPHAN_STUCK_MIN_AGE_MS = 2 * 60 * 60 * 1000;
 
 /** [A7] The window of the `create_unconfirmed` gauge: rows created in the last 24 h. */
 export const ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS = 24;

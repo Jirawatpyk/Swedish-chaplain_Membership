@@ -3180,15 +3180,6 @@ export const broadcastsMetrics = {
   },
 
   /**
-   * `broadcasts_orphaned_resend_ids_unconfirmed{tenant}` — spec 140 s2c (DL5b):
-   * `create_unconfirmed` orphan rows created in the last
-   * `ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS` (24 h) — a `createBroadcast` that
-   * ended in a network failure, a timeout or a 5xx, which may have minted a
-   * draft whose id we never received (no sweep can reach it). Zero-filled by
-   * the gauges cron. **Alarm** (not page) at ≥ 1; runbook
-   * `docs/runbooks/broadcast-audience-build.md` § orphaned Resend ids.
-   */
-  /**
    * `broadcasts_retention_orphan_prune_failed_total{tenant}` — spec 140 s2c
    * review round 1 (reliability L-2): the F7 retention sweep's prune of the
    * orphaned Resend id record (`prune_orphaned_resend_ids`, kept for
@@ -3234,6 +3225,17 @@ export const broadcastsMetrics = {
     });
   },
 
+  /**
+   * `broadcasts_orphaned_resend_ids_unconfirmed{tenant}` — spec 140 s2c (DL5b):
+   * `create_unconfirmed` orphan rows created in the last
+   * `ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS` (24 h) — a `createBroadcast` that
+   * ended in a network failure, a timeout or a 5xx, which may have minted a
+   * draft whose id we never received (no sweep can reach it). Zero-filled by
+   * the gauges cron. **Alarm** (not page) at ≥ 1; runbook
+   * `docs/runbooks/broadcast-audience-build.md` § orphaned Resend ids.
+   * (Review round 2, spec N3 — this docblock had drifted above the prune
+   * counter.)
+   */
   orphanedResendIdsUnconfirmed(tenantId: string, count: number): void {
     safeMetric(() => {
       observeGauge(
@@ -3367,6 +3369,24 @@ export const broadcastsMetrics = {
         'broadcasts_cascade_outcome_total',
         'F3 archival/erasure cascade outcome per broadcast',
       ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * `broadcasts_cascade_orphan_stuck_total{tenant}` — spec 140 s2c review
+   * round 2 (security F2, pdpa M-3): an erasure's pass (b) released a STUCK
+   * tenant audience orphan (`ORPHAN_STUCK_ATTEMPTS` tries and older than
+   * `ORPHAN_STUCK_MIN_AGE_MS`) without withholding `member_erased`. The copy
+   * is still at Resend and the row still unsettled; `member_erased` carries
+   * the count (`audience_orphans_stuck_count`). Alarm at any increase;
+   * runbook `docs/runbooks/broadcast-audience-build.md` § E.
+   */
+  cascadeOrphanStuck(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_cascade_orphan_stuck_total',
+        'Stuck tenant audience orphans an erasure released without withholding member_erased',
+      ).add(1, { tenant: tenantId });
     });
   },
 
