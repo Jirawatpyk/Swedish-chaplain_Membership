@@ -304,7 +304,8 @@ describe('F7 retention sweep (0310) — live Neon', () => {
           providerCopyKeptTransient: 0,
           providerCopyRetainedAtProcessor: 0,
           oldestAnchor: SIX_YEARS_AGO,
-          newestAnchor: SIX_YEARS_AGO,
+          newestAnchor: SIX_YEARS_AGO,
+
           orphanRowsPruned: 0,
         },
       });
@@ -420,7 +421,8 @@ describe('F7 retention sweep (0310) — live Neon', () => {
         providerCopyKeptTransient: 0,
         providerCopyRetainedAtProcessor: 0,
         oldestAnchor: null,
-        newestAnchor: null,
+        newestAnchor: null,
+
         orphanRowsPruned: 0,
       },
     });
@@ -504,7 +506,8 @@ describe('F7 retention sweep (0310) — live Neon', () => {
           providerCopyKeptTransient: 1,
           providerCopyRetainedAtProcessor: 1,
           oldestAnchor: SEVEN_YEARS_AGO,
-          newestAnchor: SIX_YEARS_AGO,
+          newestAnchor: SIX_YEARS_AGO,
+
           orphanRowsPruned: 0,
         },
       });

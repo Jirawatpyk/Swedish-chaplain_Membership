@@ -1411,6 +1411,10 @@ async function restartAudienceBuild(
  * code when Resend sends no `name`. (`createContactImport` always imports into
  * an audience this tick created, so its 404 keeps the permanent rule.)
  */
+function isAudienceMissing(failure: GatewayFailure): boolean {
+  return !failure.retryable && failure.kind === 'permanent' && (failure.code === 'not_found' || failure.code === 'http_404');
+}
+
 /**
  * Spec 140 s2c (DL5b) — the `createBroadcast` failures that may have minted a
  * draft we never learnt the id of: the request may have reached Resend. A 429
@@ -1418,10 +1422,6 @@ async function restartAudienceBuild(
  */
 function isCreateUnconfirmed(subKind: string | undefined): boolean {
   return subKind === 'network' || subKind === 'timeout' || subKind === 'server_5xx';
-}
-
-function isAudienceMissing(failure: GatewayFailure): boolean {
-  return !failure.retryable && failure.kind === 'permanent' && (failure.code === 'not_found' || failure.code === 'http_404');
 }
 
 /**
