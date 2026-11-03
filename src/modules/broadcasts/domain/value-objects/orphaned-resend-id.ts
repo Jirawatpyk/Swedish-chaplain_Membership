@@ -42,10 +42,14 @@ export type OrphanReason = (typeof ORPHAN_REASONS)[number];
  * - `retained` — an unsent copy Resend will not delete (403, then the GET read
  *   `canceled` or `failed`);
  * - `handed` — Resend had accepted it for sending (403, then queued / sending /
- *   sent): a disclosure, RoPA residual 8c.
+ *   sent): a disclosure, RoPA residual 8c;
+ * - `superseded` (review round 2, code-review #2) — the id is held by a row
+ *   whose send went out normally (`sent` / `partially_sent` /
+ *   `partial_delivery_accepted`): an ordinary delivery, not erasure evidence.
+ *   Settled with no Resend call, never counted in the erasure fields, prunable.
  * Anything else leaves the row unsettled for the next run.
  */
-export const ORPHAN_OUTCOMES = ['deleted', 'absent', 'retained', 'handed'] as const;
+export const ORPHAN_OUTCOMES = ['deleted', 'absent', 'retained', 'handed', 'superseded'] as const;
 export type OrphanOutcome = (typeof ORPHAN_OUTCOMES)[number];
 
 /**
@@ -55,6 +59,13 @@ export type OrphanOutcome = (typeof ORPHAN_OUTCOMES)[number];
  * never pruned: it still names a copy at Resend.
  */
 export const ORPHAN_ROW_RETENTION_DAYS = 90;
+
+/**
+ * Review round 2 (pdpa L-3) — a `handed` row (the durable record of a
+ * disclosure) is pruned after this many years: the horizon of the 8c evidence
+ * (`audit_log.retention_years` = 5 for the broadcasts evidence rows).
+ */
+export const ORPHAN_HANDED_RETENTION_YEARS = 5;
 
 /**
  * How much older than `ORPHAN_ROW_RETENTION_DAYS` the retention sweep's cutoff

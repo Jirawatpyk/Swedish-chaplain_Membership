@@ -26,6 +26,7 @@ import {
   ORPHAN_OUTCOMES,
   ORPHAN_REASONS,
   ORPHAN_RESOURCE_TYPES,
+  ORPHAN_HANDED_RETENTION_YEARS,
   ORPHAN_PRUNE_SKEW_MARGIN_MS,
   ORPHAN_ROW_RETENTION_DAYS,
 } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
@@ -310,5 +311,42 @@ describe('spec 140 s2c — 0325 broadcast_orphaned_resend_ids', () => {
       tx.execute(sql`SELECT attempts, last_attempted_at FROM broadcast_orphaned_resend_ids WHERE resource_id = ${id}`),
     )) as unknown as Array<{ attempts: number; last_attempted_at: string | null }>;
     expect(rows).toEqual([{ attempts: 0, last_attempted_at: null }]);
+  });
+
+  /**
+   * Spec 140 s2c review round 2:
+   *   - [migration LOW] settled once, in the DB: a BEFORE UPDATE trigger
+   *     refuses a change of `settled_at` / `outcome` once the row is settled;
+   *   - [pdpa L-3] a `handed` row is pruned after ORPHAN_HANDED_RETENTION_YEARS;
+   *   - [code-review #2] `superseded` is an outcome, and it is prunable.
+   */
+  it('[migration LOW] re-settling a settled row is refused; attempts on it are still accepted', async () => {
+    const id = `rb-once-${randomUUID()}`;
+    await runInTenant(tenant.ctx, (tx: Tx) =>
+      tx.execute(insertSql(tenant.ctx.slug, { resourceId: id, settledAt: new Date(), outcome: 'deleted' })),
+    );
+    const where = sql`WHERE tenant_id = ${tenant.ctx.slug} AND resource_id = ${id}`;
+    expect(await attempt(tenant, sql`UPDATE broadcast_orphaned_resend_ids SET outcome = 'absent' ${where}`)).toBe('23514 (no constraint)');
+    expect(await attempt(tenant, sql`UPDATE broadcast_orphaned_resend_ids SET settled_at = now() ${where}`)).toBe('23514 (no constraint)');
+    expect(await attempt(tenant, sql`UPDATE broadcast_orphaned_resend_ids SET attempts = attempts + 1 ${where}`)).toBe('ok');
+  });
+
+  it('[pdpa L-3] the prune deletes a handed row past ORPHAN_HANDED_RETENTION_YEARS, keeps a younger one, and prunes an old superseded one', async () => {
+    const yearsAgo = new Date(Date.now() - (ORPHAN_HANDED_RETENTION_YEARS * 365 + 2) * DAY_MS);
+    const daysAgo = new Date(Date.now() - (ORPHAN_ROW_RETENTION_DAYS + 1) * DAY_MS);
+    const ids = { handedOld: `rb-ho-${randomUUID()}`, handedYoung: `rb-hy-${randomUUID()}`, superseded: `rb-ss-${randomUUID()}` };
+    await runInTenant(tenant.ctx, async (tx: Tx) => {
+      await tx.execute(insertSql(tenant.ctx.slug, { resourceId: ids.handedOld, createdAt: yearsAgo, settledAt: yearsAgo, outcome: 'handed' }));
+      await tx.execute(insertSql(tenant.ctx.slug, { resourceId: ids.handedYoung, createdAt: daysAgo, settledAt: daysAgo, outcome: 'handed' }));
+      await tx.execute(insertSql(tenant.ctx.slug, { resourceId: ids.superseded, createdAt: daysAgo, settledAt: daysAgo, outcome: 'superseded' }));
+    });
+    const cutoff = new Date(Date.now() - ORPHAN_ROW_RETENTION_DAYS * DAY_MS - ORPHAN_PRUNE_SKEW_MARGIN_MS);
+    await runInTenant(tenant.ctx, (tx: Tx) =>
+      tx.execute(sql`SELECT prune_orphaned_resend_ids(${tenant.ctx.slug}, ${cutoff.toISOString()}::timestamptz)`),
+    );
+    const left = (await runInTenant(tenant.ctx, (tx: Tx) =>
+      tx.execute(sql`SELECT resource_id FROM broadcast_orphaned_resend_ids WHERE resource_id IN (${ids.handedOld}, ${ids.handedYoung}, ${ids.superseded})`),
+    )) as unknown as Array<{ resource_id: string }>;
+    expect(left.map((r) => r.resource_id)).toEqual([ids.handedYoung]);
   });
 });
