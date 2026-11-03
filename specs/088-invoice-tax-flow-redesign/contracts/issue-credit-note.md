@@ -34,12 +34,22 @@ time; it does **not** move to payment).
   reason: string }`. `creditTotalSatang` is a numeric string (JSON has no bigint) coerced via
   `BigInt(...)` at the route boundary.
 - **Headers**: session cookie. Rate limit `f4:credit-note:{tenant}:{actor}` — 20 / 5 min.
+- **#66 `idempotencyKey`** (optional, uuid): one per ADMIN issue attempt; the admin form keeps it
+  (sessionStorage per invoice) until a definite answer. A repeat with the same key, invoice and
+  `creditTotalSatang` answers with the note already issued — no second §86/10 note, no second §87
+  number, no audit, no email. The same key for another invoice or amount → `concurrent_state_change`
+  (409). A malformed key → 400 `invalid_body`. Stored as `credit_notes.idempotency_key` (mig 0323,
+  partial UNIQUE per tenant; a lost race reconciles to the winner). Refund-origin notes never send it.
 
 ## Response `201`
 
 `serialiseCreditNote(creditNote)` fields **plus** a sibling `email_delivery` field
 (`CreditNoteEmailDelivery` — surfaces `skipped_no_recipient` when the buyer has no email). The CN
 DTO's reference fields point at the **RC receipt number** and the receipt's (payment) date.
+
+**#66 `replayed`** (boolean, sibling): `true` when the response is a note an earlier request
+already issued (same idempotency key, or same refund). A replay is still `201` and carries no
+`membership_end` (the end-membership step ran, or is covered by the hourly backstop, the first time).
 
 ## Preconditions
 

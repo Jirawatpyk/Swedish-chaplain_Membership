@@ -27,7 +27,7 @@
  * mock-deps pattern.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { issueCreditNote } from '@/modules/invoicing/application/use-cases/issue-credit-note';
+import { issueCreditNote, issueCreditNoteSchema } from '@/modules/invoicing/application/use-cases/issue-credit-note';
 import type { IssueCreditNoteDeps } from '@/modules/invoicing/application/use-cases/issue-credit-note';
 import {
   asInvoiceId,
@@ -1891,11 +1891,9 @@ describe('issueCreditNote — #66 idempotency key (admin notes)', () => {
     expect(insert).not.toHaveProperty('idempotencyKey');
   });
 
-  it('a malformed key is refused by the input schema', async () => {
-    const { deps } = depsWithKeyHit(null);
-    const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: 'not-a-uuid' });
-    expect(r.ok).toBe(false);
-    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+  it('a malformed key is refused by the input schema (the route parses with it)', () => {
+    expect(issueCreditNoteSchema.safeParse({ ...baseInput, idempotencyKey: 'not-a-uuid' }).success).toBe(false);
+    expect(issueCreditNoteSchema.safeParse({ ...baseInput, idempotencyKey: KEY }).success).toBe(true);
   });
 
   it('a lost race on the key index (23505 credit_notes_tenant_idempotency_key_uniq) reconciles to the winning note', async () => {

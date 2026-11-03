@@ -64,6 +64,11 @@ export interface CreditNoteRepo {
        * reconcile backstop.
        */
       readonly membershipEffect?: 'keep' | 'cancel_membership';
+      /**
+       * #66 — persists `credit_notes.idempotency_key`: the admin issue attempt
+       * this note answers. Omitted for refund-origin and keyless issues.
+       */
+      readonly idempotencyKey?: string;
     },
   ): Promise<CreditNote>;
 
@@ -82,6 +87,18 @@ export interface CreditNoteRepo {
     tx: unknown,
     tenantId: string,
     sourceRefundId: string,
+  ): Promise<CreditNote | null>;
+
+  /**
+   * #66 — the admin twin of `findBySourceRefundId`: the note (if any) already
+   * issued for `(tenant_id, idempotency_key)`. Same contract — on the caller's
+   * tx (under the invoice lock, or a fresh reconcile tx), at most one row (the
+   * partial unique index `credit_notes_tenant_idempotency_key_uniq`).
+   */
+  findByIdempotencyKey(
+    tx: unknown,
+    tenantId: string,
+    idempotencyKey: string,
   ): Promise<CreditNote | null>;
 
   /** Detail lookup (no tx — used by admin detail page + PDF route). */
