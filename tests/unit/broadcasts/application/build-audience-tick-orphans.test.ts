@@ -13,7 +13,7 @@
  *     timeout or a 5xx (never a 429, which created nothing, nor a permanent 4xx).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ok } from '@/lib/result';
+import { err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
@@ -58,6 +58,8 @@ interface Opts {
   readonly reread?: Partial<{ resendBroadcastId: string | null; status: string }> | 'throws';
   /** What each successive lease check answers; the last one repeats. Default always `held`. */
   readonly checks?: ReadonlyArray<'held' | 'lost' | 'expiring' | 'throws'>;
+  /** The resolver refuses: the audience grew past the ceiling. */
+  readonly resolveTooLarge?: boolean;
 }
 
 function harness(opts: Opts = {}) {
@@ -100,7 +102,10 @@ function harness(opts: Opts = {}) {
     tenantDisplayName: 'Test Chamber',
     locale: 'en' as const,
     brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
-    resolveRecipients: async () => ok({ recipients: RECIPIENTS, estimatedCount: RECIPIENTS.length, orphans: [], droppedByPreference: 0 }),
+    resolveRecipients: async () =>
+      opts.resolveTooLarge === true
+        ? err({ kind: 'broadcast_audience_too_large' as const, count: 99_999, cap: 900 })
+        : ok({ recipients: RECIPIENTS, estimatedCount: RECIPIENTS.length, orphans: [], droppedByPreference: 0 }),
     broadcastsRepo: {
       async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
         return fn(null);
@@ -442,5 +447,46 @@ describe('spec 140 s2c — the failTerminally choke point', () => {
     expect(h.events.filter((e) => e.startsWith('gw:deleteBroadcastOnce'))).toEqual(['gw:deleteBroadcastOnce:rb-draft']);
     expect(h.events).not.toContain('reread');
     expect(h.events.filter((e) => e.startsWith('check:'))).toHaveLength(1);
+  });
+});
+
+/**
+ * Spec 140 s2c review round 1:
+ *   - code-review #5 — a handed draft at the choke point is the mail going
+ *     out: the row is caught up to `sending` through the existing
+ *     `catchUpHanded` (the re-read row), instead of a bare skip that would
+ *     leave it `approved` and loop;
+ *   - reliability M-1 — `onResolveFailure` passes every non-terminal stop
+ *     through (`lease_expiring`, the catch-up), so the cron does not count
+ *     `permanent_failed` for a row nothing terminal was written to;
+ *   - reliability nit — `terminal_reread_failed` names its step.
+ */
+describe('spec 140 s2c review round 1 — the choke point, continued', () => {
+  const TERMINAL = { row: TICK2_ROW, importStatus: 'failed', reread: { resendBroadcastId: 'rb-late' } } as const;
+
+  it('a handed draft at the choke point catches the row up to sending', async () => {
+    const h = harness({ ...TERMINAL, deleteOnce: 'forbidden', retrieveOnce: { kind: 'present', status: 'queued' } });
+    const res = await h.run();
+    expect(h.events).toContain('transition:sending');
+    expect(h.events).not.toContain('transition:failed_to_dispatch');
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'sent', resendBroadcastId: 'rb-late' });
+    expect(h.memberEmails).toEqual([]);
+  });
+
+  it.each([
+    ['a lease running short', { checks: ['expiring'] as const }, { kind: 'lease_expiring', step: 'terminal_reclaim' }],
+    ['a handed draft (caught up)', { deleteOnce: 'forbidden' as const, retrieveOnce: { kind: 'present' as const, status: 'sent' } }, { kind: 'sent' }],
+  ])('onResolveFailure passes %s through, not the resolver kind', async (_label, extra, expected) => {
+    const h = harness({ reread: { resendBroadcastId: 'rb-late' }, resolveTooLarge: true, ...extra });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toMatchObject(expected);
+    expect(h.events).not.toContain('transition:failed_to_dispatch');
+  });
+
+  it('terminal_reread_failed names its step (terminal_reclaim)', async () => {
+    const h = harness({ ...TERMINAL, reread: 'throws' });
+    await h.run();
+    const line = vi.mocked(logger.warn).mock.calls.find((c) => c[1] === 'broadcasts.audience_import.terminal_reread_failed');
+    expect(line?.[0]).toMatchObject({ step: 'terminal_reclaim' });
   });
 });
