@@ -1,0 +1,256 @@
+/**
+ * Spec 140 s2c (DL6) — the orphan drain: `cleanupOrphanedAudiences`' second
+ * pass, after the terminal-audience loop (plan.md § Slice 2c, item 5).
+ *
+ *   - broadcast rows: `deleteBroadcastOnce` — deleted / absent settle as such;
+ *     forbidden → ONE `retrieveBroadcastOnce`: canceled / failed → `retained`,
+ *     queued / sending / sent → `handed`; anything else is left for the next run;
+ *   - audience rows: `deleteAudience` — resolved (a 404 included) → `deleted`,
+ *     a throw is left;
+ *   - the grace period, skipped when the requester is erased [P H-2];
+ *   - at most `ORPHAN_DRAIN_LIMIT` rows, `ORPHAN_DRAIN_CONCURRENCY` at a time,
+ *     and no chunk starts after `ORPHAN_DRAIN_STOP_MS`, inside the route's
+ *     `maxDuration` (`CLEANUP_MAX_DURATION_MS`);
+ *   - log hygiene: `err: errKind(e)` + `tenantId`, never `e.message`.
+ * The SQL that keeps `create_unconfirmed` and live-held ids out of the list is
+ * the repo's (`broadcast-orphans-repo.test.ts`, `orphan-drain.test.ts`).
+ */
+import { readFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '@/lib/logger';
+import { asTenantContext } from '@/modules/tenants';
+import {
+  CLEANUP_MAX_DURATION_MS,
+  ORPHAN_DRAIN_CONCURRENCY,
+  ORPHAN_DRAIN_LIMIT,
+  ORPHAN_DRAIN_STOP_MS,
+  cleanupOrphanedAudiences,
+} from '@/modules/broadcasts/application/use-cases/cleanup-orphaned-audiences';
+import { RESEND_CALL_TIMEOUT_MS } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import type { OrphanedResendIdRef } from '@/modules/broadcasts/application/ports/broadcast-orphans-repo';
+
+const tenant = asTenantContext('test-tenant');
+const NOW = new Date('2026-11-03T12:00:00Z');
+const GRACE_MS = 60 * 60 * 1000;
+const OLD = new Date(NOW.getTime() - 2 * GRACE_MS);
+const YOUNG = new Date(NOW.getTime() - 60_000);
+const ROUTE = 'src/app/api/cron/broadcasts/cleanup-audiences/route.ts';
+
+type DeleteOnce = 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other';
+
+function orphan(n: number, patch: Partial<OrphanedResendIdRef> = {}): OrphanedResendIdRef {
+  return {
+    orphanId: `o-${n}`,
+    broadcastId: `b-${n}`,
+    requestedByMemberId: 'm-live',
+    resourceType: 'broadcast',
+    resourceId: `rb-${n}`,
+    reason: 'attach_lost',
+    createdAt: OLD,
+    outcome: null,
+    ...patch,
+  };
+}
+
+interface Opts {
+  readonly orphans: ReadonlyArray<OrphanedResendIdRef>;
+  readonly deleteOnce?: Record<string, DeleteOnce>;
+  readonly retrieveOnce?: Record<string, { kind: 'present'; status: string } | { kind: 'not_found' } | { kind: 'retryable' }>;
+  readonly deleteAudienceThrows?: ReadonlySet<string>;
+  readonly listThrows?: boolean;
+  readonly settleThrows?: boolean;
+  readonly erased?: Record<string, 'erased' | 'live' | 'throws'>;
+  /** The audience pass's candidates (terminal rows still holding an audience). */
+  readonly terminal?: ReadonlyArray<{ broadcastId: string; resendAudienceId: string }>;
+  readonly terminalListThrows?: boolean;
+  /** ms the clock advances on every Resend call. */
+  readonly stepMs?: number;
+}
+
+function harness(opts: Opts) {
+  let nowMs = NOW.getTime();
+  const settled: Array<[string, string]> = [];
+  const calls: string[] = [];
+  const listLimits: number[] = [];
+  let inFlight = 0;
+  let peak = 0;
+  const step = async (label: string) => {
+    calls.push(label);
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    await Promise.resolve();
+    nowMs += opts.stepMs ?? 0;
+    inFlight -= 1;
+  };
+  const deps = {
+    tenant,
+    clock: { now: () => new Date(nowMs) },
+    broadcastsRepo: {
+      async listTerminalBroadcastsWithLiveAudience() {
+        if (opts.terminalListThrows === true) throw new Error('Neon: password authentication failed for user x');
+        return opts.terminal ?? [];
+      },
+      async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+        return fn(null);
+      },
+      async markAudienceDeletedInTx() {},
+    },
+    orphans: {
+      async listDrainableOrphans(limit: number) {
+        listLimits.push(limit);
+        if (opts.listThrows === true) throw new Error('Neon: password authentication failed for user x');
+        return opts.orphans;
+      },
+      async settleOrphan(orphanId: string, outcome: string) {
+        if (opts.settleThrows === true) throw new Error('57P01');
+        settled.push([orphanId, outcome]);
+        return true;
+      },
+    },
+    membersBridge: {
+      async getMemberErasedAt(_t: unknown, memberId: string) {
+        const e = opts.erased?.[memberId] ?? 'live';
+        if (e === 'throws') throw new Error('members read failed');
+        return { erasedAt: e === 'erased' ? new Date('2026-11-01T00:00:00Z') : null };
+      },
+    },
+    broadcastsGateway: {
+      async deleteAudience(id: string) {
+        await step(`deleteAudience:${id}`);
+        if (opts.deleteAudienceThrows?.has(id) === true) throw { kind: 'retryable', subKind: 'timeout', reason: 'aborted' };
+      },
+      async deleteBroadcastOnce(id: string) {
+        await step(`deleteBroadcastOnce:${id}`);
+        return { kind: opts.deleteOnce?.[id] ?? 'deleted' };
+      },
+      async retrieveBroadcastOnce(id: string) {
+        await step(`retrieveBroadcastOnce:${id}`);
+        return opts.retrieveOnce?.[id] ?? { kind: 'not_found' as const };
+      },
+    },
+  };
+  const run = () => cleanupOrphanedAudiences(deps as never, { graceMs: GRACE_MS, limit: 50 });
+  return { run, settled, calls, listLimits, peak: () => peak };
+}
+
+let warn: ReturnType<typeof vi.spyOn>;
+let error: ReturnType<typeof vi.spyOn>;
+beforeEach(() => {
+  vi.spyOn(logger, 'info').mockImplementation(() => undefined as never);
+  warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+  error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+});
+afterEach(() => vi.restoreAllMocks());
+
+describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
+  it.each([
+    ['deleted', undefined, 'deleted'],
+    ['absent', undefined, 'absent'],
+    ['forbidden', { kind: 'present', status: 'cancelled' }, 'retained'],
+    ['forbidden', { kind: 'present', status: 'failed' }, 'retained'],
+    ['forbidden', { kind: 'present', status: 'queued' }, 'handed'],
+    ['forbidden', { kind: 'present', status: 'sent' }, 'handed'],
+  ] as const)('a broadcast row whose DELETE answers %s (GET %o) settles %s', async (del, get, outcome) => {
+    const h = harness({
+      orphans: [orphan(1)],
+      deleteOnce: { 'rb-1': del },
+      ...(get === undefined ? {} : { retrieveOnce: { 'rb-1': get } }),
+    });
+    const res = await h.run();
+    expect(h.settled).toEqual([['o-1', outcome]]);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 1, settled: 1, undecided: 0 });
+  });
+
+  it.each([
+    ['retryable', undefined],
+    ['other', undefined],
+    ['forbidden', { kind: 'present', status: 'draft' }],
+    ['forbidden', { kind: 'not_found' }],
+    ['forbidden', { kind: 'retryable' }],
+  ] as const)('a broadcast row whose DELETE answers %s (GET %o) is left for the next run', async (del, get) => {
+    const h = harness({
+      orphans: [orphan(1)],
+      deleteOnce: { 'rb-1': del },
+      ...(get === undefined ? {} : { retrieveOnce: { 'rb-1': get } }),
+    });
+    const res = await h.run();
+    expect(h.settled).toEqual([]);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 1, settled: 0, undecided: 1 });
+  });
+
+  it('an audience row: deleteAudience resolves → deleted; a throw is left', async () => {
+    const h = harness({
+      orphans: [orphan(1, { resourceType: 'audience', resourceId: 'aud-1', reason: 'audience_leaked' }), orphan(2, { resourceType: 'audience', resourceId: 'aud-2', reason: 'audience_leaked' })],
+      deleteAudienceThrows: new Set(['aud-2']),
+    });
+    await h.run();
+    expect(h.settled).toEqual([['o-1', 'deleted']]);
+    expect(h.calls.filter((c) => c.startsWith('deleteBroadcastOnce'))).toEqual([]);
+  });
+
+  it('[P H-2] a row inside the grace is drained only when its requester is erased; a failed read waits', async () => {
+    const h = harness({
+      orphans: [
+        orphan(1, { createdAt: YOUNG, requestedByMemberId: 'm-live' }),
+        orphan(2, { createdAt: YOUNG, requestedByMemberId: 'm-erased' }),
+        orphan(3, { createdAt: YOUNG, requestedByMemberId: 'm-unreadable' }),
+        orphan(4, { createdAt: OLD, requestedByMemberId: 'm-live' }),
+      ],
+      erased: { 'm-erased': 'erased', 'm-unreadable': 'throws' },
+    });
+    const res = await h.run();
+    expect(h.settled.map(([id]) => id).sort()).toEqual(['o-2', 'o-4']);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 4, settled: 2, waiting: 2 });
+  });
+
+  it(`reads at most ORPHAN_DRAIN_LIMIT (${ORPHAN_DRAIN_LIMIT}) rows and settles them ORPHAN_DRAIN_CONCURRENCY (${ORPHAN_DRAIN_CONCURRENCY}) at a time`, async () => {
+    const h = harness({ orphans: Array.from({ length: 12 }, (_, i) => orphan(i + 1)) });
+    await h.run();
+    expect(h.listLimits).toEqual([ORPHAN_DRAIN_LIMIT]);
+    expect(ORPHAN_DRAIN_LIMIT).toBe(20);
+    expect(ORPHAN_DRAIN_CONCURRENCY).toBe(5);
+    expect(h.peak()).toBe(ORPHAN_DRAIN_CONCURRENCY);
+    expect(h.settled).toHaveLength(12);
+  });
+
+  it('no chunk starts after ORPHAN_DRAIN_STOP_MS: the rest wait for the next run', async () => {
+    // Each Resend call moves the clock past the stop: the first chunk runs, the second does not.
+    const h = harness({ orphans: Array.from({ length: 12 }, (_, i) => orphan(i + 1)), stepMs: ORPHAN_DRAIN_STOP_MS });
+    const res = await h.run();
+    expect(h.settled).toHaveLength(ORPHAN_DRAIN_CONCURRENCY);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 12, settled: ORPHAN_DRAIN_CONCURRENCY, deferred: 12 - ORPHAN_DRAIN_CONCURRENCY });
+  });
+
+  it('the stop leaves room for one chunk inside the route maxDuration (CLEANUP_MAX_DURATION_MS)', () => {
+    const m = /export const maxDuration = (\d+);\r?\n/.exec(readFileSync(ROUTE, 'utf8'));
+    expect(Number(m?.[1]) * 1000).toBe(CLEANUP_MAX_DURATION_MS);
+    // One in-flight chunk: a DELETE and a GET at RESEND_CALL_TIMEOUT_MS each, plus 5 s for the settle.
+    expect(ORPHAN_DRAIN_STOP_MS + 2 * RESEND_CALL_TIMEOUT_MS + 5_000).toBeLessThanOrEqual(CLEANUP_MAX_DURATION_MS);
+  });
+
+  it('a list that fails is logged (err: errKind, tenantId) and the audience pass still answers ok', async () => {
+    const h = harness({ orphans: [], listThrows: true });
+    const res = await h.run();
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 0, listFailed: true });
+    const line = error.mock.calls.find((c) => c[1] === 'broadcasts.orphan_drain.list_failed');
+    expect(line?.[0]).toEqual({ tenantId: tenant.slug, err: 'Error' });
+  });
+
+  it('a settle CAS that throws is undecided and logged with ids only', async () => {
+    const h = harness({ orphans: [orphan(1)], settleThrows: true });
+    const res = await h.run();
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ settled: 0, undecided: 1 });
+    const line = warn.mock.calls.find((c) => c[1] === 'broadcasts.orphan_drain.settle_failed');
+    expect(line?.[0]).toMatchObject({ tenantId: tenant.slug, orphanId: 'o-1', resourceType: 'broadcast', resourceId: 'rb-1', err: 'Error' });
+    expect(line?.[0]).not.toHaveProperty('reason');
+  });
+
+  it('log hygiene — the audience pass logs err: errKind(e) + tenantId, never the message; its list failure answers the class', async () => {
+    const h = harness({ orphans: [], terminal: [{ broadcastId: 'bc-1', resendAudienceId: 'aud-t1' }], deleteAudienceThrows: new Set(['aud-t1']) });
+    await h.run();
+    const line = warn.mock.calls.find((c) => c[1] === 'broadcasts.audience_cleanup.delete_failed');
+    expect(line?.[0]).toEqual({ tenantId: tenant.slug, broadcastId: 'bc-1', err: 'unknown' });
+    const failed = await harness({ orphans: [], terminalListThrows: true }).run();
+    expect(failed.ok ? null : failed.error).toEqual({ kind: 'cleanup.server_error', message: 'Error' });
+  });
+});
