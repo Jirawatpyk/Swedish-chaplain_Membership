@@ -146,7 +146,7 @@ function fakeResend(opts: { parkSend?: ReturnType<typeof gate>; parkDelete?: Ret
       calls.push('retrieveBroadcastOnce');
       const s = state.get(id);
       if (s === undefined || s === 'deleted') return { kind: 'not_found' as const };
-      return { kind: 'present' as const, status: s };
+      return { kind: 'present' as const, status: s, sentAt: null };
     },
     async deleteBroadcastOnce(id: string) {
       calls.push('deleteBroadcastOnce');

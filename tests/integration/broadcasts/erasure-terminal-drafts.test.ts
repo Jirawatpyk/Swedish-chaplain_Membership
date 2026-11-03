@@ -77,7 +77,7 @@ function fakeResend(opts: { retryableDeletes?: number } = {}) {
       const s = state.get(id);
       if (s === undefined || s === 'deleted') return { kind: 'not_found' as const };
       // The reader maps Resend's one-L `canceled` to our `cancelled`.
-      return { kind: 'present' as const, status: s === 'canceled' ? ('cancelled' as const) : s };
+      return { kind: 'present' as const, status: s === 'canceled' ? ('cancelled' as const) : s, sentAt: null };
     },
     async deleteAudience(id: string) {
       audienceDeletes.push(id);

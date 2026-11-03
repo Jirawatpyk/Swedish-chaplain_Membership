@@ -5264,7 +5264,7 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
         const { audit, repo, gw, deps } = standingDeps(makeFakeSendStanding({ halted: ['m-1'] }), withDraft(), { retrieveStatus: 'draft' });
         vi.spyOn(gw.port, 'deleteBroadcastOnce').mockResolvedValue({ kind: outcome });
         // After a 403 the probe still reads a draft: not a sibling's send.
-        vi.spyOn(gw.port, 'retrieveBroadcastOnce').mockResolvedValue({ kind: 'present', status: 'draft' });
+        vi.spyOn(gw.port, 'retrieveBroadcastOnce').mockResolvedValue({ kind: 'present', status: 'draft', sentAt: null });
 
         const result = await dispatchScheduledBroadcast(deps, baseInput);
 
@@ -5285,7 +5285,7 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
         const warnSpy = vi.spyOn(logger, 'warn');
         const { audit, repo, gw, email, deps } = standingDeps(makeFakeSendStanding({ halted: ['m-1'] }), withDraft(), { retrieveStatus: 'draft' });
         vi.spyOn(gw.port, 'deleteBroadcastOnce').mockResolvedValue({ kind: 'forbidden' });
-        vi.spyOn(gw.port, 'retrieveBroadcastOnce').mockResolvedValue({ kind: 'present', status });
+        vi.spyOn(gw.port, 'retrieveBroadcastOnce').mockResolvedValue({ kind: 'present', status, sentAt: null });
 
         const result = await dispatchScheduledBroadcast(deps, baseInput);
 

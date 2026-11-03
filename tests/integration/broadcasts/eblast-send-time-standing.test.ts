@@ -407,7 +407,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     const gw = allowingGateway({
       retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
       deleteBroadcastOnce: { kind: 'forbidden' },
-      retrieveBroadcastOnce: { kind: 'present', status: 'sent' },
+      retrieveBroadcastOnce: { kind: 'present', status: 'sent', sentAt: null },
     });
     const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
 
@@ -462,7 +462,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     const gw = allowingGateway({
       retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
       deleteBroadcastOnce: { kind: 'forbidden' },
-      retrieveBroadcastOnce: { kind: 'present', status: 'queued' },
+      retrieveBroadcastOnce: { kind: 'present', status: 'queued', sentAt: null },
     });
     const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted());
 

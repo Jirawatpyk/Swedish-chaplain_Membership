@@ -241,10 +241,10 @@ export type RetrieveBroadcastOnceOutcome =
       readonly status: RetrievedBroadcastResource['status'] | 'failed';
       /**
        * Spec 140 s2c review round 2 (reliability nit) — the body's `sent_at`
-       * when it is a string, else `null`. The adapter always sets it; it is
-       * optional so a test double may leave it out (read as `null`).
+       * when it is a string, else `null`. The adapter always sets it; review
+       * round 3 (code-review #6) made it required, so a double must too.
        */
-      readonly sentAt?: string | null;
+      readonly sentAt: string | null;
     }
   | { readonly kind: 'not_found' }
   | { readonly kind: 'retryable' }

@@ -15,7 +15,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { settleOrphanAtResend } from '@/modules/broadcasts/application/use-cases/_settle-orphan-at-resend';
 import { REPROBE_PAUSE_MS } from '@/modules/broadcasts/application/use-cases/_reprobe-pause';
 
-type Probe = { kind: 'present'; status: string } | { kind: 'not_found' } | { kind: 'retryable' };
+type Probe = { kind: 'present'; status: string; sentAt?: string | null } | { kind: 'not_found' } | { kind: 'retryable' };
 
 function gateway(deleted: string, probe: Probe) {
   const calls: string[] = [];
@@ -28,7 +28,8 @@ function gateway(deleted: string, probe: Probe) {
       }),
       retrieveBroadcastOnce: vi.fn(async (id: string) => {
         calls.push(`get:${id}`);
-        return probe;
+        // Review round 3 (code-review #6) — `sentAt` is required on present.
+        return probe.kind === 'present' ? { sentAt: null, ...probe } : probe;
       }),
       deleteAudience: vi.fn(async (id: string) => {
         calls.push(`deleteAudience:${id}`);

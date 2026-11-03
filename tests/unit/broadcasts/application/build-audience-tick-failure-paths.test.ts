@@ -778,7 +778,7 @@ function makeDeps(opts: {
         },
         async retrieveBroadcastOnce() {
           rec.gatewayCalls.push('retrieveBroadcastOnce');
-          return { kind: 'present' as const, status: opts.retrieveOnceStatus ?? ('draft' as const) };
+          return { kind: 'present' as const, status: opts.retrieveOnceStatus ?? ('draft' as const), sentAt: null };
         },
       },
       audit: {

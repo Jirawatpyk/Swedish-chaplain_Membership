@@ -32,7 +32,7 @@ const TICK2_ROW = { resendAudienceId: 'aud-1', audienceImportId: 'imp-1', audien
 
 type DepsWithEveryPort = { [K in keyof BuildAudienceTickDeps]: unknown };
 type DeleteOnce = 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other';
-type RetrieveOnce = { kind: 'present'; status: string } | { kind: 'not_found' } | { kind: 'retryable' };
+type RetrieveOnce = { kind: 'present'; status: string; sentAt?: string | null } | { kind: 'not_found' } | { kind: 'retryable' };
 
 interface Opts {
   readonly row?: Partial<{
@@ -214,7 +214,9 @@ function harness(opts: Opts = {}) {
       },
       async retrieveBroadcastOnce(id: string) {
         events.push(`gw:retrieveBroadcastOnce:${id}`);
-        return opts.retrieveOnce ?? { kind: 'not_found' as const };
+        // Review round 3 (code-review #6) — `sentAt` is required on present.
+        const r = opts.retrieveOnce ?? { kind: 'not_found' as const };
+        return r.kind === 'present' ? { sentAt: null, ...r } : r;
       },
     },
     orphans: {
@@ -520,7 +522,7 @@ describe('spec 140 s2c review round 2 — the choke point', () => {
 
   it("[reliability nit] a handed catch-up at the choke point carries the GET's sent_at", async () => {
     const sentAt = '2026-11-03T10:00:00.000Z';
-    const h = harness({ ...TERMINAL, deleteOnce: 'forbidden', retrieveOnce: { kind: 'present', status: 'sent', sentAt } as never });
+    const h = harness({ ...TERMINAL, deleteOnce: 'forbidden', retrieveOnce: { kind: 'present', status: 'sent', sentAt } });
     await h.run();
     const started = h.audits.find((a) => a.eventType === 'broadcast_send_started');
     expect(started?.payload).toMatchObject({ actualSendAt: sentAt });

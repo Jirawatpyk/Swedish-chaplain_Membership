@@ -248,7 +248,7 @@ describe('deleteDraftBeforeStandingRefusal (spec 140 s1 ED4, review round 1)', (
     retrieveBroadcastOnce: vi.fn(async () => {
       if (probe === 'throws') throw new Error('a fake that breaks the never-throws contract');
       if (probe === 'not_found' || probe === 'retryable' || probe === 'other') return { kind: probe };
-      return { kind: 'present' as const, status: probe };
+      return { kind: 'present' as const, status: probe, sentAt: null };
     }),
   });
   const draft = { resendBroadcastId: 'rb-1', probedStatus: 'draft' as const };

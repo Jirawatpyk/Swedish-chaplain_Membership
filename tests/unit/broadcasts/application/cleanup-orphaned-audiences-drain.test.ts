@@ -58,7 +58,7 @@ function orphan(n: number, patch: Partial<OrphanedResendIdRef> = {}): OrphanedRe
 interface Opts {
   readonly orphans: ReadonlyArray<OrphanedResendIdRef>;
   readonly deleteOnce?: Record<string, DeleteOnce>;
-  readonly retrieveOnce?: Record<string, { kind: 'present'; status: string } | { kind: 'not_found' } | { kind: 'retryable' }>;
+  readonly retrieveOnce?: Record<string, { kind: 'present'; status: string; sentAt?: string | null } | { kind: 'not_found' } | { kind: 'retryable' }>;
   readonly deleteAudienceThrows?: ReadonlySet<string>;
   readonly listThrows?: boolean;
   /** Review round 3 (code-review #2) — only the in-grace-only list throws. */
@@ -157,7 +157,9 @@ function harness(opts: Opts) {
       },
       async retrieveBroadcastOnce(id: string) {
         await step(`retrieveBroadcastOnce:${id}`);
-        return opts.retrieveOnce?.[id] ?? { kind: 'not_found' as const };
+        // Review round 3 (code-review #6) — `sentAt` is required on present.
+        const r = opts.retrieveOnce?.[id] ?? { kind: 'not_found' as const };
+        return r.kind === 'present' ? { sentAt: null, ...r } : r;
       },
     },
     // Review round 2 (code-review #4) — the pause before a 404's confirming GET, recorded.

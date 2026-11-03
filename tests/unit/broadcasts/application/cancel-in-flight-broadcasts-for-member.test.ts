@@ -202,7 +202,7 @@ function makeDeps(overrides: {
       const probe = overrides.probe ?? 'sent';
       if (probe === 'throws') throw new Error('a fake that breaks the never-throws contract');
       if (probe === 'not_found' || probe === 'retryable' || probe === 'other') return { kind: probe };
-      return { kind: 'present' as const, status: probe };
+      return { kind: 'present' as const, status: probe, sentAt: null };
     }),
   };
   // Review round 2 (code-review #1) — the pause between a DELETE 404 and its
