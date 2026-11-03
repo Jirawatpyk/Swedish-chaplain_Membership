@@ -304,7 +304,8 @@ describe('F7 retention sweep (0310) — live Neon', () => {
           providerCopyKeptTransient: 0,
           providerCopyRetainedAtProcessor: 0,
           oldestAnchor: SIX_YEARS_AGO,
-          newestAnchor: SIX_YEARS_AGO,
+          newestAnchor: SIX_YEARS_AGO,
+          orphanRowsPruned: 0,
         },
       });
 
@@ -419,7 +420,8 @@ describe('F7 retention sweep (0310) — live Neon', () => {
         providerCopyKeptTransient: 0,
         providerCopyRetainedAtProcessor: 0,
         oldestAnchor: null,
-        newestAnchor: null,
+        newestAnchor: null,
+        orphanRowsPruned: 0,
       },
     });
     const runRows = (await db.execute(sql`
@@ -502,7 +504,8 @@ describe('F7 retention sweep (0310) — live Neon', () => {
           providerCopyKeptTransient: 1,
           providerCopyRetainedAtProcessor: 1,
           oldestAnchor: SEVEN_YEARS_AGO,
-          newestAnchor: SIX_YEARS_AGO,
+          newestAnchor: SIX_YEARS_AGO,
+          orphanRowsPruned: 0,
         },
       });
       // Both copies of the confirmed row were deleted while the row still existed.
@@ -549,4 +552,40 @@ describe('F7 retention sweep (0310) — live Neon', () => {
     },
     120_000,
   );
+
+  /**
+   * Spec 140 s2c [P M-1] — the composed sweep prunes the orphaned Resend id
+   * record through `prune_orphaned_resend_ids`: an old settled row goes, an old
+   * UNSETTLED row with an id stays (it still names a copy at Resend), and
+   * tenant B's old settled row is not touched.
+   */
+  it('[P M-1] the sweep prunes old settled orphan rows of its own tenant only, and keeps an unsettled one', async () => {
+    const old = new Date(NOW.getTime() - 120 * 24 * 60 * 60 * 1000);
+    const ids = { settled: `rb-prune-${randomUUID()}`, unsettled: `rb-keep-${randomUUID()}`, otherTenant: `rb-b-${randomUUID()}` };
+    const insert = (t: TestTenant, resourceId: string, settled: boolean) =>
+      runInTenant(t.ctx, (tx: Tx) =>
+        tx.execute(sql`
+          INSERT INTO broadcast_orphaned_resend_ids
+            (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at, settled_at, outcome)
+          VALUES (${t.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'broadcast', ${resourceId}, 'attach_lost',
+                  ${old.toISOString()}::timestamptz,
+                  ${settled ? old.toISOString() : null}::timestamptz, ${settled ? 'deleted' : null})`),
+      );
+    await insert(tenantA, ids.settled, true);
+    await insert(tenantA, ids.unsettled, false);
+    await insert(tenantB, ids.otherTenant, true);
+
+    const result = await sweepExpiredBroadcasts({
+      ...makeSweepExpiredBroadcastsDeps(tenantA.ctx.slug, `retention-it-prune-${randomUUID()}`),
+      broadcastsGateway: noResendCall,
+      clock: { now: () => new Date() },
+    });
+    expect(result.ok ? result.value.orphanRowsPruned : null).toBe(1);
+    const left = async (t: TestTenant) =>
+      ((await runInTenant(t.ctx, (tx: Tx) =>
+        tx.execute(sql`SELECT resource_id FROM broadcast_orphaned_resend_ids WHERE tenant_id = ${t.ctx.slug}`),
+      )) as unknown as Array<{ resource_id: string }>).map((r) => r.resource_id);
+    expect(await left(tenantA)).toEqual([ids.unsettled]);
+    expect(await left(tenantB)).toContain(ids.otherTenant);
+  });
 });
