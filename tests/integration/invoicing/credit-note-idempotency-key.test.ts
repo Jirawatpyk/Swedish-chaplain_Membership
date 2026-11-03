@@ -111,6 +111,33 @@ const SNAP_MEMBER = {
 };
 
 /** A `paid` membership invoice paid by bank transfer (no online payment to guard). */
+/** A distinct sequence per seeded invoice: `invoices_tenant_fiscal_seq_unique` (R123). */
+let seedSequence = 0;
+
+/** A Result carries bigint satang, which plain JSON.stringify cannot print (R123). */
+function show(value: unknown): string {
+  return JSON.stringify(value, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
+}
+
+/**
+ * The whole message chain of a rejection: drizzle wraps a PG error as "Failed
+ * query: …" and keeps the trigger's RAISE text on `cause` (R123).
+ */
+async function rejectionText(promise: Promise<unknown>): Promise<string> {
+  try {
+    await promise;
+  } catch (e) {
+    const parts: string[] = [];
+    let current: unknown = e;
+    while (current instanceof Error) {
+      parts.push(current.message);
+      current = current.cause;
+    }
+    return parts.join(' | ');
+  }
+  throw new Error('expected the statement to be refused');
+}
+
 async function seedPaidInvoice(tenant: TestTenant, user: TestUser, planId: string): Promise<string> {
   const invoiceId = randomUUID();
   const memberId = randomUUID();
@@ -135,7 +162,7 @@ async function seedPaidInvoice(tenant: TestTenant, user: TestUser, planId: strin
       pdfDocKind: 'invoice',
       receiptPdfStatus: 'rendered',
       fiscalYear: FISCAL_YEAR,
-      sequenceNumber: 1,
+      sequenceNumber: ++seedSequence,
       documentNumber: `IDK-2026-${String(Math.floor(Math.random() * 900000) + 100000)}`,
       issueDate: '2026-04-15',
       dueDate: '2026-05-14',
@@ -284,7 +311,7 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
     const before = await readCreditNoteSeq(tenant);
     const r1 = await issue(tenant, invoiceId, key);
     const r2 = await issue(tenant, invoiceId, key);
-    expect(r1.ok && r2.ok, JSON.stringify([r1, r2])).toBe(true);
+    expect(r1.ok && r2.ok, show([r1, r2])).toBe(true);
     if (!r1.ok || !r2.ok) return;
     expect(r1.value.replayed).toBe(false);
     expect(r2.value.replayed).toBe(true);
@@ -306,7 +333,7 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
     const key = randomUUID();
     const before = await readCreditNoteSeq(tenant);
     const [a, b] = await Promise.all([issue(tenant, invoiceId, key), issue(tenant, invoiceId, key)]);
-    expect(a.ok && b.ok, JSON.stringify([a, b])).toBe(true);
+    expect(a.ok && b.ok, show([a, b])).toBe(true);
     if (!a.ok || !b.ok) return;
     expect(a.value.creditNote.creditNoteId).toBe(b.value.creditNote.creditNoteId);
     expect([a.value.replayed, b.value.replayed].sort()).toEqual([false, true]);
@@ -338,13 +365,15 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
     const r = await issue(tenant, invoiceId, randomUUID());
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    await expect(
-      runInTenant(tenant.ctx, (tx) =>
-        tx.execute(
-          sql`UPDATE credit_notes SET idempotency_key = ${randomUUID()} WHERE tenant_id = ${tenant.ctx.slug} AND credit_note_id = ${r.value.creditNote.creditNoteId}`,
+    expect(
+      await rejectionText(
+        runInTenant(tenant.ctx, (tx) =>
+          tx.execute(
+            sql`UPDATE credit_notes SET idempotency_key = ${randomUUID()} WHERE tenant_id = ${tenant.ctx.slug} AND credit_note_id = ${r.value.creditNote.creditNoteId}`,
+          ),
         ),
       ),
-    ).rejects.toThrow(/immutable/);
+    ).toMatch(/immutable/);
   }, 60_000);
 
   // #728 review (Thai-tax M-1, round 2) — deterministic: each attempt's
@@ -416,7 +445,7 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
         }),
       ),
     );
-    expect(results.filter((r) => r.ok).length, JSON.stringify(results)).toBe(1);
+    expect(results.filter((r) => r.ok).length, show(results)).toBe(1);
     const loserIdx = results.findIndex((r) => !r.ok);
     const loser = results[loserIdx];
     if (loser && !loser.ok) expect(loser.error.code).toBe('concurrent_state_change');
@@ -455,7 +484,7 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
       });
     const r1 = await send();
     const r2 = await send();
-    expect(r1.ok && r2.ok, JSON.stringify([r1, r2])).toBe(true);
+    expect(r1.ok && r2.ok, show([r1, r2])).toBe(true);
     if (!r1.ok || !r2.ok) return;
     expect(r2.value.replayed).toBe(true);
     expect(r2.value.creditNote.creditNoteId).toBe(r1.value.creditNote.creditNoteId);
@@ -468,21 +497,23 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
     const r = await issue(tenant, invoiceId, randomUUID());
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    await expect(
-      runInTenant(tenant.ctx, async (tx) => {
-        await tx.execute(sql`SET LOCAL app.allow_pii_redaction = 'true'`);
-        await tx.execute(
-          sql`UPDATE credit_notes SET idempotency_key = ${randomUUID()} WHERE tenant_id = ${tenant.ctx.slug} AND credit_note_id = ${r.value.creditNote.creditNoteId}`,
-        );
-      }),
-    ).rejects.toThrow(/only member_identity_snapshot may change/);
+    expect(
+      await rejectionText(
+        runInTenant(tenant.ctx, async (tx) => {
+          await tx.execute(sql`SET LOCAL app.allow_pii_redaction = 'true'`);
+          await tx.execute(
+            sql`UPDATE credit_notes SET idempotency_key = ${randomUUID()} WHERE tenant_id = ${tenant.ctx.slug} AND credit_note_id = ${r.value.creditNote.creditNoteId}`,
+          );
+        }),
+      ),
+    ).toMatch(/only member_identity_snapshot may change/);
   }, 60_000);
 
   it('keys are per tenant: the same key in another tenant is its own note', async () => {
     const key = randomUUID();
     const a = await issue(tenant, await seedPaidInvoice(tenant, user, planId), key);
     const b = await issue(other, await seedPaidInvoice(other, user, planId), key);
-    expect(a.ok && b.ok, JSON.stringify([a, b])).toBe(true);
+    expect(a.ok && b.ok, show([a, b])).toBe(true);
     if (!a.ok || !b.ok) return;
     expect(b.value.replayed).toBe(false);
     expect(b.value.creditNote.creditNoteId).not.toBe(a.value.creditNote.creditNoteId);
