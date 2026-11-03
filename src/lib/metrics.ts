@@ -3206,7 +3206,7 @@ export const broadcastsMetrics = {
     safeMetric(() => {
       observeGauge(
         'broadcasts_orphaned_resend_ids_unsettled',
-        'Orphaned Resend ids (with an id) still unsettled more than 24 h after they were recorded',
+        'Orphaned Resend ids (with an id) still unsettled more than ORPHAN_UNSETTLED_GAUGE_AGE_HOURS (24 h) after they were recorded',
         { tenant: tenantId },
         count,
       );
@@ -3218,7 +3218,7 @@ export const broadcastsMetrics = {
     safeMetric(() => {
       observeGauge(
         'broadcasts_orphaned_resend_ids_unsettled_oldest_age_seconds',
-        'Age of the oldest orphaned Resend id still unsettled more than 24 h after it was recorded',
+        'Age of the oldest orphaned Resend id still unsettled more than ORPHAN_UNSETTLED_GAUGE_AGE_HOURS (24 h) after it was recorded',
         { tenant: tenantId },
         seconds,
       );
@@ -3240,7 +3240,7 @@ export const broadcastsMetrics = {
     safeMetric(() => {
       observeGauge(
         'broadcasts_orphaned_resend_ids_unconfirmed',
-        'create_unconfirmed orphan rows (a createBroadcast that may have minted a draft we never learnt the id of) in the last 24 h',
+        'create_unconfirmed orphan rows (a createBroadcast that may have minted a draft we never learnt the id of) in the last ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS (24 h)',
         { tenant: tenantId },
         count,
       );

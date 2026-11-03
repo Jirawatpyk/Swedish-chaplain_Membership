@@ -241,11 +241,12 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      record on the DSR ticket that an unsent copy remains at Resend; a handed
      row is 8c (above);
    - **spec 140 s2c — the orphan rows.** The cascade also settled the member's
-     rows of `broadcast_orphaned_resend_ids` (ids our side left at Resend on no
-     live row) and the tenant's leaked audiences; an undecided one withholds
-     `member_erased`. Their settled broadcast rows are in the counts above
-     (`deleted` / `absent` → cleared, `retained` → retained, `handed` → already
-     sent), so with orphans the TERMINAL-query equality reads "+ the member's
+     own BROADCAST orphans in `broadcast_orphaned_resend_ids` (ids our side
+     left at Resend on no live row) and the tenant's leaked audiences; an
+     undecided broadcast orphan of the member withholds `member_erased`. Their
+     settled broadcast rows are in the counts above (`deleted` / `absent` →
+     cleared, `retained` → retained, `handed` → already sent, RoPA 8c;
+     `superseded` — a sent row holds the id — is in none of them), so with orphans the TERMINAL-query equality reads "+ the member's
      settled broadcast orphans whose id no terminal row holds". Check nothing
      is left (read-only):
 
@@ -259,10 +260,17 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
 
      **The tenant's leaked audiences** (review round 1, pdpa M-B). The
      erasure also settles every unsettled AUDIENCE orphan of the tenant,
-     whoever requested it (they hold recipients' contacts). One tried
-     `ORPHAN_STUCK_ATTEMPTS` (8) times or more is reported
-     (`broadcasts.cascade.orphan_stuck`) and does not withhold this erasure;
-     list them, settle each by hand, and record it on the DSR ticket:
+     whoever requested it (they hold recipients' contacts), and asks Resend to
+     detach the member's addresses from each (review round 2, pdpa H-1; in
+     `subprocessor_erasure_propagated`). One that is STUCK —
+     `ORPHAN_STUCK_ATTEMPTS` (8) tries AND older than `ORPHAN_STUCK_MIN_AGE_MS`
+     (2 h), review round 2 — is reported (`broadcasts.cascade.orphan_stuck`)
+     at any exit of the pass and does not withhold this erasure;
+     `member_erased.audience_orphans_stuck_count` says how many this run
+     released. When it is above 0: list them, delete each by hand **within
+     the Art. 12(3) period of this DSR (one month from the request)**, record
+     the audience ids and the date on the DSR ticket, and say so in the DSR
+     answer (RoPA 8d residual 5):
 
      ```sql
      -- the step-4 TENANT AUDIENCE query (read-only)

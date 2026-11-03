@@ -191,23 +191,36 @@ network failure, a timeout or a 5xx).
   `maxDuration` 300 s). It never lists an id a NON-TERMINAL row holds
   (type-matched), an audience a row went terminal with less than `GRACE_MS`
   ago (the audience loop's grace, review round 1), nor a `create_unconfirmed`
-  row. It reads `ORDER BY attempts, created_at`: every undecided answer
-  increments the row's `attempts`, so a row that never settles cannot hold
-  the head of the queue (review round 1). The erasure cascade settles
-  the requester's broadcast orphans and the tenant's leaked audiences
-  (`member-erasure.md` step 4).
-- **What a row's `outcome` means.** `deleted` / `absent` — gone; `retained` —
-  canceled or failed at Resend (403, undeletable, never sendable); `handed` —
-  queued or sent (a disclosure, RoPA 8c). `NULL` — not settled yet.
+  row. It reads rows past the grace first, then `ORDER BY attempts,
+  created_at`: rows the grace holds back cannot fill the 20 (review round 2),
+  and every undecided answer increments the row's `attempts`, so a row that
+  never settles cannot hold the head of the queue (review round 1). The
+  erasure cascade settles the requester's own BROADCAST orphans and the
+  tenant's leaked audiences (`member-erasure.md` step 4).
+- **What a row's `outcome` means.** `deleted` / `absent` — gone (`absent`
+  only once a GET `REPROBE_PAUSE_MS` after the DELETE's 404 answers 404 too,
+  review round 2); `retained` — canceled or failed at Resend (403,
+  undeletable, never sendable); `handed` — queued or sent (a disclosure, RoPA
+  8c); `superseded` — a `sent` / `partially_sent` / `partial_delivery_accepted`
+  row holds the id, so the copy went out normally (no Resend call, never
+  counted, review round 2). `NULL` — not settled yet. A settled row never
+  changes again (a trigger).
 - **Rows stuck unsettled** (`broadcasts_orphaned_resend_ids_unsettled` ≥ 1:
   undecided more than `ORPHAN_UNSETTLED_GAUGE_AGE_HOURS` (24) after it was
   written; `broadcasts.orphan_drain.undecided` with a rising `attempts`): a
   permanent Resend answer. Read the `answer` token, check the id at Resend,
   delete it by hand if it is a draft or an audience, and leave the row (the
-  next run reads 404 → `absent`). A tenant audience orphan at
-  `ORPHAN_STUCK_ATTEMPTS` (8, about 2 h of runs) or more no longer withholds
-  other members' erasures (`broadcasts.cascade.orphan_stuck`); this runbook
-  owns it from then on (`member-erasure.md` step 4 has the manual settle).
+  next run reads 404 → `absent`). A tenant audience orphan that is STUCK —
+  `ORPHAN_STUCK_ATTEMPTS` (8) tries AND older than `ORPHAN_STUCK_MIN_AGE_MS`
+  (2 h; the tries alone are not a time, review round 2) — no longer withholds
+  other members' erasures (`broadcasts.cascade.orphan_stuck`,
+  `broadcasts_cascade_orphan_stuck_total`, `member_erased.audience_orphans_stuck_count`);
+  a member's own BROADCAST orphans always withhold. This runbook owns a stuck
+  audience from then on: settle it by hand (`member-erasure.md` step 4) within
+  the Art. 12(3) period of the erasure that released it — one month from the
+  request (RoPA 8d residual 5). Between 2 h and 24 h such a row is not yet in
+  `broadcasts_orphaned_resend_ids_unsettled`: the stuck counter and the
+  `orphan_stuck` line are its only signals in that window.
 - **A 403 on an audience DELETE** is not a refusal to act on: Resend answers
   a deleted audience's DELETE with 403 `validation_error` "Cannot delete last
   audience." (MEASURED 2026-11-03, the sink account holding only `General`),
@@ -233,8 +246,10 @@ SELECT tenant_id, broadcast_id, created_at
 - **Retention.** The daily retention sweep prunes settled rows and
   `create_unconfirmed` rows older than `ORPHAN_ROW_RETENTION_DAYS` (90 days)
   through `prune_orphaned_resend_ids` (`cron-jobs.md` § F7 retention-sweep).
-  A `handed` row is never pruned: it is the record of a disclosure (RoPA 8c;
-  review round 1, pdpa M-A).
+  A `handed` row is the record of a disclosure (RoPA 8c; review round 1,
+  pdpa M-A): it is pruned only `ORPHAN_HANDED_RETENTION_YEARS` (5) years after
+  it settled, the horizon of its 8c evidence (review round 2). A `superseded`
+  row is pruned like any settled row.
 
 ## Why this matters
 
