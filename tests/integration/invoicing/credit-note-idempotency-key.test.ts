@@ -378,7 +378,22 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
             if (lookups[i] === 2) {
               arrived += 1;
               if (arrived === 2) release();
-              await bothLooked;
+              // Fail loudly, not by the test timeout, if the other attempt
+              // never reaches its locked lookup.
+              let timer: ReturnType<typeof setTimeout> | undefined;
+              try {
+                await Promise.race([
+                  bothLooked,
+                  new Promise<never>((_, reject) => {
+                    timer = setTimeout(
+                      () => reject(new Error(`attempt ${1 - i} never reached its in-tx key lookup`)),
+                      20_000,
+                    );
+                  }),
+                ]);
+              } finally {
+                clearTimeout(timer);
+              }
             }
             return found;
           },

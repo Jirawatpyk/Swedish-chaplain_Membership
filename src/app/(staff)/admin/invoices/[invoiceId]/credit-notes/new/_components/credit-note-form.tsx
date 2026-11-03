@@ -327,7 +327,8 @@ export function CreditNoteForm({
     const satang = BigInt(request.creditTotalSatang);
     setAmountThb(`${satang / 100n}.${(satang % 100n).toString().padStart(2, '0')}`);
     setReason(request.reason);
-    setTyped(confirmPhrase);
+    // The typed phrase is NOT restored (FR-040): if this attempt ends on a
+    // definite refusal, a new note still needs the admin to type it.
     if (request.membershipEffect) setMembershipEffect(request.membershipEffect);
     if (request.onlinePaymentRefundAcknowledged === true) setOnlineRefundAcknowledged(true);
     markUnknown(stored);

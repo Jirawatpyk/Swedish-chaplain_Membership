@@ -1685,26 +1685,29 @@ export async function issueCreditNote(
     }
     // #66 — the same fresh-tx reconcile for the admin idempotency-key race.
     if (e instanceof CreditNoteKeyRaceError) {
-      let winner: CreditNote | null;
-      let matches = false;
+      let reconciled: { readonly winner: CreditNote | null; readonly matches: boolean };
       try {
         // #67 — the matching winner is answered as a replay, and its audit
         // row lands in the same fresh tx as the read.
-        winner = await deps.invoiceRepo.withTx(async (tx) => {
+        reconciled = await deps.invoiceRepo.withTx(async (tx) => {
           const found = await deps.creditNoteRepo.findByIdempotencyKey(tx, input.tenantId, e.idempotencyKey);
-          matches = found !== null && keyHitMatches(found, invoiceId, input);
+          const matches = found !== null && keyHitMatches(found, invoiceId, input);
           if (found && matches) {
             await deps.audit.emit(tx, replayAuditEvent(input, found, e.idempotencyKey, 'race_reconcile'));
           }
-          return found;
+          return { winner: found, matches };
         });
       } catch (reconcileErr) {
+        // The 23505 proves a note exists under this key: a definite refusal
+        // would end the client's attempt, so surface a 5xx (the form keeps the
+        // key and the lock) — /code-review on #728.
         logger.error(
           { err: reconcileErr, tenantId: input.tenantId, invoiceId: input.invoiceId },
-          'issueCreditNote: fresh-tx reconcile read failed after an idempotency_key race — returning concurrent_state_change',
+          'issueCreditNote: fresh-tx reconcile failed after an idempotency_key race — rethrowing',
         );
-        return err({ code: 'concurrent_state_change' });
+        throw reconcileErr;
       }
+      const { winner, matches } = reconciled;
       if (winner && matches) {
         return ok({
           creditNote: winner,
