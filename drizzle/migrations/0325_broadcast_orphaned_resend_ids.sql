@@ -63,10 +63,7 @@
 -- call) — older than the cutoff. An UNSETTLED row with an id is never pruned.
 -- A `handed` row is the durable record of a disclosure (RoPA 8c; review round
 -- 1, pdpa M-A), kept until `ORPHAN_HANDED_RETENTION_YEARS` = 5 after it was
--- settled, the 8c evidence horizon (review round 2, pdpa L-3).
---
--- Outcomes (review round 2, code-review #2): `superseded` is added — the id is
--- held by a row whose send went out normally; settled with no Resend call. SECURITY DEFINER (it runs as the
+-- settled, the 8c evidence horizon (review round 2, pdpa L-3). SECURITY DEFINER (it runs as the
 -- owner, which has BYPASSRLS and the DELETE chamber_app lacks), so it fences
 -- itself: the tenant must be the caller's `app.current_tenant`, every DELETE
 -- carries `tenant_id = p_tenant`, and a cutoff younger than 90 days
@@ -74,6 +71,9 @@
 -- retention. `search_path` is pinned to `pg_catalog, public, pg_temp` (the
 -- 0293 pattern; review round 1, migration M1): with `pg_temp` LAST, a caller's
 -- temporary table cannot shadow the table this owner-run function deletes from. The F7 retention sweep calls it once per tenant per daily run.
+--
+-- Outcomes (review round 2, code-review #2): `superseded` is added — the id is
+-- held by a row whose send went out normally; settled with no Resend call.
 --
 -- Indexes: the partial UNIQUE (tenant_id, resource_type, resource_id) WHERE
 -- resource_id IS NOT NULL is what the writers' `ON CONFLICT DO NOTHING` lands

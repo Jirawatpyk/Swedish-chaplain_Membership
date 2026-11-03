@@ -2834,7 +2834,8 @@ async function advanceToSending(
  *    - `undeleted` → an orphan row `terminal_reclaim_undecided` (the drain
  *      reaches it once the row is terminal), then terminal with
  *      `resendDraftOutcome: 'undeleted'` + `resendDraftErrClass`.
- *    The helper's own log lines say `refusal: 'standing'`; this function adds
+ *    The helper's own log lines say `refusal: 'terminal'` (review round 2,
+ *    code-review #5; this docblock fixed in round 3, #7); this function adds
  *    no line of its own beyond the orphan record.
  *
  * W_max is unchanged (`_dispatch-lease.ts`): tick 2 already counts these two

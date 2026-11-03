@@ -261,14 +261,18 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      **The tenant's leaked audiences** (review round 1, pdpa M-B). The
      erasure also settles every unsettled AUDIENCE orphan of the tenant,
      whoever requested it (they hold recipients' contacts), and asks Resend to
-     detach the member's addresses from each (review round 2, pdpa H-1; in
-     `subprocessor_erasure_propagated`). One that is STUCK —
+     detach the member's addresses from up to
+     `ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT` (10) of them, the most-attempted
+     first (review round 2, pdpa H-1, capped by review round 3; in
+     `subprocessor_erasure_propagated`); one past the cap is deleted whole by
+     this pass or the drain. One that is STUCK —
      `ORPHAN_STUCK_ATTEMPTS` (8) tries AND older than `ORPHAN_STUCK_MIN_AGE_MS`
      (2 h), review round 2 — is reported (`broadcasts.cascade.orphan_stuck`)
      at any exit of the pass and does not withhold this erasure;
      `member_erased.audience_orphans_stuck_count` says how many this run
-     released. When it is above 0: list them, delete each by hand **within
-     the Art. 12(3) period of this DSR (one month from the request)**, record
+     released (a minimum: the stuck rows the pass listed, review round 3; the
+     query below lists them all). When it is above 0: list them, delete each
+     by hand **within the § H-1 remediation SLA of the erasure that released it (`member_erasure_requested` + 30 days, PDPA by analogy; the default for every subject)**, record
      the audience ids and the date on the DSR ticket, and say so in the DSR
      answer (RoPA 8d residual 5):
 

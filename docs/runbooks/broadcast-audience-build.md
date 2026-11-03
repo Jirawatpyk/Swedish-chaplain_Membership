@@ -201,8 +201,8 @@ network failure, a timeout or a 5xx).
   only once a GET `REPROBE_PAUSE_MS` after the DELETE's 404 answers 404 too,
   review round 2); `retained` — canceled or failed at Resend (403,
   undeletable, never sendable); `handed` — queued or sent (a disclosure, RoPA
-  8c); `superseded` — a `sent` / `partially_sent` / `partial_delivery_accepted`
-  row holds the id, so the copy went out normally (no Resend call, never
+  8c); `superseded` — a `sent` / `partial_delivery_accepted` row (terminal
+  statuses only, review round 3) holds the id, so the copy went out normally (no Resend call, never
   counted, review round 2). `NULL` — not settled yet. A settled row never
   changes again (a trigger).
 - **Rows stuck unsettled** (`broadcasts_orphaned_resend_ids_unsettled` ≥ 1:
@@ -216,9 +216,8 @@ network failure, a timeout or a 5xx).
   other members' erasures (`broadcasts.cascade.orphan_stuck`,
   `broadcasts_cascade_orphan_stuck_total`, `member_erased.audience_orphans_stuck_count`);
   a member's own BROADCAST orphans always withhold. This runbook owns a stuck
-  audience from then on: settle it by hand (`member-erasure.md` step 4) within
-  the Art. 12(3) period of the erasure that released it — one month from the
-  request (RoPA 8d residual 5). Between 2 h and 24 h such a row is not yet in
+  audience from then on: settle it by hand (`member-erasure.md` step 4)
+  within the § H-1 remediation SLA of the erasure that released it (`member_erasure_requested` + 30 days, PDPA by analogy; the default for every subject) (RoPA 8d residual 5). Between 2 h and 24 h such a row is not yet in
   `broadcasts_orphaned_resend_ids_unsettled`: the stuck counter and the
   `orphan_stuck` line are its only signals in that window.
 - **A 403 on an audience DELETE** is not a refusal to act on: Resend answers

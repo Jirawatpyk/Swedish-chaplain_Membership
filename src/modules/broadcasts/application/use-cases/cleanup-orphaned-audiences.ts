@@ -39,8 +39,11 @@
  *     only, and the erased requesters' rows go first, so past-grace rows that
  *     keep failing cannot fill the run ahead of them;
  *   - no chunk starts once `ORPHAN_DRAIN_STOP_MS` has passed since the run
- *     began, which leaves one chunk's two bounded calls inside the route's
- *     `maxDuration` (`CLEANUP_MAX_DURATION_MS`); the rest go next run;
+ *     began; the rest go next run. Review round 3 (code-review #10): a
+ *     broadcast row's worst case is a DELETE, `REPROBE_PAUSE_MS`, then a GET
+ *     (10 s + 3 s + 10 s, about 23 s, plus the settle tx), so the last chunk
+ *     starts before 240 s and ends by about 265 s, inside the route's
+ *     `maxDuration` (`CLEANUP_MAX_DURATION_MS`, 300 s);
  *   - undecided rows stay unsettled for the next run.
  * A failed orphan list is logged and does not fail the audience pass.
  *
@@ -82,9 +85,12 @@ export { AUDIENCE_CLEANUP_GRACE_MS } from '../../domain/value-objects/orphaned-r
 export const CLEANUP_MAX_DURATION_MS = 300_000;
 
 /**
- * No orphan chunk starts later than this into the run: one chunk's two
- * bounded calls (2 × `RESEND_CALL_TIMEOUT_MS`) plus its settle still finish
- * inside `CLEANUP_MAX_DURATION_MS` (pinned by the drain test).
+ * No orphan chunk starts later than this into the run. A chunk's slowest row
+ * (review round 3, code-review #10) is a broadcast DELETE that answers 404,
+ * `REPROBE_PAUSE_MS`, then the confirming GET: 2 × `RESEND_CALL_TIMEOUT_MS` +
+ * 3 s ≈ 23 s, plus its settle tx. The last chunk therefore ends by about
+ * 265 s, a margin of about 35 s inside `CLEANUP_MAX_DURATION_MS` (the drain
+ * test pins STOP + 2 × timeout + pause + 5 s ≤ 300 s).
  */
 export const ORPHAN_DRAIN_STOP_MS = 240_000;
 
