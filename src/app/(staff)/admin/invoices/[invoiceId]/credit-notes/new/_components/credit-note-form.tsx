@@ -30,7 +30,7 @@ import { toast } from '@/lib/toast';
 import { formatSatangThb } from '@/lib/format-thb';
 import { isReadOnlyRefusal, readProblemCode } from '@/lib/http/read-only-refusal';
 import { routeCreditNoteError } from './credit-note-error-routing';
-import { refreshWhenOnline } from '../../../../_components/refresh-when-online';
+import { cancelPendingRefresh, refreshWhenOnline } from '../../../../_components/refresh-when-online';
 import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from '../../../../_components/unknown-outcome';
 import { useStillWorking } from '../../../../_components/use-still-working';
 
@@ -187,6 +187,8 @@ export function CreditNoteForm({
   const submit = useCallback(() => {
     if (!canSubmit || proposedSatang === null || inFlightRef.current) return;
     setFormError(null);
+    // A navigation queued offline must not fire after this new attempt.
+    cancelPendingRefresh();
     setWaitingForConnection(false);
     inFlightRef.current = true;
     startTransition(async () => {

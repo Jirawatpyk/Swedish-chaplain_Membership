@@ -704,7 +704,7 @@ export function EventFeeForm({
     } else {
       const issuePayload: unknown =
         issueRes !== null ? await issueRes.json().catch(() => ({})) : undefined;
-      const problem = issuePayload === undefined ? null : readProblemCode(issuePayload);
+      const problem = readProblemCode(issuePayload);
       if (issueRes !== null && isReadOnlyRefusal(issueRes.status, issuePayload)) {
         // The write freeze refused it: nothing ran, and the draft survived.
         // No Retry: the freeze lasts minutes, and the draft is on the page
@@ -756,8 +756,17 @@ export function EventFeeForm({
         );
       }
     }
-    router.push(`/admin/invoices/${invoiceId}`);
-    router.refresh();
+    const land = () => {
+      router.push(`/admin/invoices/${invoiceId}`);
+      router.refresh();
+    };
+    // #727 review — offline, a navigation falls onto the browser's offline
+    // page and the toast above is lost (#48), so it waits for the connection.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      window.addEventListener('online', land, { once: true });
+    } else {
+      land();
+    }
   }
 
   function submit(e: React.FormEvent<HTMLFormElement>) {

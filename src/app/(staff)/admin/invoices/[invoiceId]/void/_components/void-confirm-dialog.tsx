@@ -30,7 +30,7 @@ import type { FeedbackTone } from '@jirawatpyk/aura-react';
 import { isReadOnlyRefusal, readProblemCode } from '@/lib/http/read-only-refusal';
 import { routeVoidError } from './void-error-routing';
 import { PhraseChip } from '../../../_components/phrase-chip';
-import { refreshWhenOnline } from '../../../_components/refresh-when-online';
+import { cancelPendingRefresh, refreshWhenOnline } from '../../../_components/refresh-when-online';
 import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from '../../../_components/unknown-outcome';
 import { useStillWorking } from '../../../_components/use-still-working';
 
@@ -119,6 +119,8 @@ export function VoidConfirmDialog({ invoiceId, documentNumber, isBill = false }:
   const submit = useCallback(() => {
     if (!canSubmit || inFlightRef.current) return;
     setFormError(null);
+    // A navigation queued offline must not fire after this new attempt.
+    cancelPendingRefresh();
     setWaitingForConnection(false);
     inFlightRef.current = true;
     startTransition(async () => {

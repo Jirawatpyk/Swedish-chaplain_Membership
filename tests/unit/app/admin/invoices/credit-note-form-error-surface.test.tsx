@@ -245,23 +245,22 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
     }
   });
 
-  it('a 504 HTML page and a 500 internal_error read as unconfirmed and lock the submit', async () => {
-    for (const [status, body] of [
-      [504, undefined],
-      [500, { error: { code: 'internal_error' } }],
-    ] as const) {
-      vi.stubGlobal('fetch', respond(status, body));
-      const view = renderForm();
-      try {
-        fillAndSubmit();
-        const alert = await screen.findByTestId('credit-note-error');
-        expect(alert).toHaveAttribute('data-tone', 'warning');
-        expect(alert).toHaveTextContent(UNCONFIRMED);
-        expect(screen.getByRole('button', { name: cnMessages.submit })).toBeDisabled();
-      } finally {
-        view.unmount();
-        vi.unstubAllGlobals();
-      }
+  // One case per test: two full form renders in one test ran close to the
+  // default findBy budget on a loaded worker (seen once in a batch run).
+  it.each([
+    ['a 504 HTML page', 504, undefined],
+    ['a 500 internal_error', 500, { error: { code: 'internal_error' } }],
+  ] as const)('%s reads as unconfirmed and locks the submit', async (_label, status, body) => {
+    vi.stubGlobal('fetch', respond(status, body));
+    try {
+      renderForm();
+      fillAndSubmit();
+      const alert = await screen.findByTestId('credit-note-error');
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveTextContent(UNCONFIRMED);
+      expect(screen.getByRole('button', { name: cnMessages.submit })).toBeDisabled();
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 
