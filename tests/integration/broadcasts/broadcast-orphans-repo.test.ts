@@ -23,7 +23,11 @@ import {
   broadcasts,
   type NewBroadcastRow,
 } from '@/modules/broadcasts/infrastructure/schema';
-import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+import { createTestTenant, createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+
+const HOUR = 60 * 60 * 1000;
+/** The cleanup route's 1 h `GRACE_MS`, as the drain passes it. */
+const GRACE_CUTOFF = () => new Date(Date.now() - HOUR);
 
 describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
   let tenantA: TestTenant;
@@ -87,7 +91,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
       await repo.recordOrphanedResendId({ broadcastId: bid, requestedByMemberId: member, resourceType, resourceId, reason: 'attach_lost' });
     }
 
-    const drainable = (await repo.listDrainableOrphans(50)).map((o) => `${o.resourceType}:${o.resourceId}`);
+    const drainable = (await repo.listDrainableOrphans(50, GRACE_CUTOFF())).map((o) => `${o.resourceType}:${o.resourceId}`);
     expect(drainable).toContain(`broadcast:${heldByTerminal}`);
     expect(drainable).toContain(`broadcast:${crossTyped}`);
     expect(drainable).not.toContain(`broadcast:${heldByApproved}`);
@@ -95,7 +99,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
 
     const mine = (await repo.listMemberOrphans(member)).map((o) => o.resourceId).sort();
     expect(mine).toEqual([crossTyped, heldByTerminal].sort());
-    const audiences = (await repo.listUnsettledAudienceOrphans(50)).map((o) => o.resourceId);
+    const audiences = (await repo.listUnsettledAudienceOrphans(50, GRACE_CUTOFF())).map((o) => o.resourceId);
     expect(audiences).not.toContain(audHeldByApproved);
   });
 
@@ -119,9 +123,9 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     expect(await repo.settleOrphan(listed[0]!.orphanId, 'absent')).toBe(false);
     const again = await repo.listMemberOrphans(member);
     expect(again.map((o) => o.outcome)).toEqual(['deleted']);
-    expect((await repo.listDrainableOrphans(500)).map((o) => o.resourceId)).not.toContain(id);
-    expect((await repo.listUnsettledAudienceOrphans(500)).map((o) => o.resourceId)).toContain(aud);
-    for (const o of await repo.listDrainableOrphans(500)) expect(o.reason).not.toBe('create_unconfirmed');
+    expect((await repo.listDrainableOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId)).not.toContain(id);
+    expect((await repo.listUnsettledAudienceOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId)).toContain(aud);
+    for (const o of await repo.listDrainableOrphans(500, GRACE_CUTOFF())) expect(o.reason).not.toBe('create_unconfirmed');
   });
 
   it('cross-tenant: tenant B rows with the same uuids and Resend id are never listed, settled or pruned from A', async () => {
@@ -135,8 +139,8 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     await repoB.recordOrphanedResendId({ broadcastId: bid, requestedByMemberId: member, resourceType: 'audience', resourceId: aud, reason: 'audience_leaked' });
 
     expect(await repoA.listMemberOrphans(member)).toEqual([]);
-    expect((await repoA.listDrainableOrphans(500)).map((o) => o.resourceId)).not.toContain(id);
-    expect((await repoA.listUnsettledAudienceOrphans(500)).map((o) => o.resourceId)).not.toContain(aud);
+    expect((await repoA.listDrainableOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId)).not.toContain(id);
+    expect((await repoA.listUnsettledAudienceOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId)).not.toContain(aud);
     const bRows = await repoB.listMemberOrphans(member);
     expect(bRows).toHaveLength(1);
     expect(await repoA.settleOrphan(bRows[0]!.orphanId, 'deleted')).toBe(false);
@@ -152,9 +156,59 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     const shared = `rb-${randomUUID()}`;
     await seedRow(tenantB, { status: 'approved', resendBroadcastId: shared });
     await repoA.recordOrphanedResendId({ broadcastId: bid, requestedByMemberId: member, resourceType: 'broadcast', resourceId: shared, reason: 'attach_lost' });
-    expect((await repoA.listDrainableOrphans(500)).map((o) => o.resourceId)).toContain(shared);
+    expect((await repoA.listDrainableOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId)).toContain(shared);
     // The prune touches only A (B's rows are unsettled and young either way).
     expect(await repoA.pruneOrphans(new Date(Date.now() - 100 * 86_400_000))).toBe(0);
     expect(await repoB.listMemberOrphans(member)).toHaveLength(1);
+  });
+
+  /**
+   * Spec 140 s2c review round 1:
+   *   - the attempt counter (code-review #2): an undecided settle increments
+   *     `attempts` by CAS, and the lists read `ORDER BY attempts, created_at`,
+   *     so 20 permanently undecided rows cannot starve a 21st;
+   *   - an audience a row JUST went terminal with is still the existing
+   *     audience loop's for `GRACE_MS` (code-review #3): the terminal holder
+   *     counts as live until its `updated_at` is past the grace.
+   */
+  it('20 undecided rows do not starve a 21st (attempts order the drain)', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      const member = randomUUID();
+      for (let i = 0; i < 21; i += 1) {
+        await repo.recordOrphanedResendId({ broadcastId: randomUUID(), requestedByMemberId: member, resourceType: 'broadcast', resourceId: `rb-${i}-${randomUUID()}`, reason: 'attach_lost' });
+      }
+      const first = await repo.listDrainableOrphans(20, GRACE_CUTOFF());
+      expect(first).toHaveLength(20);
+      for (const o of first) expect(await repo.markOrphanAttempted(o.orphanId)).toBe(true);
+      const all = await repo.listDrainableOrphans(50, GRACE_CUTOFF());
+      const fresh = all.filter((o) => o.attempts === 0);
+      expect(fresh).toHaveLength(1);
+      const next = await repo.listDrainableOrphans(20, GRACE_CUTOFF());
+      expect(next[0]?.orphanId).toBe(fresh[0]?.orphanId);
+      // A settled row is not attempted again (the CAS is on settled_at IS NULL).
+      expect(await repo.settleOrphan(first[0]!.orphanId, 'absent')).toBe(true);
+      expect(await repo.markOrphanAttempted(first[0]!.orphanId)).toBe(false);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
+
+  it('an audience a row just went terminal with is not drained until GRACE_MS has passed', async () => {
+    const repo = makeDrizzleBroadcastOrphansRepo(tenantA.ctx.slug);
+    const fresh = `aud-fresh-${randomUUID()}`;
+    const stale = `aud-stale-${randomUUID()}`;
+    await seedRow(tenantA, { status: 'failed_to_dispatch', resendAudienceId: fresh, updatedAt: new Date() });
+    await seedRow(tenantA, { status: 'failed_to_dispatch', resendAudienceId: stale, updatedAt: new Date(Date.now() - 2 * HOUR) });
+    for (const id of [fresh, stale]) {
+      await repo.recordOrphanedResendId({ broadcastId: randomUUID(), requestedByMemberId: randomUUID(), resourceType: 'audience', resourceId: id, reason: 'audience_leaked' });
+    }
+    const drainable = (await repo.listDrainableOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId);
+    expect(drainable).toContain(stale);
+    expect(drainable).not.toContain(fresh);
+    const erasureList = (await repo.listUnsettledAudienceOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId);
+    expect(erasureList).toContain(stale);
+    expect(erasureList).not.toContain(fresh);
   });
 });
