@@ -70,6 +70,16 @@ import { settleOrphanAtResend } from './_settle-orphan-at-resend';
 // Bounds (spec 140 s2c, plan.md § Slice 2c, item 5)
 // ---------------------------------------------------------------------------
 
+/**
+ * The audience loop's grace (1 h): a terminal row's audience is deleted only
+ * once its `updated_at` is this old, so a just-terminal broadcast does not race
+ * Resend's own post-send processing. The cleanup route passes it as `graceMs`;
+ * review round 1 (code-review #3) applies it to an audience ORPHAN whose
+ * terminal holder changed recently too, in the drain and in the erasure's
+ * audience pass.
+ */
+export const AUDIENCE_CLEANUP_GRACE_MS = 60 * 60 * 1000;
+
 /** The cleanup route's `maxDuration` (300 s), in ms — pinned to the route's literal by the drain test. */
 export const CLEANUP_MAX_DURATION_MS = 300_000;
 
@@ -245,7 +255,7 @@ async function drainOrphans(
   const tenantId = deps.tenant.slug;
   let listed: ReadonlyArray<OrphanedResendIdRef>;
   try {
-    listed = await deps.orphans.listDrainableOrphans(ORPHAN_DRAIN_LIMIT);
+    listed = await deps.orphans.listDrainableOrphans(ORPHAN_DRAIN_LIMIT, graceCutoff);
   } catch (e) {
     logger.error({ tenantId, err: errKind(e) }, 'broadcasts.orphan_drain.list_failed');
     return { listed: 0, settled: 0, undecided: 0, waiting: 0, deferred: 0, listFailed: true };

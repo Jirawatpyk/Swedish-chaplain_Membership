@@ -41,6 +41,8 @@ vi.mock('@/modules/tenants', () => ({
   asTenantContext: (slug: string) => ({ slug }),
 }));
 vi.mock('@/modules/broadcasts', () => ({
+  // Spec 140 s2c review round 1 — the route's grace is the use case's constant.
+  AUDIENCE_CLEANUP_GRACE_MS: 60 * 60 * 1000,
   cleanupOrphanedAudiences: (...args: unknown[]) =>
     cleanupOrphanedAudiencesMock(...args),
   makeCleanupOrphanedAudiencesDeps: () => ({}),

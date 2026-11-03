@@ -37,6 +37,8 @@ export interface OrphanedResendIdRef {
   readonly createdAt: Date;
   /** `null` = unsettled. */
   readonly outcome: OrphanOutcome | null;
+  /** Review round 1 — undecided settles so far (`markOrphanAttempted`). */
+  readonly attempts: number;
 }
 
 /** What a writer records. `resourceId` is `null` only for `create_unconfirmed` (CHECK `_id_iff_known`). */
@@ -67,13 +69,21 @@ export interface BroadcastOrphansRepo {
    * holder does not block: it can never be sent again, and the drain's DELETE
    * is draft-only. Terminal = `TERMINAL_BROADCAST_STATUSES`.
    *
-   * The grace period is applied by the caller, not here [P H-2]: a row inside
-   * the grace is drained at once when its requester is erased, and the
-   * members bridge (`getMemberErasedAt`) is the only crossing into members
-   * this module has. Oldest first, so rows past the grace are always read
-   * before rows inside it.
+   * The grace period on the ORPHAN is applied by the caller, not here [P H-2]:
+   * a row inside the grace is drained at once when its requester is erased,
+   * and the members bridge (`getMemberErasedAt`) is the only crossing into
+   * members this module has.
+   *
+   * Review round 1 (code-review #3): for an AUDIENCE orphan, a TERMINAL holder
+   * whose `updated_at` is at or after `audienceGraceCutoff` also counts as
+   * live — the audience a row just went terminal with is still the existing
+   * audience loop's for its `GRACE_MS` (the cleanup route's grace).
+   *
+   * Review round 1 (code-review #2): `ORDER BY attempts, created_at`, so a row
+   * whose settle keeps answering undecided (`markOrphanAttempted`) sinks below
+   * every row that has been tried fewer times and cannot hold the head.
    */
-  listDrainableOrphans(limit: number): Promise<ReadonlyArray<OrphanedResendIdRef>>;
+  listDrainableOrphans(limit: number, audienceGraceCutoff: Date): Promise<ReadonlyArray<OrphanedResendIdRef>>;
 
   /**
    * The erasure cascade's view of ONE requester's BROADCAST orphans (DL10):
@@ -84,10 +94,11 @@ export interface BroadcastOrphansRepo {
 
   /**
    * [P H-1] The tenant's UNSETTLED AUDIENCE orphans, whoever requested them:
-   * a leaked audience holds recipients' contacts. Same non-terminal rule; no
-   * grace. At most `limit`, oldest first.
+   * a leaked audience holds recipients' contacts. The same holder rule as the
+   * drain, the terminal-holder grace (`audienceGraceCutoff`) included; no grace
+   * on the orphan itself. At most `limit`, `ORDER BY attempts, created_at`.
    */
-  listUnsettledAudienceOrphans(limit: number): Promise<ReadonlyArray<OrphanedResendIdRef>>;
+  listUnsettledAudienceOrphans(limit: number, audienceGraceCutoff: Date): Promise<ReadonlyArray<OrphanedResendIdRef>>;
 
   /**
    * Settle one row: a CAS on `settled_at IS NULL`, writing `settled_at = now()`
@@ -95,6 +106,14 @@ export interface BroadcastOrphansRepo {
    * (a concurrent drain or cascade won); not an error.
    */
   settleOrphan(orphanId: string, outcome: OrphanOutcome): Promise<boolean>;
+
+  /**
+   * Review round 1 (code-review #2) — record one undecided settle: a CAS on
+   * `settled_at IS NULL` that increments `attempts` and stamps
+   * `last_attempted_at = now()`. `false` = the row is settled (or gone); not an
+   * error. The drain and both erasure passes call it on every undecided answer.
+   */
+  markOrphanAttempted(orphanId: string): Promise<boolean>;
 
   /**
    * [P M-1] The retention prune (`prune_orphaned_resend_ids`, 0325): settled

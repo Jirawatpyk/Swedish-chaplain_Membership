@@ -423,6 +423,7 @@ export {
 
 // --- PR-2 Task 4 — cleanup-orphaned-audiences cron (defect #5) -----------
 export {
+  AUDIENCE_CLEANUP_GRACE_MS,
   cleanupOrphanedAudiences,
   type CleanupOrphanedAudiencesDeps,
   type CleanupOrphanedAudiencesInput,

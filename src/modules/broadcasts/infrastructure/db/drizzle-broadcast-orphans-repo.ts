@@ -31,18 +31,25 @@ const TERMINAL_IN = sql.join(
 );
 
 /**
- * [A1] No NON-TERMINAL `broadcasts` row of this tenant holds the orphan's id,
- * type-matched: a broadcast orphan against `resend_broadcast_id`, an audience
- * orphan against `resend_audience_id`. A terminal holder never blocks.
+ * [A1] No live `broadcasts` row of this tenant holds the orphan's id,
+ * type-matched: a broadcast orphan against `resend_broadcast_id` held by a
+ * NON-TERMINAL row; an audience orphan against `resend_audience_id` held by a
+ * non-terminal row OR (review round 1, code-review #3) by a terminal row whose
+ * `updated_at` is at or after `audienceGraceCutoff` — the existing audience
+ * loop's `GRACE_MS`. `null` = no audience grace (the member list reads
+ * broadcast orphans only).
  */
-function notHeldByLiveRow(tenantId: string) {
+function notHeldByLiveRow(tenantId: string, audienceGraceCutoff: Date | null) {
+  const cutoff = audienceGraceCutoff === null ? null : audienceGraceCutoff.toISOString();
   return sql`NOT EXISTS (
     SELECT 1 FROM ${broadcasts}
      WHERE ${broadcasts.tenantId} = ${tenantId}
-       AND ${broadcasts.status}::text NOT IN (${TERMINAL_IN})
        AND (
-         (${orphans.resourceType} = 'broadcast' AND ${broadcasts.resendBroadcastId} = ${orphans.resourceId})
-         OR (${orphans.resourceType} = 'audience' AND ${broadcasts.resendAudienceId} = ${orphans.resourceId})
+         (${orphans.resourceType} = 'broadcast' AND ${broadcasts.resendBroadcastId} = ${orphans.resourceId}
+           AND ${broadcasts.status}::text NOT IN (${TERMINAL_IN}))
+         OR (${orphans.resourceType} = 'audience' AND ${broadcasts.resendAudienceId} = ${orphans.resourceId}
+           AND (${broadcasts.status}::text NOT IN (${TERMINAL_IN})
+                OR ${broadcasts.updatedAt} >= ${cutoff}::timestamptz))
        )
   )`;
 }
@@ -56,6 +63,7 @@ const COLUMNS = {
   reason: orphans.reason,
   createdAt: orphans.createdAt,
   outcome: orphans.outcome,
+  attempts: orphans.attempts,
 };
 
 type SelectedRow = {
@@ -67,6 +75,7 @@ type SelectedRow = {
   reason: string;
   createdAt: Date;
   outcome: string | null;
+  attempts: number;
 };
 
 function toRef(r: SelectedRow): OrphanedResendIdRef {
@@ -81,6 +90,7 @@ function toRef(r: SelectedRow): OrphanedResendIdRef {
     reason: r.reason as OrphanReason,
     createdAt: r.createdAt,
     outcome: r.outcome as OrphanOutcome | null,
+    attempts: r.attempts,
   };
 }
 
@@ -109,7 +119,7 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
       });
     },
 
-    async listDrainableOrphans(limit) {
+    async listDrainableOrphans(limit, audienceGraceCutoff) {
       return bound('listDrainableOrphans', async (tx) => {
         const rows = await tx
           .select(COLUMNS)
@@ -119,10 +129,10 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
               eq(orphans.tenantId, ctx.slug),
               isNull(orphans.settledAt),
               isNotNull(orphans.resourceId),
-              notHeldByLiveRow(ctx.slug),
+              notHeldByLiveRow(ctx.slug, audienceGraceCutoff),
             ),
           )
-          .orderBy(asc(orphans.createdAt), asc(orphans.orphanId))
+          .orderBy(asc(orphans.attempts), asc(orphans.createdAt), asc(orphans.orphanId))
           .limit(limit);
         return rows.map(toRef);
       });
@@ -139,7 +149,7 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
               eq(orphans.requestedByMemberId, requestedByMemberId),
               eq(orphans.resourceType, 'broadcast'),
               isNotNull(orphans.resourceId),
-              notHeldByLiveRow(ctx.slug),
+              notHeldByLiveRow(ctx.slug, null),
             ),
           )
           .orderBy(asc(orphans.createdAt), asc(orphans.orphanId));
@@ -147,7 +157,7 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
       });
     },
 
-    async listUnsettledAudienceOrphans(limit) {
+    async listUnsettledAudienceOrphans(limit, audienceGraceCutoff) {
       return bound('listUnsettledAudienceOrphans', async (tx) => {
         const rows = await tx
           .select(COLUMNS)
@@ -158,10 +168,10 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
               eq(orphans.resourceType, 'audience'),
               isNull(orphans.settledAt),
               isNotNull(orphans.resourceId),
-              notHeldByLiveRow(ctx.slug),
+              notHeldByLiveRow(ctx.slug, audienceGraceCutoff),
             ),
           )
-          .orderBy(asc(orphans.createdAt), asc(orphans.orphanId))
+          .orderBy(asc(orphans.attempts), asc(orphans.createdAt), asc(orphans.orphanId))
           .limit(limit);
         return rows.map(toRef);
       });
@@ -172,6 +182,17 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
         const rows = await tx
           .update(orphans)
           .set({ settledAt: sql`now()`, outcome })
+          .where(and(eq(orphans.tenantId, ctx.slug), eq(orphans.orphanId, orphanId), isNull(orphans.settledAt)))
+          .returning({ orphanId: orphans.orphanId });
+        return rows.length === 1;
+      });
+    },
+
+    async markOrphanAttempted(orphanId) {
+      return bound('markOrphanAttempted', async (tx) => {
+        const rows = await tx
+          .update(orphans)
+          .set({ attempts: sql`${orphans.attempts} + 1`, lastAttemptedAt: sql`now()` })
           .where(and(eq(orphans.tenantId, ctx.slug), eq(orphans.orphanId, orphanId), isNull(orphans.settledAt)))
           .returning({ orphanId: orphans.orphanId });
         return rows.length === 1;

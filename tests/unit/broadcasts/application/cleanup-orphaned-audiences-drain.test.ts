@@ -48,6 +48,7 @@ function orphan(n: number, patch: Partial<OrphanedResendIdRef> = {}): OrphanedRe
     reason: 'attach_lost',
     createdAt: OLD,
     outcome: null,
+    attempts: 0,
     ...patch,
   };
 }

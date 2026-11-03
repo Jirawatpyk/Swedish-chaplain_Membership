@@ -215,6 +215,7 @@ import type { OrphanOutcome } from '../../domain/value-objects/orphaned-resend-i
 import { asBroadcastId } from '../../domain/broadcast';
 import { isHandedStatus } from './_probe-refused-send';
 import { settleOrphanAtResend } from './_settle-orphan-at-resend';
+import { AUDIENCE_CLEANUP_GRACE_MS } from './cleanup-orphaned-audiences';
 import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
 export type CancelInFlightForMemberError =
@@ -972,7 +973,10 @@ export async function cancelInFlightBroadcastsForMember(
       // (b) The tenant's leaked audiences [P H-1]: deleted, not counted.
       let audienceOrphans: ReadonlyArray<OrphanedResendIdRef> = [];
       try {
-        audienceOrphans = await deps.orphans.listUnsettledAudienceOrphans(ERASURE_AUDIENCE_ORPHAN_LIMIT + 1);
+        audienceOrphans = await deps.orphans.listUnsettledAudienceOrphans(
+          ERASURE_AUDIENCE_ORPHAN_LIMIT + 1,
+          new Date(deps.clock.now().getTime() - AUDIENCE_CLEANUP_GRACE_MS),
+        );
       } catch (e) {
         orphanUnexpected(e, null, 'broadcasts.cascade.audience_orphan_list_failed');
       }

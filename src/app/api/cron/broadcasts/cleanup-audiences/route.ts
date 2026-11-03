@@ -25,6 +25,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import {
+  AUDIENCE_CLEANUP_GRACE_MS,
   cleanupOrphanedAudiences,
   makeCleanupOrphanedAudiencesDeps,
 } from '@/modules/broadcasts';
@@ -41,7 +42,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
  * broadcast whose Resend audience the webhook handler may still be
  * writing delivery events to).
  */
-const GRACE_MS = 60 * 60 * 1000; // 1 hour
+const GRACE_MS = AUDIENCE_CLEANUP_GRACE_MS; // 1 hour — the use case's constant (spec 140 s2c review round 1)
 
 /**
  * Per-tick candidate limit: 50 rows per tenant (matches reconcile-stuck-
