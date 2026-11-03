@@ -25,9 +25,32 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { Alert, Button, Card, Checkbox, RadioGroup, TextField, Textarea, buttonClass } from '@jirawatpyk/aura-react';
+import type { FeedbackTone } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { formatSatangThb } from '@/lib/format-thb';
+import { isReadOnlyRefusal, readProblemCode } from '@/lib/http/read-only-refusal';
 import { routeCreditNoteError } from './credit-note-error-routing';
+import { refreshWhenOnline } from '../../../../_components/refresh-when-online';
+import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from '../../../../_components/unknown-outcome';
+import { useStillWorking } from '../../../../_components/use-still-working';
+
+type CreditNoteFormError =
+  | { readonly kind: 'concurrent' }
+  // #61 — no trustworthy answer: the note commits before `requestMembershipEnd`
+  // runs, so a drop, the timeout or a 5xx naming no refusal may come after a
+  // §86/10 note was minted.
+  | { readonly kind: 'unconfirmed' }
+  // The READ_ONLY_MODE freeze refused it: nothing was written.
+  | { readonly kind: 'readOnly' }
+  | { readonly kind: 'failure'; readonly message: string };
+
+/** One tone per kind; a new kind must pick one (the wrapper's `data-tone` follows). */
+const CREDIT_NOTE_ERROR_TONE = {
+  concurrent: { alert: 'info', wrapper: 'neutral' },
+  unconfirmed: { alert: 'warning', wrapper: 'warning' },
+  readOnly: { alert: 'warning', wrapper: 'warning' },
+  failure: { alert: 'danger', wrapper: 'destructive' },
+} as const satisfies Record<CreditNoteFormError['kind'], { alert: FeedbackTone; wrapper: string }>;
 
 /** F-2 (2026-07-08) — membership-effect intent, mirrors the use-case's enum. */
 type MembershipEffect = 'keep' | 'cancel_membership';
@@ -88,6 +111,7 @@ export function CreditNoteForm({
   onlineRefundState,
 }: Props) {
   const t = useTranslations('admin.creditNotes.new');
+  const tErrors = useTranslations('errors');
   const locale = useLocale();
   const router = useRouter();
   const [amountThb, setAmountThb] = useState('');
@@ -98,15 +122,25 @@ export function CreditNoteForm({
   const [membershipEffect, setMembershipEffect] = useState<MembershipEffect>('keep');
   const [onlineRefundAcknowledged, setOnlineRefundAcknowledged] = useState(false);
   const [pending, startTransition] = useTransition();
+  const stillWorking = useStillWorking(pending);
 
   // 088 T021a / FR-032 — issuing a credit note MINTS a §87 tax-document number
   // in-tx and moves the invoice to credited; it cannot be rolled back
   // client-side, so a failure MUST NOT be a transient toast: it is surfaced
   // INLINE via a focused role="alert" so the admin cannot miss it. A concurrent
   // 409 is shown as an inline "already credited/voided — refresh".
-  const [formError, setFormError] = useState<
-    { readonly kind: 'concurrent' } | { readonly kind: 'failure'; readonly message: string } | null
-  >(null);
+  const [formError, setFormError] = useState<CreditNoteFormError | null>(null);
+  // #61 — an admin credit note is NOT idempotent (only a refund-origin one is,
+  // by `source_refund_id`): after an unknown outcome a partial retry passes the
+  // remainder check and mints a SECOND §86/10 note. So the submit stays locked
+  // until this form is left or reloaded; the alert's action opens the invoice,
+  // which lists its credit notes.
+  const [outcomeUnknown, setOutcomeUnknown] = useState(false);
+  // An offline action waits for the connection (#48).
+  const [waitingForConnection, setWaitingForConnection] = useState(false);
+  // Set before the POST, synchronously: `pending` flips only on the next
+  // render, so a second submit in the same tick would otherwise mint twice.
+  const inFlightRef = useRef(false);
   const errorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (formError) errorRef.current?.focus();
@@ -147,95 +181,126 @@ export function CreditNoteForm({
     reasonValid &&
     matches &&
     (!requiresOnlineAck || onlineRefundAcknowledged) &&
+    !outcomeUnknown &&
     !pending;
 
   const submit = useCallback(() => {
-    if (!canSubmit || proposedSatang === null) return;
+    if (!canSubmit || proposedSatang === null || inFlightRef.current) return;
     setFormError(null);
+    setWaitingForConnection(false);
+    inFlightRef.current = true;
     startTransition(async () => {
-      const res = await fetch('/api/credit-notes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          invoiceId,
-          creditTotalSatang: proposedSatang.toString(),
-          reason: reason.trim(),
-          // F-2 — only sent when the radio is actually shown; partial
-          // credits and event invoices never touch membership, so the
-          // field is omitted rather than sent-but-ignored.
-          ...(showMembershipEffect ? { membershipEffect } : {}),
-          ...(requiresOnlineAck && onlineRefundAcknowledged
-            ? { onlinePaymentRefundAcknowledged: true }
-            : {}),
-        }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          error?: { code?: string };
-        };
-        const code = body.error?.code;
-        // FR-032 — the credit-note mint is irreversible, so route the failure to
-        // an INLINE focused role="alert" (the form stays put); a concurrent 409
-        // (voided / fully-credited / remainder-shrank) shows the "already
-        // credited/voided — refresh" prompt. The §86/10 receipt_not_creditable
-        // guidance still resolves via routeCreditNoteError.
-        const routing = routeCreditNoteError(code);
-        if (routing.kind === 'concurrent') {
-          setFormError({ kind: 'concurrent' });
-        } else {
-          const message =
-            routing.messageKey === 'errors.codeFallback' && routing.codeArg
-              ? t('errors.codeFallback', { code: routing.codeArg })
-              : t(routing.messageKey as 'errors.unknown');
-          setFormError({ kind: 'failure', message });
+      // Held after a success: the page navigates away.
+      let issued = false;
+      try {
+        let res: Response;
+        try {
+          res = await fetch('/api/credit-notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              invoiceId,
+              creditTotalSatang: proposedSatang.toString(),
+              reason: reason.trim(),
+              // F-2 — only sent when the radio is actually shown; partial
+              // credits and event invoices never touch membership, so the
+              // field is omitted rather than sent-but-ignored.
+              ...(showMembershipEffect ? { membershipEffect } : {}),
+              ...(requiresOnlineAck && onlineRefundAcknowledged
+                ? { onlinePaymentRefundAcknowledged: true }
+                : {}),
+            }),
+            signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
+          });
+        } catch {
+          // #61 — no response (a drop or the timeout): the note may have been
+          // minted. Lock the submit; a retry could mint a second one.
+          setOutcomeUnknown(true);
+          setFormError({ kind: 'unconfirmed' });
+          return;
         }
-        return;
+        if (!res.ok) {
+          const body: unknown = await res.json().catch(() => ({}));
+          // The write freeze refused it: nothing ran (its flat body names no code).
+          if (isReadOnlyRefusal(res.status, body)) {
+            setFormError({ kind: 'readOnly' });
+            return;
+          }
+          const problem = readProblemCode(body);
+          // #61 — a 5xx naming no refusal may come after the note was minted.
+          if (isUnknownOutcome(res.status, problem)) {
+            setOutcomeUnknown(true);
+            setFormError({ kind: 'unconfirmed' });
+            return;
+          }
+          // Route codes are nested; a flat string is not one (read-only aside).
+          const code = problem?.shape === 'nested' ? problem.code : undefined;
+          // FR-032 — the credit-note mint is irreversible, so route the failure to
+          // an INLINE focused role="alert" (the form stays put); a concurrent 409
+          // (voided / fully-credited / remainder-shrank) shows the "already
+          // credited/voided — refresh" prompt. The §86/10 receipt_not_creditable
+          // guidance still resolves via routeCreditNoteError.
+          const routing = routeCreditNoteError(code);
+          if (routing.kind === 'concurrent') {
+            setFormError({ kind: 'concurrent' });
+          } else {
+            const message =
+              routing.messageKey === 'errors.codeFallback' && routing.codeArg
+                ? t('errors.codeFallback', { code: routing.codeArg })
+                : t(routing.messageKey as 'errors.unknown');
+            setFormError({ kind: 'failure', message });
+          }
+          return;
+        }
+        // FR-032 — doc-specific success toast interpolating the freshly-minted
+        // credit-note number (`document_number`, known only post-commit).
+        // MEDIUM-5 — the email-delivery signal rides alongside: a
+        // `skipped_no_recipient` value means the CN is still fully issued but the
+        // buyer has no email on file, so the auto-email was skipped (non-blocking
+        // description). `membership_end` (0306) is the same kind of non-blocking
+        // signal for the requested end of the member's coverage. All fields come
+        // from ONE parse of the success body.
+        const successBody = (await res.json().catch(() => ({}))) as {
+          document_number?: string | null;
+          email_delivery?: string;
+          membership_end?: string;
+        };
+        const cnNumber =
+          typeof successBody.document_number === 'string' && successBody.document_number
+            ? successBody.document_number
+            : null;
+        const title = cnNumber ? t('successWithNumber', { number: cnNumber }) : t('success');
+        const noticeParts: string[] = [];
+        if (successBody.email_delivery === 'skipped_no_recipient') {
+          noticeParts.push(t('emailSkippedNoRecipient'));
+        }
+        // 0306 — the outcome of ending the member's coverage (present only when
+        // staff chose to end it). `ended` confirms; the rest explain what is
+        // still pending or needs follow-up. The credit note is issued either way.
+        const membershipEndKey = (
+          {
+            ended: 'membershipEnd.ended',
+            deferred: 'membershipEnd.deferred',
+            no_open_cycle: 'membershipEnd.noOpenCycle',
+            failed: 'membershipEnd.failed',
+          } as const
+        )[successBody.membership_end as 'ended' | 'deferred' | 'no_open_cycle' | 'failed'];
+        if (membershipEndKey !== undefined) {
+          noticeParts.push(t(membershipEndKey));
+        }
+        if (noticeParts.length > 0) {
+          toast.success(title, { description: noticeParts.join(' ') });
+        } else {
+          toast.success(title);
+        }
+        // Destination page (`/admin/invoices/[id]`) is a server component
+        // that fetches fresh on mount; `router.refresh()` here would
+        // invalidate the abandoned form route, not the target. Drop it.
+        issued = true;
+        router.push(`/admin/invoices/${invoiceId}`);
+      } finally {
+        if (!issued) inFlightRef.current = false;
       }
-      // FR-032 — doc-specific success toast interpolating the freshly-minted
-      // credit-note number (`document_number`, known only post-commit).
-      // MEDIUM-5 — the email-delivery signal rides alongside: a
-      // `skipped_no_recipient` value means the CN is still fully issued but the
-      // buyer has no email on file, so the auto-email was skipped (non-blocking
-      // description). `membership_end` (0306) is the same kind of non-blocking
-      // signal for the requested end of the member's coverage. All fields come
-      // from ONE parse of the success body.
-      const successBody = (await res.json().catch(() => ({}))) as {
-        document_number?: string | null;
-        email_delivery?: string;
-        membership_end?: string;
-      };
-      const cnNumber =
-        typeof successBody.document_number === 'string' && successBody.document_number
-          ? successBody.document_number
-          : null;
-      const title = cnNumber ? t('successWithNumber', { number: cnNumber }) : t('success');
-      const noticeParts: string[] = [];
-      if (successBody.email_delivery === 'skipped_no_recipient') {
-        noticeParts.push(t('emailSkippedNoRecipient'));
-      }
-      // 0306 — the outcome of ending the member's coverage (present only when
-      // staff chose to end it). `ended` confirms; the rest explain what is
-      // still pending or needs follow-up. The credit note is issued either way.
-      const membershipEndKey = (
-        {
-          ended: 'membershipEnd.ended',
-          deferred: 'membershipEnd.deferred',
-          no_open_cycle: 'membershipEnd.noOpenCycle',
-          failed: 'membershipEnd.failed',
-        } as const
-      )[successBody.membership_end as 'ended' | 'deferred' | 'no_open_cycle' | 'failed'];
-      if (membershipEndKey !== undefined) {
-        noticeParts.push(t(membershipEndKey));
-      }
-      if (noticeParts.length > 0) {
-        toast.success(title, { description: noticeParts.join(' ') });
-      } else {
-        toast.success(title);
-      }
-      // Destination page (`/admin/invoices/[id]`) is a server component
-      // that fetches fresh on mount; `router.refresh()` here would
-      // invalidate the abandoned form route, not the target. Drop it.
-      router.push(`/admin/invoices/${invoiceId}`);
     });
   }, [
     canSubmit,
@@ -271,25 +336,63 @@ export function CreditNoteForm({
           ref={errorRef}
           tabIndex={-1}
           role="alert"
-          data-tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
+          data-tone={CREDIT_NOTE_ERROR_TONE[formError.kind].wrapper}
           className="outline-none"
           data-testid="credit-note-error"
         >
           <Alert
             role="none"
-            tone={formError.kind === 'failure' ? 'danger' : 'info'}
+            tone={CREDIT_NOTE_ERROR_TONE[formError.kind].alert}
             action={
-              formError.kind === 'concurrent' ? (
-                <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => router.refresh()}>
-                  {t('errors.refreshAction')}
+              formError.kind === 'concurrent' || formError.kind === 'unconfirmed' ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  touchHeight
+                  aria-disabled={waitingForConnection || undefined}
+                  onClick={() => {
+                    if (waitingForConnection) return;
+                    // Offline, a navigation falls onto the browser's offline
+                    // page; wait for the connection instead (#48). On an
+                    // unknown outcome, go to the invoice: it lists the notes.
+                    const go =
+                      formError.kind === 'unconfirmed'
+                        ? { refresh: () => router.push(`/admin/invoices/${invoiceId}`) }
+                        : router;
+                    const outcome = refreshWhenOnline(go, () => {});
+                    if (outcome === 'waiting') setWaitingForConnection(true);
+                  }}
+                >
+                  {waitingForConnection
+                    ? t('errors.waitingForConnection')
+                    : formError.kind === 'unconfirmed'
+                      ? t('errors.openInvoiceAction')
+                      : t('errors.refreshAction')}
                 </Button>
               ) : undefined
             }
           >
-            {formError.kind === 'concurrent' ? t('errors.concurrent') : formError.message}
+            {formError.kind === 'concurrent'
+              ? t('errors.concurrent')
+              : formError.kind === 'unconfirmed'
+                ? t('errors.unconfirmed')
+                : formError.kind === 'readOnly'
+                  ? `${tErrors('readOnlyMode')} ${tErrors('readOnlyNothingChanged')}`
+                  : formError.message}
           </Alert>
         </div>
       )}
+      {/* #61 — the offline wait and the 10 s "still working" note, announced
+          once, outside the alert region; visible too, so nobody closes the
+          tab during a long wait. */}
+      <div role="status" aria-live="polite" className="min-h-5 text-sm text-[var(--aura-fg-secondary)]">
+        {waitingForConnection
+          ? t('errors.waitingForConnection')
+          : stillWorking
+            ? t('errors.stillWorking')
+            : ''}
+      </div>
       <Card>
         <div className="flex flex-col gap-[var(--aura-space-5)]">
           <div className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3 text-sm">
