@@ -36,7 +36,8 @@
 --   outlive both the broadcast row, which the retention sweep deletes, and
 --   any member change; it carries no content), resource_type, resource_id
 --   (NULL only for `create_unconfirmed`), reason, created_at, settled_at and
---   outcome (set together, once, by the settle CAS), and since review round 1
+--   outcome (set together, once, by the settle CAS — and, since review round 2,
+--   enforced once by a BEFORE UPDATE trigger), and since review round 1
 --   attempts / last_attempted_at (an undecided settle increments both, so the
 --   drain lists `ORDER BY attempts, created_at` and a permanently undecided row
 --   cannot hold the head of the queue).
@@ -58,10 +59,14 @@
 --
 -- Retention [P M-1]: `prune_orphaned_resend_ids(tenant, cutoff)` deletes the
 -- rows that no longer name a copy we could reach — settled rows other than
--- `handed`, and `create_unconfirmed` rows (no id to call) — older than the
--- cutoff. An UNSETTLED row with an id is never pruned, and neither is a
--- `handed` row: it is the durable record of a disclosure (RoPA 8c; review
--- round 1, pdpa M-A). SECURITY DEFINER (it runs as the
+-- `handed` (`superseded` included), and `create_unconfirmed` rows (no id to
+-- call) — older than the cutoff. An UNSETTLED row with an id is never pruned.
+-- A `handed` row is the durable record of a disclosure (RoPA 8c; review round
+-- 1, pdpa M-A), kept until `ORPHAN_HANDED_RETENTION_YEARS` = 5 after it was
+-- settled, the 8c evidence horizon (review round 2, pdpa L-3).
+--
+-- Outcomes (review round 2, code-review #2): `superseded` is added — the id is
+-- held by a row whose send went out normally; settled with no Resend call. SECURITY DEFINER (it runs as the
 -- owner, which has BYPASSRLS and the DELETE chamber_app lacks), so it fences
 -- itself: the tenant must be the caller's `app.current_tenant`, every DELETE
 -- carries `tenant_id = p_tenant`, and a cutoff younger than 90 days
@@ -73,7 +78,9 @@
 -- Indexes: the partial UNIQUE (tenant_id, resource_type, resource_id) WHERE
 -- resource_id IS NOT NULL is what the writers' `ON CONFLICT DO NOTHING` lands
 -- on (one row per Resend id); the partial (tenant_id, created_at) WHERE
--- settled_at IS NULL serves the drain's oldest-first read. The drain's
+-- settled_at IS NULL narrows the drain's and the erasure's reads to the
+-- unsettled rows (they then sort past-grace first, by attempts and age, in
+-- memory: at most a tenant's unsettled rows, review round 2). The drain's
 -- NOT EXISTS against `broadcasts.resend_audience_id` has no index on that
 -- column; it reads at most 20 orphans per tick against one tenant's rows, so
 -- none is added here (an index on `broadcasts` would lock it on deploy).
@@ -115,7 +122,7 @@ CREATE TABLE IF NOT EXISTS "broadcast_orphaned_resend_ids" (
   "settled_at"             timestamptz NULL,
   "outcome"                text        NULL
                              CONSTRAINT "broadcast_orphaned_resend_ids_outcome_check"
-                             CHECK ("outcome" IN ('deleted', 'absent', 'retained', 'handed')),
+                             CHECK ("outcome" IN ('deleted', 'absent', 'retained', 'handed', 'superseded')),
   CONSTRAINT "broadcast_orphaned_resend_ids_pkey" PRIMARY KEY ("tenant_id", "orphan_id"),
   -- An id is known for every reason but `create_unconfirmed`, which never has one.
   CONSTRAINT "broadcast_orphaned_resend_ids_id_iff_known"
@@ -135,6 +142,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS "broadcast_orphaned_resend_ids_resource_uq"
 CREATE INDEX IF NOT EXISTS "broadcast_orphaned_resend_ids_unsettled_idx"
   ON "broadcast_orphaned_resend_ids" ("tenant_id", "created_at")
   WHERE "settled_at" IS NULL;--> statement-breakpoint
+
+-- Review round 2 (code-review #2) — the outcome set gains `superseded`. CREATE
+-- TABLE IF NOT EXISTS skipped an existing table, so the CHECK is replaced here.
+ALTER TABLE "broadcast_orphaned_resend_ids"
+  DROP CONSTRAINT IF EXISTS "broadcast_orphaned_resend_ids_outcome_check";--> statement-breakpoint
+ALTER TABLE "broadcast_orphaned_resend_ids"
+  ADD CONSTRAINT "broadcast_orphaned_resend_ids_outcome_check"
+  CHECK ("outcome" IN ('deleted', 'absent', 'retained', 'handed', 'superseded'));--> statement-breakpoint
 
 -- Review round 1 — the attempt counter (a separate ADD COLUMN, see the header).
 ALTER TABLE "broadcast_orphaned_resend_ids"
@@ -160,6 +175,31 @@ CREATE POLICY "tenant_isolation_on_broadcast_orphaned_resend_ids"
   TO chamber_app
   USING      ("tenant_id" = current_setting('app.current_tenant', TRUE))
   WITH CHECK ("tenant_id" = current_setting('app.current_tenant', TRUE));--> statement-breakpoint
+
+-- --- Review round 2 (migration LOW) — settled once, in the DB ---------------
+-- The settle CAS (`settled_at IS NULL`) already writes a row once; this trigger
+-- makes it a property of the table: once `settled_at` is set, neither it nor
+-- `outcome` changes. `attempts` / `last_attempted_at` stay writable.
+CREATE OR REPLACE FUNCTION public.broadcast_orphaned_resend_ids_settled_once_fn()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+BEGIN
+  IF OLD.settled_at IS NOT NULL
+     AND (NEW.settled_at IS DISTINCT FROM OLD.settled_at OR NEW.outcome IS DISTINCT FROM OLD.outcome) THEN
+    RAISE EXCEPTION 'broadcast_orphaned_resend_ids_settled_once'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;--> statement-breakpoint
+
+DROP TRIGGER IF EXISTS "broadcast_orphaned_resend_ids_settled_once" ON "broadcast_orphaned_resend_ids";--> statement-breakpoint
+CREATE TRIGGER "broadcast_orphaned_resend_ids_settled_once"
+  BEFORE UPDATE ON "broadcast_orphaned_resend_ids"
+  FOR EACH ROW
+  EXECUTE FUNCTION public.broadcast_orphaned_resend_ids_settled_once_fn();--> statement-breakpoint
 
 -- --- [P M-1] the retention prune --------------------------------------------
 
@@ -187,8 +227,10 @@ BEGIN
   DELETE FROM broadcast_orphaned_resend_ids
    WHERE tenant_id = p_tenant
      AND (
-       -- A `handed` row is the durable disclosure record: kept (pdpa M-A).
+       -- A `handed` row is the durable disclosure record: kept (pdpa M-A) ...
        (settled_at IS NOT NULL AND settled_at < p_cutoff AND outcome <> 'handed')
+       -- ... for ORPHAN_HANDED_RETENTION_YEARS = 5, the 8c horizon (pdpa L-3).
+       OR (outcome = 'handed' AND settled_at < now() - interval '5 years')
        OR (reason = 'create_unconfirmed' AND created_at < p_cutoff)
      );
   GET DIAGNOSTICS v_count = ROW_COUNT;
