@@ -563,9 +563,14 @@ describe('sweepExpiredBroadcasts — the orphan-record prune (spec 140 s2c)', ()
     expect(events.at(-1)).toBe('prune');
   });
 
-  it('a failed prune is logged with its class and the sweep still answers ok (orphanRowsPruned null)', async () => {
+  it('a failed prune is logged with its class, counted, and the sweep still answers ok (orphanRowsPruned null)', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const counted = vi.spyOn(broadcastsMetrics, 'retentionOrphanPruneFailed');
     const { deps } = makeDeps({ pruned: 'throws' });
     const result = await sweepExpiredBroadcasts(deps);
+    // Review round 1 (reliability L-2) — a durable signal, not only a log line.
+    expect(counted).toHaveBeenCalledWith('test-tenant');
+    counted.mockRestore();
     expect(result).toEqual({ ok: true, value: { ...ZERO_OUTPUT, orphanRowsPruned: null } });
     const line = logged.warn.find((c) => c[1] === 'broadcasts.retention_sweep.orphan_prune_failed');
     expect(line?.[0]).toEqual({ tenantId: 'test-tenant', err: 'Error' });

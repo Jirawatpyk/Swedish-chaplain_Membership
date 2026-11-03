@@ -152,6 +152,8 @@ describe('spec 140 s2c — the persist helper records a leaked minted id', () =>
       resourceType: 'broadcast',
       resourceId: 'rb-minted',
       orphanReason: 'attach_lost',
+      // Review round 1 (pdpa L-B) — the row a by-hand fix needs: whose it was.
+      requestedByMemberId: MEMBER,
       severity: 'critical',
     });
     expect(line?.[0]).not.toHaveProperty('reason');
