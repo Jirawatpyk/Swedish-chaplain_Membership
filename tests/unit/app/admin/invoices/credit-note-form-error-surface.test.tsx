@@ -126,17 +126,18 @@ describe('CreditNoteForm — concurrent 409 inline recovery (FR-032)', () => {
       expect(alert).toHaveAttribute('role', 'alert');
       // #61 — no "in another session": a retry from this same form lands here too.
       expect(alert).toHaveTextContent(
-        'This invoice has already been credited or voided. Refresh to see its latest status.',
+        'This invoice has already been credited or voided. Open it to see its latest status.',
       );
       expect(alert).not.toHaveTextContent(/session/i);
 
-      // The recovery affordance is the whole point of the concurrent branch.
-      const refreshBtn = screen.getByRole('button', { name: 'Refresh' });
-      expect(refreshMock).not.toHaveBeenCalled();
-      fireEvent.click(refreshBtn);
-      expect(refreshMock).toHaveBeenCalledTimes(1);
-      // Recovery must NOT navigate away from the still-open form.
+      // #727 review (UX M2) — the form page answers notFound() for a fully
+      // credited or voided invoice, so a refresh would land on a 404; the
+      // recovery opens the invoice instead.
+      expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
       expect(pushMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Open invoice' }));
+      expect(pushMock).toHaveBeenCalledWith(`/admin/invoices/${INVOICE_ID}`);
+      expect(refreshMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -230,6 +231,10 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
       expect(submit).toBeDisabled();
       fireEvent.click(submit);
       expect(fetchMock).toHaveBeenCalledTimes(1);
+      // #727 review (UX M1) — the reason sits beside the disabled button.
+      expect(screen.getByTestId('cn-locked-hint')).toHaveTextContent(
+        'Issuing is paused until you check the invoice — this prevents a duplicate credit note.',
+      );
       // The invoice detail lists its credit notes; leaving the form also ends
       // the lock. No Refresh here: an in-place refresh would keep it.
       expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();

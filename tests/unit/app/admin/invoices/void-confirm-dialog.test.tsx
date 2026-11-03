@@ -22,7 +22,7 @@
  * route-level form, not an <AlertDialog> child, so it renders bare.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { toast } from '@/lib/toast';
 import enMessages from '@/i18n/messages/en.json';
@@ -126,17 +126,18 @@ describe('VoidConfirmDialog — concurrent 409 inline recovery (FR-032)', () => 
       expect(alert).toHaveAttribute('role', 'alert');
       // #61 — no "in another session": a retry from this same page lands here too.
       expect(alert).toHaveTextContent(
-        'This invoice has already been voided or changed. Refresh to see its latest status.',
+        'This invoice has already been voided or changed. Open it to see its latest status.',
       );
       expect(alert).not.toHaveTextContent(/session/i);
 
-      // The recovery affordance is the whole point of the concurrent branch.
-      const refreshBtn = screen.getByRole('button', { name: 'Refresh' });
-      expect(refreshMock).not.toHaveBeenCalled();
-      fireEvent.click(refreshBtn);
-      expect(refreshMock).toHaveBeenCalledTimes(1);
-      // Recovery must NOT navigate away from the still-open confirm form.
+      // #727 review (UX H1) — the void page answers notFound() for an invoice
+      // that is no longer issued, so a refresh here would land on a 404. The
+      // recovery opens the invoice instead.
+      expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
       expect(pushMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Open invoice' }));
+      expect(pushMock).toHaveBeenCalledWith(DETAIL_ROUTE);
+      expect(refreshMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -199,7 +200,7 @@ describe('VoidConfirmDialog — failure branch is focused + destructive (FR-032)
 // nothing.
 describe('VoidConfirmDialog — #61 an unknown outcome reads as unknown', () => {
   const UNCONFIRMED =
-    "We couldn't confirm whether the invoice was voided. Refresh to check its status before you try again — if it was voided, trying again changes nothing.";
+    "We couldn't confirm whether the invoice was voided. Open the invoice to check its status before you try again — if it was voided, trying again changes nothing.";
 
   function respond(status: number, body: unknown) {
     return vi.fn(async (_url: string, _init: RequestInit) => ({
@@ -212,7 +213,7 @@ describe('VoidConfirmDialog — #61 an unknown outcome reads as unknown', () => 
     }));
   }
 
-  it('a rejected fetch (a dropped connection) shows the warning, focused, with Refresh and no toast', async () => {
+  it('a rejected fetch (a dropped connection) shows the warning, focused, with Open invoice and no toast', async () => {
     vi.mocked(toast.error).mockClear();
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => {
       throw new TypeError('Failed to fetch');
@@ -225,11 +226,34 @@ describe('VoidConfirmDialog — #61 an unknown outcome reads as unknown', () => 
       expect(alert).toHaveAttribute('data-tone', 'warning');
       expect(alert).toHaveTextContent(UNCONFIRMED);
       await waitFor(() => expect(alert).toHaveFocus());
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-      expect(refreshMock).toHaveBeenCalledTimes(1);
       expect(toast.error).not.toHaveBeenCalled();
       expect(pushMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Open invoice' }));
+      expect(pushMock).toHaveBeenCalledWith(DETAIL_ROUTE);
     } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('offline, Open invoice waits for the connection, then navigates and the label comes back', async () => {
+    vi.stubGlobal('fetch', rejectingFetch('invalid_status'));
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      renderDialog();
+      fillAndSubmit();
+      await screen.findByTestId('void-invoice-error');
+      fireEvent.click(screen.getByRole('button', { name: 'Open invoice' }));
+      expect(pushMock).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Waiting for the connection…' })).toHaveAttribute('aria-disabled', 'true');
+      onLine.mockReturnValue(true);
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+      expect(pushMock).toHaveBeenCalledWith(DETAIL_ROUTE);
+      // #727 review (UX H2) — the page stays mounted, so the wait must clear.
+      expect(screen.getByRole('button', { name: 'Open invoice' })).not.toHaveAttribute('aria-disabled');
+    } finally {
+      onLine.mockRestore();
       vi.unstubAllGlobals();
     }
   });

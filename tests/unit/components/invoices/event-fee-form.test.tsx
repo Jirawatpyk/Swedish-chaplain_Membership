@@ -962,6 +962,11 @@ describe('<EventFeeForm>', () => {
     expect(toastWarning).toHaveBeenCalledTimes(1);
     const [title, options] = toastWarning.mock.calls[0]!;
     expect(title).toBe(asPaidMessages.errors.unconfirmed);
+    expect(title).toBe(
+      "We couldn't confirm whether the invoice was issued as paid. Check its status on the invoice before you try again.",
+    );
+    // #727 review (UX H3) — it stays across the navigation until dismissed.
+    expect(options).toEqual({ duration: Infinity });
     expect(options ?? {}).not.toHaveProperty('action');
     expect(JSON.stringify(options ?? {})).not.toContain(asPaidMessages.draftRemains);
     expect(toastError).not.toHaveBeenCalled();
@@ -989,7 +994,7 @@ describe('<EventFeeForm>', () => {
         }),
       );
       await waitFor(() => expect(pushMock).toHaveBeenCalledWith(`/admin/invoices/inv-2${4 + i}`));
-      expect(toastWarning).toHaveBeenLastCalledWith(asPaidMessages.errors.unconfirmed);
+      expect(toastWarning).toHaveBeenLastCalledWith(asPaidMessages.errors.unconfirmed, { duration: Infinity });
       expect(toastError).not.toHaveBeenCalled();
       view.unmount();
     }
@@ -1016,6 +1021,7 @@ describe('<EventFeeForm>', () => {
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-26'));
     expect(toastWarning).toHaveBeenCalledWith(enMessages.errors.readOnlyMode, {
       description: `${enMessages.errors.readOnlyNothingChanged} ${asPaidMessages.draftRemains}`,
+      duration: 10_000,
     });
     expect(toastError).not.toHaveBeenCalled();
   });
