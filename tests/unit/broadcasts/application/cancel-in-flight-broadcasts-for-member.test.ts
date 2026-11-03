@@ -267,7 +267,7 @@ interface OrphanFixture {
   readonly broadcastId: string;
   readonly resourceId: string;
   readonly resourceType?: 'broadcast' | 'audience';
-  readonly outcome?: 'deleted' | 'absent' | 'retained' | 'handed' | null;
+  readonly outcome?: 'deleted' | 'absent' | 'retained' | 'handed' | 'superseded' | null;
   readonly attempts?: number;
   readonly heldBySentRow?: boolean;
 }
@@ -1298,7 +1298,8 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
 
     it.each([
       ['deleted', undefined, 'deleted', { resendDraftsCleared: 1 }],
-      ['absent', undefined, 'absent', { resendDraftsCleared: 1 }],
+      // Review round 2 (code-review #4) — a 404 settles absent once a GET confirms it.
+      ['absent', 'not_found', 'absent', { resendDraftsCleared: 1 }],
       ['forbidden', 'cancelled', 'retained', { resendCopiesRetained: 1 }],
       ['forbidden', 'failed', 'retained', { resendCopiesRetained: 1 }],
     ] as const)('a member broadcast orphan: DELETE %s (GET %s) settles %s and counts into the draft fields', async (deleteOutcome, probe, outcome, counts) => {
@@ -1457,6 +1458,44 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 0 } });
       expect(deps.settles).toHaveLength(12);
       expect(deps.audiencePeak()).toBe(5);
+    });
+  });
+
+  /**
+   * Spec 140 s2c review round 2 — pass (a) through the shared outcome table:
+   * code-review #2 (`superseded`: settled with no Resend call, never counted,
+   * on the first run or a re-drive) and code-review #4 (a DELETE 404 is
+   * confirmed by a GET after REPROBE_PAUSE_MS).
+   */
+  describe('spec 140 s2c review round 2 — superseded, the 404 confirm', () => {
+    const erasureInput = { tenant, memberId, requestId: 'req-1', onDispatchBegun: 'delete_then_cancel' as const };
+    type Seen = {
+      settles: Array<[string, string]>;
+      calls: string[];
+      broadcastsGateway: { deleteBroadcastOnce: ReturnType<typeof vi.fn> };
+    };
+    const o1 = { orphanId: 'o-1', broadcastId: broadcastIdA, resourceId: 'rb-o1' };
+
+    it('[code-review #2] an orphan whose id a sent row holds is superseded, not handed, and never counted', async () => {
+      const deps = makeDeps({ memberOrphans: [{ ...o1, heldBySentRow: true }], deleteOutcome: 'forbidden', probe: 'sent' }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0 } });
+      expect(deps.settles).toEqual([['o-1', 'superseded']]);
+      expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
+    });
+
+    it('[code-review #2] a re-drive does not count a settled superseded row', async () => {
+      const deps = makeDeps({ memberOrphans: [{ ...o1, outcome: 'superseded' }] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0 } });
+    });
+
+    it('[code-review #4] a 404 then a GET draft is not absent: it withholds member_erased', async () => {
+      const deps = makeDeps({ memberOrphans: [o1], deleteOutcome: 'absent', probe: 'draft' }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, resendDraftsCleared: 0 } });
+      expect(deps.settles).toEqual([]);
+      expect(deps.calls).toEqual(['delete:rb-o1:no-lock', `pause:${REPROBE_PAUSE_MS}:no-lock`, 'probe:rb-o1:no-lock']);
     });
   });
 });

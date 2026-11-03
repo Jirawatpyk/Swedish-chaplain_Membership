@@ -27,6 +27,7 @@ import {
   cleanupOrphanedAudiences,
 } from '@/modules/broadcasts/application/use-cases/cleanup-orphaned-audiences';
 import { RESEND_CALL_TIMEOUT_MS } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import { REPROBE_PAUSE_MS } from '@/modules/broadcasts/application/use-cases/_reprobe-pause';
 import type { OrphanedResendIdRef } from '@/modules/broadcasts/application/ports/broadcast-orphans-repo';
 
 const tenant = asTenantContext('test-tenant');
@@ -140,6 +141,10 @@ function harness(opts: Opts) {
         return opts.retrieveOnce?.[id] ?? { kind: 'not_found' as const };
       },
     },
+    // Review round 2 (code-review #4) — the pause before a 404's confirming GET, recorded.
+    pauseBeforeReprobe: async (ms: number) => {
+      calls.push(`pause:${ms}`);
+    },
   };
   const run = () => cleanupOrphanedAudiences(deps as never, { graceMs: GRACE_MS, limit: 50 });
   return { run, settled, attempted, calls, listLimits, peak: () => peak };
@@ -236,8 +241,9 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
   it('the stop leaves room for one chunk inside the route maxDuration (CLEANUP_MAX_DURATION_MS)', () => {
     const m = /export const maxDuration = (\d+);\r?\n/.exec(readFileSync(ROUTE, 'utf8'));
     expect(Number(m?.[1]) * 1000).toBe(CLEANUP_MAX_DURATION_MS);
-    // One in-flight chunk: a DELETE and a GET at RESEND_CALL_TIMEOUT_MS each, plus 5 s for the settle.
-    expect(ORPHAN_DRAIN_STOP_MS + 2 * RESEND_CALL_TIMEOUT_MS + 5_000).toBeLessThanOrEqual(CLEANUP_MAX_DURATION_MS);
+    // One in-flight chunk: a DELETE and a GET at RESEND_CALL_TIMEOUT_MS each, the
+    // pause before a 404's confirming GET (review round 2), plus 5 s for the settle.
+    expect(ORPHAN_DRAIN_STOP_MS + 2 * RESEND_CALL_TIMEOUT_MS + REPROBE_PAUSE_MS + 5_000).toBeLessThanOrEqual(CLEANUP_MAX_DURATION_MS);
   });
 
   it('a list that fails is logged (err: errKind, tenantId) and the audience pass still answers ok', async () => {
@@ -296,5 +302,39 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     const res = await h.run();
     expect(res.ok ? res.value.orphans : null).toMatchObject({ settled: 1, undecided: 1 });
     expect(warn.mock.calls.some((c) => c[1] === 'broadcasts.orphan_drain.attempt_mark_failed')).toBe(true);
+  });
+
+  /**
+   * Spec 140 s2c review round 2 — code-review #4 (a DELETE 404 is confirmed by
+   * a GET after REPROBE_PAUSE_MS) and code-review #2 (`superseded`), through
+   * the drain.
+   */
+  it('[code-review #4] a 404 then a GET draft is not absent; a 404 then a GET 404 settles absent after the pause', async () => {
+    const h = harness({
+      orphans: [orphan(1), orphan(2)],
+      deleteOnce: { 'rb-1': 'absent', 'rb-2': 'absent' },
+      retrieveOnce: { 'rb-1': { kind: 'present', status: 'draft' }, 'rb-2': { kind: 'not_found' } },
+    });
+    const res = await h.run();
+    expect(h.settled).toEqual([['o-2', 'absent']]);
+    expect(h.attempted).toEqual(['o-1']);
+    expect(h.calls.filter((c) => c.endsWith('rb-2') || c.startsWith('pause'))).toEqual([
+      'deleteBroadcastOnce:rb-2',
+      `pause:${REPROBE_PAUSE_MS}`,
+      `pause:${REPROBE_PAUSE_MS}`,
+      'retrieveBroadcastOnce:rb-2',
+    ]);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ settled: 1, undecided: 1 });
+  });
+
+  it('[code-review #2] an orphan whose id a sent row holds is superseded, not handed', async () => {
+    const h = harness({
+      orphans: [orphan(1, { heldBySentRow: true })],
+      deleteOnce: { 'rb-1': 'forbidden' },
+      retrieveOnce: { 'rb-1': { kind: 'present', status: 'sent' } },
+    });
+    await h.run();
+    expect(h.settled).toEqual([['o-1', 'superseded']]);
+    expect(h.calls).toEqual([]);
   });
 });
