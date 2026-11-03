@@ -1898,6 +1898,24 @@ describe('issueCreditNote — #66 idempotency key (admin notes)', () => {
     expect(replays[0].payload).toMatchObject({ credit_note_id: winner.creditNoteId, path: 'race_reconcile' });
   });
 
+  // /code-review — a 23505 proves a note exists under the key; if the
+  // reconcile cannot read it, answer a 5xx (the form keeps the attempt), never
+  // a definite concurrent_state_change.
+  it('a reconcile that fails after a key race throws instead of refusing', async () => {
+    const { deps, findByIdempotencyKey } = depsWithKeyHit(null);
+    findByIdempotencyKey
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockRejectedValue(new Error('connection terminated'));
+    (deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>).mockRejectedValue(
+      Object.assign(new Error('duplicate key value violates unique constraint'), {
+        code: '23505',
+        constraint_name: 'credit_notes_tenant_idempotency_key_uniq',
+      }),
+    );
+    await expect(issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY })).rejects.toThrow('connection terminated');
+  });
+
   it('a first issue and a refused mismatch write no replay row', async () => {
     for (const hit of [null, existingCn({ total: Money.fromSatangUnsafe(2_140n) })]) {
       const { deps } = depsWithKeyHit(hit);

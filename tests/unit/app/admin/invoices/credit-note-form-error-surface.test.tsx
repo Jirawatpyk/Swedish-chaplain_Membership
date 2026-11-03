@@ -431,6 +431,26 @@ describe('CreditNoteForm — #66 the idempotency key', () => {
     for (const r of radios) expect(r).toBeDisabled();
   });
 
+  // /code-review (FR-040) — a restored attempt must not carry the typed phrase:
+  // once it ends on a definite refusal, a NEW note still needs the admin to
+  // type it.
+  it('a restored attempt that ends leaves the typed confirmation empty', async () => {
+    storeAttempt({ creditTotalSatang: '50000' });
+    vi.stubGlobal('fetch', vi.fn(async () => refusal(409, { error: { code: 'credit_exceeds_remainder' } })));
+    try {
+      renderForm();
+      await screen.findByTestId('credit-note-error');
+      await clickTryAgain();
+      await waitFor(() =>
+        expect(screen.getByTestId('credit-note-error')).toHaveAttribute('data-tone', 'neutral'),
+      );
+      expect(screen.getByLabelText(new RegExp(cnMessages.confirmCopy.split('{phrase}')[0]!))).toHaveValue('');
+      expect(screen.getByRole('button', { name: cnMessages.submit })).toBeDisabled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('while the outcome is unknown every field is read-only and the locked note says why', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => dropped()));
     try {
