@@ -65,13 +65,35 @@ describe('abandonCreditNoteAttempt (task 68)', () => {
     });
   });
 
-  it('the note was issued under the key: answers issued with it, and abandons nothing', async () => {
-    const note = { creditNoteId: 'cn-1', originalInvoiceId: INVOICE_ID };
-    const { deps, raw } = makeDeps({ note });
+  it('the note was issued under the key: answers issued with it, abandons nothing, and records the replay', async () => {
+    const note = {
+      creditNoteId: 'cn-1',
+      originalInvoiceId: INVOICE_ID,
+      documentNumber: { raw: 'CN-2026-000009' },
+      total: { satang: 53_500n },
+    };
+    const { deps, raw, tx } = makeDeps({ note });
     const r = await abandonCreditNoteAttempt(deps, input);
     expect(r).toEqual({ ok: true, value: { outcome: 'issued', creditNote: note } });
     expect(raw.creditNoteRepo.insertAbandonedAttempt).not.toHaveBeenCalled();
-    expect(raw.audit.emit).not.toHaveBeenCalled();
+    // #67 — returning an existing §86/10 note in answer to the attempt leaves
+    // the same trace as a replay, in the tx that read it.
+    expect(raw.audit.emit).toHaveBeenCalledTimes(1);
+    expect(raw.audit.emit.mock.calls[0] as unknown[]).toEqual([
+      tx,
+      expect.objectContaining({
+        eventType: 'credit_note_issue_replayed',
+        actorUserId: 'actor-user',
+        payload: {
+          credit_note_id: 'cn-1',
+          original_invoice_id: INVOICE_ID,
+          document_number: 'CN-2026-000009',
+          idempotency_key: KEY,
+          total_satang: '53500',
+          path: 'start_over',
+        },
+      }),
+    ]);
   });
 
   it('a second Start over is idempotent: abandoned again, no second tombstone or audit', async () => {
@@ -93,11 +115,19 @@ describe('abandonCreditNoteAttempt (task 68)', () => {
     expect(raw.audit.emit).not.toHaveBeenCalled();
   });
 
-  it('an unknown invoice: invoice_not_found, no lookup', async () => {
+  it('an unknown invoice: invoice_not_found, no lookup, and a probe row that survives the tx', async () => {
     const { deps, raw } = makeDeps({ status: null });
-    const r = await abandonCreditNoteAttempt(deps, input);
+    const r = await abandonCreditNoteAttempt(deps, { ...input, actorRole: 'admin' });
     expect(r).toEqual({ ok: false, error: { code: 'invoice_not_found' } });
     expect(raw.creditNoteRepo.findByIdempotencyKey).not.toHaveBeenCalled();
+    // The same probe trace as issuing (null tx: it outlives a rollback).
+    expect(raw.audit.emit.mock.calls[0] as unknown[]).toEqual([
+      null,
+      expect.objectContaining({
+        eventType: 'credit_note_cross_tenant_probe',
+        payload: { attempted_invoice_id: INVOICE_ID, actor_role: 'admin', route: 'abandon-credit-note-attempt' },
+      }),
+    ]);
   });
 
   it('the input schema refuses a malformed key or invoice id', async () => {

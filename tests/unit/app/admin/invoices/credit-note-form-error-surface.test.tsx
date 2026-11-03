@@ -332,7 +332,7 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
 // "Try again" resends exactly what the first attempt sent.
 describe('CreditNoteForm — #66 the idempotency key', () => {
   const STORE_KEY = `cn-attempt:${INVOICE_ID}`;
-  const LOCKED_HINT = 'Finish this credit note with “Try again” in the message above, or open the invoice.';
+  const LOCKED_HINT = 'Finish this credit note with “Try again” in the message above, open the invoice, or choose “Start over”.';
 
   function okFetch(body: Record<string, unknown>) {
     return vi.fn(async (_url: string, _init: RequestInit) => ({
@@ -728,6 +728,9 @@ describe('CreditNoteForm — task 68 Start over', () => {
         ),
       );
       expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull();
+      // The same unlock as Start over in this tab: a new note needs its own
+      // typed confirmation, so the old phrase is not left armed.
+      expect(screen.getByLabelText(new RegExp(cnMessages.confirmCopy.split('{phrase}')[0]!))).toHaveValue('');
     } finally {
       vi.unstubAllGlobals();
     }
