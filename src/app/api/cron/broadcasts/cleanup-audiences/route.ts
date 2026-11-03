@@ -55,6 +55,10 @@ const LIMIT = 50;
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// Spec 140 s2c — `CLEANUP_MAX_DURATION_MS` (300 s). The orphan drain starts no
+// chunk after `ORPHAN_DRAIN_STOP_MS` (240 s), so its last chunk's two bounded
+// Resend calls finish inside it (pinned by cleanup-orphaned-audiences-drain.test.ts).
+export const maxDuration = 300;
 
 // Vercel-native Cron invokes each scheduled path with a GET; this handler's
 // Bearer-gated logic lives in POST. Alias GET → POST so one handler serves
@@ -101,7 +105,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     logger.error(
       {
         tenantId: tenant.slug,
-        message: result.error.message,
+        // The error CLASS (the use case answers `errKind`), never a driver message.
+        err: result.error.message,
       },
       'cron.broadcasts.cleanup_audiences.server_error',
     );
@@ -111,12 +116,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { processed, deleted, failed } = result.value;
+  // Spec 140 s2c — `orphans` is the orphan drain's counts (no ids).
+  const { processed, deleted, failed, orphans } = result.value;
 
   logger.info(
-    { tenantId: tenant.slug, processed, deleted, failed },
+    { tenantId: tenant.slug, processed, deleted, failed, orphans },
     'cron.broadcasts.cleanup_audiences.tick_complete',
   );
 
-  return NextResponse.json({ processed, deleted, failed }, { status: 200 });
+  return NextResponse.json({ processed, deleted, failed, orphans }, { status: 200 });
 }

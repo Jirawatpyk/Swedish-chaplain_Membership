@@ -945,6 +945,8 @@ import type { CleanupOrphanedAudiencesDeps } from '../application/use-cases/clea
  * Deps: tenant context + `broadcastsRepo` (list + mark via `withTx`) +
  * `broadcastsGateway` (deleteAudience) + `clock` (grace cutoff).
  * Mirrors `makeReconcileStuckSendingDeps` — same adapters, leaner dep set.
+ * Spec 140 s2c — plus the orphan record the drain settles and the members
+ * bridge's erased read (an erased requester's young row skips the grace).
  */
 export function makeCleanupOrphanedAudiencesDeps(
   tenantId: string,
@@ -955,6 +957,8 @@ export function makeCleanupOrphanedAudiencesDeps(
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     broadcastsGateway: resendBroadcastsGateway,
     clock: systemClock,
+    orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
+    membersBridge,
   };
 }
 

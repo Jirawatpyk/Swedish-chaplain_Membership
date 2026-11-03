@@ -34,6 +34,13 @@ const EXPECTED_CUTOFF = new Date(FROZEN_NOW.getTime() - GRACE_MS);
 const tenant = asTenantContext('test-tenant');
 const clock = { now: (): Date => FROZEN_NOW };
 
+/** Spec 140 s2c — the orphan drain's deps with nothing to drain; its own suite is cleanup-orphaned-audiences-drain.test.ts. */
+const NO_DRAIN_DEPS = {
+  orphans: { async listDrainableOrphans() { return []; }, async settleOrphan() { return false; } },
+  membersBridge: { async getMemberErasedAt() { return { erasedAt: null }; } },
+};
+const NO_ORPHAN_RUN = { listed: 0, settled: 0, undecided: 0, waiting: 0, deferred: 0, listFailed: false };
+
 // ---------------------------------------------------------------------------
 // Stub factories
 // ---------------------------------------------------------------------------
@@ -173,13 +180,13 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
     const gateway = makeGateway({});
 
     const result = await cleanupOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, ...NO_DRAIN_DEPS },
       { graceMs: GRACE_MS, limit: 50 },
     );
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value).toEqual({ processed: 0, deleted: 0, failed: 0 });
+      expect(result.value).toEqual({ processed: 0, deleted: 0, failed: 0, orphans: NO_ORPHAN_RUN });
     }
     expect(gateway.deleteCalls).toHaveLength(0);
     expect(repo.markCalls).toHaveLength(0);
@@ -199,14 +206,14 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
     const gateway = makeGateway({ throws: { 'aud-2222': retryableThrow } });
 
     const result = await cleanupOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, ...NO_DRAIN_DEPS },
       { graceMs: GRACE_MS, limit: 50 },
     );
 
     // Result shape
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value).toEqual({ processed: 2, deleted: 1, failed: 1 });
+      expect(result.value).toEqual({ processed: 2, deleted: 1, failed: 1, orphans: NO_ORPHAN_RUN });
     }
 
     // Gateway called for BOTH candidates
@@ -241,14 +248,14 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
     const gateway = makeGateway({ throws: { 'aud-3': retryableThrow } });
 
     const result = await cleanupOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, ...NO_DRAIN_DEPS },
       { graceMs: GRACE_MS, limit: 50 },
     );
 
     expect(result.ok).toBe(true);
     if (result.ok) {
       // 7 processed, 6 deleted (all but #4), 1 failed (#4 only).
-      expect(result.value).toEqual({ processed: 7, deleted: 6, failed: 1 });
+      expect(result.value).toEqual({ processed: 7, deleted: 6, failed: 1, orphans: NO_ORPHAN_RUN });
     }
 
     // Every candidate's delete was attempted (no short-circuit).
@@ -321,7 +328,7 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
     void allInFlight.then(() => releaseGate());
 
     const result = await cleanupOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway, clock, ...NO_DRAIN_DEPS },
       { graceMs: GRACE_MS, limit: 50 },
     );
 
@@ -336,7 +343,7 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
     const gateway = makeGateway({});
 
     await cleanupOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, ...NO_DRAIN_DEPS },
       { graceMs: GRACE_MS, limit: 25 },
     );
 
@@ -352,14 +359,15 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
     const gateway = makeGateway({});
 
     const result = await cleanupOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, ...NO_DRAIN_DEPS },
       { graceMs: GRACE_MS, limit: 50 },
     );
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('cleanup.server_error');
-      expect(result.error.message).toContain('Neon');
+      // Spec 140 s2c — the error CLASS, never the driver's message.
+      expect(result.error.message).toBe('Error');
     }
   });
 });

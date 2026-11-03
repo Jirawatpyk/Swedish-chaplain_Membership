@@ -540,6 +540,16 @@ export interface BroadcastsGatewayPort {
    * draft or scheduled broadcast, and `/send` works only on a draft — so a
    * DELETE that lands first makes any later `/send` 404, and a send that
    * landed first makes the DELETE 403.
+   *
+   * The fourth exception (spec 140 s2c) is an id read from the ORPHAN TABLE
+   * (`broadcast_orphaned_resend_ids`, migration 0323), by the
+   * `cleanup-audiences` drain and the erasure cascade's orphan pass
+   * (`_settle-orphan-at-resend.ts`). Either reads an id only while NO
+   * non-terminal `broadcasts` row of the tenant holds it (type-matched,
+   * `BroadcastOrphansRepo`), and Resend arbitrates as above: a copy a tick has
+   * handed to `/send` answers 403 and the one GET reads it handed. (The import
+   * leg's `failTerminally` choke point, also spec 140 s2c, is the second
+   * caller's path: `deleteDraftBeforeStandingRefusal` on the row's re-read id.)
    */
   deleteBroadcastOnce(broadcastId: string): Promise<DeleteBroadcastOnceOutcome>;
 
