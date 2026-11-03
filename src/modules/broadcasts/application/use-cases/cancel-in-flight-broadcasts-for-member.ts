@@ -211,7 +211,7 @@ import {
 import type { ClockPort } from '../ports/clock-port';
 import type { TerminalBroadcastDraftRef } from '../ports/broadcasts-repo';
 import type { BroadcastOrphansRepo, OrphanedResendIdRef } from '../ports/broadcast-orphans-repo';
-import type { OrphanOutcome } from '../../domain/value-objects/orphaned-resend-id';
+import { ORPHAN_STUCK_ATTEMPTS, type OrphanOutcome } from '../../domain/value-objects/orphaned-resend-id';
 import { asBroadcastId } from '../../domain/broadcast';
 import { isHandedStatus } from './_probe-refused-send';
 import { settleOrphanAtResend } from './_settle-orphan-at-resend';
@@ -324,7 +324,10 @@ export interface CancelInFlightForMemberDeps {
    */
   readonly broadcastsGateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce' | 'retrieveBroadcastOnce' | 'deleteAudience'>;
   /** Spec 140 s2c (DL10) — the orphan record, read and settled in the erasure mode only. */
-  readonly orphans: Pick<BroadcastOrphansRepo, 'listMemberOrphans' | 'listUnsettledAudienceOrphans' | 'settleOrphan'>;
+  readonly orphans: Pick<
+    BroadcastOrphansRepo,
+    'listMemberOrphans' | 'listUnsettledAudienceOrphans' | 'settleOrphan' | 'markOrphanAttempted'
+  >;
   /**
    * Spec 139 review round 2 (code-review #1) — waits `REPROBE_PAUSE_MS` between
    * a DELETE 404 and its confirming GET, as the import leg waits before its own
@@ -368,6 +371,9 @@ export const CASCADE_CAS_RETRIES = 3;
  * withheld) and the re-drive continues.
  */
 export const ERASURE_AUDIENCE_ORPHAN_LIMIT = 20;
+
+/** Review round 1 — tenant audience orphans settled at once in pass (b) (the drain's `ORPHAN_DRAIN_CONCURRENCY`). */
+export const ERASURE_AUDIENCE_ORPHAN_CONCURRENCY = 5;
 const DEFAULT_REASON = 'originator_member_deleted';
 
 function cascadeReasonSummary(reason: CascadeCancellationReason): string {
@@ -923,17 +929,48 @@ export async function cancelInFlightBroadcastsForMember(
         broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'deferred');
         logger.debug({ ...logBase, orphanId: orphan.orphanId }, 'broadcasts.cascade.orphan_deferred');
       };
-      /** Settle one unsettled orphan at Resend, then by CAS; `null` = undecided (already counted unexpected). */
-      const settleOrphan = async (orphan: OrphanedResendIdRef): Promise<OrphanOutcome | null> => {
+      /**
+       * Settle one unsettled orphan at Resend, then by CAS; `null` = undecided
+       * (already counted unexpected — or, for a STUCK tenant audience orphan,
+       * reported). Review round 1:
+       * - an undecided answer marks the row attempted (code-review #2);
+       * - a settle whose CAS LOST is undecided too: a concurrent settler won,
+       *   and the re-drive counts the row it settled (code-review #6);
+       * - `stuckReported` (pass (b) only): a row already tried
+       *   `ORPHAN_STUCK_ATTEMPTS` times is logged `orphan_stuck` and does not
+       *   withhold (code-review #1, reliability M-2, pdpa M-B).
+       */
+      const settleOrphan = async (
+        orphan: OrphanedResendIdRef,
+        stuckReported: boolean,
+      ): Promise<OrphanOutcome | null> => {
+        const undecided = async (e: unknown, msg: string, extra: Record<string, unknown> = {}): Promise<null> => {
+          await deps.orphans.markOrphanAttempted(orphan.orphanId).catch((markErr: unknown) => {
+            logger.warn({ ...logBase, orphanId: orphan.orphanId, err: errKind(markErr) }, 'broadcasts.cascade.orphan_attempt_mark_failed');
+          });
+          if (stuckReported && orphan.attempts >= ORPHAN_STUCK_ATTEMPTS) {
+            logger.warn(
+              { ...logBase, orphanId: orphan.orphanId, resourceType: orphan.resourceType, resourceId: orphan.resourceId, attempts: orphan.attempts + 1, ...extra },
+              'broadcasts.cascade.orphan_stuck',
+            );
+            return null;
+          }
+          orphanUnexpected(e, orphan, msg, extra);
+          return null;
+        };
         const answer = await settleOrphanAtResend(deps.broadcastsGateway, orphan);
         if (answer.kind === 'undecided') {
-          orphanUnexpected(null, orphan, 'broadcasts.cascade.orphan_unresolved', { answer: answer.answer });
-          return null;
+          return undecided(null, 'broadcasts.cascade.orphan_unresolved', { answer: answer.answer });
         }
+        let won: boolean;
         try {
-          await deps.orphans.settleOrphan(orphan.orphanId, answer.outcome);
+          won = await deps.orphans.settleOrphan(orphan.orphanId, answer.outcome);
         } catch (e) {
           orphanUnexpected(e, orphan, 'broadcasts.cascade.orphan_settle_failed');
+          return null;
+        }
+        if (!won) {
+          orphanUnexpected(null, orphan, 'broadcasts.cascade.orphan_settle_lost');
           return null;
         }
         logger.info({ ...logBase, orphanId: orphan.orphanId, resourceType: orphan.resourceType, outcome: answer.outcome }, 'broadcasts.cascade.orphan_settled');
@@ -954,7 +991,7 @@ export async function cancelInFlightBroadcastsForMember(
             deferOrphan(orphan);
             continue;
           }
-          outcome = await settleOrphan(orphan);
+          outcome = await settleOrphan(orphan, false);
           if (outcome === null) continue;
         }
         if (countedResendIds.has(orphan.resourceId)) continue;
@@ -980,12 +1017,17 @@ export async function cancelInFlightBroadcastsForMember(
       } catch (e) {
         orphanUnexpected(e, null, 'broadcasts.cascade.audience_orphan_list_failed');
       }
-      for (const [i, orphan] of audienceOrphans.entries()) {
-        if (i >= ERASURE_AUDIENCE_ORPHAN_LIMIT || pastDeadline()) {
-          deferOrphan(orphan);
-          continue;
+      // Review round 1 — five at a time (the drain's concurrency); the
+      // deadline is checked before each chunk, and the rest are deferred.
+      const due = audienceOrphans.slice(0, ERASURE_AUDIENCE_ORPHAN_LIMIT);
+      for (const orphan of audienceOrphans.slice(ERASURE_AUDIENCE_ORPHAN_LIMIT)) deferOrphan(orphan);
+      for (let i = 0; i < due.length; i += ERASURE_AUDIENCE_ORPHAN_CONCURRENCY) {
+        const chunk = due.slice(i, i + ERASURE_AUDIENCE_ORPHAN_CONCURRENCY);
+        if (pastDeadline()) {
+          for (const orphan of due.slice(i)) deferOrphan(orphan);
+          break;
         }
-        await settleOrphan(orphan);
+        await Promise.all(chunk.map((orphan) => settleOrphan(orphan, true)));
       }
     }
 

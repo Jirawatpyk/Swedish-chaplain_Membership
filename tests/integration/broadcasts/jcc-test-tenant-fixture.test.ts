@@ -193,6 +193,9 @@ describe('T179 — JCC-test tenant fixture (multi-tenant readiness invariant)', 
             settleOrphan: async (): Promise<never> => {
               throw new Error('not used in the archive mode');
             },
+            markOrphanAttempted: async (): Promise<never> => {
+              throw new Error('not used in the archive mode');
+            },
           },
         },
         {

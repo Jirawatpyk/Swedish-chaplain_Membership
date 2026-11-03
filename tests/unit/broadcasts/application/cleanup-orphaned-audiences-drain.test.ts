@@ -62,6 +62,8 @@ interface Opts {
   readonly settleThrows?: boolean;
   /** What the settle CAS answers (`false` = a concurrent settler won). Default `true`. */
   readonly settleReturns?: boolean;
+  /** `markOrphanAttempted` throws. */
+  readonly markThrows?: boolean;
   readonly erased?: Record<string, 'erased' | 'live' | 'throws'>;
   /** The audience pass's candidates (terminal rows still holding an audience). */
   readonly terminal?: ReadonlyArray<{ broadcastId: string; resendAudienceId: string }>;
@@ -111,6 +113,7 @@ function harness(opts: Opts) {
         return opts.settleReturns ?? true;
       },
       async markOrphanAttempted(orphanId: string) {
+        if (opts.markThrows === true) throw new Error('57P01');
         attempted.push(orphanId);
         return true;
       },
@@ -259,7 +262,7 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     const line = warn.mock.calls.find((c) => c[1] === 'broadcasts.audience_cleanup.delete_failed');
     expect(line?.[0]).toEqual({ tenantId: tenant.slug, broadcastId: 'bc-1', err: 'unknown' });
     const failed = await harness({ orphans: [], terminalListThrows: true }).run();
-    expect(failed.ok ? null : failed.error).toEqual({ kind: 'cleanup.server_error', message: 'Error' });
+    expect(failed.ok ? null : failed.error).toMatchObject({ kind: 'cleanup.server_error', message: 'Error' });
   });
 
   // Spec 140 s2c review round 1 (code-review #2, #4, #6 / reliability L-1).
@@ -285,5 +288,12 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
       message: 'Error',
       orphans: { listed: 1, settled: 1 },
     });
+  });
+
+  it('a failed attempt mark is logged and the run carries on', async () => {
+    const h = harness({ orphans: [orphan(1), orphan(2)], deleteOnce: { 'rb-1': 'retryable' }, markThrows: true });
+    const res = await h.run();
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ settled: 1, undecided: 1 });
+    expect(warn.mock.calls.some((c) => c[1] === 'broadcasts.orphan_drain.attempt_mark_failed')).toBe(true);
   });
 });

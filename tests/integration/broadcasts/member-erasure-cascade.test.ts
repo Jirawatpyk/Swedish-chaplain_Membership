@@ -254,6 +254,9 @@ const UNUSED_ORPHANS = {
   async settleOrphan(): Promise<never> {
     throw new Error('settleOrphan must not be called in the archive mode');
   },
+  async markOrphanAttempted(): Promise<never> {
+    throw new Error('markOrphanAttempted must not be called in the archive mode');
+  },
 };
 
 describe('T178a — cancelInFlightBroadcastsForMember (F3 cascade boundary)', () => {

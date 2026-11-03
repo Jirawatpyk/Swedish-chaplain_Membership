@@ -106,7 +106,7 @@ export interface CleanupOrphanedAudiencesDeps {
   readonly broadcastsGateway: Pick<BroadcastsGatewayPort, 'deleteAudience' | 'deleteBroadcastOnce' | 'retrieveBroadcastOnce'>;
   readonly clock: ClockPort;
   /** Spec 140 s2c — the orphaned Resend id record the drain settles. */
-  readonly orphans: Pick<BroadcastOrphansRepo, 'listDrainableOrphans' | 'settleOrphan'>;
+  readonly orphans: Pick<BroadcastOrphansRepo, 'listDrainableOrphans' | 'settleOrphan' | 'markOrphanAttempted'>;
   /** Spec 140 s2c [P H-2] — whether a young row's requester is erased (it then skips the grace). */
   readonly membersBridge: Pick<MembersBridgePort, 'getMemberErasedAt'>;
 }
@@ -158,6 +158,11 @@ export type CleanupOrphanedAudiencesError = {
   readonly kind: 'cleanup.server_error';
   /** The error CLASS (`errKind`), never the driver's message. */
   readonly message: string;
+  /**
+   * Review round 1 (code-review #4) — the audience list failed, but the
+   * orphan drain still ran: its counts.
+   */
+  readonly orphans: OrphanDrainOutput;
 };
 
 // ---------------------------------------------------------------------------
@@ -185,8 +190,10 @@ export async function cleanupOrphanedAudiences(
     // List failure is unexpected (Neon outage, RLS misconfiguration, etc.)
     // Surface as cleanup.server_error so the cron route can return 500 and
     // the next tick retries. Spec 140 s2c — the class only: a driver message
-    // can carry bound parameters.
-    return err({ kind: 'cleanup.server_error', message: errKind(e) });
+    // can carry bound parameters. Review round 1 (code-review #4) — the orphan
+    // drain does not depend on that list, so it still runs.
+    const orphans = await drainOrphans(deps, startedAtMs, graceCutoff);
+    return err({ kind: 'cleanup.server_error', message: errKind(e), orphans });
   }
 
   let deleted = 0;
@@ -296,13 +303,19 @@ async function drainOrphans(
     const answer = await settleOrphanAtResend(deps.broadcastsGateway, row);
     if (answer.kind === 'undecided') {
       undecided += 1;
-      logger.warn({ ...ids, answer: answer.answer }, 'broadcasts.orphan_drain.undecided');
+      logger.warn({ ...ids, attempts: row.attempts + 1, answer: answer.answer }, 'broadcasts.orphan_drain.undecided');
+      // Review round 1 (code-review #2) — the row sinks below untried rows.
+      await deps.orphans.markOrphanAttempted(row.orphanId).catch((e: unknown) => {
+        logger.warn({ ...ids, err: errKind(e) }, 'broadcasts.orphan_drain.attempt_mark_failed');
+      });
       return;
     }
     try {
-      await deps.orphans.settleOrphan(row.orphanId, answer.outcome);
-      settled += 1;
-      logger.info({ ...ids, outcome: answer.outcome }, 'broadcasts.orphan_drain.settled');
+      // Review round 1 (code-review #6) — counted only when this CAS won.
+      if (await deps.orphans.settleOrphan(row.orphanId, answer.outcome)) {
+        settled += 1;
+        logger.info({ ...ids, outcome: answer.outcome }, 'broadcasts.orphan_drain.settled');
+      }
     } catch (e) {
       undecided += 1;
       logger.warn({ ...ids, err: errKind(e) }, 'broadcasts.orphan_drain.settle_failed');

@@ -110,6 +110,8 @@ function makeDeps(overrides: {
   settleThrows?: boolean;
   /** Spec 140 s2c review round 1 — what the settle CAS answers. Default `true`. */
   settleReturns?: boolean;
+  /** Spec 140 s2c review round 1 — `markOrphanAttempted` throws. */
+  markThrows?: boolean;
 }) {
   const rows = (overrides.inFlightRows ?? []).map(makeBroadcastRow);
   // F119 round-4 B6 — mirror db.transaction: a callback that returns COMMITS,
@@ -230,6 +232,7 @@ function makeDeps(overrides: {
       return overrides.settleReturns ?? true;
     }),
     markOrphanAttempted: vi.fn(async (orphanId: string) => {
+      if (overrides.markThrows === true) throw new Error('57P01');
       attempted.push(orphanId);
       return true;
     }),
@@ -1434,6 +1437,16 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
       expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, resendDraftsCleared: 0 } });
+    });
+
+    it('a failed attempt mark still withholds, and is logged', async () => {
+      const deps = makeDeps({
+        memberOrphans: [{ orphanId: 'o-1', broadcastId: broadcastIdA, resourceId: 'rb-o1' }],
+        deleteOutcome: 'retryable',
+        markThrows: true,
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1 } });
     });
 
     it('pass (b) settles the tenant audience orphans five at a time', async () => {

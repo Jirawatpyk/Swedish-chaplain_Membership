@@ -65,5 +65,15 @@ export const ORPHAN_ROW_RETENTION_DAYS = 90;
  */
 export const ORPHAN_PRUNE_SKEW_MARGIN_MS = 60 * 60 * 1000;
 
+/**
+ * Review round 1 (code-review #1, reliability M-2, pdpa M-B) — after this many
+ * undecided settles (`attempts`), a TENANT AUDIENCE orphan no longer withholds
+ * another member's `member_erased` (erasure pass (b)): it is reported
+ * (`broadcasts.cascade.orphan_stuck`), counted by the unsettled gauge, and
+ * owned by the runbook. 8 ≈ two hours of the `cleanup-audiences` cron (every
+ * 15 minutes, `vercel.json`). A member's OWN orphans always withhold.
+ */
+export const ORPHAN_STUCK_ATTEMPTS = 8;
+
 /** [A7] The window of the `create_unconfirmed` gauge: rows created in the last 24 h. */
 export const ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS = 24;
