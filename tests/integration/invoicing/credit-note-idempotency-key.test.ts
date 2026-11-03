@@ -73,7 +73,8 @@ vi.mock('@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter
 
 // Imports that depend on the mocked modules MUST come after the vi.mock calls.
 import { issueCreditNote, issueCreditNoteSchema } from '@/modules/invoicing/application/use-cases/issue-credit-note';
-import { makeIssueCreditNoteDeps } from '@/modules/invoicing/application/invoicing-deps';
+import { makeIssueCreditNoteDeps, makeAbandonCreditNoteAttemptDeps } from '@/modules/invoicing/application/invoicing-deps';
+import { abandonCreditNoteAttempt } from '@/modules/invoicing/application/use-cases/abandon-credit-note-attempt';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -517,5 +518,105 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
     if (!a.ok || !b.ok) return;
     expect(b.value.replayed).toBe(false);
     expect(b.value.creditNote.creditNoteId).not.toBe(a.value.creditNote.creditNoteId);
+  }, 60_000);
+
+  // Task 68 — "Start over" closes a key under the invoice lock.
+  function abandon(t: TestTenant, invoiceId: string, key: string) {
+    return abandonCreditNoteAttempt(makeAbandonCreditNoteAttemptDeps(t.ctx.slug), {
+      tenantId: t.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+      idempotencyKey: key,
+    });
+  }
+
+  it('Start over with no note closes the key: a later issue with it is refused and burns no number', async () => {
+    const invoiceId = await seedPaidInvoice(tenant, user, planId);
+    const key = randomUUID();
+    const before = await readCreditNoteSeq(tenant);
+    expect(await abandon(tenant, invoiceId, key)).toEqual({ ok: true, value: { outcome: 'abandoned' } });
+    // Idempotent.
+    expect(await abandon(tenant, invoiceId, key)).toEqual({ ok: true, value: { outcome: 'abandoned' } });
+    const r = await issue(tenant, invoiceId, key);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('attempt_abandoned');
+    expect(await countNotes(tenant, invoiceId)).toBe(0);
+    expect((await readCreditNoteSeq(tenant)) - before).toBe(0);
+    const rows = await db.execute<{ retention_years: number }>(
+      sql`SELECT retention_years FROM audit_log WHERE tenant_id = ${tenant.ctx.slug} AND event_type = 'credit_note_attempt_abandoned' AND payload->>'idempotency_key' = ${key}`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.retention_years).toBe(10);
+  }, 60_000);
+
+  it('Start over after the note was issued answers issued with it', async () => {
+    const invoiceId = await seedPaidInvoice(tenant, user, planId);
+    const key = randomUUID();
+    const issued = await issue(tenant, invoiceId, key);
+    expect(issued.ok).toBe(true);
+    if (!issued.ok) return;
+    const r = await abandon(tenant, invoiceId, key);
+    expect(r.ok, show(r)).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.outcome).toBe('issued');
+    if (r.value.outcome === 'issued') expect(r.value.creditNote.creditNoteId).toBe(issued.value.creditNote.creditNoteId);
+  }, 60_000);
+
+  // The lock is the guarantee: an issue attempt that holds the invoice lock
+  // when Start over arrives commits first, and Start over then finds its note.
+  it('Start over while an issue holds the invoice lock waits for it, then answers issued', async () => {
+    const invoiceId = await seedPaidInvoice(tenant, user, planId);
+    const key = randomUUID();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let reachedLock: () => void = () => {};
+    const atLock = new Promise<void>((r) => {
+      reachedLock = r;
+    });
+    const deps = makeIssueCreditNoteDeps(tenant.ctx.slug);
+    const repo = deps.creditNoteRepo;
+    let lookups = 0;
+    const gated = {
+      ...deps,
+      creditNoteRepo: {
+        ...repo,
+        findByIdempotencyKey: async (...args: Parameters<typeof repo.findByIdempotencyKey>) => {
+          lookups += 1;
+          const found = await repo.findByIdempotencyKey(...args);
+          if (lookups === 2) {
+            reachedLock();
+            await gate;
+          }
+          return found;
+        },
+      },
+    };
+    const issuing = issueCreditNote(gated, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+      creditTotalSatang: asSatang(53_500n),
+      reason: 'duplicate charge',
+      idempotencyKey: key,
+    });
+    await atLock;
+    const abandoning = abandon(tenant, invoiceId, key);
+    // Give Start over time to block on the invoice lock, then let the issue go.
+    await new Promise((r) => setTimeout(r, 500));
+    release();
+    const [issued, abandoned] = await Promise.all([issuing, abandoning]);
+    expect(issued.ok, show(issued)).toBe(true);
+    expect(abandoned.ok, show(abandoned)).toBe(true);
+    if (abandoned.ok) expect(abandoned.value.outcome).toBe('issued');
+    expect(await countNotes(tenant, invoiceId)).toBe(1);
+  }, 60_000);
+
+  it('a tombstone is per tenant: the same key in another tenant still issues', async () => {
+    const key = randomUUID();
+    expect((await abandon(tenant, await seedPaidInvoice(tenant, user, planId), key)).ok).toBe(true);
+    const b = await issue(other, await seedPaidInvoice(other, user, planId), key);
+    expect(b.ok, show(b)).toBe(true);
   }, 60_000);
 });

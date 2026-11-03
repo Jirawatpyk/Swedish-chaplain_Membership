@@ -27,7 +27,7 @@
  * membership-effect fieldset never mounts (irrelevant to the error surface).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { CreditNoteForm } from '@/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/_components/credit-note-form';
@@ -575,6 +575,157 @@ describe('CreditNoteForm — #66 the idempotency key', () => {
       await screen.findByTestId('credit-note-error');
       expect(bodyOf(refused, 0).idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
       expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+// Task 68 — "Start over" closes a locked attempt on the server. The original
+// request may still commit, so the form never unlocks on its own: it asks the
+// server, which either closes the key for good or hands back the note the
+// attempt had already issued.
+describe('CreditNoteForm — task 68 Start over', () => {
+  const STORE_KEY = `cn-attempt:${INVOICE_ID}`;
+  const dropped = async () => {
+    throw new TypeError('Failed to fetch');
+  };
+
+  async function lockedForm(abandon: (url: string, init: RequestInit) => Promise<unknown>) {
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) =>
+      url === '/api/credit-notes/attempts/abandon' ? abandon(url, init) : dropped(),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm();
+    fillAndSubmit();
+    await screen.findByTestId('credit-note-error');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Start over' })).not.toHaveAttribute('aria-disabled', 'true'),
+    );
+    const key = (JSON.parse(window.sessionStorage.getItem(STORE_KEY) ?? '{}') as { key?: string }).key;
+    return { fetchMock, key };
+  }
+
+  it('Start over asks first; Cancel changes nothing', async () => {
+    try {
+      const { fetchMock } = await lockedForm(async () => ({ ok: true, status: 200, json: async () => ({ outcome: 'abandoned' }) }));
+      fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog).toHaveTextContent('Start over without this credit note?');
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(window.sessionStorage.getItem(STORE_KEY)).not.toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('confirmed and abandoned: the key is closed, the form unlocks with the phrase empty, and a toast says so', async () => {
+    const { toast } = await import('@/lib/toast');
+    vi.mocked(toast.success).mockClear();
+    try {
+      const { fetchMock, key } = await lockedForm(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ outcome: 'abandoned' }),
+      }));
+      fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+      const dialog = await screen.findByRole('dialog');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Start over' }));
+      await waitFor(() => expect(screen.queryByTestId('credit-note-error')).toBeNull());
+      const [, init] = fetchMock.mock.calls.find(([u]) => u === '/api/credit-notes/attempts/abandon') as [string, RequestInit];
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(String(init.body))).toEqual({ invoiceId: INVOICE_ID, idempotencyKey: key });
+      expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull();
+      expect(screen.getByLabelText(labelled(cnMessages.amountLabel))).not.toHaveAttribute('readonly');
+      expect(screen.getByLabelText(new RegExp(cnMessages.confirmCopy.split('{phrase}')[0]!))).toHaveValue('');
+      expect(screen.queryByTestId('cn-locked-hint')).toBeNull();
+      expect(toast.success).toHaveBeenCalledWith(
+        'This credit note will not be issued. You can enter a new one.',
+        expect.objectContaining({ duration: 10_000 }),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the attempt had issued its note: the replay toast, then the invoice', async () => {
+    const { toast } = await import('@/lib/toast');
+    vi.mocked(toast.success).mockClear();
+    try {
+      await lockedForm(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ outcome: 'issued', document_number: 'CN-2026-000009' }),
+      }));
+      fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+      fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Start over' }));
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith(`/admin/invoices/${INVOICE_ID}`));
+      expect(toast.success).toHaveBeenCalledWith(
+        'Credit note CN-2026-000009 had already been issued — no new credit note was issued.',
+        expect.objectContaining({ duration: 10_000 }),
+      );
+      expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('Start over fails: the attempt stays locked and the alert says so', async () => {
+    try {
+      await lockedForm(async () => ({ ok: false, status: 504, json: async () => { throw new Error('html'); } }));
+      const stored = window.sessionStorage.getItem(STORE_KEY);
+      fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+      fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Start over' }));
+      await waitFor(() =>
+        expect(screen.getByTestId('credit-note-error')).toHaveTextContent(
+          "We couldn't start over. The credit note stays locked — try again, or open the invoice to check.",
+        ),
+      );
+      expect(window.sessionStorage.getItem(STORE_KEY)).toBe(stored);
+      expect(screen.getByLabelText(labelled(cnMessages.amountLabel))).toHaveAttribute('readonly');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a Try again refused as attempt_abandoned (another tab started over) ends the attempt and says nothing was issued', async () => {
+    const fetchMock = vi
+      .fn(async (_u: string, _i: RequestInit) => ({ ok: false, status: 409, json: async () => ({ error: { code: 'attempt_abandoned' } }) }))
+      .mockImplementationOnce(dropped);
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      fillAndSubmit();
+      await screen.findByTestId('credit-note-error');
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Try again' })).not.toHaveAttribute('aria-disabled', 'true'),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() =>
+        expect(screen.getByTestId('credit-note-error')).toHaveTextContent(
+          'This credit note was cancelled with Start over — nothing was issued.',
+        ),
+      );
+      expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a replay toast lasts 10 s, so it survives the move to the invoice', async () => {
+    const { toast } = await import('@/lib/toast');
+    vi.mocked(toast.success).mockClear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, status: 201, json: async () => ({ document_number: 'CN-2026-000009', replayed: true }) })),
+    );
+    try {
+      renderForm();
+      fillAndSubmit();
+      await waitFor(() => expect(toast.success).toHaveBeenCalled());
+      expect(vi.mocked(toast.success).mock.calls[0]?.[1]).toMatchObject({ duration: 10_000 });
     } finally {
       vi.unstubAllGlobals();
     }

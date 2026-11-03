@@ -48,3 +48,33 @@ describe('credit-note repo — the idempotency lookups bind the tenant (#66)', (
     expect(check.violations).toEqual([]);
   });
 });
+
+// Task 68 — the "Start over" tombstone is tenant-scoped too.
+describe('credit-note repo — the abandoned-attempt tombstone binds the tenant (task 68)', () => {
+  const KEY = '11111111-2222-4333-8444-555555555555';
+  it('findAbandonedAttempt fences credit_note_abandoned_attempts on tenant_id', async () => {
+    rec.statements.length = 0;
+    const repo = makeDrizzleCreditNoteRepo(T);
+    await repo.findAbandonedAttempt(rec.db, T, KEY).catch(() => undefined);
+    expect(rec.statements.length).toBe(1);
+    const check = tenantPredicateViolations(rec.statements[0]!, TABLES);
+    expect([...check.tables]).toEqual(['credit_note_abandoned_attempts']);
+    expect(check.violations).toEqual([]);
+  });
+
+  it('insertAbandonedAttempt writes the tenant it was given', async () => {
+    rec.statements.length = 0;
+    const repo = makeDrizzleCreditNoteRepo(T);
+    await repo
+      .insertAbandonedAttempt(rec.db, {
+        tenantId: T,
+        idempotencyKey: KEY,
+        invoiceId: '00000000-0000-4000-8000-0000000000a1',
+        abandonedByUserId: '00000000-0000-4000-8000-0000000000b1',
+      })
+      .catch(() => undefined);
+    expect(rec.statements.length).toBe(1);
+    expect(rec.statements[0]!.sql).toMatch(/insert into "credit_note_abandoned_attempts"/i);
+    expect(rec.statements[0]!.params).toContain(T);
+  });
+});
