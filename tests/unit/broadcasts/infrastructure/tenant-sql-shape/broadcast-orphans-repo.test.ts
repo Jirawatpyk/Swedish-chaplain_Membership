@@ -47,19 +47,22 @@ describe('broadcast orphans repo — D-029 tenant predicates', () => {
       markOrphanAttempted: [ID],
       pruneOrphans: [new Date('2026-01-01T00:00:00Z')],
     });
+    // Review round 3 (code-review #2) — the in-grace-only branch is its own statement.
+    await repo.listDrainableOrphans(20, new Date('2026-01-01T00:00:00Z'), { inGraceOnly: true });
     const probes = rec.statements.filter((s) => /current_setting\('app\.current_tenant'/.test(s.sql));
-    expect(probes).toHaveLength(7);
+    expect(probes).toHaveLength(8);
     const checked = rec.statements.filter(
       (s) => !isPureInsert(s.sql) && tenantPredicateViolations(s, TABLES).refs.length > 0,
     );
-    // Positive control: the three reads and the two UPDATEs (settle, attempt)
-    // reach the parser (the INSERT is pure, the prune names no table), and
-    // each read names BOTH tables (the NOT EXISTS subquery).
-    expect(checked).toHaveLength(5);
+    // Positive control: the four reads (the drain's two lists) and the two
+    // UPDATEs (settle, attempt) reach the parser (the INSERT is pure, the prune
+    // names no table), and each read names BOTH tables (the NOT EXISTS subquery).
+    expect(checked).toHaveLength(6);
     const readTables = checked
       .filter((s) => /^\s*select/i.test(s.sql))
       .map((s) => [...tenantPredicateViolations(s, TABLES).tables].sort().join('+'));
     expect(readTables).toEqual([
+      'broadcast_orphaned_resend_ids+broadcasts',
       'broadcast_orphaned_resend_ids+broadcasts',
       'broadcast_orphaned_resend_ids+broadcasts',
       'broadcast_orphaned_resend_ids+broadcasts',

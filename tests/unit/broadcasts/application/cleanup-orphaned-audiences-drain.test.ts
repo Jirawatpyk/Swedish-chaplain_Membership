@@ -242,7 +242,8 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
   it(`reads at most ORPHAN_DRAIN_LIMIT (${ORPHAN_DRAIN_LIMIT}) rows and settles them ORPHAN_DRAIN_CONCURRENCY (${ORPHAN_DRAIN_CONCURRENCY}) at a time`, async () => {
     const h = harness({ orphans: Array.from({ length: 12 }, (_, i) => orphan(i + 1)) });
     await h.run();
-    expect(h.listLimits).toEqual([ORPHAN_DRAIN_LIMIT]);
+    // Review round 3 (code-review #2) — two lists (past-grace first; in-grace only), each at the limit.
+    expect(h.listLimits).toEqual([ORPHAN_DRAIN_LIMIT, ORPHAN_DRAIN_LIMIT]);
     expect(ORPHAN_DRAIN_LIMIT).toBe(20);
     expect(ORPHAN_DRAIN_CONCURRENCY).toBe(5);
     expect(h.peak()).toBe(ORPHAN_DRAIN_CONCURRENCY);

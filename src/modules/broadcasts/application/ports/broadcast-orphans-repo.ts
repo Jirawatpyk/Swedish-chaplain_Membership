@@ -57,6 +57,12 @@ export interface RecordOrphanInput {
   readonly reason: OrphanReason;
 }
 
+/** Review round 3 (code-review #2) — the drain's second list. */
+export interface ListDrainableOrphansOptions {
+  /** Only rows created at or after the grace cutoff, oldest first. */
+  readonly inGraceOnly?: boolean;
+}
+
 export interface BroadcastOrphansRepo {
   /**
    * Insert one row in its OWN transaction, so it commits whatever the
@@ -92,8 +98,16 @@ export interface BroadcastOrphansRepo {
    * Review round 2 (code-review #3): rows past the grace come first
    * (`ORDER BY created_at >= audienceGraceCutoff, attempts, created_at`), so
    * rows the caller would hold back cannot fill the `limit`.
+   * Review round 3 (code-review #2) — `{ inGraceOnly: true }` lists only the
+   * rows created at or after `audienceGraceCutoff`, oldest first, so the
+   * caller can reach an erased requester's young row that 20 failing
+   * past-grace rows would keep out of the default list.
    */
-  listDrainableOrphans(limit: number, audienceGraceCutoff: Date): Promise<ReadonlyArray<OrphanedResendIdRef>>;
+  listDrainableOrphans(
+    limit: number,
+    audienceGraceCutoff: Date,
+    options?: ListDrainableOrphansOptions,
+  ): Promise<ReadonlyArray<OrphanedResendIdRef>>;
 
   /**
    * The erasure cascade's view of ONE requester's BROADCAST orphans (DL10):

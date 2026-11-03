@@ -34,7 +34,10 @@
  *     (no id) never is;
  *   - the grace (`graceMs`, the same as the audience pass) holds a young row
  *     back, EXCEPT when its requester is erased [P H-2]: a row written after
- *     `member_erased` is drained on the next tick (a failed erased read waits);
+ *     `member_erased` is drained on the next tick (a failed erased read waits).
+ *     Review round 3 (code-review #2): a second list reads the in-grace rows
+ *     only, and the erased requesters' rows go first, so past-grace rows that
+ *     keep failing cannot fill the run ahead of them;
  *   - no chunk starts once `ORPHAN_DRAIN_STOP_MS` has passed since the run
  *     began, which leaves one chunk's two bounded calls inside the route's
  *     `maxDuration` (`CLEANUP_MAX_DURATION_MS`); the rest go next run;
@@ -129,7 +132,7 @@ export interface CleanupOrphanedAudiencesInput {
 
 /** Spec 140 s2c — what the orphan drain did this run. */
 export interface OrphanDrainOutput {
-  /** Rows the list returned. */
+  /** Rows the lists returned (both lists, one per orphan id; review round 3). */
   readonly listed: number;
   /** Rows settled at Resend and stamped by the CAS. */
   readonly settled: number;
@@ -137,9 +140,12 @@ export interface OrphanDrainOutput {
   readonly undecided: number;
   /** Rows inside the grace whose requester is not (known to be) erased. */
   readonly waiting: number;
-  /** Rows not reached before `ORPHAN_DRAIN_STOP_MS`. */
+  /**
+   * Rows not reached before `ORPHAN_DRAIN_STOP_MS`, and (review round 3) rows
+   * over the run's `ORPHAN_DRAIN_LIMIT` once both lists are merged.
+   */
   readonly deferred: number;
-  /** The orphan list itself failed (logged at error). */
+  /** The past-grace orphan list failed (logged at error); the in-grace list's failure is only logged. */
   readonly listFailed: boolean;
 }
 
@@ -260,17 +266,31 @@ async function drainOrphans(
   graceCutoff: Date,
 ): Promise<OrphanDrainOutput> {
   const tenantId = deps.tenant.slug;
-  let listed: ReadonlyArray<OrphanedResendIdRef>;
+  let pastFirst: ReadonlyArray<OrphanedResendIdRef>;
   try {
-    listed = await deps.orphans.listDrainableOrphans(ORPHAN_DRAIN_LIMIT, graceCutoff);
+    pastFirst = await deps.orphans.listDrainableOrphans(ORPHAN_DRAIN_LIMIT, graceCutoff);
   } catch (e) {
     logger.error({ tenantId, err: errKind(e) }, 'broadcasts.orphan_drain.list_failed');
     return { listed: 0, settled: 0, undecided: 0, waiting: 0, deferred: 0, listFailed: true };
   }
+  // Review round 3 (code-review #2) — a second list, inside the grace only, so
+  // an erased requester's young row is reached even when ORPHAN_DRAIN_LIMIT
+  // past-grace rows that keep failing fill the first one (RoPA 8d residual
+  // (1)). A failure here is logged; the first list still drains.
+  let inGraceOnly: ReadonlyArray<OrphanedResendIdRef> = [];
+  try {
+    inGraceOnly = await deps.orphans.listDrainableOrphans(ORPHAN_DRAIN_LIMIT, graceCutoff, { inGraceOnly: true });
+  } catch (e) {
+    logger.error({ tenantId, list: 'in_grace', err: errKind(e) }, 'broadcasts.orphan_drain.list_failed');
+  }
+  // One row per orphanId across both lists.
+  const byId = new Map<string, OrphanedResendIdRef>();
+  for (const row of [...inGraceOnly, ...pastFirst]) if (!byId.has(row.orphanId)) byId.set(row.orphanId, row);
+  const listed = [...byId.values()];
 
   // [P H-2] — one erased read per DISTINCT requester of a row inside the
   // grace, all at once (review round 2, code-review #9: at most
-  // ORPHAN_DRAIN_LIMIT reads). A failed read counts as not erased: the row waits.
+  // 2 × ORPHAN_DRAIN_LIMIT reads). A failed read counts as not erased: the row waits.
   const inGrace = (row: OrphanedResendIdRef) => row.createdAt.getTime() >= graceCutoff.getTime();
   const requesters = [...new Set(listed.filter(inGrace).map((row) => row.requestedByMemberId))];
   const erasedRequesters = new Set<string>();
@@ -285,19 +305,23 @@ async function drainOrphans(
     }),
   );
 
-  const due: OrphanedResendIdRef[] = [];
+  // Review round 3 (code-review #2) — the erased requesters' in-grace rows
+  // first, then the past-grace rows, at most ORPHAN_DRAIN_LIMIT in all; a row
+  // over the cap is deferred to the next run.
+  const erasedYoung: OrphanedResendIdRef[] = [];
+  const pastGrace: OrphanedResendIdRef[] = [];
   let waiting = 0;
   for (const row of listed) {
-    if (!inGrace(row) || erasedRequesters.has(row.requestedByMemberId)) {
-      due.push(row);
-    } else {
-      waiting += 1;
-    }
+    if (!inGrace(row)) pastGrace.push(row);
+    else if (erasedRequesters.has(row.requestedByMemberId)) erasedYoung.push(row);
+    else waiting += 1;
   }
+  const ordered = [...erasedYoung, ...pastGrace];
+  const due = ordered.slice(0, ORPHAN_DRAIN_LIMIT);
 
   let settled = 0;
   let undecided = 0;
-  let deferred = 0;
+  let deferred = ordered.length - due.length;
   const settleOne = async (row: OrphanedResendIdRef): Promise<void> => {
     const ids = { tenantId, orphanId: row.orphanId, resourceType: row.resourceType, resourceId: row.resourceId, orphanReason: row.reason };
     const answer = await settleOrphanAtResend(deps.broadcastsGateway, row, deps.pauseBeforeReprobe);
@@ -324,7 +348,7 @@ async function drainOrphans(
 
   for (let i = 0; i < due.length; i += ORPHAN_DRAIN_CONCURRENCY) {
     if (deps.clock.now().getTime() - startedAtMs >= ORPHAN_DRAIN_STOP_MS) {
-      deferred = due.length - i;
+      deferred += due.length - i;
       logger.warn({ tenantId, deferred }, 'broadcasts.orphan_drain.stopped_at_budget');
       break;
     }
