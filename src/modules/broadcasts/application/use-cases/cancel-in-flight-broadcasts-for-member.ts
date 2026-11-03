@@ -1117,7 +1117,9 @@ export async function cancelInFlightBroadcastsForMember(
       alreadySentCount > 0 ||
       unexpectedErrorCount > 0 ||
       resendDraftsCleared > 0 ||
-      resendCopiesRetained > 0
+      resendCopiesRetained > 0 ||
+      // Review round 3 (code-review #5) — a released stuck audience orphan is news too.
+      audienceOrphansStuckCount > 0
     ) {
       logger.info(
         {

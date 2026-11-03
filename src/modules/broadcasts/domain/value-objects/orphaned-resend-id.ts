@@ -45,8 +45,8 @@ export type OrphanReason = (typeof ORPHAN_REASONS)[number];
  * - `handed` — Resend had accepted it for sending (403, then queued / sending /
  *   sent): a disclosure, RoPA residual 8c;
  * - `superseded` (review round 2, code-review #2) — the id is held by a row
- *   whose send went out normally (`sent` / `partially_sent` /
- *   `partial_delivery_accepted`): an ordinary delivery, not erasure evidence.
+ *   whose send went out normally (`sent` / `partial_delivery_accepted`): an
+ *   ordinary delivery, not erasure evidence.
  *   Settled with no Resend call, never counted in the erasure fields, prunable.
  * Anything else leaves the row unsettled for the next run.
  */
@@ -56,8 +56,10 @@ export type OrphanOutcome = (typeof ORPHAN_OUTCOMES)[number];
 /**
  * Review round 2 (code-review #2) — the statuses of a row whose send went out
  * normally. A BROADCAST orphan whose id such a row holds settles `superseded`.
+ * Review round 3 (reliability nit) — terminal ones only: `partially_sent` is
+ * not terminal, so a row in it already hides the orphan from every list.
  */
-export const ORPHAN_SUPERSEDING_STATUSES = ['sent', 'partially_sent', 'partial_delivery_accepted'] as const satisfies ReadonlyArray<BroadcastStatus>;
+export const ORPHAN_SUPERSEDING_STATUSES = ['sent', 'partial_delivery_accepted'] as const satisfies ReadonlyArray<BroadcastStatus>;
 
 /**
  * [P M-1] How long a settled row, or a `create_unconfirmed` row, is kept
