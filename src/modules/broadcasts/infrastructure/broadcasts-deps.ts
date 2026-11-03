@@ -13,6 +13,7 @@ import {
   findBroadcastByResendAudienceIdsBypassRls,
   makeDrizzleBroadcastsRepo,
 } from './db/drizzle-broadcasts-repo';
+import { makeDrizzleBroadcastOrphansRepo } from './db/drizzle-broadcast-orphans-repo';
 import { makeDrizzleBroadcastSegmentDefinitionsRepo } from './db/drizzle-broadcast-segment-definitions-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-unsubscribes-repo';
 import { rfc5321EmailValidator } from './email-validator/rfc5321-email-validator';
@@ -492,6 +493,8 @@ export async function makeDispatchScheduledBroadcastDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    // Spec 140 s2c — the orphaned Resend id record (migration 0323).
+    orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
     // Spec 140 s2a review round 2 (CR#2): the legacy leg's createBroadcast
     // retries a 5xx inside the budget. Deleted with the leg in slice 4.
     broadcastsGateway: legacyResendBroadcastsGateway,
@@ -1233,6 +1236,8 @@ export async function makeBuildAudienceTickDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    // Spec 140 s2c — the orphaned Resend id record (migration 0323).
+    orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
     broadcastsGateway: resendBroadcastsGateway,
     audit: f7AuditAdapter,
     clock: systemClock,

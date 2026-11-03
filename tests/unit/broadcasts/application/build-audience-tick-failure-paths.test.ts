@@ -506,6 +506,8 @@ function makeDeps(opts: {
       locale: 'en' as const,
       // F119 — required port; no brand configured for these cases.
       brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
+      // Spec 140 s2c - the orphan record; these cases do not read it.
+      orphans: { async recordOrphanedResendId() {} },
       resolveRecipients: async () => resolverAnswer(),
       // The pause before re-probing a `not_found` inherited id: recorded, never waited.
       pauseBeforeReprobe: async (ms: number) => {

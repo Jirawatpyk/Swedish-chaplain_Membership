@@ -50,6 +50,7 @@ import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/applicati
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
 import { emailTransactionalBridge } from '@/modules/broadcasts/infrastructure/email-transactional-bridge';
 import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
@@ -302,6 +303,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
         {
           tenant: tenant.ctx,
           broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
+          orphans: makeDrizzleBroadcastOrphansRepo(tenant.ctx.slug),
           audienceMode: 'primary_only' as const,
           audienceCeiling: 5000,
           broadcastsGateway: gateway,

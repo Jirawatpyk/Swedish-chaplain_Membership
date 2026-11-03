@@ -42,6 +42,7 @@ import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-at
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { emailTransactionalBridge } from '@/modules/broadcasts/infrastructure/email-transactional-bridge';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
 import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
@@ -240,6 +241,7 @@ describe('dispatch — resend_broadcast_id is persisted in its OWN tx before the
     const buildDeps = () => ({
       tenant: tenant.ctx,
       broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
+      orphans: makeDrizzleBroadcastOrphansRepo(tenant.ctx.slug),
       audienceMode: 'primary_only' as const,
       audienceCeiling: 5000,
       broadcastsGateway: gateway,

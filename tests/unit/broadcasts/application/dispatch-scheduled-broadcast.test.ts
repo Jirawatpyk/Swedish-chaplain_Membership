@@ -58,6 +58,8 @@ const OK_STANDING = makeFakeSendStanding();
 
 /** F119 — dispatch deps require a brand port; these cases send with no brand configured. */
 const NO_BRAND_CHROME = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
+/** Spec 140 s2c - the orphan record, for the cases that do not read it. */
+const NO_ORPHANS = { async recordOrphanedResendId() {} };
 
 const useCasePath = resolve(
   __dirname,
@@ -753,6 +755,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       emailTransactional: makeEmailTransactional().port,
       sendStanding: OK_STANDING,
       brandChrome: NO_BRAND_CHROME,
+      orphans: NO_ORPHANS,
     };
     const r1 = await dispatchScheduledBroadcast({ ...base, brandChrome: { load: async () => brand } }, baseInput);
     expect(r1.ok).toBe(true);
@@ -800,6 +803,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -869,6 +873,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -903,6 +908,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -936,6 +942,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -978,6 +985,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1030,6 +1038,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1097,6 +1106,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1164,6 +1174,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1211,6 +1222,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1260,6 +1272,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1302,6 +1315,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1359,6 +1373,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1415,6 +1430,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1465,6 +1481,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1504,6 +1521,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1545,6 +1563,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1602,6 +1621,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1646,6 +1666,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1695,6 +1716,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1752,6 +1774,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1806,6 +1829,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1855,6 +1879,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1897,6 +1922,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -1961,6 +1987,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2041,6 +2068,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2124,6 +2152,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2195,6 +2224,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2270,6 +2300,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2338,6 +2369,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2392,6 +2424,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2462,6 +2495,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2531,6 +2565,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2574,6 +2609,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2635,6 +2671,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2706,6 +2743,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2761,6 +2799,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2829,6 +2868,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2898,6 +2938,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -2941,6 +2982,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3012,6 +3054,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3070,6 +3113,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3127,6 +3171,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3195,6 +3240,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3252,6 +3298,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3303,6 +3350,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
           emailTransactional: email.port,
           sendStanding: OK_STANDING,
           brandChrome: NO_BRAND_CHROME,
+          orphans: NO_ORPHANS,
         },
         baseInput,
       );
@@ -3397,6 +3445,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3447,6 +3496,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3497,6 +3547,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3556,6 +3607,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3604,6 +3656,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3649,6 +3702,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3700,6 +3754,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3760,6 +3815,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3802,6 +3858,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3847,6 +3904,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3912,6 +3970,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -3966,6 +4025,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4050,6 +4110,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4104,6 +4165,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4145,6 +4207,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4189,6 +4252,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4230,6 +4294,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4279,6 +4344,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4334,6 +4400,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4396,6 +4463,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4442,6 +4510,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4502,6 +4571,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4548,6 +4618,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4600,6 +4671,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4659,6 +4731,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
           emailTransactional: email.port,
           sendStanding: OK_STANDING,
           brandChrome: NO_BRAND_CHROME,
+          orphans: NO_ORPHANS,
         },
         baseInput,
       );
@@ -4703,6 +4776,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4764,6 +4838,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4824,6 +4899,7 @@ describe('dispatch-scheduled-broadcast — per-broadcast opt-out drop log (round
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -4880,6 +4956,7 @@ describe('dispatch-scheduled-broadcast — 108 PR-C resolver contract (T076)', (
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
     };
   }
@@ -4996,6 +5073,7 @@ describe('dispatch-scheduled-broadcast — 108 PR-C resolver contract (T076)', (
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -5060,6 +5138,7 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
         sendStanding,
       },
     };
@@ -5498,6 +5577,7 @@ describe('dispatch-scheduled-broadcast — FR-021 budget anchors on the first fa
         emailTransactional: email.port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
     };
   }
@@ -5822,6 +5902,7 @@ describe('spec 139 P8 — a /send 404 after the row left approved is a concurren
     emailTransactional: makeEmailTransactional().port,
     sendStanding: OK_STANDING,
     brandChrome: NO_BRAND_CHROME,
+    orphans: NO_ORPHANS,
   });
 
   it('the re-read finds the row cancelled → broadcast_invalid_state_transition (cancelled), no transition, no audit, an info line', async () => {
@@ -5930,6 +6011,7 @@ describe('spec 140 s2a DL7 — the legacy leg skips a row that holds import colu
         emailTransactional: makeEmailTransactional().port,
         sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
       },
       baseInput,
     );
@@ -5972,6 +6054,7 @@ describe('spec 140 s2b — the legacy leg under the dispatch lease (cell 23)', (
     emailTransactional: makeEmailTransactional().port,
     sendStanding: OK_STANDING,
     brandChrome: NO_BRAND_CHROME,
+    orphans: NO_ORPHANS,
   });
   const counting = (port: BroadcastsGatewayPort, calls: string[]) =>
     new Proxy(port, {

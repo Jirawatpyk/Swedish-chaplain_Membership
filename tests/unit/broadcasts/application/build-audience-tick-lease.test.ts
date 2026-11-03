@@ -134,6 +134,8 @@ function harness(opts: Opts = {}) {
     tenantDisplayName: 'Test Chamber',
     locale: 'en' as const,
     brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
+    // Spec 140 s2c - the orphan record; these cases do not read it.
+    orphans: { async recordOrphanedResendId() {} },
     resolveRecipients: async () =>
       opts.resolveTooLarge === true
         ? err({ kind: 'broadcast_audience_too_large' as const, count: 99_999, cap: 900 })
