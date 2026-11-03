@@ -612,7 +612,8 @@ describe('CreditNoteForm — task 68 Start over', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
       const dialog = await screen.findByRole('dialog');
       expect(dialog).toHaveTextContent('Start over without this credit note?');
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      // The page has its own Cancel: use the dialog's.
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(window.sessionStorage.getItem(STORE_KEY)).not.toBeNull();

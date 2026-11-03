@@ -213,7 +213,15 @@ export type F4AuditEventType =
    * tax-document events it answers for (`credit_note_issued`,
    * `credit_note_pdf_resent`).
    */
-  | 'credit_note_issue_replayed';
+  | 'credit_note_issue_replayed'
+  /**
+   * Task 68 (mig 0326) — "Start over" closed a locked admin issue attempt:
+   * no note existed under its `idempotency_key`, and none ever will (a
+   * tombstone in `credit_note_abandoned_attempts`). Payload, ids only:
+   * `{ invoice_id, idempotency_key }`. **10y**: it decides whether a §86/10
+   * note will exist.
+   */
+  | 'credit_note_attempt_abandoned';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -244,6 +252,8 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   credit_note_issued: 10,
   // #67 — answers a §86/10 request with an existing tax document; 10y.
   credit_note_issue_replayed: 10,
+  // Task 68 — decides whether a §86/10 note will ever exist; 10y.
+  credit_note_attempt_abandoned: 10,
   tenant_invoice_settings_updated: 5,
   invoice_pdf_resent: 10,
   receipt_pdf_resent: 10,

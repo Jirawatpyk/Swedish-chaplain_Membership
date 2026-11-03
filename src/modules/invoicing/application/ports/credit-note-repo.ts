@@ -101,6 +101,27 @@ export interface CreditNoteRepo {
     idempotencyKey: string,
   ): Promise<CreditNote | null>;
 
+  /**
+   * Task 68 — the "Start over" tombstone for `(tenant_id, idempotency_key)`, if
+   * the key was closed. On the caller's tx, under the invoice lock.
+   */
+  findAbandonedAttempt(
+    tx: unknown,
+    tenantId: string,
+    idempotencyKey: string,
+  ): Promise<{ readonly invoiceId: string } | null>;
+
+  /** Task 68 — close a key for good (append-only; PK per tenant + key). */
+  insertAbandonedAttempt(
+    tx: unknown,
+    input: {
+      readonly tenantId: string;
+      readonly idempotencyKey: string;
+      readonly invoiceId: string;
+      readonly abandonedByUserId: string;
+    },
+  ): Promise<void>;
+
   /** Detail lookup (no tx — used by admin detail page + PDF route). */
   findById(creditNoteId: CreditNoteId, tenantId: string): Promise<CreditNote | null>;
 

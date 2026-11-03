@@ -104,6 +104,8 @@ const ERROR_STATUS: Record<IssueCreditNoteError['code'], number> = {
   // `membership_effect_required`: well-formed, but the use-case needs the
   // staff's declared intent. Not transient — retrying without it changes nothing.
   online_payment_refundable: 422,
+  // Task 68 — the attempt was closed with "Start over"; a definite refusal.
+  attempt_abandoned: 409,
 };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {

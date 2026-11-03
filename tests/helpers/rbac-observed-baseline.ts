@@ -277,6 +277,7 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'POST /api/auth/users/[id]/role', kind: 'api', key: 'users.manage' },
   { surface: 'POST /api/credit-notes', kind: 'api', key: 'credit_notes.write' },
   { surface: 'POST /api/credit-notes/[creditNoteId]/resend', kind: 'api', key: 'credit_notes.write' },
+  { surface: 'POST /api/credit-notes/attempts/abandon', kind: 'api', key: 'credit_notes.write' },
   { surface: 'POST /api/invoices', kind: 'api', key: 'invoicing.write' },
   { surface: 'POST /api/invoices/event-draft', kind: 'api', key: 'invoicing.write' },
   { surface: 'POST /api/invoices/[invoiceId]/discard-auto-draft', kind: 'api', key: 'invoicing.write' },

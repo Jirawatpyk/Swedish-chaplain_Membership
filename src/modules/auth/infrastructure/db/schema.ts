@@ -149,6 +149,8 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'auto_email_delivery_failed',
   // --- #67 — a replayed admin credit note (idempotency key) — mig 0324 ---
   'credit_note_issue_replayed',
+  // --- Task 68 — "Start over" closed an admin issue attempt — mig 0326 ---
+  'credit_note_attempt_abandoned',
   // --- Hybrid A+B duplicate-email handling — added by migration 0032 ---
   'contact_linked_to_user',
   // --- F3 R4 verify-fix Types-#6 (2026-05-02) — preferred_locale write

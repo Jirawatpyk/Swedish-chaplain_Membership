@@ -72,6 +72,8 @@ const DEDICATED_MESSAGE_KEYS: Readonly<Record<string, string>> = {
   // request lacked the staff acknowledgement (a stale render, or a non-form
   // caller). Point at Issue refund / the acknowledgement, not a raw code.
   online_payment_refundable: 'errors.onlinePaymentRefundable',
+  // Task 68 — the attempt was closed with "Start over" (another tab): no note.
+  attempt_abandoned: 'errors.attemptAbandoned',
 };
 
 export function routeCreditNoteError(

@@ -34,6 +34,7 @@ export {
 } from './schema-invoice-lines';
 export {
   creditNotes,
+  creditNoteAbandonedAttempts,
   type CreditNoteRow,
   type NewCreditNoteRow,
 } from './schema-credit-notes';

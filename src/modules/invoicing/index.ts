@@ -366,6 +366,14 @@ export {
 } from './application/use-cases/issue-credit-note';
 
 export {
+  abandonCreditNoteAttempt,
+  abandonCreditNoteAttemptSchema,
+  type AbandonCreditNoteAttemptInput,
+  type AbandonCreditNoteAttemptSuccess,
+  type AbandonCreditNoteAttemptError,
+} from './application/use-cases/abandon-credit-note-attempt';
+
+export {
   voidInvoice,
   voidInvoiceSchema,
   type VoidInvoiceInput,
@@ -544,6 +552,7 @@ export {
   makeVoidInvoiceDeps,
   makeIssueMembershipBillDeps,
   makeIssueCreditNoteDeps,
+  makeAbandonCreditNoteAttemptDeps,
   makeGetCreditNoteDeps,
   makeListCreditNotesDeps,
   makeListManualCreditNotesEndingMembershipDeps,

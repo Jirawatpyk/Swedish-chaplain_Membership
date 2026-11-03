@@ -30,7 +30,7 @@ import {
   type TenantIdentitySnapshot,
 } from '../../domain/value-objects/tenant-identity-snapshot';
 import { readMemberIdentitySnapshot } from '../../domain/value-objects/member-identity-snapshot';
-import { creditNotes, invoices, type CreditNoteRow } from '../db';
+import { creditNoteAbandonedAttempts, creditNotes, invoices, type CreditNoteRow } from '../db';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 
@@ -335,6 +335,30 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
         {},
         'findByIdempotencyKey',
       );
+    },
+
+    async findAbandonedAttempt(txUnknown, tenantIdArg: string, idempotencyKey: string) {
+      // Task 68 — explicit tenant predicate (D-029), RLS is the second wall.
+      const rows = await (txUnknown as TenantTx)
+        .select({ invoiceId: creditNoteAbandonedAttempts.invoiceId })
+        .from(creditNoteAbandonedAttempts)
+        .where(
+          and(
+            eq(creditNoteAbandonedAttempts.tenantId, tenantIdArg),
+            eq(creditNoteAbandonedAttempts.idempotencyKey, idempotencyKey),
+          ),
+        )
+        .limit(1);
+      return rows[0] ?? null;
+    },
+
+    async insertAbandonedAttempt(txUnknown, input) {
+      await (txUnknown as TenantTx).insert(creditNoteAbandonedAttempts).values({
+        tenantId: input.tenantId,
+        idempotencyKey: input.idempotencyKey,
+        invoiceId: input.invoiceId,
+        abandonedByUserId: input.abandonedByUserId,
+      });
     },
 
     async findById(creditNoteId: CreditNoteId, tenantIdArg: string): Promise<CreditNote | null> {

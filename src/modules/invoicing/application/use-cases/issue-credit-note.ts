@@ -286,6 +286,12 @@ export type IssueCreditNoteError =
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'concurrent_state_change' }
   /**
+   * Task 68 — the attempt's idempotency key was closed with "Start over"
+   * (`credit_note_abandoned_attempts`): no note may ever be issued under it.
+   * Returned under the invoice lock, before any number is allocated.
+   */
+  | { code: 'attempt_abandoned' }
+  /**
    * F-2 (2026-07-08) — this credit note would FULLY credit a
    * `invoiceSubject==='membership'` invoice, but the caller omitted the
    * required `membershipEffect` field. Returned BEFORE `allocateNext` (no
@@ -658,6 +664,11 @@ export async function issueCreditNote(
             membershipCancellationRequested: false,
             replayed: true,
           });
+        }
+        // Task 68 — "Start over" closed this key under this same lock: the
+        // attempt is over, nothing may be issued under it.
+        if (await deps.creditNoteRepo.findAbandonedAttempt(tx, input.tenantId, input.idempotencyKey)) {
+          return err({ code: 'attempt_abandoned' });
         }
         // #728 review (financial L2) — the pre-read saw this key, so the
         // manual guards above were skipped; the locked read no longer does.

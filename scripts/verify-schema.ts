@@ -239,6 +239,13 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'credit_notes' AND column_name = 'idempotency_key' AND data_type = 'uuid' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'credit_notes' AND indexname = 'credit_notes_tenant_idempotency_key_uniq' AND indexdef LIKE 'CREATE UNIQUE INDEX%' AND indexdef LIKE '%(tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)') AND EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'credit_notes_enforce_immutability' AND prosrc LIKE '%NEW."idempotency_key"%')`,
       },
       {
+        // Task 68 (mig 0326) — the "Start over" tombstones: the table with RLS
+        // forced (issueCreditNote reads it on every keyed admin issue, so a
+        // missing table 500s them) and the audit value its use case writes.
+        name: 'credit_note_abandoned_attempts (RLS forced) + audit_event_type credit_note_attempt_abandoned (mig 0326)',
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_class WHERE relname = 'credit_note_abandoned_attempts' AND relkind = 'r' AND relrowsecurity AND relforcerowsecurity) AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'credit_note_attempt_abandoned')`,
+      },
+      {
         // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure
         // indexes. The tax-point one is asserted by its expression: an index
         // of that name on another expression would silently stop matching

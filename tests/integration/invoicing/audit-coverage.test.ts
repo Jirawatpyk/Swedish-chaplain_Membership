@@ -282,8 +282,10 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'auto_email_skipped_no_recipient',
       // #67 (migration 0324) — a replayed admin credit-note issue attempt.
       'credit_note_issue_replayed',
+      // Task 68 (migration 0326) — "Start over" closed an admin issue attempt.
+      'credit_note_attempt_abandoned',
     ] as const;
-    expect(allF4Types).toHaveLength(29);
+    expect(allF4Types).toHaveLength(30);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -727,6 +729,12 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
           'tests/unit/invoicing/record-payment.test.ts (108 FR-001 block — no live primary → skipped_no_email + audited skip, emitted on the payment tx)',
         since: '2026-09-04',
       },
+      credit_note_attempt_abandoned: {
+        status: 'covered',
+        where:
+          'credit-note-idempotency-key.test.ts (Start over with no note → one row, 10y) + tests/unit/invoicing/abandon-credit-note-attempt.test.ts',
+        since: '2026-11-03',
+      },
       credit_note_issue_replayed: {
         status: 'covered',
         where:
@@ -784,6 +792,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'auto_email_skipped_no_recipient',
       // #67 (2026-11-03) — a replayed admin credit-note issue attempt.
       'credit_note_issue_replayed',
+      // Task 68 (2026-11-03) — "Start over" closed an admin issue attempt.
+      'credit_note_attempt_abandoned',
     ] as const;
     // C4 — the inventory must reference REAL, CURRENT test files.
     // Previously `'covered'` entries were declarative-only: if a
@@ -855,6 +865,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         'tests/integration/invoicing/credit-note-idempotency-key.test.ts',
       'tests/unit/invoicing/issue-credit-note.test.ts':
         'tests/unit/invoicing/issue-credit-note.test.ts',
+      'tests/unit/invoicing/abandon-credit-note-attempt.test.ts':
+        'tests/unit/invoicing/abandon-credit-note-attempt.test.ts',
     };
 
     for (const t of declared) {
@@ -909,7 +921,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     // the record-payment unit block asserts the audit row on the payment tx).
     // #67 — bumped 29 → 30 for `credit_note_issue_replayed` (covered: the
     // idempotency-key integration file reads the replay row).
-    expect(coveredCount + deferredCount).toBe(30);
+    // Task 68 — bumped 30 → 31 for `credit_note_attempt_abandoned`.
+    expect(coveredCount + deferredCount).toBe(31);
     // Behavioral coverage target: 23/26. Remaining 4 are post-MVP/rare-path
     // deferrals: invoice_pdf_regenerated (Blob-outage auto-rerender),
     // receipt_rendered + pdf_render_permanently_failed (T166 async
