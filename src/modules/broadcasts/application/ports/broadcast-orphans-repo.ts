@@ -1,6 +1,6 @@
 /**
  * Spec 140 s2c (DL5b, DL6, DL10) — the port over `broadcast_orphaned_resend_ids`
- * (migration 0323): a Resend broadcast or audience our side created whose id
+ * (migration 0325): a Resend broadcast or audience our side created whose id
  * no live `broadcasts` row will carry to a cleanup path.
  *
  * Its own port, as the module keeps one per table (`broadcast-versions-repo`,
@@ -97,7 +97,7 @@ export interface BroadcastOrphansRepo {
   settleOrphan(orphanId: string, outcome: OrphanOutcome): Promise<boolean>;
 
   /**
-   * [P M-1] The retention prune (`prune_orphaned_resend_ids`, 0323): settled
+   * [P M-1] The retention prune (`prune_orphaned_resend_ids`, 0325): settled
    * rows and `create_unconfirmed` rows older than `cutoff`. The function
    * refuses a cutoff younger than `ORPHAN_ROW_RETENTION_DAYS`. Returns the
    * number deleted.

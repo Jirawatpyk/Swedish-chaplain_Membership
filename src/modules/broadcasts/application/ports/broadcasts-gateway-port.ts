@@ -542,7 +542,7 @@ export interface BroadcastsGatewayPort {
    * landed first makes the DELETE 403.
    *
    * The fourth exception (spec 140 s2c) is an id read from the ORPHAN TABLE
-   * (`broadcast_orphaned_resend_ids`, migration 0323), by the
+   * (`broadcast_orphaned_resend_ids`, migration 0325), by the
    * `cleanup-audiences` drain and the erasure cascade's orphan pass
    * (`_settle-orphan-at-resend.ts`). Either reads an id only while NO
    * non-terminal `broadcasts` row of the tenant holds it (type-matched,

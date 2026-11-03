@@ -231,11 +231,11 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'broadcasts' AND column_name = 'dispatch_lease_token' AND data_type = 'uuid' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'broadcasts' AND column_name = 'dispatch_lease_expires_at' AND data_type = 'timestamp with time zone' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'broadcasts_dispatch_lease_pair' AND conrelid = 'public.broadcasts'::regclass AND contype = 'c') AND EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'broadcasts_immutable_after_submit_fn' AND prosrc LIKE '%NEW.dispatch_lease_token%' AND prosrc LIKE '%NEW.dispatch_lease_expires_at%')`,
       },
       {
-        // Spec 140 s2c (mig 0323) — the orphaned Resend id table: RLS ENABLE +
+        // Spec 140 s2c (mig 0325) — the orphaned Resend id table: RLS ENABLE +
         // FORCE with one policy, chamber_app holding no DELETE, the partial
         // unique id index the writers' ON CONFLICT lands on, and the
         // SECURITY DEFINER prune with its pinned search_path [P M-1].
-        name: 'broadcast_orphaned_resend_ids (RLS+FORCE, no chamber_app DELETE, resource_uq) + prune_orphaned_resend_ids SECURITY DEFINER (mig 0323)',
+        name: 'broadcast_orphaned_resend_ids (RLS+FORCE, no chamber_app DELETE, resource_uq) + prune_orphaned_resend_ids SECURITY DEFINER (mig 0325)',
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_class WHERE relname = 'broadcast_orphaned_resend_ids' AND relrowsecurity AND relforcerowsecurity) AND (SELECT count(*) FROM pg_policies WHERE tablename = 'broadcast_orphaned_resend_ids') = 1 AND NOT EXISTS (SELECT 1 FROM information_schema.role_table_grants WHERE table_name = 'broadcast_orphaned_resend_ids' AND grantee = 'chamber_app' AND privilege_type = 'DELETE') AND EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = 'broadcast_orphaned_resend_ids' AND indexname = 'broadcast_orphaned_resend_ids_resource_uq') AND EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'prune_orphaned_resend_ids' AND prosecdef AND array_to_string(proconfig, ';') LIKE 'search_path=%')`,
       },
       {

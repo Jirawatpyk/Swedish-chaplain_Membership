@@ -61,7 +61,7 @@
  *
  * THE ORPHAN RECORD (spec 140 s2c [P M-1]). After the run row, the run prunes
  * `broadcast_orphaned_resend_ids` (`pruneOrphans` → the SECURITY DEFINER
- * `prune_orphaned_resend_ids`, migration 0323): settled rows and
+ * `prune_orphaned_resend_ids`, migration 0325): settled rows and
  * `create_unconfirmed` rows older than `ORPHAN_ROW_RETENTION_DAYS` (90). An
  * unsettled row with an id is never pruned (it still names a copy at Resend).
  * Best-effort and independent of the E-Blast rows: it runs whatever the loop

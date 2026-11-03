@@ -1284,7 +1284,7 @@ export type NewBroadcastMemberDecisionRow =
   typeof broadcastMemberDecisions.$inferInsert;
 
 /**
- * Spec 140 s2c (migration 0323) — a Resend broadcast or audience our side
+ * Spec 140 s2c (migration 0325) — a Resend broadcast or audience our side
  * created whose id no live `broadcasts` row will carry to a cleanup path. The
  * drain (`cleanupOrphanedAudiences`) and the erasure cascade settle it at
  * Resend; `prune_orphaned_resend_ids` (SECURITY DEFINER) is the only DELETE.

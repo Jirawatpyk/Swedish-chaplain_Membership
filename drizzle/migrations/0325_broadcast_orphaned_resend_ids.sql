@@ -1,11 +1,23 @@
 -- ---------------------------------------------------------------------------
--- Migration 0323 — spec 140 s2c: `broadcast_orphaned_resend_ids`, the record
+-- Migration 0325 — spec 140 s2c: `broadcast_orphaned_resend_ids`, the record
 -- of a Resend broadcast or audience our side created whose id no live
 -- `broadcasts` row will carry to a cleanup path (DL5b, DL6, DL10; plan.md
 -- § Slice 2c — build plan, item 1).
 --
--- Numbered 0323, journal idx 324, `when` 1798545600000 — strictly after
--- 0322's 1798545500000 (a duplicate `when` makes db:migrate a silent no-op).
+-- Numbered 0325, journal idx 326, `when` 1798545800000. 0323 and 0324 (idx
+-- 324-325, `when` 1798545600000 / 1798545700000) belong to PR #728 (the
+-- credit-note idempotency), which merges first; they are gaps on this branch.
+-- drizzle's migrator reads the journal entries in order and never reads `idx`,
+-- so a gap is harmless; a duplicate `when` would make db:migrate a silent
+-- no-op, and run-migrations' phase 4 fails on any unrecorded entry.
+--
+-- RE-RUNNABLE: every statement is idempotent (CREATE TABLE / INDEX IF NOT
+-- EXISTS, GRANT / REVOKE, ENABLE / FORCE, DROP POLICY IF EXISTS + CREATE
+-- POLICY, CREATE OR REPLACE FUNCTION). The dev branch first applied this file
+-- as 0323 (`when` 1798545600000); that ledger row was deleted when it was
+-- renumbered, and this file re-ran over the objects already there. CREATE
+-- TABLE IF NOT EXISTS skips the whole table, so its inline constraints are
+-- whatever the first apply created (identical text).
 --
 -- Who writes a row (each at its CALLER, never inside a shared gateway
 -- helper, plan item 3): a minted broadcast whose reclaim leaked
@@ -62,7 +74,7 @@
 --
 -- Rollback: `DROP FUNCTION prune_orphaned_resend_ids(text, timestamptz);
 -- DROP TABLE broadcast_orphaned_resend_ids;` — after which an orphan is again
--- only a critical log line (the pre-0323 state, RoPA 8d).
+-- only a critical log line (the pre-0325 state, RoPA 8d).
 -- ---------------------------------------------------------------------------
 
 -- --- fail fast on the lock (0310 / 0322 precedent) -------------------------

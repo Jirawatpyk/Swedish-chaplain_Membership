@@ -543,7 +543,7 @@ describe('sweepExpiredBroadcasts — failures', () => {
 
 /**
  * Spec 140 s2c [P M-1] — the run also prunes the orphaned Resend id record
- * (`prune_orphaned_resend_ids`, 0323): settled rows and `create_unconfirmed`
+ * (`prune_orphaned_resend_ids`, 0325): settled rows and `create_unconfirmed`
  * rows older than `ORPHAN_ROW_RETENTION_DAYS`. Once per run, after the run row,
  * best-effort: a failed prune is logged and the sweep's answer is unchanged.
  */

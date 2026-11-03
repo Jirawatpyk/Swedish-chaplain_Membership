@@ -66,7 +66,7 @@ export const SCOPED_TABLES = [
   // the append-only member decisions; RLS ENABLE + FORCE + the 0064 policy.
   'broadcast_versions',
   'broadcast_member_decisions',
-  // Spec 140 s2c (migration 0323) — the orphaned Resend id record; RLS ENABLE +
+  // Spec 140 s2c (migration 0325) — the orphaned Resend id record; RLS ENABLE +
   // FORCE + the 0064 policy, no chamber_app DELETE.
   'broadcast_orphaned_resend_ids',
   // #400 PR-B — tables that always carried RLS + FORCE + a tenant policy but

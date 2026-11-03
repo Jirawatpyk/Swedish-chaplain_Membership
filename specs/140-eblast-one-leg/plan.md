@@ -86,7 +86,7 @@ Also: the new ceiling env, the Segments names, `docs/decisions.md` D-042, go-liv
 | 1 | Erasure deletes reachable drafts; refusals delete their draft | ED1–ED5 | pdpa-gdpr, security, reliability, spec-compliance | `140-eblast-one-leg-s1` | #713 · done |
 | 2a | Bounded Resend calls (one signal spans every attempt, C = 10 s); no in-process retry on creates; the legacy leg skips import rows; `propagate` bounded | DL5a, DL7, DL8, carry R3 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2` | #719 · done |
 | 2b | Lease + fencing token + pre-call check + row-start cutoff; migration 0322 (lease columns + trigger list); the live-lease legacy skip | DL1–DL4, DL9, cell 23, carry R4 | drizzle-migration, security, reliability, spec-compliance | `140-eblast-one-leg-s2b` | #723 · done |
-| 2c | Orphan-id table (migration 0323) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; an audience whose reclaim was undecided (`audience_leaked`, s2b round 2) gets an orphan row and is drained; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | — · open |
+| 2c | Orphan-id table (migration 0325) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; an audience whose reclaim was undecided (`audience_leaked`, s2b round 2) gets an orphan row and is drained; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | — · open |
 | 3 | Error classes + import-leg table fixes; `listAudiences` per-invocation time budget | DT1–DT5 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
 | 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | — · open |
 
@@ -438,7 +438,7 @@ s2a was 2 cells and still reached the review cap. The remaining 25 cells split a
 | Slice | Covers | Migration | Cells |
 |---|---|---|---|
 | **2b — lease** | lease columns, plus the trigger GUC list; claim, release and the pre-call check (`clock_timestamp()`); the token in every row writer; `applyTransition` clears the lease on any status change; the row-start cutoff and the TTL; the scan excludes a live lease; the legacy leg skips a live lease (cell 23); a lost lease is a concurrent skip; carry **R4** | 0322 | 1–9, 13, 14, 16–18, 20, 21, 23 |
-| **2c — orphan ids** | `broadcast_orphaned_resend_ids` (RLS + FORCE); the eight writers, including `create_unconfirmed` with a NULL id (a 5xx is included, matching RoPA 8d: "a 5xx, a network failure, or our own timeout"); the drain in `cleanup-audiences` (`maxDuration` 300, stops at 240 s); the `failTerminally` reclaim choke point; the unconfirmed gauge; carry **R1 #5**; **#699 closes** | 0323 | 10–12, 15 (DL5b), 25–29 |
+| **2c — orphan ids** | `broadcast_orphaned_resend_ids` (RLS + FORCE); the eight writers, including `create_unconfirmed` with a NULL id (a 5xx is included, matching RoPA 8d: "a 5xx, a network failure, or our own timeout"); the drain in `cleanup-audiences` (`maxDuration` 300, stops at 240 s); the `failTerminally` reclaim choke point; the unconfirmed gauge; carry **R1 #5**; **#699 closes** | 0325 | 10–12, 15 (DL5b), 25–29 |
 
 - In 2b, cell 8 keeps today's critical `minted_broadcast_leaked` log (`_reclaim-minted-broadcast.ts:66`); 2c replaces it with an orphan row.
 - DL5b and DL6 move to 2c.
@@ -584,7 +584,7 @@ The maintainer asked the main session to consult the advisor and pick best pract
 #### Build
 **Branch:** `140-eblast-one-leg-s2c` from `e477b3337`, in f142 (clean install, `.husky/_`).
 
-##### 1. Migration 0323
+##### 1. Migration 0325
 `new-migration` skill; journal `when` 1798545600000; template 0308 (no DELETE grant).
 
 **Table `broadcast_orphaned_resend_ids`:**
@@ -809,7 +809,7 @@ Branch `140-eblast-one-leg-s2c` (f142), from `1afa060d0` + the plan commit `4d59
 
 | Mechanism | RED | GREEN |
 |---|---|---|
-| Migration 0323 (CHECKs, unique, RLS + FORCE, grants, prune) | `660ecce19` — 5/5 fail, `relation "broadcast_orphaned_resend_ids" does not exist` | `93028b107` |
+| Migration 0325 (CHECKs, unique, RLS + FORCE, grants, prune) | `660ecce19` — 5/5 fail, `relation "broadcast_orphaned_resend_ids" does not exist` | `93028b107` |
 | `BroadcastOrphansRepo` + Drizzle adapter | `f8e071457` — both files fail to resolve the adapter | `194514e4a` |
 | The writers, both legs | `5039a24de` — 16 fail (e.g. `expected [] to deeply equal [ { …(5) } ]`) | `8a59aee5d` |
 | The `failTerminally` choke point | `fe4b4efdf` — 12 fail (the event list has no `reread` / `check` / delete) | `f8db7e955` |
@@ -830,6 +830,11 @@ Decisions made while building:
 8. **The choke point's log lines** come from `deleteDraftBeforeStandingRefusal` and so say `refusal: 'standing'`; the shared helper (100 % pinned) was not changed. A re-read failure is `dispatch.server_error` phase `terminal_write`, message `terminal_reread_failed` (no new phase, so the dispatch route's `dispatch_resolve_failed.total{phase}` labels are unchanged). One existing case changed meaning: "the send 404s and the re-read itself FAILS" now answers the retryable error with no terminal write, because its `findById` fails on every call.
 9. **The tick's `orphans` dep is REQUIRED** on both legs (the composition factories wire `makeDrizzleBroadcastOrphansRepo`); 81 legacy unit literals got `orphans: NO_ORPHANS`, five integration files the real adapter.
 10. **The drain's NOT EXISTS has no index on `broadcasts.resend_audience_id`.** It reads at most 20 orphans per run against one tenant's rows; adding the index would lock `broadcasts` on deploy. Revisit if a tenant's `broadcasts` grows large.
+11. **Deviation recorded (plan item 1, [A8]):** the slice-2 design's single `resend_broadcast_id` column is `resource_type` + `resource_id`, so a leaked audience fits the same table; the partial unique key is `(tenant_id, resource_type, resource_id)`.
+12. **The prune's clock skew** (found at the done-check, advisor): the SQL floor compares the app's cutoff with Neon's `now()`, so an app clock even slightly ahead of the DB's would refuse every daily prune (22023). The sweep's cutoff is now `ORPHAN_ROW_RETENTION_DAYS` + `ORPHAN_PRUNE_SKEW_MARGIN_MS` (1 h) old; the SQL floor is unchanged (RED `6cba852b0`, GREEN `cd66b7989`).
+13. **Renumbered 0323 → 0325** (maintainer, 3 Nov 2026): PR #728 takes 0323 / 0324 (`when` 1798545600000 / 1798545700000) and merges first. This file is idx 326, `when` 1798545800000; 0323 / 0324 are gaps here (drizzle's migrator never reads `idx`). On dev the 0323 ledger row (`created_at` 1798545600000, hash `9c00afc2713a…3c0b`) was deleted by a one-off dev-only script, and the re-runnable file re-applied as 1798545800000 (ledger before: 413 / 1798545600000 on top; after: 414 / 1798545800000, no 1798545600000 row). **Hazard for #728 on dev:** with 1798545800000 already recorded, drizzle's migrate skips any entry with an older `when`, so #728's 0323 / 0324 will not apply on the shared dev branch by `pnpm db:migrate` alone; run-migrations' phase 4 then fails loudly with "not recorded". Whoever lands #728 must apply it on dev with that in mind (CI and prod are fresh / ordered and unaffected).
+
+Counts corrected: commit `5830a93b6` says "drain 20/20"; `cleanup-orphaned-audiences-drain.test.ts` holds 19 cases (32 with the cleanup unit and route suites). The `dispatch-lease-budget.test.ts` [A4] pin landed with its GREEN commit: it pins literals that already existed, so it could not be red first.
 
 **The gauges route's role (verified on dev after migrating, `pnpm db:query`):** `current_user = neondb_owner`, `rolbypassrls = true`; both `broadcasts` and `broadcast_orphaned_resend_ids` have `relforcerowsecurity = true`; with no tenant GUC set the role read 7 `broadcasts` rows (1 tenant) and the orphan table without error (0 rows at the time: the test tenants had been cleaned up), and the gauge's own predicate ran. So the route reads the new table exactly as it reads `broadcasts`.
 

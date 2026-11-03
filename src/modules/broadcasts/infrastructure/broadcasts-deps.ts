@@ -493,7 +493,7 @@ export async function makeDispatchScheduledBroadcastDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
-    // Spec 140 s2c — the orphaned Resend id record (migration 0323).
+    // Spec 140 s2c — the orphaned Resend id record (migration 0325).
     orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
     // Spec 140 s2a review round 2 (CR#2): the legacy leg's createBroadcast
     // retries a 5xx inside the budget. Deleted with the leg in slice 4.
@@ -1245,7 +1245,7 @@ export async function makeBuildAudienceTickDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
-    // Spec 140 s2c — the orphaned Resend id record (migration 0323).
+    // Spec 140 s2c — the orphaned Resend id record (migration 0325).
     orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
     broadcastsGateway: resendBroadcastsGateway,
     audit: f7AuditAdapter,

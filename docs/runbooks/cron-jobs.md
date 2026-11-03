@@ -921,7 +921,7 @@ Daily cron that **enforces the RoPA's retention of E-Blasts**
 (`docs/compliance/processing-records.md`, F7 retention table: 5 years; a row's
 own `retention_years` may say 10). Since spec 140 s2c it also **prunes the
 orphaned Resend id record** after its run row: `prune_orphaned_resend_ids`
-(SECURITY DEFINER, migration 0323) deletes settled rows and `create_unconfirmed`
+(SECURITY DEFINER, migration 0325) deletes settled rows and `create_unconfirmed`
 rows older than `ORPHAN_ROW_RETENTION_DAYS` (90 days), only in the tenant the
 call is bound to, and refuses a younger cutoff. An unsettled row with an id is
 never pruned. Best-effort: a failure logs

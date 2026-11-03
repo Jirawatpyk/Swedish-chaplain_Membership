@@ -174,7 +174,7 @@ What becomes stale: a count a member saw at compose before the flip. SC-004 hold
 ### E. Orphaned Resend ids (spec 140 s2c)
 
 An id our side created at Resend and then left on no live `broadcasts` row is a
-row of `broadcast_orphaned_resend_ids` (migration 0323), written at the writer
+row of `broadcast_orphaned_resend_ids` (migration 0325), written at the writer
 that held it: `attach_lost` / `row_vanished` / `persist_failed` (a minted
 broadcast whose reclaim failed), `read_back_failed_kept`,
 `dead_broadcast_replaced` / `dead_broadcast_kept` (a cancelled inherited id),

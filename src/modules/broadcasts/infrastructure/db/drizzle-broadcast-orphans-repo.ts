@@ -1,6 +1,6 @@
 /**
  * Spec 140 s2c — the Drizzle adapter of `BroadcastOrphansRepo` over
- * `broadcast_orphaned_resend_ids` (migration 0323).
+ * `broadcast_orphaned_resend_ids` (migration 0325).
  *
  * Bound to one tenant. Every method opens its own `runInTenant` transaction
  * (chamber_app, `SET LOCAL app.current_tenant`), checks that binding with
@@ -74,7 +74,7 @@ function toRef(r: SelectedRow): OrphanedResendIdRef {
     orphanId: r.orphanId,
     broadcastId: r.broadcastId,
     requestedByMemberId: r.requestedByMemberId,
-    // The 0323 CHECKs close all three sets; the casts state what they admit.
+    // The 0325 CHECKs close all three sets; the casts state what they admit.
     resourceType: r.resourceType as OrphanResourceType,
     // NOT NULL by every read's WHERE.
     resourceId: r.resourceId ?? '',

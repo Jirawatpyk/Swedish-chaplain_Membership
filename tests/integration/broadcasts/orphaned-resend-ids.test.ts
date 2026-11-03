@@ -1,5 +1,5 @@
 /**
- * Spec 140 s2c — migration 0323's `broadcast_orphaned_resend_ids` on real
+ * Spec 140 s2c — migration 0325's `broadcast_orphaned_resend_ids` on real
  * Postgres, run as `chamber_app` inside `runInTenant`.
  *
  *   - the CHECKs: the three closed value sets (pinned against the Domain
@@ -74,7 +74,7 @@ function insertSql(tenantSlug: string, r: Row): ReturnType<typeof sql> {
     )`;
 }
 
-describe('spec 140 s2c — 0323 broadcast_orphaned_resend_ids', () => {
+describe('spec 140 s2c — 0325 broadcast_orphaned_resend_ids', () => {
   let tenant: TestTenant;
   let other: TestTenant;
 

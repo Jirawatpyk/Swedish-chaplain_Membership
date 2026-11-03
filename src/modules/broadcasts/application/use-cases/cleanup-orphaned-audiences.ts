@@ -25,7 +25,7 @@
  * Spec 140 s2c (DL6) — THE ORPHAN DRAIN, a second pass after that loop. It
  * settles at Resend the ids recorded in `broadcast_orphaned_resend_ids` (a
  * leaked mint, a leaked audience, a terminal row's undeleted draft — every
- * writer is listed in the migration 0323 header), with the outcome table of
+ * writer is listed in the migration 0325 header), with the outcome table of
  * `_settle-orphan-at-resend.ts`, and writes each answer by a settle CAS:
  *   - at most `ORPHAN_DRAIN_LIMIT` rows per run, `ORPHAN_DRAIN_CONCURRENCY` at
  *     a time, oldest first; a row is never listed while a NON-TERMINAL

@@ -2,9 +2,9 @@
  * Spec 140 s2c (DL5b, DL6, DL10) — the orphaned Resend id: a Resend broadcast
  * or audience our side created, whose id no live `broadcasts` row will carry
  * to a cleanup path, recorded so that a cron and the erasure cascade can
- * settle it at Resend (`broadcast_orphaned_resend_ids`, migration 0323).
+ * settle it at Resend (`broadcast_orphaned_resend_ids`, migration 0325).
  *
- * The SQL CHECKs in 0323 list these values by hand; the integration suite
+ * The SQL CHECKs in 0325 list these values by hand; the integration suite
  * `orphaned-resend-ids.test.ts` pins them against these tuples, so the two
  * cannot drift silently.
  *
@@ -50,7 +50,7 @@ export type OrphanOutcome = (typeof ORPHAN_OUTCOMES)[number];
 
 /**
  * [P M-1] How long a settled row, or a `create_unconfirmed` row, is kept
- * before the retention sweep prunes it (`prune_orphaned_resend_ids`, 0323,
+ * before the retention sweep prunes it (`prune_orphaned_resend_ids`, 0325,
  * which refuses a cutoff younger than this). An UNSETTLED row with an id is
  * never pruned: it still names a copy at Resend.
  */
