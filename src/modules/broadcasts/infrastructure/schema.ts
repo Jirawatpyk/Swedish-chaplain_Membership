@@ -1304,6 +1304,9 @@ export const broadcastOrphanedResendIds = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     settledAt: timestamp('settled_at', { withTimezone: true }),
     outcome: text('outcome', { enum: ['deleted', 'absent', 'retained', 'handed'] }),
+    /** Review round 1 — undecided settles so far; the drain lists `ORDER BY attempts, created_at`. */
+    attempts: integer('attempts').notNull().default(0),
+    lastAttemptedAt: timestamp('last_attempted_at', { withTimezone: true }),
   },
   (table) => [
     primaryKey({

@@ -4,20 +4,19 @@
 -- `broadcasts` row will carry to a cleanup path (DL5b, DL6, DL10; plan.md
 -- § Slice 2c — build plan, item 1).
 --
--- Numbered 0325, journal idx 326, `when` 1798545800000. 0323 and 0324 (idx
--- 324-325, `when` 1798545600000 / 1798545700000) belong to PR #728 (the
--- credit-note idempotency), which merges first; they are gaps on this branch.
--- drizzle's migrator reads the journal entries in order and never reads `idx`,
--- so a gap is harmless; a duplicate `when` would make db:migrate a silent
--- no-op, and run-migrations' phase 4 fails on any unrecorded entry.
+-- Numbered 0325, journal idx 326, `when` 1798545800000: after #728's 0323 /
+-- 0324 (`when` 1798545600000 / 1798545700000, merged) and before #733's 0326
+-- (`when` 1798545900000), which must merge AFTER this file — drizzle's
+-- migrator skips an entry older than the newest applied one, so 0325 landing
+-- after 0326 would never run (and run-migrations' phase 4 would fail the
+-- deploy on the unrecorded entry).
 --
 -- RE-RUNNABLE: every statement is idempotent (CREATE TABLE / INDEX IF NOT
--- EXISTS, GRANT / REVOKE, ENABLE / FORCE, DROP POLICY IF EXISTS + CREATE
--- POLICY, CREATE OR REPLACE FUNCTION). The dev branch first applied this file
--- as 0323 (`when` 1798545600000); that ledger row was deleted when it was
--- renumbered, and this file re-ran over the objects already there. CREATE
--- TABLE IF NOT EXISTS skips the whole table, so its inline constraints are
--- whatever the first apply created (identical text).
+-- EXISTS, ADD COLUMN IF NOT EXISTS, GRANT / REVOKE, ENABLE / FORCE, DROP
+-- POLICY IF EXISTS + CREATE POLICY, CREATE OR REPLACE FUNCTION). CREATE TABLE
+-- IF NOT EXISTS skips the whole table, so the two attempt columns are added
+-- by their own ADD COLUMN IF NOT EXISTS (review round 1): the dev branch, which
+-- had this table before they existed, gets them the same way.
 --
 -- Who writes a row (each at its CALLER, never inside a shared gateway
 -- helper, plan item 3): a minted broadcast whose reclaim leaked
@@ -37,7 +36,10 @@
 --   outlive both the broadcast row, which the retention sweep deletes, and
 --   any member change; it carries no content), resource_type, resource_id
 --   (NULL only for `create_unconfirmed`), reason, created_at, settled_at and
---   outcome (set together, once, by the settle CAS).
+--   outcome (set together, once, by the settle CAS), and since review round 1
+--   attempts / last_attempted_at (an undecided settle increments both, so the
+--   drain lists `ORDER BY attempts, created_at` and a permanently undecided row
+--   cannot hold the head of the queue).
 --
 -- Deviation from the slice-2 design (plan item 1, [A8]): the design's single
 -- `resend_broadcast_id` column is `resource_type` + `resource_id`, so a leaked
@@ -48,19 +50,25 @@
 -- orphaned-resend-id.ts); `orphaned-resend-ids.test.ts` pins every value.
 --
 -- Access: RLS ENABLE + FORCE with the 0064 / 0308 policy on
--- `app.current_tenant`. chamber_app gets SELECT, INSERT, UPDATE and NO
--- DELETE: rows leave only through `prune_orphaned_resend_ids` below.
+-- `app.current_tenant`. chamber_app gets SELECT and INSERT on the table, and
+-- UPDATE on four columns only (`settled_at`, `outcome`, `attempts`,
+-- `last_attempted_at`; review round 1, migration M2): no writer may rewrite an
+-- id, a reason or a requester. No DELETE: rows leave only through
+-- `prune_orphaned_resend_ids` below.
 --
 -- Retention [P M-1]: `prune_orphaned_resend_ids(tenant, cutoff)` deletes the
--- rows that no longer name a copy we could reach — settled rows, and
--- `create_unconfirmed` rows (no id to call) — older than the cutoff. An
--- UNSETTLED row with an id is never pruned. SECURITY DEFINER (it runs as the
+-- rows that no longer name a copy we could reach — settled rows other than
+-- `handed`, and `create_unconfirmed` rows (no id to call) — older than the
+-- cutoff. An UNSETTLED row with an id is never pruned, and neither is a
+-- `handed` row: it is the durable record of a disclosure (RoPA 8c; review
+-- round 1, pdpa M-A). SECURITY DEFINER (it runs as the
 -- owner, which has BYPASSRLS and the DELETE chamber_app lacks), so it fences
 -- itself: the tenant must be the caller's `app.current_tenant`, every DELETE
 -- carries `tenant_id = p_tenant`, and a cutoff younger than 90 days
 -- (`ORPHAN_ROW_RETENTION_DAYS`) is refused, so no caller can shorten the
--- retention. `search_path` is pinned (the 0291 / 0293 SECURITY DEFINER
--- pattern). The F7 retention sweep calls it once per tenant per daily run.
+-- retention. `search_path` is pinned to `pg_catalog, public, pg_temp` (the
+-- 0293 pattern; review round 1, migration M1): with `pg_temp` LAST, a caller's
+-- temporary table cannot shadow the table this owner-run function deletes from. The F7 retention sweep calls it once per tenant per daily run.
 --
 -- Indexes: the partial UNIQUE (tenant_id, resource_type, resource_id) WHERE
 -- resource_id IS NOT NULL is what the writers' `ON CONFLICT DO NOTHING` lands
@@ -128,7 +136,20 @@ CREATE INDEX IF NOT EXISTS "broadcast_orphaned_resend_ids_unsettled_idx"
   ON "broadcast_orphaned_resend_ids" ("tenant_id", "created_at")
   WHERE "settled_at" IS NULL;--> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE ON TABLE "broadcast_orphaned_resend_ids" TO chamber_app;--> statement-breakpoint
+-- Review round 1 — the attempt counter (a separate ADD COLUMN, see the header).
+ALTER TABLE "broadcast_orphaned_resend_ids"
+  ADD COLUMN IF NOT EXISTS "attempts" integer NOT NULL DEFAULT 0
+    CONSTRAINT "broadcast_orphaned_resend_ids_attempts_nonneg" CHECK ("attempts" >= 0);--> statement-breakpoint
+ALTER TABLE "broadcast_orphaned_resend_ids"
+  ADD COLUMN IF NOT EXISTS "last_attempted_at" timestamptz NULL;--> statement-breakpoint
+
+-- Review round 1 (migration M2) — UPDATE on the settle and attempt columns
+-- only. The REVOKE also removes any column-level UPDATE, so the GRANT below
+-- is the whole of what chamber_app may change.
+GRANT SELECT, INSERT ON TABLE "broadcast_orphaned_resend_ids" TO chamber_app;--> statement-breakpoint
+REVOKE UPDATE ON TABLE "broadcast_orphaned_resend_ids" FROM chamber_app;--> statement-breakpoint
+GRANT UPDATE ("settled_at", "outcome", "attempts", "last_attempted_at")
+  ON TABLE "broadcast_orphaned_resend_ids" TO chamber_app;--> statement-breakpoint
 
 ALTER TABLE "broadcast_orphaned_resend_ids" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "broadcast_orphaned_resend_ids" FORCE  ROW LEVEL SECURITY;--> statement-breakpoint
@@ -146,7 +167,7 @@ CREATE OR REPLACE FUNCTION public.prune_orphaned_resend_ids(p_tenant text, p_cut
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_count integer;
@@ -166,7 +187,8 @@ BEGIN
   DELETE FROM broadcast_orphaned_resend_ids
    WHERE tenant_id = p_tenant
      AND (
-       (settled_at IS NOT NULL AND settled_at < p_cutoff)
+       -- A `handed` row is the durable disclosure record: kept (pdpa M-A).
+       (settled_at IS NOT NULL AND settled_at < p_cutoff AND outcome <> 'handed')
        OR (reason = 'create_unconfirmed' AND created_at < p_cutoff)
      );
   GET DIAGNOSTICS v_count = ROW_COUNT;
