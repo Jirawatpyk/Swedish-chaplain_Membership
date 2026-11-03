@@ -255,7 +255,7 @@ describe('deleteDraftBeforeStandingRefusal (spec 140 s1 ED4, review round 1)', (
 
   it.each(['queued', 'sending', 'sent'] as const)('403, then the GET says %s → handed (a sibling sent it): no refusal', async (status) => {
     const g = gw('forbidden', status);
-    expect(await deleteDraftBeforeStandingRefusal(g, ids, draft)).toEqual({ kind: 'handed', resendStatus: status });
+    expect(await deleteDraftBeforeStandingRefusal(g, ids, draft)).toEqual({ kind: 'handed', resendStatus: status, sentAt: null });
     expect(g.retrieveBroadcastOnce).toHaveBeenCalledTimes(1);
     expect(g.retrieveBroadcastOnce).toHaveBeenCalledWith('rb-1');
   });

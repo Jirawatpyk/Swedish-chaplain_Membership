@@ -2872,13 +2872,15 @@ async function reclaimDraftBeforeTerminal(
     deps.broadcastsGateway,
     { ...ids, leg: 'import' },
     { resendBroadcastId: draftId, probedStatus: null },
+    'terminal',
   );
   if (cleared.kind === 'handed') {
     return {
       stop: await catchUpHanded(deps, input, current, deps.clock.now(), draftId, {
         handed: true,
         status: cleared.resendStatus,
-        sentAt: null,
+        // Review round 2 (reliability nit) — the GET's own send time.
+        sentAt: cleared.sentAt,
       }),
     };
   }

@@ -1249,17 +1249,20 @@ function deleteOnceOutcomeFor(status: number): DeleteBroadcastOnceOutcome {
 
 function retrieveOnceOutcomeFor(status: number, text: string): RetrieveBroadcastOnceOutcome {
   if (status >= 200 && status < 300) {
-    let raw: unknown;
+    let body: { status?: unknown; sent_at?: unknown } | null;
     try {
-      raw = (JSON.parse(text) as { status?: unknown } | null)?.status;
+      body = JSON.parse(text) as { status?: unknown; sent_at?: unknown } | null;
     } catch {
       return { kind: 'other' };
     }
+    const raw = body?.status;
     if (typeof raw !== 'string') return { kind: 'other' };
+    // Review round 2 (reliability nit) — a string `sent_at` only; anything else is null.
+    const sentAt = typeof body?.sent_at === 'string' ? body.sent_at : null;
     // Spec 140 s1 — MEASURED 2026-10-29 (an audience deleted under a queued
     // broadcast). Named by this reader only; `normaliseStatus` keeps it
     // `unknown` for every other caller (see `RetrieveBroadcastOnceOutcome`).
-    return { kind: 'present', status: raw === 'failed' ? 'failed' : normaliseStatus(raw) };
+    return { kind: 'present', status: raw === 'failed' ? 'failed' : normaliseStatus(raw), sentAt };
   }
   if (status === 404 || status === 410) return { kind: 'not_found' };
   if (status === 429 || status >= 500) return { kind: 'retryable' };

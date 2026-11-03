@@ -236,7 +236,16 @@ export type DeleteBroadcastOnceOutcome =
  * cascade still treats `failed` as unexpected.
  */
 export type RetrieveBroadcastOnceOutcome =
-  | { readonly kind: 'present'; readonly status: RetrievedBroadcastResource['status'] | 'failed' }
+  | {
+      readonly kind: 'present';
+      readonly status: RetrievedBroadcastResource['status'] | 'failed';
+      /**
+       * Spec 140 s2c review round 2 (reliability nit) — the body's `sent_at`
+       * when it is a string, else `null`. The adapter always sets it; it is
+       * optional so a test double may leave it out (read as `null`).
+       */
+      readonly sentAt?: string | null;
+    }
   | { readonly kind: 'not_found' }
   | { readonly kind: 'retryable' }
   | { readonly kind: 'other' };

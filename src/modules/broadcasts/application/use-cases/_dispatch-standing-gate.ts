@@ -205,7 +205,7 @@ export async function deleteDraftBeforeRefusal(
     readonly tenantId: string;
     readonly broadcastId: string;
     readonly leg: 'live' | 'import';
-    readonly refusal: 'erased' | 'standing';
+    readonly refusal: 'erased' | 'standing' | 'terminal';
   },
   draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
 ): Promise<DraftClearance> {
@@ -273,7 +273,12 @@ export async function deleteDraftBeforeErasedRefusal(
 export type StandingDraftClearance =
   | Extract<DraftClearance, { kind: 'cleared' }>
   | { readonly kind: 'undeleted'; readonly errClass: StandingDraftErrClass }
-  | { readonly kind: 'handed'; readonly resendStatus: 'queued' | 'sending' | 'sent' };
+  | {
+      readonly kind: 'handed';
+      readonly resendStatus: 'queued' | 'sending' | 'sent';
+      /** Review round 2 (reliability nit) — the GET's `sent_at`, when it read one. */
+      readonly sentAt: string | null;
+    };
 
 /**
  * Spec 140 s1 review round 2 (code-review #6) — why a standing refusal's draft
@@ -296,20 +301,25 @@ export type StandingDraftErrClass =
  * release the quota slot and tell the member a delivered E-Blast failed. So ONE
  * bounded `retrieveBroadcastOnce` decides: queued / sending / sent → `handed`;
  * anything else (a throw included) → `undeleted`, and the refusal goes ahead.
+ *
+ * Spec 140 s2c review round 2 (code-review #5) — `refusal` names the caller in
+ * the log lines: `'standing'` (the default, both legs' refuse arms) or
+ * `'terminal'` (the import leg's `failTerminally` choke point, not a refusal).
  */
 export async function deleteDraftBeforeStandingRefusal(
   gateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce' | 'retrieveBroadcastOnce'>,
   ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'live' | 'import' },
   draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
+  refusal: 'standing' | 'terminal' = 'standing',
 ): Promise<StandingDraftClearance> {
-  const cleared = await deleteDraftBeforeRefusal(gateway, { ...ids, refusal: 'standing' }, draft);
+  const cleared = await deleteDraftBeforeRefusal(gateway, { ...ids, refusal }, draft);
   if (cleared.kind === 'cleared') return cleared;
   // Review round 5 — ONE line per refusal, for its final outcome, carrying the
   // tick's first probe, the DELETE's answer and (after a 403) the GET's reading.
   const { resendBroadcastId } = cleared;
   const logIds = {
     ...ids,
-    refusal: 'standing',
+    refusal,
     resendBroadcastId,
     probedStatus: cleared.probedStatus,
     outcome: cleared.errClass,
@@ -331,9 +341,10 @@ export async function deleteDraftBeforeStandingRefusal(
     return { kind: 'undeleted', errClass: 'threw' };
   }
   const probed = probe.kind === 'present' ? probe.status : probe.kind;
-  if (isHandedStatus(probed)) {
-    logger.warn({ ...logIds, observedResendStatus: probed }, 'broadcasts.dispatch.refused_draft_handed_by_sibling');
-    return { kind: 'handed', resendStatus: probed };
+  // Only a `present` answer carries a handed status (`isHandedStatus`).
+  if (probe.kind === 'present' && isHandedStatus(probe.status)) {
+    logger.warn({ ...logIds, observedResendStatus: probe.status }, 'broadcasts.dispatch.refused_draft_handed_by_sibling');
+    return { kind: 'handed', resendStatus: probe.status, sentAt: probe.sentAt ?? null };
   }
   // Review round 2 (code-review #6) — a `cancelled` reading is an unsendable
   // copy: cleared, as `deleteDraftBeforeRefusal` clears a 403 on an id its
