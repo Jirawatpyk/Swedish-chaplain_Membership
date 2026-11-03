@@ -55,6 +55,9 @@ vi.mock('@/lib/env', () => ({
 // this wire contract is about, so only the constant is provided — the REAL one.
 vi.mock('@/modules/broadcasts', async () => ({
   MARKETING_TURN_STATUSES: (await import('@/modules/broadcasts/domain/stage/whose-turn')).MARKETING_TURN_STATUSES,
+  // Spec 140 s2c - the create_unconfirmed gauge's window, the REAL one.
+  ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS: (await import('@/modules/broadcasts/domain/value-objects/orphaned-resend-id'))
+    .ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS,
 }));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: (...a: unknown[]) => loggerErrorSpy(...a), debug: vi.fn() },

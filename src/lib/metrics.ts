@@ -3180,6 +3180,26 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts_orphaned_resend_ids_unconfirmed{tenant}` — spec 140 s2c (DL5b):
+   * `create_unconfirmed` orphan rows created in the last
+   * `ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS` (24 h) — a `createBroadcast` that
+   * ended in a network failure, a timeout or a 5xx, which may have minted a
+   * draft whose id we never received (no sweep can reach it). Zero-filled by
+   * the gauges cron. **Alarm** (not page) at ≥ 1; runbook
+   * `docs/runbooks/broadcast-audience-build.md` § orphaned Resend ids.
+   */
+  orphanedResendIdsUnconfirmed(tenantId: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_orphaned_resend_ids_unconfirmed',
+        'create_unconfirmed orphan rows (a createBroadcast that may have minted a draft we never learnt the id of) in the last 24 h',
+        { tenant: tenantId },
+        count,
+      );
+    });
+  },
+
+  /**
    * `broadcasts.audit_emit_count{tenant, event_type}` — ops-dashboard
    * audit-event volume per tenant per type. Distinct from
    * `auditEmitFailed` (which counts FAILURES).

@@ -62,7 +62,7 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics, membersMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { MARKETING_TURN_STATUSES } from '@/modules/broadcasts';
+import { MARKETING_TURN_STATUSES, ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS } from '@/modules/broadcasts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -164,6 +164,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let suppressionSizes: PendingRow[] = [];
   let approvedOverdue: PendingRow[] = [];
   let audienceImportStuck: PendingRow[] = [];
+  let orphanUnconfirmed: PendingRow[] = [];
   let eblastStages: EblastStageRow[] = [];
   let broadcastsGaugesOk = true;
   try {
@@ -286,6 +287,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         WHERE status::text IN (${MARKETING_TURN_IN}, 'awaiting_member_approval')
         GROUP BY tenant_id
       `);
+      // Spec 140 s2c (DL5b, [A7]) — `create_unconfirmed` orphan rows (a
+      // `createBroadcast` that may have minted a draft we never learnt the id
+      // of) of the last ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS. Read here, on the
+      // owner role like every sibling: the table is RLS + FORCE, and the owner
+      // bypasses both (checked on dev with `pnpm db:query`, spec 140 plan.md
+      // § Evidence). Zero-filled below; a tenant with only orphan rows joins
+      // the observed set.
+      const orphanUnconfirmedRows = await tx.execute<PendingRow>(sql`
+        SELECT tenant_id, COUNT(*)::int AS count
+        FROM broadcast_orphaned_resend_ids
+        WHERE reason = 'create_unconfirmed'
+          AND created_at > now() - make_interval(hours => ${ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS})
+        GROUP BY tenant_id
+      `);
       const tenantRows = await tx.execute<TenantRow>(sql`
         SELECT DISTINCT tenant_id FROM broadcasts
       `);
@@ -297,6 +312,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         suppressionRows,
         approvedOverdueRows,
         audienceImportStuckRows,
+        orphanUnconfirmedRows,
         eblastStageRows,
       };
     });
@@ -307,6 +323,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     suppressionSizes = Array.from(result.suppressionRows);
     approvedOverdue = Array.from(result.approvedOverdueRows);
     audienceImportStuck = Array.from(result.audienceImportStuckRows ?? []);
+    orphanUnconfirmed = Array.from(result.orphanUnconfirmedRows ?? []);
     eblastStages = Array.from(result.eblastStageRows ?? []);
   } catch (e) {
     broadcastsGaugesOk = false;
@@ -325,6 +342,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const stuckByTenant = new Map(stuck.map((r) => [r.tenant_id, r.count]));
   const overdueByTenant = new Map(approvedOverdue.map((r) => [r.tenant_id, r.count]));
   const importStuckByTenant = new Map(audienceImportStuck.map((r) => [r.tenant_id, r.count]));
+  const orphanUnconfirmedByTenant = new Map(orphanUnconfirmed.map((r) => [r.tenant_id, r.count]));
   const suppressionByTenant = new Map(suppressionSizes.map((r) => [r.tenant_id, r.count]));
   const eblastStageByTenant = new Map(eblastStages.map((r) => [r.tenant_id, r]));
   const observed = new Set<string>();
@@ -334,6 +352,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     ...stuckByTenant.keys(),
     ...overdueByTenant.keys(),
     ...importStuckByTenant.keys(),
+    ...orphanUnconfirmedByTenant.keys(),
     // A tenant can carry unsubscribes with no `broadcasts` row at all (a
     // contact-level opt-out recorded before the first send), so the
     // suppression keys join the observed set rather than relying on it.
@@ -353,6 +372,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     broadcastsMetrics.approvedOverdueCount(tenantId, o);
     const ais = importStuckByTenant.get(tenantId) ?? 0;
     broadcastsMetrics.audienceImportStuckCount(tenantId, ais);
+    // Spec 140 s2c — zero-filled ("0 means 0"), like its sibling above.
+    broadcastsMetrics.orphanedResendIdsUnconfirmed(tenantId, orphanUnconfirmedByTenant.get(tenantId) ?? 0);
     audienceImportStuckTotal += ais;
     pendingTotal += p;
     stuckTotal += s;
