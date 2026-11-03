@@ -3188,6 +3188,37 @@ export const broadcastsMetrics = {
    * the gauges cron. **Alarm** (not page) at ≥ 1; runbook
    * `docs/runbooks/broadcast-audience-build.md` § orphaned Resend ids.
    */
+  /**
+   * `broadcasts_orphaned_resend_ids_unsettled{tenant}` — spec 140 s2c review
+   * round 1: orphan rows with an id still unsettled more than
+   * `ORPHAN_UNSETTLED_GAUGE_AGE_HOURS` (24 h) after they were written — a
+   * copy at Resend the drain keeps failing to settle (a stuck tenant audience
+   * included). Zero-filled. **Alarm** at ≥ 1; runbook
+   * `docs/runbooks/broadcast-audience-build.md` § E.
+   */
+  orphanedResendIdsUnsettled(tenantId: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_orphaned_resend_ids_unsettled',
+        'Orphaned Resend ids (with an id) still unsettled more than 24 h after they were recorded',
+        { tenant: tenantId },
+        count,
+      );
+    });
+  },
+
+  /** `broadcasts_orphaned_resend_ids_unsettled_oldest_age_seconds{tenant}` — the oldest of those rows' age; 0 when none. */
+  orphanedResendIdsUnsettledOldestAgeSeconds(tenantId: string, seconds: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_orphaned_resend_ids_unsettled_oldest_age_seconds',
+        'Age of the oldest orphaned Resend id still unsettled more than 24 h after it was recorded',
+        { tenant: tenantId },
+        seconds,
+      );
+    });
+  },
+
   orphanedResendIdsUnconfirmed(tenantId: string, count: number): void {
     safeMetric(() => {
       observeGauge(

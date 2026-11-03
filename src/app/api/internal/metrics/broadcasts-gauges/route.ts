@@ -62,7 +62,11 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics, membersMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { MARKETING_TURN_STATUSES, ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS } from '@/modules/broadcasts';
+import {
+  MARKETING_TURN_STATUSES,
+  ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS,
+  ORPHAN_UNSETTLED_GAUGE_AGE_HOURS,
+} from '@/modules/broadcasts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -100,6 +104,13 @@ interface MembersPendingRow extends Record<string, unknown> {
  * F119 T121 — one row per tenant with ≥ 1 broadcast in an E-Blast approval
  * stage (`contracts/dashboard-and-notifications.md` § 4.1).
  */
+/** Spec 140 s2c review round 1 — one tenant's unsettled-orphan count and the oldest one's age. */
+interface OrphanUnsettledRow extends Record<string, unknown> {
+  readonly tenant_id: string;
+  readonly count: number;
+  readonly oldest_age_seconds: number;
+}
+
 interface EblastStageRow extends Record<string, unknown> {
   readonly tenant_id: string;
   readonly awaiting_count: number;
@@ -164,7 +175,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let suppressionSizes: PendingRow[] = [];
   let approvedOverdue: PendingRow[] = [];
   let audienceImportStuck: PendingRow[] = [];
-  let orphanUnconfirmed: PendingRow[] = [];
   let eblastStages: EblastStageRow[] = [];
   let broadcastsGaugesOk = true;
   try {
@@ -287,20 +297,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         WHERE status::text IN (${MARKETING_TURN_IN}, 'awaiting_member_approval')
         GROUP BY tenant_id
       `);
-      // Spec 140 s2c (DL5b, [A7]) — `create_unconfirmed` orphan rows (a
-      // `createBroadcast` that may have minted a draft we never learnt the id
-      // of) of the last ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS. Read here, on the
-      // owner role like every sibling: the table is RLS + FORCE, and the owner
-      // bypasses both (checked on dev with `pnpm db:query`, spec 140 plan.md
-      // § Evidence). Zero-filled below; a tenant with only orphan rows joins
-      // the observed set.
-      const orphanUnconfirmedRows = await tx.execute<PendingRow>(sql`
-        SELECT tenant_id, COUNT(*)::int AS count
-        FROM broadcast_orphaned_resend_ids
-        WHERE reason = 'create_unconfirmed'
-          AND created_at > now() - make_interval(hours => ${ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS})
-        GROUP BY tenant_id
-      `);
       const tenantRows = await tx.execute<TenantRow>(sql`
         SELECT DISTINCT tenant_id FROM broadcasts
       `);
@@ -312,7 +308,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         suppressionRows,
         approvedOverdueRows,
         audienceImportStuckRows,
-        orphanUnconfirmedRows,
         eblastStageRows,
       };
     });
@@ -323,7 +318,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     suppressionSizes = Array.from(result.suppressionRows);
     approvedOverdue = Array.from(result.approvedOverdueRows);
     audienceImportStuck = Array.from(result.audienceImportStuckRows ?? []);
-    orphanUnconfirmed = Array.from(result.orphanUnconfirmedRows ?? []);
     eblastStages = Array.from(result.eblastStageRows ?? []);
   } catch (e) {
     broadcastsGaugesOk = false;
@@ -342,7 +336,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const stuckByTenant = new Map(stuck.map((r) => [r.tenant_id, r.count]));
   const overdueByTenant = new Map(approvedOverdue.map((r) => [r.tenant_id, r.count]));
   const importStuckByTenant = new Map(audienceImportStuck.map((r) => [r.tenant_id, r.count]));
-  const orphanUnconfirmedByTenant = new Map(orphanUnconfirmed.map((r) => [r.tenant_id, r.count]));
   const suppressionByTenant = new Map(suppressionSizes.map((r) => [r.tenant_id, r.count]));
   const eblastStageByTenant = new Map(eblastStages.map((r) => [r.tenant_id, r]));
   const observed = new Set<string>();
@@ -352,7 +345,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     ...stuckByTenant.keys(),
     ...overdueByTenant.keys(),
     ...importStuckByTenant.keys(),
-    ...orphanUnconfirmedByTenant.keys(),
     // A tenant can carry unsubscribes with no `broadcasts` row at all (a
     // contact-level opt-out recorded before the first send), so the
     // suppression keys join the observed set rather than relying on it.
@@ -372,8 +364,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     broadcastsMetrics.approvedOverdueCount(tenantId, o);
     const ais = importStuckByTenant.get(tenantId) ?? 0;
     broadcastsMetrics.audienceImportStuckCount(tenantId, ais);
-    // Spec 140 s2c — zero-filled ("0 means 0"), like its sibling above.
-    broadcastsMetrics.orphanedResendIdsUnconfirmed(tenantId, orphanUnconfirmedByTenant.get(tenantId) ?? 0);
     audienceImportStuckTotal += ais;
     pendingTotal += p;
     stuckTotal += s;
@@ -512,6 +502,70 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     if (age > membersOldestAgeSecondsMax) membersOldestAgeSecondsMax = age;
   }
 
+  // -------------------------------------------------------------------------
+  // Spec 140 s2c — the orphaned Resend id gauges. Review round 1
+  // (code-review #10): EACH in its own transaction and try, after the two
+  // halves above, so a fault in one cannot dark the other or any sibling (a
+  // failed statement poisons its whole transaction). Read on the owner role
+  // like every sibling: the table is RLS + FORCE, and the owner bypasses both
+  // (checked on dev with `pnpm db:query`, spec 140 plan.md § Evidence).
+  // Zero-filled over the observed tenant set; a tenant with only orphan rows
+  // joins it. A failed read observes nothing new for that gauge.
+  //   - unconfirmed (DL5b, [A7]): `create_unconfirmed` rows of the last
+  //     ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS;
+  //   - unsettled (security M, reliability M-3): rows with an id unsettled
+  //     more than ORPHAN_UNSETTLED_GAUGE_AGE_HOURS after they were written,
+  //     and the oldest one's age.
+  // -------------------------------------------------------------------------
+  let orphanGaugesOk = true;
+  const readOrphanGauge = async <R extends Record<string, unknown>>(
+    gauge: 'unconfirmed' | 'unsettled',
+    query: ReturnType<typeof sql>,
+  ): Promise<R[] | null> => {
+    try {
+      const rows = await db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
+        return tx.execute<R>(query);
+      });
+      return Array.from((rows ?? []) as Iterable<R>);
+    } catch (e) {
+      orphanGaugesOk = false;
+      logger.error({ requestId, gauge, err: errKind(e) }, 'cron.broadcasts_gauges.orphan_query_failed');
+      return null;
+    }
+  };
+  const orphanUnconfirmed = await readOrphanGauge<PendingRow>('unconfirmed', sql`
+    SELECT tenant_id, COUNT(*)::int AS count
+    FROM broadcast_orphaned_resend_ids
+    WHERE reason = 'create_unconfirmed'
+      AND created_at > now() - make_interval(hours => ${ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS})
+    GROUP BY tenant_id
+  `);
+  const orphanUnsettled = await readOrphanGauge<OrphanUnsettledRow>('unsettled', sql`
+    SELECT tenant_id,
+           COUNT(*)::int AS count,
+           COALESCE(EXTRACT(EPOCH FROM (now() - MIN(created_at))), 0)::int AS oldest_age_seconds
+    FROM broadcast_orphaned_resend_ids
+    WHERE settled_at IS NULL
+      AND resource_id IS NOT NULL
+      AND created_at < now() - make_interval(hours => ${ORPHAN_UNSETTLED_GAUGE_AGE_HOURS})
+    GROUP BY tenant_id
+  `);
+  const orphanTenants = new Set<string>(observed);
+  for (const r of [...(orphanUnconfirmed ?? []), ...(orphanUnsettled ?? [])]) orphanTenants.add(r.tenant_id);
+  if (orphanUnconfirmed !== null) {
+    const byTenant = new Map(orphanUnconfirmed.map((r) => [r.tenant_id, r.count]));
+    for (const tenantId of orphanTenants) broadcastsMetrics.orphanedResendIdsUnconfirmed(tenantId, byTenant.get(tenantId) ?? 0);
+  }
+  if (orphanUnsettled !== null) {
+    const byTenant = new Map(orphanUnsettled.map((r) => [r.tenant_id, r]));
+    for (const tenantId of orphanTenants) {
+      const row = byTenant.get(tenantId);
+      broadcastsMetrics.orphanedResendIdsUnsettled(tenantId, row?.count ?? 0);
+      broadcastsMetrics.orphanedResendIdsUnsettledOldestAgeSeconds(tenantId, Math.max(0, row?.oldest_age_seconds ?? 0));
+    }
+  }
+
   logger.info(
     {
       requestId,
@@ -526,6 +580,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,
       broadcastsGaugesOk,
+      orphanGaugesOk,
       membersGaugesOk,
       membersGaugesSkipped,
       membersPendingTenantCount: membersPendingByTenant.size,
@@ -538,7 +593,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // B9: EITHER half failing is a failed tick. The per-half flags below say
   // WHICH, and the two log names are unchanged, so the existing alert rules
   // keep working (§ 27.3).
-  const tickOk = broadcastsGaugesOk && membersGaugesOk;
+  const tickOk = broadcastsGaugesOk && membersGaugesOk && orphanGaugesOk;
   return NextResponse.json(
     {
       // SEC-1 + B9: answered HERE, after BOTH halves have run, keeping the
@@ -546,6 +601,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       ok: tickOk,
       ...(tickOk ? {} : { error: 'query_failed' }),
       broadcastsGaugesOk,
+      // Spec 140 s2c review round 1 — the orphan gauges' own verdict.
+      orphanGaugesOk,
       pendingTenantCount: pending.length,
       stuckTenantCount: stuck.length,
       dispatchRatioTenantCount: dispatchRatios.length,

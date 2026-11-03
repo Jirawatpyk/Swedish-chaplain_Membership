@@ -26,6 +26,8 @@ vi.mock('@/modules/broadcasts', async () => ({
   MARKETING_TURN_STATUSES: (await import('@/modules/broadcasts/domain/stage/whose-turn')).MARKETING_TURN_STATUSES,
   ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS: (await import('@/modules/broadcasts/domain/value-objects/orphaned-resend-id'))
     .ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS,
+  ORPHAN_UNSETTLED_GAUGE_AGE_HOURS: (await import('@/modules/broadcasts/domain/value-objects/orphaned-resend-id'))
+    .ORPHAN_UNSETTLED_GAUGE_AGE_HOURS,
 }));
 vi.mock('@/lib/env', () => ({
   env: { isDevelopment: false, features: { memberChangeApproval: true } },

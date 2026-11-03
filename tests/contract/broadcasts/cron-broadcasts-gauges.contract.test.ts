@@ -58,6 +58,8 @@ vi.mock('@/modules/broadcasts', async () => ({
   // Spec 140 s2c - the create_unconfirmed gauge's window, the REAL one.
   ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS: (await import('@/modules/broadcasts/domain/value-objects/orphaned-resend-id'))
     .ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS,
+  ORPHAN_UNSETTLED_GAUGE_AGE_HOURS: (await import('@/modules/broadcasts/domain/value-objects/orphaned-resend-id'))
+    .ORPHAN_UNSETTLED_GAUGE_AGE_HOURS,
 }));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: (...a: unknown[]) => loggerErrorSpy(...a), debug: vi.fn() },
@@ -486,7 +488,9 @@ describe('GET /api/internal/metrics/broadcasts-gauges — members change-request
     const { GET } = await import('@/app/api/internal/metrics/broadcasts-gauges/route');
     const res = await GET(makeRequest('Bearer test-cron-secret'));
     expect(res.status).toBe(200);
-    expect(dbTransactionMock).toHaveBeenCalledTimes(2);
+    // The broadcasts and members halves, then the two orphan gauges' own
+    // transactions (spec 140 s2c review round 1, code-review #10).
+    expect(dbTransactionMock).toHaveBeenCalledTimes(4);
 
     expect(membersPendingCountSpy).toHaveBeenCalledWith('swecham', 3);
     expect(membersOldestAgeSecondsSpy).toHaveBeenCalledWith('swecham', 604_800);
@@ -607,7 +611,9 @@ describe('GET /api/internal/metrics/broadcasts-gauges — members change-request
     const { GET } = await import('@/app/api/internal/metrics/broadcasts-gauges/route');
     const res = await GET(makeRequest('Bearer test-cron-secret'));
     expect(res.status).toBe(500);
-    expect(dbTransactionMock).toHaveBeenCalledTimes(2);
+    // The broadcasts and members halves, then the two orphan gauges' own
+    // transactions (spec 140 s2c review round 1, code-review #10).
+    expect(dbTransactionMock).toHaveBeenCalledTimes(4);
 
     expect(membersPendingCountSpy).toHaveBeenCalledWith('swecham', 2);
     expect(membersOldestAgeSecondsSpy).toHaveBeenCalledWith('swecham', 1_300_000);

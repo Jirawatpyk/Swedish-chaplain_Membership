@@ -85,7 +85,10 @@ export {
   type BroadcastStatus,
 } from './domain/value-objects/broadcast-status';
 // Spec 140 s2c — the gauges route's window for the `create_unconfirmed` orphan gauge.
-export { ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS } from './domain/value-objects/orphaned-resend-id';
+export {
+  ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS,
+  ORPHAN_UNSETTLED_GAUGE_AGE_HOURS,
+} from './domain/value-objects/orphaned-resend-id';
 export {
   BROADCAST_SEGMENT_TYPES,
   isBroadcastSegmentType,

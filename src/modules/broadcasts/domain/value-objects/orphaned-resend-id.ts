@@ -77,3 +77,10 @@ export const ORPHAN_STUCK_ATTEMPTS = 8;
 
 /** [A7] The window of the `create_unconfirmed` gauge: rows created in the last 24 h. */
 export const ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS = 24;
+
+/**
+ * Review round 1 (security M, reliability M-3) — the unsettled-orphan gauge
+ * counts rows with an id still unsettled this many hours after they were
+ * written: well past the drain's 1 h grace and ~96 of its 15-minute runs.
+ */
+export const ORPHAN_UNSETTLED_GAUGE_AGE_HOURS = 24;
