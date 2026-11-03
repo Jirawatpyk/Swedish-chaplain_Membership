@@ -362,4 +362,40 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     expect(ids).not.toContain(bcast);
     expect(ids).not.toContain(otherTenant);
   });
+
+  /**
+   * Spec 140 s2c review round 3 (code-review #3) — the leaked-audience arm is
+   * capped: at most 10 (`ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT`) unsettled
+   * audience orphans, the most-attempted first; past the cap the erasure's
+   * pass (b) and the drain delete the audience outright. Another tenant's row
+   * is never paired, however often it was tried.
+   */
+  it('[code-review #3] 12 unsettled audience orphans yield 10 audiences in the detach pairs, the most-attempted first', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const email = `cap-${randomUUID()}@example.com`;
+      const ids = Array.from({ length: 12 }, (_, i) => `aud-cap-${i}-${randomUUID()}`);
+      for (const [i, id] of ids.entries()) {
+        await runInTenant(solo.ctx, (tx) =>
+          tx.execute(sql`
+            INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, attempts)
+            VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${id}, 'audience_leaked', ${i})`),
+        );
+      }
+      const otherTenant = `aud-cap-b-${randomUUID()}`;
+      await runInTenant(tenantB.ctx, (tx) =>
+        tx.execute(sql`
+          INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, attempts)
+          VALUES (${tenantB.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${otherTenant}, 'audience_leaked', 99)`),
+      );
+      const repo = makeDrizzleBroadcastsRepo(solo.ctx.slug);
+      const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email]));
+      const audiences = [...new Set(pairs.map((p) => p.audienceId))].sort();
+      // attempts 0 and 1 are past the cap.
+      expect(audiences).toEqual(ids.slice(2).sort());
+      expect(audiences).not.toContain(otherTenant);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
 });
