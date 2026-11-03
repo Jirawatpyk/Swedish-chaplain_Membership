@@ -1282,3 +1282,39 @@ export type BroadcastMemberDecisionRow =
   typeof broadcastMemberDecisions.$inferSelect;
 export type NewBroadcastMemberDecisionRow =
   typeof broadcastMemberDecisions.$inferInsert;
+
+/**
+ * Spec 140 s2c (migration 0323) — a Resend broadcast or audience our side
+ * created whose id no live `broadcasts` row will carry to a cleanup path. The
+ * drain (`cleanupOrphanedAudiences`) and the erasure cascade settle it at
+ * Resend; `prune_orphaned_resend_ids` (SECURITY DEFINER) is the only DELETE.
+ * `broadcastId` and `requestedByMemberId` are snapshots with no FK, by
+ * decision: the row outlives both. RLS + FORCE in the migration.
+ */
+export const broadcastOrphanedResendIds = pgTable(
+  'broadcast_orphaned_resend_ids',
+  {
+    tenantId: text('tenant_id').notNull(),
+    orphanId: uuid('orphan_id').defaultRandom().notNull(),
+    broadcastId: uuid('broadcast_id').notNull(),
+    requestedByMemberId: uuid('requested_by_member_id').notNull(),
+    resourceType: text('resource_type', { enum: ['broadcast', 'audience'] }).notNull(),
+    resourceId: text('resource_id'),
+    reason: text('reason').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+    outcome: text('outcome', { enum: ['deleted', 'absent', 'retained', 'handed'] }),
+  },
+  (table) => [
+    primaryKey({
+      name: 'broadcast_orphaned_resend_ids_pkey',
+      columns: [table.tenantId, table.orphanId],
+    }),
+    uniqueIndex('broadcast_orphaned_resend_ids_resource_uq')
+      .on(table.tenantId, table.resourceType, table.resourceId)
+      .where(sql`${table.resourceId} IS NOT NULL`),
+    index('broadcast_orphaned_resend_ids_unsettled_idx')
+      .on(table.tenantId, table.createdAt)
+      .where(sql`${table.settledAt} IS NULL`),
+  ],
+);
