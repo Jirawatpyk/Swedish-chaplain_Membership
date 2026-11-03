@@ -1586,6 +1586,14 @@ Dev and prod share the broadcasts key, so the account state matches.
 - code-review #7: the `draftSettled` flag. Two callers; the budget test pins both.
 - code-review #10: the member uuid in `orphan_record_failed`. pdpa L-B asked for it; member ids are logged under the house convention; it is not a user id.
 
+**Round-2 fix notes (Evidence).**
+- RED → GREEN pairs: migration `423e2fff4` → `b95ea19ed`; repo (sent holder, past-grace order) `c6f4f126f` → `2cb33f24e`; settle table (404 confirm, `superseded`) `8e90df846` → `a8a58a5b9`; stuck rule + `audience_orphans_stuck_count` `9c8381902` → `4a8696801`; detach arm `679746a4c` → `3ba0465a8`; choke point (`refusal: 'terminal'`, `sent_at`) `d110ab77c` → `e24e094f0`; erased reads `2ad335168` → `54277dd0d`. Test-only pins (spec N4 catch-up lost, spec M4 gauge 2 in / 1 out): `edac995a3`. Each RED commit body quotes its failure line.
+- Dev DDL (0325 edited in place, applied by a guarded scratch script in one transaction, the ledger untouched): 22 statements ok. `pnpm db:query`: the outcome CHECK lists `superseded`; the trigger `broadcast_orphaned_resend_ids_settled_once` is present and enabled (`O`); the prune body names `5 years`. `pnpm db:verify`: 29/29.
+- The D-029 shape gate caught a real gap in the first GREEN of `heldBySentRow`: Drizzle renders a SELECT-list column unqualified, so the subquery's `"tenant_id"` bound by SQL scope alone. Every name in that subquery is now written qualified (alias `held`).
+- Mutation proofs (from the committed base `42ffe6bc7`, each restored with `git restore` and the line grepped back): (a) the age condition removed from `isStuck` → "attempts ≥ 8 but younger than 2 h still withholds" and the deadline case fail; (c) the deferral exits ignoring the stuck rule (`false && isStuck`) → "21 stuck audience orphans past the limit do not withhold" and the deadline case fail; (b) the column grant: a table-level `GRANT UPDATE` cannot be tried by the integration suite without committing it on the shared dev branch, so the suite's three statements (`reason`, `created_at`, `resource_id`) were run as `chamber_app` inside ONE rolled-back dev transaction — `42501` under the shipped grant, `ok` under the mutant — and the table-level grants read `INSERT,SELECT` afterwards, the four column UPDATE grants intact.
+- The pinned `_dispatch-standing-gate.ts` stays 100/100/100/100 (a scoped coverage run over `tests/unit/broadcasts`).
+- The stuck rule's over-limit exit judges the one row it can see (the list reads `ERASURE_AUDIENCE_ORPHAN_LIMIT + 1`): rows past it are not read in that run; they sort after it (`attempts` ascending), and the next run reads them.
+
 **Verify:** a re-Verify on the final HEAD (spec N1), handed to the maintainer after the fixes.
 
 ## Rollout
