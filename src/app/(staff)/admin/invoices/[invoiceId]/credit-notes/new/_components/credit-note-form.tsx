@@ -353,22 +353,20 @@ export function CreditNoteForm({
                   aria-disabled={waitingForConnection || undefined}
                   onClick={() => {
                     if (waitingForConnection) return;
-                    // Offline, a navigation falls onto the browser's offline
-                    // page; wait for the connection instead (#48). On an
-                    // unknown outcome, go to the invoice: it lists the notes.
-                    const go =
-                      formError.kind === 'unconfirmed'
-                        ? { refresh: () => router.push(`/admin/invoices/${invoiceId}`) }
-                        : router;
-                    const outcome = refreshWhenOnline(go, () => {});
+                    // Go to the invoice: it lists the notes, and this page
+                    // answers notFound() for a fully credited or voided
+                    // invoice, so a refresh could land on a 404 (#727
+                    // review). Offline, a navigation falls onto the browser's
+                    // offline page, so wait for the connection (#48); the
+                    // page stays mounted, so the wait clears when it runs.
+                    const outcome = refreshWhenOnline(
+                      { refresh: () => router.push(`/admin/invoices/${invoiceId}`) },
+                      () => setWaitingForConnection(false),
+                    );
                     if (outcome === 'waiting') setWaitingForConnection(true);
                   }}
                 >
-                  {waitingForConnection
-                    ? t('errors.waitingForConnection')
-                    : formError.kind === 'unconfirmed'
-                      ? t('errors.openInvoiceAction')
-                      : t('errors.refreshAction')}
+                  {waitingForConnection ? t('errors.waitingForConnection') : t('errors.openInvoiceAction')}
                 </Button>
               ) : undefined
             }
@@ -566,8 +564,13 @@ export function CreditNoteForm({
           {pending ? t('submitting') : t('submit')}
         </Button>
       </div>
-      {/* A disabled button can't take focus, so say why it is disabled. */}
-      {requiresOnlineAck && !onlineRefundAcknowledged && (
+      {/* A disabled button can't take focus, so say why it is disabled. The
+          #61 lock comes first: acknowledging would not unlock it. */}
+      {outcomeUnknown ? (
+        <p className="-mt-4 text-end text-xs text-[var(--aura-fg-secondary)]" data-testid="cn-locked-hint">
+          {t('errors.submitLockedHint')}
+        </p>
+      ) : requiresOnlineAck && !onlineRefundAcknowledged && (
         <p className="-mt-4 text-end text-xs text-[var(--aura-fg-secondary)]" data-testid="cn-ack-required-hint">
           {t('onlinePayment.ackRequiredHint')}
         </p>

@@ -246,14 +246,20 @@ export function VoidConfirmDialog({ invoiceId, documentNumber, isBill = false }:
                   aria-disabled={waitingForConnection || undefined}
                   onClick={() => {
                     if (waitingForConnection) return;
-                    // Offline, a refresh would fall onto the browser's offline
-                    // page; wait for the connection instead (#48). This is a
-                    // page, not a dialog, so there is nothing to close.
-                    const outcome = refreshWhenOnline(router, () => {});
+                    // This page answers notFound() once the invoice is no
+                    // longer issued, so a refresh would land on a 404: open
+                    // the invoice instead (#727 review). Offline, a navigation
+                    // falls onto the browser's offline page, so wait for the
+                    // connection (#48); the page stays mounted, so the wait
+                    // clears when it runs.
+                    const outcome = refreshWhenOnline(
+                      { refresh: () => router.push(`/admin/invoices/${invoiceId}`) },
+                      () => setWaitingForConnection(false),
+                    );
                     if (outcome === 'waiting') setWaitingForConnection(true);
                   }}
                 >
-                  {waitingForConnection ? t('errors.waitingForConnection') : t('errors.refreshAction')}
+                  {waitingForConnection ? t('errors.waitingForConnection') : t('errors.openInvoiceAction')}
                 </Button>
               ) : undefined
             }

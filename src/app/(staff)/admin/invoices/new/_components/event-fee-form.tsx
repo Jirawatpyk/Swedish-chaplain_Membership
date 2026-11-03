@@ -711,13 +711,18 @@ export function EventFeeForm({
         // this lands on.
         toast.warning(tErrors('readOnlyMode'), {
           description: `${tErrors('readOnlyNothingChanged')} ${tAsPaid('draftRemains')}`,
+          // Read across the navigation below (#727 review).
+          duration: 10_000,
         });
       } else if (issueRes === null || isUnknownOutcome(issueRes.status, problem)) {
         // #61 — no answer, or a 5xx naming no refusal: the receipt may have been
         // numbered. Say so, without claiming the draft remains and without a
         // blind Retry; the invoice page this lands on shows the real status.
         // (A retry would be refused as invoice_already_issued, but check first.)
-        toast.warning(tAsPaid('errors.unconfirmed'));
+        // Kept until dismissed: it is the one thing to read on the invoice
+        // page this lands on, and the navigation can take most of the default
+        // 5 s (#727 review, UX H3).
+        toast.warning(tAsPaid('errors.unconfirmed'), { duration: Infinity });
       } else {
         const issueCode = problem?.shape === 'nested' ? problem.code : undefined;
         const issueKnown =

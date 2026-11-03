@@ -2533,9 +2533,10 @@
         "errors": {
           "failed": "Credit note could not be issued.",
           "unknown": "An unknown error occurred. Please try again.",
-          "concurrent": "This invoice has already been credited or voided. Refresh to see its latest status.",
+          "concurrent": "This invoice has already been credited or voided. Open it to see its latest status.",
           "unconfirmed": "We couldn't confirm whether the credit note was issued. Open the invoice and check its credit notes before you issue another — trying again could issue a second credit note.",
           "openInvoiceAction": "Open invoice",
+          "submitLockedHint": "Issuing is paused until you check the invoice — this prevents a duplicate credit note.",
           "stillWorking": "Still working — keep this window open.",
           "waitingForConnection": "Waiting for the connection…",
           "refreshAction": "Refresh",
@@ -3561,7 +3562,7 @@
           "member_not_found": "The member could not be found.",
           "pdf_render_failed": "The PDF could not be generated — nothing was issued. Try again.",
           "blob_upload_failed": "The PDF could not be stored — nothing was issued. Try again.",
-          "unconfirmed": "We couldn't confirm whether the invoice was issued as paid. Check its status on this page before you try again.",
+          "unconfirmed": "We couldn't confirm whether the invoice was issued as paid. Check its status on the invoice before you try again.",
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again."
         }
@@ -3649,8 +3650,9 @@
         "errors": {
           "failed": "Invoice could not be voided.",
           "unknown": "An unknown error occurred. Please try again.",
-          "concurrent": "This invoice has already been voided or changed. Refresh to see its latest status.",
-          "unconfirmed": "We couldn't confirm whether the invoice was voided. Refresh to check its status before you try again — if it was voided, trying again changes nothing.",
+          "concurrent": "This invoice has already been voided or changed. Open it to see its latest status.",
+          "unconfirmed": "We couldn't confirm whether the invoice was voided. Open the invoice to check its status before you try again — if it was voided, trying again changes nothing.",
+          "openInvoiceAction": "Open invoice",
           "stillWorking": "Still working — keep this window open.",
           "waitingForConnection": "Waiting for the connection…",
           "refreshAction": "Refresh",

@@ -2531,9 +2531,10 @@
           }
         },
         "errors": {
-          "concurrent": "Denna faktura har redan krediterats eller annullerats. Uppdatera för att se dess senaste status.",
-          "unconfirmed": "Vi kunde inte bekräfta om kreditnotan utfärdades. Öppna fakturan och kontrollera dess kreditnotor innan du utfärdar en ny — ett nytt försök kan utfärda en andra kreditnota.",
+          "concurrent": "Denna faktura har redan krediterats eller annullerats. Öppna den för att se dess senaste status.",
+          "unconfirmed": "Vi kunde inte bekräfta om kreditnotan utfärdades. Öppna fakturan och kontrollera dess kreditnotor innan du utfärdar en till — om du försöker igen kan en andra kreditnota utfärdas.",
           "openInvoiceAction": "Öppna fakturan",
+          "submitLockedHint": "Utfärdandet är pausat tills du har kontrollerat fakturan — det förhindrar en dubbel kreditnota.",
           "stillWorking": "Arbetar fortfarande — håll det här fönstret öppet.",
           "waitingForConnection": "Väntar på anslutningen…",
           "refreshAction": "Uppdatera",
@@ -3561,7 +3562,7 @@
           "member_not_found": "Medlemmen kunde inte hittas.",
           "pdf_render_failed": "PDF-filen kunde inte genereras — inget har utfärdats. Försök igen.",
           "blob_upload_failed": "PDF-filen kunde inte lagras — inget har utfärdats. Försök igen.",
-          "unconfirmed": "Vi kunde inte bekräfta om fakturan utfärdades som betald. Kontrollera statusen på den här sidan innan du försöker igen.",
+          "unconfirmed": "Vi kunde inte bekräfta om fakturan utfärdades som betald. Kontrollera statusen på fakturan innan du försöker igen.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
         }
@@ -3649,8 +3650,9 @@
         "errors": {
           "failed": "Fakturan kunde inte annulleras.",
           "unknown": "Ett okänt fel inträffade. Försök igen.",
-          "concurrent": "Denna faktura har redan annullerats eller ändrats. Uppdatera för att se dess senaste status.",
-          "unconfirmed": "Vi kunde inte bekräfta om fakturan annullerades. Uppdatera för att kontrollera statusen innan du försöker igen — om den redan är annullerad ändrar ett nytt försök ingenting.",
+          "concurrent": "Denna faktura har redan annullerats eller ändrats. Öppna den för att se dess senaste status.",
+          "unconfirmed": "Vi kunde inte bekräfta om fakturan annullerades. Öppna fakturan för att kontrollera statusen innan du försöker igen — om den redan är annullerad ändrar ett nytt försök ingenting.",
+          "openInvoiceAction": "Öppna fakturan",
           "stillWorking": "Arbetar fortfarande — håll det här fönstret öppet.",
           "waitingForConnection": "Väntar på anslutningen…",
           "refreshAction": "Uppdatera",
