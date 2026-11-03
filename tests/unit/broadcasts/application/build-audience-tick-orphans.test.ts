@@ -52,11 +52,21 @@ interface Opts {
   readonly readBackThrows?: boolean;
   readonly deleteOnce?: DeleteOnce;
   readonly retrieveOnce?: RetrieveOnce;
+  /** What the import poll answers (`failed` → a terminal `provider_failed`). Default `completed`. */
+  readonly importStatus?: string;
+  /** The choke point's re-read (`findById`): fields over the snapshot, or a throw. */
+  readonly reread?: Partial<{ resendBroadcastId: string | null; status: string }> | 'throws';
+  /** What each successive lease check answers; the last one repeats. Default always `held`. */
+  readonly checks?: ReadonlyArray<'held' | 'lost' | 'expiring' | 'throws'>;
 }
 
 function harness(opts: Opts = {}) {
   const events: string[] = [];
   const recorded: RecordOrphanInput[] = [];
+  const audits: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+  const memberEmails: unknown[] = [];
+  const checks = opts.checks ?? ['held'];
+  let checkIndex = 0;
   let attachAttempted = false;
   const broadcast = {
     broadcastId: BROADCAST_ID,
@@ -101,8 +111,12 @@ function harness(opts: Opts = {}) {
       async claimDispatchLease() {
         return TOKEN;
       },
-      async checkDispatchLease() {
-        return 'held';
+      async checkDispatchLease(_tx: unknown, _t: unknown, _b: unknown, _lease: unknown, headroomMs: number) {
+        const answer = checks[Math.min(checkIndex, checks.length - 1)]!;
+        checkIndex += 1;
+        events.push(`check:${headroomMs}:${answer}`);
+        if (answer === 'throws') throw Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' });
+        return answer;
       },
       async releaseDispatchLease() {
         return true;
@@ -112,6 +126,11 @@ function harness(opts: Opts = {}) {
       },
       async findById() {
         if (attachAttempted && opts.readBackThrows === true) throw new Error('57P01 terminating connection');
+        if (!attachAttempted) {
+          events.push('reread');
+          if (opts.reread === 'throws') throw new Error('57P01 terminating connection');
+          if (opts.reread !== undefined) return { ...broadcast, ...opts.reread };
+        }
         return broadcast;
       },
       async attachAudienceId() {
@@ -156,7 +175,7 @@ function harness(opts: Opts = {}) {
       },
       async getContactImport() {
         return {
-          status: 'completed',
+          status: opts.importStatus ?? 'completed',
           counts: { total: RECIPIENTS.length, created: RECIPIENTS.length, updated: 0, skipped: 0, failed: 0 },
         };
       },
@@ -194,7 +213,11 @@ function harness(opts: Opts = {}) {
         recorded.push(input);
       },
     },
-    audit: { async emit() {} },
+    audit: {
+      async emit(_tx: unknown, e: { eventType: string; payload: Record<string, unknown> }) {
+        audits.push({ eventType: e.eventType, payload: e.payload });
+      },
+    },
     membersBridge: {
       async getMemberPrimaryContact() {
         return 'member@example.com';
@@ -203,13 +226,17 @@ function harness(opts: Opts = {}) {
         return 'en' as const;
       },
     },
-    emailTransactional: { async sendMemberEmail() {} },
+    emailTransactional: {
+      async sendMemberEmail(_t: unknown, m: unknown) {
+        memberEmails.push(m);
+      },
+    },
     plansBridge: { async getPlanForMember() { return ok({ planId: 'plan-1', planCode: 'CORP', eblastPerYear: 12 }); } },
     sendStanding: makeFakeSendStanding(opts.standing),
     pauseBeforeReprobe: async () => {},
   };
   const run = () => buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
-  return { run, events, recorded };
+  return { run, events, recorded, audits, memberEmails };
 }
 
 beforeEach(() => {
@@ -315,5 +342,105 @@ describe('spec 140 s2c — the import leg records its orphans at the caller', ()
     const h = harness({ row: TICK2_ROW, createBroadcastThrows: thrown });
     await h.run();
     expect(h.recorded).toEqual([]);
+  });
+});
+
+/**
+ * Spec 140 s2c, item 4 — the choke point in `failTerminally` (pdpa M-1, design
+ * item 10): before ANY terminal write on the import leg, the row is RE-READ
+ * [A3]; when it holds a Resend draft id, the lease is checked [A4] and the
+ * draft is deleted with `deleteDraftBeforeStandingRefusal` [A2], whose full
+ * outcome set decides the answer. The two refuse arms pass `draftSettled` and
+ * are not deleted twice.
+ *
+ * The path used: tick 2 with the import answering `failed` → a terminal
+ * `provider_failed`. The SNAPSHOT row has no broadcast id; only the re-read
+ * carries `rb-late` (a sibling's persist after this tick's Step 1), so a
+ * choke point that trusted the snapshot would delete nothing.
+ */
+describe('spec 140 s2c — the failTerminally choke point', () => {
+  const TERMINAL = { row: TICK2_ROW, importStatus: 'failed', reread: { resendBroadcastId: 'rb-late' } } as const;
+  const calls = (h: ReturnType<typeof harness>) =>
+    h.events.filter((e) => e === 'reread' || e.startsWith('check:') || e.startsWith('gw:deleteBroadcastOnce') || e.startsWith('gw:retrieveBroadcastOnce') || e.startsWith('transition:') || e.startsWith('orphan:'));
+
+  it('[A3] re-reads the row, checks the lease, deletes the draft the RE-READ holds, then writes terminal with resendDraftOutcome', async () => {
+    const h = harness(TERMINAL);
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'provider_failed' });
+    expect(calls(h)).toEqual(['reread', 'check:25000:held', 'gw:deleteBroadcastOnce:rb-late', 'transition:failed_to_dispatch']);
+    expect(h.audits[0]).toMatchObject({ eventType: 'broadcast_failed_to_dispatch', payload: { reason: 'provider_failed', resendDraftOutcome: 'deleted' } });
+  });
+
+  it('[A3] a re-read that fails answers a retryable dispatch.server_error with no Resend call and no terminal write', async () => {
+    const h = harness({ ...TERMINAL, reread: 'throws' });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'dispatch.server_error', phase: 'terminal_write' });
+    expect(calls(h)).toEqual(['reread']);
+    expect(h.audits).toEqual([]);
+    expect(h.memberEmails).toEqual([]);
+  });
+
+  it('a re-read with no broadcast id deletes nothing and writes terminal as before', async () => {
+    const h = harness({ ...TERMINAL, reread: { resendBroadcastId: null } });
+    await h.run();
+    expect(calls(h)).toEqual(['reread', 'transition:failed_to_dispatch']);
+    expect(h.audits[0]?.payload).not.toHaveProperty('resendDraftOutcome');
+  });
+
+  it.each([
+    ['lost', { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' }],
+    ['expiring', { kind: 'lease_expiring', step: 'terminal_reclaim' }],
+    ['throws', { kind: 'dispatch.server_error', message: 'lease_check_failed', phase: 'lease' }],
+  ] as const)('[A4] a lease check that reads %s makes no Resend call and writes nothing terminal', async (answer, expected) => {
+    const h = harness({ ...TERMINAL, checks: [answer] });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toMatchObject(expected);
+    expect(h.events.filter((e) => e.startsWith('gw:deleteBroadcastOnce'))).toEqual([]);
+    expect(h.events.filter((e) => e.startsWith('transition:'))).toEqual([]);
+    expect(h.memberEmails).toEqual([]);
+  });
+
+  it.each([
+    ['deleted', undefined, 'deleted'],
+    ['absent', undefined, 'absent'],
+    ['forbidden', { kind: 'present', status: 'cancelled' }, 'cancelled'],
+    ['forbidden', { kind: 'present', status: 'failed' }, 'failed'],
+  ] as const)('DELETE %s (GET %o) → terminal with resendDraftOutcome %s, and no orphan row', async (deleteOnce, retrieveOnce, outcome) => {
+    const h = harness({ ...TERMINAL, deleteOnce, ...(retrieveOnce === undefined ? {} : { retrieveOnce }) });
+    await h.run();
+    expect(h.events).toContain('transition:failed_to_dispatch');
+    expect(h.audits[0]?.payload).toMatchObject({ resendDraftOutcome: outcome });
+    expect(h.recorded).toEqual([]);
+  });
+
+  it('DELETE 403 whose GET reads queued (handed) → a concurrent skip: no terminal write, no member email', async () => {
+    const h = harness({ ...TERMINAL, deleteOnce: 'forbidden', retrieveOnce: { kind: 'present', status: 'queued' } });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+    expect(h.events.filter((e) => e.startsWith('transition:'))).toEqual([]);
+    expect(h.audits).toEqual([]);
+    expect(h.memberEmails).toEqual([]);
+  });
+
+  it('an undecided DELETE → an orphan row terminal_reclaim_undecided FIRST, then terminal with resendDraftOutcome undeleted', async () => {
+    const h = harness({ ...TERMINAL, deleteOnce: 'retryable' });
+    await h.run();
+    expect(h.recorded).toEqual([row('terminal_reclaim_undecided', 'rb-late')]);
+    expect(calls(h)).toEqual([
+      'reread',
+      'check:25000:held',
+      'gw:deleteBroadcastOnce:rb-late',
+      'orphan:terminal_reclaim_undecided',
+      'transition:failed_to_dispatch',
+    ]);
+    expect(h.audits[0]?.payload).toMatchObject({ resendDraftOutcome: 'undeleted', resendDraftErrClass: 'retryable' });
+  });
+
+  it('the refuse arm passes draftSettled: one delete (the gate\u2019s), no re-read, no second check', async () => {
+    const h = harness({ row: { ...TICK2_ROW, resendBroadcastId: 'rb-draft' }, probe: 'draft', standing: { halted: [MEMBER] } });
+    await h.run();
+    expect(h.events.filter((e) => e.startsWith('gw:deleteBroadcastOnce'))).toEqual(['gw:deleteBroadcastOnce:rb-draft']);
+    expect(h.events).not.toContain('reread');
+    expect(h.events.filter((e) => e.startsWith('check:'))).toHaveLength(1);
   });
 });
