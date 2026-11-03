@@ -1,0 +1,160 @@
+/**
+ * Spec 140 s2c — `makeDrizzleBroadcastOrphansRepo` on live Postgres (Neon
+ * `dev`), as `chamber_app` under `runInTenant`.
+ *
+ *   - [A1] the drain and the cascade skip an id only while a NON-TERMINAL
+ *     `broadcasts` row of the same tenant holds it, TYPE-MATCHED: a broadcast
+ *     orphan against `resend_broadcast_id`, an audience orphan against
+ *     `resend_audience_id`. A terminal holder does not block;
+ *   - `listMemberOrphans` returns settled rows too [A6a], broadcast type only;
+ *   - `listUnsettledAudienceOrphans` [P H-1] is tenant-wide;
+ *   - `recordOrphanedResendId` keeps the first row per id; `settleOrphan` is a
+ *     CAS on `settled_at IS NULL`;
+ *   - cross-tenant: tenant B's rows (same broadcast uuid, same member uuid,
+ *     same Resend id) are never listed, settled or pruned from tenant A.
+ */
+import { randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { runInTenant } from '@/lib/db';
+import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
+import {
+  broadcastOrphanedResendIds,
+  broadcasts,
+  type NewBroadcastRow,
+} from '@/modules/broadcasts/infrastructure/schema';
+import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+
+describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
+  let tenantA: TestTenant;
+  let tenantB: TestTenant;
+
+  beforeAll(async () => {
+    const t = await createTwoTestTenants();
+    tenantA = t.a;
+    tenantB = t.b;
+  });
+
+  afterAll(async () => {
+    await tenantA?.cleanup().catch(() => {});
+    await tenantB?.cleanup().catch(() => {});
+  });
+
+  async function seedRow(tenant: TestTenant, patch: Partial<NewBroadcastRow>): Promise<string> {
+    const broadcastId = patch.broadcastId ?? randomUUID();
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(broadcasts).values({
+        tenantId: tenant.ctx.slug,
+        broadcastId,
+        requestedByMemberId: randomUUID(),
+        requestedByMemberPlanIdSnapshot: 'plan-test',
+        submittedByUserId: randomUUID(),
+        actorRole: 'member_self_service',
+        subject: 's2c orphan',
+        bodyHtml: '<p>x</p>',
+        bodySource: 'plain',
+        fromName: 'Test Chamber',
+        replyToEmail: 'reply@example.com',
+        segmentType: 'all_members',
+        estimatedRecipientCount: 1,
+        status: 'failed_to_dispatch',
+        submittedAt: new Date(Date.now() - 86_400_000),
+        ...patch,
+      }),
+    );
+    return broadcastId;
+  }
+
+  it('[A1] a non-terminal holder hides the id, a terminal holder does not, and the match is type-matched', async () => {
+    const repo = makeDrizzleBroadcastOrphansRepo(tenantA.ctx.slug);
+    const member = randomUUID();
+    const heldByApproved = `rb-${randomUUID()}`;
+    const heldByTerminal = `rb-${randomUUID()}`;
+    const audHeldByApproved = `aud-${randomUUID()}`;
+    // An id that a non-terminal row holds as its AUDIENCE: a broadcast orphan
+    // with the same text is not blocked by it (type-matched).
+    const crossTyped = `x-${randomUUID()}`;
+    await seedRow(tenantA, { status: 'approved', resendBroadcastId: heldByApproved, resendAudienceId: audHeldByApproved });
+    await seedRow(tenantA, { status: 'failed_to_dispatch', resendBroadcastId: heldByTerminal });
+    await seedRow(tenantA, { status: 'approved', resendAudienceId: crossTyped });
+    const bid = randomUUID();
+    for (const [resourceType, resourceId] of [
+      ['broadcast', heldByApproved],
+      ['broadcast', heldByTerminal],
+      ['audience', audHeldByApproved],
+      ['broadcast', crossTyped],
+    ] as const) {
+      await repo.recordOrphanedResendId({ broadcastId: bid, requestedByMemberId: member, resourceType, resourceId, reason: 'attach_lost' });
+    }
+
+    const drainable = (await repo.listDrainableOrphans(50)).map((o) => `${o.resourceType}:${o.resourceId}`);
+    expect(drainable).toContain(`broadcast:${heldByTerminal}`);
+    expect(drainable).toContain(`broadcast:${crossTyped}`);
+    expect(drainable).not.toContain(`broadcast:${heldByApproved}`);
+    expect(drainable).not.toContain(`audience:${audHeldByApproved}`);
+
+    const mine = (await repo.listMemberOrphans(member)).map((o) => o.resourceId).sort();
+    expect(mine).toEqual([crossTyped, heldByTerminal].sort());
+    const audiences = (await repo.listUnsettledAudienceOrphans(50)).map((o) => o.resourceId);
+    expect(audiences).not.toContain(audHeldByApproved);
+  });
+
+  it('records once per id, lists settled rows for the member, settles by CAS and never lists create_unconfirmed', async () => {
+    const repo = makeDrizzleBroadcastOrphansRepo(tenantA.ctx.slug);
+    const member = randomUUID();
+    const id = `rb-${randomUUID()}`;
+    const bid = randomUUID();
+    await repo.recordOrphanedResendId({ broadcastId: bid, requestedByMemberId: member, resourceType: 'broadcast', resourceId: id, reason: 'persist_failed' });
+    await repo.recordOrphanedResendId({ broadcastId: bid, requestedByMemberId: member, resourceType: 'broadcast', resourceId: id, reason: 'attach_lost' });
+    await repo.recordOrphanedResendId({ broadcastId: bid, requestedByMemberId: member, resourceType: 'broadcast', resourceId: null, reason: 'create_unconfirmed' });
+    const aud = `aud-${randomUUID()}`;
+    await repo.recordOrphanedResendId({ broadcastId: bid, requestedByMemberId: randomUUID(), resourceType: 'audience', resourceId: aud, reason: 'audience_leaked' });
+
+    const listed = await repo.listMemberOrphans(member);
+    expect(listed.map((o) => [o.resourceId, o.reason, o.outcome])).toEqual([[id, 'persist_failed', null]]);
+    expect(listed[0]?.broadcastId).toBe(bid);
+    expect(listed[0]?.requestedByMemberId).toBe(member);
+
+    expect(await repo.settleOrphan(listed[0]!.orphanId, 'deleted')).toBe(true);
+    expect(await repo.settleOrphan(listed[0]!.orphanId, 'absent')).toBe(false);
+    const again = await repo.listMemberOrphans(member);
+    expect(again.map((o) => o.outcome)).toEqual(['deleted']);
+    expect((await repo.listDrainableOrphans(500)).map((o) => o.resourceId)).not.toContain(id);
+    expect((await repo.listUnsettledAudienceOrphans(500)).map((o) => o.resourceId)).toContain(aud);
+    for (const o of await repo.listDrainableOrphans(500)) expect(o.reason).not.toBe('create_unconfirmed');
+  });
+
+  it('cross-tenant: tenant B rows with the same uuids and Resend id are never listed, settled or pruned from A', async () => {
+    const repoA = makeDrizzleBroadcastOrphansRepo(tenantA.ctx.slug);
+    const repoB = makeDrizzleBroadcastOrphansRepo(tenantB.ctx.slug);
+    const member = randomUUID();
+    const bid = randomUUID();
+    const id = `rb-${randomUUID()}`;
+    const aud = `aud-${randomUUID()}`;
+    await repoB.recordOrphanedResendId({ broadcastId: bid, requestedByMemberId: member, resourceType: 'broadcast', resourceId: id, reason: 'attach_lost' });
+    await repoB.recordOrphanedResendId({ broadcastId: bid, requestedByMemberId: member, resourceType: 'audience', resourceId: aud, reason: 'audience_leaked' });
+
+    expect(await repoA.listMemberOrphans(member)).toEqual([]);
+    expect((await repoA.listDrainableOrphans(500)).map((o) => o.resourceId)).not.toContain(id);
+    expect((await repoA.listUnsettledAudienceOrphans(500)).map((o) => o.resourceId)).not.toContain(aud);
+    const bRows = await repoB.listMemberOrphans(member);
+    expect(bRows).toHaveLength(1);
+    expect(await repoA.settleOrphan(bRows[0]!.orphanId, 'deleted')).toBe(false);
+    const stillUnsettled = await runInTenant(tenantB.ctx, (tx) =>
+      tx
+        .select({ outcome: broadcastOrphanedResendIds.outcome })
+        .from(broadcastOrphanedResendIds)
+        .where(and(eq(broadcastOrphanedResendIds.tenantId, tenantB.ctx.slug), eq(broadcastOrphanedResendIds.orphanId, bRows[0]!.orphanId))),
+    );
+    expect(stillUnsettled).toEqual([{ outcome: null }]);
+    // B's non-terminal row holding an id does not hide A's orphan of that id:
+    // the NOT EXISTS is fenced on the orphan's own tenant.
+    const shared = `rb-${randomUUID()}`;
+    await seedRow(tenantB, { status: 'approved', resendBroadcastId: shared });
+    await repoA.recordOrphanedResendId({ broadcastId: bid, requestedByMemberId: member, resourceType: 'broadcast', resourceId: shared, reason: 'attach_lost' });
+    expect((await repoA.listDrainableOrphans(500)).map((o) => o.resourceId)).toContain(shared);
+    // The prune touches only A (B's rows are unsettled and young either way).
+    expect(await repoA.pruneOrphans(new Date(Date.now() - 100 * 86_400_000))).toBe(0);
+    expect(await repoB.listMemberOrphans(member)).toHaveLength(1);
+  });
+});
