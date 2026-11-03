@@ -198,6 +198,12 @@ network failure, a timeout or a 5xx).
   `orphanId` every 15 minutes): a permanent Resend answer. Read the `answer`
   token, check the id at Resend, delete it by hand if it is a draft or an
   audience, and leave the row (the next run reads 404 → `absent`).
+- **A 403 on an audience DELETE** is not a refusal to act on: Resend answers
+  a deleted audience's DELETE with 403 `validation_error` "Cannot delete last
+  audience." (MEASURED 2026-11-03, the sink account holding only `General`),
+  so `deleteAudience` probes it with one GET and a 404 there settles the row
+  as gone (`audience_already_absent`, `via: 'probe_after_403'`). A 403 whose
+  GET still finds the audience is a real refusal and stays undecided.
 - **`orphan_record_failed`** (critical): the id is only in the log line —
   delete `resourceId` at Resend by hand.
 - **`broadcasts_orphaned_resend_ids_unconfirmed` ≥ 1:** a draft with no
