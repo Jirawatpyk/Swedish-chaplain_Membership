@@ -418,12 +418,14 @@ describe('spec 140 s2c — the failTerminally choke point', () => {
     expect(h.recorded).toEqual([]);
   });
 
-  it('DELETE 403 whose GET reads queued (handed) → a concurrent skip: no terminal write, no member email', async () => {
+  // Review round 1 (code-review #5): no longer a bare skip — caught up (the
+  // round-1 describe below pins the `sending` transition).
+  it('DELETE 403 whose GET reads queued (handed) → no terminal write, no member email', async () => {
     const h = harness({ ...TERMINAL, deleteOnce: 'forbidden', retrieveOnce: { kind: 'present', status: 'queued' } });
     const res = await h.run();
-    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
-    expect(h.events.filter((e) => e.startsWith('transition:'))).toEqual([]);
-    expect(h.audits).toEqual([]);
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'sent' });
+    expect(h.events.filter((e) => e.startsWith('transition:'))).toEqual(['transition:sending']);
+    expect(h.audits.map((a) => a.eventType)).not.toContain('broadcast_failed_to_dispatch');
     expect(h.memberEmails).toEqual([]);
   });
 

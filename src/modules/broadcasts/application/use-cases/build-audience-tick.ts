@@ -2825,8 +2825,12 @@ async function advanceToSending(
  *    outcome set) with no probed status, so a 403 is decided by its one GET:
  *    - `cleared` (`deleted` / `absent` / `cancelled` / `failed`) → terminal,
  *      `resendDraftOutcome` in the payload;
- *    - `handed` → a sibling sent it: a concurrent skip labelled
- *      `unknown_or_already_processed`, no terminal write, no member email;
+ *    - `handed` → the mail is out (a sibling sent it, or this tick's own
+ *      earlier send landed): no terminal write, no member email. Review round 1
+ *      (code-review #5) — the row is caught up to `sending` through the
+ *      existing `catchUpHanded`, with the RE-READ row, rather than left
+ *      `approved` to loop; a catch-up that loses answers as that path does (a
+ *      concurrent skip);
  *    - `undeleted` → an orphan row `terminal_reclaim_undecided` (the drain
  *      reaches it once the row is terminal), then terminal with
  *      `resendDraftOutcome: 'undeleted'` + `resendDraftErrClass`.
@@ -2854,12 +2858,13 @@ async function reclaimDraftBeforeTerminal(
   try {
     current = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
   } catch (e) {
-    logger.warn({ ...ids, err: errKind(e) }, 'broadcasts.audience_import.terminal_reread_failed');
+    logger.warn({ ...ids, step: 'terminal_reclaim', err: errKind(e) }, 'broadcasts.audience_import.terminal_reread_failed');
     return {
       stop: err({ kind: 'dispatch.server_error', message: 'terminal_reread_failed', errClass: errKind(e), phase: 'terminal_write' }),
     };
   }
-  const draftId = current?.resendBroadcastId ?? '';
+  if (current === null) return {};
+  const draftId = current.resendBroadcastId ?? '';
   if (draftId === '') return {};
   const gated = await leaseGate(deps, input, 'terminal_reclaim');
   if (gated !== null) return { stop: gated };
@@ -2869,7 +2874,13 @@ async function reclaimDraftBeforeTerminal(
     { resendBroadcastId: draftId, probedStatus: null },
   );
   if (cleared.kind === 'handed') {
-    return { stop: err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' }) };
+    return {
+      stop: await catchUpHanded(deps, input, current, deps.clock.now(), draftId, {
+        handed: true,
+        status: cleared.resendStatus,
+        sentAt: null,
+      }),
+    };
   }
   if (cleared.kind === 'cleared') return { payloadExtra: { resendDraftOutcome: cleared.draftOutcome } };
   await recordOrphan(deps, input, {
@@ -3214,7 +3225,11 @@ async function onResolveFailure(
     // itself. Spec 140 s2b — so does a lost lease (`failTerminally`'s
     // concurrent skip): nothing was written, and answering `mapped` would have
     // the cron count `permanent_failed` for a row this tick no longer owns.
-    if (!terminal.ok && (terminal.error.kind === 'dispatch.server_error' || isLeaseLost(terminal.error))) return terminal;
+    // Review round 1 (reliability M-1) — every non-terminal stop passes through
+    // (`lease_expiring`, a handed draft caught up at the choke point), not only
+    // the server error and the lost lease: only a RECORDED terminal state
+    // answers the resolver's kind.
+    if (terminal.ok || terminal.error.kind !== 'audience_import_failed') return terminal;
     return err(mapped);
   }
 
