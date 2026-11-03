@@ -57,13 +57,14 @@ describe('issueAsPaid error display set — EN i18n coverage (065 item 5 / QC S1
     ).toEqual([]);
   });
 
-  it('the fallback + transport keys exist (codeFallback / unknown / network)', () => {
+  it('the fallback + transport keys exist (codeFallback / unknown / unconfirmed)', () => {
     // codeFallback renders unmapped codes ("Error code: {code}"), unknown is
-    // the generic toast, network is the S4 fetch-rejection guidance — all
-    // three are reachable on EVERY submit regardless of the display set.
+    // the generic toast, unconfirmed is the #61 no-answer / unknown-5xx
+    // warning (it replaced S4's "network") — all three are reachable on EVERY
+    // submit regardless of the display set.
     expect(typeof errors['codeFallback']).toBe('string');
     expect(typeof errors['unknown']).toBe('string');
-    expect(typeof errors['network']).toBe('string');
+    expect(typeof errors['unconfirmed']).toBe('string');
   });
 
   it('the imported set matches the form arithmetic: leaf − registration_lookup_failed + invalid', () => {

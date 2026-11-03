@@ -25,16 +25,17 @@ import fc from 'fast-check';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
 
-const { pushMock, toastSuccess, toastError } = vi.hoisted(() => ({
+const { pushMock, toastSuccess, toastError, toastWarning } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  toastWarning: vi.fn(),
 }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, replace: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock('@/lib/toast', () => ({
-  toast: { success: toastSuccess, error: toastError, info: vi.fn() },
+  toast: { success: toastSuccess, error: toastError, warning: toastWarning, info: vi.fn() },
 }));
 
 import {
@@ -345,6 +346,7 @@ describe('<EventFeeForm>', () => {
     pushMock.mockReset();
     toastSuccess.mockReset();
     toastError.mockReset();
+    toastWarning.mockReset();
   });
   afterEach(() => {
     vi.useFakeTimers();
@@ -933,7 +935,12 @@ describe('<EventFeeForm>', () => {
 
   // ── 064 remediation S4 — try/catch around the whole two-step submit ──────
 
-  it('S4/M-3: network rejection on the issue-as-paid POST → CONNECTION copy (not unknown) WITH draft-remains + retry; lands on the draft; no unhandled rejection', async () => {
+  // #61 — no answer on the issue-as-paid POST (a drop or the timeout) and a
+  // 5xx naming no refusal both leave the outcome UNKNOWN: the as-paid issue may
+  // have committed (receipt numbered). Say so in a warning, without claiming
+  // the draft remains and without a blind Retry; the detail page it lands on
+  // shows the real status.
+  it('#61: network rejection on the issue-as-paid POST → UNCONFIRMED warning, no draft-remains claim, no Retry; lands on the invoice', async () => {
     const fetchMock = mockFetchRegistrations([matchedRegistration]);
     vi.stubGlobal('fetch', fetchMock);
     renderForm({ initialEventId: 'ev-1' });
@@ -952,32 +959,53 @@ describe('<EventFeeForm>', () => {
     );
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-23'));
-    // 065 M-3 — a network-level rejection (offline/DNS/abort) is actionable
-    // ("check your connection, then retry") and must not collapse into the
-    // generic unknown copy a server 500 also produces.
-    expect(toastError).toHaveBeenCalledWith(
-      asPaidMessages.errors.network,
-      expect.objectContaining({
-        description: asPaidMessages.draftRemains,
-        action: expect.objectContaining({ label: asPaidMessages.retry }),
-      }),
-    );
+    expect(toastWarning).toHaveBeenCalledTimes(1);
+    const [title, options] = toastWarning.mock.calls[0]!;
+    expect(title).toBe(asPaidMessages.errors.unconfirmed);
+    expect(options ?? {}).not.toHaveProperty('action');
+    expect(JSON.stringify(options ?? {})).not.toContain(asPaidMessages.draftRemains);
+    expect(toastError).not.toHaveBeenCalled();
     expect(toastSuccess).not.toHaveBeenCalled();
+    // The as-paid POST carries the money-POST timeout.
+    expect((fetchMock.mock.calls.at(-1)![1] as RequestInit).signal).toBeInstanceOf(AbortSignal);
   });
 
-  it('M-3: HTTP failure WITHOUT an error code → codeFallback interpolates the HTTP status (HTTP_500), draft-remains + retry', async () => {
+  it('#61: a 504 / a 500 naming no code on the issue-as-paid POST → the same UNCONFIRMED warning (not "Error code: HTTP_500")', async () => {
+    for (const [i, res] of [
+      () => new Response('<html>Gateway Timeout</html>', { status: 504 }),
+      () => new Response(JSON.stringify({}), { status: 500 }),
+    ].entries()) {
+      const fetchMock = mockFetchRegistrations([matchedRegistration]);
+      vi.stubGlobal('fetch', fetchMock);
+      const view = renderForm({ initialEventId: 'ev-1' });
+      fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+      fetchMock.mockImplementationOnce(
+        async () => new Response(JSON.stringify({ invoice_id: `inv-2${4 + i}` }), { status: 201 }),
+      );
+      fetchMock.mockImplementationOnce(async () => res());
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+        }),
+      );
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith(`/admin/invoices/inv-2${4 + i}`));
+      expect(toastWarning).toHaveBeenLastCalledWith(asPaidMessages.errors.unconfirmed);
+      expect(toastError).not.toHaveBeenCalled();
+      view.unmount();
+    }
+  });
+
+  it('#61: the READ_ONLY_MODE 503 on the issue-as-paid POST → the read-only warning, nothing changed, draft remains, no Retry', async () => {
     const fetchMock = mockFetchRegistrations([matchedRegistration]);
     vi.stubGlobal('fetch', fetchMock);
     renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
 
     fetchMock.mockImplementationOnce(
-      async () => new Response(JSON.stringify({ invoice_id: 'inv-24' }), { status: 201 }),
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-26' }), { status: 201 }),
     );
-    // A 500 whose body carries no `error.code` (proxy error page, Next
-    // default handler) — previously indistinguishable from a network drop.
     fetchMock.mockImplementationOnce(
-      async () => new Response(JSON.stringify({}), { status: 500 }),
+      async () => new Response(JSON.stringify({ error: 'read-only-mode' }), { status: 503 }),
     );
     fireEvent.click(
       screen.getByRole('button', {
@@ -985,15 +1013,11 @@ describe('<EventFeeForm>', () => {
       }),
     );
 
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-24'));
-    expect(toastError).toHaveBeenCalledWith(
-      asPaidMessages.errors.codeFallback.replace('{code}', 'HTTP_500'),
-      expect.objectContaining({
-        description: asPaidMessages.draftRemains,
-        action: expect.objectContaining({ label: asPaidMessages.retry }),
-      }),
-    );
-    expect(toastSuccess).not.toHaveBeenCalled();
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-26'));
+    expect(toastWarning).toHaveBeenCalledWith(enMessages.errors.readOnlyMode, {
+      description: `${enMessages.errors.readOnlyNothingChanged} ${asPaidMessages.draftRemains}`,
+    });
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   it('M-1: 201 with a BROKEN body → draft-remains toast WITHOUT retry (no id) + lands on the invoice LIST; issue-as-paid never fires', async () => {

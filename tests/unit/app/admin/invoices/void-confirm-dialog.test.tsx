@@ -124,9 +124,11 @@ describe('VoidConfirmDialog — concurrent 409 inline recovery (FR-032)', () => 
       // A stale-write 409 is NOT the admin's error → neutral, not destructive.
       expect(alert).toHaveAttribute('data-tone', 'neutral');
       expect(alert).toHaveAttribute('role', 'alert');
+      // #61 — no "in another session": a retry from this same page lands here too.
       expect(alert).toHaveTextContent(
-        'This invoice was already voided or changed in another session. Refresh to see the latest status.',
+        'This invoice has already been voided or changed. Refresh to see its latest status.',
       );
+      expect(alert).not.toHaveTextContent(/session/i);
 
       // The recovery affordance is the whole point of the concurrent branch.
       const refreshBtn = screen.getByRole('button', { name: 'Refresh' });
@@ -185,6 +187,126 @@ describe('VoidConfirmDialog — failure branch is focused + destructive (FR-032)
         'An unknown error occurred. Please try again.',
       );
       expect(alert).not.toHaveTextContent(/Error code/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+// #61 — the void commits before its Phase-2 work (blob upload, sha sync,
+// audit), so no answer, a timeout or a 5xx naming no refusal may come AFTER the
+// invoice was voided. Say so, and offer Refresh; a READ_ONLY_MODE 503 wrote
+// nothing.
+describe('VoidConfirmDialog — #61 an unknown outcome reads as unknown', () => {
+  const UNCONFIRMED =
+    "We couldn't confirm whether the invoice was voided. Refresh to check its status before you try again — if it was voided, trying again changes nothing.";
+
+  function respond(status: number, body: unknown) {
+    return vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: false,
+      status,
+      json: async () => {
+        if (body === undefined) throw new Error('Unexpected token < in JSON');
+        return body;
+      },
+    }));
+  }
+
+  it('a rejected fetch (a dropped connection) shows the warning, focused, with Refresh and no toast', async () => {
+    vi.mocked(toast.error).mockClear();
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => {
+      throw new TypeError('Failed to fetch');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderDialog();
+      fillAndSubmit();
+      const alert = await screen.findByTestId('void-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveTextContent(UNCONFIRMED);
+      await waitFor(() => expect(alert).toHaveFocus());
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(pushMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the POST carries a timeout signal', async () => {
+    const fetchMock = rejectingFetch('invalid_status');
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderDialog();
+      fillAndSubmit();
+      await screen.findByTestId('void-invoice-error');
+      const init = fetchMock.mock.calls[0]?.[1];
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a 504 HTML page and a 500 internal_error read as unconfirmed, not "try again"', async () => {
+    for (const [status, body] of [
+      [504, undefined],
+      [500, { error: { code: 'internal_error' } }],
+    ] as const) {
+      const fetchMock = respond(status, body);
+      vi.stubGlobal('fetch', fetchMock);
+      const view = renderDialog();
+      try {
+        fillAndSubmit();
+        const alert = await screen.findByTestId('void-invoice-error');
+        expect(alert).toHaveAttribute('data-tone', 'warning');
+        expect(alert).toHaveTextContent(UNCONFIRMED);
+        expect(alert).not.toHaveTextContent(/try again\.$|Error code/);
+      } finally {
+        view.unmount();
+        vi.unstubAllGlobals();
+      }
+    }
+  });
+
+  it('a named 5xx raised inside the rolled-back tx keeps its own copy', async () => {
+    vi.stubGlobal('fetch', respond(500, { error: { code: 'pdf_render_failed' } }));
+    try {
+      renderDialog();
+      fillAndSubmit();
+      const alert = await screen.findByTestId('void-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'destructive');
+      expect(alert).toHaveTextContent('Error code: pdf_render_failed');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the READ_ONLY_MODE 503 says nothing was changed, inline, with no Refresh', async () => {
+    vi.stubGlobal('fetch', respond(503, { error: 'read-only-mode' }));
+    try {
+      renderDialog();
+      fillAndSubmit();
+      const alert = await screen.findByTestId('void-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveTextContent(
+        'The system is currently in read-only mode for maintenance. Nothing was changed. Try again in a few minutes.',
+      );
+      expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a double submit in one tick sends one POST', async () => {
+    const fetchMock = vi.fn((_url: string, _init: RequestInit) => new Promise<never>(() => {}));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const { container } = renderDialog();
+      fillAndSubmit();
+      fireEvent.submit(container.querySelector('form')!);
+      await screen.findByRole('button', { name: /Voiding/ });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
       vi.unstubAllGlobals();
     }
