@@ -267,7 +267,8 @@ describe('VoidConfirmDialog — #61 an unknown outcome reads as unknown', () => 
       fillAndSubmit();
       await screen.findByTestId('void-invoice-error');
       fireEvent.click(screen.getByRole('button', { name: 'Open invoice' }));
-      fireEvent.click(screen.getByRole('button', { name: /^Void invoice$/ }));
+      // The alert renders before the transition settles: wait for the button.
+      fireEvent.click(await screen.findByRole('button', { name: /^Void invoice$/ }));
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
       onLine.mockReturnValue(true);
       act(() => {

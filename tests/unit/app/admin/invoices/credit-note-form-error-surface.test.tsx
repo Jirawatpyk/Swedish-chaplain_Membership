@@ -227,7 +227,9 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
       expect(alert).toHaveAttribute('data-tone', 'warning');
       expect(alert).toHaveTextContent(UNCONFIRMED);
       await waitFor(() => expect(alert).toHaveFocus());
-      const submit = screen.getByRole('button', { name: cnMessages.submit });
+      // The alert renders before the transition settles, so the button can
+      // still read "Issuing…" for a moment: wait for it.
+      const submit = await screen.findByRole('button', { name: cnMessages.submit });
       expect(submit).toBeDisabled();
       fireEvent.click(submit);
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -258,7 +260,7 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
       const alert = await screen.findByTestId('credit-note-error');
       expect(alert).toHaveAttribute('data-tone', 'warning');
       expect(alert).toHaveTextContent(UNCONFIRMED);
-      expect(screen.getByRole('button', { name: cnMessages.submit })).toBeDisabled();
+      expect(await screen.findByRole('button', { name: cnMessages.submit })).toBeDisabled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -271,7 +273,7 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
       fillAndSubmit();
       const alert = await screen.findByTestId('credit-note-error');
       expect(alert).toHaveAttribute('data-tone', 'destructive');
-      expect(screen.getByRole('button', { name: cnMessages.submit })).toBeEnabled();
+      expect(await screen.findByRole('button', { name: cnMessages.submit })).toBeEnabled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -288,7 +290,7 @@ describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
         'The system is currently in read-only mode for maintenance. Nothing was changed. Try again in a few minutes.',
       );
       expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
-      expect(screen.getByRole('button', { name: cnMessages.submit })).toBeEnabled();
+      expect(await screen.findByRole('button', { name: cnMessages.submit })).toBeEnabled();
     } finally {
       vi.unstubAllGlobals();
     }
