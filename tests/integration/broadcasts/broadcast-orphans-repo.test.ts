@@ -14,7 +14,7 @@
  *     same Resend id) are never listed, settled or pruned from tenant A.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runInTenant } from '@/lib/db';
 import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
@@ -210,5 +210,67 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     const erasureList = (await repo.listUnsettledAudienceOrphans(500, GRACE_CUTOFF())).map((o) => o.resourceId);
     expect(erasureList).toContain(stale);
     expect(erasureList).not.toContain(fresh);
+  });
+
+  /**
+   * Spec 140 s2c review round 2:
+   *   - code-review #2: a broadcast orphan whose id a row that SENT holds is
+   *     flagged `heldBySentRow`, so the settlers record `superseded` with no
+   *     Resend call (an ordinary delivery, not erasure evidence);
+   *   - code-review #3: past-grace rows sort first, so 20 in-grace rows cannot
+   *     hide an older drainable one;
+   *   - spec N4: the erasure's audience list orders by attempts, then age.
+   */
+  it('[code-review #2] an orphan whose id a sent row holds is superseded, not handed: the repo flags heldBySentRow', async () => {
+    const repo = makeDrizzleBroadcastOrphansRepo(tenantA.ctx.slug);
+    const member = randomUUID();
+    const sentId = `rb-sent-${randomUUID()}`;
+    const freeId = `rb-free-${randomUUID()}`;
+    await seedRow(tenantA, { status: 'sent', resendBroadcastId: sentId, quotaYearConsumed: new Date().getFullYear(), quotaConsumedAt: new Date(), sentAt: new Date() });
+    for (const id of [sentId, freeId]) {
+      await repo.recordOrphanedResendId({ broadcastId: randomUUID(), requestedByMemberId: member, resourceType: 'broadcast', resourceId: id, reason: 'attach_lost' });
+    }
+    const mine = await repo.listMemberOrphans(member);
+    expect(Object.fromEntries(mine.map((o) => [o.resourceId, o.heldBySentRow]))).toEqual({ [sentId]: true, [freeId]: false });
+    const drainable = await repo.listDrainableOrphans(500, GRACE_CUTOFF());
+    expect(drainable.find((o) => o.resourceId === sentId)?.heldBySentRow).toBe(true);
+  });
+
+  it('[code-review #3] 20 in-grace rows do not hide an older drainable row, even one tried more often', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      const member = randomUUID();
+      const oldId = `rb-old-${randomUUID()}`;
+      await runInTenant(solo.ctx, (tx) =>
+        tx.execute(sql`
+          INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at, attempts)
+          VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${member}::uuid, 'broadcast', ${oldId}, 'attach_lost', ${new Date(Date.now() - 3 * HOUR).toISOString()}::timestamptz, 3)`),
+      );
+      for (let i = 0; i < 20; i += 1) {
+        await repo.recordOrphanedResendId({ broadcastId: randomUUID(), requestedByMemberId: member, resourceType: 'broadcast', resourceId: `rb-young-${i}-${randomUUID()}`, reason: 'attach_lost' });
+      }
+      const listed = await repo.listDrainableOrphans(20, GRACE_CUTOFF());
+      expect(listed[0]?.resourceId).toBe(oldId);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
+
+  it('[spec N4] the erasure audience list orders by attempts, then age', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      const ids = [`aud-1-${randomUUID()}`, `aud-2-${randomUUID()}`, `aud-3-${randomUUID()}`];
+      for (const id of ids) {
+        await repo.recordOrphanedResendId({ broadcastId: randomUUID(), requestedByMemberId: randomUUID(), resourceType: 'audience', resourceId: id, reason: 'audience_leaked' });
+      }
+      const first = await repo.listUnsettledAudienceOrphans(10, GRACE_CUTOFF());
+      expect(await repo.markOrphanAttempted(first.find((o) => o.resourceId === ids[0])!.orphanId)).toBe(true);
+      const again = (await repo.listUnsettledAudienceOrphans(10, GRACE_CUTOFF())).map((o) => o.resourceId);
+      expect(again).toEqual([ids[1], ids[2], ids[0]]);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
   });
 });
