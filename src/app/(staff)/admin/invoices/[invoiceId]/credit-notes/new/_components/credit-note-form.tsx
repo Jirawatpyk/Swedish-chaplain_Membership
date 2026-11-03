@@ -529,9 +529,9 @@ export function CreditNoteForm({
     const attempt = attemptRef.current;
     if (!attempt || startingOver || inFlightRef.current) return;
     setStartingOver(true);
-    const stayLocked = () => {
+    const stayLocked = (refusal = t('startOver.failed')) => {
       setStartOverOpen(false);
-      markUnknown(attempt, t('startOver.failed'));
+      markUnknown(attempt, refusal);
     };
     try {
       let res: Response;
@@ -546,7 +546,14 @@ export function CreditNoteForm({
         stayLocked();
         return;
       }
-      const body = (res.ok ? await res.json().catch(() => ({})) : {}) as {
+      const raw: unknown = await res.json().catch(() => ({}));
+      // The write freeze refused it: nothing ran, and trying again cannot work
+      // until it lifts, so say so rather than "Start over again".
+      if (!res.ok && isReadOnlyRefusal(res.status, raw)) {
+        stayLocked(`${tErrors('readOnlyMode')} ${tErrors('readOnlyNothingChanged')}`);
+        return;
+      }
+      const body = (res.ok ? raw : {}) as {
         outcome?: string;
         document_number?: string | null;
       };
@@ -580,7 +587,7 @@ export function CreditNoteForm({
     } finally {
       setStartingOver(false);
     }
-  }, [endAttempt, invoiceId, markUnknown, router, startingOver, t]);
+  }, [endAttempt, invoiceId, markUnknown, router, startingOver, t, tErrors]);
 
   return (
     <form
@@ -663,6 +670,7 @@ export function CreditNoteForm({
                 </Button>
                 {formError.kind === 'unconfirmed' && (
                   <Dialog
+                    role="alertdialog"
                     open={startOverOpen}
                     onOpen={() => {
                       startedOverRef.current = false;
@@ -690,7 +698,7 @@ export function CreditNoteForm({
                           type="button"
                           variant="secondary"
                           data-autofocus
-                          disabled={startingOver}
+                          aria-disabled={startingOver || undefined}
                           onClick={() => setStartOverOpen(false)}
                         >
                           {t('startOver.cancel')}

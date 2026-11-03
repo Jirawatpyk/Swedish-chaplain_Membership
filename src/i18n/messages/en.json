@@ -2517,11 +2517,11 @@
         "startOver": {
           "action": "Start over",
           "title": "Start over without this credit note?",
-          "body": "We'll check whether it was issued. If it wasn't, it can never be issued, and you can enter a new credit note.",
+          "body": "We'll check whether it was issued. If it was, we'll open it. If it wasn't, it can never be issued, and you can enter a new credit note.",
           "confirm": "Start over",
-          "cancel": "Cancel",
+          "cancel": "Go back",
           "done": "This credit note will not be issued. You can enter a new one.",
-          "failed": "We couldn't start over. The credit note stays locked — try again, or open the invoice to check."
+          "failed": "We couldn't start over. The credit note stays locked — choose Start over again, or open the invoice to check."
         },
         "submitLockedHint": "Finish this credit note with “Try again” in the message above, or open the invoice.",
         "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
@@ -2547,7 +2547,7 @@
           "unknown": "An unknown error occurred. Please try again.",
           "concurrent": "This invoice has already been credited or voided. Open it to see its latest status.",
           "unconfirmed": "We couldn't confirm whether the credit note for {amount} was issued. Try again — if it was already issued, trying again issues nothing new. Or open the invoice to check.",
-          "attemptAbandoned": "This credit note was cancelled with Start over — nothing was issued.",
+          "attemptAbandoned": "This credit note was closed with “Start over” — nothing was issued.",
           "retryRefused": "This try was refused: {reason}",
           "retryAction": "Try again",
           "openInvoiceAction": "Open invoice",
@@ -8023,7 +8023,7 @@
       "invoice_overdue_detected": "Invoice overdue",
       "credit_note_issued": "Credit note issued",
       "credit_note_issue_replayed": "Credit note request repeated — existing note returned",
-      "credit_note_attempt_abandoned": "Credit note attempt closed with Start over — no note issued",
+      "credit_note_attempt_abandoned": "Credit note attempt closed with “Start over” — no note issued",
       "invoice_pdf_resent": "Invoice PDF resent",
       "receipt_pdf_resent": "Receipt PDF resent",
       "credit_note_pdf_resent": "Credit-note PDF resent",

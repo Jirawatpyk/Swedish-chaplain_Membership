@@ -606,15 +606,16 @@ describe('CreditNoteForm — task 68 Start over', () => {
     return { fetchMock, key };
   }
 
-  it('Start over asks first; Cancel changes nothing', async () => {
+  it('Start over asks first; Go back changes nothing', async () => {
     try {
       const { fetchMock } = await lockedForm(async () => ({ ok: true, status: 200, json: async () => ({ outcome: 'abandoned' }) }));
       fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
-      const dialog = await screen.findByRole('dialog');
+      const dialog = await screen.findByRole('alertdialog');
       expect(dialog).toHaveTextContent('Start over without this credit note?');
-      // The page has its own Cancel: use the dialog's.
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      // "Go back", not "Cancel": in this dialog "Cancel" would read as
+      // "cancel the credit note", the opposite of what the button does.
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Go back' }));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(window.sessionStorage.getItem(STORE_KEY)).not.toBeNull();
     } finally {
@@ -632,7 +633,7 @@ describe('CreditNoteForm — task 68 Start over', () => {
         json: async () => ({ outcome: 'abandoned' }),
       }));
       fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
-      const dialog = await screen.findByRole('dialog');
+      const dialog = await screen.findByRole('alertdialog');
       fireEvent.click(within(dialog).getByRole('button', { name: 'Start over' }));
       await waitFor(() => expect(screen.queryByTestId('credit-note-error')).toBeNull());
       const [, init] = fetchMock.mock.calls.find(([u]) => u === '/api/credit-notes/attempts/abandon') as [string, RequestInit];
@@ -661,7 +662,7 @@ describe('CreditNoteForm — task 68 Start over', () => {
         json: async () => ({ outcome: 'issued', document_number: 'CN-2026-000009' }),
       }));
       fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
-      fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Start over' }));
+      fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Start over' }));
       await waitFor(() => expect(pushMock).toHaveBeenCalledWith(`/admin/invoices/${INVOICE_ID}`));
       expect(toast.success).toHaveBeenCalledWith(
         'Credit note CN-2026-000009 had already been issued — no new credit note was issued.',
@@ -678,14 +679,31 @@ describe('CreditNoteForm — task 68 Start over', () => {
       await lockedForm(async () => ({ ok: false, status: 504, json: async () => { throw new Error('html'); } }));
       const stored = window.sessionStorage.getItem(STORE_KEY);
       fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
-      fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Start over' }));
+      fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Start over' }));
       await waitFor(() =>
         expect(screen.getByTestId('credit-note-error')).toHaveTextContent(
-          "We couldn't start over. The credit note stays locked — try again, or open the invoice to check.",
+          "We couldn't start over. The credit note stays locked — choose Start over again, or open the invoice to check.",
         ),
       );
       expect(window.sessionStorage.getItem(STORE_KEY)).toBe(stored);
       expect(screen.getByLabelText(labelled(cnMessages.amountLabel))).toHaveAttribute('readonly');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('Start over refused by the write freeze: still locked, and the alert says nothing changed', async () => {
+    try {
+      await lockedForm(async () => ({ ok: false, status: 503, json: async () => ({ error: 'read-only-mode' }) }));
+      fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
+      fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Start over' }));
+      await waitFor(() =>
+        expect(screen.getByTestId('credit-note-error')).toHaveTextContent(
+          `${enMessages.errors.readOnlyMode} ${enMessages.errors.readOnlyNothingChanged}`,
+        ),
+      );
+      expect(screen.getByTestId('credit-note-error')).not.toHaveTextContent("We couldn't start over");
+      expect(window.sessionStorage.getItem(STORE_KEY)).not.toBeNull();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -706,7 +724,7 @@ describe('CreditNoteForm — task 68 Start over', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
       await waitFor(() =>
         expect(screen.getByTestId('credit-note-error')).toHaveTextContent(
-          'This credit note was cancelled with Start over — nothing was issued.',
+          'This credit note was closed with “Start over” — nothing was issued.',
         ),
       );
       expect(window.sessionStorage.getItem(STORE_KEY)).toBeNull();

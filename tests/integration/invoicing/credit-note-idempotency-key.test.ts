@@ -613,6 +613,92 @@ describe('#66 — an admin credit note is issued once per idempotency key', () =
     expect(await countNotes(tenant, invoiceId)).toBe(1);
   }, 60_000);
 
+  // The reverse order: Start over holds the lock (tombstone written, not yet
+  // committed) while an issue with the key waits on it. The issue's read under
+  // the lock must see the committed tombstone — the check that breaks if it
+  // ever moves before the lock or the tx stops reading a fresh snapshot.
+  it('an issue waiting on Start over\'s lock sees the tombstone once it commits, and issues nothing', async () => {
+    const invoiceId = await seedPaidInvoice(tenant, user, planId);
+    const key = randomUUID();
+    const before = await readCreditNoteSeq(tenant);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let reachedCommit: () => void = () => {};
+    const atCommit = new Promise<void>((r) => {
+      reachedCommit = r;
+    });
+    const deps = makeAbandonCreditNoteAttemptDeps(tenant.ctx.slug);
+    const gated = {
+      ...deps,
+      audit: {
+        ...deps.audit,
+        // The audit row is the last write before the commit.
+        emit: async (...args: Parameters<typeof deps.audit.emit>) => {
+          await deps.audit.emit(...args);
+          reachedCommit();
+          await gate;
+        },
+      },
+    };
+    const abandoning = abandonCreditNoteAttempt(gated, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+      idempotencyKey: key,
+    });
+    await atCommit;
+    const issuing = issue(tenant, invoiceId, key);
+    // Give the issue time to block on the invoice lock, then commit Start over.
+    await new Promise((r) => setTimeout(r, 500));
+    release();
+    const [abandoned, issued] = await Promise.all([abandoning, issuing]);
+    expect(abandoned).toEqual({ ok: true, value: { outcome: 'abandoned' } });
+    expect(issued.ok, show(issued)).toBe(false);
+    if (!issued.ok) expect(issued.error.code).toBe('attempt_abandoned');
+    expect(await countNotes(tenant, invoiceId)).toBe(0);
+    expect((await readCreditNoteSeq(tenant)) - before).toBe(0);
+  }, 60_000);
+
+  // Append-only by grant: no trigger backs the table, so the app role's
+  // missing UPDATE / DELETE privilege is the whole guarantee.
+  it('the app role cannot change or delete a tombstone', async () => {
+    const invoiceId = await seedPaidInvoice(tenant, user, planId);
+    const key = randomUUID();
+    expect((await abandon(tenant, invoiceId, key)).ok).toBe(true);
+    await expect(
+      runInTenant(tenant.ctx, (tx) =>
+        tx.execute(sql`UPDATE credit_note_abandoned_attempts SET abandoned_at = now() WHERE idempotency_key = ${key}`),
+      ),
+    ).rejects.toMatchObject({ cause: { code: '42501' } });
+    await expect(
+      runInTenant(tenant.ctx, (tx) =>
+        tx.execute(sql`DELETE FROM credit_note_abandoned_attempts WHERE idempotency_key = ${key}`),
+      ),
+    ).rejects.toMatchObject({ cause: { code: '42501' } });
+  }, 60_000);
+
+  // The database wall on its own (Principle I): with no tenant predicate in
+  // the SQL, RLS still hides tenant A's tombstone from tenant B and refuses
+  // B writing one for A.
+  it('RLS hides another tenant\'s tombstone and refuses writing one for it', async () => {
+    const invoiceId = await seedPaidInvoice(tenant, user, planId);
+    const key = randomUUID();
+    expect((await abandon(tenant, invoiceId, key)).ok).toBe(true);
+    const seen = await runInTenant(other.ctx, (tx) =>
+      tx.execute(sql`SELECT 1 FROM credit_note_abandoned_attempts WHERE idempotency_key = ${key}`),
+    );
+    expect(seen).toHaveLength(0);
+    await expect(
+      runInTenant(other.ctx, (tx) =>
+        tx.execute(
+          sql`INSERT INTO credit_note_abandoned_attempts (tenant_id, idempotency_key, invoice_id, abandoned_by_user_id) VALUES (${tenant.ctx.slug}, ${randomUUID()}, ${invoiceId}, ${user.userId})`,
+        ),
+      ),
+    ).rejects.toMatchObject({ cause: { code: '42501' } });
+  }, 60_000);
+
   it('a tombstone is per tenant: the same key in another tenant still issues', async () => {
     const key = randomUUID();
     expect((await abandon(tenant, await seedPaidInvoice(tenant, user, planId), key)).ok).toBe(true);

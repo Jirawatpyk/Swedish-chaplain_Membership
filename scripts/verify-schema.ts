@@ -241,9 +241,11 @@ async function main(): Promise<void> {
       {
         // Task 68 (mig 0326) — the "Start over" tombstones: the table with RLS
         // forced (issueCreditNote reads it on every keyed admin issue, so a
-        // missing table 500s them) and the audit value its use case writes.
-        name: 'credit_note_abandoned_attempts (RLS forced) + audit_event_type credit_note_attempt_abandoned (mig 0326)',
-        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_class WHERE relname = 'credit_note_abandoned_attempts' AND relkind = 'r' AND relrowsecurity AND relforcerowsecurity) AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'credit_note_attempt_abandoned')`,
+        // missing table 500s them), append-only by grant (no trigger backs
+        // it: chamber_app may SELECT and INSERT, never UPDATE or DELETE) and
+        // the audit value its use case writes.
+        name: 'credit_note_abandoned_attempts (RLS forced, append-only grants) + audit_event_type credit_note_attempt_abandoned (mig 0326)',
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_class WHERE relname = 'credit_note_abandoned_attempts' AND relnamespace = 'public'::regnamespace AND relkind = 'r' AND relrowsecurity AND relforcerowsecurity) AND has_table_privilege('chamber_app', 'public.credit_note_abandoned_attempts', 'SELECT') AND has_table_privilege('chamber_app', 'public.credit_note_abandoned_attempts', 'INSERT') AND NOT has_table_privilege('chamber_app', 'public.credit_note_abandoned_attempts', 'UPDATE') AND NOT has_table_privilege('chamber_app', 'public.credit_note_abandoned_attempts', 'DELETE') AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'credit_note_attempt_abandoned')`,
       },
       {
         // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure

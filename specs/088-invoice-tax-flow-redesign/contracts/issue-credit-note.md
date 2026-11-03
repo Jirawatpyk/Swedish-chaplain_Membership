@@ -120,3 +120,7 @@ Closes a locked admin issue attempt on the server. Same gate (`credit_notes.writ
   allocated. The lock makes this exact: an attempt holding the lock when Start over arrives commits first and is
   returned as `issued`; one that reaches the lock later finds the tombstone.
 
+- **Scope of the guarantee:** per invoice. The lock serialises Start over against issues **on the same invoice**, which
+  is every request the form can send (a stored attempt binds its key to its invoice). A crafted request that reuses a
+  closed key on a different invoice is not serialised against the abandon, and is out of scope: it needs
+  `credit_notes.write` and the unguessable key, and `keyHitMatches` never returns one invoice's note for another.

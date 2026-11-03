@@ -16,6 +16,9 @@
 --    updated or deleted by the app (append-only by privilege). The invoice FK
 --    cascades, so the only deletes are the invoice's own (test-tenant
 --    cleanup; a paid invoice is never deleted in production).
+--    `abandoned_by_user_id` has no FK to users on purpose, like an audit
+--    payload's actor id: a tombstone must never block a user's deletion, and
+--    the audit row is the record of who closed the key.
 -- 2. `audit_event_type += 'credit_note_attempt_abandoned'` (10 y, set by the
 --    F4 emitter): it decides whether a §86/10 note will ever exist.
 --
