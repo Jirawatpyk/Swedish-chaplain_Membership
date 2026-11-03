@@ -3189,6 +3189,21 @@ export const broadcastsMetrics = {
    * `docs/runbooks/broadcast-audience-build.md` § orphaned Resend ids.
    */
   /**
+   * `broadcasts_retention_orphan_prune_failed_total{tenant}` — spec 140 s2c
+   * review round 1 (reliability L-2): the F7 retention sweep's prune of the
+   * orphaned Resend id record (`prune_orphaned_resend_ids`, kept for
+   * `ORPHAN_ROW_RETENTION_DAYS` = 90) failed. Alarm at any increase.
+   */
+  retentionOrphanPruneFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_retention_orphan_prune_failed_total',
+        'F7 retention sweep runs whose orphaned-Resend-id prune failed',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
    * `broadcasts_orphaned_resend_ids_unsettled{tenant}` — spec 140 s2c review
    * round 1: orphan rows with an id still unsettled more than
    * `ORPHAN_UNSETTLED_GAUGE_AGE_HOURS` (24 h) after they were written — a

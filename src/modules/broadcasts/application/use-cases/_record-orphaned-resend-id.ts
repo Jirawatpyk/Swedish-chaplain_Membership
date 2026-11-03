@@ -31,6 +31,11 @@ export async function recordOrphanBestEffort(
     await orphans.recordOrphanedResendId(input);
     logger.info(fields, `${ctx.logPrefix}.orphan_recorded`);
   } catch (e) {
-    logger.error({ ...fields, err: errKind(e), severity: 'critical' }, `${ctx.logPrefix}.orphan_record_failed`);
+    // Review round 1 (pdpa L-B) — the requester (a uuid, no content), so the
+    // by-hand fix this line asks for can tell whose erasure it may bear on.
+    logger.error(
+      { ...fields, requestedByMemberId: input.requestedByMemberId, err: errKind(e), severity: 'critical' },
+      `${ctx.logPrefix}.orphan_record_failed`,
+    );
   }
 }

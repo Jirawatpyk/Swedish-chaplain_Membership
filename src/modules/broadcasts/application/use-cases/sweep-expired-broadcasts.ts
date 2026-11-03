@@ -72,6 +72,7 @@
  * `cleanup-orphaned-audiences`).
  */
 import { errKind } from '@/lib/log-id';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -300,6 +301,9 @@ export async function sweepExpiredBroadcasts(
     );
   } catch (e) {
     logger.warn({ tenantId: slug, err: errKind(e) }, 'broadcasts.retention_sweep.orphan_prune_failed');
+    // Review round 1 (reliability L-2) — a counter, so a prune failing every
+    // day alarms instead of living only in a log line.
+    broadcastsMetrics.retentionOrphanPruneFailed(slug);
   }
 
   if (failure !== null) {
