@@ -49,6 +49,7 @@ function orphan(n: number, patch: Partial<OrphanedResendIdRef> = {}): OrphanedRe
     createdAt: OLD,
     outcome: null,
     attempts: 0,
+    heldBySentRow: false,
     ...patch,
   };
 }

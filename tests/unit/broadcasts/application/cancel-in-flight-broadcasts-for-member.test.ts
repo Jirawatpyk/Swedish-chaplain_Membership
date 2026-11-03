@@ -269,6 +269,7 @@ interface OrphanFixture {
   readonly resourceType?: 'broadcast' | 'audience';
   readonly outcome?: 'deleted' | 'absent' | 'retained' | 'handed' | null;
   readonly attempts?: number;
+  readonly heldBySentRow?: boolean;
 }
 
 function orphanRef(o: OrphanFixture) {
@@ -282,6 +283,7 @@ function orphanRef(o: OrphanFixture) {
     createdAt: new Date('2026-05-02T00:00:00Z'),
     outcome: o.outcome ?? null,
     attempts: o.attempts ?? 0,
+    heldBySentRow: o.heldBySentRow ?? false,
   };
 }
 

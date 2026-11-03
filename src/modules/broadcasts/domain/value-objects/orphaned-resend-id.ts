@@ -10,6 +10,7 @@
  *
  * Pure TypeScript — no framework imports (Constitution Principle III).
  */
+import type { BroadcastStatus } from './broadcast-status';
 
 /** What the id names at Resend. `create_unconfirmed` is always `broadcast`. */
 export const ORPHAN_RESOURCE_TYPES = ['broadcast', 'audience'] as const;
@@ -51,6 +52,12 @@ export type OrphanReason = (typeof ORPHAN_REASONS)[number];
  */
 export const ORPHAN_OUTCOMES = ['deleted', 'absent', 'retained', 'handed', 'superseded'] as const;
 export type OrphanOutcome = (typeof ORPHAN_OUTCOMES)[number];
+
+/**
+ * Review round 2 (code-review #2) — the statuses of a row whose send went out
+ * normally. A BROADCAST orphan whose id such a row holds settles `superseded`.
+ */
+export const ORPHAN_SUPERSEDING_STATUSES = ['sent', 'partially_sent', 'partial_delivery_accepted'] as const satisfies ReadonlyArray<BroadcastStatus>;
 
 /**
  * [P M-1] How long a settled row, or a `create_unconfirmed` row, is kept

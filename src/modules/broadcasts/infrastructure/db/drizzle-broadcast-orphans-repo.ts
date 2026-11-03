@@ -12,10 +12,11 @@ import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
-import type {
-  OrphanOutcome,
-  OrphanReason,
-  OrphanResourceType,
+import {
+  ORPHAN_SUPERSEDING_STATUSES,
+  type OrphanOutcome,
+  type OrphanReason,
+  type OrphanResourceType,
 } from '../../domain/value-objects/orphaned-resend-id';
 import type {
   BroadcastOrphansRepo,
@@ -29,6 +30,28 @@ const TERMINAL_IN = sql.join(
   TERMINAL_BROADCAST_STATUSES.map((s) => sql`${s}`),
   sql`, `,
 );
+
+/** `ORPHAN_SUPERSEDING_STATUSES` as SQL binds (review round 2, code-review #2). */
+const SUPERSEDING_IN = sql.join(
+  ORPHAN_SUPERSEDING_STATUSES.map((s) => sql`${s}`),
+  sql`, `,
+);
+
+/**
+ * Review round 2 (code-review #2) — a BROADCAST orphan whose id a row of this
+ * tenant in `ORPHAN_SUPERSEDING_STATUSES` holds (the port's `heldBySentRow`).
+ * A SELECT-list expression: Drizzle renders a column there UNQUALIFIED, so an
+ * inner `"tenant_id"` would bind by SQL scope alone. Every name is written
+ * qualified instead (the subquery's table under the alias `held`).
+ */
+function heldBySentRow(tenantId: string) {
+  return sql<boolean>`("broadcast_orphaned_resend_ids"."resource_type" = 'broadcast' AND EXISTS (
+    SELECT 1 FROM ${broadcasts} AS held
+     WHERE held.tenant_id = ${tenantId}
+       AND held.resend_broadcast_id = "broadcast_orphaned_resend_ids"."resource_id"
+       AND held.status::text IN (${SUPERSEDING_IN})
+  ))`;
+}
 
 /**
  * [A1] No live `broadcasts` row of this tenant holds the orphan's id,
@@ -54,7 +77,7 @@ function notHeldByLiveRow(tenantId: string, audienceGraceCutoff: Date | null) {
   )`;
 }
 
-const COLUMNS = {
+const columns = (tenantId: string) => ({
   orphanId: orphans.orphanId,
   broadcastId: orphans.broadcastId,
   requestedByMemberId: orphans.requestedByMemberId,
@@ -64,7 +87,8 @@ const COLUMNS = {
   createdAt: orphans.createdAt,
   outcome: orphans.outcome,
   attempts: orphans.attempts,
-};
+  heldBySentRow: heldBySentRow(tenantId),
+});
 
 type SelectedRow = {
   orphanId: string;
@@ -76,6 +100,7 @@ type SelectedRow = {
   createdAt: Date;
   outcome: string | null;
   attempts: number;
+  heldBySentRow: boolean;
 };
 
 function toRef(r: SelectedRow): OrphanedResendIdRef {
@@ -91,6 +116,7 @@ function toRef(r: SelectedRow): OrphanedResendIdRef {
     createdAt: r.createdAt,
     outcome: r.outcome as OrphanOutcome | null,
     attempts: r.attempts,
+    heldBySentRow: r.heldBySentRow === true,
   };
 }
 
@@ -122,7 +148,7 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
     async listDrainableOrphans(limit, audienceGraceCutoff) {
       return bound('listDrainableOrphans', async (tx) => {
         const rows = await tx
-          .select(COLUMNS)
+          .select(columns(ctx.slug))
           .from(orphans)
           .where(
             and(
@@ -132,7 +158,13 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
               notHeldByLiveRow(ctx.slug, audienceGraceCutoff),
             ),
           )
-          .orderBy(asc(orphans.attempts), asc(orphans.createdAt), asc(orphans.orphanId))
+          // Review round 2 (code-review #3) — past-grace rows first (false < true).
+          .orderBy(
+            asc(sql`(${orphans.createdAt} >= ${audienceGraceCutoff.toISOString()}::timestamptz)`),
+            asc(orphans.attempts),
+            asc(orphans.createdAt),
+            asc(orphans.orphanId),
+          )
           .limit(limit);
         return rows.map(toRef);
       });
@@ -141,7 +173,7 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
     async listMemberOrphans(requestedByMemberId) {
       return bound('listMemberOrphans', async (tx) => {
         const rows = await tx
-          .select(COLUMNS)
+          .select(columns(ctx.slug))
           .from(orphans)
           .where(
             and(
@@ -160,7 +192,7 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
     async listUnsettledAudienceOrphans(limit, audienceGraceCutoff) {
       return bound('listUnsettledAudienceOrphans', async (tx) => {
         const rows = await tx
-          .select(COLUMNS)
+          .select(columns(ctx.slug))
           .from(orphans)
           .where(
             and(

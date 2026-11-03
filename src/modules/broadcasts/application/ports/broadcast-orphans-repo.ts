@@ -39,6 +39,13 @@ export interface OrphanedResendIdRef {
   readonly outcome: OrphanOutcome | null;
   /** Review round 1 — undecided settles so far (`markOrphanAttempted`). */
   readonly attempts: number;
+  /**
+   * Review round 2 (code-review #2) — a BROADCAST orphan whose id a row of
+   * this tenant in `ORPHAN_SUPERSEDING_STATUSES` holds: that copy was
+   * delivered normally, so the settlers record `superseded` with no Resend
+   * call. Always `false` for an audience orphan.
+   */
+  readonly heldBySentRow: boolean;
 }
 
 /** What a writer records. `resourceId` is `null` only for `create_unconfirmed` (CHECK `_id_iff_known`). */
@@ -82,6 +89,9 @@ export interface BroadcastOrphansRepo {
    * Review round 1 (code-review #2): `ORDER BY attempts, created_at`, so a row
    * whose settle keeps answering undecided (`markOrphanAttempted`) sinks below
    * every row that has been tried fewer times and cannot hold the head.
+   * Review round 2 (code-review #3): rows past the grace come first
+   * (`ORDER BY created_at >= audienceGraceCutoff, attempts, created_at`), so
+   * rows the caller would hold back cannot fill the `limit`.
    */
   listDrainableOrphans(limit: number, audienceGraceCutoff: Date): Promise<ReadonlyArray<OrphanedResendIdRef>>;
 
