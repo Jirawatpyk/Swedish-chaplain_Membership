@@ -35,6 +35,7 @@ vi.mock('@/lib/logger', () => ({
 
 import {
   CASCADE_CAS_RETRIES,
+  ERASURE_AUDIENCE_ORPHAN_LIMIT,
   cancelInFlightBroadcastsForMember,
 } from '@/modules/broadcasts/application/use-cases/cancel-in-flight-broadcasts-for-member';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
@@ -98,6 +99,14 @@ function makeDeps(overrides: {
   terminalRows?: ReadonlyArray<{ broadcastId: string; status: string; resendBroadcastId: string }> | 'throws';
   /** Spec 140 s1 — a per-Resend-id DELETE answer; falls back to `deleteOutcome`. */
   deleteOutcomeById?: Readonly<Record<string, 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other' | 'throws'>>;
+  /** Spec 140 s2c — the member's broadcast orphan rows (`listMemberOrphans`); `'throws'` = the read fails. */
+  memberOrphans?: ReadonlyArray<OrphanFixture> | 'throws';
+  /** Spec 140 s2c — the tenant's unsettled audience orphans (`listUnsettledAudienceOrphans`); `'throws'` = the read fails. */
+  audienceOrphans?: ReadonlyArray<OrphanFixture> | 'throws';
+  /** Spec 140 s2c — audience ids whose `deleteAudience` throws. */
+  deleteAudienceThrows?: ReadonlyArray<string>;
+  /** Spec 140 s2c — the settle CAS throws. */
+  settleThrows?: boolean;
 }) {
   const rows = (overrides.inFlightRows ?? []).map(makeBroadcastRow);
   // F119 round-4 B6 — mirror db.transaction: a callback that returns COMMITS,
@@ -194,15 +203,65 @@ function makeDeps(overrides: {
   const pauseBeforeReprobe = vi.fn(async (ms: number) => {
     calls.push(`pause:${ms}${openTx > 0 ? '' : ':no-lock'}`);
   });
+  // Spec 140 s2c — the orphan record. Its calls go to their own list, so the
+  // s1 call-order assertions above are unchanged.
+  const orphanCalls: string[] = [];
+  const settles: Array<[string, string]> = [];
+  const orphans = {
+    listMemberOrphans: vi.fn(async (forMember: string) => {
+      orphanCalls.push(`listMember:${forMember}`);
+      if (overrides.memberOrphans === 'throws') throw new Error('Neon: orphan list failed');
+      return (overrides.memberOrphans ?? []).map(orphanRef);
+    }),
+    listUnsettledAudienceOrphans: vi.fn(async (limit: number) => {
+      orphanCalls.push(`listAudiences:${limit}`);
+      if (overrides.audienceOrphans === 'throws') throw new Error('Neon: orphan list failed');
+      return (overrides.audienceOrphans ?? []).map(orphanRef).slice(0, limit);
+    }),
+    settleOrphan: vi.fn(async (orphanId: string, outcome: string) => {
+      if (overrides.settleThrows === true) throw new Error('57P01');
+      settles.push([orphanId, outcome]);
+      return true;
+    }),
+  };
+  const deleteAudience = vi.fn(async (id: string) => {
+    orphanCalls.push(`deleteAudience:${id}`);
+    if (overrides.deleteAudienceThrows?.includes(id) === true) throw { kind: 'retryable', subKind: 'timeout', reason: 'aborted' };
+  });
   return {
     broadcastsRepo,
     audit,
     clock,
-    broadcastsGateway,
+    broadcastsGateway: { ...broadcastsGateway, deleteAudience },
     pauseBeforeReprobe,
+    orphans,
+    orphanCalls,
+    settles,
     txOutcomes,
     calls,
   } as never;
+}
+
+/** Spec 140 s2c — an orphan row as the fake repo answers it. */
+interface OrphanFixture {
+  readonly orphanId: string;
+  readonly broadcastId: string;
+  readonly resourceId: string;
+  readonly resourceType?: 'broadcast' | 'audience';
+  readonly outcome?: 'deleted' | 'absent' | 'retained' | 'handed' | null;
+}
+
+function orphanRef(o: OrphanFixture) {
+  return {
+    orphanId: o.orphanId,
+    broadcastId: o.broadcastId,
+    requestedByMemberId: memberId as string,
+    resourceType: o.resourceType ?? 'broadcast',
+    resourceId: o.resourceId,
+    reason: o.resourceType === 'audience' ? 'audience_leaked' : 'attach_lost',
+    createdAt: new Date('2026-05-02T00:00:00Z'),
+    outcome: o.outcome ?? null,
+  };
 }
 
 describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
@@ -1173,6 +1232,146 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       expect(result).toEqual(value({}));
       expect(deps.broadcastsRepo.listTerminalWithResendIdOwnedByMember).not.toHaveBeenCalled();
       expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Spec 140 s2c (DL10) — the erasure also settles the member's known-id
+   * orphan rows at Resend [P H-1 for the tenant's audiences]. The member's
+   * broadcast orphans count into the existing `resendDraftsCleared` /
+   * `resendCopiesRetained`; a handed one is already-sent evidence keyed on the
+   * row's snapshot `broadcast_id`, counted without writing an evidence row
+   * [P M-2]; settled rows are counted again on a re-drive with no Resend call
+   * [A6a]; an id the terminal pass already counted is not counted twice. The
+   * tenant's audience orphans are deleted and NOT counted [P L-1]. Anything
+   * undecided withholds `member_erased` (`unexpectedErrorCount`).
+   */
+  describe('spec 140 s2c — the erasure settles the member\'s orphans and the tenant\'s leaked audiences', () => {
+    const erasureInput = { tenant, memberId, requestId: 'req-1', onDispatchBegun: 'delete_then_cancel' as const };
+    type Seen = {
+      calls: string[];
+      orphanCalls: string[];
+      settles: Array<[string, string]>;
+      audit: { emit: ReturnType<typeof vi.fn> };
+      orphans: { listMemberOrphans: ReturnType<typeof vi.fn>; listUnsettledAudienceOrphans: ReturnType<typeof vi.fn> };
+      broadcastsGateway: { deleteBroadcastOnce: ReturnType<typeof vi.fn>; retrieveBroadcastOnce: ReturnType<typeof vi.fn> };
+    };
+    const value = (v: Partial<Record<string, number>>) => ({
+      ok: true,
+      value: {
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        unexpectedErrorCount: 0,
+        alreadySentCount: 0,
+        resendDraftsCleared: 0,
+        resendCopiesRetained: 0,
+        deferredCount: 0,
+        ...v,
+      },
+    });
+    const o1 = { orphanId: 'o-1', broadcastId: broadcastIdA, resourceId: 'rb-orphan-1' };
+    const o2 = { orphanId: 'o-2', broadcastId: broadcastIdB, resourceId: 'rb-orphan-2' };
+    const aud = { orphanId: 'o-aud', broadcastId: broadcastIdB, resourceId: 'aud-leaked', resourceType: 'audience' as const };
+
+    it.each([
+      ['deleted', undefined, 'deleted', { resendDraftsCleared: 1 }],
+      ['absent', undefined, 'absent', { resendDraftsCleared: 1 }],
+      ['forbidden', 'cancelled', 'retained', { resendCopiesRetained: 1 }],
+      ['forbidden', 'failed', 'retained', { resendCopiesRetained: 1 }],
+    ] as const)('a member broadcast orphan: DELETE %s (GET %s) settles %s and counts into the draft fields', async (deleteOutcome, probe, outcome, counts) => {
+      const deps = makeDeps({ memberOrphans: [o1], deleteOutcome, ...(probe === undefined ? {} : { probe }) }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value(counts));
+      expect(deps.settles).toEqual([['o-1', outcome]]);
+      expect(deps.orphans.listMemberOrphans).toHaveBeenCalledWith(memberId);
+    });
+
+    it('[P M-2] a handed member orphan settles handed and counts as already sent, keyed on its broadcast_id, with NO evidence row written', async () => {
+      const deps = makeDeps({ memberOrphans: [o1], deleteOutcome: 'forbidden', probe: 'sent' }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value({ alreadySentCount: 1 }));
+      expect(deps.settles).toEqual([['o-1', 'handed']]);
+      expect(deps.audit.emit).not.toHaveBeenCalled();
+    });
+
+    it('[P M-2] a handed orphan of a broadcast that already has evidence, or two of one broadcast, count once', async () => {
+      const twin = { orphanId: 'o-1b', broadcastId: broadcastIdA, resourceId: 'rb-orphan-1b', outcome: 'handed' as const };
+      const deps = makeDeps({
+        memberOrphans: [{ ...o1, outcome: 'handed' }, twin, { ...o2, outcome: 'handed' }],
+        alreadySentEvidence: [broadcastIdB],
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      // B is in the evidence (1); A is not, and its two handed orphans add 1.
+      expect(result).toEqual(value({ alreadySentCount: 2 }));
+    });
+
+    it('[A6a] a re-drive counts the settled rows again with no Resend call', async () => {
+      const deps = makeDeps({
+        memberOrphans: [{ ...o1, outcome: 'deleted' }, { ...o2, outcome: 'retained' }],
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value({ resendDraftsCleared: 1, resendCopiesRetained: 1 }));
+      expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
+      expect(deps.settles).toEqual([]);
+    });
+
+    it('an orphan whose id a terminal row holds is settled but not counted twice', async () => {
+      const terminal = { broadcastId: broadcastIdA, status: 'failed_to_dispatch', resendBroadcastId: 'rb-orphan-1' };
+      const deps = makeDeps({ terminalRows: [terminal], memberOrphans: [o1] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value({ resendDraftsCleared: 1 }));
+      expect(deps.settles).toEqual([['o-1', 'deleted']]);
+    });
+
+    it.each([
+      ['an undecided DELETE', { memberOrphans: [o1], deleteOutcome: 'retryable' as const }],
+      ['a settle CAS that throws', { memberOrphans: [o1], settleThrows: true }],
+      ['a member orphan list that fails', { memberOrphans: 'throws' as const }],
+    ])('%s withholds member_erased (unexpectedErrorCount)', async (_label, opts) => {
+      const deps = makeDeps(opts) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, resendDraftsCleared: 0 } });
+    });
+
+    it('[P H-1] the tenant\'s unsettled audience orphans are deleted and settled, and NOT counted into the draft fields', async () => {
+      const deps = makeDeps({ audienceOrphans: [aud] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value({}));
+      expect(deps.orphanCalls).toContain('deleteAudience:aud-leaked');
+      expect(deps.settles).toEqual([['o-aud', 'deleted']]);
+    });
+
+    it.each([
+      ['a delete that throws', { audienceOrphans: [aud], deleteAudienceThrows: ['aud-leaked'] }],
+      ['an audience list that fails', { audienceOrphans: 'throws' as const }],
+    ])('[P H-1] %s on an audience orphan withholds member_erased', async (_label, opts) => {
+      const deps = makeDeps(opts) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1 } });
+    });
+
+    it(`[P H-1] more audience orphans than ERASURE_AUDIENCE_ORPHAN_LIMIT: the rest are deferred and withhold member_erased`, async () => {
+      const many = Array.from({ length: ERASURE_AUDIENCE_ORPHAN_LIMIT + 1 }, (_, i) => ({ ...aud, orphanId: `o-aud-${i}`, resourceId: `aud-${i}` }));
+      const deps = makeDeps({ audienceOrphans: many }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(deps.orphans.listUnsettledAudienceOrphans).toHaveBeenCalledWith(ERASURE_AUDIENCE_ORPHAN_LIMIT + 1);
+      expect(deps.settles).toHaveLength(ERASURE_AUDIENCE_ORPHAN_LIMIT);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, deferredCount: 1 } });
+    });
+
+    it('past the caller\'s deadline an unsettled orphan is deferred (no Resend call) and withholds member_erased', async () => {
+      const deps = makeDeps({ memberOrphans: [o1, { ...o2, outcome: 'deleted' }], audienceOrphans: [aud] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, { ...erasureInput, deadlineAt: new Date('2026-05-02T00:00:00Z') });
+      // The settled row is still counted; the two unsettled ones are deferred.
+      expect(result).toEqual(value({ resendDraftsCleared: 1, unexpectedErrorCount: 2, deferredCount: 2 }));
+      expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
+      expect(deps.orphanCalls.filter((c) => c.startsWith('deleteAudience'))).toEqual([]);
+    });
+
+    it('the archive mode reads no orphan', async () => {
+      const deps = makeDeps({ memberOrphans: [o1], audienceOrphans: [aud] }) as unknown as Seen;
+      await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
+      expect(deps.orphanCalls).toEqual([]);
     });
   });
 });

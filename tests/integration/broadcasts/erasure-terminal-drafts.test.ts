@@ -43,6 +43,7 @@ import {
   terminalDraftsForMemberQuery,
 } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { broadcasts, type NewBroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
+import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 
 type ResendState = 'draft' | 'canceled' | 'queued' | 'deleted';
@@ -55,6 +56,8 @@ function fakeResend(opts: { retryableDeletes?: number } = {}) {
   const state = new Map<string, ResendState>();
   const deletes: string[] = [];
   const probes: string[] = [];
+  /** Spec 140 s2c — audiences the erasure's leaked-audience pass deleted. */
+  const audienceDeletes: string[] = [];
   let retryable = opts.retryableDeletes ?? 0;
   const port = {
     async deleteBroadcastOnce(id: string) {
@@ -76,8 +79,11 @@ function fakeResend(opts: { retryableDeletes?: number } = {}) {
       // The reader maps Resend's one-L `canceled` to our `cancelled`.
       return { kind: 'present' as const, status: s === 'canceled' ? ('cancelled' as const) : s };
     },
-  } satisfies Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce' | 'retrieveBroadcastOnce'>;
-  return { port, state, deletes, probes };
+    async deleteAudience(id: string) {
+      audienceDeletes.push(id);
+    },
+  } satisfies Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce' | 'retrieveBroadcastOnce' | 'deleteAudience'>;
+  return { port, state, deletes, probes, audienceDeletes };
 }
 
 describe('spec 140 s1 — the erasure cascade deletes the drafts its terminal rows point to (live Neon)', () => {
@@ -299,5 +305,66 @@ describe('spec 140 s1 — the erasure cascade deletes the drafts its terminal ro
     expect(thrown).toBeInstanceOf(BroadcastConcurrentMutationError);
     expect((thrown as BroadcastConcurrentMutationError).observedStatus).toBe('cancelled');
     expect(await readRow(tenantA, broadcastId)).toMatchObject({ status: 'cancelled', resendBroadcastId: null, resendAudienceId: null });
+  });
+
+  /**
+   * Spec 140 s2c (DL10) — the erasure also settles the member's known-id
+   * orphan rows, and the tenant's leaked audiences [P H-1], through the real
+   * orphan repo. The member's cleared orphan counts into
+   * `resendDraftsCleared`; a handed one counts into `alreadySentCount`, keyed
+   * on its snapshot broadcast id, with NO evidence row [P M-2]; the audience
+   * is deleted and not counted. A re-drive reports the same numbers and makes
+   * no second Resend call [A6a]. Tenant B's leaked audience is untouched.
+   */
+  it('DL10 — the erasure settles the member orphans and the tenant leaked audience; a re-drive is stable', async () => {
+    const memberId = randomUUID();
+    const resend = fakeResend();
+    const draft = `rb-dl10-${randomUUID()}`;
+    const handed = `rb-dl10-h-${randomUUID()}`;
+    resend.state.set(draft, 'draft');
+    resend.state.set(handed, 'queued');
+    const orphansA = makeDrizzleBroadcastOrphansRepo(tenantA.ctx.slug);
+    const orphansB = makeDrizzleBroadcastOrphansRepo(tenantB.ctx.slug);
+    const handedBroadcastId = randomUUID();
+    await orphansA.recordOrphanedResendId({ broadcastId: randomUUID(), requestedByMemberId: memberId, resourceType: 'broadcast', resourceId: draft, reason: 'attach_lost' });
+    await orphansA.recordOrphanedResendId({ broadcastId: handedBroadcastId, requestedByMemberId: memberId, resourceType: 'broadcast', resourceId: handed, reason: 'persist_failed' });
+    const audA = `aud-dl10-${randomUUID()}`;
+    const audB = `aud-dl10-b-${randomUUID()}`;
+    await orphansA.recordOrphanedResendId({ broadcastId: randomUUID(), requestedByMemberId: randomUUID(), resourceType: 'audience', resourceId: audA, reason: 'audience_leaked' });
+    await orphansB.recordOrphanedResendId({ broadcastId: randomUUID(), requestedByMemberId: memberId, resourceType: 'audience', resourceId: audB, reason: 'audience_leaked' });
+
+    const first = await eraseCascade(tenantA, memberId, resend.port);
+    const again = await eraseCascade(tenantA, memberId, resend.port);
+
+    for (const result of [first, again]) {
+      expect(result).toEqual({
+        ok: true,
+        value: {
+          cancelledCount: 0,
+          skippedConcurrentCount: 0,
+          unexpectedErrorCount: 0,
+          alreadySentCount: 1,
+          resendDraftsCleared: 1,
+          resendCopiesRetained: 0,
+          deferredCount: 0,
+        },
+      });
+    }
+    // One DELETE per orphan, on the first run only; one GET for the 403.
+    expect(resend.deletes.sort()).toEqual([draft, handed].sort());
+    expect(resend.probes).toEqual([handed]);
+    expect(resend.audienceDeletes).toEqual([audA]);
+    const settled = (await orphansA.listMemberOrphans(memberId)).map((o) => [o.resourceId, o.outcome]);
+    expect(settled.sort()).toEqual([[draft, 'deleted'], [handed, 'handed']].sort());
+    // [P M-2] no evidence row was written for the handed orphan's broadcast.
+    const evidence = (await db.execute(sql`
+      SELECT 1 FROM audit_log
+       WHERE tenant_id = ${tenantA.ctx.slug}
+         AND event_type = 'broadcast_concurrent_action_blocked'
+         AND payload->>'broadcastId' = ${handedBroadcastId}
+    `)) as unknown as unknown[];
+    expect(evidence).toEqual([]);
+    // Tenant B's leaked audience is untouched and still unsettled.
+    expect((await orphansB.listUnsettledAudienceOrphans(50)).map((o) => o.resourceId)).toContain(audB);
   });
 });
