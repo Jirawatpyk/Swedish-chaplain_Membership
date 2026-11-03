@@ -39,7 +39,9 @@ type CreditNoteFormError =
   // #61 — no trustworthy answer: the note commits before `requestMembershipEnd`
   // runs, so a drop, the timeout or a 5xx naming no refusal may come after a
   // §86/10 note was minted.
-  | { readonly kind: 'unconfirmed' }
+  // `amount` names the attempt's credit; `refusal` is what refused a retry
+  // made before the key lookup (the attempt stays open, #728 review).
+  | { readonly kind: 'unconfirmed'; readonly amount: string; readonly refusal?: string }
   // The READ_ONLY_MODE freeze refused it: nothing was written.
   | { readonly kind: 'readOnly' }
   | { readonly kind: 'failure'; readonly message: string };
@@ -54,6 +56,72 @@ const CREDIT_NOTE_ERROR_TONE = {
 
 /** F-2 (2026-07-08) — membership-effect intent, mirrors the use-case's enum. */
 type MembershipEffect = 'keep' | 'cancel_membership';
+
+/** #66 — the request one issue attempt sends, every time, under its key. */
+type AttemptRequest = {
+  readonly invoiceId: string;
+  readonly creditTotalSatang: string;
+  readonly reason: string;
+  readonly membershipEffect?: MembershipEffect;
+  readonly onlinePaymentRefundAcknowledged?: true;
+  readonly idempotencyKey: string;
+};
+type Attempt = { readonly key: string; readonly body: string; readonly request: AttemptRequest };
+
+/**
+ * #728 review — after an unknown outcome, only these refusals end the attempt:
+ * the use case makes them under the invoice lock, after the key lookup missed,
+ * so no note exists under the key. `invoice_not_found` can come before the
+ * lookup, but a note's invoice is its RESTRICT FK parent: no invoice, no note. Anything else (a rate limit, the session,
+ * the write freeze, the pre-tx refund guards, a 5xx) keeps the key and the lock.
+ */
+const ENDS_ATTEMPT_AFTER_UNKNOWN: ReadonlySet<string> = new Set([
+  'invalid_status',
+  'credit_exceeds_remainder',
+  'concurrent_state_change',
+  'receipt_not_creditable',
+  'receipt_not_rendered',
+  'membership_effect_required',
+  'invoice_not_found',
+  'no_snapshot_on_invoice',
+  'invalid_event_invoice',
+  'settings_missing',
+  'overflow',
+]);
+
+/** The stored attempt for this invoice, or null (a malformed one is dropped). */
+function readStoredAttempt(storageKey: string, invoiceId: string): Attempt | null {
+  let raw: string | null;
+  try {
+    raw = window.sessionStorage.getItem(storageKey);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { key?: unknown; body?: unknown };
+    if (typeof parsed.key === 'string' && typeof parsed.body === 'string') {
+      const request = JSON.parse(parsed.body) as Partial<AttemptRequest>;
+      if (
+        request.idempotencyKey === parsed.key &&
+        request.invoiceId === invoiceId &&
+        typeof request.creditTotalSatang === 'string' &&
+        /^[1-9]\d*$/.test(request.creditTotalSatang) &&
+        typeof request.reason === 'string'
+      ) {
+        return { key: parsed.key, body: parsed.body, request: request as AttemptRequest };
+      }
+    }
+  } catch {
+    // Malformed: dropped below.
+  }
+  try {
+    window.sessionStorage.removeItem(storageKey);
+  } catch {
+    // Nothing to drop.
+  }
+  return null;
+}
 
 /**
  * How the invoice was paid: an online F5 payment (`card` / `promptpay`) or a
@@ -130,14 +198,17 @@ export function CreditNoteForm({
   // INLINE via a focused role="alert" so the admin cannot miss it. A concurrent
   // 409 is shown as an inline "already credited/voided — refresh".
   const [formError, setFormError] = useState<CreditNoteFormError | null>(null);
-  // #61 — an admin credit note is NOT idempotent (only a refund-origin one is,
-  // by `source_refund_id`): after an unknown outcome a partial retry passes the
-  // remainder check and mints a SECOND §86/10 note. So the submit stays locked
-  // until this form is left or reloaded; the alert's action opens the invoice,
-  // which lists its credit notes.
+  // Bumped on every unconfirmed answer: the alert is keyed on it, so a retry
+  // that comes back unconfirmed again is announced again and takes focus.
+  const [alertSeq, setAlertSeq] = useState(0);
+  // #61 / #66 — after an unknown outcome the attempt is locked: every field is
+  // read-only and the submit disabled, so no DIFFERENT request goes out under
+  // the attempt's idempotency key; the alert offers "Try again" (the same
+  // request, the same key: the server answers with the note already issued,
+  // if any) and "Open invoice".
   const [outcomeUnknown, setOutcomeUnknown] = useState(false);
-  // An offline action waits for the connection (#48).
-  const [waitingForConnection, setWaitingForConnection] = useState(false);
+  // An offline action waits for the connection (#48); one of the two at a time.
+  const [waitingFor, setWaitingFor] = useState<'open' | 'retry' | null>(null);
   // Set before the POST, synchronously: `pending` flips only on the next
   // render, so a second submit in the same tick would otherwise mint twice.
   const inFlightRef = useRef(false);
@@ -172,7 +243,11 @@ export function CreditNoteForm({
   // `exceedsRemainder` check above already blocks anything greater).
   // Mirrors the use-case's own `isFullCredit` derivation server-side.
   const isFullCredit = proposedSatang !== null && proposedSatang === remainingBi;
-  const showMembershipEffect = invoiceSubject === 'membership' && isFullCredit;
+  // #728 round 2 (UX M-B) — a locked attempt shows the choice it carries even
+  // when the remainder read after a reload no longer makes it a full credit.
+  const [attemptEffect, setAttemptEffect] = useState<MembershipEffect | null>(null);
+  const showMembershipEffect =
+    invoiceSubject === 'membership' && (isFullCredit || (outcomeUnknown && attemptEffect !== null));
   // Any amount, not just a full credit: a partial CN of X makes X of the
   // online payment unrefundable the same way.
   const requiresOnlineAck = onlineRefundState !== 'none';
@@ -184,13 +259,92 @@ export function CreditNoteForm({
     !outcomeUnknown &&
     !pending;
 
-  const submit = useCallback(() => {
-    if (!canSubmit || proposedSatang === null || inFlightRef.current) return;
-    setFormError(null);
+  // #66 — one issue attempt: its idempotency key and the exact request sent
+  // under it, kept in sessionStorage (written before each POST) until the
+  // server gives a definite answer. A reload restores it locked, so "Try
+  // again" resends the same request — never a new amount under an old key.
+  // Storage can be unavailable (private mode, blocked site data): the
+  // in-memory copy still covers retries on this page.
+  const attemptRef = useRef<Attempt | null>(null);
+  // Sticky per attempt: an outcome was unknown at least once, so a note may
+  // exist under the key and only a refusal made after the key lookup ends it.
+  const unknownRef = useRef(false);
+  const storageKey = `cn-attempt:${invoiceId}`;
+  const saveAttempt = useCallback(
+    (attempt: Attempt) => {
+      attemptRef.current = attempt;
+      try {
+        window.sessionStorage.setItem(storageKey, JSON.stringify({ key: attempt.key, body: attempt.body }));
+      } catch {
+        // In-memory only.
+      }
+    },
+    [storageKey],
+  );
+  const endAttempt = useCallback(() => {
+    attemptRef.current = null;
+    unknownRef.current = false;
+    try {
+      window.sessionStorage.removeItem(storageKey);
+    } catch {
+      // Nothing stored.
+    }
+  }, [storageKey]);
+
+  const formatAmount = useCallback(
+    (attempt: Attempt) => formatSatangThb(BigInt(attempt.request.creditTotalSatang), locale, currencySymbol),
+    [locale, currencySymbol],
+  );
+  const failureText = useCallback(
+    (failure: CreditNoteFormError): string =>
+      failure.kind === 'concurrent'
+        ? t('errors.concurrent')
+        : failure.kind === 'readOnly'
+          ? `${tErrors('readOnlyMode')} ${tErrors('readOnlyNothingChanged')}`
+          : failure.kind === 'failure'
+            ? failure.message
+            : '',
+    [t, tErrors],
+  );
+  const markUnknown = useCallback(
+    (attempt: Attempt, refusal?: string) => {
+      unknownRef.current = true;
+      setOutcomeUnknown(true);
+      setAttemptEffect(attempt.request.membershipEffect ?? null);
+      setFormError({ kind: 'unconfirmed', amount: formatAmount(attempt), ...(refusal ? { refusal } : {}) });
+      setAlertSeq((n) => n + 1);
+    },
+    [formatAmount],
+  );
+
+  // #66 — a stored attempt means an earlier page never heard a definite
+  // answer: restore it locked, with its values, so the admin finishes it.
+  useEffect(() => {
+    const stored = readStoredAttempt(storageKey, invoiceId);
+    if (!stored) return;
+    attemptRef.current = stored;
+    const { request } = stored;
+    const satang = BigInt(request.creditTotalSatang);
+    setAmountThb(`${satang / 100n}.${(satang % 100n).toString().padStart(2, '0')}`);
+    setReason(request.reason);
+    // The typed phrase is NOT restored (FR-040): if this attempt ends on a
+    // definite refusal, a new note still needs the admin to type it.
+    if (request.membershipEffect) setMembershipEffect(request.membershipEffect);
+    if (request.onlinePaymentRefundAcknowledged === true) setOnlineRefundAcknowledged(true);
+    markUnknown(stored);
+    // Mount only: the attempt is read once per page load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const post = useCallback((attempt: Attempt, { retry }: { readonly retry: boolean }) => {
+    if (inFlightRef.current) return;
+    // A retry keeps the alert on screen while it runs (#728 review, UX M1).
+    if (!retry) setFormError(null);
     // A navigation queued offline must not fire after this new attempt.
     cancelPendingRefresh();
-    setWaitingForConnection(false);
+    setWaitingFor(null);
     inFlightRef.current = true;
+    saveAttempt(attempt);
     startTransition(async () => {
       // Held after a success: the page navigates away.
       let issued = false;
@@ -200,39 +354,23 @@ export function CreditNoteForm({
           res = await fetch('/api/credit-notes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              invoiceId,
-              creditTotalSatang: proposedSatang.toString(),
-              reason: reason.trim(),
-              // F-2 — only sent when the radio is actually shown; partial
-              // credits and event invoices never touch membership, so the
-              // field is omitted rather than sent-but-ignored.
-              ...(showMembershipEffect ? { membershipEffect } : {}),
-              ...(requiresOnlineAck && onlineRefundAcknowledged
-                ? { onlinePaymentRefundAcknowledged: true }
-                : {}),
-            }),
+            body: attempt.body,
             signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
           });
         } catch {
-          // #61 — no response (a drop or the timeout): the note may have been
-          // minted. Lock the submit; a retry could mint a second one.
-          setOutcomeUnknown(true);
-          setFormError({ kind: 'unconfirmed' });
+          // #61 / #66 — no response (a drop or the timeout): the note may have
+          // been issued. Keep the attempt; "Try again" resends it.
+          markUnknown(attempt);
           return;
         }
         if (!res.ok) {
           const body: unknown = await res.json().catch(() => ({}));
           // The write freeze refused it: nothing ran (its flat body names no code).
-          if (isReadOnlyRefusal(res.status, body)) {
-            setFormError({ kind: 'readOnly' });
-            return;
-          }
+          const readOnly = isReadOnlyRefusal(res.status, body);
           const problem = readProblemCode(body);
           // #61 — a 5xx naming no refusal may come after the note was minted.
-          if (isUnknownOutcome(res.status, problem)) {
-            setOutcomeUnknown(true);
-            setFormError({ kind: 'unconfirmed' });
+          if (!readOnly && isUnknownOutcome(res.status, problem)) {
+            markUnknown(attempt);
             return;
           }
           // Route codes are nested; a flat string is not one (read-only aside).
@@ -240,20 +378,36 @@ export function CreditNoteForm({
           // FR-032 — the credit-note mint is irreversible, so route the failure to
           // an INLINE focused role="alert" (the form stays put); a concurrent 409
           // (voided / fully-credited / remainder-shrank) shows the "already
-          // credited/voided — refresh" prompt. The §86/10 receipt_not_creditable
-          // guidance still resolves via routeCreditNoteError.
+          // credited/voided — open the invoice" prompt.
           const routing = routeCreditNoteError(code);
-          if (routing.kind === 'concurrent') {
-            setFormError({ kind: 'concurrent' });
-          } else {
-            const message =
-              routing.messageKey === 'errors.codeFallback' && routing.codeArg
-                ? t('errors.codeFallback', { code: routing.codeArg })
-                : t(routing.messageKey as 'errors.unknown');
-            setFormError({ kind: 'failure', message });
+          const failure: CreditNoteFormError = readOnly
+            ? { kind: 'readOnly' }
+            : routing.kind === 'concurrent'
+              ? { kind: 'concurrent' }
+              : {
+                  kind: 'failure',
+                  message:
+                    routing.messageKey === 'errors.codeFallback' && routing.codeArg
+                      ? t('errors.codeFallback', { code: routing.codeArg })
+                      : t(routing.messageKey as 'errors.unknown'),
+                };
+          // #728 review (Thai-tax H-1) — after an unknown outcome, a refusal
+          // made BEFORE the key lookup (rate limit, session, the write
+          // freeze, the pre-tx refund guards) says nothing about the first
+          // attempt: keep the key and the lock, and say what refused this try.
+          if (unknownRef.current && (readOnly || code === undefined || !ENDS_ATTEMPT_AFTER_UNKNOWN.has(code))) {
+            // Named as this try's refusal, so "nothing was changed" is not read
+            // as "no note was issued" (UX L-4).
+            markUnknown(attempt, t('errors.retryRefused', { reason: failureText(failure) }));
+            return;
           }
+          // A definite answer for this attempt: no note under its key.
+          endAttempt();
+          setOutcomeUnknown(false);
+          setFormError(failure);
           return;
         }
+        endAttempt();
         // FR-032 — doc-specific success toast interpolating the freshly-minted
         // credit-note number (`document_number`, known only post-commit).
         // MEDIUM-5 — the email-delivery signal rides alongside: a
@@ -266,12 +420,21 @@ export function CreditNoteForm({
           document_number?: string | null;
           email_delivery?: string;
           membership_end?: string;
+          replayed?: boolean;
         };
         const cnNumber =
           typeof successBody.document_number === 'string' && successBody.document_number
             ? successBody.document_number
             : null;
-        const title = cnNumber ? t('successWithNumber', { number: cnNumber }) : t('success');
+        // #66 — a replay answered with the note an earlier attempt issued.
+        const title =
+          successBody.replayed === true
+            ? cnNumber
+              ? t('successAlreadyIssued', { number: cnNumber })
+              : t('successAlreadyIssuedNoNumber')
+            : cnNumber
+              ? t('successWithNumber', { number: cnNumber })
+              : t('success');
         const noticeParts: string[] = [];
         if (successBody.email_delivery === 'skipped_no_recipient') {
           noticeParts.push(t('emailSkippedNoRecipient'));
@@ -304,18 +467,43 @@ export function CreditNoteForm({
         if (!issued) inFlightRef.current = false;
       }
     });
+  }, [endAttempt, failureText, invoiceId, markUnknown, router, saveAttempt, t]);
+
+  const submit = useCallback(() => {
+    if (!canSubmit || proposedSatang === null) return;
+    const key = crypto.randomUUID();
+    const request: AttemptRequest = {
+      invoiceId,
+      creditTotalSatang: proposedSatang.toString(),
+      reason: reason.trim(),
+      // F-2 — only sent when the radio is actually shown; partial
+      // credits and event invoices never touch membership, so the
+      // field is omitted rather than sent-but-ignored.
+      ...(showMembershipEffect ? { membershipEffect } : {}),
+      ...(requiresOnlineAck && onlineRefundAcknowledged
+        ? { onlinePaymentRefundAcknowledged: true }
+        : {}),
+      // #66 — the attempt's key (kept until a definite answer).
+      idempotencyKey: key,
+    };
+    post({ key, body: JSON.stringify(request), request }, { retry: false });
   }, [
     canSubmit,
     proposedSatang,
     invoiceId,
     reason,
-    t,
-    router,
     showMembershipEffect,
     membershipEffect,
     requiresOnlineAck,
     onlineRefundAcknowledged,
+    post,
   ]);
+
+  // #66 — resend the unconfirmed attempt exactly (same key), so a note that was
+  // already issued comes back instead of a second one.
+  const retry = useCallback(() => {
+    if (attemptRef.current) post(attemptRef.current, { retry: true });
+  }, [post]);
 
   return (
     <form
@@ -335,6 +523,7 @@ export function CreditNoteForm({
         // The wrapper is the live region and takes focus; the AURA alert
         // inside only draws it (`role="none"`, so it is announced once).
         <div
+          key={alertSeq}
           ref={errorRef}
           tabIndex={-1}
           role="alert"
@@ -347,14 +536,39 @@ export function CreditNoteForm({
             tone={CREDIT_NOTE_ERROR_TONE[formError.kind].alert}
             action={
               formError.kind === 'concurrent' || formError.kind === 'unconfirmed' ? (
+                <div className="flex flex-wrap gap-[var(--aura-space-2)]">
+                {/* #66 — the attempt carries an idempotency key, so resending it
+                    cannot issue a second note: the server answers with the
+                    one already issued, if any. */}
+                {formError.kind === 'unconfirmed' && (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    touchHeight
+                    // aria-disabled, not disabled: the button keeps focus while
+                    // the retry runs (#728 review, UX M1).
+                    loading={pending}
+                    aria-disabled={pending || waitingFor !== null || undefined}
+                    onClick={() => {
+                      if (pending || waitingFor !== null) return;
+                      // Offline, the POST would fail at once and read as
+                      // unconfirmed again: wait for the connection (UX M3).
+                      const outcome = refreshWhenOnline({ refresh: retry }, () => setWaitingFor(null));
+                      if (outcome === 'waiting') setWaitingFor('retry');
+                    }}
+                  >
+                    {waitingFor === 'retry' ? t('errors.waitingForConnection') : t('errors.retryAction')}
+                  </Button>
+                )}
                 <Button
                   type="button"
                   variant="secondary"
                   size="sm"
                   touchHeight
-                  aria-disabled={waitingForConnection || undefined}
+                  aria-disabled={waitingFor !== null || undefined}
                   onClick={() => {
-                    if (waitingForConnection) return;
+                    if (waitingFor !== null) return;
                     // Go to the invoice: it lists the notes, and this page
                     // answers notFound() for a fully credited or voided
                     // invoice, so a refresh could land on a 404 (#727
@@ -363,23 +577,27 @@ export function CreditNoteForm({
                     // page stays mounted, so the wait clears when it runs.
                     const outcome = refreshWhenOnline(
                       { refresh: () => router.push(`/admin/invoices/${invoiceId}`) },
-                      () => setWaitingForConnection(false),
+                      () => setWaitingFor(null),
                     );
-                    if (outcome === 'waiting') setWaitingForConnection(true);
+                    if (outcome === 'waiting') setWaitingFor('open');
                   }}
                 >
-                  {waitingForConnection ? t('errors.waitingForConnection') : t('errors.openInvoiceAction')}
+                  {waitingFor === 'open' ? t('errors.waitingForConnection') : t('errors.openInvoiceAction')}
                 </Button>
+                </div>
               ) : undefined
             }
           >
             {formError.kind === 'concurrent'
               ? t('errors.concurrent')
               : formError.kind === 'unconfirmed'
-                ? t('errors.unconfirmed')
-                : formError.kind === 'readOnly'
-                  ? `${tErrors('readOnlyMode')} ${tErrors('readOnlyNothingChanged')}`
-                  : formError.message}
+                ? (
+                    <div className="flex flex-col gap-[var(--aura-space-2)]">
+                      {formError.refusal && <p>{formError.refusal}</p>}
+                      <p>{t('errors.unconfirmed', { amount: formError.amount })}</p>
+                    </div>
+                  )
+                : failureText(formError)}
           </Alert>
         </div>
       )}
@@ -387,7 +605,7 @@ export function CreditNoteForm({
           once, outside the alert region; visible too, so nobody closes the
           tab during a long wait. */}
       <div role="status" aria-live="polite" className="min-h-5 text-sm text-[var(--aura-fg-secondary)]">
-        {waitingForConnection
+        {waitingFor !== null
           ? t('errors.waitingForConnection')
           : stillWorking
             ? t('errors.stillWorking')
@@ -436,6 +654,7 @@ export function CreditNoteForm({
                 </Link>
                 <Checkbox
                   checked={onlineRefundAcknowledged}
+                  disabled={outcomeUnknown}
                   onChange={(checked: boolean) => setOnlineRefundAcknowledged(checked)}
                 >
                   {t('onlinePayment.acknowledge')}
@@ -454,15 +673,18 @@ export function CreditNoteForm({
               step="0.01"
               min="0"
               value={amountThb}
+              readOnly={outcomeUnknown}
               onChange={(e) => setAmountThb(e.target.value)}
               suffix={currencySymbol}
               aria-describedby="cn-amount-help"
-              aria-invalid={exceedsRemainder || (amountThb.length > 0 && !amountValid)}
+              // A locked attempt's amount is not an input error: after a reload
+              // the remainder may already reflect the note it issued (UX M-A).
+              aria-invalid={!outcomeUnknown && (exceedsRemainder || (amountThb.length > 0 && !amountValid))}
             />
             <p id="cn-amount-help" className="text-xs text-[var(--aura-fg-secondary)]">
               {t('amountHelp')}
             </p>
-            {exceedsRemainder && (
+            {exceedsRemainder && !outcomeUnknown && (
               <p role="alert" className="text-xs text-[var(--aura-fg-danger)]">
                 {t('exceedsRemainder', {
                   remaining: formatRemaining(remainingSatang, locale, currencySymbol),
@@ -488,6 +710,7 @@ export function CreditNoteForm({
                 label={t('membershipEffect.legend')}
                 name="cn-membership-effect"
                 value={membershipEffect}
+                disabled={outcomeUnknown}
                 onChange={(v) => setMembershipEffect(v === 'cancel_membership' ? 'cancel_membership' : 'keep')}
                 options={[
                   // Option 1b — 'keep' is a paperwork correction where the member
@@ -511,6 +734,7 @@ export function CreditNoteForm({
               label={t('reasonLabel')}
               required
               value={reason}
+              readOnly={outcomeUnknown}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
               maxLength={500}
@@ -528,6 +752,7 @@ export function CreditNoteForm({
               id="cn-confirm"
               label={t('confirmCopy', { phrase: confirmPhrase })}
               value={typed}
+              readOnly={outcomeUnknown}
               onChange={(e) => setTyped(e.target.value)}
               placeholder={confirmPhrase}
               autoComplete="off"
@@ -566,14 +791,14 @@ export function CreditNoteForm({
           {pending ? t('submitting') : t('submit')}
         </Button>
       </div>
-      {/* A disabled button can't take focus, so say why it is disabled. The
-          #61 lock comes first: acknowledging would not unlock it. */}
-      {outcomeUnknown ? (
-        <p className="-mt-4 text-end text-xs text-[var(--aura-fg-secondary)]" data-testid="cn-locked-hint">
-          {t('errors.submitLockedHint')}
+      {/* A disabled button can't take focus, so say why it is disabled. */}
+      {outcomeUnknown && (
+        <p className="-mt-4 text-end text-xs text-[var(--aura-fg-secondary)] max-sm:text-start" data-testid="cn-locked-hint">
+          {t('submitLockedHint')}
         </p>
-      ) : requiresOnlineAck && !onlineRefundAcknowledged && (
-        <p className="-mt-4 text-end text-xs text-[var(--aura-fg-secondary)]" data-testid="cn-ack-required-hint">
+      )}
+      {requiresOnlineAck && !onlineRefundAcknowledged && !outcomeUnknown && (
+        <p className="-mt-4 text-end text-xs text-[var(--aura-fg-secondary)] max-sm:text-start" data-testid="cn-ack-required-hint">
           {t('onlinePayment.ackRequiredHint')}
         </p>
       )}

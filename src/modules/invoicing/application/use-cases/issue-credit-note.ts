@@ -172,6 +172,14 @@ export const issueCreditNoteSchema = z.object({
    * refundable.
    */
   onlinePaymentRefundAcknowledged: z.boolean().optional(),
+  /**
+   * #66 — one uuid per ADMIN issue attempt (the form keeps it until a definite
+   * answer). A repeat with the same key returns the note already issued — no
+   * second §86/10 note, no second §87 number. Stored on the row (mig 0323,
+   * partial UNIQUE per tenant). Never sent with `sourceRefundId` (a
+   * refund-origin note is idempotent by its refund).
+   */
+  idempotencyKey: z.string().uuid().optional(),
 });
 
 export type IssueCreditNoteInput = z.infer<typeof issueCreditNoteSchema>;
@@ -216,6 +224,11 @@ export interface IssueCreditNoteSuccess {
    * `cancelInFlightCyclesForMember` after this transaction commits.
    */
   readonly membershipCancellationRequested: boolean;
+  /**
+   * #66 — `true` when this call answered with a note an earlier call already
+   * issued (same idempotency key or same refund): nothing new was created.
+   */
+  readonly replayed: boolean;
 }
 
 export type IssueCreditNoteError =
@@ -313,6 +326,71 @@ class IssueCreditNoteInternalError extends TxAbort<IssueCreditNoteError> {
  */
 const SOURCE_REFUND_UNIQUE_CONSTRAINT = 'credit_notes_source_refund_id_uniq';
 
+/** #66 — the partial unique index (migration 0323) per admin issue attempt. */
+const IDEMPOTENCY_KEY_UNIQUE_CONSTRAINT = 'credit_notes_tenant_idempotency_key_uniq';
+
+/**
+ * #66 — the admin twin of `CreditNoteRefundRaceError`: the CN insert lost a
+ * concurrent race on the idempotency-key index (23505). Same handling: roll
+ * back (the §87 number returns to the pool), then reconcile the winner by key
+ * in a fresh tx.
+ */
+class CreditNoteKeyRaceError extends Error {
+  override readonly name = 'CreditNoteKeyRaceError';
+  constructor(readonly idempotencyKey: string) {
+    super('credit-note idempotency_key unique race — reconcile in a fresh tx');
+  }
+}
+
+/**
+ * #66 — a key hit answers THIS request only when it is the same credit: the
+ * invoice, the amount, the reason (stored trimmed) and the membership choice
+ * (#728 review: a different reason or effect under one key is a client bug,
+ * not a repeat).
+ */
+function keyHitMatches(
+  existing: CreditNote,
+  invoiceId: InvoiceId,
+  input: Pick<IssueCreditNoteInput, 'creditTotalSatang' | 'reason' | 'membershipEffect'>,
+): boolean {
+  return (
+    existing.originalInvoiceId === invoiceId &&
+    existing.total.satang === input.creditTotalSatang &&
+    existing.reason === input.reason.trim() &&
+    // A stored null: the effect had no part in that note (only a full credit
+    // of a membership invoice stores one), so any request matches it (#728
+    // round 2, financial LOW-1). A stored effect must be resent as is.
+    (existing.membershipEffect == null || existing.membershipEffect === input.membershipEffect)
+  );
+}
+
+/**
+ * #67 — the audit row a replayed admin issue attempt leaves: ids only, never
+ * the reason or any buyer data. Emitted in the tx that read the note.
+ */
+function replayAuditEvent(
+  input: IssueCreditNoteInput,
+  note: CreditNote,
+  idempotencyKey: string,
+  path: 'locked_read' | 'race_reconcile',
+) {
+  return {
+    tenantId: input.tenantId,
+    requestId: input.requestId ?? null,
+    eventType: 'credit_note_issue_replayed' as const,
+    actorUserId: input.actorUserId,
+    summary: `Credit note ${note.documentNumber.raw} request repeated; the existing note was returned`,
+    payload: {
+      credit_note_id: note.creditNoteId,
+      original_invoice_id: note.originalInvoiceId,
+      document_number: note.documentNumber.raw,
+      idempotency_key: idempotencyKey,
+      total_satang: note.total.satang.toString(),
+      path,
+    },
+  };
+}
+
 /**
  * CRITICAL-1 / RR-2 — thrown when the CN insert LOSES a concurrent race on the
  * `source_refund_id` partial unique index (23505). A winning racer already
@@ -381,8 +459,11 @@ export interface IssueCreditNoteDeps {
 
 export async function issueCreditNote(
   deps: IssueCreditNoteDeps,
-  input: IssueCreditNoteInput,
+  rawInput: IssueCreditNoteInput,
 ): Promise<Result<IssueCreditNoteSuccess, IssueCreditNoteError>> {
+  // The reason is normalised once (the route's schema trims it too), so what
+  // is stored, printed and audited is what a key replay compares against.
+  const input: IssueCreditNoteInput = { ...rawInput, reason: rawInput.reason.trim() };
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
   const creditNoteId = asCreditNoteId(randomUUID());
   const now = deps.clock.nowIso();
@@ -398,6 +479,18 @@ export async function issueCreditNote(
   // the tx is safe.
   const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
 
+  // #66 — a repeat of an admin attempt that already issued its note must be
+  // answered with that note, not refused by the guards below (a refund started
+  // since, or the online payment now refundable, would otherwise turn a replay
+  // into a refusal). Non-locking; the read under the invoice lock below is the
+  // authoritative one.
+  const keyHitBeforeTx =
+    input.idempotencyKey !== undefined && input.sourceRefundId === undefined
+      ? await deps.invoiceRepo.withTx((tx) =>
+          deps.creditNoteRepo.findByIdempotencyKey(tx, input.tenantId, input.idempotencyKey!),
+        )
+      : null;
+
   // 8A — refuse a MANUAL credit note while a refund is in flight on this
   // invoice (a non-locking count; see the port docstring). ABOVE the withTx on
   // purpose: `err()` inside `runInTenant` COMMITS, so a guard below the first
@@ -405,7 +498,7 @@ export async function issueCreditNote(
   // `sourceRefundId === undefined` — a refund-origin CN IS the refund's own
   // §86/10, so blocking it on its own pending row is nonsensical (and would
   // deadlock the refund it belongs to).
-  if (input.sourceRefundId === undefined) {
+  if (input.sourceRefundId === undefined && keyHitBeforeTx === null) {
     const pendingRefunds =
       await deps.pendingRefundGuard.countPendingRefundsForInvoice(
         input.tenantId,
@@ -425,7 +518,7 @@ export async function issueCreditNote(
   // acknowledged, so the audit row records what the staff overrode.
   let onlineRefundOverride: { readonly refundableSatang: string | null } | null =
     null;
-  if (input.sourceRefundId === undefined) {
+  if (input.sourceRefundId === undefined && keyHitBeforeTx === null) {
     const online =
       await deps.onlinePaymentRefundGuard.readRefundableOnlinePayment(
         input.tenantId,
@@ -528,7 +621,55 @@ export async function issueCreditNote(
             // Repeat is a pure read — no new email enqueued, no F8 cascade.
             emailDelivery: 'not_requested',
             membershipCancellationRequested: false,
+            replayed: true,
           });
+        }
+      }
+
+      // #66 — the admin twin: a repeat of an issue attempt (same idempotency
+      // key) returns the note it already issued, under the same lock and
+      // before the same status gate (a full credit leaves the invoice
+      // `credited`). A key that answers a DIFFERENT credit (another invoice or
+      // amount) is a client bug — refuse it typed, issue nothing.
+      if (input.idempotencyKey !== undefined && input.sourceRefundId === undefined) {
+        const existing = await deps.creditNoteRepo.findByIdempotencyKey(
+          tx,
+          input.tenantId,
+          input.idempotencyKey,
+        );
+        if (existing) {
+          if (!keyHitMatches(existing, invoiceId, input)) {
+            logger.warn(
+              {
+                tenantId: input.tenantId,
+                invoiceId,
+                existingCreditNoteId: existing.creditNoteId,
+                existingOriginalInvoiceId: existing.originalInvoiceId,
+              },
+              'issueCreditNote: idempotency key already answers a different credit — rejecting',
+            );
+            return err({ code: 'concurrent_state_change' });
+          }
+          // #67 — the replay leaves a trace (it commits with this tx).
+          await deps.audit.emit(tx, replayAuditEvent(input, existing, input.idempotencyKey, 'locked_read'));
+          return ok({
+            creditNote: existing,
+            emailDelivery: 'not_requested',
+            membershipCancellationRequested: false,
+            replayed: true,
+          });
+        }
+        // #728 review (financial L2) — the pre-read saw this key, so the
+        // manual guards above were skipped; the locked read no longer does.
+        // Issuing now would bypass them: issue nothing, and throw (a 5xx) —
+        // a definite refusal would end the client's attempt although a note
+        // was just seen under its key (/code-review).
+        if (keyHitBeforeTx !== null) {
+          logger.error(
+            { tenantId: input.tenantId, invoiceId },
+            'issueCreditNote: idempotency key seen before the lock but not under it — rolling back',
+          );
+          throw new Error('issueCreditNote: idempotency key seen before the lock but not under it');
         }
       }
 
@@ -1045,6 +1186,9 @@ export async function issueCreditNote(
           ...(input.sourceRefundId !== undefined
             ? { sourceRefundId: input.sourceRefundId }
             : {}),
+          ...(input.idempotencyKey !== undefined && input.sourceRefundId === undefined
+            ? { idempotencyKey: input.idempotencyKey }
+            : {}),
         });
       } catch (e) {
         // CRITICAL-1 (F5) — a LOST race on the `source_refund_id` partial
@@ -1060,6 +1204,13 @@ export async function issueCreditNote(
           isUniqueViolationOnConstraint(e, SOURCE_REFUND_UNIQUE_CONSTRAINT)
         ) {
           throw new CreditNoteRefundRaceError(input.sourceRefundId);
+        }
+        // #66 — the same race on the admin idempotency-key index.
+        if (
+          input.idempotencyKey !== undefined &&
+          isUniqueViolationOnConstraint(e, IDEMPOTENCY_KEY_UNIQUE_CONSTRAINT)
+        ) {
+          throw new CreditNoteKeyRaceError(input.idempotencyKey);
         }
         // Unique-constraint on (tenant, fiscal_year, sequence_number) is
         // prevented by the allocator FOR UPDATE lock; any insert error
@@ -1479,7 +1630,7 @@ export async function issueCreditNote(
         );
       }
 
-      return ok({ creditNote: cn, emailDelivery, membershipCancellationRequested });
+      return ok({ creditNote: cn, emailDelivery, membershipCancellationRequested, replayed: false });
     });
   } catch (e) {
     // CRITICAL-1 / RR-2 — the CN insert lost the `source_refund_id` unique
@@ -1521,6 +1672,7 @@ export async function issueCreditNote(
           creditNote: reconciled,
           emailDelivery: 'not_requested',
           membershipCancellationRequested: false,
+          replayed: true,
         });
       }
       // Extremely unlikely: the sibling vanished between the 23505 and the
@@ -1533,6 +1685,45 @@ export async function issueCreditNote(
           sourceRefundId: e.sourceRefundId,
         },
         'issueCreditNote: source_refund_id race but sibling CN absent on fresh-tx reconcile',
+      );
+      return err({ code: 'concurrent_state_change' });
+    }
+    // #66 — the same fresh-tx reconcile for the admin idempotency-key race.
+    if (e instanceof CreditNoteKeyRaceError) {
+      let reconciled: { readonly winner: CreditNote | null; readonly matches: boolean };
+      try {
+        // #67 — the matching winner is answered as a replay, and its audit
+        // row lands in the same fresh tx as the read.
+        reconciled = await deps.invoiceRepo.withTx(async (tx) => {
+          const found = await deps.creditNoteRepo.findByIdempotencyKey(tx, input.tenantId, e.idempotencyKey);
+          const matches = found !== null && keyHitMatches(found, invoiceId, input);
+          if (found && matches) {
+            await deps.audit.emit(tx, replayAuditEvent(input, found, e.idempotencyKey, 'race_reconcile'));
+          }
+          return { winner: found, matches };
+        });
+      } catch (reconcileErr) {
+        // The 23505 proves a note exists under this key: a definite refusal
+        // would end the client's attempt, so surface a 5xx (the form keeps the
+        // key and the lock) — /code-review on #728.
+        logger.error(
+          { err: reconcileErr, tenantId: input.tenantId, invoiceId: input.invoiceId },
+          'issueCreditNote: fresh-tx reconcile failed after an idempotency_key race — rethrowing',
+        );
+        throw reconcileErr;
+      }
+      const { winner, matches } = reconciled;
+      if (winner && matches) {
+        return ok({
+          creditNote: winner,
+          emailDelivery: 'not_requested',
+          membershipCancellationRequested: false,
+          replayed: true,
+        });
+      }
+      logger.error(
+        { tenantId: input.tenantId, invoiceId: input.invoiceId, winnerFound: winner !== null },
+        'issueCreditNote: idempotency_key race but no matching winner on fresh-tx reconcile',
       );
       return err({ code: 'concurrent_state_change' });
     }

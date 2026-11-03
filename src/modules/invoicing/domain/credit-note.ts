@@ -105,6 +105,14 @@ export interface CreditNote {
   readonly sourceRefundId: string | null;
 
   /**
+   * 0306 / F-2 — what staff chose for the membership on a FULL credit of a
+   * membership invoice (`membership_effect`); null on every other note.
+   * Optional: a note built in memory may omit it. #728 review — an idempotency
+   * key replays only the same choice.
+   */
+  readonly membershipEffect?: 'keep' | 'cancel_membership' | null;
+
+  /**
    * The receipt this note reduces and the document behind it, for display.
    * Populated by the repo's single-note read (joined from the original
    * invoice); absent on a note the issue path has just built in memory.

@@ -27,7 +27,7 @@
  * mock-deps pattern.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { issueCreditNote } from '@/modules/invoicing/application/use-cases/issue-credit-note';
+import { issueCreditNote, issueCreditNoteSchema } from '@/modules/invoicing/application/use-cases/issue-credit-note';
 import type { IssueCreditNoteDeps } from '@/modules/invoicing/application/use-cases/issue-credit-note';
 import {
   asInvoiceId,
@@ -1786,5 +1786,269 @@ describe('issueCreditNote — US6 credited annotation re-targets the tax receipt
     if (!r.ok) return;
     expect(r.value.creditNote.creditNoteId).toBe(sameCn.creditNoteId);
     expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+  });
+});
+
+// ── #66 — an admin credit note is issued once per idempotency key ──────────
+//
+// Only a refund-origin note was idempotent (source_refund_id). An admin note
+// had no key, so a retry after an unknown outcome (a dropped response, a 504)
+// passed the remainder check and minted a SECOND §86/10 note. The admin form
+// now sends one uuid per issue attempt (mig 0323 `idempotency_key`, partial
+// UNIQUE per tenant); a repeat answers with the note already issued.
+describe('issueCreditNote — #66 idempotency key (admin notes)', () => {
+  const KEY = '11111111-2222-4333-8444-555555555555';
+  const baseInput = {
+    tenantId: 'test-swecham',
+    actorUserId: 'actor-user',
+    requestId: 'req-cn-key',
+    invoiceId: INVOICE_ID,
+    creditTotalSatang: 1_070n,
+    reason: 'duplicate charge',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function existingCn(overrides: Partial<CreditNote> = {}): CreditNote {
+    return {
+      ...makeCreditNote(
+        Money.fromSatangUnsafe(1_000n),
+        Money.fromSatangUnsafe(70n),
+        Money.fromSatangUnsafe(1_070n),
+        null,
+      ),
+      originalInvoiceId: asInvoiceId(INVOICE_ID),
+      reason: baseInput.reason,
+      ...overrides,
+    };
+  }
+
+  function depsWithKeyHit(hit: CreditNote | null) {
+    const deps = makeDeps(makeIssuedEventInvoice(), makeSettings());
+    const findByIdempotencyKey = vi.fn(async () => hit);
+    (deps.creditNoteRepo as unknown as { findByIdempotencyKey: unknown }).findByIdempotencyKey =
+      findByIdempotencyKey;
+    return { deps, findByIdempotencyKey };
+  }
+
+  it('a repeat with the same key, invoice and amount returns the note already issued: replayed, no number, no PDF, no issue audit, no email', async () => {
+    const cn = existingCn();
+    const { deps, findByIdempotencyKey } = depsWithKeyHit(cn);
+    const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.creditNote.creditNoteId).toBe(cn.creditNoteId);
+    expect(r.value.replayed).toBe(true);
+    expect(r.value.emailDelivery).toBe('not_requested');
+    expect(r.value.membershipCancellationRequested).toBe(false);
+    expect(findByIdempotencyKey).toHaveBeenCalledWith(expect.anything(), 'test-swecham', KEY);
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+    // #67 — only the replay's own row, never a second credit_note_issued.
+    const types = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1].eventType);
+    expect(types).toEqual(['credit_note_issue_replayed']);
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  // #67 (Thai-tax M-2 on #728) — a replay answers a §86/10 request with the
+  // existing note: it leaves one audit row saying so (ids only), and never a
+  // second `credit_note_issued`.
+  it('a replay writes one credit_note_issue_replayed row (locked read), and no credit_note_issued', async () => {
+    const cn = existingCn();
+    const { deps } = depsWithKeyHit(cn);
+    const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    const emits = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
+    expect(emits).toHaveLength(1);
+    expect(emits[0]).toMatchObject({
+      tenantId: 'test-swecham',
+      eventType: 'credit_note_issue_replayed',
+      actorUserId: 'actor-user',
+      payload: {
+        credit_note_id: cn.creditNoteId,
+        original_invoice_id: INVOICE_ID,
+        document_number: cn.documentNumber.raw,
+        idempotency_key: KEY,
+        total_satang: '1070',
+        path: 'locked_read',
+      },
+    });
+    expect(emits[0].payload).not.toHaveProperty('member_id');
+  });
+
+  it('a lost race reconciled to the winner writes the replay row with path race_reconcile', async () => {
+    const winner = existingCn();
+    const { deps, findByIdempotencyKey } = depsWithKeyHit(null);
+    findByIdempotencyKey.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValue(winner);
+    (deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>).mockRejectedValue(
+      Object.assign(new Error('duplicate key value violates unique constraint'), {
+        code: '23505',
+        constraint_name: 'credit_notes_tenant_idempotency_key_uniq',
+      }),
+    );
+    const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    const replays = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c[1])
+      .filter((e) => e.eventType === 'credit_note_issue_replayed');
+    expect(replays).toHaveLength(1);
+    expect(replays[0].payload).toMatchObject({ credit_note_id: winner.creditNoteId, path: 'race_reconcile' });
+  });
+
+  // /code-review — a 23505 proves a note exists under the key; if the
+  // reconcile cannot read it, answer a 5xx (the form keeps the attempt), never
+  // a definite concurrent_state_change.
+  it('a reconcile that fails after a key race throws instead of refusing', async () => {
+    const { deps, findByIdempotencyKey } = depsWithKeyHit(null);
+    findByIdempotencyKey
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockRejectedValue(new Error('connection terminated'));
+    (deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>).mockRejectedValue(
+      Object.assign(new Error('duplicate key value violates unique constraint'), {
+        code: '23505',
+        constraint_name: 'credit_notes_tenant_idempotency_key_uniq',
+      }),
+    );
+    await expect(issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY })).rejects.toThrow('connection terminated');
+  });
+
+  it('a first issue and a refused mismatch write no replay row', async () => {
+    for (const hit of [null, existingCn({ total: Money.fromSatangUnsafe(2_140n) })]) {
+      const { deps } = depsWithKeyHit(hit);
+      await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+      const types = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1].eventType);
+      expect(types).not.toContain('credit_note_issue_replayed');
+    }
+  });
+
+  it('a repeat skips the pre-transaction manual guards (a refund now in flight must not refuse the replay)', async () => {
+    const { deps } = depsWithKeyHit(existingCn());
+    (deps.pendingRefundGuard.countPendingRefundsForInvoice as ReturnType<typeof vi.fn>).mockResolvedValue(1);
+    const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (r.ok) expect(r.value.replayed).toBe(true);
+  });
+
+  it('the same key for a different amount or invoice is refused as concurrent_state_change, before any side effect', async () => {
+    for (const hit of [
+      existingCn({ total: Money.fromSatangUnsafe(2_140n) }),
+      existingCn({ originalInvoiceId: asInvoiceId('00000000-0000-0000-0000-0000000000ff') }),
+    ]) {
+      const { deps } = depsWithKeyHit(hit);
+      const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('concurrent_state_change');
+      expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+      expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+    }
+  });
+
+  // #728 review (financial M1) — the key answers THIS request only when the
+  // whole credit matches: a different reason or membership effect under the
+  // same key is not the same note.
+  it('the same key with a different reason or membership effect is refused as concurrent_state_change', async () => {
+    for (const [hit, input] of [
+      [existingCn({ reason: 'another reason' }), baseInput],
+      [existingCn({ membershipEffect: 'cancel_membership' }), { ...baseInput, membershipEffect: 'keep' as const }],
+      [existingCn({ membershipEffect: 'keep' }), baseInput],
+    ] as const) {
+      const { deps } = depsWithKeyHit(hit);
+      const r = await issueCreditNote(deps, { ...input, idempotencyKey: KEY });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('concurrent_state_change');
+      expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+    }
+  });
+
+  it('the same reason (trimmed) and the same membership effect still replay', async () => {
+    const { deps } = depsWithKeyHit(existingCn({ membershipEffect: 'keep' }));
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      reason: '  duplicate charge ',
+      membershipEffect: 'keep',
+      idempotencyKey: KEY,
+    });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (r.ok) expect(r.value.replayed).toBe(true);
+  });
+
+  // #728 round 2 (financial LOW-1) — a note stores its membership effect only
+  // on a full credit of a membership invoice; a stored null means the effect
+  // had no part in it, so a request naming one still replays (refusing it would
+  // end the client's attempt as if nothing had been issued).
+  it('a stored null membership effect replays a request that names one', async () => {
+    const { deps } = depsWithKeyHit(existingCn({ membershipEffect: null }));
+    const r = await issueCreditNote(deps, { ...baseInput, membershipEffect: 'keep', idempotencyKey: KEY });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (r.ok) expect(r.value.replayed).toBe(true);
+  });
+
+  // #728 review (financial L2) — the pre-read hit skipped the manual guards; if
+  // the locked read then misses, issuing would bypass them. Refuse instead.
+  // /code-review — and it throws (a 5xx) rather than answer a code the form
+  // treats as definite: the server just saw a note under this key.
+  it('a pre-read hit followed by a miss under the lock issues nothing and throws', async () => {
+    const { deps, findByIdempotencyKey } = depsWithKeyHit(null);
+    findByIdempotencyKey.mockResolvedValueOnce(existingCn()).mockResolvedValue(null);
+    await expect(issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY })).rejects.toThrow(
+      /seen before the lock but not under it/,
+    );
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+  });
+
+  // /code-review — the reason is normalised once, so a caller that skips the
+  // schema still stores what a replay compares against.
+  it('a padded reason from a direct caller is stored trimmed', async () => {
+    const { deps } = depsWithKeyHit(null);
+    const r = await issueCreditNote(deps, { ...baseInput, reason: '  duplicate charge ', idempotencyKey: KEY });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    const insert = (deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+    expect(insert).toMatchObject({ reason: 'duplicate charge' });
+  });
+
+  it('a first attempt with a key issues normally, stores the key on the row and is not a replay', async () => {
+    const { deps } = depsWithKeyHit(null);
+    const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (r.ok) expect(r.value.replayed).toBe(false);
+    const insert = (deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+    expect(insert).toMatchObject({ idempotencyKey: KEY });
+  });
+
+  it('no key: no key lookup, nothing stored, not a replay (the refund path and older clients)', async () => {
+    const { deps, findByIdempotencyKey } = depsWithKeyHit(null);
+    const r = await issueCreditNote(deps, baseInput);
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (r.ok) expect(r.value.replayed).toBe(false);
+    expect(findByIdempotencyKey).not.toHaveBeenCalled();
+    const insert = (deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+    expect(insert).not.toHaveProperty('idempotencyKey');
+  });
+
+  it('a malformed key is refused by the input schema (the route parses with it)', () => {
+    expect(issueCreditNoteSchema.safeParse({ ...baseInput, idempotencyKey: 'not-a-uuid' }).success).toBe(false);
+    expect(issueCreditNoteSchema.safeParse({ ...baseInput, idempotencyKey: KEY }).success).toBe(true);
+  });
+
+  it('a lost race on the key index (23505 credit_notes_tenant_idempotency_key_uniq) reconciles to the winning note', async () => {
+    const winner = existingCn();
+    const { deps, findByIdempotencyKey } = depsWithKeyHit(null);
+    findByIdempotencyKey.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValue(winner);
+    (deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>).mockRejectedValue(
+      Object.assign(new Error('duplicate key value violates unique constraint'), {
+        code: '23505',
+        constraint_name: 'credit_notes_tenant_idempotency_key_uniq',
+      }),
+    );
+    const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.creditNote.creditNoteId).toBe(winner.creditNoteId);
+    expect(r.value.replayed).toBe(true);
   });
 });
