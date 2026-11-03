@@ -240,6 +240,39 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      sweep removes rows). A non-zero `resend_copies_retained` is residual 8d:
      record on the DSR ticket that an unsent copy remains at Resend; a handed
      row is 8c (above);
+   - **spec 140 s2c — the orphan rows.** The cascade also settled the member's
+     rows of `broadcast_orphaned_resend_ids` (ids our side left at Resend on no
+     live row) and the tenant's leaked audiences; an undecided one withholds
+     `member_erased`. Their settled broadcast rows are in the counts above
+     (`deleted` / `absent` → cleared, `retained` → retained, `handed` → already
+     sent), so with orphans the TERMINAL-query equality reads "+ the member's
+     settled broadcast orphans whose id no terminal row holds". Check nothing
+     is left (read-only):
+
+     ```sql
+     -- the step-4 ORPHAN query: rows still unsettled for this member
+     SELECT orphan_id, resource_type, resource_id, reason, created_at
+       FROM broadcast_orphaned_resend_ids
+      WHERE tenant_id = '<tenant>' AND requested_by_member_id = '<member_id>'
+        AND settled_at IS NULL;
+     ```
+
+     A `create_unconfirmed` row (no `resource_id`) is never settled: it is the
+     unknown-id mint of RoPA 8d. Give the DSR its count, and follow "How to
+     find one" there:
+
+     ```sql
+     -- the DSR count query
+     SELECT count(*) AS create_unconfirmed
+       FROM broadcast_orphaned_resend_ids
+      WHERE tenant_id = '<tenant>' AND requested_by_member_id = '<member_id>'
+        AND reason = 'create_unconfirmed';
+     ```
+
+     A row with an id written after the cascade's pass (a tick in flight) is
+     drained by `cleanup-audiences` within one tick (an erased requester's row
+     skips the grace); re-run the ORPHAN query after 15 minutes if the first
+     run returned one;
    - **run the step 3b STATE query on every erasure, whatever the count says**
      (`sent_at >= member_erasure_requested`, statuses `sending` / `sent` /
      `partially_sent` / `partial_delivery_accepted`). Any row it returns is

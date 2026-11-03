@@ -171,6 +171,53 @@ What does NOT change: suppression, the marketing opt-out filter, self-exclusion,
 
 What becomes stale: a count a member saw at compose before the flip. SC-004 holds per tenant STATE, and the audience mode is part of that state.
 
+### E. Orphaned Resend ids (spec 140 s2c)
+
+An id our side created at Resend and then left on no live `broadcasts` row is a
+row of `broadcast_orphaned_resend_ids` (migration 0323), written at the writer
+that held it: `attach_lost` / `row_vanished` / `persist_failed` (a minted
+broadcast whose reclaim failed), `read_back_failed_kept`,
+`dead_broadcast_replaced` / `dead_broadcast_kept` (a cancelled inherited id),
+`terminal_reclaim_undecided` (the import leg's `failTerminally` choke point)
+and `refused_draft_undeleted` (a standing refusal), `audience_leaked` (both
+legs), and `create_unconfirmed` (no id: a `createBroadcast` that ended in a
+network failure, a timeout or a 5xx).
+
+- **Who settles it.** The `cleanup-audiences` cron drains up to
+  `ORPHAN_DRAIN_LIMIT` (20) rows per run, `ORPHAN_DRAIN_CONCURRENCY` (5) at a
+  time, past the route's 1-hour `GRACE_MS` (skipped when the requester is
+  erased), and starts no chunk after `ORPHAN_DRAIN_STOP_MS` (240 s of the
+  route's `maxDuration` 300 s). It never lists an id a NON-TERMINAL row holds
+  (type-matched), nor a `create_unconfirmed` row. The erasure cascade settles
+  the requester's broadcast orphans and the tenant's leaked audiences
+  (`member-erasure.md` step 4).
+- **What a row's `outcome` means.** `deleted` / `absent` — gone; `retained` —
+  canceled or failed at Resend (403, undeletable, never sendable); `handed` —
+  queued or sent (a disclosure, RoPA 8c). `NULL` — not settled yet.
+- **Rows stuck unsettled** (`broadcasts.orphan_drain.undecided` for the same
+  `orphanId` every 15 minutes): a permanent Resend answer. Read the `answer`
+  token, check the id at Resend, delete it by hand if it is a draft or an
+  audience, and leave the row (the next run reads 404 → `absent`).
+- **`orphan_record_failed`** (critical): the id is only in the log line —
+  delete `resourceId` at Resend by hand.
+- **`broadcasts_orphaned_resend_ids_unconfirmed` ≥ 1:** a draft with no
+  recorded id may exist. Find it from the row (RoPA 8d, "How to find one"):
+
+```sql
+-- read-only (pnpm db:query on dev; the prod read-only path on prod)
+SELECT tenant_id, broadcast_id, created_at
+  FROM broadcast_orphaned_resend_ids
+ WHERE reason = 'create_unconfirmed'
+   AND created_at > now() - interval '24 hours'   -- ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS
+ ORDER BY created_at;
+```
+
+  For each `broadcast_id`, list the Resend broadcasts on that row's audience
+  and delete any id that is not the row's `resend_broadcast_id`.
+- **Retention.** The daily retention sweep prunes settled rows and
+  `create_unconfirmed` rows older than `ORPHAN_ROW_RETENTION_DAYS` (90 days)
+  through `prune_orphaned_resend_ids` (`cron-jobs.md` § F7 retention-sweep).
+
 ## Why this matters
 
 - FR-041 / research R8: the audience is never silently truncated — every failure path here is loud (refusal, retry + counter), so "no alarm" means the build is complete, not that it was skipped.

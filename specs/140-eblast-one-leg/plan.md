@@ -803,6 +803,40 @@ Flag OFF, Resend sink address only, no `/send`, no Vercel env.
 
 Filled in at Verify, one block per slice.
 
+### Slice 2c — build notes (3 Nov 2026)
+
+Branch `140-eblast-one-leg-s2c` (f142), from `1afa060d0` + the plan commit `4d59fa711`. Eight RED → GREEN pairs, each RED committed with its failing run first:
+
+| Mechanism | RED | GREEN |
+|---|---|---|
+| Migration 0323 (CHECKs, unique, RLS + FORCE, grants, prune) | `660ecce19` — 5/5 fail, `relation "broadcast_orphaned_resend_ids" does not exist` | `93028b107` |
+| `BroadcastOrphansRepo` + Drizzle adapter | `f8e071457` — both files fail to resolve the adapter | `194514e4a` |
+| The writers, both legs | `5039a24de` — 16 fail (e.g. `expected [] to deeply equal [ { …(5) } ]`) | `8a59aee5d` |
+| The `failTerminally` choke point | `fe4b4efdf` — 12 fail (the event list has no `reread` / `check` / delete) | `f8db7e955` |
+| The cleanup drain | `5d6e64a3f` — unit 19/19; `orphan-drain.test.ts` `expected [] to deeply equal [ Array(1) ]` | `5830a93b6` |
+| The erasure extension | `c87c76148` — unit 16 of 17 new; `erasure-terminal-drafts.test.ts` DL10 fails | `5f3992451` |
+| The gauge | `955e709ae` — `expected "spy" to be called with arguments: [ 'busy', 2 ]` | `04c074194` |
+| The retention prune | `108b1b990` — unit 4, integration 4 of 5 | `796f32f69` |
+
+Decisions made while building:
+
+1. **A port of its own.** `BroadcastOrphansRepo` (`ports/broadcast-orphans-repo.ts`), not five methods on `BroadcastsRepo`: the module keeps one port per table, and `BroadcastsRepo` has ~17 full fakes in `tests/`. Each consumer takes a `Pick<>` of it (the legs write only).
+2. **[P H-2] without a members join.** `listDrainableOrphans(limit)` returns unsettled known-id rows oldest first with NO grace; the drain applies the grace and asks `MembersBridgePort.getMemberErasedAt` once per requester for a row inside it (broadcasts infrastructure reads no members table today). A failed erased read waits for the grace. Oldest first means a row past the grace is never crowded out by a young one.
+3. **The gauge reads in the route**, the `audienceImportStuck` template (one grouped read on the owner role), so plan item 2's `countRecentUnconfirmedOrphans` port method was not built. The window is `ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS`, exported from the barrel; the two gauges contract suites' barrel mocks carry it.
+4. **The prune is fenced in SQL.** `prune_orphaned_resend_ids(tenant, cutoff)` runs as the owner (BYPASSRLS), so it refuses a tenant other than `app.current_tenant` (42501) and a cutoff younger than 90 days (22023), and filters `tenant_id`. `ORPHAN_ROW_RETENTION_DAYS` is pinned against the SQL floor by `orphaned-resend-ids.test.ts`. The sweep prunes after its run row, best-effort (`orphanRowsPruned: null` on a failure); the run row's payload is unchanged.
+5. **[P M-2] handed orphans.** `alreadySentCount` = the evidence count + one per DISTINCT handed-orphan `broadcast_id` whose `readAlreadySentEvidenceInTx(…, { broadcastId })` reads `broadcastRecorded: false`. No `recordAlreadySent` row is written. Settled rows count on every run, so a re-drive reports the same number.
+6. **No double count.** An orphan whose `resource_id` the terminal-draft pass listed this run (a `terminal_reclaim_undecided` / `refused_draft_undeleted` row on a now-terminal row) is settled but not counted again.
+7. **Audience backlog.** The erasure settles at most `ERASURE_AUDIENCE_ORPHAN_LIMIT` (20) tenant audience orphans per run; it reads one more, and a 21st is a deferral (withholds `member_erased`).
+8. **The choke point's log lines** come from `deleteDraftBeforeStandingRefusal` and so say `refusal: 'standing'`; the shared helper (100 % pinned) was not changed. A re-read failure is `dispatch.server_error` phase `terminal_write`, message `terminal_reread_failed` (no new phase, so the dispatch route's `dispatch_resolve_failed.total{phase}` labels are unchanged). One existing case changed meaning: "the send 404s and the re-read itself FAILS" now answers the retryable error with no terminal write, because its `findById` fails on every call.
+9. **The tick's `orphans` dep is REQUIRED** on both legs (the composition factories wire `makeDrizzleBroadcastOrphansRepo`); 81 legacy unit literals got `orphans: NO_ORPHANS`, five integration files the real adapter.
+10. **The drain's NOT EXISTS has no index on `broadcasts.resend_audience_id`.** It reads at most 20 orphans per run against one tenant's rows; adding the index would lock `broadcasts` on deploy. Revisit if a tenant's `broadcasts` grows large.
+
+**The gauges route's role (verified on dev after migrating, `pnpm db:query`):** `current_user = neondb_owner`, `rolbypassrls = true`; both `broadcasts` and `broadcast_orphaned_resend_ids` have `relforcerowsecurity = true`; with no tenant GUC set the role read 7 `broadcasts` rows (1 tenant) and the orphan table without error (0 rows at the time: the test tenants had been cleaned up), and the gauge's own predicate ran. So the route reads the new table exactly as it reads `broadcasts`.
+
+**Migration:** `pnpm db:migrate` on dev → `✓ Migrations applied`; `information_schema` / `pg_class` / `pg_policies` / `pg_proc` checked (RLS + FORCE, one policy, chamber_app `INSERT,SELECT,UPDATE`, the function `SECURITY DEFINER` with `search_path=pg_catalog, public`); `pnpm db:verify` → 28/28 canaries, the new one included.
+
+**Mutation proofs (each from a committed base, restored with `git restore` and re-grepped):** (a) the NON-TERMINAL condition dropped from the NOT EXISTS → `broadcast-orphans-repo.test.ts` [A1] and `orphan-drain.test.ts` red; (b) the choke point reads the snapshot instead of re-reading → 12 choke-point cases red; (c) the erasure skips the tenant's audience orphans → 5 unit cases and the DL10 integration case red.
+
 ### Slice 1 — build notes (decisions made while building)
 
 Commits: `5ab2a9abd` test (RED), `14eac06e6` feat (GREEN). RED ran first: the unit, contract and integration rows above failed on the missing method, fields and arms (98 unit/contract failures; 5/5 integration in `erasure-terminal-drafts.test.ts`).
