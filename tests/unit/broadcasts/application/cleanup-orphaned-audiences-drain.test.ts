@@ -60,6 +60,8 @@ interface Opts {
   readonly deleteAudienceThrows?: ReadonlySet<string>;
   readonly listThrows?: boolean;
   readonly settleThrows?: boolean;
+  /** What the settle CAS answers (`false` = a concurrent settler won). Default `true`. */
+  readonly settleReturns?: boolean;
   readonly erased?: Record<string, 'erased' | 'live' | 'throws'>;
   /** The audience pass's candidates (terminal rows still holding an audience). */
   readonly terminal?: ReadonlyArray<{ broadcastId: string; resendAudienceId: string }>;
@@ -71,6 +73,7 @@ interface Opts {
 function harness(opts: Opts) {
   let nowMs = NOW.getTime();
   const settled: Array<[string, string]> = [];
+  const attempted: string[] = [];
   const calls: string[] = [];
   const listLimits: number[] = [];
   let inFlight = 0;
@@ -105,6 +108,10 @@ function harness(opts: Opts) {
       async settleOrphan(orphanId: string, outcome: string) {
         if (opts.settleThrows === true) throw new Error('57P01');
         settled.push([orphanId, outcome]);
+        return opts.settleReturns ?? true;
+      },
+      async markOrphanAttempted(orphanId: string) {
+        attempted.push(orphanId);
         return true;
       },
     },
@@ -131,7 +138,7 @@ function harness(opts: Opts) {
     },
   };
   const run = () => cleanupOrphanedAudiences(deps as never, { graceMs: GRACE_MS, limit: 50 });
-  return { run, settled, calls, listLimits, peak: () => peak };
+  return { run, settled, attempted, calls, listLimits, peak: () => peak };
 }
 
 let warn: ReturnType<typeof vi.spyOn>;
@@ -253,5 +260,30 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     expect(line?.[0]).toEqual({ tenantId: tenant.slug, broadcastId: 'bc-1', err: 'unknown' });
     const failed = await harness({ orphans: [], terminalListThrows: true }).run();
     expect(failed.ok ? null : failed.error).toEqual({ kind: 'cleanup.server_error', message: 'Error' });
+  });
+
+  // Spec 140 s2c review round 1 (code-review #2, #4, #6 / reliability L-1).
+  it('an undecided answer marks the row attempted, so it sinks below untried rows', async () => {
+    const h = harness({ orphans: [orphan(1), orphan(2)], deleteOnce: { 'rb-1': 'retryable' } });
+    await h.run();
+    expect(h.attempted).toEqual(['o-1']);
+    expect(h.settled).toEqual([['o-2', 'deleted']]);
+  });
+
+  it('a settle whose CAS lost (a concurrent settler won) is not counted', async () => {
+    const h = harness({ orphans: [orphan(1)], settleReturns: false });
+    const res = await h.run();
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 1, settled: 0, undecided: 0 });
+  });
+
+  it('a failed audience list still drains, and answers cleanup.server_error with the drain counts', async () => {
+    const h = harness({ orphans: [orphan(1)], terminalListThrows: true });
+    const res = await h.run();
+    expect(h.settled).toEqual([['o-1', 'deleted']]);
+    expect(res.ok ? null : res.error).toMatchObject({
+      kind: 'cleanup.server_error',
+      message: 'Error',
+      orphans: { listed: 1, settled: 1 },
+    });
   });
 });

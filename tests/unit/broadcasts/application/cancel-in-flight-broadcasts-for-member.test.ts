@@ -38,6 +38,7 @@ import {
   ERASURE_AUDIENCE_ORPHAN_LIMIT,
   cancelInFlightBroadcastsForMember,
 } from '@/modules/broadcasts/application/use-cases/cancel-in-flight-broadcasts-for-member';
+import { ORPHAN_STUCK_ATTEMPTS } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { REPROBE_PAUSE_MS } from '@/modules/broadcasts/application/use-cases/_reprobe-pause';
 import { asTenantContext } from '@/modules/tenants';
@@ -107,6 +108,8 @@ function makeDeps(overrides: {
   deleteAudienceThrows?: ReadonlyArray<string>;
   /** Spec 140 s2c — the settle CAS throws. */
   settleThrows?: boolean;
+  /** Spec 140 s2c review round 1 — what the settle CAS answers. Default `true`. */
+  settleReturns?: boolean;
 }) {
   const rows = (overrides.inFlightRows ?? []).map(makeBroadcastRow);
   // F119 round-4 B6 — mirror db.transaction: a callback that returns COMMITS,
@@ -207,6 +210,9 @@ function makeDeps(overrides: {
   // s1 call-order assertions above are unchanged.
   const orphanCalls: string[] = [];
   const settles: Array<[string, string]> = [];
+  const attempted: string[] = [];
+  let audienceInFlight = 0;
+  let audiencePeak = 0;
   const orphans = {
     listMemberOrphans: vi.fn(async (forMember: string) => {
       orphanCalls.push(`listMember:${forMember}`);
@@ -221,11 +227,19 @@ function makeDeps(overrides: {
     settleOrphan: vi.fn(async (orphanId: string, outcome: string) => {
       if (overrides.settleThrows === true) throw new Error('57P01');
       settles.push([orphanId, outcome]);
+      return overrides.settleReturns ?? true;
+    }),
+    markOrphanAttempted: vi.fn(async (orphanId: string) => {
+      attempted.push(orphanId);
       return true;
     }),
   };
   const deleteAudience = vi.fn(async (id: string) => {
     orphanCalls.push(`deleteAudience:${id}`);
+    audienceInFlight += 1;
+    audiencePeak = Math.max(audiencePeak, audienceInFlight);
+    await Promise.resolve();
+    audienceInFlight -= 1;
     if (overrides.deleteAudienceThrows?.includes(id) === true) throw { kind: 'retryable', subKind: 'timeout', reason: 'aborted' };
   });
   return {
@@ -237,6 +251,8 @@ function makeDeps(overrides: {
     orphans,
     orphanCalls,
     settles,
+    attempted,
+    audiencePeak: () => audiencePeak,
     txOutcomes,
     calls,
   } as never;
@@ -249,6 +265,7 @@ interface OrphanFixture {
   readonly resourceId: string;
   readonly resourceType?: 'broadcast' | 'audience';
   readonly outcome?: 'deleted' | 'absent' | 'retained' | 'handed' | null;
+  readonly attempts?: number;
 }
 
 function orphanRef(o: OrphanFixture) {
@@ -261,6 +278,7 @@ function orphanRef(o: OrphanFixture) {
     reason: o.resourceType === 'audience' ? 'audience_leaked' : 'attach_lost',
     createdAt: new Date('2026-05-02T00:00:00Z'),
     outcome: o.outcome ?? null,
+    attempts: o.attempts ?? 0,
   };
 }
 
@@ -1372,6 +1390,58 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       const deps = makeDeps({ memberOrphans: [o1], audienceOrphans: [aud] }) as unknown as Seen;
       await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
       expect(deps.orphanCalls).toEqual([]);
+    });
+  });
+
+  /**
+   * Spec 140 s2c review round 1 (code-review #1, #2, #6; reliability M-2, L-1;
+   * pdpa M-B): an undecided settle marks the row attempted; a settle whose CAS
+   * lost withholds (the re-drive counts the settled row); and in pass (b) a
+   * tenant audience orphan tried `ORPHAN_STUCK_ATTEMPTS` (8) times or more is
+   * REPORTED (`orphan_stuck`), not withheld — a member's own orphans still
+   * withhold. Pass (b) settles at concurrency 5.
+   */
+  describe('spec 140 s2c review round 1 — attempts, the stuck rule, the CAS', () => {
+    const erasureInput = { tenant, memberId, requestId: 'req-1', onDispatchBegun: 'delete_then_cancel' as const };
+    type Seen = { attempted: string[]; settles: Array<[string, string]>; audiencePeak: () => number };
+    const aud = (n: number, attempts = 0) => ({ orphanId: `o-aud-${n}`, broadcastId: broadcastIdB, resourceId: `aud-${n}`, resourceType: 'audience' as const, attempts });
+
+    it('a stuck tenant audience orphan does not withhold; a fresh one does', async () => {
+      expect(ORPHAN_STUCK_ATTEMPTS).toBe(8);
+      const stuck = makeDeps({ audienceOrphans: [aud(1, ORPHAN_STUCK_ATTEMPTS)], deleteAudienceThrows: ['aud-1'] }) as unknown as Seen;
+      const stuckRun = await cancelInFlightBroadcastsForMember(stuck as never, erasureInput);
+      expect(stuckRun).toMatchObject({ ok: true, value: { unexpectedErrorCount: 0 } });
+      expect(stuck.attempted).toEqual(['o-aud-1']);
+      const fresh = makeDeps({ audienceOrphans: [aud(1, ORPHAN_STUCK_ATTEMPTS - 1)], deleteAudienceThrows: ['aud-1'] }) as unknown as Seen;
+      const freshRun = await cancelInFlightBroadcastsForMember(fresh as never, erasureInput);
+      expect(freshRun).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1 } });
+    });
+
+    it("the member's OWN orphan still withholds however many attempts it has", async () => {
+      const deps = makeDeps({
+        memberOrphans: [{ orphanId: 'o-1', broadcastId: broadcastIdA, resourceId: 'rb-o1', attempts: 50 }],
+        deleteOutcome: 'retryable',
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1 } });
+      expect(deps.attempted).toEqual(['o-1']);
+    });
+
+    it('a settle whose CAS lost withholds (the re-drive counts the settled row)', async () => {
+      const deps = makeDeps({
+        memberOrphans: [{ orphanId: 'o-1', broadcastId: broadcastIdA, resourceId: 'rb-o1' }],
+        settleReturns: false,
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, resendDraftsCleared: 0 } });
+    });
+
+    it('pass (b) settles the tenant audience orphans five at a time', async () => {
+      const deps = makeDeps({ audienceOrphans: Array.from({ length: 12 }, (_, i) => aud(i)) }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 0 } });
+      expect(deps.settles).toHaveLength(12);
+      expect(deps.audiencePeak()).toBe(5);
     });
   });
 });
