@@ -124,17 +124,20 @@ describe('CreditNoteForm — concurrent 409 inline recovery (FR-032)', () => {
       // A stale-write 409 is NOT the admin's error → neutral, not destructive.
       expect(alert).toHaveAttribute('data-tone', 'neutral');
       expect(alert).toHaveAttribute('role', 'alert');
+      // #61 — no "in another session": a retry from this same form lands here too.
       expect(alert).toHaveTextContent(
-        'This invoice was already credited or voided in another session. Refresh to see the latest status.',
+        'This invoice has already been credited or voided. Open it to see its latest status.',
       );
+      expect(alert).not.toHaveTextContent(/session/i);
 
-      // The recovery affordance is the whole point of the concurrent branch.
-      const refreshBtn = screen.getByRole('button', { name: 'Refresh' });
-      expect(refreshMock).not.toHaveBeenCalled();
-      fireEvent.click(refreshBtn);
-      expect(refreshMock).toHaveBeenCalledTimes(1);
-      // Recovery must NOT navigate away from the still-open form.
+      // #727 review (UX M2) — the form page answers notFound() for a fully
+      // credited or voided invoice, so a refresh would land on a 404; the
+      // recovery opens the invoice instead.
+      expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
       expect(pushMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Open invoice' }));
+      expect(pushMock).toHaveBeenCalledWith(`/admin/invoices/${INVOICE_ID}`);
+      expect(refreshMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -185,6 +188,124 @@ describe('CreditNoteForm — failure branch is focused + destructive (FR-032)', 
         'An unknown error occurred. Please try again.',
       );
       expect(alert).not.toHaveTextContent(/Error code/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+// #61 — the credit note commits before `requestMembershipEnd` runs, so no
+// answer, a timeout or a 5xx naming no refusal may come AFTER a §86/10 note was
+// minted. An admin credit note is NOT idempotent (only a refund-origin one is,
+// by source_refund_id): a partial retry passes the remainder check and mints a
+// SECOND note. So the copy never invites a retry and the submit stays locked
+// until the page reloads.
+describe('CreditNoteForm — #61 an unknown outcome locks the submit', () => {
+  const UNCONFIRMED =
+    "We couldn't confirm whether the credit note was issued. Open the invoice and check its credit notes before you issue another — trying again could issue a second credit note.";
+
+  function respond(status: number, body: unknown) {
+    return vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: false,
+      status,
+      json: async () => {
+        if (body === undefined) throw new Error('Unexpected token < in JSON');
+        return body;
+      },
+    }));
+  }
+
+  it('a rejected fetch shows the warning, focused; the submit stays locked and the action opens the invoice', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => {
+      throw new TypeError('Failed to fetch');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      fillAndSubmit();
+      const alert = await screen.findByTestId('credit-note-error');
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveTextContent(UNCONFIRMED);
+      await waitFor(() => expect(alert).toHaveFocus());
+      // The alert renders before the transition settles, so the button can
+      // still read "Issuing…" for a moment: wait for it.
+      const submit = await screen.findByRole('button', { name: cnMessages.submit });
+      expect(submit).toBeDisabled();
+      fireEvent.click(submit);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      // #727 review (UX M1) — the reason sits beside the disabled button.
+      expect(screen.getByTestId('cn-locked-hint')).toHaveTextContent(
+        'Issuing is paused until you check the invoice — this prevents a duplicate credit note.',
+      );
+      // The invoice detail lists its credit notes; leaving the form also ends
+      // the lock. No Refresh here: an in-place refresh would keep it.
+      expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Open invoice' }));
+      expect(pushMock).toHaveBeenCalledWith(`/admin/invoices/${INVOICE_ID}`);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // One case per test: two full form renders in one test ran close to the
+  // default findBy budget on a loaded worker (seen once in a batch run).
+  it.each([
+    ['a 504 HTML page', 504, undefined],
+    ['a 500 internal_error', 500, { error: { code: 'internal_error' } }],
+  ] as const)('%s reads as unconfirmed and locks the submit', async (_label, status, body) => {
+    vi.stubGlobal('fetch', respond(status, body));
+    try {
+      renderForm();
+      fillAndSubmit();
+      const alert = await screen.findByTestId('credit-note-error');
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveTextContent(UNCONFIRMED);
+      expect(await screen.findByRole('button', { name: cnMessages.submit })).toBeDisabled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a named 5xx raised inside the rolled-back tx keeps its copy and does not lock', async () => {
+    vi.stubGlobal('fetch', respond(500, { error: { code: 'pdf_render_failed' } }));
+    try {
+      renderForm();
+      fillAndSubmit();
+      const alert = await screen.findByTestId('credit-note-error');
+      expect(alert).toHaveAttribute('data-tone', 'destructive');
+      expect(await screen.findByRole('button', { name: cnMessages.submit })).toBeEnabled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the READ_ONLY_MODE 503 says nothing was changed, inline, with no Refresh, and does not lock', async () => {
+    vi.stubGlobal('fetch', respond(503, { error: 'read-only-mode' }));
+    try {
+      renderForm();
+      fillAndSubmit();
+      const alert = await screen.findByTestId('credit-note-error');
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveTextContent(
+        'The system is currently in read-only mode for maintenance. Nothing was changed. Try again in a few minutes.',
+      );
+      expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+      expect(await screen.findByRole('button', { name: cnMessages.submit })).toBeEnabled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('the POST carries a timeout signal, and a double submit in one tick sends one POST', async () => {
+    const fetchMock = vi.fn((_url: string, _init: RequestInit) => new Promise<never>(() => {}));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const { container } = renderForm();
+      fillAndSubmit();
+      fireEvent.submit(container.querySelector('form')!);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
     } finally {
       vi.unstubAllGlobals();
     }
