@@ -109,6 +109,11 @@ export interface CleanupOrphanedAudiencesDeps {
   readonly orphans: Pick<BroadcastOrphansRepo, 'listDrainableOrphans' | 'settleOrphan' | 'markOrphanAttempted'>;
   /** Spec 140 s2c [P H-2] — whether a young row's requester is erased (it then skips the grace). */
   readonly membersBridge: Pick<MembersBridgePort, 'getMemberErasedAt'>;
+  /**
+   * Review round 2 (code-review #4) — waits `REPROBE_PAUSE_MS` between a
+   * DELETE 404 and its confirming GET. Default: a timer; tests pass a recorder.
+   */
+  readonly pauseBeforeReprobe?: (ms: number) => Promise<void>;
 }
 
 export interface CleanupOrphanedAudiencesInput {
@@ -300,7 +305,7 @@ async function drainOrphans(
   let deferred = 0;
   const settleOne = async (row: OrphanedResendIdRef): Promise<void> => {
     const ids = { tenantId, orphanId: row.orphanId, resourceType: row.resourceType, resourceId: row.resourceId, orphanReason: row.reason };
-    const answer = await settleOrphanAtResend(deps.broadcastsGateway, row);
+    const answer = await settleOrphanAtResend(deps.broadcastsGateway, row, deps.pauseBeforeReprobe);
     if (answer.kind === 'undecided') {
       undecided += 1;
       logger.warn({ ...ids, attempts: row.attempts + 1, answer: answer.answer }, 'broadcasts.orphan_drain.undecided');

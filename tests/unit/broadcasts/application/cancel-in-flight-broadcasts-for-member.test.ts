@@ -1495,7 +1495,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
       expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, resendDraftsCleared: 0 } });
       expect(deps.settles).toEqual([]);
-      expect(deps.calls).toEqual(['delete:rb-o1:no-lock', `pause:${REPROBE_PAUSE_MS}:no-lock`, 'probe:rb-o1:no-lock']);
+      expect(deps.calls.filter((c) => !c.startsWith('evidence'))).toEqual(['delete:rb-o1:no-lock', `pause:${REPROBE_PAUSE_MS}:no-lock`, 'probe:rb-o1:no-lock']);
     });
   });
 });

@@ -4,7 +4,9 @@
  * (plan.md § Slice 2c, items 5 and 6):
  *
  *   | resource  | call(s)                                   | outcome        |
- *   | broadcast | DELETE deleted / absent                   | same           |
+ *   | broadcast | none: a sent row holds the id             | `superseded`   |
+ *   | broadcast | DELETE deleted                            | `deleted`      |
+ *   | broadcast | DELETE absent, pause, GET not_found       | `absent`       |
  *   | broadcast | DELETE forbidden, GET canceled / failed   | `retained`     |
  *   | broadcast | DELETE forbidden, GET queued/sending/sent | `handed`       |
  *   | broadcast | anything else (a throw included)          | undecided      |
@@ -15,6 +17,14 @@
  * (`RESEND_CALL_TIMEOUT_MS` each). DELETE answers 200 only on a draft or a
  * scheduled broadcast (MEASURED 2026-10-29), so a copy a tick is sending
  * cannot be deleted from under it: it answers 403 and the GET reads it handed.
+ *
+ * Review round 2:
+ * - code-review #2 — a broadcast orphan whose id a sent row holds
+ *   (`heldBySentRow`) is an ordinary delivery: `superseded`, no Resend call;
+ * - code-review #4 — a DELETE 404 settles `absent` only once a GET, sent
+ *   `REPROBE_PAUSE_MS` later, answers `not_found` too (the import leg's "two
+ *   not-founds" rule, `_reprobe-pause.ts`); any other GET leaves the row.
+ *
  * Never throws; `undecided` carries a closed token for the log line, never the
  * provider's text.
  *
@@ -25,6 +35,7 @@ import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { OrphanedResendIdRef } from '../ports/broadcast-orphans-repo';
 import { classifyThrown } from './_classify-thrown';
 import { isHandedStatus } from './_probe-refused-send';
+import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
 export type OrphanSettlement =
   | { readonly kind: 'settled'; readonly outcome: OrphanOutcome }
@@ -32,15 +43,23 @@ export type OrphanSettlement =
 
 export async function settleOrphanAtResend(
   gateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce' | 'retrieveBroadcastOnce' | 'deleteAudience'>,
-  orphan: Pick<OrphanedResendIdRef, 'resourceType' | 'resourceId'>,
+  orphan: Pick<OrphanedResendIdRef, 'resourceType' | 'resourceId' | 'heldBySentRow'>,
+  pauseBeforeReprobe: (ms: number) => Promise<void> = sleepBeforeReprobe,
 ): Promise<OrphanSettlement> {
   try {
     if (orphan.resourceType === 'audience') {
       await gateway.deleteAudience(orphan.resourceId);
       return { kind: 'settled', outcome: 'deleted' };
     }
+    if (orphan.heldBySentRow) return { kind: 'settled', outcome: 'superseded' };
     const deleted = await gateway.deleteBroadcastOnce(orphan.resourceId);
-    if (deleted.kind === 'deleted' || deleted.kind === 'absent') return { kind: 'settled', outcome: deleted.kind };
+    if (deleted.kind === 'deleted') return { kind: 'settled', outcome: 'deleted' };
+    if (deleted.kind === 'absent') {
+      await pauseBeforeReprobe(REPROBE_PAUSE_MS);
+      const confirm = await gateway.retrieveBroadcastOnce(orphan.resourceId);
+      if (confirm.kind === 'not_found') return { kind: 'settled', outcome: 'absent' };
+      return { kind: 'undecided', answer: `absent_probe_${confirm.kind === 'present' ? confirm.status : confirm.kind}` };
+    }
     if (deleted.kind !== 'forbidden') return { kind: 'undecided', answer: deleted.kind };
     const probe = await gateway.retrieveBroadcastOnce(orphan.resourceId);
     const probed = probe.kind === 'present' ? probe.status : probe.kind;

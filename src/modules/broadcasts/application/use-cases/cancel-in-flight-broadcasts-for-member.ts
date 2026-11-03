@@ -169,7 +169,9 @@
  * under the caller's deadline:
  *   (a) the member's BROADCAST orphans (`listMemberOrphans`: settled rows too,
  *       so a re-drive counts the same set [A6a]; only unsettled rows are sent
- *       to Resend). `deleted` / `absent` count into `resendDraftsCleared`,
+ *       to Resend). `superseded` (a sent row holds the id, review round 2)
+ *       is settled with no Resend call and never counted. `deleted` /
+ *       `absent` count into `resendDraftsCleared`,
  *       `retained` into `resendCopiesRetained`, and `handed` into
  *       `alreadySentCount`, keyed on the row's snapshot `broadcast_id` and
  *       deduplicated against the evidence rows, with NO `recordAlreadySent`
@@ -958,7 +960,7 @@ export async function cancelInFlightBroadcastsForMember(
           orphanUnexpected(e, orphan, msg, extra);
           return null;
         };
-        const answer = await settleOrphanAtResend(deps.broadcastsGateway, orphan);
+        const answer = await settleOrphanAtResend(deps.broadcastsGateway, orphan, deps.pauseBeforeReprobe);
         if (answer.kind === 'undecided') {
           return undecided(null, 'broadcasts.cascade.orphan_unresolved', { answer: answer.answer });
         }
@@ -994,6 +996,8 @@ export async function cancelInFlightBroadcastsForMember(
           outcome = await settleOrphan(orphan, false);
           if (outcome === null) continue;
         }
+        // Review round 2 (code-review #2) — an ordinary delivery: never counted.
+        if (outcome === 'superseded') continue;
         if (countedResendIds.has(orphan.resourceId)) continue;
         countedResendIds.add(orphan.resourceId);
         if (outcome === 'handed') {
