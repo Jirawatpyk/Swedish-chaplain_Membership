@@ -32,6 +32,7 @@ import {
   type EmailLower,
 } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import type { BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
+import type { RecordOrphanInput } from '@/modules/broadcasts/application/ports/broadcast-orphans-repo';
 import type {
   AuditEmitInput,
   AuditPort,
@@ -6015,4 +6016,99 @@ describe('spec 140 s2b — the legacy leg under the dispatch lease (cell 23)', (
     expect(calls).toContain('sendBroadcast');
   });
 
+});
+
+/**
+ * Spec 140 s2c — the legacy leg's orphan writers, at the caller [A2, A5]: the
+ * audience a lost attach leaked (`audience_attach_lost_leaked`), the draft a
+ * standing refusal could not delete (`refused_draft_undeleted`), and the
+ * shared persist helper's leaked mint, which needs the requester passed in.
+ */
+describe('spec 140 s2c — the legacy leg records its orphans', () => {
+  const orphanDeps = (
+    repo: ReturnType<typeof makeRepo>,
+    gw: ReturnType<typeof makeGateway>,
+    recorded: RecordOrphanInput[],
+    sendStanding = OK_STANDING,
+  ) => ({
+    tenant,
+    broadcastsRepo: repo.port,
+    audienceMode: 'primary_only' as const,
+    audienceCeiling: 5000,
+    broadcastsGateway: gw.port,
+    membersBridge: makeMembersBridge({ recipients: [recipient('m-r1', 'one@example.com')], primaryContact: 'sender@example.com' }),
+    marketingUnsubscribes: makeMarketingUnsubscribes(),
+    eventAttendees: makeEventAttendees(),
+    audit: makeAudit().port,
+    clock,
+    fromEmail: 'noreply@test.invalid-but-test-only',
+    tenantDisplayName: 'Test Chamber',
+    locale: 'en' as const,
+    plansBridge: makePlansBridge(),
+    emailTransactional: makeEmailTransactional().port,
+    sendStanding,
+    brandChrome: NO_BRAND_CHROME,
+    orphans: {
+      async recordOrphanedResendId(input: RecordOrphanInput) {
+        recorded.push(input);
+      },
+    },
+  });
+
+  it('[A5] a lost audience attach whose reclaim fails → audience_leaked with the minted audience', async () => {
+    const recorded: RecordOrphanInput[] = [];
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved'), attachAudienceIdLosesCasWithStatus: 'sent' });
+    const gw = makeGateway({ throwOnDeleteAudience: true });
+    await dispatchScheduledBroadcast(orphanDeps(repo, gw, recorded) as never, baseInput);
+    expect(recorded).toEqual([
+      { broadcastId, requestedByMemberId: 'm-1', resourceType: 'audience', resourceId: 'aud-fake-1', reason: 'audience_leaked' },
+    ]);
+  });
+
+  it('a lost audience attach whose reclaim works → no row', async () => {
+    const recorded: RecordOrphanInput[] = [];
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved'), attachAudienceIdLosesCasWithStatus: 'sent' });
+    await dispatchScheduledBroadcast(orphanDeps(repo, makeGateway(), recorded) as never, baseInput);
+    expect(recorded).toEqual([]);
+  });
+
+  it('a lost broadcast-id persist whose reclaim leaks → attach_lost through the shared helper, with the requester', async () => {
+    const recorded: RecordOrphanInput[] = [];
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' },
+      attachBroadcastIdLosesCasWithStatus: 'cancelled',
+    });
+    await dispatchScheduledBroadcast(orphanDeps(repo, makeGateway({ throwOnDeleteBroadcast: true }), recorded) as never, baseInput);
+    expect(recorded).toEqual([
+      { broadcastId, requestedByMemberId: 'm-1', resourceType: 'broadcast', resourceId: 'bcast-fake-1', reason: 'attach_lost' },
+    ]);
+  });
+
+  it('R1 #5 — a halted refusal whose DELETE stays undecided → refused_draft_undeleted with the row draft id', async () => {
+    const recorded: RecordOrphanInput[] = [];
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-prev', resendBroadcastId: 'rb-prev-draft' },
+    });
+    const gw = makeGateway({ retrieveStatus: 'draft' });
+    vi.spyOn(gw.port, 'deleteBroadcastOnce').mockResolvedValue({ kind: 'retryable' });
+    await dispatchScheduledBroadcast(orphanDeps(repo, gw, recorded, makeFakeSendStanding({ halted: ['m-1'] })) as never, baseInput);
+    expect(recorded).toEqual([
+      { broadcastId, requestedByMemberId: 'm-1', resourceType: 'broadcast', resourceId: 'rb-prev-draft', reason: 'refused_draft_undeleted' },
+    ]);
+    expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+  });
+
+  it('a halted refusal whose DELETE lands → no row', async () => {
+    const recorded: RecordOrphanInput[] = [];
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-prev', resendBroadcastId: 'rb-prev-draft' },
+    });
+    const gw = makeGateway({ retrieveStatus: 'draft' });
+    vi.spyOn(gw.port, 'deleteBroadcastOnce').mockResolvedValue({ kind: 'deleted' });
+    await dispatchScheduledBroadcast(orphanDeps(repo, gw, recorded, makeFakeSendStanding({ halted: ['m-1'] })) as never, baseInput);
+    expect(recorded).toEqual([]);
+  });
 });
