@@ -1593,9 +1593,43 @@ Dev and prod share the broadcasts key, so the account state matches.
 - Mutation proofs (from the committed base `42ffe6bc7`, each restored with `git restore` and the line grepped back): (a) the age condition removed from `isStuck` → "attempts ≥ 8 but younger than 2 h still withholds" and the deadline case fail; (c) the deferral exits ignoring the stuck rule (`false && isStuck`) → "21 stuck audience orphans past the limit do not withhold" and the deadline case fail; (b) the column grant: a table-level `GRANT UPDATE` cannot be tried by the integration suite without committing it on the shared dev branch, so the suite's three statements (`reason`, `created_at`, `resource_id`) were run as `chamber_app` inside ONE rolled-back dev transaction — `42501` under the shipped grant, `ok` under the mutant — and the table-level grants read `INSERT,SELECT` afterwards, the four column UPDATE grants intact.
 - The pinned `_dispatch-standing-gate.ts` stays 100/100/100/100 (a scoped coverage run over `tests/unit/broadcasts`).
 - The erasure's longest orphan row is now a DELETE 404 confirmed by a GET: 10 s + `REPROBE_PAUSE_MS` 3 s + 10 s + the settle tx ≈ 24 s, inside `ERASURE_MEMBER_START_FLOOR_MS` (30 s) and the 60 s `ERASURE_CASCADE_RESERVE_MS` (the in-flight arm's 404 confirm already had that shape). W_max (dispatch) is unaffected.
-- The stuck rule's over-limit exit judges the one row it can see (the list reads `ERASURE_AUDIENCE_ORPHAN_LIMIT + 1`): rows past it are not read in that run; they sort after it (`attempts` ascending), and the next run reads them.
+- The stuck rule's over-limit exit judges the one row it can see (the list reads `ERASURE_AUDIENCE_ORPHAN_LIMIT + 1`). Superseded by review round 3 (the stuck-last sort): a stuck marker row now proves every unlisted row is stuck.
 
 **Verify:** a re-Verify on the final HEAD (spec N1), handed to the maintainer after the fixes.
+
+### Slice 2c — review round 3, targeted (`/code-review high 0543f031a..6d967f738`, security APPROVE, pdpa APPROVE WITH CONDITIONS, reliability MERGEABLE; 4 Nov 2026)
+
+**Review metrics:** round 3 (targeted #1) · 10 + 1 + 1 + 3 items (code-review, security, pdpa, reliability; the over-limit exit was found by three of them) · cap: 2 full + ≤ 2 targeted; round 4 is the last targeted round.
+
+**Plan rows added before the fixes (D-043, neighbours named).**
+
+| Mechanism (asked by) | State / rule | Neighbours | Test that goes red first |
+|---|---|---|---|
+| **Stuck rows sort last in the erasure audience list** (code-review #1, security LOW, reliability LOW-1) | `listUnsettledAudienceOrphans(limit, audienceGraceCutoff, stuckAgeCutoff)` orders by `(attempts >= ORPHAN_STUCK_ATTEMPTS AND created_at <= stuckAgeCutoff)` ascending first, then attempts, created_at, orphan_id. The use case passes `stuckAgeCutoff = now - ORPHAN_STUCK_MIN_AGE_MS` from the same injected clock as `isStuck`, so the sort and the predicate cannot disagree. When the marker row (`LIMIT + 1`) is stuck, every unlisted row is stuck too. `audience_orphans_stuck_count` stays a minimum (it counts the listed stuck rows); the payload docblock says so | erasure pass (b), every stub of the port method (arity change: tests swept by symbol), the drain (unchanged) | repo integration · "an old row with 8 attempts sorts after a young row with 9" + cascade unit · the "21 stuck" case rewritten to the real guarantee |
+| **An erased requester's young rows are not starved by a past-grace backlog** (code-review #2) | The drain lists past-grace rows as today, plus a second list of in-grace rows only (`listDrainableOrphans(limit, cutoff, { inGraceOnly: true })`, limit `ORPHAN_DRAIN_LIMIT`). Erased requesters' in-grace rows are processed first, then the past-grace rows, all within `ORPHAN_DRAIN_LIMIT` per run. RoPA residual (1), "drained by the cron within one tick", stays true | the drain, `isErased` (one read per distinct requester across both lists), RoPA 8d residual (1) | cleanup unit · "20 failing past-grace rows do not hold back an erased requester's young row" + repo integration · the in-grace-only list |
+| **The leaked-audience detach arm is capped** (code-review #3) | The third UNION arm reads at most `ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT` (10) unsettled audience orphans, most attempts first. Beyond the cap, the erasure's pass (b) and the drain delete the audience outright. A stuck audience past the cap is a named residual in RoPA 8d. Each pair still checks the deadline (subprocessor adapter :122), and untried pairs are logged by audience id | pdpa H-1 (round 2), the propagate loop, pass (b), RoPA 8d | repo integration · "12 unsettled audience orphans yield 10 audiences in the detach pairs, the most-attempted first" |
+| **The stuck counter counts released erasures** (code-review #4, reliability LOW-2) | `broadcasts_cascade_orphan_stuck_total{tenant}` moves from `reportStuck` to the `member_erased` emit in `erase-member.ts`: one `.add(audience_orphans_stuck_count)` per emitted erasure, nothing on a withheld run | the alert row in `observability.md`, the metrics inventory | erase-member unit · "a withheld run adds nothing; an emitted one adds the count" |
+
+**Fixes:**
+- code-review #5: `broadcasts.cascade.completed` is also logged when `audienceOrphansStuckCount > 0`.
+- code-review #6: `RetrieveBroadcastOnceOutcome.present.sentAt` is required (`string | null`); test doubles updated.
+- reliability nit: `partially_sent` leaves `ORPHAN_SUPERSEDING_STATUSES`. It is not terminal, so a holder in that state hides the orphan from every list.
+
+**Docs:**
+- pdpa M-1: RoPA residual (5), runbook step 4 and the `observability.md` alert row state the § H-1 SLA (`member_erasure_requested` + 30 days, PDPA by analogy, the default for every subject). "Extendable by two months" is dropped.
+- code-review #7: the `reclaimDraftBeforeTerminal` docblock says `refusal: 'terminal'`.
+- code-review #8: the 0325 header's Outcomes paragraph moves out of the retention paragraph.
+- code-review #9: the changelog names the superseding statuses (`sent`, `partial_delivery_accepted`).
+- code-review #10: the drain docblock budgets a broadcast row at DELETE + `REPROBE_PAUSE_MS` + GET.
+- security INFO-2: the detach derivation's docblock says its SELECT runs inside the scrub tx; a grant or RLS regression aborts the scrub (verify-schema pins the grants).
+
+**Accepted:**
+- pdpa I-1: no `tests/contract/` case for the cascade port's count fields. This predates the PR; it is tracked in a follow-up issue.
+- pdpa I-2: `heldBySentRow` matches on the Resend id alone. One id sits on one row.
+- security test gap: a 2-tenant live test for `heldBySentRow`. This is the RLS-masked class (s1); the app fence is in place.
+- security INFO-3: `sentAt` reaches `catchUpHanded` from the terminal path. This is the S8 path's existing shape.
+
+**Verify:** a re-Verify on the final HEAD (spec N1), handed to the maintainer after round 4.
 
 ## Rollout
 
