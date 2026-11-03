@@ -39,8 +39,9 @@ time; it does **not** move to payment).
   same key, invoice, `creditTotalSatang`, trimmed `reason` and `membershipEffect` (compared only when
   the note stored one: a full credit of a membership invoice) answers with the
   note already issued — no second §86/10 note, no second §87 number, no audit, no email. The same key
-  for any other credit → `concurrent_state_change` (409); so is a key seen by the non-locking pre-read
-  but not under the invoice lock (the pre-tx guards were skipped for it, so nothing is issued). The
+  for any other credit → `concurrent_state_change` (409). A key seen by the non-locking pre-read but not
+  under the invoice lock, or a failed reconcile after a race on the key index, issues nothing and
+  answers `500` (the form keeps the attempt: a note was seen, or proven by the 23505, under the key). The
   key is looked up before the pre-tx refund guards, so a 429, 401/403, the read-only 503,
   `refund_in_progress` and `online_payment_refundable` say nothing about an earlier attempt: after an
   unknown outcome the form keeps the key for them. A malformed key → 400 `invalid_body`. Stored as `credit_notes.idempotency_key` (mig 0323,

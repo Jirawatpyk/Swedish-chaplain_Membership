@@ -459,8 +459,11 @@ export interface IssueCreditNoteDeps {
 
 export async function issueCreditNote(
   deps: IssueCreditNoteDeps,
-  input: IssueCreditNoteInput,
+  rawInput: IssueCreditNoteInput,
 ): Promise<Result<IssueCreditNoteSuccess, IssueCreditNoteError>> {
+  // The reason is normalised once (the route's schema trims it too), so what
+  // is stored, printed and audited is what a key replay compares against.
+  const input: IssueCreditNoteInput = { ...rawInput, reason: rawInput.reason.trim() };
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
   const creditNoteId = asCreditNoteId(randomUUID());
   const now = deps.clock.nowIso();
@@ -658,13 +661,15 @@ export async function issueCreditNote(
         }
         // #728 review (financial L2) — the pre-read saw this key, so the
         // manual guards above were skipped; the locked read no longer does.
-        // Issuing now would bypass them: refuse, issue nothing.
+        // Issuing now would bypass them: issue nothing, and throw (a 5xx) —
+        // a definite refusal would end the client's attempt although a note
+        // was just seen under its key (/code-review).
         if (keyHitBeforeTx !== null) {
-          logger.warn(
+          logger.error(
             { tenantId: input.tenantId, invoiceId },
-            'issueCreditNote: idempotency key seen before the lock but not under it — rejecting',
+            'issueCreditNote: idempotency key seen before the lock but not under it — rolling back',
           );
-          return err({ code: 'concurrent_state_change' });
+          throw new Error('issueCreditNote: idempotency key seen before the lock but not under it');
         }
       }
 
