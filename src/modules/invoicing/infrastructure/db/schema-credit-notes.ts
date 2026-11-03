@@ -77,6 +77,10 @@ export const creditNotes = pgTable(
     // membership credit; the renewals reconcile backstop re-reads End
     // decisions from here. NULL on partial / event credits. DB CHECK.
     membershipEffect: text('membership_effect'),
+    // Migration 0323 (#66) — the admin issue attempt this note answers. NULL for
+    // refund-origin and legacy notes; partial UNIQUE (tenant_id,
+    // idempotency_key) WHERE NOT NULL; locked by the immutability trigger.
+    idempotencyKey: uuid('idempotency_key'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

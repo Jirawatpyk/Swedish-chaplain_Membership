@@ -2512,6 +2512,9 @@
         "cancel": "Avbryt",
         "success": "Kreditnota utfärdad.",
         "successWithNumber": "Kreditnota {number} utfärdad.",
+        "successAlreadyIssued": "Kreditnota {number} var redan utfärdad — ingen ny kreditnota utfärdades.",
+        "successAlreadyIssuedNoNumber": "Kreditnotan var redan utfärdad — ingen ny kreditnota utfärdades.",
+        "submitLockedHint": "Slutför kreditnotan med ”Försök igen” i meddelandet ovan, eller öppna fakturan.",
         "emailSkippedNoRecipient": "Köparen har ingen e-post registrerad — skicka kreditnotan manuellt.",
         "membershipEnd": {
           "ended": "Medlemskapet har avslutats — medlemmens åtkomst upphör nu.",
@@ -2531,8 +2534,13 @@
           }
         },
         "errors": {
-          "concurrent": "Denna faktura har redan krediterats eller annullerats i en annan session. Uppdatera för att se den senaste statusen.",
-          "refreshAction": "Uppdatera",
+          "concurrent": "Denna faktura har redan krediterats eller annullerats. Öppna den för att se dess senaste status.",
+          "unconfirmed": "Vi kunde inte bekräfta om kreditnotan på {amount} utfärdades. Försök igen — om den redan har utfärdats, utfärdas ingen ny. Du kan också öppna fakturan och kontrollera.",
+          "retryRefused": "Det här försöket nekades: {reason}",
+          "retryAction": "Försök igen",
+          "openInvoiceAction": "Öppna fakturan",
+          "stillWorking": "Arbetar fortfarande — håll det här fönstret öppet.",
+          "waitingForConnection": "Väntar på anslutningen…",
           "failed": "Kreditnotan kunde inte utfärdas.",
           "unknown": "Ett okänt fel uppstod. Försök igen.",
           "receiptNotCreditable": "För denna betalning utfärdades ett kvitto enligt paragraf 105, inte en skattefaktura, så ingen kreditnota kan utfärdas för den. För att återbetala den, använd återbetalningsåtgärden på betalningen — den återför pengarna utan en kreditnota.",
@@ -3557,7 +3565,7 @@
           "member_not_found": "Medlemmen kunde inte hittas.",
           "pdf_render_failed": "PDF-filen kunde inte genereras — inget har utfärdats. Försök igen.",
           "blob_upload_failed": "PDF-filen kunde inte lagras — inget har utfärdats. Försök igen.",
-          "network": "Anslutningsfel — begäran nådde kanske inte servern. Kontrollera din anslutning och försök igen.",
+          "unconfirmed": "Vi kunde inte bekräfta om fakturan utfärdades som betald. Kontrollera statusen på fakturan innan du försöker igen.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
         }
@@ -3645,8 +3653,11 @@
         "errors": {
           "failed": "Fakturan kunde inte annulleras.",
           "unknown": "Ett okänt fel inträffade. Försök igen.",
-          "concurrent": "Denna faktura har redan annullerats eller ändrats i en annan session. Uppdatera för att se den senaste statusen.",
-          "refreshAction": "Uppdatera",
+          "concurrent": "Denna faktura har redan annullerats eller ändrats. Öppna den för att se dess senaste status.",
+          "unconfirmed": "Vi kunde inte bekräfta om fakturan annullerades. Öppna fakturan för att kontrollera statusen innan du försöker igen — om den redan är annullerad ändrar ett nytt försök ingenting.",
+          "openInvoiceAction": "Öppna fakturan",
+          "stillWorking": "Arbetar fortfarande — håll det här fönstret öppet.",
+          "waitingForConnection": "Väntar på anslutningen…",
           "codeFallback": "Felkod: {code}",
           "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att annullera nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen.",
           "paidMembershipRequiresCreditNote": "Den här betalda medlemsfakturan kan inte annulleras. För att återföra den, utfärda en kreditnota i stället.",
@@ -8001,6 +8012,7 @@
       "invoice_voided": "Faktura annullerad",
       "invoice_overdue_detected": "Faktura förfallen",
       "credit_note_issued": "Kreditnota utfärdad",
+      "credit_note_issue_replayed": "Begäran om kreditnota upprepad — befintlig kreditnota returnerad",
       "invoice_pdf_resent": "Faktura-PDF skickad igen",
       "receipt_pdf_resent": "Kvitto-PDF skickat igen",
       "credit_note_pdf_resent": "Kreditnota-PDF skickad igen",

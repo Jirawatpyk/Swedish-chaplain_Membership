@@ -90,6 +90,8 @@ import {
 // deep import of the pure-constants codes module (client-safe; the barrel's
 // runtime graph is server-only).
 import { AS_PAID_ERROR_CODES } from './as-paid-error-codes';
+import { isReadOnlyRefusal, readProblemCode } from '@/lib/http/read-only-refusal';
+import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from '../../_components/unknown-outcome';
 // Wave-4 S14 — shared client-safe Asia/Bangkok "today" helper.
 import { bangkokTodayIso } from '@/lib/bangkok-today';
 import { formatSatangAmount } from '@/lib/format-thb';
@@ -467,6 +469,7 @@ export function EventFeeForm({
   const locale = useLocale();
   // (S25 — the shared record-payment labels moved into AsPaidPaymentFields.)
   const tAsPaid = useTranslations('admin.invoices.issueAsPaid');
+  const tErrors = useTranslations('errors');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -673,10 +676,11 @@ export function EventFeeForm({
           ...(refTrim !== '' ? { paymentReference: refTrim } : {}),
           ...(notesTrim !== '' ? { paymentNotes: notesTrim } : {}),
         }),
+        signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
       });
     } catch {
-      // S4 — network-level rejection (offline, DNS, aborted): fall through
-      // to the unknown-error toast below WITH the draft-remains context.
+      // S4 / #61 — no response (offline, DNS, aborted, the timeout): the
+      // as-paid issue may have committed. Handled below as an unknown outcome.
       issueRes = null;
     }
     if (issueRes?.ok) {
@@ -698,51 +702,71 @@ export function EventFeeForm({
         noEmailWarning ? { description: noEmailWarning } : undefined,
       );
     } else {
-      let issueCode: string | undefined;
-      if (issueRes !== null) {
-        const issuePayload = await issueRes.json().catch(() => ({}));
-        issueCode = (issuePayload as { error?: { code?: string } })?.error?.code;
-      }
-      const issueKnown =
-        issueCode !== undefined && AS_PAID_ERROR_CODES.includes(issueCode);
-      // 065 M-3 — three distinguishable failure shapes, three copies:
-      //   issueRes === null → NETWORK rejection (offline/DNS/abort): the
-      //     request may never have reached the server — "check your
-      //     connection, then retry" guidance, NOT the generic unknown.
-      //   typed code        → mapped copy (or codeFallback for codes
-      //     without copy).
-      //   HTTP without code → an HTTP response DID arrive (proxy error
-      //     page, Next default 500) — interpolate the status into
-      //     codeFallback (e.g. "Error code: HTTP_500") so support can
-      //     tell it apart from a connection drop.
-      toast.error(
-        issueRes === null
-          ? tAsPaid('errors.network')
-          : issueKnown
+      const issuePayload: unknown =
+        issueRes !== null ? await issueRes.json().catch(() => ({})) : undefined;
+      const problem = readProblemCode(issuePayload);
+      if (issueRes !== null && isReadOnlyRefusal(issueRes.status, issuePayload)) {
+        // The write freeze refused it: nothing ran, and the draft survived.
+        // No Retry: the freeze lasts minutes, and the draft is on the page
+        // this lands on.
+        toast.warning(tErrors('readOnlyMode'), {
+          description: `${tErrors('readOnlyNothingChanged')} ${tAsPaid('draftRemains')}`,
+          // Read across the navigation below (#727 review).
+          duration: 10_000,
+        });
+      } else if (issueRes === null || isUnknownOutcome(issueRes.status, problem)) {
+        // #61 — no answer, or a 5xx naming no refusal: the receipt may have been
+        // numbered. Say so, without claiming the draft remains and without a
+        // blind Retry; the invoice page this lands on shows the real status.
+        // (A retry would be refused as invoice_already_issued, but check first.)
+        // Kept until dismissed: it is the one thing to read on the invoice
+        // page this lands on, and the navigation can take most of the default
+        // 5 s (#727 review, UX H3).
+        toast.warning(tAsPaid('errors.unconfirmed'), { duration: Infinity });
+      } else {
+        const issueCode = problem?.shape === 'nested' ? problem.code : undefined;
+        const issueKnown =
+          issueCode !== undefined && AS_PAID_ERROR_CODES.includes(issueCode);
+        // 065 M-3 — a typed code → mapped copy (or codeFallback for codes
+        // without copy); an HTTP refusal without a code (a 4xx proxy page)
+        // interpolates the status (e.g. "Error code: HTTP_413") so support can
+        // tell it apart.
+        toast.error(
+          issueKnown
             ? tAsPaid(`errors.${issueCode}`)
             : tAsPaid('errors.codeFallback', {
                 code: issueCode ?? `HTTP_${issueRes.status}`,
               }),
-        {
-          description: tAsPaid('draftRemains'),
-          // S6 — honest retry: the draft survived, so offer to re-run the
-          // issue step right from the toast. Suppressed when the row is
-          // ALREADY issued (terminal for this flow — just navigate).
-          ...(issueCode === 'invoice_already_issued'
-            ? {}
-            : {
-                action: {
-                  label: tAsPaid('retry'),
-                  onClick: () => {
-                    void issueDraftAsPaid(invoiceId);
+          {
+            description: tAsPaid('draftRemains'),
+            // S6 — honest retry: the draft survived, so offer to re-run the
+            // issue step right from the toast. Suppressed when the row is
+            // ALREADY issued (terminal for this flow — just navigate).
+            ...(issueCode === 'invoice_already_issued'
+              ? {}
+              : {
+                  action: {
+                    label: tAsPaid('retry'),
+                    onClick: () => {
+                      void issueDraftAsPaid(invoiceId);
+                    },
                   },
-                },
-              }),
-        },
-      );
+                }),
+          },
+        );
+      }
     }
-    router.push(`/admin/invoices/${invoiceId}`);
-    router.refresh();
+    const land = () => {
+      router.push(`/admin/invoices/${invoiceId}`);
+      router.refresh();
+    };
+    // #727 review — offline, a navigation falls onto the browser's offline
+    // page and the toast above is lost (#48), so it waits for the connection.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      window.addEventListener('online', land, { once: true });
+    } else {
+      land();
+    }
   }
 
   function submit(e: React.FormEvent<HTMLFormElement>) {

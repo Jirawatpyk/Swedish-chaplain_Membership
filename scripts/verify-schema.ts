@@ -231,6 +231,14 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'broadcasts' AND column_name = 'dispatch_lease_token' AND data_type = 'uuid' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'broadcasts' AND column_name = 'dispatch_lease_expires_at' AND data_type = 'timestamp with time zone' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'broadcasts_dispatch_lease_pair' AND conrelid = 'public.broadcasts'::regclass AND contype = 'c') AND EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'broadcasts_immutable_after_submit_fn' AND prosrc LIKE '%NEW.dispatch_lease_token%' AND prosrc LIKE '%NEW.dispatch_lease_expires_at%')`,
       },
       {
+        // #66 (mig 0323) — the admin credit-note idempotency key. The column,
+        // the partial per-tenant UNIQUE the race reconcile names, and the
+        // immutability trigger's lock on the key (by SOURCE, as 0311: the
+        // function's name and signature are unchanged since 0307).
+        name: 'credit_notes.idempotency_key + credit_notes_tenant_idempotency_key_uniq + immutability lock (mig 0323)',
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'credit_notes' AND column_name = 'idempotency_key' AND data_type = 'uuid' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'credit_notes' AND indexname = 'credit_notes_tenant_idempotency_key_uniq' AND indexdef LIKE 'CREATE UNIQUE INDEX%' AND indexdef LIKE '%(tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)') AND EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'credit_notes_enforce_immutability' AND prosrc LIKE '%NEW."idempotency_key"%')`,
+      },
+      {
         // Spec 140 s2c (mig 0325) — the orphaned Resend id table: RLS ENABLE +
         // FORCE with one policy, chamber_app holding no DELETE, the partial
         // unique id index the writers' ON CONFLICT lands on, and the

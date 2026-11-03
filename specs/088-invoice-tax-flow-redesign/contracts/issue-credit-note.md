@@ -34,12 +34,31 @@ time; it does **not** move to payment).
   reason: string }`. `creditTotalSatang` is a numeric string (JSON has no bigint) coerced via
   `BigInt(...)` at the route boundary.
 - **Headers**: session cookie. Rate limit `f4:credit-note:{tenant}:{actor}` — 20 / 5 min.
+- **#66 `idempotencyKey`** (optional, uuid): one per ADMIN issue attempt; the admin form keeps it
+  (sessionStorage per invoice, with the exact request) until a definite answer. A repeat with the
+  same key, invoice, `creditTotalSatang`, trimmed `reason` and `membershipEffect` (compared only when
+  the note stored one: a full credit of a membership invoice) answers with the
+  note already issued — no second §86/10 note, no second §87 number, no audit, no email. The same key
+  for any other credit → `concurrent_state_change` (409). A key seen by the non-locking pre-read but not
+  under the invoice lock, or a failed reconcile after a race on the key index, issues nothing and
+  answers `500` (the form keeps the attempt: a note was seen, or proven by the 23505, under the key). The
+  key is looked up before the pre-tx refund guards, so a 429, 401/403, the read-only 503,
+  `refund_in_progress` and `online_payment_refundable` say nothing about an earlier attempt: after an
+  unknown outcome the form keeps the key for them. A malformed key → 400 `invalid_body`. Stored as `credit_notes.idempotency_key` (mig 0323,
+  partial UNIQUE per tenant; a lost race reconciles to the winner). Refund-origin notes never send it.
 
 ## Response `201`
 
 `serialiseCreditNote(creditNote)` fields **plus** a sibling `email_delivery` field
 (`CreditNoteEmailDelivery` — surfaces `skipped_no_recipient` when the buyer has no email). The CN
 DTO's reference fields point at the **RC receipt number** and the receipt's (payment) date.
+
+**#66 `replayed`** (boolean, sibling): `true` when the response is a note an earlier request
+already issued (same idempotency key, or same refund). A replay is still `201` and carries no
+`membership_end` (the end-membership step ran, or is covered by the hourly backstop, the first time).
+An admin key replay writes one `credit_note_issue_replayed` audit row (mig 0324; 10 y; ids only:
+`credit_note_id`, `original_invoice_id`, `document_number`, `idempotency_key`, `total_satang`, `path`
+`locked_read` | `race_reconcile`), never a second `credit_note_issued`.
 
 ## Preconditions
 

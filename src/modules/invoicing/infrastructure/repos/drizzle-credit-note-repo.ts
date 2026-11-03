@@ -6,7 +6,7 @@
  * every row touched, even on paths that forget a WHERE tenant_id
  * filter.
  */
-import { and, asc, desc, eq, gte, ilike, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, isNull, sql, type SQL } from 'drizzle-orm';
 import { asSatang } from '@/lib/money';
 import type { CreditNoteRepo } from '../../application/ports/credit-note-repo';
 import {
@@ -96,6 +96,10 @@ function rowToCreditNote(
     },
     // F5 extension — NULL for F4-manual CNs; non-NULL = refund-origin
     sourceRefundId: row.sourceRefundId,
+    membershipEffect:
+      row.membershipEffect === 'keep' || row.membershipEffect === 'cancel_membership'
+        ? row.membershipEffect
+        : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -187,6 +191,44 @@ async function sumVatByOriginalInvoice(
   return Money.fromSatangUnsafe(BigInt(row?.total ?? '0'));
 }
 
+/**
+ * One credit note by an idempotency column (`source_refund_id`, or #66's
+ * `idempotency_key`), on the caller's tx, fenced on `tenant_id` (D-029). LEFT
+ * JOIN mirrors `findById` so an orphan CN (invoice hard-deleted —
+ * FK-prevented in practice) is dropped rather than 500-ing.
+ */
+async function findOneIdempotent(
+  tx: TenantTx,
+  tenantIdArg: string,
+  match: SQL,
+  logContext: Record<string, string>,
+  label: string,
+): Promise<CreditNote | null> {
+  const rows = await tx
+    .select({
+      creditNote: creditNotes,
+      originalInvoiceMemberId: invoices.memberId,
+      originalInvoiceId: invoices.invoiceId,
+    })
+    .from(creditNotes)
+    .leftJoin(
+      invoices,
+      and(eq(invoices.tenantId, creditNotes.tenantId), eq(invoices.invoiceId, creditNotes.originalInvoiceId)),
+    )
+    .where(and(eq(creditNotes.tenantId, tenantIdArg), match))
+    .limit(1);
+  const result = rows[0] ?? null;
+  if (!result) return null;
+  if (!result.originalInvoiceId) {
+    logger.error(
+      { tenantId: tenantIdArg, ...logContext },
+      `drizzle-credit-note-repo: ${label} — CN row has no matching invoice (orphan)`,
+    );
+    return null;
+  }
+  return rowToCreditNote(result.creditNote as CreditNoteRow, result.originalInvoiceMemberId);
+}
+
 export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
   const ctx = asTenantContext(tenantId);
 
@@ -217,6 +259,9 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
           retainsCoverage: input.retainsCoverage,
           ...(input.membershipEffect !== undefined
             ? { membershipEffect: input.membershipEffect }
+            : {}),
+          ...(input.idempotencyKey !== undefined
+            ? { idempotencyKey: input.idempotencyKey }
             : {}),
           ...(input.sourceRefundId !== undefined
             ? { sourceRefundId: input.sourceRefundId }
@@ -267,42 +312,28 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
       // caller's `tx` (never the pool-global `db`) so RLS is enforced on the
       // same connection under the invoice lock / fresh reconcile tx (Principle
       // I). At most one row (partial unique index); `limit(1)` is belt-and-
-      // suspenders. LEFT JOIN mirrors `findById` so an orphan CN (invoice hard-
-      // deleted — FK-prevented in practice) is dropped rather than 500-ing.
-      const tx = txUnknown as TenantTx;
-      const rows = await tx
-        .select({
-          creditNote: creditNotes,
-          originalInvoiceMemberId: invoices.memberId,
-          originalInvoiceId: invoices.invoiceId,
-        })
-        .from(creditNotes)
-        .leftJoin(
-          invoices,
-          and(
-            eq(invoices.tenantId, creditNotes.tenantId),
-            eq(invoices.invoiceId, creditNotes.originalInvoiceId),
-          ),
-        )
-        .where(
-          and(
-            eq(creditNotes.tenantId, tenantIdArg),
-            eq(creditNotes.sourceRefundId, sourceRefundId),
-          ),
-        )
-        .limit(1);
-      const result = rows[0] ?? null;
-      if (!result) return null;
-      if (!result.originalInvoiceId) {
-        logger.error(
-          { tenantId: tenantIdArg, sourceRefundId },
-          'drizzle-credit-note-repo: findBySourceRefundId — CN row has no matching invoice (orphan)',
-        );
-        return null;
-      }
-      return rowToCreditNote(
-        result.creditNote as CreditNoteRow,
-        result.originalInvoiceMemberId,
+      // suspenders.
+      return findOneIdempotent(
+        txUnknown as TenantTx,
+        tenantIdArg,
+        eq(creditNotes.sourceRefundId, sourceRefundId),
+        { sourceRefundId },
+        'findBySourceRefundId',
+      );
+    },
+
+    async findByIdempotencyKey(
+      txUnknown,
+      tenantIdArg: string,
+      idempotencyKey: string,
+    ): Promise<CreditNote | null> {
+      // #66 — the admin twin, on `credit_notes_tenant_idempotency_key_uniq`.
+      return findOneIdempotent(
+        txUnknown as TenantTx,
+        tenantIdArg,
+        eq(creditNotes.idempotencyKey, idempotencyKey),
+        {},
+        'findByIdempotencyKey',
       );
     },
 

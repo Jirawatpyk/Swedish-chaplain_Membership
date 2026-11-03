@@ -2201,6 +2201,20 @@
       "breakpoints": true
     },
     {
+      "idx": 324,
+      "version": "7",
+      "when": 1798545600000,
+      "tag": "0323_credit_notes_idempotency_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 325,
+      "version": "7",
+      "when": 1798545700000,
+      "tag": "0324_audit_event_credit_note_issue_replayed",
+      "breakpoints": true
+    },
+    {
       "idx": 326,
       "version": "7",
       "when": 1798545800000,

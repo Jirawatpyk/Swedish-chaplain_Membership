@@ -201,7 +201,19 @@ export type F4AuditEventType =
    * "we never sent it" for five is an asymmetry that always favours us —
    * exactly what an audit trail must not do.
    */
-  | 'auto_email_skipped_no_recipient';
+  | 'auto_email_skipped_no_recipient'
+  /**
+   * #67 (mig 0324) — a repeat of an ADMIN credit-note issue attempt (the same
+   * `idempotency_key`, #66) was answered with the note already issued: no new
+   * §86/10 note, no §87 number. Emitted in the tx that read the note (the
+   * locked read, or the fresh-tx reconcile after a lost 23505 race). Payload,
+   * ids only: `{ credit_note_id, original_invoice_id, document_number,
+   * idempotency_key, total_satang, path: 'locked_read' | 'race_reconcile' }`.
+   * No `member_id`: a replay is not member activity. **10y**, as the
+   * tax-document events it answers for (`credit_note_issued`,
+   * `credit_note_pdf_resent`).
+   */
+  | 'credit_note_issue_replayed';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -230,6 +242,8 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   invoice_voided: 10,
   invoice_overdue_detected: 5,
   credit_note_issued: 10,
+  // #67 — answers a §86/10 request with an existing tax document; 10y.
+  credit_note_issue_replayed: 10,
   tenant_invoice_settings_updated: 5,
   invoice_pdf_resent: 10,
   receipt_pdf_resent: 10,

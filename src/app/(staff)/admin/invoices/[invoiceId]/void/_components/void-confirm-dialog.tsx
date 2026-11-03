@@ -26,8 +26,30 @@ import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { ArchiveIcon } from 'lucide-react';
 import { Alert, Button, Card, TextField, Textarea } from '@jirawatpyk/aura-react';
+import type { FeedbackTone } from '@jirawatpyk/aura-react';
+import { isReadOnlyRefusal, readProblemCode } from '@/lib/http/read-only-refusal';
 import { routeVoidError } from './void-error-routing';
 import { PhraseChip } from '../../../_components/phrase-chip';
+import { cancelPendingRefresh, refreshWhenOnline } from '../../../_components/refresh-when-online';
+import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from '../../../_components/unknown-outcome';
+import { useStillWorking } from '../../../_components/use-still-working';
+
+type VoidFormError =
+  | { readonly kind: 'concurrent' }
+  // #61 — no trustworthy answer: the void commits before its Phase-2 work, so
+  // a drop, the timeout or a 5xx naming no refusal may come after it voided.
+  | { readonly kind: 'unconfirmed' }
+  // The READ_ONLY_MODE freeze refused it: nothing was written.
+  | { readonly kind: 'readOnly' }
+  | { readonly kind: 'failure'; readonly message: string };
+
+/** One tone per kind; a new kind must pick one (the wrapper's `data-tone` follows). */
+const VOID_ERROR_TONE = {
+  concurrent: { alert: 'info', wrapper: 'neutral' },
+  unconfirmed: { alert: 'warning', wrapper: 'warning' },
+  readOnly: { alert: 'warning', wrapper: 'warning' },
+  failure: { alert: 'danger', wrapper: 'destructive' },
+} as const satisfies Record<VoidFormError['kind'], { alert: FeedbackTone; wrapper: string }>;
 
 type Props = {
   readonly invoiceId: string;
@@ -38,20 +60,25 @@ type Props = {
 
 export function VoidConfirmDialog({ invoiceId, documentNumber, isBill = false }: Props) {
   const t = useTranslations('admin.invoices.void');
+  const tErrors = useTranslations('errors');
   const locale = useLocale();
   const router = useRouter();
   const [reason, setReason] = useState('');
   const [typed, setTyped] = useState('');
   const [pending, startTransition] = useTransition();
+  const stillWorking = useStillWorking(pending);
   const reasonRef = useRef<HTMLTextAreaElement | null>(null);
 
   // 088 T021a / FR-032 — voiding RETIRES the §87 document number (terminal,
   // irreversible-in-effect), so a failure MUST NOT be a transient toast: it is
   // surfaced INLINE via a focused role="alert". A concurrent 409 (already
   // voided/paid) shows an inline "already voided — refresh".
-  const [formError, setFormError] = useState<
-    { readonly kind: 'concurrent' } | { readonly kind: 'failure'; readonly message: string } | null
-  >(null);
+  const [formError, setFormError] = useState<VoidFormError | null>(null);
+  // #61 — Refresh was pressed offline: it runs once the connection is back.
+  const [waitingForConnection, setWaitingForConnection] = useState(false);
+  // Set before the POST, synchronously: `pending` flips only on the next
+  // render, so a second submit in the same tick would otherwise void twice.
+  const inFlightRef = useRef(false);
   const errorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (formError) errorRef.current?.focus();
@@ -90,54 +117,85 @@ export function VoidConfirmDialog({ invoiceId, documentNumber, isBill = false }:
   const canSubmit = reasonValid && matches && !pending;
 
   const submit = useCallback(() => {
-    if (!canSubmit) return;
+    if (!canSubmit || inFlightRef.current) return;
     setFormError(null);
+    // A navigation queued offline must not fire after this new attempt.
+    cancelPendingRefresh();
+    setWaitingForConnection(false);
+    inFlightRef.current = true;
     startTransition(async () => {
-      const res = await fetch(`/api/invoices/${invoiceId}/void`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voidReason: reason.trim() }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          error?: { code?: string };
-        };
-        const code = body.error?.code;
-        // FR-032 — the void is irreversible (§87 number retired), so route the
-        // failure to an INLINE focused role="alert" (the dialog stays open); a
-        // concurrent 409 (already voided/paid elsewhere) shows the "already
-        // voided — refresh" prompt instead of a raw error.
-        const routing = routeVoidError(code);
-        if (routing.kind === 'concurrent') {
-          setFormError({ kind: 'concurrent' });
-        } else {
-          const message =
-            routing.messageKey === 'errors.codeFallback' && routing.codeArg
-              ? t('errors.codeFallback', { code: routing.codeArg })
-              : t(routing.messageKey as 'errors.unknown');
-          setFormError({ kind: 'failure', message });
+      // Held after a success: the page navigates away.
+      let voided = false;
+      try {
+        let res: Response;
+        try {
+          res = await fetch(`/api/invoices/${invoiceId}/void`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ voidReason: reason.trim() }),
+            signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
+          });
+        } catch {
+          // #61 — no response (a drop or the timeout): the void may have
+          // committed. A retry is safe (the server refuses a voided invoice),
+          // but check first.
+          setFormError({ kind: 'unconfirmed' });
+          return;
         }
-        return;
+        if (!res.ok) {
+          const body: unknown = await res.json().catch(() => ({}));
+          // The write freeze refused it: nothing ran (its flat body names no code).
+          if (isReadOnlyRefusal(res.status, body)) {
+            setFormError({ kind: 'readOnly' });
+            return;
+          }
+          const problem = readProblemCode(body);
+          // #61 — a 5xx naming no refusal may come after the void committed.
+          if (isUnknownOutcome(res.status, problem)) {
+            setFormError({ kind: 'unconfirmed' });
+            return;
+          }
+          // Route codes are nested; a flat string is not one (read-only aside).
+          const code = problem?.shape === 'nested' ? problem.code : undefined;
+          // FR-032 — the void is irreversible (§87 number retired), so route the
+          // failure to an INLINE focused role="alert" (the page stays put); a
+          // concurrent 409 (already voided/paid) shows the "already voided —
+          // refresh" prompt instead of a raw error.
+          const routing = routeVoidError(code);
+          if (routing.kind === 'concurrent') {
+            setFormError({ kind: 'concurrent' });
+          } else {
+            const message =
+              routing.messageKey === 'errors.codeFallback' && routing.codeArg
+                ? t('errors.codeFallback', { code: routing.codeArg })
+                : t(routing.messageKey as 'errors.unknown');
+            setFormError({ kind: 'failure', message });
+          }
+          return;
+        }
+        // FR-032 — doc-specific success toast: the invoice's document number is
+        // known here (it IS the typed-phrase gate), so name it.
+        //
+        // 108 FR-004 (round-5 finding #4) — and say whether the §86/10
+        // cancellation notice actually LEFT. `voidInvoice` skips it when the
+        // member has no live primary contact; the route reports that as
+        // `email_delivery`, and this success path used to ignore the body
+        // entirely and navigate away. The void succeeded either way, so this is a
+        // warning toast, not an error: the statutory act is done, but nobody was
+        // told, and this page is the only place the admin will be looking.
+        const body = (await res.json().catch(() => null)) as
+          | { email_delivery?: string }
+          | null;
+        if (body?.email_delivery === 'skipped_no_recipient') {
+          toast.warning(t('successWithNumberNoNotice', { number: documentNumber }));
+        } else {
+          toast.success(t('successWithNumber', { number: documentNumber }));
+        }
+        voided = true;
+        router.push(`/admin/invoices/${invoiceId}`);
+      } finally {
+        if (!voided) inFlightRef.current = false;
       }
-      // FR-032 — doc-specific success toast: the invoice's document number is
-      // known here (it IS the typed-phrase gate), so name it.
-      //
-      // 108 FR-004 (round-5 finding #4) — and say whether the §86/10
-      // cancellation notice actually LEFT. `voidInvoice` skips it when the
-      // member has no live primary contact; the route reports that as
-      // `email_delivery`, and this success path used to ignore the body
-      // entirely and navigate away. The void succeeded either way, so this is a
-      // warning toast, not an error: the statutory act is done, but nobody was
-      // told, and this page is the only place the admin will be looking.
-      const body = (await res.json().catch(() => null)) as
-        | { email_delivery?: string }
-        | null;
-      if (body?.email_delivery === 'skipped_no_recipient') {
-        toast.warning(t('successWithNumberNoNotice', { number: documentNumber }));
-      } else {
-        toast.success(t('successWithNumber', { number: documentNumber }));
-      }
-      router.push(`/admin/invoices/${invoiceId}`);
     });
   }, [canSubmit, invoiceId, reason, documentNumber, t, router]);
 
@@ -173,25 +231,61 @@ export function VoidConfirmDialog({ invoiceId, documentNumber, isBill = false }:
           ref={errorRef}
           tabIndex={-1}
           role="alert"
-          data-tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
+          data-tone={VOID_ERROR_TONE[formError.kind].wrapper}
           className="outline-none"
           data-testid="void-invoice-error"
         >
           <Alert
             role="none"
-            tone={formError.kind === 'failure' ? 'danger' : 'info'}
+            tone={VOID_ERROR_TONE[formError.kind].alert}
             action={
-              formError.kind === 'concurrent' ? (
-                <Button type="button" variant="secondary" size="sm" touchHeight onClick={() => router.refresh()}>
-                  {t('errors.refreshAction')}
+              formError.kind === 'concurrent' || formError.kind === 'unconfirmed' ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  touchHeight
+                  aria-disabled={waitingForConnection || undefined}
+                  onClick={() => {
+                    if (waitingForConnection) return;
+                    // This page answers notFound() once the invoice is no
+                    // longer issued, so a refresh would land on a 404: open
+                    // the invoice instead (#727 review). Offline, a navigation
+                    // falls onto the browser's offline page, so wait for the
+                    // connection (#48); the page stays mounted, so the wait
+                    // clears when it runs.
+                    const outcome = refreshWhenOnline(
+                      { refresh: () => router.push(`/admin/invoices/${invoiceId}`) },
+                      () => setWaitingForConnection(false),
+                    );
+                    if (outcome === 'waiting') setWaitingForConnection(true);
+                  }}
+                >
+                  {waitingForConnection ? t('errors.waitingForConnection') : t('errors.openInvoiceAction')}
                 </Button>
               ) : undefined
             }
           >
-            {formError.kind === 'concurrent' ? t('errors.concurrent') : formError.message}
+            {formError.kind === 'concurrent'
+              ? t('errors.concurrent')
+              : formError.kind === 'unconfirmed'
+                ? t('errors.unconfirmed')
+                : formError.kind === 'readOnly'
+                  ? `${tErrors('readOnlyMode')} ${tErrors('readOnlyNothingChanged')}`
+                  : formError.message}
           </Alert>
         </div>
       )}
+      {/* #61 — the offline wait and the 10 s "still working" note, announced
+          once, outside the alert region; visible too, so nobody closes the
+          tab during a long wait. */}
+      <div role="status" aria-live="polite" className="min-h-5 text-sm text-[var(--aura-fg-secondary)]">
+        {waitingForConnection
+          ? t('errors.waitingForConnection')
+          : stillWorking
+            ? t('errors.stillWorking')
+            : ''}
+      </div>
 
       <Card>
         <div className="flex flex-col gap-[var(--aura-space-5)]">

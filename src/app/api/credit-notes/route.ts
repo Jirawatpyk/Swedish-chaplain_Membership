@@ -45,6 +45,9 @@ type HasEmailDeliveryKey = 'email_delivery' extends keyof SerialisedCreditNote
   ? true
   : false;
 const _assertNoEmailDeliveryCollision: false = false as HasEmailDeliveryKey;
+// #66 — the same guard for the `replayed` sibling.
+type HasReplayedKey = 'replayed' extends keyof SerialisedCreditNote ? true : false;
+const _assertNoReplayedCollision: false = false as HasReplayedKey;
 
 interface CreditNoteResponseBody extends SerialisedCreditNote {
   readonly email_delivery: CreditNoteEmailDelivery;
@@ -55,6 +58,11 @@ interface CreditNoteResponseBody extends SerialisedCreditNote {
    * ALWAYS fully committed regardless (§86/10 numbering never depends on F8).
    */
   readonly membership_end?: MembershipEndOutcome;
+  /**
+   * #66 — `true` when this answered with a note an earlier request already
+   * issued (same idempotency key or refund): nothing new was created.
+   */
+  readonly replayed: boolean;
 }
 
 // SG-7 — error-code → HTTP status lookup. Cleaner than a nested
@@ -163,6 +171,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Optional; the use-case refuses a manual CN on a refundable online
     // payment unless this is `true` (see `online_payment_refundable`).
     onlinePaymentRefundAcknowledged: rawBody.onlinePaymentRefundAcknowledged,
+    // #66 — optional uuid per admin issue attempt; the schema refuses a
+    // malformed one (400) before the use case runs.
+    idempotencyKey: rawBody.idempotencyKey,
   });
   if (!parsed.success) {
     return NextResponse.json(
@@ -238,6 +249,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const responseBody: CreditNoteResponseBody = {
     ...serialiseCreditNote(result.value.creditNote),
     email_delivery: result.value.emailDelivery,
+    replayed: result.value.replayed,
     // Present only when staff chose to end the membership.
     ...(membershipEnd !== undefined ? { membership_end: membershipEnd } : {}),
   };
