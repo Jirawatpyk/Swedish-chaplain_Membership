@@ -1000,6 +1000,63 @@ describe('<EventFeeForm>', () => {
     }
   });
 
+  it('#727 review: offline, the unconfirmed toast shows and the navigation waits for the connection', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-27' }), { status: 201 }),
+    );
+    const onLine = vi.spyOn(navigator, 'onLine', 'get');
+    fetchMock.mockImplementationOnce(async () => {
+      onLine.mockReturnValue(false);
+      throw new TypeError('Failed to fetch');
+    });
+    try {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+        }),
+      );
+      await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1));
+      // A navigation while offline falls onto the browser's offline page and
+      // loses the toast (#48), so it waits.
+      expect(pushMock).not.toHaveBeenCalled();
+      onLine.mockReturnValue(true);
+      window.dispatchEvent(new Event('online'));
+      expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-27');
+    } finally {
+      onLine.mockRestore();
+    }
+  });
+
+  it('M-3: a refusal WITHOUT an error code below 500 → codeFallback interpolates the HTTP status, draft-remains + retry', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-28' }), { status: 201 }),
+    );
+    fetchMock.mockImplementationOnce(
+      async () => new Response('<html>Payload Too Large</html>', { status: 413 }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-28'));
+    expect(toastError).toHaveBeenCalledWith(
+      asPaidMessages.errors.codeFallback.replace('{code}', 'HTTP_413'),
+      expect.objectContaining({
+        description: asPaidMessages.draftRemains,
+        action: expect.objectContaining({ label: asPaidMessages.retry }),
+      }),
+    );
+  });
+
   it('#61: the READ_ONLY_MODE 503 on the issue-as-paid POST → the read-only warning, nothing changed, draft remains, no Retry', async () => {
     const fetchMock = mockFetchRegistrations([matchedRegistration]);
     vi.stubGlobal('fetch', fetchMock);

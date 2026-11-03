@@ -258,6 +258,28 @@ describe('VoidConfirmDialog — #61 an unknown outcome reads as unknown', () => 
     }
   });
 
+  it('#727 review: submitting again drops a pending offline navigation', async () => {
+    const fetchMock = rejectingFetch('invalid_status');
+    vi.stubGlobal('fetch', fetchMock);
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      renderDialog();
+      fillAndSubmit();
+      await screen.findByTestId('void-invoice-error');
+      fireEvent.click(screen.getByRole('button', { name: 'Open invoice' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Void invoice$/ }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      onLine.mockReturnValue(true);
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+      expect(pushMock).not.toHaveBeenCalled();
+    } finally {
+      onLine.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('the POST carries a timeout signal', async () => {
     const fetchMock = rejectingFetch('invalid_status');
     vi.stubGlobal('fetch', fetchMock);
