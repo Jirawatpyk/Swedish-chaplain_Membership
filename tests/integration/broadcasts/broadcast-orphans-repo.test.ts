@@ -18,6 +18,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runInTenant } from '@/lib/db';
 import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
+import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import {
   broadcastOrphanedResendIds,
   broadcasts,
@@ -272,5 +273,38 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     } finally {
       await solo.cleanup().catch(() => {});
     }
+  });
+
+  /**
+   * Spec 140 s2c review round 2 (pdpa H-1) — the 8a detach derivation
+   * (`listMemberResendAudienceContactsInTx`) pairs the erased member's
+   * addresses with every UNSETTLED audience orphan of the tenant: a stuck
+   * leaked audience may hold the address. Settled rows, broadcast orphans and
+   * another tenant's rows are not paired.
+   */
+  it("[pdpa H-1] a stuck audience orphan's audience is in the detach pairs", async () => {
+    const orphansA = makeDrizzleBroadcastOrphansRepo(tenantA.ctx.slug);
+    const orphansB = makeDrizzleBroadcastOrphansRepo(tenantB.ctx.slug);
+    const stuck = `aud-stuck-${randomUUID()}`;
+    const settled = `aud-settled-${randomUUID()}`;
+    const bcast = `rb-detach-${randomUUID()}`;
+    const otherTenant = `aud-b-${randomUUID()}`;
+    const email = `h1-${randomUUID()}@example.com`;
+    const rec = (repo: typeof orphansA, resourceType: 'audience' | 'broadcast', resourceId: string) =>
+      repo.recordOrphanedResendId({ broadcastId: randomUUID(), requestedByMemberId: randomUUID(), resourceType, resourceId, reason: resourceType === 'audience' ? 'audience_leaked' : 'attach_lost' });
+    await rec(orphansA, 'audience', stuck);
+    await rec(orphansA, 'audience', settled);
+    await rec(orphansA, 'broadcast', bcast);
+    await rec(orphansB, 'audience', otherTenant);
+    const settledRow = (await orphansA.listUnsettledAudienceOrphans(500, GRACE_CUTOFF())).find((o) => o.resourceId === settled);
+    expect(await orphansA.settleOrphan(settledRow!.orphanId, 'deleted')).toBe(true);
+
+    const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
+    const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, tenantA.ctx.slug, [email.toUpperCase()]));
+    const ids = pairs.map((p) => p.audienceId);
+    expect(pairs).toContainEqual({ audienceId: stuck, email });
+    expect(ids).not.toContain(settled);
+    expect(ids).not.toContain(bcast);
+    expect(ids).not.toContain(otherTenant);
   });
 });
