@@ -60,6 +60,8 @@ interface Opts {
   readonly checks?: ReadonlyArray<'held' | 'lost' | 'expiring' | 'throws'>;
   /** The resolver refuses: the audience grew past the ceiling. */
   readonly resolveTooLarge?: boolean;
+  /** `applyTransition` to this target loses its CAS (a concurrent writer moved the row). */
+  readonly transitionLost?: string;
 }
 
 function harness(opts: Opts = {}) {
@@ -150,6 +152,9 @@ function harness(opts: Opts = {}) {
       async attachResendIds() {},
       async applyTransition(_tx: unknown, _t: unknown, _b: unknown, target: string) {
         events.push(`transition:${target}`);
+        if (opts.transitionLost === target) {
+          throw new (BroadcastConcurrentMutationError as unknown as new (...a: unknown[]) => Error)(tenant.slug, BROADCAST_ID, 'sending');
+        }
         return { ...broadcast, status: target };
       },
       async markAudienceImportCompleted() {},
@@ -519,5 +524,18 @@ describe('spec 140 s2c review round 2 — the choke point', () => {
     await h.run();
     const started = h.audits.find((a) => a.eventType === 'broadcast_send_started');
     expect(started?.payload).toMatchObject({ actualSendAt: sentAt });
+  });
+
+  // Spec N4 — the plan row: "If the catch-up loses, the answer is a concurrent
+  // skip". A sibling moved the row first: no terminal write, no member email,
+  // and the answer is the lost-race kind the cron buckets as concurrent_skip.
+  it('[spec N4] a handed catch-up that loses its CAS answers a concurrent skip, nothing terminal', async () => {
+    const h = harness({ ...TERMINAL, deleteOnce: 'forbidden', retrieveOnce: { kind: 'present', status: 'queued' }, transitionLost: 'sending' });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'broadcast_invalid_state_transition' });
+    expect(h.events).toContain('transition:sending');
+    expect(h.events).not.toContain('transition:failed_to_dispatch');
+    expect(h.audits.map((a) => a.eventType)).not.toContain('broadcast_failed_to_dispatch');
+    expect(h.memberEmails).toEqual([]);
   });
 });
