@@ -1989,14 +1989,26 @@ describe('issueCreditNote — #66 idempotency key (admin notes)', () => {
 
   // #728 review (financial L2) — the pre-read hit skipped the manual guards; if
   // the locked read then misses, issuing would bypass them. Refuse instead.
-  it('a pre-read hit followed by a miss under the lock issues nothing (concurrent_state_change)', async () => {
+  // /code-review — and it throws (a 5xx) rather than answer a code the form
+  // treats as definite: the server just saw a note under this key.
+  it('a pre-read hit followed by a miss under the lock issues nothing and throws', async () => {
     const { deps, findByIdempotencyKey } = depsWithKeyHit(null);
     findByIdempotencyKey.mockResolvedValueOnce(existingCn()).mockResolvedValue(null);
-    const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('concurrent_state_change');
+    await expect(issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY })).rejects.toThrow(
+      /seen before the lock but not under it/,
+    );
     expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
     expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+  });
+
+  // /code-review — the reason is normalised once, so a caller that skips the
+  // schema still stores what a replay compares against.
+  it('a padded reason from a direct caller is stored trimmed', async () => {
+    const { deps } = depsWithKeyHit(null);
+    const r = await issueCreditNote(deps, { ...baseInput, reason: '  duplicate charge ', idempotencyKey: KEY });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    const insert = (deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+    expect(insert).toMatchObject({ reason: 'duplicate charge' });
   });
 
   it('a first attempt with a key issues normally, stores the key on the row and is not a replay', async () => {
