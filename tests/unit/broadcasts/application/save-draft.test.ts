@@ -250,6 +250,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
     },
     // Spec 139 — read first by the send-standing gate; a live member.
     async getMemberErasedAt() { return { erasedAt: null }; },
+    async filterErasedMemberIds() { return []; },
     async getMembersHaltedInTenant() {
       return [];
     },

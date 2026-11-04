@@ -22,6 +22,7 @@
  * (architectural deviation documented in plan.md § Complexity Tracking).
  */
 import { ok, err, type Result } from '@/lib/result';
+import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { errKind } from '@/lib/log-id';
@@ -356,6 +357,27 @@ export const membersBridge: MembersBridgePort = {
       throw new Error(`members-bridge.getMemberErasedAt: ${result.error.code}`);
     }
     return { erasedAt: result.value.erasedAt };
+  },
+
+  /**
+   * Spec 140 s2d (#736a) — the port docblock has the contract. The members
+   * barrel's batched `findErasedIdsInTx` (explicit tenant predicate, RLS
+   * behind it) inside this read's own `runInTenant`. The answer keeps the
+   * caller's order.
+   */
+  async filterErasedMemberIds(
+    tenantCtx: TenantContext,
+    memberIds: ReadonlyArray<string>,
+  ): Promise<ReadonlyArray<string>> {
+    if (memberIds.length === 0) return [];
+    const result = await runInTenant(tenantCtx, (tx) =>
+      drizzleMemberRepo.findErasedIdsInTx(tx, tenantCtx.slug, memberIds.map(asMemberId)),
+    );
+    if (!result.ok) {
+      throw new Error(`members-bridge.filterErasedMemberIds: ${result.error.code}`);
+    }
+    const erased = new Set<string>(result.value);
+    return memberIds.filter((id) => erased.has(id));
   },
 
   async setMemberHalt(

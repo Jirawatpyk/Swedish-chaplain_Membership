@@ -8,7 +8,7 @@
  * (D-029) — the NOT EXISTS subquery's `broadcasts` reference included — so the
  * application predicate and RLS + FORCE are two walls, not one.
  */
-import { and, asc, desc, eq, gte, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
@@ -146,31 +146,19 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
       });
     },
 
-    async listDrainableOrphans(limit, audienceGraceCutoff, options) {
+    async listDrainableOrphans(limit, audienceGraceCutoff) {
       return bound('listDrainableOrphans', async (tx) => {
-        const base = and(
-          eq(orphans.tenantId, ctx.slug),
-          isNull(orphans.settledAt),
-          isNotNull(orphans.resourceId),
-          notHeldByLiveRow(ctx.slug, audienceGraceCutoff),
-        );
-        // Review round 3 (code-review #2) — the in-grace-only list.
-        // Review round 4 (code-review #1) — newest first: an erased requester's
-        // post-pass orphan is the newest row, so a backlog of older in-grace
-        // rows cannot push it past the limit.
-        if (options?.inGraceOnly === true) {
-          const rows = await tx
-            .select(columns(ctx.slug))
-            .from(orphans)
-            .where(and(base, gte(orphans.createdAt, audienceGraceCutoff)))
-            .orderBy(desc(orphans.createdAt), desc(orphans.orphanId))
-            .limit(limit);
-          return rows.map(toRef);
-        }
         const rows = await tx
           .select(columns(ctx.slug))
           .from(orphans)
-          .where(base)
+          .where(
+            and(
+              eq(orphans.tenantId, ctx.slug),
+              isNull(orphans.settledAt),
+              isNotNull(orphans.resourceId),
+              notHeldByLiveRow(ctx.slug, audienceGraceCutoff),
+            ),
+          )
           // Review round 2 (code-review #3) — past-grace rows first (false < true).
           .orderBy(
             asc(sql`(${orphans.createdAt} >= ${audienceGraceCutoff.toISOString()}::timestamptz)`),
@@ -178,6 +166,53 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
             asc(orphans.createdAt),
             asc(orphans.orphanId),
           )
+          .limit(limit);
+        return rows.map(toRef);
+      });
+    },
+
+    // Spec 140 s2d (#736a) — the requesters of the unsettled in-grace rows.
+    // The WHERE has the shape of the 0325 partial index (tenant_id, created_at)
+    // WHERE settled_at IS NULL (on the dev branch's few rows the planner
+    // seq-scans). ORDER BY the selected column keeps a capped answer stable
+    // from run to run.
+    async listInGraceRequesterIds(graceCutoff, cap) {
+      return bound('listInGraceRequesterIds', async (tx) => {
+        const rows = await tx
+          .selectDistinct({ requestedByMemberId: orphans.requestedByMemberId })
+          .from(orphans)
+          .where(
+            and(
+              eq(orphans.tenantId, ctx.slug),
+              isNull(orphans.settledAt),
+              isNotNull(orphans.resourceId),
+              gte(orphans.createdAt, graceCutoff),
+            ),
+          )
+          .orderBy(asc(orphans.requestedByMemberId))
+          .limit(cap);
+        return rows.map((r) => r.requestedByMemberId);
+      });
+    },
+
+    // Spec 140 s2d (#736a) — the erased requesters' rows, read first by the
+    // drain; the same holder rule as listDrainableOrphans (B2).
+    async listUnsettledOrphansForRequesters(requestedByMemberIds, limit, audienceGraceCutoff) {
+      if (requestedByMemberIds.length === 0) return [];
+      return bound('listUnsettledOrphansForRequesters', async (tx) => {
+        const rows = await tx
+          .select(columns(ctx.slug))
+          .from(orphans)
+          .where(
+            and(
+              eq(orphans.tenantId, ctx.slug),
+              inArray(orphans.requestedByMemberId, [...requestedByMemberIds]),
+              isNull(orphans.settledAt),
+              isNotNull(orphans.resourceId),
+              notHeldByLiveRow(ctx.slug, audienceGraceCutoff),
+            ),
+          )
+          .orderBy(asc(orphans.attempts), asc(orphans.createdAt), asc(orphans.orphanId))
           .limit(limit);
         return rows.map(toRef);
       });

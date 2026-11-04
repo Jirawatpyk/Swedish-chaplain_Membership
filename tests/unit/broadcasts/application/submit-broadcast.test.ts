@@ -149,6 +149,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
       if (opts.erased === 'throws') throw new Error('members-bridge.getMemberErasedAt: repo.unexpected');
       return { erasedAt: opts.erased === 'erased' ? FROZEN_NOW : null };
     },
+    async filterErasedMemberIds() { return []; },
     async getMembersHaltedInTenant() {
       if (opts.haltReadThrows) throw new Error('members-bridge.getMembersHaltedInTenant: repo.unexpected');
       return halted;
