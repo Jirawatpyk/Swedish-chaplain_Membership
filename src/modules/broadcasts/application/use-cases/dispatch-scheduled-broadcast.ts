@@ -1511,7 +1511,9 @@ export async function dispatchScheduledBroadcast(
           {
             tenantId: deps.tenant.slug,
             broadcastId: input.broadcastId as string,
-            reason: shape.reason,
+            // Spec 140 s2d review round 3 — no `reason`: `classifyThrown`'s
+            // reason is the thrown message (and `reason` is a redacted key,
+            // so the line only ever carried `[REDACTED]`).
           },
           'broadcasts.dispatch.idempotency_conflict_pre_send',
         );

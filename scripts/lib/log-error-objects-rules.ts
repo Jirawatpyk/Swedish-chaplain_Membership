@@ -31,11 +31,18 @@
  * `??` / `||`) make `x` error-ish unless `y` is a token field, or the local is
  * annotated with a type in the reviewed `TOKEN_FIELDS_BY_TYPE`.
  *
+ * Review round 3 (code-review #6, #9, #10; security #5): a local is tainted
+ * by any initializer the rule would refuse inline (a template, `+`, `&&`,
+ * `String(e)`, an unknown call over an error), by a reassignment
+ * (`x = e.message`) and by a `for (const x of e.y)` loop. A
+ * `TOKEN_FIELDS_BY_TYPE` annotation counts only over a direct property read,
+ * never a cast (`(e as any).reason`, `e!.reason`). Each block's taint is
+ * computed once and reused for every logger call in it.
+ *
  * A TRIPWIRE, not proof of completeness: it reads each `logger.<level>(…)`
- * call's arguments syntactically. A value laundered through a call into a
- * local (`const code = String(e); logger.warn({ err: code })`), through two
- * locals, or through a helper in the safe set passes. The sweep that preceded
- * it was done by hand.
+ * call's arguments syntactically. A value laundered through two locals, or
+ * through a helper in the safe set, passes. The sweep that preceded it was
+ * done by hand.
  */
 import ts from 'typescript';
 
@@ -68,7 +75,10 @@ const SAFE_NAME = /^(?:code|.*(?:Code|Kind|Class))$/;
  * `ApprovalDependencyError`'s dependency and `causeKind` (every constructor
  * call passes a repo code, a closed kind, a literal or an `errKind`);
  * `retryableSubKind` one of five literals; `isTimeout` and `Number.isFinite`
- * a boolean.
+ * a boolean. Review round 3 — `primaryContactTriggerViolation` (a local's
+ * initializer is now judged like a log value): a count, a member uuid matched
+ * by `[0-9a-f-]{36}` and a tenant slug parsed from the trigger's own raise
+ * (`src/lib/db-errors.ts`), or null; never the message.
  */
 const SAFE_CALLS = new Set([
   'errKind',
@@ -82,6 +92,7 @@ const SAFE_CALLS = new Set([
   'retryableSubKind',
   'isTimeout',
   'Number.isFinite',
+  'primaryContactTriggerViolation',
 ]);
 /** The only fields of `classifyThrown(e)` that are closed tokens (`reason` carries the message). */
 const CLASSIFY_SAFE_FIELDS = new Set(['kind', 'subKind', 'resourceType']);
@@ -200,10 +211,38 @@ function allowlistedTypeName(node: ts.TypeNode): string | null {
   return first !== undefined && ts.isTypeReferenceNode(first) && ts.isIdentifier(first.typeName) ? first.typeName.text : null;
 }
 
+/**
+ * Review round 3 (security #5) — true when every value `expr` can yield is
+ * read directly: a property read whose base holds no `as`, `!`, `<T>` or
+ * `satisfies`, an arm of `?:` / `??` / `||` that is one, or a value that reads
+ * no field at all (a literal, an identifier, a call). A cast tells tsc to stop
+ * checking the annotation, so the annotation proves nothing over it.
+ */
+function isDirectRead(expr: ts.Expression): boolean {
+  if (ts.isParenthesizedExpression(expr)) return isDirectRead(expr.expression);
+  if (ts.isConditionalExpression(expr)) return isDirectRead(expr.whenTrue) && isDirectRead(expr.whenFalse);
+  if (
+    ts.isBinaryExpression(expr) &&
+    (expr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || expr.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+  ) {
+    return isDirectRead(expr.left) && isDirectRead(expr.right);
+  }
+  if (isCast(expr)) return false;
+  for (let cur: ts.Expression = expr; ts.isPropertyAccessExpression(cur) || ts.isParenthesizedExpression(cur); cur = cur.expression) {
+    if (isCast(cur.expression)) return false;
+  }
+  return true;
+}
+
+function isCast(node: ts.Expression): boolean {
+  return ts.isAsExpression(node) || ts.isNonNullExpression(node) || ts.isSatisfiesExpression(node) || ts.isTypeAssertionExpression(node);
+}
+
 /** The fields a local's type annotation names from {@link TOKEN_FIELDS_BY_TYPE}; empty unless EVERY member is listed. */
 function annotatedTokenFields(decl: ts.VariableDeclaration): ReadonlySet<string> {
   const type = decl.type;
   if (type === undefined) return new Set();
+  if (decl.initializer === undefined || !isDirectRead(decl.initializer)) return new Set();
   const members = ts.isUnionTypeNode(type) ? type.types : [type];
   const fields = new Set<string>();
   for (const m of members) {
@@ -231,30 +270,11 @@ function boundNames(name: ts.BindingName, out: string[] = []): string[] {
 }
 
 /**
- * True when `expr` is a direct read off an error-ish base that the rule would
- * refuse in a log line: the error itself, a non-token field, its text, or an
- * element of it — also as an arm of `?:`, `??` or `||`. A call's result is not
- * followed (the rule reads calls at the log line: an unknown callee is refused
- * there, a safe one is not).
+ * The locals of one declaration that hold an error or its text: one hop, never
+ * chained. Review round 3 (code-review #6) — an identifier-named local is
+ * tainted by any initializer the rule would refuse in a log line
+ * ({@link refusal}), not only a direct read off an error.
  */
-function readsOffError(sf: ts.SourceFile, expr: ts.Expression, scope: Scope): boolean {
-  const node = unwrap(expr);
-  if (ts.isConditionalExpression(node)) {
-    return readsOffError(sf, node.whenTrue, scope) || readsOffError(sf, node.whenFalse, scope);
-  }
-  if (
-    ts.isBinaryExpression(node) &&
-    (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || node.operatorToken.kind === ts.SyntaxKind.BarBarToken)
-  ) {
-    return readsOffError(sf, node.left, scope) || readsOffError(sf, node.right, scope);
-  }
-  if (ts.isIdentifier(node) || ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
-    return refusal(sf, node, scope) !== null;
-  }
-  return false;
-}
-
-/** The locals of one declaration that hold an error or its text: one hop, never chained. */
 function taintedByDeclaration(sf: ts.SourceFile, decl: ts.VariableDeclaration): string[] {
   const init = decl.initializer;
   if (init === undefined) return [];
@@ -262,7 +282,7 @@ function taintedByDeclaration(sf: ts.SourceFile, decl: ts.VariableDeclaration): 
   if (ts.isIdentifier(decl.name)) {
     const extra = annotatedTokenFields(decl);
     const tokens = extra.size === 0 ? TOKEN_FIELDS : new Set([...TOKEN_FIELDS, ...extra]);
-    return readsOffError(sf, init, { ...scope, tokens }) ? [decl.name.text] : [];
+    return refusal(sf, init, { ...scope, tokens }) !== null ? [decl.name.text] : [];
   }
   const base = shapeOf(init, scope);
   if (base === null || base === 'token') return [];
@@ -276,6 +296,60 @@ function taintedByDeclaration(sf: ts.SourceFile, decl: ts.VariableDeclaration): 
   return out;
 }
 
+/** What one statement of a block does to the taint: the names it declares (and which of them are bad), and the names it assigns from a refused value. */
+interface StatementTaint {
+  readonly end: number;
+  readonly declared: ReadonlyArray<string>;
+  readonly bad: ReadonlySet<string>;
+  readonly assigned: ReadonlyArray<string>;
+}
+
+type StatementList = ts.Block | ts.SourceFile | ts.CaseClause | ts.DefaultClause | ts.ModuleBlock;
+
+/** Review round 3 (code-review #10) — each block's statements are judged once, whatever the number of logger calls in it. */
+const blockTaints = new WeakMap<StatementList, ReadonlyArray<StatementTaint>>();
+
+/**
+ * Review round 3 (code-review #9) — the names a statement assigns from a value
+ * the rule would refuse (`x = e.message`), anywhere inside it but not inside a
+ * nested function. A later safe assignment does not clear the taint.
+ */
+function assignedFromRefused(sf: ts.SourceFile, stmt: ts.Statement): string[] {
+  const out: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isFunctionLike(node)) return;
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left) &&
+      refusal(sf, node.right, { errors: caughtNames(node), tokens: TOKEN_FIELDS }) !== null
+    ) {
+      out.push(node.left.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(stmt);
+  return out;
+}
+
+function statementTaints(sf: ts.SourceFile, block: StatementList): ReadonlyArray<StatementTaint> {
+  const cached = blockTaints.get(block);
+  if (cached !== undefined) return cached;
+  const taints = block.statements.map((stmt): StatementTaint => {
+    const declared: string[] = [];
+    const bad = new Set<string>();
+    if (ts.isVariableStatement(stmt)) {
+      for (const decl of stmt.declarationList.declarations) {
+        declared.push(...boundNames(decl.name));
+        for (const n of taintedByDeclaration(sf, decl)) bad.add(n);
+      }
+    }
+    return { end: stmt.end, declared, bad, assigned: assignedFromRefused(sf, stmt) };
+  });
+  blockTaints.set(block, taints);
+  return taints;
+}
+
 /**
  * Spec 140 s2d review round 2 (security #4, code-review #8) — the locals in
  * scope at `call` that were destructured or assigned off an error-ish base
@@ -285,6 +359,12 @@ function taintedByDeclaration(sf: ts.SourceFile, decl: ts.VariableDeclaration): 
  * enclosing block, the innermost declaration of a name deciding it, and a
  * function's parameters shadowing an outer local. One hop only: a local read
  * off a tainted local is not followed.
+ *
+ * Review round 3 (code-review #6, #9, #10) — any refused initializer taints
+ * ({@link taintedByDeclaration}); so does a reassignment from a refused value
+ * before the call ({@link assignedFromRefused}), and the binding of an
+ * enclosing `for (… of …)` / `for (… in …)` over a refused value. Each block
+ * is judged once ({@link blockTaints}).
  */
 function taintedNames(sf: ts.SourceFile, call: ts.Node): ReadonlySet<string> {
   const tainted = new Set<string>();
@@ -293,22 +373,30 @@ function taintedNames(sf: ts.SourceFile, call: ts.Node): ReadonlySet<string> {
     if (ts.isFunctionLike(cur)) {
       for (const p of cur.parameters) for (const n of boundNames(p.name)) decided.add(n);
     }
+    if ((ts.isForOfStatement(cur) || ts.isForInStatement(cur)) && ts.isVariableDeclarationList(cur.initializer)) {
+      const bad = refusal(sf, cur.expression, { errors: caughtNames(cur), tokens: TOKEN_FIELDS }) !== null;
+      for (const decl of cur.initializer.declarations) {
+        for (const n of boundNames(decl.name)) {
+          if (decided.has(n)) continue;
+          decided.add(n);
+          if (bad) tainted.add(n);
+        }
+      }
+      continue;
+    }
     if (!(ts.isBlock(cur) || ts.isSourceFile(cur) || ts.isCaseClause(cur) || ts.isDefaultClause(cur) || ts.isModuleBlock(cur))) {
       continue;
     }
     const level = new Set<string>();
-    for (const stmt of cur.statements) {
-      if (stmt.end > call.pos || !ts.isVariableStatement(stmt)) continue;
-      for (const decl of stmt.declarationList.declarations) {
-        const names = boundNames(decl.name);
-        const bad = new Set(taintedByDeclaration(sf, decl));
-        for (const n of names) {
-          if (decided.has(n)) continue;
-          level.add(n);
-          if (bad.has(n)) tainted.add(n);
-          else tainted.delete(n);
-        }
+    for (const stmt of statementTaints(sf, cur)) {
+      if (stmt.end > call.pos) continue;
+      for (const n of stmt.declared) {
+        if (decided.has(n)) continue;
+        level.add(n);
+        if (stmt.bad.has(n)) tainted.add(n);
+        else tainted.delete(n);
       }
+      for (const n of stmt.assigned) if (!decided.has(n)) tainted.add(n);
     }
     for (const n of level) decided.add(n);
   }
