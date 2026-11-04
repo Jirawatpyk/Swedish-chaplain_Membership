@@ -894,7 +894,7 @@ Per tenant, inside `cleanupOrphanedAudiences`:
    (20) rows of `broadcast_orphaned_resend_ids`, `ORPHAN_DRAIN_CONCURRENCY` (5)
    at a time, settled at Resend (`deleteBroadcastOnce` and, after a 403, one
    `retrieveBroadcastOnce`; `deleteAudience` for an audience row) and stamped by
-   a settle CAS. The same 1-hour grace applies to a row's `created_at`, except
+   a settle CAS. The same `AUDIENCE_CLEANUP_GRACE_MS` (1 hour) grace applies to a row's `created_at`, except
    for an erased requester's row. No chunk starts after `ORPHAN_DRAIN_STOP_MS`
    (240 s): the route's **`maxDuration = 300`** (`CLEANUP_MAX_DURATION_MS`,
    pinned by `cleanup-orphaned-audiences-drain.test.ts`) leaves the last chunk's

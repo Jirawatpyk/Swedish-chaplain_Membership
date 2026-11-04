@@ -314,17 +314,17 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      drain reads an erased requester's rows by requester, first, at most
      `ORPHAN_DRAIN_ERASED_SHARE` (10) a run, so other members' newer rows
      cannot hold it back (RoPA 8d residual 1). It waits longer only while
-     Resend's answer stays undecided, while a terminal row within the 1-hour
-     grace holds its audience, while more than 10 erased-requester rows are
+     Resend's answer stays undecided, while a terminal row within the
+     `AUDIENCE_CLEANUP_GRACE_MS` (1 hour) grace holds its audience, while more than 10 erased-requester rows are
      queued (the rest go on the next runs; `tick_complete`
      `orphans.erasedShareFull: true`), or when the run's erased read
      failed (`tick_complete` `orphans.erasedReadFailed: true`,
      `broadcasts.orphan_drain.erased_read_failed`, its `step` names the read)
      or was capped (`broadcasts.orphan_drain.erased_requesters_capped`):
-     those two wait the 1-hour grace, then join the past-grace queue. If the
+     those two wait the `AUDIENCE_CLEANUP_GRACE_MS` (1 hour) grace, then join the past-grace queue. If the
      first run returned one, re-run the ORPHAN
      query after one interval (`*/15 * * * *`, `vercel.json`); if it is still
-     there, re-run it after the 1-hour grace; if it is STILL there (an
+     there, re-run it after the `AUDIENCE_CLEANUP_GRACE_MS` (1 hour) grace; if it is STILL there (an
      undecided answer), settle it by hand as in residual 5;
    - **run the step 3b STATE query on every erasure, whatever the count says**
      (`sent_at >= member_erasure_requested`, statuses `sending` / `sent` /
@@ -802,7 +802,7 @@ runbook.
 >
 > **What this means for you:** the manual remediation below is still the ONLY thing
 > that closes a failed detach, and it is still urgent — `cleanup-orphaned-audiences`
-> deletes the audience at Resend after a 1-hour grace on a terminal broadcast, and
+> deletes the audience at Resend after the `AUDIENCE_CLEANUP_GRACE_MS` (1 hour) grace on a terminal broadcast, and
 > after that there is nothing left to detach. Do NOT wait for a second
 > `subprocessor_erasure_propagated` row with `resend_contacts_removed_count >= 1`;
 > on a re-drive that count is structurally 0.
@@ -934,8 +934,8 @@ Two limits are accepted by design (security-engineer + pdpa-gdpr-compliance-offi
 sign-off, plan-review 2026-06-20):
 
 1. **Best-effort-ONCE.** A first-pass Resend failure is **not** auto-retried; it is
-   finished by hand via the procedure above, inside the 1-hour
-   `cleanup-orphaned-audiences` grace window.
+   finished by hand via the procedure above, inside the
+   `cleanup-orphaned-audiences` grace window (`AUDIENCE_CLEANUP_GRACE_MS`, 1 hour).
 
    *For one day (2026-09-09/10) this entry read "~~Best-effort-ONCE~~ **NARROWED**"
    and claimed a US2d re-drive performs a real detach. It does not — see the
