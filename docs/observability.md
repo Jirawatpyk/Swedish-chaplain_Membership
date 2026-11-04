@@ -87,21 +87,33 @@ before the line is written: a `logMethod` hook for the call's fields (pino
 copies `err.message` into `msg` when no message is given) and serializers for
 a child logger's bindings. Review round 2 (the maintainer's decision of
 4 Nov 2026, every module): ANY non-string value under those keys, an Error or
-a plain object with any field, becomes closed tokens plus stack frames, never
-`message`, `stack`, `detail`, `params` or `query`:
-- `type`: the class (`errKind`), or a token-shaped `name` of a plain object,
-  else `unknown`;
+a plain object with any field, becomes token-shaped values (shape-checked)
+plus stack frames, never `message`, `stack`, `detail`, `params` or `query`.
+Review round 3 made every kept value shape-checked; the output is frozen:
+- `type`: the class (`errKind`) of an Error; for a plain object its `name` only
+  when that is an error class name (`/^[A-Z]\w*(Error|Exception)$/`), else
+  `unknown`; `unreducible` when reading the value threw (a throwing getter
+  never turns a log call into a throw);
+- `errType`: a plain object's own `type` discriminant, when token-shaped
+  (`/^[a-z][a-z0-9_]{0,47}$/`): `{ type: 'server_error' }` writes
+  `{ type: 'unknown', errType: 'server_error' }`;
 - `code`: the SQLSTATE (`pgErrorCode`; at most 10 `.cause` hops, and only a
-  `/^[0-9A-Z]{5}$/` code counts);
-- `repoCode`: a Result error's own code (RESULT_CODE-validated by
-  `errLogFields`), on the value or a RepoError it wraps at `.cause` / `.error`;
-- `errCode`: a token-shaped string `.code` that is not the SQLSTATE (Node
-  `ECONNRESET`, Stripe `card_declined`);
-- `statusCode` (an integer) and `declineCode` (Stripe's `decline_code`, a token);
-- `frames`: the `at …` lines of `.stack` with the message cut out first, at
-  most 8.
-Any other field of a plain object (a `kind`, say) is dropped. A string value
-is kept. Any other key, and error TEXT in string form under any key, is not
+  `/^(?=.*\d)[0-9A-Z]{5}$/` code counts, so Node `EPIPE` is not one);
+- `repoCode`: a Result error's own code (`RESULT_CODE`-validated by
+  `errLogFields`: lowercase words, at most 4 digits, so a uuid or a digit
+  string is `unrecognised`), on the value or a RepoError it wraps at
+  `.cause` / `.error`;
+- `errCode`: an Error's own token-shaped `.code` that is not the SQLSTATE
+  (Node `ECONNRESET` / `EPIPE`, Stripe `card_declined`), never a plain
+  object's; `...errLogFields(e)` returns it too;
+- `statusCode` (an integer); `declineCode` (Stripe's `decline_code`) and
+  `kind` (a Result error's discriminant), each a lowercase token as `errType`;
+- `frames`: the lines of `.stack` shaped like a frame
+  (`/^\s+at .*:\d+:\d+\)?$/`), at most 8 of at most 300 characters; the
+  header (every line before the first frame) is never searched for the
+  message, so no message line is kept.
+Any other field of a plain object is dropped. A string value is kept. Any
+other key, and error TEXT in string form under any key, is not
 reduced: that is the gate's job below, and #740 for the modules outside it. A
 line carries:
 - `err: errKind(e)`: the error class. For a RepoError, `errKind(rootCause(x.error))`
