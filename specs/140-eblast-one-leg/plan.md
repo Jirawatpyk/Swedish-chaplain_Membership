@@ -1645,7 +1645,7 @@ Dev and prod share the broadcasts key, so the account state matches.
 
 **Fixes:**
 - code-review #6, reliability nit: `stopped_at_budget` logs the budget-cut count only (`stoppedDeferred`), and `deferred` stays the total in the output.
-- code-review #7: `err: e` becomes `err: errKind(e)` in the `erase-member.ts` catches (:334, :750, :1327).
+- code-review #7: `err: e` becomes `err: errKind(e), code: pgErrorCode(e)` in the `erase-member.ts` catches (:334, :750, :1327). `pgErrorCode` (`src/lib/db-errors.ts`) returns only the SQLSTATE, so the forensic purpose of the shipped cause-threading tests survives without the message text, which can carry the subject's address. The 10 forensics rows assert the class, the code, and the message's absence.
 - reliability nit: the `observability.md` row for `broadcasts.orphan_drain.list_failed` names the `list` field.
 
 **Docs:**
