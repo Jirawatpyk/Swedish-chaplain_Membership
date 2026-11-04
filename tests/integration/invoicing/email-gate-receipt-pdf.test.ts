@@ -24,12 +24,12 @@
  * physical email transport).
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 
 import { db, runInTenant } from '@/lib/db';
-import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
+import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { GET as outboxDispatch } from '@/app/api/cron/outbox-dispatch/route';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
@@ -40,6 +40,7 @@ import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
 
 // The dispatcher's email send is a no-op here: tests/integration-setup.ts
 // replaces `emailSender` for every integration suite.
@@ -191,6 +192,7 @@ async function enqueueInvoicePaidEmailRow(
   tenant: TestTenant,
   invoiceId: string,
   dependsOnReceiptPdf: boolean,
+  frozenKey = 'invoicing/test/t166-gate.pdf',
 ): Promise<string> {
   const id = randomUUID();
   await db.insert(notificationsOutbox).values({
@@ -202,7 +204,7 @@ async function enqueueInvoicePaidEmailRow(
     contextData: {
       event_type: 'invoice_paid',
       invoice_id: invoiceId,
-      pdf_blob_key: 'invoicing/test/t166-gate.pdf',
+      pdf_blob_key: frozenKey,
       pdf_template_version: 1,
       depends_on_receipt_pdf: dependsOnReceiptPdf,
     },
@@ -385,5 +387,152 @@ describe('T166-09 — invoice_paid email gate on receipt_pdf_status', () => {
     // queue, not skip-loop forever.
     expect(rowAfter?.attempts).toBe(1);
     expect(rowAfter?.lastError).toContain('pdf_render_failed');
+  }, 60_000);
+
+  // Task #70 (financial M-1 on #738) — the payment freezes the receipt key
+  // at the CURRENT template version, but the reconcile cron re-enqueues a
+  // stuck render with the invoice's ISSUE version. After a template bump
+  // the worker writes `_receipt_v{issue}` and the row references it, while
+  // the frozen key names `_receipt_v{current}` — a stray the orphan sweep
+  // deletes. The email must link the key the row holds.
+  it('#70 — a rendered receipt is linked by the row\'s key, not the key frozen at payment', async () => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
+    const frozen = `invoicing/${tenant.ctx.slug}/2026/${invoiceId}_receipt_v13.pdf`;
+    const committed = `invoicing/${tenant.ctx.slug}/2026/${invoiceId}_receipt_v12.pdf`;
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set({
+          receiptPdfStatus: 'rendered',
+          receiptPdfBlobKey: committed,
+          receiptPdfSha256: 'd'.repeat(64),
+          receiptPdfTemplateVersion: 12,
+        })
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    });
+    const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true, frozen);
+    const sign = vi.mocked(vercelBlobAdapter.signDownloadUrl);
+    sign.mockClear();
+
+    const resp = await outboxDispatch(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+    expect(resp.status).toBe(200);
+
+    const [rowAfter] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(rowAfter?.status).toBe('sent');
+    const signed = sign.mock.calls.map((c) => c[0]);
+    expect(signed).toContain(committed);
+    expect(signed).not.toContain(frozen);
+    // The row records the key it actually sent, so an audit of sent rows
+    // (the runbook's pre-flag query) never flags a correct send.
+    expect((rowAfter?.contextData as Record<string, unknown>).pdf_blob_key).toBe(committed);
+  }, 60_000);
+
+  it('#70 — rendered with no receipt key fails closed: attempts bumped, nothing sent', async () => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set({ receiptPdfStatus: 'rendered', receiptPdfBlobKey: null })
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    });
+    const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true);
+
+    const resp = await outboxDispatch(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+    expect(resp.status).toBe(200);
+
+    const [rowAfter] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(rowAfter?.status).toBe('pending');
+    expect(rowAfter?.attempts).toBe(1);
+    expect(rowAfter?.lastError).toContain('rendered_without_key');
+  }, 60_000);
+
+  // Task #70 review (financial M-1) — every attempt-bumping gate arm said it
+  // "exits via the permanent-fail ladder", yet none checked MAX_ATTEMPTS: a
+  // broken row was pushed back 60 s forever, with no audit and no alert. On
+  // the last attempt the row is permanently failed and audited.
+  it.each([
+    ['rendered_without_key', { receiptPdfStatus: 'rendered' as const, receiptPdfBlobKey: null }],
+    ['pdf_render_failed', { receiptPdfStatus: 'failed' as const }],
+  ])('#70 M-1 — the %s arm on its last attempt is permanently failed and audited', async (reason, set) => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set(set)
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    });
+    const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true);
+    // MAX_ATTEMPTS is 5: four attempts already spent.
+    await db.update(notificationsOutbox).set({ attempts: 4 }).where(eq(notificationsOutbox.id, outboxId));
+
+    const resp = await outboxDispatch(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+    expect(resp.status).toBe(200);
+
+    const [rowAfter] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(rowAfter?.status).toBe('permanently_failed');
+    expect(rowAfter?.attempts).toBe(5);
+    expect(rowAfter?.lastError).toContain(reason);
+    const audits = await db
+      .select({ eventType: auditLog.eventType })
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenant.ctx.slug), sql`${auditLog.payload}->>'outbox_row_id' = ${outboxId}`));
+    expect(audits.map((a) => a.eventType).sort()).toEqual(['auto_email_delivery_failed', 'email_dispatch_failed']);
+  }, 60_000);
+
+  // /code-review on #742 — a `failed` receipt is not terminal: the reconcile
+  // cron re-renders it. The gate's retries follow the dispatcher's standard
+  // ladder (60 s, 5 min, 30 min, 3 h), not a flat 60 s that spends all five
+  // attempts in five minutes and gives up before the re-render lands.
+  it('#70 — a gate retry follows the standard backoff ladder (2nd attempt waits ~5 min)', async () => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set({ receiptPdfStatus: 'failed' })
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    });
+    const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true);
+    await db.update(notificationsOutbox).set({ attempts: 1 }).where(eq(notificationsOutbox.id, outboxId));
+
+    await outboxDispatch(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+
+    const [rowAfter] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(rowAfter?.status).toBe('pending');
+    expect(rowAfter?.attempts).toBe(2);
+    const delta = rowAfter!.nextRetryAt!.getTime() - Date.now();
+    expect(delta).toBeGreaterThan(240_000);
+    expect(delta).toBeLessThan(360_000);
   }, 60_000);
 });

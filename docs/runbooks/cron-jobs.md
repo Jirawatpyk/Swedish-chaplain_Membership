@@ -408,7 +408,15 @@ certificate scans. **Keep local and preview Blob tokens on a dev-only store.**
 `orphan_pdf_sweep_would_delete` logs: `wouldDelete` should be the handful of
 known orphans, and every `would_delete` line should name a document with no
 committed PDF at that version. A dry run counts toward the 500 cap, so
-`truncated: true` there is not the whole backlog. Then set
+`truncated: true` there is not the whole backlog. Before turning deletes on,
+also check that no receipt email already sent links a key the sweep would
+delete (task #70: before that fix the email linked the key frozen at payment,
+which a reconciled render after a template bump did not write). Read-only,
+with `pnpm db:query` on dev or the Neon console on prod:
+`SELECT o.id FROM notifications_outbox o JOIN invoices i ON i.tenant_id = o.tenant_id AND i.invoice_id = (o.context_data->>'invoice_id')::uuid WHERE o.notification_type = 'invoice_auto_email' AND o.status = 'sent' AND o.context_data->>'depends_on_receipt_pdf' = 'true' AND o.context_data->>'pdf_blob_key' IS DISTINCT FROM i.receipt_pdf_blob_key;`
+Any row it returns is a member holding a link to a file no row references:
+resend that receipt (the resend reads the row's key) before the flag goes on.
+Then set
 `FEATURE_ORPHAN_PDF_SWEEP_DELETE=true` in Vercel (Production) — **setting it is
 a production deploy** — and the next night deletes.
 
