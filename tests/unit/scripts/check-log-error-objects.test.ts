@@ -6,7 +6,9 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { findLogErrorObjects } from '../../../scripts/lib/log-error-objects-rules';
+import * as rules from '../../../scripts/lib/log-error-objects-rules';
+
+const { findLogErrorObjects } = rules;
 
 const lines = (src: string) => findLogErrorObjects('x.ts', src).map((f) => f.line);
 
@@ -56,6 +58,31 @@ describe('findLogErrorObjects', () => {
       '}',
     ].join('\n');
     expect(lines(src)).toEqual([]);
+  });
+
+  it('parses a .tsx file as TSX, so JSX before a logger call does not hide it', () => {
+    // Parsed as TS, the backtick in the JSX text opens a template literal that
+    // swallows every line after it, the logger call on line 6 included.
+    const src = [
+      'export function Row() {',
+      '  try { run(); } catch (e) { logger.error({ err: e }); }',
+      '  return <p className="hint">Press the ` key</p>;',
+      '}',
+      'export function Other() {',
+      '  try { run(); } catch (e) { logger.error({ err: e.message }); }',
+      '}',
+    ].join('\n');
+    expect(findLogErrorObjects('row.tsx', src).map((f) => f.line)).toEqual([2, 6]);
+  });
+
+  it('counts every logger call it parsed, for the real-tree floor', () => {
+    const src = [
+      "logger.info({ id }, 'a');",
+      "deps.logger.warn({ id }, 'b');",
+      'logger.child({ id });',
+      "console.error({ id }, 'c');",
+    ].join('\n');
+    expect(rules.scanLogErrorObjects('x.ts', src)).toEqual({ findings: [], loggerCalls: 3 });
   });
 
   it('the fixture: every `// refused` line is found and no `// allowed` line is', () => {

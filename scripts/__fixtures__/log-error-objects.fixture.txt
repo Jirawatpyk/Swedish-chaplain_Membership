@@ -3,7 +3,11 @@
 // (a .txt so tsc and eslint leave it alone). Every line marked `// refused` must
 // yield a finding on THAT line; every line marked `// allowed` must yield none.
 // One refused form per line, so a rule that stops matching names its line.
-declare const logger: { warn(o: unknown, m?: string): void; error(o: unknown, m?: string): void };
+declare const logger: {
+  warn(o: unknown, m?: string): void;
+  error(o: unknown, m?: string): void;
+  child(o: unknown): typeof logger;
+};
 declare const deps: { logger: typeof logger };
 declare const result: { error: { code: string; kind: string; cause: unknown } };
 declare function errKind(e: unknown): string;
@@ -20,6 +24,12 @@ declare const actorUserId: string;
 declare const outcomeKind: string;
 declare const errClass: string;
 declare const pgCode: string;
+declare function describeKind(e: unknown): string;
+declare function isBroken(e: unknown): boolean;
+declare function approvalErrKind(e: unknown): string;
+declare function retryableSubKind(s: string | undefined): string;
+declare function isTimeout(e: unknown): boolean;
+declare const attempts: number;
 
 export async function refusedForms(): Promise<void> {
   try {
@@ -41,6 +51,26 @@ export async function refusedForms(): Promise<void> {
     logger.error({ why: classifyThrown(e).reason }, 'x'); // refused
     logger.error({ err: errKind(e) }, `failed: ${e.message}`); // refused
     deps.logger.warn({ err: e }, 'x'); // refused
+    // Review round 1 (security M1, code-review #1, security L2, L3) — the stricter rule.
+    logger.error({ err: e['message'] }, 'x'); // refused
+    logger.error({ err: result.error['cause'] }, 'x'); // refused
+    logger.error({ err: e.toString() }, 'x'); // refused
+    logger.error({ err: e.message.slice(0, 40) }, 'x'); // refused
+    logger.error({ err: (e as Error).message.trim() }, 'x'); // refused
+    logger.error({ err: JSON.stringify({ e }) }, 'x'); // refused
+    logger.error({ err: JSON.stringify({ failure: e }) }, 'x'); // refused
+    logger.error({ err: String([e]) }, 'x'); // refused
+    logger.error({ params: e.params }, 'x'); // refused
+    logger.error({ detail: result.error.cause.detail }, 'x'); // refused
+    logger.error({ err: describeKind(e) }, 'x'); // refused
+    logger.error({ broken: isBroken(e) }, 'x'); // refused
+    logger.child({ err: e }); // refused
+    deps.logger.child({ cause: e.message }); // refused
+  }
+  try {
+    await Promise.resolve();
+  } catch (errClass) {
+    logger.error({ errClass }, 'x'); // refused
   }
   try {
     await Promise.resolve();
@@ -72,6 +102,10 @@ export async function allowedForms(): Promise<void> {
     logger.error({ err: errKind(e), code: pgErrorCode(e) }, 'x'); // allowed
     logger.error({ err: errKind(rootCause(e)), ...{ meta: pgErrorMeta(e) } }, 'x'); // allowed
     logger.error({ kind: classifyThrown(e).kind }, 'x'); // allowed
+    logger.error({ name: e.name, kind: e.kind, code: e.code }, 'x'); // allowed
+    logger.error({ err: approvalErrKind(e), timedOut: isTimeout(e) }, 'x'); // allowed
+    logger.error({ sub: retryableSubKind(classifyThrown(e).subKind), finite: Number.isFinite(attempts) }, 'x'); // allowed
+    logger.child({ err: errKind(e), code: pgErrorCode(e) }); // allowed
   }
   logger.error({ err: errKind(rootCause(result.error)), repoCode: result.error.code }, 'x'); // allowed
   logger.error({ kind: result.error.kind }, 'x'); // allowed
