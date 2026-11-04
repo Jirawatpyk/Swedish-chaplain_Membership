@@ -7,7 +7,10 @@
  *     queued / sending / sent → `handed`; anything else is left for the next run;
  *   - audience rows: `deleteAudience` — resolved (a 404 included) → `deleted`,
  *     a throw is left;
- *   - the grace period, skipped when the requester is erased [P H-2];
+ *   - the grace period, skipped when the requester is erased [P H-2]; spec
+ *     140 s2d (#736a): the erased requesters' rows are read by requester
+ *     (one bridge call, ids in / ids out), first, at most
+ *     `ORPHAN_DRAIN_ERASED_SHARE`;
  *   - at most `ORPHAN_DRAIN_LIMIT` rows, `ORPHAN_DRAIN_CONCURRENCY` at a time,
  *     and no chunk starts after `ORPHAN_DRAIN_STOP_MS`, inside the route's
  *     `maxDuration` (`CLEANUP_MAX_DURATION_MS`);
@@ -22,8 +25,10 @@ import { asTenantContext } from '@/modules/tenants';
 import {
   CLEANUP_MAX_DURATION_MS,
   ORPHAN_DRAIN_CONCURRENCY,
+  ORPHAN_DRAIN_ERASED_SHARE,
   ORPHAN_DRAIN_LIMIT,
   ORPHAN_DRAIN_STOP_MS,
+  ORPHAN_ERASED_REQUESTER_CAP,
   cleanupOrphanedAudiences,
 } from '@/modules/broadcasts/application/use-cases/cleanup-orphaned-audiences';
 import { RESEND_CALL_TIMEOUT_MS } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
@@ -63,14 +68,15 @@ interface Opts {
   readonly retrieveOnce?: Record<string, { kind: 'present'; status: string; sentAt?: string | null } | { kind: 'not_found' } | { kind: 'retryable' }>;
   readonly deleteAudienceThrows?: ReadonlySet<string>;
   readonly listThrows?: boolean;
-  /** Review round 3 (code-review #2) — only the in-grace-only list throws. */
-  readonly inGraceListThrows?: boolean;
   readonly settleThrows?: boolean;
   /** What the settle CAS answers (`false` = a concurrent settler won). Default `true`. */
   readonly settleReturns?: boolean;
   /** `markOrphanAttempted` throws. */
   readonly markThrows?: boolean;
-  readonly erased?: Record<string, 'erased' | 'live' | 'throws'>;
+  /** Spec 140 s2d (#736a) — the requesters the bridge answers as erased (ids in, ids out). */
+  readonly erased?: Record<string, 'erased' | 'live'>;
+  /** Spec 140 s2d (#736a) — which read of the erased-requester path throws. */
+  readonly erasedPathThrows?: 'requesters' | 'bridge' | 'rows';
   /** The audience pass's candidates (terminal rows still holding an audience). */
   readonly terminal?: ReadonlyArray<{ broadcastId: string; resendAudienceId: string }>;
   readonly terminalListThrows?: boolean;
@@ -84,10 +90,9 @@ function harness(opts: Opts) {
   const attempted: string[] = [];
   const calls: string[] = [];
   const listLimits: number[] = [];
-  const listModes: string[] = [];
-  const erasedReads: string[] = [];
-  let erasedInFlight = 0;
-  let erasedPeak = 0;
+  /** Spec 140 s2d (#736a) — every read of the erased-requester path, in order. */
+  const erasedPath: string[] = [];
+  const bridgeCalls: string[][] = [];
   let inFlight = 0;
   let peak = 0;
   const step = async (label: string) => {
@@ -112,18 +117,36 @@ function harness(opts: Opts) {
       async markAudienceDeletedInTx() {},
     },
     orphans: {
-      async listDrainableOrphans(limit: number, cutoff: Date, options?: { readonly inGraceOnly?: boolean }) {
+      async listDrainableOrphans(limit: number, cutoff: Date) {
         listLimits.push(limit);
-        const inGraceOnly = options?.inGraceOnly === true;
-        listModes.push(inGraceOnly ? 'in_grace' : 'all');
-        if (opts.listThrows === true || (inGraceOnly && opts.inGraceListThrows === true)) {
-          throw new Error('Neon: password authentication failed for user x');
-        }
-        // Review round 3 (code-review #2) — the repo's two lists, each at most
-        // `limit`: the fixture order is the past-grace-first order; the
-        // in-grace-only list keeps only the rows inside the grace.
-        const rows = inGraceOnly ? opts.orphans.filter((o) => o.createdAt.getTime() >= cutoff.getTime()) : opts.orphans;
-        return !inGraceOnly && opts.firstListOverReturns === true ? rows : rows.slice(0, limit);
+        if (opts.listThrows === true) throw new Error('Neon: password authentication failed for user x');
+        // The repo's order: past-grace rows first, then attempts, then age (a
+        // stable sort keeps the fixture order inside a tie).
+        const rows = [...opts.orphans].sort(
+          (a, b) =>
+            Number(a.createdAt.getTime() >= cutoff.getTime()) - Number(b.createdAt.getTime() >= cutoff.getTime()) ||
+            a.attempts - b.attempts ||
+            a.createdAt.getTime() - b.createdAt.getTime(),
+        );
+        return opts.firstListOverReturns === true ? rows : rows.slice(0, limit);
+      },
+      // Spec 140 s2d (#736a) — the distinct requesters of the unsettled rows
+      // inside the grace, at most `cap`.
+      async listInGraceRequesterIds(cutoff: Date, cap: number) {
+        erasedPath.push(`requesters:${cap}`);
+        if (opts.erasedPathThrows === 'requesters') throw new Error('Neon: password authentication failed for user x');
+        const young = opts.orphans.filter((o) => o.createdAt.getTime() >= cutoff.getTime());
+        return [...new Set(young.map((o) => o.requestedByMemberId))].slice(0, cap);
+      },
+      // Spec 140 s2d (#736a) — those requesters' unsettled rows, any age,
+      // attempts then age, at most `limit`.
+      async listUnsettledOrphansForRequesters(ids: readonly string[], limit: number) {
+        erasedPath.push(`rows:${[...ids].join(',')}:${limit}`);
+        if (opts.erasedPathThrows === 'rows') throw new Error('Neon: password authentication failed for user x');
+        return opts.orphans
+          .filter((o) => ids.includes(o.requestedByMemberId))
+          .sort((a, b) => a.attempts - b.attempts || a.createdAt.getTime() - b.createdAt.getTime())
+          .slice(0, limit);
       },
       async settleOrphan(orphanId: string, outcome: string) {
         if (opts.settleThrows === true) throw new Error('57P01');
@@ -137,15 +160,11 @@ function harness(opts: Opts) {
       },
     },
     membersBridge: {
-      async getMemberErasedAt(_t: unknown, memberId: string) {
-        erasedReads.push(memberId);
-        erasedInFlight += 1;
-        erasedPeak = Math.max(erasedPeak, erasedInFlight);
-        await Promise.resolve();
-        erasedInFlight -= 1;
-        const e = opts.erased?.[memberId] ?? 'live';
-        if (e === 'throws') throw new Error('members read failed');
-        return { erasedAt: e === 'erased' ? new Date('2026-11-01T00:00:00Z') : null };
+      async filterErasedMemberIds(_t: unknown, ids: readonly string[]) {
+        bridgeCalls.push([...ids]);
+        erasedPath.push('bridge');
+        if (opts.erasedPathThrows === 'bridge') throw new Error('members read failed');
+        return ids.filter((id) => opts.erased?.[id] === 'erased');
       },
     },
     broadcastsGateway: {
@@ -170,7 +189,7 @@ function harness(opts: Opts) {
     },
   };
   const run = () => cleanupOrphanedAudiences(deps as never, { graceMs: GRACE_MS, limit: 50 });
-  return { run, settled, attempted, calls, listLimits, listModes, peak: () => peak, erasedReads, erasedPeak: () => erasedPeak };
+  return { run, settled, attempted, calls, listLimits, peak: () => peak, erasedPath, bridgeCalls };
 }
 
 let warn: ReturnType<typeof vi.spyOn>;
@@ -228,26 +247,24 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     expect(h.calls.filter((c) => c.startsWith('deleteBroadcastOnce'))).toEqual([]);
   });
 
-  it('[P H-2] a row inside the grace is drained only when its requester is erased; a failed read waits', async () => {
+  it('[P H-2] a row inside the grace is drained only when its requester is erased', async () => {
     const h = harness({
       orphans: [
         orphan(1, { createdAt: YOUNG, requestedByMemberId: 'm-live' }),
         orphan(2, { createdAt: YOUNG, requestedByMemberId: 'm-erased' }),
-        orphan(3, { createdAt: YOUNG, requestedByMemberId: 'm-unreadable' }),
+        orphan(3, { createdAt: YOUNG, requestedByMemberId: 'm-other' }),
         orphan(4, { createdAt: OLD, requestedByMemberId: 'm-live' }),
       ],
-      erased: { 'm-erased': 'erased', 'm-unreadable': 'throws' },
+      erased: { 'm-erased': 'erased' },
     });
     const res = await h.run();
     expect(h.settled.map(([id]) => id).sort()).toEqual(['o-2', 'o-4']);
-    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 4, settled: 2, waiting: 2 });
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 4, settled: 2, waiting: 2, erasedReadFailed: false });
   });
 
   it(`reads at most ORPHAN_DRAIN_LIMIT (${ORPHAN_DRAIN_LIMIT}) rows and settles them ORPHAN_DRAIN_CONCURRENCY (${ORPHAN_DRAIN_CONCURRENCY}) at a time`, async () => {
     const h = harness({ orphans: Array.from({ length: 12 }, (_, i) => orphan(i + 1)) });
     await h.run();
-    // Review round 4 (code-review #4) — 12 rows is a short first list: it holds
-    // every drainable row, so the in-grace-only list is not read.
     expect(h.listLimits).toEqual([ORPHAN_DRAIN_LIMIT]);
     expect(ORPHAN_DRAIN_LIMIT).toBe(20);
     expect(ORPHAN_DRAIN_CONCURRENCY).toBe(5);
@@ -294,6 +311,19 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 0, listFailed: true });
     const line = error.mock.calls.find((c) => c[1] === 'broadcasts.orphan_drain.list_failed');
     expect(line?.[0]).toEqual({ tenantId: tenant.slug, err: 'Error' });
+  });
+
+  // Spec 140 s2d (#736a) — the erased requesters' rows are read before the
+  // past-grace list, so they still settle when that list fails.
+  it("a failed past-grace list still settles an erased requester's rows", async () => {
+    const h = harness({
+      orphans: [orphan(1), orphan(2, { createdAt: YOUNG, requestedByMemberId: 'm-erased' })],
+      erased: { 'm-erased': 'erased' },
+      listThrows: true,
+    });
+    const res = await h.run();
+    expect(h.settled).toEqual([['o-2', 'deleted']]);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 1, settled: 1, waiting: 0, listFailed: true, erasedReadFailed: false });
   });
 
   it('a settle CAS that throws is undecided and logged with ids only', async () => {
@@ -380,7 +410,10 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     expect(h.calls).toEqual([]);
   });
 
-  it('[code-review #9] the erased reads run once per distinct requester, together (Promise.all)', async () => {
+  // Spec 140 s2d (#736a) — replaces the per-requester reads (code-review #9):
+  // ONE bridge call with the distinct in-grace requesters, then one row read
+  // for the erased ones.
+  it('the erased read is one bridge call with the distinct in-grace requesters', async () => {
     const h = harness({
       orphans: [
         orphan(1, { createdAt: YOUNG, requestedByMemberId: 'm-a' }),
@@ -391,18 +424,22 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
       erased: { 'm-a': 'erased' },
     });
     await h.run();
-    // Only rows inside the grace need the read; one per requester, both in flight at once.
-    expect([...h.erasedReads].sort()).toEqual(['m-a', 'm-b']);
-    expect(h.erasedPeak()).toBe(2);
+    expect(h.bridgeCalls).toEqual([['m-a', 'm-b']]);
+    expect(h.erasedPath).toEqual([`requesters:${ORPHAN_ERASED_REQUESTER_CAP}`, 'bridge', `rows:m-a:${ORPHAN_DRAIN_ERASED_SHARE}`]);
     expect(h.settled.map(([id]) => id).sort()).toEqual(['o-1', 'o-3', 'o-4']);
+  });
+
+  it('no in-grace requester → no bridge call and no row read', async () => {
+    const h = harness({ orphans: [orphan(1)] });
+    await h.run();
+    expect(h.erasedPath).toEqual([`requesters:${ORPHAN_ERASED_REQUESTER_CAP}`]);
   });
 
   /**
    * Spec 140 s2c review round 3 (code-review #2) — RoPA 8d residual (1): an
-   * erased requester's row is drained within one tick. The past-grace list
-   * alone can be filled by 20 rows that keep failing, so the drain reads a
-   * second, in-grace-only list and settles the erased requesters' rows first,
-   * then the past-grace rows, at most ORPHAN_DRAIN_LIMIT in all.
+   * erased requester's row is drained within one tick: past-grace rows that
+   * keep failing cannot fill the run ahead of it. Spec 140 s2d (#736a) — the
+   * erased requesters' rows are read by requester, not from a second list.
    */
   it("[code-review #2] 20 failing past-grace rows do not hold back an erased requester's young row", async () => {
     const failing = Array.from({ length: ORPHAN_DRAIN_LIMIT }, (_, i) => orphan(i + 1, { attempts: 5 }));
@@ -412,8 +449,6 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
       erased: { 'm-erased': 'erased' },
     });
     const res = await h.run();
-    expect(h.settled).toEqual([['o-99', 'deleted']]);
-    expect(h.listModes).toEqual(['all', 'in_grace']);
     const deletes = h.calls.filter((c) => c.startsWith('deleteBroadcastOnce'));
     expect(deletes[0]).toBe('deleteBroadcastOnce:rb-99');
     expect(deletes).toHaveLength(ORPHAN_DRAIN_LIMIT);
@@ -421,45 +456,97 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: ORPHAN_DRAIN_LIMIT + 1, settled: 1, undecided: ORPHAN_DRAIN_LIMIT - 1, waiting: 0, deferred: 1 });
   });
 
-  it('[code-review #2] an in-grace list that fails is logged and the past-grace rows still drain', async () => {
-    // Review round 4 (code-review #4) — a full first list, so the second is read.
-    const h = harness({ orphans: Array.from({ length: ORPHAN_DRAIN_LIMIT }, (_, i) => orphan(i + 1)), inGraceListThrows: true });
+  /**
+   * Spec 140 s2d (#736a) — the erased requester, anchored on the orphan
+   * (plan.md § Slice 2d — plan review): the drain reads the distinct
+   * requesters of the in-grace rows (at most ORPHAN_ERASED_REQUESTER_CAP),
+   * asks the members bridge which are erased (ids in, ids out), and reads
+   * those requesters' unsettled rows FIRST, at most ORPHAN_DRAIN_ERASED_SHARE;
+   * the past-grace list fills the rest. A failed read on that path does not
+   * set listFailed: the normal drain runs and erasedReadFailed is set.
+   */
+  it("25 newer in-grace rows from live members do not hold back an erased requester's row", async () => {
+    const newer = Array.from({ length: 25 }, (_, i) => orphan(i + 1, { createdAt: YOUNG }));
+    // Older than the 25 and tried once: last in the past-grace list's order.
+    const erasedRow = orphan(99, { createdAt: new Date(NOW.getTime() - 30 * 60_000), requestedByMemberId: 'm-erased', attempts: 1 });
+    const h = harness({ orphans: [...newer, erasedRow], erased: { 'm-erased': 'erased' } });
     const res = await h.run();
-    expect(h.settled).toHaveLength(ORPHAN_DRAIN_LIMIT);
-    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: ORPHAN_DRAIN_LIMIT, settled: ORPHAN_DRAIN_LIMIT, listFailed: false });
-    const line = error.mock.calls.find((c) => c[1] === 'broadcasts.orphan_drain.list_failed');
-    expect(line?.[0]).toEqual({ tenantId: tenant.slug, list: 'in_grace', err: 'Error' });
+    expect(h.settled.map(([id]) => id)).toContain('o-99');
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ settled: 1, waiting: ORPHAN_DRAIN_LIMIT, erasedReadFailed: false });
   });
 
-  /**
-   * Spec 140 s2c review round 4 (code-review #4) — the in-grace-only list is
-   * read only when the first list came back full (ORPHAN_DRAIN_LIMIT rows); a
-   * shorter first list already holds every drainable row, young ones included.
-   */
-  it('[code-review #4] a short first list skips the second', async () => {
+  it("an erased requester's 15 undecided rows take at most ORPHAN_DRAIN_ERASED_SHARE slots; past-grace rows fill the rest", async () => {
+    const erasedRows = Array.from({ length: 15 }, (_, i) =>
+      orphan(100 + i, { createdAt: new Date(YOUNG.getTime() - i * 1000), requestedByMemberId: 'm-erased', attempts: 3 }),
+    );
+    const pastGrace = Array.from({ length: 15 }, (_, i) => orphan(i + 1));
     const h = harness({
-      orphans: [...Array.from({ length: 4 }, (_, i) => orphan(i + 1)), orphan(9, { createdAt: YOUNG, requestedByMemberId: 'm-erased' })],
+      orphans: [...erasedRows, ...pastGrace],
       erased: { 'm-erased': 'erased' },
+      deleteOnce: Object.fromEntries(erasedRows.map((o) => [o.resourceId, 'retryable' as const])),
     });
     const res = await h.run();
-    expect(h.listModes).toEqual(['all']);
-    expect(h.listLimits).toEqual([ORPHAN_DRAIN_LIMIT]);
-    expect(h.settled.map(([id]) => id).sort()).toEqual(['o-1', 'o-2', 'o-3', 'o-4', 'o-9']);
-    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 5, settled: 5, deferred: 0 });
+    const deletes = h.calls.filter((c) => c.startsWith('deleteBroadcastOnce'));
+    const erasedDeletes = deletes.filter((c) => /rb-1\d\d$/.test(c));
+    expect(ORPHAN_DRAIN_ERASED_SHARE).toBe(ORPHAN_DRAIN_LIMIT / 2);
+    expect(erasedDeletes).toHaveLength(ORPHAN_DRAIN_ERASED_SHARE);
+    expect(deletes).toHaveLength(ORPHAN_DRAIN_LIMIT);
+    expect(h.settled).toHaveLength(ORPHAN_DRAIN_LIMIT - ORPHAN_DRAIN_ERASED_SHARE);
+    // 5 past-grace rows are over the run's cap: left for the next run.
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 25, settled: 10, undecided: 10, waiting: 0, deferred: 5 });
   });
 
-  // Review round 4 follow-up (code-review #7) — the gate is `>=`, not `===`:
-  // a first list that comes back longer than the limit still counts as full.
-  it('[code-review #7] a first list longer than the limit still reads the in-grace-only list', async () => {
+  it.each(['requesters', 'bridge', 'rows'] as const)(
+    'the erased path fails at %s → past-grace rows still settle, the erased row waits, erasedReadFailed is set, listFailed is false',
+    async (where) => {
+      const h = harness({
+        orphans: [orphan(1), orphan(2), orphan(9, { createdAt: YOUNG, requestedByMemberId: 'm-erased' })],
+        erased: { 'm-erased': 'erased' },
+        erasedPathThrows: where,
+      });
+      const res = await h.run();
+      expect(h.settled.map(([id]) => id).sort()).toEqual(['o-1', 'o-2']);
+      expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 3, settled: 2, waiting: 1, listFailed: false, erasedReadFailed: true });
+      const lines = warn.mock.calls.filter((c) => c[1] === 'broadcasts.orphan_drain.erased_read_failed');
+      expect(lines).toHaveLength(1);
+      expect(lines[0]?.[0]).toEqual({ tenantId: tenant.slug, err: 'Error', code: undefined });
+      expect(error.mock.calls.some((c) => c[1] === 'broadcasts.orphan_drain.list_failed')).toBe(false);
+    },
+  );
+
+  it('[pdpa H-1] requester erased 3 h before the orphan was written, the row in grace → settled this tick', async () => {
+    // The bridge answers ids only: there is no erased_at window to fall out of.
+    const h = harness({
+      orphans: [orphan(1, { createdAt: YOUNG, requestedByMemberId: 'm-erased-3h-before' })],
+      erased: { 'm-erased-3h-before': 'erased' },
+    });
+    const res = await h.run();
+    expect(h.settled).toEqual([['o-1', 'deleted']]);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ settled: 1, waiting: 0 });
+  });
+
+  it('ORPHAN_ERASED_REQUESTER_CAP in-grace requesters → logged (erased_requesters_capped) and the run carries on', async () => {
+    const many = Array.from({ length: ORPHAN_ERASED_REQUESTER_CAP }, (_, i) => orphan(i + 1, { createdAt: YOUNG, requestedByMemberId: `m-${i}` }));
+    const h = harness({ orphans: [...many, orphan(999)], erased: { 'm-3': 'erased' } });
+    const res = await h.run();
+    expect(h.settled.map(([id]) => id).sort()).toEqual(['o-4', 'o-999']);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ settled: 2, erasedReadFailed: false });
+    const line = warn.mock.calls.find((c) => c[1] === 'broadcasts.orphan_drain.erased_requesters_capped');
+    expect(line?.[0]).toEqual({ tenantId: tenant.slug, cap: ORPHAN_ERASED_REQUESTER_CAP });
+  });
+
+  it('fewer in-grace requesters than the cap → no capped line', async () => {
+    const h = harness({ orphans: [orphan(1, { createdAt: YOUNG })] });
+    await h.run();
+    expect(warn.mock.calls.some((c) => c[1] === 'broadcasts.orphan_drain.erased_requesters_capped')).toBe(false);
+  });
+
+  // Review round 4 follow-up (code-review #7) — a past-grace list longer than
+  // its limit still caps the run at ORPHAN_DRAIN_LIMIT.
+  it('[code-review #7] a past-grace list longer than the limit still settles at most ORPHAN_DRAIN_LIMIT', async () => {
     const h = harness({ orphans: Array.from({ length: ORPHAN_DRAIN_LIMIT + 1 }, (_, i) => orphan(i + 1)), firstListOverReturns: true });
-    await h.run();
-    expect(h.listModes).toEqual(['all', 'in_grace']);
-  });
-
-  it('[code-review #4] a full first list reads the in-grace-only list as well', async () => {
-    const h = harness({ orphans: Array.from({ length: ORPHAN_DRAIN_LIMIT }, (_, i) => orphan(i + 1)) });
-    await h.run();
-    expect(h.listModes).toEqual(['all', 'in_grace']);
-    expect(h.listLimits).toEqual([ORPHAN_DRAIN_LIMIT, ORPHAN_DRAIN_LIMIT]);
+    const res = await h.run();
+    expect(h.settled).toHaveLength(ORPHAN_DRAIN_LIMIT);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: ORPHAN_DRAIN_LIMIT + 1, deferred: 1 });
   });
 });

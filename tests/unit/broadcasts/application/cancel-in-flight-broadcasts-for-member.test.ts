@@ -1349,6 +1349,22 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       expect(deps.settles).toEqual([]);
     });
 
+    // Spec 140 s2d (#736a, pdpa L-1, accepted) — the drain settles an erased
+    // requester's row between pass (a)'s list and its settle CAS: the CAS
+    // loses, the drive withholds member_erased (unexpected), and the
+    // reconciler's re-drive counts the row ONCE from its stored outcome.
+    it('[pdpa L-1] a drain/cascade CAS race counts once and member_erased is eventually written', async () => {
+      const raced = makeDeps({ memberOrphans: [o1], settleReturns: false }) as unknown as Seen;
+      const first = await cancelInFlightBroadcastsForMember(raced as never, erasureInput);
+      expect(first).toEqual(value({ unexpectedErrorCount: 1 }));
+      // The re-drive reads the row the drain settled: counted, no Resend call.
+      const redrive = makeDeps({ memberOrphans: [{ ...o1, outcome: 'deleted' }] }) as unknown as Seen;
+      const second = await cancelInFlightBroadcastsForMember(redrive as never, erasureInput);
+      expect(second).toEqual(value({ resendDraftsCleared: 1 }));
+      expect(redrive.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
+      expect(redrive.settles).toEqual([]);
+    });
+
     it('an orphan whose id a terminal row holds is settled but not counted twice', async () => {
       const terminal = { broadcastId: broadcastIdA, status: 'failed_to_dispatch', resendBroadcastId: 'rb-orphan-1' };
       const deps = makeDeps({ terminalRows: [terminal], memberOrphans: [o1] }) as unknown as Seen;

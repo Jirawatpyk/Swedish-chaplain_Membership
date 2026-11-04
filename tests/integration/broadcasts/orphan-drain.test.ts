@@ -91,9 +91,10 @@ describe('spec 140 s2c — the orphan drain (DL6, live Neon)', () => {
         deleted.push(id);
       },
     };
+    // Spec 140 s2d (#736a) - ids in, ids out.
     const membersBridge = {
-      async getMemberErasedAt(_t: unknown, memberId: string) {
-        return { erasedAt: memberId === erased ? new Date() : null };
+      async filterErasedMemberIds(_t: unknown, ids: readonly string[]) {
+        return ids.filter((id) => id === erased);
       },
     };
     // Every row was just written: a 1 h grace keeps them all inside it, so

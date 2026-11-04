@@ -36,10 +36,17 @@ const clock = { now: (): Date => FROZEN_NOW };
 
 /** Spec 140 s2c — the orphan drain's deps with nothing to drain; its own suite is cleanup-orphaned-audiences-drain.test.ts. */
 const NO_DRAIN_DEPS = {
-  orphans: { async listDrainableOrphans() { return []; }, async settleOrphan() { return false; }, async markOrphanAttempted() { return false; } },
-  membersBridge: { async getMemberErasedAt() { return { erasedAt: null }; } },
+  orphans: {
+    async listDrainableOrphans() { return []; },
+    async listInGraceRequesterIds() { return []; },
+    async listUnsettledOrphansForRequesters() { return []; },
+    async settleOrphan() { return false; },
+    async markOrphanAttempted() { return false; },
+  },
+  // Spec 140 s2d (#736a) — ids in, ids out.
+  membersBridge: { async filterErasedMemberIds() { return []; } },
 };
-const NO_ORPHAN_RUN = { listed: 0, settled: 0, undecided: 0, waiting: 0, deferred: 0, listFailed: false };
+const NO_ORPHAN_RUN = { listed: 0, settled: 0, undecided: 0, waiting: 0, deferred: 0, listFailed: false, erasedReadFailed: false };
 
 // ---------------------------------------------------------------------------
 // Stub factories
