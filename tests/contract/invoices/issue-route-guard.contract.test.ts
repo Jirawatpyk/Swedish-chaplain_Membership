@@ -245,13 +245,33 @@ describe('contract: POST /api/invoices/[invoiceId]/issue — expectedTotalSatang
     );
   });
 
-  it('#62 409 membership_coverage_overlap — bare code (another bill covers the period)', async () => {
-    issueInvoiceMock.mockResolvedValueOnce(err({ code: 'membership_coverage_overlap' }));
+  it('#62 409 membership_coverage_overlap — no blocking bill found → bare code', async () => {
+    issueInvoiceMock.mockResolvedValueOnce(err({ code: 'membership_coverage_overlap', blocking: null }));
     const { POST } = await importRoute();
     const res = await POST(postWithBody({ expectedTotalSatang: '107000' }), routeParams);
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: Record<string, unknown> };
     expect(body.error).toEqual({ code: 'membership_coverage_overlap' });
+  });
+
+  // #730 — the dialog links the bill that covers the period: its id and the
+  // number printed on it, nothing more (status/total stay server-side).
+  it('#730 409 membership_coverage_overlap — names the blocking bill', async () => {
+    issueInvoiceMock.mockResolvedValueOnce(
+      err({
+        code: 'membership_coverage_overlap',
+        blocking: { invoiceId: 'inv-blocking', status: 'paid', documentNumber: 'RC-2026-000042', totalSatang: 1n },
+      }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(postWithBody({ expectedTotalSatang: '107000' }), routeParams);
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: Record<string, unknown> };
+    expect(body.error).toEqual({
+      code: 'membership_coverage_overlap',
+      blocking_invoice_id: 'inv-blocking',
+      blocking_document_number: 'RC-2026-000042',
+    });
   });
 
   it('409 issue_total_changed — bare code', async () => {

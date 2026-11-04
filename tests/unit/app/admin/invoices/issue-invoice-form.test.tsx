@@ -15,7 +15,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
-import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { IssueInvoiceForm } from '@/app/(staff)/admin/invoices/_components/issue-invoice-form';
@@ -585,6 +585,47 @@ describe('IssueInvoiceForm — failure branch is focused + destructive (FR-032)'
       expect(alert).not.toHaveTextContent(enMessages.admin.invoices.issue.errors.concurrent);
       await waitFor(() => expect(alert).toHaveFocus());
       expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // #730 — the overlap names the committed bill that covers the period, so the
+  // admin opens it instead of searching the member's invoices.
+  it('#730 a coverage-overlap 409 naming the blocking bill links to it', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        error: {
+          code: 'membership_coverage_overlap',
+          blocking_invoice_id: 'inv-blocking',
+          blocking_document_number: 'RC-2026-000042',
+        },
+      }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      confirmAndSubmit();
+      const alert = await screen.findByTestId('issue-invoice-error');
+      const link = within(alert).getByRole('link', { name: /RC-2026-000042/ });
+      expect(link).toHaveAttribute('href', '/admin/invoices/inv-blocking');
+      // Review round 1 (UX M): with the link there, the copy does not send the
+      // admin to search the member's invoices.
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.issue.errors.membership_coverage_overlap_linked);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('#730 a coverage-overlap 409 with no blocking bill shows no link', async () => {
+    vi.stubGlobal('fetch', rejectingFetch('membership_coverage_overlap'));
+    try {
+      renderForm();
+      confirmAndSubmit();
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(within(alert).queryByRole('link')).toBeNull();
     } finally {
       vi.unstubAllGlobals();
     }

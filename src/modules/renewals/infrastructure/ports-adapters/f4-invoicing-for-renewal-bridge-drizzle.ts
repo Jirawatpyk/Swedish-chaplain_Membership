@@ -132,6 +132,14 @@ export const makeF4InvoicingForRenewalBridge = (
           'reason' in issueResult.error
             ? String(issueResult.error.reason)
             : issueResult.error.code,
+        // #730 — name the committed bill a coverage overlap collided with.
+        ...(issueResult.error.code === 'membership_coverage_overlap'
+          ? {
+              blocking: issueResult.error.blocking
+                ? { invoiceId: issueResult.error.blocking.invoiceId, status: issueResult.error.blocking.status }
+                : null,
+            }
+          : {}),
       };
     }
     const issued = issueResult.value;
@@ -255,6 +263,14 @@ export const makeF4InvoicingForRenewalBridge = (
           'reason' in issueResult.error
             ? String(issueResult.error.reason)
             : issueResult.error.code,
+        // #730 — name the committed bill a coverage overlap collided with.
+        ...(issueResult.error.code === 'membership_coverage_overlap'
+          ? {
+              blocking: issueResult.error.blocking
+                ? { invoiceId: issueResult.error.blocking.invoiceId, status: issueResult.error.blocking.status }
+                : null,
+            }
+          : {}),
       };
     }
     const issued = issueResult.value;

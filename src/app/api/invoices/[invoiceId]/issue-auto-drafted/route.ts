@@ -123,7 +123,13 @@ function serialiseError(error: IssueAutoDraftError): Record<string, unknown> {
         conflicting_status: error.conflictingStatus,
       };
     case 'issue_failed':
-      return { code: error.kind, error_code: error.errorCode };
+      // #730 — a coverage overlap names the bill that covers the period, so
+      // the queue links it as it does for `duplicate_live_bill`.
+      return {
+        code: error.kind,
+        error_code: error.errorCode,
+        ...(error.blocking ? { conflicting_invoice_id: error.blocking.invoiceId } : {}),
+      };
     case 'invalid_input':
     case 'draft_not_found':
     case 'cycle_not_found':

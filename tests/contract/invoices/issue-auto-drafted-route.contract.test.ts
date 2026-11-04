@@ -353,6 +353,28 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-auto-drafted (Task 14)'
     expect(body.error).toEqual({ code: 'issue_failed', error_code: 'overflow' });
   });
 
+  // #730 — the EXCLUDE race: the queue links the bill that covers the period,
+  // as it does for the pre-flight duplicate_live_bill refusal.
+  it('#730 409 issue_failed{membership_coverage_overlap} — forwards the blocking bill id', async () => {
+    issueAutoDraftedRenewalMock.mockResolvedValueOnce(
+      err({
+        kind: 'issue_failed',
+        errorCode: 'membership_coverage_overlap',
+        detail: 'membership_coverage_overlap',
+        blocking: { invoiceId: 'inv-blocking', status: 'paid' },
+      }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makePostRequest({ sendEmail: false }), routeParams);
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: Record<string, unknown> };
+    expect(body.error).toEqual({
+      code: 'issue_failed',
+      error_code: 'membership_coverage_overlap',
+      conflicting_invoice_id: 'inv-blocking',
+    });
+  });
+
   it('500 issue_failed{pdf_render_failed} — logged at ERROR (server fault), not WARN', async () => {
     issueAutoDraftedRenewalMock.mockResolvedValueOnce(
       err({ kind: 'issue_failed', errorCode: 'pdf_render_failed', detail: 'font missing' }),
