@@ -1,0 +1,81 @@
+// Positive control for `pnpm check:log-error-objects` (spec 140 s2d, #736c).
+// Parsed as TypeScript by scripts/lib/log-error-objects-rules.ts, never compiled
+// (a .txt so tsc and eslint leave it alone). Every line marked `// refused` must
+// yield a finding on THAT line; every line marked `// allowed` must yield none.
+// One refused form per line, so a rule that stops matching names its line.
+declare const logger: { warn(o: unknown, m?: string): void; error(o: unknown, m?: string): void };
+declare const deps: { logger: typeof logger };
+declare const result: { error: { code: string; kind: string; cause: unknown } };
+declare function errKind(e: unknown): string;
+declare function pgErrorCode(e: unknown): string | undefined;
+declare function pgErrorMeta(e: unknown): unknown;
+declare function hashId(id: string): string;
+declare function classifyThrown(e: unknown): { kind: string; reason?: string };
+declare function rootCause(e: unknown): unknown;
+declare function describeStorageError(e: unknown): string;
+declare const dbError: Error;
+declare const sendErr: Error;
+declare const cause: unknown;
+declare const actorUserId: string;
+declare const outcomeKind: string;
+declare const errClass: string;
+declare const pgCode: string;
+
+export async function refusedForms(): Promise<void> {
+  try {
+    await Promise.resolve();
+  } catch (e) {
+    logger.error({ err: e }, 'x'); // refused
+    logger.error({ err: e.message }, 'x'); // refused
+    logger.error({ stack: e.stack }, 'x'); // refused
+    logger.error({ err: String(e) }, 'x'); // refused
+    logger.error({ err: JSON.stringify(e) }, 'x'); // refused
+    logger.error({ err: `failed: ${e.message}` }, 'x'); // refused
+    logger.error({ err: e instanceof Error ? e.message : 'unknown' }, 'x'); // refused
+    logger.error({ err: e instanceof Error ? errKind(e) : String(e) }, 'x'); // refused
+    logger.error({ ...e }, 'x'); // refused
+    logger.error(e, 'x'); // refused
+    logger.error({ nested: { err: e } }, 'x'); // refused
+    logger.error({ err: describeStorageError(e) }, 'x'); // refused
+    logger.error({ err: classifyThrown(e) }, 'x'); // refused
+    logger.error({ why: classifyThrown(e).reason }, 'x'); // refused
+    logger.error({ err: errKind(e) }, `failed: ${e.message}`); // refused
+    deps.logger.warn({ err: e }, 'x'); // refused
+  }
+  try {
+    await Promise.resolve();
+  } catch (thrown) {
+    logger.error({ err: thrown }, 'x'); // refused
+  }
+  await Promise.resolve().catch((boom) => logger.error({ err: boom }, 'x')); // refused
+  const err = new Error('x');
+  const error = new Error('x');
+  const ex = new Error('x');
+  const e = new Error('x');
+  logger.error({ err }, 'x'); // refused
+  logger.error({ error }, 'x'); // refused
+  logger.error({ cause }, 'x'); // refused
+  logger.error({ e }, 'x'); // refused
+  logger.error({ failure: ex }, 'x'); // refused
+  logger.error({ failure: dbError }, 'x'); // refused
+  logger.error({ failure: sendErr }, 'x'); // refused
+  logger.error({ err: result.error }, 'x'); // refused
+  logger.error({ err: result.error.cause }, 'x'); // refused
+  logger.error({ err: rootCause(result.error) }, 'x'); // refused
+  logger.error({ err: error.message ?? 'none' }, 'x'); // refused
+}
+
+export async function allowedForms(): Promise<void> {
+  try {
+    await Promise.resolve();
+  } catch (e) {
+    logger.error({ err: errKind(e), code: pgErrorCode(e) }, 'x'); // allowed
+    logger.error({ err: errKind(rootCause(e)), ...{ meta: pgErrorMeta(e) } }, 'x'); // allowed
+    logger.error({ kind: classifyThrown(e).kind }, 'x'); // allowed
+  }
+  logger.error({ err: errKind(rootCause(result.error)), repoCode: result.error.code }, 'x'); // allowed
+  logger.error({ kind: result.error.kind }, 'x'); // allowed
+  logger.error({ actor: hashId(actorUserId) }, 'x'); // allowed
+  logger.error({ outcomeKind, errClass, pgCode }, 'x'); // allowed
+  logger.error({ err: errClass, step: 'insert_row' }, 'x'); // allowed
+}
