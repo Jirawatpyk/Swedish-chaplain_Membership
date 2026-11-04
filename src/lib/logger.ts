@@ -736,7 +736,10 @@ export interface ReducedLoggedError {
 }
 
 /** A lowercase discriminant token: `server_error`, `not_found`, `insufficient_funds`. */
-const LOWER_TOKEN = /^[a-z][a-z0-9_]{0,47}$/;
+// Review round 3 follow-up — up to four lowercase words joined by `.` or `:`
+// (this repo's discriminants are dotted: `process_webhook.server_error`), at
+// most 64 characters.
+const LOWER_TOKEN = /^(?=.{1,64}$)[a-z][a-z0-9_]*(?:[.:][a-z][a-z0-9_]*){0,3}$/;
 /** An error class name: `DrizzleQueryError`, `NeonDbError`, `TimeoutException`. */
 const ERROR_CLASS_NAME = /^[A-Z]\w*(Error|Exception)$/;
 /** A V8 / Node stack frame line: `at fn (file.ts:1:2)` or `at file.ts:1:2`. */
