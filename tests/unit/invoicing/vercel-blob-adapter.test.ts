@@ -208,4 +208,16 @@ describe('vercelBlobAdapter — #60 conditional delete', () => {
       BlobChangedSinceUploadError,
     );
   });
+
+  // #729 L1 — a delete of a key already gone is reported by the port's own
+  // class, so a caller (the orphan sweep) can tell "gone" from a failure.
+  it("the SDK's BlobNotFoundError on delete → the port's BlobKeyNotFoundError", async () => {
+    const { BlobNotFoundError } = await vi.importActual<typeof import('@vercel/blob')>('@vercel/blob');
+    delMock.mockRejectedValue(new BlobNotFoundError());
+    const { vercelBlobAdapter } = await loadAdapter();
+    const { BlobKeyNotFoundError } = await import('@/modules/invoicing/application/ports/blob-storage-port');
+    await expect(vercelBlobAdapter.delete(KEY, { ifMatch: '"etag-a"' })).rejects.toBeInstanceOf(
+      BlobKeyNotFoundError,
+    );
+  });
 });

@@ -13,10 +13,13 @@ import {
   BlobKeyNotFoundError,
   type BlobStoragePort,
 } from '../../application/ports/blob-storage-port';
+import type { OrphanPdfBlobPage, OrphanPdfBlobPort } from '../../application/ports/orphan-pdf-blob-port';
 import { env } from '@/lib/env';
 
 /** #60 — upper bound on one Blob delete, retries included. */
 const BLOB_DELETE_TIMEOUT_MS = 10_000;
+/** #729 — upper bound on one listing page when the caller gives no signal. */
+const BLOB_LIST_PAGE_TIMEOUT_MS = 20_000;
 
 /**
  * `head()` for a READ, with NOT-FOUND classified by the SDK's own class and
@@ -37,7 +40,7 @@ async function headForRead(key: string): Promise<{ readonly url: string }> {
   }
 }
 
-export const vercelBlobAdapter: BlobStoragePort = {
+export const vercelBlobAdapter: BlobStoragePort & OrphanPdfBlobPort = {
   async uploadPdf(input: {
     readonly key: string;
     readonly body: Uint8Array;
@@ -158,6 +161,9 @@ export const vercelBlobAdapter: BlobStoragePort = {
       if (e instanceof BlobPreconditionFailedError) {
         throw new BlobChangedSinceUploadError({ cause: e });
       }
+      // #729 L1 — the key is already gone: say so with the port's class, so a
+      // caller can tell "gone" from a failure (the orphan sweep counts it).
+      if (e instanceof BlobNotFoundError) throw new BlobKeyNotFoundError({ cause: e });
       throw e;
     }
   },
@@ -172,5 +178,28 @@ export const vercelBlobAdapter: BlobStoragePort = {
       token: env.blob.readWriteToken,
     });
     return result.blobs.map((b) => b.pathname);
+  },
+
+  async listPage(
+    prefix: string,
+    cursor: string | undefined,
+    limit: number,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<OrphanPdfBlobPage> {
+    // #729 — the orphan sweeper pages a whole tenant folder; the pathname is
+    // the key (`put` never adds a random suffix). Always bounded: the SDK
+    // retries a 5xx with backoff for minutes, past the route's maxDuration.
+    const result = await list({
+      prefix,
+      ...(cursor !== undefined ? { cursor } : {}),
+      limit,
+      token: env.blob.readWriteToken,
+      abortSignal: options?.signal ?? AbortSignal.timeout(BLOB_LIST_PAGE_TIMEOUT_MS),
+    });
+    return {
+      items: result.blobs.map((b) => ({ key: b.pathname, uploadedAt: b.uploadedAt, etag: b.etag })),
+      cursor: result.cursor,
+      hasMore: result.hasMore,
+    };
   },
 };

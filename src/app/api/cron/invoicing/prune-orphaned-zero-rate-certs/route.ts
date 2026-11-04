@@ -26,7 +26,9 @@
  * `src/lib/**` composition adapter).
  *
  * Authentication: `Authorization: Bearer ${CRON_SECRET}` (constant-time; strict
- * in all envs, no dev bypass). NOT feature-gated (pure cleanup, safe regardless
+ * in all envs, no dev bypass). Runs on a production deployment only
+ * (`VERCEL_ENV`, #729); elsewhere it answers 200 skipped. Scheduled inside
+ * `sweep-orphan-blobs` since #729; this route stays for a manual run. NOT feature-gated (pure cleanup, safe regardless
  * of the 088 flag). Returns 200 `{ ok, scanned, swept, skipped, cutoff }` (NO
  * PII — cutoff is a time, keys are path segments) / 401 / 500 (scan_failed).
  * Node runtime pinned for Drizzle + Vercel Blob. Runbook:
@@ -68,6 +70,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // write-freeze does not cover, so the route skips by itself.
   const frozen = cronReadOnlyGuard(ROUTE);
   if (frozen) return frozen;
+
+  // #729 R126 F2 — production only. A preview or a local machine can hold a
+  // token for production's Blob store while its pins come from another Neon
+  // branch, so a prune there would delete live certificate scans.
+  if (env.vercelEnv !== 'production') {
+    return NextResponse.json({ ok: true, skipped: true, reason: 'not_production' }, { status: 200 });
+  }
 
   try {
     const result = await runPruneOrphanedZeroRateCerts({});

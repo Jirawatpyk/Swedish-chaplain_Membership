@@ -103,9 +103,9 @@ export interface BlobStoragePort {
   downloadBytes(key: string): Promise<Uint8Array>;
 
   /**
-   * Delete a key. No background sweeper exists (accepted residual, 064
-   * design §3.2 L-1). The catch-path orphan deletes go through
-   * `deleteOrphanPdfUnderLock`. With `ifMatch`, delete only if the stored
+   * Delete a key. The catch-path orphan deletes and the daily orphan PDF
+   * sweep (#729, `sweep-orphan-blobs`) go through `deleteOrphanPdfUnderLock`
+   * for invoice and receipt keys. With `ifMatch`, delete only if the stored
    * etag still matches; otherwise throw `BlobChangedSinceUploadError`.
    */
   delete(key: string, options?: { readonly ifMatch?: string }): Promise<void>;

@@ -56,6 +56,9 @@ const emailCsvList = csvList.pipe(z.array(z.string().email()));
 const schema = z.object({
   // Runtime
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  // Set by Vercel on every deployment; unset on a local machine. NODE_ENV is
+  // `production` on previews too, so only this tells prod from a preview.
+  VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
 
   // Database (Neon)
   DATABASE_URL: z.string().url(),
@@ -362,6 +365,14 @@ const schema = z.object({
   // (best-effort, metric-only on failure). Default false — ships dark; a
   // dangling duplicate bill is the pre-existing behaviour, not a regression.
   FEATURE_VOID_ON_REISSUE: booleanFromString.default(false),
+
+  // #729 — the orphan invoice / receipt / credit-note PDF sweep deletes only
+  // when this is TRUE *and* VERCEL_ENV is `production`; anywhere else it runs
+  // as a dry run (a preview's Neon branch can lag the Blob store, so a real
+  // delete there could remove a live document's PDF). Default false: read the
+  // first production dry run (`?dryRun=1`) before turning deletes on.
+  // Runbook: docs/runbooks/cron-jobs.md § sweep-orphan-blobs.
+  FEATURE_ORPHAN_PDF_SWEEP_DELETE: booleanFromString.default(false),
 
   // auto-invoice #2 — master kill-switch (dark-ship key #1 of 3). Default
   // false — ships dark; independent of FEATURE_F8_RENEWALS (no cross-field
@@ -1122,6 +1133,7 @@ if (
 
 export const env = {
   nodeEnv: raw.NODE_ENV,
+  vercelEnv: raw.VERCEL_ENV,
   isProduction: raw.NODE_ENV === 'production',
   isDevelopment: raw.NODE_ENV === 'development',
   isTest: raw.NODE_ENV === 'test',
@@ -1232,6 +1244,8 @@ export const env = {
     f088TaxAtPayment: raw.FEATURE_088_TAX_AT_PAYMENT,
     // 106-void-on-reissue — auto-void superseded membership bills on reissue.
     voidOnReissue: raw.FEATURE_VOID_ON_REISSUE,
+    // #729 — the orphan PDF sweep's delete gate (with `vercelEnv`).
+    orphanPdfSweepDelete: raw.FEATURE_ORPHAN_PDF_SWEEP_DELETE,
     // auto-invoice #2 — master kill-switch (dark-ship key #1 of 3).
     autoInvoice: raw.FEATURE_AUTO_INVOICE,
     // auto-invoice #2 — rollout gate for the erasure draft-discard cascade.

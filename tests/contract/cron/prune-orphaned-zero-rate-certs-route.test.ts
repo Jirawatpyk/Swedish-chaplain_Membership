@@ -19,6 +19,8 @@ const CRON_SECRET = 'test-secret-32-bytes-long-aaaaaa';
 
 // #408 — mutable so the READ_ONLY_MODE case can flip it.
 const flagsMock = vi.hoisted(() => ({ readOnlyMode: false }));
+// #729 R126 F2 — the prune deletes only on a production deployment.
+const vercelEnvMock = vi.hoisted(() => ({ value: 'production' as string | undefined }));
 
 vi.mock('@/lib/env', () => ({
   env: {
@@ -29,6 +31,9 @@ vi.mock('@/lib/env', () => ({
     isDevelopment: false,
     isTest: true,
     nodeEnv: 'test' as const,
+    get vercelEnv() {
+      return vercelEnvMock.value;
+    },
   },
 }));
 
@@ -85,6 +90,21 @@ describe('POST /api/cron/invoicing/prune-orphaned-zero-rate-certs — contract',
       expect(runPruneMock).not.toHaveBeenCalled();
     } finally {
       flagsMock.readOnlyMode = false;
+    }
+  });
+
+  // #729 R126 F2 — a local machine's Blob token reached a store that looked
+  // like production's, while its pins come from the dev branch: a prune there
+  // would delete live certificate scans. Off production it deletes nothing.
+  it.each(['preview', 'development', undefined])('VERCEL_ENV=%s → 200 skipped, nothing pruned', async (v) => {
+    vercelEnvMock.value = v;
+    try {
+      const res = await POST(makeRequest(VALID_AUTH));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'not_production' });
+      expect(runPruneMock).not.toHaveBeenCalled();
+    } finally {
+      vercelEnvMock.value = 'production';
     }
   });
 
