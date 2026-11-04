@@ -911,6 +911,55 @@ async function dispatchOne(
     // attempts) when still pending — the next cron tick re-evaluates
     // after the worker uploads.
     let receiptKeyOverride: string | null = null;
+    // Task #70 (financial M-1) — an attempt-bumping gate arm used to push the
+    // row back forever: none checked MAX_ATTEMPTS, so a broken row never
+    // reached the permanent-fail ladder, its audit or the alarm. Now the last
+    // attempt is permanently failed and audited like a failed send.
+    const gateFail = async (reason: string): Promise<DispatchOutcome> => {
+      const nextAttempt = row.attempts + 1;
+      const code = reason.slice('receipt_pdf_gate_skip:'.length).split(' ')[0] ?? 'gate';
+      if (nextAttempt < MAX_ATTEMPTS) {
+        await tx
+          .update(notificationsOutbox)
+          .set({ attempts: nextAttempt, nextRetryAt: new Date(now.getTime() + 60_000), lastError: reason, updatedAt: now })
+          .where(eq(notificationsOutbox.id, row.id));
+        return 'skipped';
+      }
+      await tx
+        .update(notificationsOutbox)
+        .set({ status: 'permanently_failed' as const, attempts: nextAttempt, lastError: reason, updatedAt: now })
+        .where(eq(notificationsOutbox.id, row.id));
+      const payload = {
+        outbox_row_id: row.id,
+        notification_type: row.notificationType,
+        attempts: nextAttempt,
+        reason: `receipt_pdf_gate_skip:${code}`,
+      };
+      await tx.insert(auditLog).values({
+        eventType: 'email_dispatch_failed',
+        actorUserId: 'system:cron',
+        summary: `outbox row ${row.id} permanently failed (receipt_pdf_gate_skip:${code}) after ${nextAttempt} attempts`,
+        requestId,
+        tenantId: row.tenantId,
+        payload,
+      });
+      if (row.tenantId) {
+        await tx.insert(auditLog).values({
+          eventType: 'auto_email_delivery_failed',
+          actorUserId: 'system:cron',
+          summary: `F4 auto-email outbox row ${row.id} permanently failed (receipt_pdf_gate_skip:${code}) after ${nextAttempt} attempts`,
+          requestId,
+          tenantId: row.tenantId,
+          payload,
+        });
+      }
+      outboxMetrics.permanentFailure(row.notificationType, 'receipt_pdf_gate');
+      logger.error(
+        { requestId, outboxRowId: row.id, reason: code, attempts: nextAttempt },
+        'outbox.receipt_pdf_gate_permanent_failure — the paid-receipt email will not ship',
+      );
+      return 'permanent';
+    };
     if (
       row.notificationType === 'invoice_auto_email' &&
       (row.contextData as Record<string, unknown>).depends_on_receipt_pdf === true
@@ -938,17 +987,7 @@ async function dispatchOne(
         //       row exits via the standard max-retries → permanent_fail
         //       ladder instead of skip-looping forever.
         if (invRow === undefined) {
-          await tx
-            .update(notificationsOutbox)
-            .set({
-              attempts: row.attempts + 1,
-              nextRetryAt: new Date(now.getTime() + 60_000),
-              lastError:
-                'receipt_pdf_gate_skip:invoice_not_visible — invoice row missing under tenant RLS scope (deleted or tenant_id mismatch)',
-              updatedAt: now,
-            })
-            .where(eq(notificationsOutbox.id, row.id));
-          return 'skipped';
+          return gateFail('receipt_pdf_gate_skip:invoice_not_visible — invoice row missing under tenant RLS scope (deleted or tenant_id mismatch)');
         }
         // R3-I1 — distinguish 'pending' (legitimate wait) from 'failed'
         // (terminal). When the reconcile cron exhausts max-retries the
@@ -960,17 +999,7 @@ async function dispatchOne(
         // retries → permanent-fail ladder (operator gets a single page
         // instead of a forever-stuck queue).
         if (invRow.receipt_pdf_status === 'failed') {
-          await tx
-            .update(notificationsOutbox)
-            .set({
-              attempts: row.attempts + 1,
-              nextRetryAt: new Date(now.getTime() + 60_000),
-              lastError:
-                'receipt_pdf_gate_skip:pdf_render_failed — receipt PDF is in terminal failed state; email cannot ship',
-              updatedAt: now,
-            })
-            .where(eq(notificationsOutbox.id, row.id));
-          return 'skipped';
+          return gateFail('receipt_pdf_gate_skip:pdf_render_failed — receipt PDF is in terminal failed state; email cannot ship');
         }
         if (invRow.receipt_pdf_status !== 'rendered') {
           // Legitimate wait — receipt still rendering ('pending'); do
@@ -994,22 +1023,21 @@ async function dispatchOne(
         if (!invRow.receipt_pdf_blob_key) {
           // Rendered with no key is an inconsistent row: fail closed so the
           // email exits via the permanent-fail ladder, never a dead link.
-          await tx
-            .update(notificationsOutbox)
-            .set({
-              attempts: row.attempts + 1,
-              nextRetryAt: new Date(now.getTime() + 60_000),
-              lastError:
-                'receipt_pdf_gate_skip:rendered_without_key — receipt_pdf_status=rendered but receipt_pdf_blob_key is null',
-              updatedAt: now,
-            })
-            .where(eq(notificationsOutbox.id, row.id));
-          return 'skipped';
+          return gateFail('receipt_pdf_gate_skip:rendered_without_key — receipt_pdf_status=rendered but receipt_pdf_blob_key is null');
         }
         if (invRow.receipt_pdf_blob_key !== ctx.pdf_blob_key) {
           // No keys in the log: the store is public by URL (PG-1).
+          // The template versions are not secret and say which path diverged.
+          const versionOf = (k: unknown) =>
+            typeof k === 'string' ? (/_v(\d+)\.pdf$/.exec(k)?.[1] ?? null) : null;
           logger.warn(
-            { requestId, outboxRowId: row.id, invoiceId },
+            {
+              requestId,
+              outboxRowId: row.id,
+              invoiceId,
+              frozenTemplateVersion: versionOf(ctx.pdf_blob_key),
+              renderedTemplateVersion: versionOf(invRow.receipt_pdf_blob_key),
+            },
             'outbox.receipt_key_rebound — sending the rendered receipt key, not the key frozen at payment',
           );
           receiptKeyOverride = invRow.receipt_pdf_blob_key;
@@ -1019,17 +1047,7 @@ async function dispatchOne(
         // Defensive: gate flag set but no invoice_id / tenant_id —
         // malformed context_data. Bump attempts so it exits via
         // permanent-fail (would otherwise skip-loop forever).
-        await tx
-          .update(notificationsOutbox)
-          .set({
-            attempts: row.attempts + 1,
-            nextRetryAt: new Date(now.getTime() + 60_000),
-            lastError:
-              'receipt_pdf_gate_skip:malformed_context — depends_on_receipt_pdf set but invoice_id/tenant_id missing',
-            updatedAt: now,
-          })
-          .where(eq(notificationsOutbox.id, row.id));
-        return 'skipped';
+        return gateFail('receipt_pdf_gate_skip:malformed_context — depends_on_receipt_pdf set but invoice_id/tenant_id missing');
       }
     }
 

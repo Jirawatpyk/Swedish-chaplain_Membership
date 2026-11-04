@@ -526,6 +526,8 @@ export const outboxMetrics = {
       | 'max_retries'
       | 'invalid_recipient'
       | 'no_template_handler'
+      // Task #70 — the async receipt gate gave up on an invoice_paid email.
+      | 'receipt_pdf_gate'
       // F114 — deterministic misses of the two change-request arms
       // (review round 2, reliability N-1: the audit row carried the true
       // reason while this label was hardcoded to no_template_handler).
