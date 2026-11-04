@@ -1680,6 +1680,21 @@ Dev and prod share the broadcasts key, so the account state matches.
   Both rest on the unit and integration tests.
 - **Teardown:** clean. The Resend audience is deleted and only `General` is left. The seeds and orphan rows are deleted, and the probe spec is removed.
 
+### Slice 2c — a look at the round-4 fixes (`/code-review high 45b1441a4..692b641cc`, the maintainer's call past the cap; 4 Nov 2026)
+
+**Why:** rounds 2–4 each found defects in the previous round's fixes, and nobody had read the round-4 fixes. The maintainer asked for one `/code-review high` on them, with no further round, fixing High and Medium and recording Low.
+
+**7 items. Fixed (RED `5ede7c02a` → GREEN `9f08399ad`):**
+- #1 (Medium, ops): the `err: errKind(e)` change hid which scrub step failed. The three erase-member catches now also log `step`, the wrapper's code-authored message. It passes only when it matches `^[a-z_]+(:[a-z0-9_.]+)?$`, so driver text with spaces never reaches the log.
+- #2 (Medium, the rules' log hygiene): the pre-flight read logged the whole RepoError with its driver cause. It now logs `repoCode`, `err: errKind(rootCause(e))` and `code: pgErrorCode(e)`. `undelete-member.ts:347` has the same shape outside this PR; it goes to a follow-up issue.
+- #4 (Low): the stuck sort compared `created_at` in microseconds, while the app compares milliseconds. The sort now uses `date_trunc('milliseconds', created_at)`.
+- #7 (Low): the second drain list is gated on `>=` the limit, not `===`.
+
+**Recorded, not fixed:**
+- #3: the detach cap ranks on the DB clock, and pass (b) judges stuck later on the app clock. A row crossing the 2 h age mid-erasure can miss the detach. Stated in RoPA 8d residual 6 and the SQL comment, which claimed it "costs nothing".
+- #5: on a busy tenant, more than 20 newer in-grace rows plus a past-grace backlog can keep an erased requester's row out of both lists past the grace. Stated in RoPA residual (1) and runbook step 4, with a manual settle. The reviewer's root fix (a flag set at erasure) is a new mechanism, left for the s3 or s4 follow-ups.
+- #6: the stuck rule is written three ways (JS, Drizzle, raw SQL). A shared predicate builder is a refactor across two repos.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.

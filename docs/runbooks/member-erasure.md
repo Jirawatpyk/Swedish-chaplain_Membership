@@ -312,10 +312,12 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      drained by `cleanup-audiences` normally on the next tick (an erased
      requester's row skips the grace); at worst one tick after the 1-hour
      grace (`AUDIENCE_CLEANUP_GRACE_MS`, while a terminal holder's audience
-     grace runs); later only while Resend's answer stays undecided. If the
+     grace runs); later only while Resend's answer stays undecided, or on a
+     busy tenant while more than 20 newer in-grace rows and a past-grace
+     backlog keep it out of both drain lists (RoPA 8d residual 1). If the
      first run returned one, re-run the ORPHAN query after one interval
      (`*/15 * * * *`, `vercel.json`); if it is still there, re-run it after
-     the 1-hour grace;
+     the 1-hour grace; if it is STILL there, settle it by hand as in residual 5;
    - **run the step 3b STATE query on every erasure, whatever the count says**
      (`sent_at >= member_erasure_requested`, statuses `sending` / `sent` /
      `partially_sent` / `partial_delivery_accepted`). Any row it returns is
