@@ -55,10 +55,10 @@ const ERROR_SUFFIX = /(?:Err|Error)$/;
 const SAFE_NAME = /^(?:code|.*(?:Code|Kind|Class))$/;
 /**
  * Calls whose result is a closed token whatever their argument — an explicit
- * set (review round 1, security L2), never a name pattern. `eraseStep` returns
- * only a code-authored step token (`erase-member.ts` STEP_MESSAGE);
- * `gatewayField` only a `[a-z0-9_]` token or `'unrecognised'`
- * (`subprocessor-erasure-adapter.ts`); `approvalErrKind` an error class plus
+ * set (review round 1, security L2), never a name pattern. `errStep` returns
+ * only a code-authored step token (`src/lib/log-id.ts`; review round 2 removed
+ * `erase-member.ts`'s own copy, `eraseStep`); `gatewayField` only a
+ * `[a-z0-9_]` token or `'unrecognised'` (`subprocessor-erasure-adapter.ts`); `approvalErrKind` an error class plus
  * `ApprovalDependencyError`'s dependency and `causeKind` (every constructor
  * call passes a repo code, a closed kind, a literal or an `errKind`);
  * `retryableSubKind` one of five literals; `isTimeout` and `Number.isFinite`
@@ -71,7 +71,6 @@ const SAFE_CALLS = new Set([
   'hashId',
   'errLogFields',
   'errStep',
-  'eraseStep',
   'gatewayField',
   'approvalErrKind',
   'retryableSubKind',

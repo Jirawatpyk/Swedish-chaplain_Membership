@@ -77,8 +77,8 @@ const CODE_AUTHORED_STEP = /^[a-z_]+(?::[a-z0-9_.]+)?$/;
  * as a step token (`throw new Error(\`lookup_failed:${repoError.code}\`)`),
  * else `undefined`. A driver's or a Drizzle wrapper's message never matches:
  * it has spaces, and a `Failed query:` message quotes the bound parameters. For
- * a log line's `step` field beside `err: errKind(e)` (the `eraseStep` rule in
- * `erase-member.ts`, shared).
+ * a log line's `step` field beside `err: errKind(e)`. The one step regex:
+ * `erase-member.ts` imports it (review round 2 removed its `eraseStep` copy).
  */
 export function errStep(e: unknown): string | undefined {
   return e instanceof Error && CODE_AUTHORED_STEP.test(e.message) ? e.message : undefined;

@@ -25,7 +25,7 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { errKind, rootCause } from '@/lib/log-id';
+import { errKind, errStep, rootCause } from '@/lib/log-id';
 import { pgErrorCode } from '@/lib/db-errors';
 import { erasureMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
@@ -231,16 +231,6 @@ export type EraseMemberMeta = {
   deadlineAt?: Date;
 };
 
-// Spec 140 s2c review round 4 follow-up (code-review #1) — the step of a
-// failed wrapper Error, so the log tells a benign race from a DB fault. Only a
-// code-authored message passes (`lookup_failed:repo.unexpected`,
-// `change_request_race:1`): lowercase words with an optional `:code`, no
-// spaces, so driver text can never reach the log through it.
-const STEP_MESSAGE = /^[a-z_]+(?::[a-z0-9_.]+)?$/;
-function eraseStep(e: unknown): string | undefined {
-  return e instanceof Error && STEP_MESSAGE.test(e.message) ? e.message : undefined;
-}
-
 class EraseNotFoundError extends Error {
   constructor() {
     super('not_found');
@@ -352,7 +342,7 @@ export async function eraseMember(
       logger.error(
         // Review round 4 (code-review #7) — the class and the SQLSTATE code,
         // never the Error: a driver message can carry the subject's address.
-        { err: errKind(e), step: eraseStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
+        { err: errKind(e), step: errStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
         'erase-member: requested-audit failed',
       );
       return err({ type: 'server_error', message: 'erase request audit failed' });
@@ -778,7 +768,7 @@ export async function eraseMember(
     logger.error(
       // Review round 4 (code-review #7) — the class and the SQLSTATE code,
       // never the Error: a driver message can carry the subject's address.
-      { err: errKind(e), step: eraseStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
+      { err: errKind(e), step: errStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
       'erase-member: scrub tx failed',
     );
     return err({ type: 'server_error', message: 'erase scrub failed' });
@@ -1357,7 +1347,7 @@ export async function eraseMember(
       logger.error(
         // Review round 4 (code-review #7) — the class and the SQLSTATE code,
         // never the Error: a driver message can carry the subject's address.
-        { err: errKind(e), step: eraseStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
+        { err: errKind(e), step: errStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
         'erase-member: member_erased audit failed',
       );
     }
