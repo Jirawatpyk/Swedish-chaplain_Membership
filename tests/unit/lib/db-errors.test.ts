@@ -226,13 +226,13 @@ describe('pgErrorCode / pgErrorMeta — bounded walk, SQLSTATE-shaped codes only
     expect(pgErrorMeta(cyclic())).toBeUndefined();
   }, 5_000);
 
-  it('stops after 10 hops: a SQLSTATE 11 links down is not read', () => {
-    let chain: unknown = pgError('40P01', 'deadlock detected');
-    for (let i = 0; i < 10; i += 1) chain = withCause(new Error(`wrap ${i}`), chain);
-    expect(pgErrorCode(chain)).toBeUndefined();
-    let nine: unknown = pgError('40P01', 'deadlock detected');
-    for (let i = 0; i < 9; i += 1) nine = withCause(new Error(`wrap ${i}`), nine);
-    expect(pgErrorCode(nine)).toBe('40P01');
+  it('stops after 10 hops: a SQLSTATE 11 hops down is not read, one 10 hops down is', () => {
+    let eleven: unknown = pgError('40P01', 'deadlock detected');
+    for (let i = 0; i < 11; i += 1) eleven = withCause(new Error(`wrap ${i}`), eleven);
+    expect(pgErrorCode(eleven)).toBeUndefined();
+    let ten: unknown = pgError('40P01', 'deadlock detected');
+    for (let i = 0; i < 10; i += 1) ten = withCause(new Error(`wrap ${i}`), ten);
+    expect(pgErrorCode(ten)).toBe('40P01');
   });
 
   it('skips a code that is not a SQLSTATE and reads the Postgres error beneath it', () => {

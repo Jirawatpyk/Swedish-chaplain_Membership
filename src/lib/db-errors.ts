@@ -133,12 +133,32 @@ export function errorChainMessage(error: unknown): string {
  * The SQLSTATE of the first Postgres error in the `.cause` chain, or
  * `undefined`. For LOGGING: pair with `errKind(e)` so a failure is
  * diagnosable without its message — a Drizzle `Failed query:` message quotes
- * the statement's parameters, which can carry member ids.
+ * the statement's parameters, which can carry member ids. Review round 2: at
+ * most 10 hops, and only a SQLSTATE-shaped code (`/^[0-9A-Z]{5}$/`) is read.
  */
 export function pgErrorCode(error: unknown): string | undefined {
+  return firstSqlStateError(error)?.code;
+}
+
+/**
+ * Spec 140 s2d review round 2 (code-review #3, security L2) — the most `.cause`
+ * hops a logging helper follows. A cyclic chain (`a.cause = b; b.cause = a`)
+ * would otherwise loop forever inside the log call that reached it.
+ */
+const MAX_CAUSE_HOPS = 10;
+/** A SQLSTATE: five digits or upper-case letters. `card_declined`, `ECONNRESET` and `repo.unexpected` are not. */
+const SQLSTATE = /^[0-9A-Z]{5}$/;
+
+/**
+ * The first link of the `.cause` chain that is a Postgres error with a
+ * SQLSTATE-shaped code, at most {@link MAX_CAUSE_HOPS} hops down, else
+ * `undefined`. A link whose `code` is not a SQLSTATE (a Stripe or Node error)
+ * is passed over, so the Postgres error beneath it is still found.
+ */
+function firstSqlStateError(error: unknown): { readonly code: string; readonly message: string } | undefined {
   let cur: unknown = error;
-  while (cur !== null && cur !== undefined) {
-    if (isPostgresError(cur)) return cur.code;
+  for (let hop = 0; hop <= MAX_CAUSE_HOPS && cur !== null && cur !== undefined; hop += 1) {
+    if (isPostgresError(cur) && SQLSTATE.test(cur.code)) return cur;
     cur = (cur as { cause?: unknown }).cause;
   }
   return undefined;
@@ -157,22 +177,18 @@ export interface PgErrorMeta {
  * LOGGING, beside `errKind(e)` and `pgErrorCode(e)`, where the constraint name
  * is what an incident needs. Names are schema metadata; NEVER `detail`,
  * `where`, `hint` or `message`, which postgres-js fills with the row's values
- * (`Key (email)=(…) already exists.`). A non-string name is left out.
+ * (`Key (email)=(…) already exists.`). A non-string name is left out. The same
+ * bounded walk as {@link pgErrorCode} (review round 2).
  */
 export function pgErrorMeta(error: unknown): PgErrorMeta | undefined {
-  let cur: unknown = error;
-  while (cur !== null && cur !== undefined) {
-    if (isPostgresError(cur)) {
-      const pg = cur as { constraint_name?: unknown; table_name?: unknown; column_name?: unknown };
-      return {
-        ...(typeof pg.constraint_name === 'string' ? { constraint: pg.constraint_name } : {}),
-        ...(typeof pg.table_name === 'string' ? { table: pg.table_name } : {}),
-        ...(typeof pg.column_name === 'string' ? { column: pg.column_name } : {}),
-      };
-    }
-    cur = (cur as { cause?: unknown }).cause;
-  }
-  return undefined;
+  const found = firstSqlStateError(error);
+  if (found === undefined) return undefined;
+  const pg = found as { constraint_name?: unknown; table_name?: unknown; column_name?: unknown };
+  return {
+    ...(typeof pg.constraint_name === 'string' ? { constraint: pg.constraint_name } : {}),
+    ...(typeof pg.table_name === 'string' ? { table: pg.table_name } : {}),
+    ...(typeof pg.column_name === 'string' ? { column: pg.column_name } : {}),
+  };
 }
 
 /**
