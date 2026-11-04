@@ -24,7 +24,7 @@ import { useEffect, useMemo, useRef, useState, useTransition, useCallback } from
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { Alert, Button, Card, Checkbox, RadioGroup, TextField, Textarea, buttonClass } from '@jirawatpyk/aura-react';
+import { Alert, Button, Card, Checkbox, Dialog, RadioGroup, TextField, Textarea, buttonClass } from '@jirawatpyk/aura-react';
 import type { FeedbackTone } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { formatSatangThb } from '@/lib/format-thb';
@@ -87,7 +87,12 @@ const ENDS_ATTEMPT_AFTER_UNKNOWN: ReadonlySet<string> = new Set([
   'invalid_event_invoice',
   'settings_missing',
   'overflow',
+  // Task 68 — the key was closed with "Start over": nothing will be issued.
+  'attempt_abandoned',
 ]);
+
+/** The replay and Start over toasts outlast the move to the invoice (R123). */
+const LASTING_TOAST_MS = 10_000;
 
 /** The stored attempt for this invoice, or null (a malformed one is dropped). */
 function readStoredAttempt(storageKey: string, invoiceId: string): Attempt | null {
@@ -306,6 +311,13 @@ export function CreditNoteForm({
             : '',
     [t, tErrors],
   );
+  // After a closed attempt the next note needs its own typed confirmation and
+  // acknowledgement, and starts from no stored membership effect.
+  const disarmForNewNote = useCallback(() => {
+    setAttemptEffect(null);
+    setTyped('');
+    setOnlineRefundAcknowledged(false);
+  }, []);
   const markUnknown = useCallback(
     (attempt: Attempt, refusal?: string) => {
       unknownRef.current = true;
@@ -404,6 +416,8 @@ export function CreditNoteForm({
           // A definite answer for this attempt: no note under its key.
           endAttempt();
           setOutcomeUnknown(false);
+          // Closed by Start over in another tab: the same unlock as here.
+          if (code === 'attempt_abandoned') disarmForNewNote();
           setFormError(failure);
           return;
         }
@@ -453,8 +467,11 @@ export function CreditNoteForm({
         if (membershipEndKey !== undefined) {
           noticeParts.push(t(membershipEndKey));
         }
+        const lasting = successBody.replayed === true ? { duration: LASTING_TOAST_MS } : {};
         if (noticeParts.length > 0) {
-          toast.success(title, { description: noticeParts.join(' ') });
+          toast.success(title, { description: noticeParts.join(' '), ...lasting });
+        } else if (successBody.replayed === true) {
+          toast.success(title, lasting);
         } else {
           toast.success(title);
         }
@@ -467,7 +484,7 @@ export function CreditNoteForm({
         if (!issued) inFlightRef.current = false;
       }
     });
-  }, [endAttempt, failureText, invoiceId, markUnknown, router, saveAttempt, t]);
+  }, [disarmForNewNote, endAttempt, failureText, invoiceId, markUnknown, router, saveAttempt, t]);
 
   const submit = useCallback(() => {
     if (!canSubmit || proposedSatang === null) return;
@@ -504,6 +521,79 @@ export function CreditNoteForm({
   const retry = useCallback(() => {
     if (attemptRef.current) post(attemptRef.current, { retry: true });
   }, [post]);
+
+  // Task 68 — "Start over": the server closes the key under the invoice lock
+  // (or hands back the note the attempt had issued). The form never unlocks
+  // on its own: the original request may still commit.
+  const [startOverOpen, setStartOverOpen] = useState(false);
+  const [startingOver, setStartingOver] = useState(false);
+  // Set once the attempt was closed: the dialog's trigger is gone, so focus
+  // goes to the amount the admin re-enters.
+  const startedOverRef = useRef(false);
+  const startOverFinalFocus = useCallback(
+    (): HTMLElement | null => (startedOverRef.current ? document.getElementById('cn-amount') : null),
+    [],
+  );
+  const startOver = useCallback(async () => {
+    const attempt = attemptRef.current;
+    if (!attempt || startingOver || inFlightRef.current) return;
+    setStartingOver(true);
+    const stayLocked = (refusal = t('startOver.failed')) => {
+      setStartOverOpen(false);
+      markUnknown(attempt, refusal);
+    };
+    try {
+      let res: Response;
+      try {
+        res = await fetch('/api/credit-notes/attempts/abandon', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invoiceId, idempotencyKey: attempt.key }),
+          signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
+        });
+      } catch {
+        stayLocked();
+        return;
+      }
+      const raw: unknown = await res.json().catch(() => ({}));
+      // The write freeze refused it: nothing ran, and trying again cannot work
+      // until it lifts, so say so rather than "Start over again".
+      if (!res.ok && isReadOnlyRefusal(res.status, raw)) {
+        stayLocked(`${tErrors('readOnlyMode')} ${tErrors('readOnlyNothingChanged')}`);
+        return;
+      }
+      const body = (res.ok ? raw : {}) as {
+        outcome?: string;
+        document_number?: string | null;
+      };
+      if (body.outcome === 'issued') {
+        // The attempt had issued its note: the same answer as a replay.
+        endAttempt();
+        setStartOverOpen(false);
+        toast.success(
+          body.document_number
+            ? t('successAlreadyIssued', { number: body.document_number })
+            : t('successAlreadyIssuedNoNumber'),
+          { duration: LASTING_TOAST_MS },
+        );
+        router.push(`/admin/invoices/${invoiceId}`);
+        return;
+      }
+      if (body.outcome === 'abandoned') {
+        endAttempt();
+        startedOverRef.current = true;
+        setOutcomeUnknown(false);
+        setFormError(null);
+        disarmForNewNote();
+        setStartOverOpen(false);
+        toast.success(t('startOver.done'), { duration: LASTING_TOAST_MS });
+        return;
+      }
+      stayLocked();
+    } finally {
+      setStartingOver(false);
+    }
+  }, [disarmForNewNote, endAttempt, invoiceId, markUnknown, router, startingOver, t, tErrors]);
 
   return (
     <form
@@ -584,6 +674,53 @@ export function CreditNoteForm({
                 >
                   {waitingFor === 'open' ? t('errors.waitingForConnection') : t('errors.openInvoiceAction')}
                 </Button>
+                {formError.kind === 'unconfirmed' && (
+                  <Dialog
+                    role="alertdialog"
+                    open={startOverOpen}
+                    onOpen={() => {
+                      startedOverRef.current = false;
+                      setStartOverOpen(true);
+                    }}
+                    onClose={() => setStartOverOpen(false)}
+                    dismissible={!startingOver}
+                    finalFocus={startOverFinalFocus}
+                    trigger={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        touchHeight
+                        aria-disabled={pending || startingOver || waitingFor !== null || undefined}
+                      >
+                        {t('startOver.action')}
+                      </Button>
+                    }
+                    title={t('startOver.title')}
+                    description={t('startOver.body')}
+                    footer={
+                      <>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          data-autofocus
+                          aria-disabled={startingOver || undefined}
+                          onClick={() => setStartOverOpen(false)}
+                        >
+                          {t('startOver.cancel')}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="primary"
+                          loading={startingOver}
+                          onClick={() => void startOver()}
+                        >
+                          {t('startOver.confirm')}
+                        </Button>
+                      </>
+                    }
+                  />
+                )}
                 </div>
               ) : undefined
             }

@@ -44,6 +44,8 @@ export const SCOPED_TABLES = [
   'invoices',
   'invoice_lines',
   'credit_notes',
+  // Task 68 (mig 0326) — "Start over" tombstones.
+  'credit_note_abandoned_attempts',
   'tenant_invoice_settings',
   'tenant_document_sequences',
   'notifications_outbox',

@@ -21,6 +21,23 @@ import {
   primaryKey,
 } from 'drizzle-orm/pg-core';
 
+/**
+ * Task 68 (migration 0326) — a closed admin issue attempt ("Start over"). One
+ * row per `(tenant_id, idempotency_key)`; `issueCreditNote` refuses a key found
+ * here (`attempt_abandoned`). chamber_app may only SELECT + INSERT.
+ */
+export const creditNoteAbandonedAttempts = pgTable(
+  'credit_note_abandoned_attempts',
+  {
+    tenantId: text('tenant_id').notNull(),
+    idempotencyKey: uuid('idempotency_key').notNull(),
+    invoiceId: uuid('invoice_id').notNull(),
+    abandonedByUserId: uuid('abandoned_by_user_id').notNull(),
+    abandonedAt: timestamp('abandoned_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.tenantId, t.idempotencyKey] })],
+);
+
 export const creditNotes = pgTable(
   'credit_notes',
   {

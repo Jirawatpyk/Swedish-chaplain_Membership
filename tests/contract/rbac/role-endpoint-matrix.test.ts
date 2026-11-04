@@ -383,6 +383,7 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'POST /api/invoices',
     'POST /api/refunds/initiate',
     'POST /api/credit-notes',
+    'POST /api/credit-notes/attempts/abandon',
     // PII egress
     'GET /api/admin/members/export.zip',
     'POST /api/admin/members/[id]/data-export',

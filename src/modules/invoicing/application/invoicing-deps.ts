@@ -75,6 +75,7 @@ import type { RecordPaymentDeps } from './use-cases/record-payment';
 import type { RenderReceiptPdfDeps } from './use-cases/render-receipt-pdf';
 import type { UpdateInvoiceDraftDeps } from './use-cases/update-invoice-draft';
 import type { IssueCreditNoteDeps } from './use-cases/issue-credit-note';
+import type { AbandonCreditNoteAttemptDeps } from './use-cases/abandon-credit-note-attempt';
 import type { VoidInvoiceDeps } from './use-cases/void-invoice';
 import type { PendingRefundGuardPort } from './ports/pending-refund-guard-port';
 import type { PendingPaymentCancellerPort } from './ports/pending-payment-canceller-port';
@@ -534,6 +535,15 @@ export function makeIssueCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
     // count-read hiccup must not hard-fail an admin credit note.
     pendingRefundGuard: makePendingRefundGuard(),
     onlinePaymentRefundGuard: makeOnlinePaymentRefundGuard(),
+  };
+}
+
+/** Task 68 — "Start over" on a locked admin credit-note attempt. */
+export function makeAbandonCreditNoteAttemptDeps(tenantId: string): AbandonCreditNoteAttemptDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
+    audit: f4AuditAdapter,
   };
 }
 
