@@ -1,6 +1,8 @@
 import { isMainThread } from 'worker_threads';
 import pino, { type LoggerOptions } from 'pino';
 import { env } from './env';
+import { pgErrorCode } from './db-errors';
+import { errKind } from './log-id';
 
 /**
  * Structured JSON logger (T018, docs/observability.md § 3).
@@ -700,6 +702,42 @@ export function redactPanValues(input: unknown, depth = 0): unknown {
   return input;
 }
 
+/** The keys a log line names an error under. */
+const ERROR_KEYS = ['err', 'error', 'cause'] as const;
+/** Fields that mark an object as an error (or a wrapper of one) rather than a token. */
+const ERROR_BEARING_FIELDS = ['cause', 'query', 'params', 'detail'] as const;
+
+/**
+ * Spec 140 s2d review round 1 (code-review #2) — an error value as a log line
+ * may carry it: `{ type: errKind(x), code: pgErrorCode(x) }`. drizzle-orm's
+ * `DrizzleQueryError` has enumerable `query` and `params` and a message that
+ * quotes them; postgres-js fills `detail` with the row's values. A string is
+ * kept (call sites log `err: errKind(e)`), and so is an object that carries
+ * none of the error-bearing fields (`{ kind: 'timeout' }`).
+ */
+export function reduceLoggedError(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) return value;
+  const isErrorLike =
+    value instanceof Error || ERROR_BEARING_FIELDS.some((field) => field in value);
+  if (!isErrorLike) return value;
+  const code = pgErrorCode(value);
+  return code === undefined ? { type: errKind(value) } : { type: errKind(value), code };
+}
+
+/** The fields object with its `err` / `error` / `cause` reduced; the input is never mutated. */
+function reduceErrorFields(fields: object): object {
+  let out: Record<string, unknown> | null = null;
+  for (const key of ERROR_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
+    const original = (fields as Record<string, unknown>)[key];
+    const reduced = reduceLoggedError(original);
+    if (reduced === original) continue;
+    out ??= { ...(fields as Record<string, unknown>) };
+    out[key] = reduced;
+  }
+  return out ?? fields;
+}
+
 const baseOptions: LoggerOptions = {
   level: env.log.level,
   base: {
@@ -712,6 +750,32 @@ const baseOptions: LoggerOptions = {
     paths: REDACT_PATHS,
     censor: '[REDACTED]',
     remove: false,
+  },
+  // Spec 140 s2d review round 1 (code-review #2) — the error reduction runs
+  // BEFORE pino's write: pino copies `err.message` into `msg` when no message
+  // is given, and `formatters.log` below clones an Error into a plain object
+  // (its class and message lost) before any serializer sees it. A bare Error
+  // argument becomes `{ err: … }` here too. Redaction is unaffected: it is by
+  // key, and these keys are not redacted ones.
+  hooks: {
+    logMethod(inputArgs, method) {
+      const [first, ...rest] = inputArgs;
+      if (first instanceof Error) {
+        return method.apply(this, [{ err: reduceLoggedError(first) }, ...rest] as Parameters<typeof method>);
+      }
+      if (typeof first === 'object' && first !== null) {
+        return method.apply(this, [reduceErrorFields(first), ...rest] as Parameters<typeof method>);
+      }
+      return method.apply(this, inputArgs);
+    },
+  },
+  // The same reduction for the values the hook never sees: a child logger's
+  // bindings (`logger.child({ err })`). Replaces pino's default `err`
+  // serializer, which writes `message`, `stack` and every enumerable field.
+  serializers: {
+    err: reduceLoggedError,
+    error: reduceLoggedError,
+    cause: reduceLoggedError,
   },
   formatters: {
     level(label) {
