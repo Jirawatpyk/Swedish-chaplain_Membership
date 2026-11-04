@@ -503,10 +503,11 @@ describe('T166-09 — invoice_paid email gate on receipt_pdf_status', () => {
     expect(audits.map((a) => a.eventType).sort()).toEqual(['auto_email_delivery_failed', 'email_dispatch_failed']);
   }, 60_000);
 
-  // Task #71 (L-2) — a void invoice's receipt is never rendered, so its
-  // paid-receipt email must not wait on it forever: the gate treats void as a
-  // failure, and on the last attempt the row is permanently failed and audited.
-  it('#71 L-2 — a void invoice with a pending receipt exits by the ladder, never waits forever', async () => {
+  // Task #71 (L-2) — a void invoice's receipt never renders, so its
+  // paid-receipt email must not wait on it forever. Void is terminal and not
+  // shipping is the intended outcome (review round 1): the row closes on the
+  // first tick, with no failure audit and no page.
+  it('#71 L-2 — a void invoice with a pending receipt closes its email at once, without a failure audit', async () => {
     const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
     await runInTenant(tenant.ctx, async (tx) => {
       await tx
@@ -520,35 +521,25 @@ describe('T166-09 — invoice_paid email gate on receipt_pdf_status', () => {
         .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
     });
     const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true);
-    const dispatch = () =>
-      outboxDispatch(
-        new NextRequest('http://localhost/api/cron/outbox-dispatch', {
-          headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
-        }),
-      );
 
-    expect((await dispatch()).status).toBe(200);
-    const [first] = await db
+    const resp = await outboxDispatch(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+    expect(resp.status).toBe(200);
+    const [rowAfter] = await db
       .select()
       .from(notificationsOutbox)
       .where(eq(notificationsOutbox.id, outboxId))
       .limit(1);
-    expect(first?.status).toBe('pending');
-    expect(first?.attempts).toBe(1);
-    expect(first?.lastError).toContain('invoice_void');
-
-    await db
-      .update(notificationsOutbox)
-      .set({ attempts: 4, nextRetryAt: new Date(Date.now() - 1000) })
-      .where(eq(notificationsOutbox.id, outboxId));
-    expect((await dispatch()).status).toBe(200);
-    const [last] = await db
-      .select()
-      .from(notificationsOutbox)
-      .where(eq(notificationsOutbox.id, outboxId))
-      .limit(1);
-    expect(last?.status).toBe('permanently_failed');
-    expect(last?.lastError).toContain('invoice_void');
+    expect(rowAfter?.status).toBe('permanently_failed');
+    expect(rowAfter?.lastError).toContain('invoice_void');
+    const audits = await db
+      .select({ eventType: auditLog.eventType })
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenant.ctx.slug), sql`${auditLog.payload}->>'outbox_row_id' = ${outboxId}`));
+    expect(audits).toEqual([]);
   }, 60_000);
 
   // /code-review on #742 — a `failed` receipt is not terminal: the reconcile

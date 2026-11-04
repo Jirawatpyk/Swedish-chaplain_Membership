@@ -745,8 +745,9 @@ describe('F4 US5 — void-invoice (T098)', () => {
     );
     // NO-OP: the WHERE now excludes status='void' → the un-stamped receipt never
     // lands. The void row still has NO receipt blob (nothing un-stamped to serve).
-    expect(updated.status).toBe('void');
-    expect(updated.receiptPdf).toBeNull();
+    expect(updated.landed).toBe(false);
+    expect(updated.invoice.status).toBe('void');
+    expect(updated.invoice.receiptPdf).toBeNull();
 
     const [row] = await runInTenant(tenant.ctx, (tx) =>
       tx
@@ -786,9 +787,10 @@ describe('F4 US5 — void-invoice (T098)', () => {
         templateVersion: 8,
       }),
     );
-    expect(updated.status).toBe('paid');
-    expect(updated.receiptPdf?.blobKey).toBe(receiptBlobKey);
-    expect(updated.receiptPdfStatus).toBe('rendered');
+    expect(updated.landed).toBe(true);
+    expect(updated.invoice.status).toBe('paid');
+    expect(updated.invoice.receiptPdf?.blobKey).toBe(receiptBlobKey);
+    expect(updated.invoice.receiptPdfStatus).toBe('rendered');
   }, 60_000);
 
   it('refuses to re-void a voided invoice (terminal state)', async () => {
