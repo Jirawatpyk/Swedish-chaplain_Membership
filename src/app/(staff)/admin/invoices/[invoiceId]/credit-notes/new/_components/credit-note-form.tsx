@@ -741,11 +741,12 @@ export function CreditNoteForm({
       {/* #61 — the offline wait and the 10 s "still working" note, announced
           once, outside the alert region; visible too, so nobody closes the
           tab during a long wait. */}
-      {/* Idle it is empty and 0 px tall, and `empty:-mt-*` cancels the stack
-          gap before it, so the form shows one gap, not gap + row + gap (R124).
-          It stays mounted: a live region added or unhidden as its text
-          arrives is skipped by some screen readers. */}
-      <div role="status" aria-live="polite" className="text-sm text-[var(--aura-fg-secondary)] empty:-mt-6">
+      {/* R124: idle, it is empty and `empty:-mt-*` cancels the stack gap
+          before it, so the form shows one gap, not gap + row + gap. While a
+          request runs it reserves its line, so a later "still working" line
+          moves nothing. It stays mounted: a live region added or unhidden as
+          its text arrives is skipped by some screen readers. */}
+      <div role="status" aria-live="polite" className={`text-sm text-[var(--aura-fg-secondary)] ${pending || waitingFor !== null ? 'min-h-5' : 'empty:-mt-6'}`}>
         {waitingFor !== null
           ? t('errors.waitingForConnection')
           : stillWorking
