@@ -232,7 +232,7 @@ import { settleOrphanAtResend } from './_settle-orphan-at-resend';
 import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
 export type CancelInFlightForMemberError =
-  | { readonly kind: 'cascade.server_error'; readonly message: string };
+  | { readonly kind: 'cascade.server_error'; readonly errClass: string };
 
 /**
  * Round 3 type-design fix — the bounded enum lives in this module's Domain
@@ -491,7 +491,28 @@ export async function cancelInFlightBroadcastsForMember(
       if (first.pause) {
         await (deps.pauseBeforeReprobe ?? sleepBeforeReprobe)(REPROBE_PAUSE_MS);
       }
-      const probe = await deps.broadcastsGateway.retrieveBroadcastOnce(resendId);
+      let probe: Awaited<ReturnType<typeof deps.broadcastsGateway.retrieveBroadcastOnce>>;
+      try {
+        probe = await deps.broadcastsGateway.retrieveBroadcastOnce(resendId);
+      } catch (e) {
+        // Spec 140 s2d (#736c, L1) — the line is written on a throwing GET too, so
+        // `resendMs` / `deleteMs` (the time the row lock was held for Resend) are
+        // not lost. The throw itself is unchanged: it propagates, and the lock tx
+        // rolls back.
+        logger.info(
+          {
+            ...logBase,
+            broadcastId: broadcast.broadcastId as string,
+            resendBroadcastId: resendId,
+            outcome: first.deleted,
+            probe: 'threw',
+            resendMs: Date.now() - startedAt,
+            deleteMs,
+          },
+          'broadcasts.cascade.dispatch_begun_delete',
+        );
+        throw e;
+      }
       logger.info(
         {
           ...logBase,
@@ -1163,7 +1184,8 @@ export async function cancelInFlightBroadcastsForMember(
       kind: 'cascade.server_error',
       // Review round 4 (code-review #8) — the error CLASS only: a message can
       // embed SQL parameter values, and the members adapter logs this field.
-      message: errKind(e),
+      // Spec 140 s2d (#736c) — named `errClass`, so no log line reads `.message`.
+      errClass: errKind(e),
     });
   }
 }

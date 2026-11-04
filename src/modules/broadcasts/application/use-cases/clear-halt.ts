@@ -15,6 +15,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort } from '../ports/audit-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
@@ -91,7 +92,8 @@ export async function clearHalt(
       // timestamp if needed (`setMemberHalt(false)` already succeeded).
       logger.error(
         {
-          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          // Spec 140 s2d (#736c) — the class and SQLSTATE, never the message.
+          ...errLogFields(auditErr),
           tenantId: deps.tenant.slug,
           memberId: input.memberId,
           actorUserId: input.actorUserId,

@@ -15,6 +15,7 @@
  * placement so the outbox INSERT commits atomically with the audit.
  */
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast } from '../domain/broadcast';
 import type { EmailTransactionalPort } from './ports/email-transactional-port';
@@ -78,7 +79,8 @@ export async function enqueueBroadcastMemberNotification(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        // Spec 140 s2d (#736c) — the class and SQLSTATE, never the message.
+        ...errLogFields(e),
         tenantId: tenant.slug,
         broadcastId: broadcast.broadcastId as string,
         templateKey: variant.templateKey,

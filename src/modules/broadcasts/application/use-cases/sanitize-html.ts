@@ -20,6 +20,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
 
 /** 200 KB rendered HTML cap (FR-002f). */
@@ -56,7 +57,8 @@ export function sanitizeHtml(
     const reason = e instanceof Error ? e.message : 'unknown sanitiser error';
     // Sanitiser threw — infra fault, NOT user content. Log + escalate.
     logger.error(
-      { err: reason, rawHtmlBytes: Buffer.byteLength(input.rawHtml, 'utf8') },
+      // Spec 140 s2d (#736c) — the class, never the sanitiser's message (the Result keeps it).
+      { err: errKind(e), rawHtmlBytes: Buffer.byteLength(input.rawHtml, 'utf8') },
       'broadcasts.sanitize.sanitizer_unavailable',
     );
     return err({ kind: 'sanitizer_unavailable', reason });

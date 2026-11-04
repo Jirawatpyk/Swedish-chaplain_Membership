@@ -149,7 +149,7 @@ describeContract(
       );
     } else {
       cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
-        err({ kind: 'cascade.server_error', message: 'Error' }),
+        err({ kind: 'cascade.server_error', errClass: 'Error' }),
       );
     }
   },

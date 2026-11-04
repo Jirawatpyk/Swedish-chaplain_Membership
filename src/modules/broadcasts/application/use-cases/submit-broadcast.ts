@@ -735,7 +735,8 @@ export async function submitBroadcast(
         {
           tenantId: deps.tenant.slug,
           memberId: input.memberId,
-          err: resolved.error.message,
+          // Spec 140 s2d (#736c) — the bounded class, never the free-text message.
+          err: resolved.error.errClass,
         },
         'broadcasts.submit.recipient_resolution_failed',
       );

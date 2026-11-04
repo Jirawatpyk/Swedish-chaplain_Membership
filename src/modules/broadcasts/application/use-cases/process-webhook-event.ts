@@ -32,6 +32,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { sha256Hex } from '@/lib/crypto';
 import { unsafeIanaTimezone, type TenantContext } from '@/modules/tenants';
@@ -664,22 +665,14 @@ export async function processWebhookEvent(
     // need it for triage on unexpected failures (RLS probe, DB drop,
     // programmer bugs).
     //
-    // R7 staff-review LOW-D fix — strip `cause` chain to a narrow
-    // `{ message, name }` shape. Pino's default error serialiser
-    // traverses `cause` recursively and SQL Drizzle errors can carry
-    // recipient email or body content in the wrapped query text;
-    // those values are NOT covered by `REDACT_PATHS` (paths match
-    // field names, not string-content within err.message). Mirrors
-    // the `enqueueDeliverySummaryEmail` catch-block pattern at line
-    // 695. Operators retain the message + name for triage; the full
-    // stack is available on the original throw via the OTel span
-    // recordException path which never goes to log sinks.
+    // Spec 140 s2d (#736c) — the class and SQLSTATE only. The message is not
+    // safe either: a Drizzle `Failed query:` message quotes the bound
+    // parameters (the recipient's email), and `REDACT_PATHS` match field
+    // names, not string content. The stack stays on the OTel span's
+    // recordException path, which never goes to log sinks.
     logger.error(
       {
-        err:
-          e instanceof Error
-            ? { message: e.message, name: e.name }
-            : String(e),
+        ...errLogFields(e),
         tenantId,
         broadcastId,
         eventId: event.id,
@@ -800,7 +793,7 @@ export async function enqueueDeliverySummaryEmail(args: {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        ...errLogFields(e),
         tenantId: args.tenant.slug,
         broadcastId: args.broadcastId,
         memberId: args.memberId,
@@ -840,7 +833,7 @@ export async function enqueueDeliverySummaryEmail(args: {
   } catch (e) {
     logger.warn(
       {
-        err: e instanceof Error ? e.message : String(e),
+        ...errLogFields(e),
         tenantId: args.tenant.slug,
         broadcastId: args.broadcastId,
         memberId: args.memberId,
@@ -875,7 +868,7 @@ export async function enqueueDeliverySummaryEmail(args: {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        ...errLogFields(e),
         tenantId: args.tenant.slug,
         broadcastId: args.broadcastId,
         memberId: args.memberId,

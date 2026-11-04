@@ -11,6 +11,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '@/modules/members';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
@@ -104,7 +105,8 @@ export async function getMemberBroadcast(
       } catch (e) {
         logger.error(
           {
-            err: e instanceof Error ? e.message : String(e),
+            // Spec 140 s2d (#736c) — the class and SQLSTATE, never the message.
+            ...errLogFields(e),
             tenantId: deps.tenant.slug,
             memberId: input.memberId,
             broadcastId: input.broadcastId,

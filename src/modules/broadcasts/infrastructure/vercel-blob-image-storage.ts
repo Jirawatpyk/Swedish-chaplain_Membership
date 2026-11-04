@@ -25,6 +25,7 @@ import {
   del,
 } from '@vercel/blob';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import {
   ImageStorageUnavailableError,
   type ImageMimeType,
@@ -121,7 +122,8 @@ export const vercelBlobImageStorage: ImageStoragePort = {
       const msg = e instanceof Error ? e.message : String(e);
       if (e instanceof BlobNotFoundError) return { status: 'absent' };
       logger.warn(
-        { err: msg, tenantId, contentHash, mime: mimeType },
+        // Spec 140 s2d (#736c) — the class, never the SDK's message (the probe result keeps it).
+        { err: errKind(e), tenantId, contentHash, mime: mimeType },
         'broadcasts.blob_head_error',
       );
       return { status: 'unknown', reason: msg };

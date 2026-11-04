@@ -98,7 +98,7 @@ describe('f7BroadcastsCascadeAdapter (G4)', () => {
 
   it('translates use-case err → outcome="cascade_failed" (no counts in DU branch — signal-loss closed)', async () => {
     cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
-      err({ kind: 'cascade.server_error', message: 'neon down' }),
+      err({ kind: 'cascade.server_error', errClass: 'Error' }),
     );
     const result = await f7BroadcastsCascadeAdapter.cancelInFlightForMember(
       tenant,

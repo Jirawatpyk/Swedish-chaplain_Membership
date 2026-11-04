@@ -364,7 +364,8 @@ export async function deleteDraftBeforeStandingRefusal(
     return { kind: 'cleared', draftOutcome: answer.status };
   }
   const errClass = PROBE_ERR_CLASS[answer.probed] ?? 'probe_other';
-  logger.warn({ ...logIds, observedResendStatus: answer.probed, errClass }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
+  // Spec 140 s2d (#736c, L2) — the same shape as the throw arms: `err` is null when nothing threw.
+  logger.warn({ ...logIds, observedResendStatus: answer.probed, errClass, err: null }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
   return { kind: 'undeleted', errClass };
 }
 

@@ -25,7 +25,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   drizzleMemberRepo,
@@ -474,7 +474,8 @@ export const membersBridge: MembersBridgePort = {
     if (!result.ok) {
       logger.warn(
         {
-          err: result.error,
+          // Spec 140 s2d (#736c) — the class and codes, never the RepoError's cause object.
+          ...errLogFields(result.error),
           tenantId: tenantCtx.slug,
           memberId,
         },
