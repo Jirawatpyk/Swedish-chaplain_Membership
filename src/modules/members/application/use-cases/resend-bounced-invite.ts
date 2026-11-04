@@ -48,7 +48,7 @@
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errLogFields } from '@/lib/log-id';
+import { errLogFields, hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { ContactId } from '../../domain/contact';
 import type { AuditPort } from '../ports/audit-port';
@@ -214,7 +214,8 @@ export async function resendBouncedInvite(
       logger.error(
         {
           contactId: input.contactId,
-          userId,
+          // Spec 140 s2d review round 2 (code-review #9) — hashed, never the raw id.
+          userIdHash: hashId(userId),
           invitationId,
           // Spec 140 s2d (#736c) — the class and codes, never the error object.
           ...errLogFields(finalised.error),
@@ -231,7 +232,7 @@ export async function resendBouncedInvite(
     logger.error(
       {
         contactId: input.contactId,
-        userId,
+        userIdHash: hashId(userId),
         invitationId,
         ...errLogFields(e),
         requestId: input.requestId,
