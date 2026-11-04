@@ -722,6 +722,8 @@ export interface ReducedLoggedError {
   readonly statusCode?: number;
   /** A token-shaped `.declineCode` / `.decline_code` (Stripe). */
   readonly declineCode?: string;
+  /** A token-shaped `.kind`: a Result error's own discriminant (`not_found`, `conflict`). */
+  readonly kind?: string;
   /** The `at …` lines of `.stack`, at most {@link MAX_FRAMES}; never its first line(s), which hold the message. */
   readonly frames?: ReadonlyArray<string>;
 }
@@ -770,8 +772,8 @@ function stackFrames(value: object): ReadonlyArray<string> | undefined {
  * `params` and a message that quotes them, postgres-js fills `detail` with the
  * row's values, and the events audit port logs `{ name, message, stack }` as a
  * plain object. A string is kept (call sites log `err: errKind(e)`; error text
- * in string form is #740's scope). A plain object's other fields (`kind`,
- * say) are dropped too: they are not in the closed set.
+ * in string form is #740's scope). A plain object's other fields are dropped
+ * too; a token-shaped `kind` (a Result error's discriminant) is kept.
  */
 export function reduceLoggedError(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return value;
@@ -783,6 +785,9 @@ export function reduceLoggedError(value: unknown): unknown {
   const errCode = ownCode !== undefined && ownCode !== code && ownCode !== repoCode ? ownCode : undefined;
   const statusCode = (value as { statusCode?: unknown }).statusCode;
   const declineCode = tokenField(value, 'declineCode') ?? tokenField(value, 'decline_code');
+  // Review round 2 follow-up — a Result error logged whole keeps its closed
+  // discriminant; a `kind` that is not token-shaped is dropped with the rest.
+  const kind = tokenField(value, 'kind');
   const frames = stackFrames(value);
   const out: ReducedLoggedError = {
     type: value instanceof Error ? errKind(value) : (tokenField(value, 'name') ?? 'unknown'),
@@ -791,6 +796,7 @@ export function reduceLoggedError(value: unknown): unknown {
     ...(errCode !== undefined ? { errCode } : {}),
     ...(typeof statusCode === 'number' && Number.isInteger(statusCode) ? { statusCode } : {}),
     ...(declineCode !== undefined ? { declineCode } : {}),
+    ...(kind !== undefined ? { kind } : {}),
     ...(frames !== undefined ? { frames } : {}),
   };
   reducedValues.add(out);

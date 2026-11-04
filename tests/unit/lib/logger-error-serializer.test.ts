@@ -61,7 +61,7 @@ function expectNoErrorText(): void {
 }
 
 /** The only keys the reducer writes (review round 2). */
-const REDUCED_KEYS = ['type', 'code', 'repoCode', 'errCode', 'statusCode', 'declineCode', 'frames'];
+const REDUCED_KEYS = ['type', 'code', 'repoCode', 'errCode', 'statusCode', 'declineCode', 'kind', 'frames'];
 
 /** The reduced value under `key` of a parsed line, with no key outside the closed set. */
 function reduced(line: Record<string, unknown>, key = 'err'): Record<string, unknown> {
@@ -111,8 +111,8 @@ describe('the logger reduces an error at the root', () => {
     logger.error({ err: 'DrizzleQueryError', error: { kind: 'timeout' }, password: 'hunter2' }, 'op.failed');
     const line = written();
     expect(line.err).toBe('DrizzleQueryError');
-    // Review round 2 — `kind` is not one of the closed fields.
-    expect(line.error).toEqual({ type: 'unknown' });
+    // Review round 2 follow-up — a token-shaped `kind` is a closed field.
+    expect(line.error).toEqual({ type: 'unknown', kind: 'timeout' });
     expect(line.password).toBe('[REDACTED]');
   });
 
@@ -149,6 +149,9 @@ describe('the root reducer writes tokens and frames, never text (review round 2)
     logger.warn({ err: { kind: 'not_found', detail: `no row for ${EMAIL}` } }, 'lookup.failed');
     expectNoErrorText();
     expect(reduced(written())).toEqual({ type: 'unknown', kind: 'not_found' });
+  });
+
+  it('a kind that is not token-shaped is dropped', () => {
     logger.warn({ err: { kind: 'free text with spaces' } }, 'lookup.failed');
     expect(reduced(written())).toEqual({ type: 'unknown' });
   });
