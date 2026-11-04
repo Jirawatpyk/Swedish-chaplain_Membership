@@ -19,7 +19,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runInTenant } from '@/lib/db';
 import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
-import { ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
+import {
+  ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT,
+  ORPHAN_STUCK_ATTEMPTS,
+  isOrphanStuck,
+  orphanStuckCutoff,
+} from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
 import {
   broadcastOrphanedResendIds,
   broadcasts,
@@ -479,6 +484,53 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
       const audiences = new Set(pairs.map((p) => p.audienceId));
       expect(audiences.size).toBe(ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT);
       for (const id of stuck) expect(audiences).toContain(id);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
+
+  /**
+   * Spec 140 s2d (#736b) — the detach cap, the erasure audience sort and pass
+   * (b) apply ONE stuck rule from ONE caller-passed instant. `asOf` is an hour
+   * in the future, so a database `now()` would call the boundary row an hour
+   * old (not stuck); and the row is 0.4 ms past the cutoff, so a comparison
+   * without the millisecond truncation would call it young too.
+   */
+  it('[#736b] the detach cap and the erasure audience sort agree on a row at the boundary', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const base = new Date(Date.now() - HOUR);
+      const asOf = new Date(base.getTime() + 2 * HOUR);
+      const cutoff = orphanStuckCutoff(asOf);
+      expect(cutoff.getTime()).toBe(base.getTime());
+      const email = `edge-${randomUUID()}@example.com`;
+      const boundary = `aud-edge-${randomUUID()}`;
+      const young = Array.from({ length: ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT }, (_, i) => `aud-young-${i}-${randomUUID()}`);
+      await runInTenant(solo.ctx, (tx) =>
+        tx.execute(sql`
+          INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at, attempts)
+          VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${boundary}, 'audience_leaked', ${cutoff.toISOString()}::timestamptz + interval '400 microseconds', ${ORPHAN_STUCK_ATTEMPTS})`),
+      );
+      // Tried more often but young at asOf: they win the cap unless the
+      // boundary row is judged stuck.
+      for (const id of young) {
+        await runInTenant(solo.ctx, (tx) =>
+          tx.execute(sql`
+            INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at, attempts)
+            VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${id}, 'audience_leaked', ${new Date(Date.now() - HOUR / 2).toISOString()}::timestamptz, ${ORPHAN_STUCK_ATTEMPTS + 1})`),
+        );
+      }
+
+      const repo = makeDrizzleBroadcastsRepo(solo.ctx.slug);
+      const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email], asOf));
+      expect(pairs).toContainEqual({ audienceId: boundary, email });
+
+      const orphansRepo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      const listed = await orphansRepo.listUnsettledAudienceOrphans(ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT + 1, GRACE_CUTOFF(), cutoff);
+      expect(listed).toHaveLength(ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT + 1);
+      const last = listed[listed.length - 1]!;
+      expect(last.resourceId).toBe(boundary);
+      expect(isOrphanStuck(last, asOf.getTime())).toBe(true);
     } finally {
       await solo.cleanup().catch(() => {});
     }
