@@ -306,7 +306,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     }
   });
 
-  it('[#736a] listUnsettledOrphansForRequesters: those requesters only, unsettled, attempts then age, the drain holder rule; empty ids → []', async () => {
+  it('[#736a] listUnsettledOrphansForRequesters: those requesters only, unsettled, in-grace first then attempts then age, the drain holder rule; empty ids → []', async () => {
     const solo = await createTestTenant('test-swecham');
     try {
       const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
@@ -333,12 +333,56 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
       // (B2) a row that just went terminal still holds its audience for the grace.
       await seedRow(solo, { status: 'failed_to_dispatch', resendAudienceId: ids.justTerminalAudience, updatedAt: new Date() });
 
+      // Review round 1 (reliability L-1) — the in-grace row first: only this
+      // path reaches it, while the past-grace list also reaches the others.
       const listed = await repo.listUnsettledOrphansForRequesters([erased], 20, GRACE_CUTOFF());
-      expect(listed.map((o) => o.resourceId)).toEqual([ids.old, ids.young, ids.oldTried]);
+      expect(listed.map((o) => o.resourceId)).toEqual([ids.young, ids.old, ids.oldTried]);
       for (const o of listed) expect(o.requestedByMemberId).toBe(erased);
-      expect((await repo.listUnsettledOrphansForRequesters([erased], 2, GRACE_CUTOFF())).map((o) => o.resourceId)).toEqual([ids.old, ids.young]);
+      expect((await repo.listUnsettledOrphansForRequesters([erased], 2, GRACE_CUTOFF())).map((o) => o.resourceId)).toEqual([ids.young, ids.old]);
       expect((await repo.listUnsettledOrphansForRequesters([erased, other], 20, GRACE_CUTOFF())).map((o) => o.resourceId)).toContain(ids.otherRequester);
       expect(await repo.listUnsettledOrphansForRequesters([], 20, GRACE_CUTOFF())).toEqual([]);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
+
+  // Review round 1 (code-review #3, security L4, reliability L-3) — a
+  // post-erasure orphan is the newest row; the capped list must reach it.
+  it('[review round 1] 51 requesters: the newest requester is listed', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      // Sorts after every random v4 uuid, so an ORDER BY requester id leaves it out.
+      const newest = 'ffffffff-ffff-4fff-bfff-ffffffffffff';
+      for (let i = 0; i < 50; i += 1) {
+        await insertOrphan(solo, { requester: randomUUID(), resourceId: `rb-${randomUUID()}`, ageMs: (10 + i) * 60 * 1000 });
+      }
+      await insertOrphan(solo, { requester: newest, resourceId: `rb-${randomUUID()}`, ageMs: 60 * 1000 });
+
+      const listed = await repo.listInGraceRequesterIds(GRACE_CUTOFF(), 50);
+      expect(listed).toHaveLength(50);
+      expect(listed[0]).toBe(newest);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
+
+  // Review round 1 (reliability L-1) — the erased share goes first to rows
+  // only this path reaches.
+  it("[review round 1] an erased requester's 10 past-grace rows do not crowd out a young one", async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      const erased = randomUUID();
+      for (let i = 0; i < 10; i += 1) {
+        await insertOrphan(solo, { requester: erased, resourceId: `rb-past-${randomUUID()}`, ageMs: (2 + i) * HOUR });
+      }
+      const young = `rb-young-${randomUUID()}`;
+      await insertOrphan(solo, { requester: erased, resourceId: young, ageMs: 5 * 60 * 1000 });
+
+      const listed = await repo.listUnsettledOrphansForRequesters([erased], 10, GRACE_CUTOFF());
+      expect(listed).toHaveLength(10);
+      expect(listed[0]?.resourceId).toBe(young);
     } finally {
       await solo.cleanup().catch(() => {});
     }
