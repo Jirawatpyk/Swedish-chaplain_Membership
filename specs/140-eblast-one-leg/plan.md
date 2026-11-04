@@ -1802,6 +1802,122 @@ One unit test per behaviour class (raw object never logged), on representative s
   - erase flow: `member_erased` counts are unchanged from s2c;
   - wrong Bearer → 401.
 
+### Slice 2d — plan review (chamber-os-architect: 2 BLOCKER, 3 HIGH, 7 MEDIUM, 6 LOW; pdpa APPROVE WITH CONDITIONS: 4 HIGH, 4 MEDIUM, 5 LOW; 4 Nov 2026)
+
+These changes SUPERSEDE the build plan above where they differ. Where the two reviewers raised the same point, the one decision is listed once.
+
+**#736a: the erased requester, anchored on the orphan, not on `erased_at`** (architect B1, B2, H1; pdpa H-1, M-3, L-1, L-2)
+
+Orphans for an already-erased requester can be written long after `erased_at`: refusal ticks, `failTerminally` after a stall, reconcile re-drives. A window on `erased_at` would regress today's per-orphan check, so the anchor is the orphan:
+- **Repo:**
+  - `BroadcastOrphansRepo.listInGraceRequesterIds(graceCutoff, cap)` does `SELECT DISTINCT requested_by_member_id … WHERE settled_at IS NULL AND resource_id IS NOT NULL AND created_at >= cutoff`, fenced on the tenant. The 0325 partial index `(tenant_id, created_at) WHERE settled_at IS NULL` serves it.
+  - `listUnsettledOrphansForRequesters(ids, limit, audienceGraceCutoff)` keeps the same `notHeldByLiveRow` audience grace (B2). Empty ids → no query, and ids are bound as `uuid[]`.
+- **Bridge:** `MembersBridgePort.filterErasedMemberIds(tenant, ids) → ids` is one query, `member_id = ANY … AND erased_at IS NOT NULL`. It returns ids only (L-2). `listErasedMembers` is not used, so there is no paging and no margin.
+- **Drain:**
+  - Order: erased requesters' unsettled rows first, ordered `attempts ASC, created_at ASC`. Their share is capped at `ORPHAN_DRAIN_ERASED_SHARE` = half of `ORPHAN_DRAIN_LIMIT`, so one requester's permanently undecided rows cannot take every slot. Then the past-grace list fills the rest. The `inGraceOnly` list and option are removed.
+  - Failures: a failed requester list or bridge read does NOT set `listFailed`. The normal drain still runs, and one warn line is written, `broadcasts.orphan_drain.erased_read_failed` (`err: errKind`, `code`, `tenantId`). `tick_complete.orphans.erasedReadFailed: true` is set (pdpa M-3).
+  - Requesters over `cap` are logged and deferred.
+- **Tests:**
+  - cross-tenant: tenant B's orphan with the same requester id is not returned for A, and tenant B's erased member is not returned for A (B1);
+  - the new methods are added to the tenant-sql-shape call-map gate (B1);
+  - "the audience of a just-terminal row is not returned" (B2);
+  - "requester erased 3 h before the orphan was written, row in grace → settled this tick" (pdpa H-1);
+  - "the bridge throws → past-grace rows still settle, the erased row waits, the flag is set" (M-3);
+  - "a drain/cascade CAS race counts once and `member_erased` is eventually written" (pdpa L-1, accepted: the reconciler re-drives).
+
+**#735: a characterization matrix first; one pure classifier; no runner** (architect H2, H3; pdpa H-4)
+
+The tables differ on purpose. "Behave the same" in #735 is wrong, for example:
+- the terminal arm clears a 404 at once, while the orphan arm confirms it;
+- `(404, sent)` is undecided for orphans but `already_sent` + evidence in flight;
+- 403 + `failed` is retained, cleared, or a throw, depending on the arm;
+- `priorProbe === 'cancelled'` + 403 clears with no GET.
+
+The steps:
+1. **Characterization matrix, committed first and green on the OLD code** (it is evidence, not a RED). Per caller (`settleAtResend`, `settleTerminalDraft`, erased refusal, standing refusal, `settleOrphanAtResend`) × DELETE {deleted, absent, forbidden, retryable, other, throw} × GET {not_found, present: draft / scheduled / queued / sending / sent / cancelled / failed, retryable, other, throw} × priorProbe. Each cell asserts:
+   - the caller's result token;
+   - the count it feeds, or withholding;
+   - whether an evidence row is written;
+   - the log event name and fields;
+   - the number of gateway calls, and whether the pause ran.
+2. **Classifier:** `classifyResendDraftAnswer(policy, deleted, probe | null)`, pure, in `_classify-resend-draft-answer.ts`.
+   - `policy` is a closed union: `'in_flight' | 'terminal_draft' | 'erased_refusal' | 'standing_refusal' | 'orphan'`, NOT boolean flags.
+   - It returns a type narrowed per policy (overloads), so the 100 % pin on `_dispatch-standing-gate.ts` holds. The new file is pinned at 100/100/100/100.
+   - `probedStatusOf(probe)` sits beside `isHandedStatus` in `_probe-refused-send.ts`.
+3. **Callers keep their own control flow:** their own gateway calls, pause, throw-under-lock, timing fields and log lines. **No `settleDraftAtResend` runner.**
+4. **What stays outside the classifier:** `superseded` (a decision made before any call, asserted with 0 gateway calls) and the audience `deleteAudience` arm. `sentAt` never reaches `observedResendStatus`, the evidence payload or the orphan row.
+5. **Mutation proof:** each policy arm is mutation-proved from a committed base.
+
+**#736b: one stuck predicate** (architect M1, M2, M3; pdpa M-1)
+- **Domain:**
+  - `isOrphanStuck(o: { readonly attempts: number; readonly createdAt: Date }, atMs: number)`, a structural type with no ports import;
+  - `orphanStuckCutoff(asOf: Date): Date`;
+  - 100 % line coverage.
+- **SQL:** `src/modules/broadcasts/infrastructure/db/_orphan-stuck-sql.ts`, `orphanStuckSql(attempts: SQL, createdAt: SQL, cutoff: Date): SQL`.
+  - It takes SQL fragments so the detach arm's alias `capped` works, and it lives in its own file because a third file avoids an import cycle.
+  - `date_trunc('milliseconds', …)` is used in both places, and `ORPHAN_STUCK_ATTEMPTS` is bound.
+  - The callers choose ASC or DESC.
+- **Detach arm:** it gains `asOf`, taken just BEFORE the scrub tx (not the pre-flight instant), which narrows the gap.
+- **Residual 6 is REWRITTEN, not dropped.** The database-vs-app clock skew is gone. The gap between the capture instant and pass (b)'s judgement (the age, or attempts a concurrent drain adds) remains.
+
+**#736c: log hygiene** (pdpa H-2, H-3, L-3, L-4, L-5; architect M4, M5, M6)
+- **Framing:** a pre-existing PII minimisation defect is being closed, not "hygiene". drizzle-orm's `DrizzleQueryError` has enumerable `query` and `params`, so raw objects and `e.message` write bound parameters (emails, names, payloads) to the log. The PR says so.
+- **Log destination:** the build checks `docs/observability.md` and the Vercel project for a log drain beyond Vercel's runtime retention, and records the answer in the PR. If a drain exists, a RoPA line and a purge decision follow.
+- **Scope:** the values in the first argument of `logger.*(` calls in members + broadcasts, every site.
+  - Each becomes `err: errKind(...)`, plus `code: pgErrorCode(...)`, plus a code-authored `step` where useful, never `reason` (pino redacts it, L-4).
+  - A new `pgErrorMeta(e)` returns only `constraint_name` / `table_name` / `column_name` (L-5).
+  - `_safe-audit-emit.ts` hashes `actorUserId` (L-3).
+  - Indirect forms (`const code = … String(e)` then `err: code`) are grep-swept too.
+- **Gate:** `scripts/check-log-error-objects.ts` parses with the TypeScript compiler API, an existing dependency. It is CRLF-proof and multi-line-proof.
+  - **Scope:** `src/modules/{members,broadcasts}/**`.
+  - **Refuses:**
+    - identifiers `e | err | error | ex | cause | *Err | *Error`;
+    - `.error` / `.cause` accesses, except `.error.code` / `.error.kind`;
+    - `.message`, `.stack`, `String(…)`, `JSON.stringify(e…)`, and templates embedding these;
+    - the shorthands `{ err }`, `{ error }`, `{ cause }`, `{ e }`, and spreads of an error.
+  - **Allows:** `errKind(…)`, `pgErrorCode(…)`, `pgErrorMeta(…)`, and identifiers named `code | *Code | *Kind | *Class`.
+  - **No pragma.** `broadcasts-cascade-adapter.ts:65` renames its source field to `errClass` instead.
+  - **Controls:** a positive-control fixture holding every refused form. The gate fails if the fixture yields 0, or misses a line.
+  - **Wiring:** `pnpm check` and `.github/workflows/quality-gates.yml` (D-033).
+  - The commit lands AFTER the sweep. The gate is a tripwire, not proof of completeness.
+- **Separate follow-up issues:**
+  - (1) Result `message: e.message` flowing into `src/app` routes and HTTP bodies (`update-member.ts:632`, `change-plan.ts:501`, …);
+  - (2) the same log rule for invoicing, payments, events, renewals and `src/app`.
+
+**#736d: contract test** (architect L5; pdpa I-3)
+- `describeContract` asserts only shape invariants on both adapters: the outcome is in the closed set, the counts are non-negative integers, and every field of each arm is present.
+- f7's passthroughs are asserted separately: `deferredCount` / `unexpectedErrorCount` on the partial arm, and the `deadlineAt` / `onDispatchBegun` opts.
+
+**Docs, only what the code proves** (pdpa M-2, M-4)
+- **RoPA 8d:**
+  - the drain sentence;
+  - residual (1), in pdpa's wording: "settled on the first cleanup run after it is written (every 15 min), unless Resend's answer stays undecided, a terminal row within the 1-hour grace holds its audience, more than `ORPHAN_DRAIN_ERASED_SHARE` erased-requester rows are queued, or the erased read failed (it then waits the grace)";
+  - residual (6), rewritten;
+  - the DSR paragraph.
+- **`member-erasure.md`:** step 4's manual-settle fallback is NARROWED, not deleted.
+- **Also:** `broadcast-audience-build.md` § E, `cron-jobs.md`, the `observability.md` rows (`tick_complete.orphans`, the `list_failed` text, the new `erased_read_failed` line, and the gate), and the `cleanup-orphaned-audiences.ts` header.
+
+**Constitution Check, s2d rows** (architect M7)
+
+| Principle | s2d |
+|---|---|
+| I | two new tenant-fenced methods, each with a cross-tenant test |
+| II | characterization before the refactor; RED first for the classifier, `isOrphanStuck`, the drain and the gate |
+| III | broadcasts reads members only through the bridge port (ids in, ids out); a structural Domain type; the SQL builder in its own file. The spec-wide row's "members reaches broadcasts only through the cascade port" is widened to include the derivation port's `asOf` |
+| VII | the new `erased_read_failed` line; the changed meaning of `listed` |
+| X | no new dependency; the AST gate uses `typescript` |
+
+**Build order** (architect L6):
+1. the #735 matrix;
+2. the classifier;
+3. #736b;
+4. #736a;
+5. #736d;
+6. the #736c sweep, then the gate and the CI wiring;
+7. the docs.
+
+Parts 1–3 touch `cancel-in-flight-broadcasts-for-member.ts` and run one after another.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
