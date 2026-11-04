@@ -428,4 +428,36 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
       await solo.cleanup().catch(() => {});
     }
   });
+
+  /**
+   * Spec 140 s2c review round 4 (code-review #2, reliability nit) — the cap
+   * ranks STUCK rows first (attempts at ORPHAN_STUCK_ATTEMPTS or more AND
+   * older than ORPHAN_STUCK_MIN_AGE_MS): they are the ones pass (b) releases
+   * rather than deletes, so they get the detach ahead of young rows that were
+   * tried more often.
+   */
+  it('[code-review #2] 10 young high-attempt rows do not crowd out 3 old stuck rows', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const email = `stuckcap-${randomUUID()}@example.com`;
+      const young = Array.from({ length: 10 }, (_, i) => `aud-young-${i}-${randomUUID()}`);
+      const stuck = Array.from({ length: 3 }, (_, i) => `aud-stuck-${i}-${randomUUID()}`);
+      for (const [ids, ageMs, attempts] of [[young, HOUR / 2, 12], [stuck, 3 * HOUR, 8]] as const) {
+        for (const id of ids) {
+          await runInTenant(solo.ctx, (tx) =>
+            tx.execute(sql`
+              INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at, attempts)
+              VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${id}, 'audience_leaked', ${new Date(Date.now() - ageMs).toISOString()}::timestamptz, ${attempts})`),
+          );
+        }
+      }
+      const repo = makeDrizzleBroadcastsRepo(solo.ctx.slug);
+      const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email]));
+      const audiences = new Set(pairs.map((p) => p.audienceId));
+      expect(audiences.size).toBe(ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT);
+      for (const id of stuck) expect(audiences).toContain(id);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
 });
