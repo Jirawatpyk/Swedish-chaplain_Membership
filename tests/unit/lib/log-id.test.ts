@@ -131,3 +131,18 @@ describe('errLogFields() — a Node code is errCode, never a SQLSTATE (review ro
     expect(errLogFields({ code: uuid })).toEqual({ err: 'unknown', repoCode: 'unrecognised' });
   });
 });
+
+/**
+ * Spec 140 s2d review round 4 (reliability LOW-2) — the first token-shaped,
+ * non-SQLSTATE own `.code` along the bounded cause walk is `errCode`, so a
+ * Drizzle wrapper over a socket reset still says which reset it was.
+ */
+describe('errLogFields() — errCode from the cause chain (review round 4)', () => {
+  it('a DrizzleQueryError over ECONNRESET gives errCode ECONNRESET', () => {
+    const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+    expect(errLogFields(new DrizzleQueryError('select 1', [], reset))).toEqual({
+      err: 'DrizzleQueryError',
+      errCode: 'ECONNRESET',
+    });
+  });
+});

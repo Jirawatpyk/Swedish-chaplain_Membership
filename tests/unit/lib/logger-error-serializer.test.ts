@@ -129,17 +129,17 @@ describe('the root reducer writes tokens and frames, never text (review round 2)
       err: {
         name: 'DrizzleQueryError',
         message: `Failed query: update contacts set email = $1\nparams: ${EMAIL}`,
-        stack: `DrizzleQueryError: Failed query: update contacts set email = $1\nparams: ${EMAIL}\n    at f (x.ts:1:1)\n    at g (y.ts:2:2)`,
+        stack: `DrizzleQueryError: Failed query: update contacts set email = $1\nparams: ${EMAIL}\n    at f (/app/x.ts:1:1)\n    at g (/app/y.ts:2:2)`,
       },
     });
     expectNoErrorText();
-    expect(reduced(written())).toEqual({ type: 'DrizzleQueryError', frames: ['at f (x.ts:1:1)', 'at g (y.ts:2:2)'] });
+    expect(reduced(written())).toEqual({ type: 'DrizzleQueryError', frames: ['at f (/app/x.ts:1:1)', 'at g (/app/y.ts:2:2)'] });
   });
 
   it('an events-style { name, message, stack } under `error` is reduced the same way', () => {
-    logger.error({ error: { name: 'NeonDbError', message: `insert failed for ${EMAIL}`, stack: `NeonDbError: insert failed for ${EMAIL}\n    at h (z.ts:3:3)` } }, 'audit.failed');
+    logger.error({ error: { name: 'NeonDbError', message: `insert failed for ${EMAIL}`, stack: `NeonDbError: insert failed for ${EMAIL}\n    at h (/app/z.ts:3:3)` } }, 'audit.failed');
     expectNoErrorText();
-    expect(reduced(written(), 'error')).toEqual({ type: 'NeonDbError', frames: ['at h (z.ts:3:3)'] });
+    expect(reduced(written(), 'error')).toEqual({ type: 'NeonDbError', frames: ['at h (/app/z.ts:3:3)'] });
   });
 
   // Spec 140 s2d (review round 2 follow-up) — a Result error logged whole
@@ -194,7 +194,7 @@ describe('the root reducer writes tokens and frames, never text (review round 2)
   it('frames never carry the message, even a multi-line one with "at" lines; at most 8 frames', () => {
     const message = `boom\n    at ${EMAIL} (Failed query)\n    at second ${EMAIL}`;
     const e = new Error(message);
-    const frames = Array.from({ length: 12 }, (_, i) => `    at fn${i} (file${i}.ts:${i}:1)`);
+    const frames = Array.from({ length: 12 }, (_, i) => `    at fn${i} (/app/file${i}.ts:${i}:1)`);
     e.stack = `Error: ${message}\n${frames.join('\n')}`;
     logger.error({ err: e });
     expectNoErrorText();
@@ -289,5 +289,93 @@ describe('SQLSTATE must hold a digit; Node codes stay visible (review round 3)',
   it('an Error with code EPIPE writes no code and writes errCode', () => {
     logger.error({ err: Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }) });
     expect(tokens(reduced(written()))).toEqual({ type: 'Error', errCode: 'EPIPE' });
+  });
+});
+
+describe('one shared token shape (review round 4, row 1)', () => {
+  // A real sha256, letter first: it is the digit cap (at most 4) that refuses
+  // it. An all-letter hex value cannot be told from a word, and is kept.
+  const HEX = 'd1a5ac9a015fac2ef7b341673635512a1511f41fe37d111b267f039eec5d4f58';
+
+  it.each([
+    ['a 64-character lowercase hex value', HEX],
+    ['a word then nine digits', 'a_123456789'],
+  ])('%s under kind is not written', (_label, value) => {
+    logger.warn({ err: { kind: value } }, 'op.failed');
+    expect(reduced(written())).toEqual({ type: 'unknown' });
+    expect(lines.join('')).not.toContain(value);
+  });
+
+  it('a hyphenated kind is kept, and a dotted one still is', () => {
+    logger.warn({ err: { kind: 'last-admin-protection' }, error: { kind: 'resolve.server_error' } }, 'op.failed');
+    const line = written();
+    expect(reduced(line)).toEqual({ type: 'unknown', kind: 'last-admin-protection' });
+    expect(reduced(line, 'error')).toEqual({ type: 'unknown', kind: 'resolve.server_error' });
+  });
+
+  it('a digit-led word inside a kind is kept (gateway_5xx)', () => {
+    logger.warn({ err: { kind: 'gateway_5xx' } }, 'op.failed');
+    expect(reduced(written())).toEqual({ type: 'unknown', kind: 'gateway_5xx' });
+  });
+});
+
+describe('a bare Error name, capped (review round 4, row 2)', () => {
+  it('{ name: "Error" } gives type "Error"', () => {
+    logger.warn({ err: { name: 'Error' } }, 'op.failed');
+    expect(reduced(written())).toEqual({ type: 'Error' });
+  });
+
+  it('a 10 KB name ending in Error gives "unknown"', () => {
+    logger.warn({ err: { name: `${'A'.repeat(10_240)}Error` } }, 'op.failed');
+    expect(reduced(written())).toEqual({ type: 'unknown' });
+  });
+});
+
+describe('errCode from the cause chain (review round 4, row 3)', () => {
+  it('a DrizzleQueryError over ECONNRESET gives errCode ECONNRESET', () => {
+    const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+    logger.error({ err: new DrizzleQueryError('select 1', [], reset) });
+    expect(tokens(reduced(written()))).toEqual({ type: 'DrizzleQueryError', errCode: 'ECONNRESET' });
+  });
+});
+
+describe('a frame must look like a frame (review round 4, row 4)', () => {
+  // Shapes measured on Node 22 (named, anonymous, async, getter, constructor,
+  // private method, `[as …]` alias, Windows CJS, ESM file URL, node:internal),
+  // plus webpack-internal and an eval-less `<anonymous>` location.
+  const REAL = [
+    '    at named (file:///C:/Users/a/app/frames.mjs:2:27)',
+    '    at file:///C:/Users/a/app/frames.mjs:3:10',
+    '    at async file:///C:/Users/a/app/frames.mjs:6:7',
+    '    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)',
+    '    at get g (file:///C:/Users/a/app/frames.mjs:10:72)',
+    '    at new F (C:\\Users\\a\\app\\c.cjs:2:24)',
+    '    at #p (C:\\Users\\a\\app\\c.cjs:1:24)',
+    '    at Object.<anonymous> (C:\\Users\\a\\app\\c.cjs:3:21)',
+    '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)',
+    '    at node:internal/main/run_main_module:36:49',
+    '    at handler (webpack-internal:///(rsc)/./src/app/api/x/route.ts:12:3)',
+    '    at /var/task/.next/server/chunks/123.js:1:2048',
+    '    at <anonymous>:1:7',
+  ];
+
+  it('real V8 frame shapes are kept', () => {
+    const e = new Error('x');
+    e.stack = `Error: x\n${REAL.join('\n')}`;
+    logger.error({ err: e });
+    // At most 8 frames: check them in two passes.
+    expect(reduced(written()).frames).toEqual(REAL.slice(0, 8).map((f) => f.trim()));
+    lines = [];
+    e.stack = `Error: x\n${REAL.slice(8).join('\n')}`;
+    logger.error({ err: e });
+    expect(reduced(written()).frames).toEqual(REAL.slice(8).map((f) => f.trim()));
+  });
+
+  it('a message line "at <email> <phone>:1:2" is not kept', () => {
+    const e = new Error('x');
+    e.stack = 'Error: x\n    at somchai@example.com 0812345678:1:2\n    at f (/app/x.ts:1:1)';
+    logger.error({ err: e });
+    expect(lines.join('')).not.toMatch(/somchai|0812345678/);
+    expect(reduced(written()).frames).toEqual(['at f (/app/x.ts:1:1)']);
   });
 });
