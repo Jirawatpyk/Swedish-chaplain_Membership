@@ -106,6 +106,13 @@ Most common when a template change shipped without a backfill golden:
              'template_version', $TPL_VERSION),
            'pending', 0, now());
    ```
+   The reconcile cron's own re-enqueue uses the current template
+   (`CURRENT_TEMPLATE_VERSION`, #71), as the sync payment path does; it
+   skips any invoice that is not `paid`. For a void invoice, the outbox
+   closes both its `receipt_pdf_render` row (`receipt_pdf_render_skip:invoice_void`)
+   and its gated `invoice_paid` email (`receipt_pdf_gate_skip:invoice_void`)
+   on the first tick as `permanently_failed`, with no retry, failure audit
+   or page: neither is meant to happen for a voided sale.
 5. Wait for the next outbox-dispatch tick (60 s ladder) — verify
    `receipt_pdf_status='rendered'` and the gated `invoice_paid` email
    ships.
@@ -265,12 +272,11 @@ anchor.
    downloadable on `partially_credited` and `credited` (a §86/10 credit
    note does not cancel the §86/4 receipt), but the worker refuses every
    status except `paid` (`invalid_state` in `render-receipt-pdf.ts`). The
-   refusal does not mark the row `failed` or count an attempt, and each
-   reconcile re-enqueue resets the attempt count to 0. So: each
+   refusal does not mark the row `failed` or count an attempt, so the
    outbox row exhausts its retries and emits
-   `pdf_render_permanently_failed` (a page), the reconcile cron sees a row
-   stuck in `pending` and re-enqueues it about every hour with no end, and
-   the member portal answers 425 the whole time. Leave
+   `pdf_render_permanently_failed` (a page). The reconcile cron only
+   re-enqueues `paid` rows (#71), so the row then sits in `pending` and the
+   member portal answers 425 for good. Leave
    `receipt_pdf_status = 'rendered'` (the honest 502) and go to step 4.
 4. **Invoice PDF, credit-note PDF, as-paid receipt, or a receipt on a
    non-`paid` invoice: restore the object; do not re-issue.** There is no

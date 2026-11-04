@@ -350,4 +350,48 @@ describe('async receipt PDF dispatcher — T166-06/07', () => {
       .limit(1);
     expect(invRow?.receiptPdfStatus).toBe('pending');
   }, 60_000);
+
+  // Task #71 /code-review — a render row for an invoice voided before its
+  // receipt rendered can never succeed (the worker refuses a non-paid row).
+  // It closes on the first tick, quietly: no retry ladder, no
+  // pdf_render_permanently_failed page.
+  it('#71 — a render row for a void invoice closes at once, with no permanent-failure audit', async () => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenantA, user);
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set({
+          status: 'void',
+          voidedAt: new Date(),
+          voidReason: 'R129 void before receipt render',
+          voidedByUserId: user.userId,
+        })
+        .where(and(eq(invoices.tenantId, tenantA.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    });
+    const outboxId = await enqueueRenderRow(tenantA, invoiceId);
+
+    const response = await outboxDispatch(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+    expect(response.status).toBe(200);
+    const [outboxRow] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(outboxRow?.status).toBe('permanently_failed');
+    expect(outboxRow?.lastError).toContain('invoice_void');
+    const pages = await db
+      .select({ payload: auditLog.payload })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenantA.ctx.slug),
+          eq(auditLog.eventType, 'pdf_render_permanently_failed'),
+        ),
+      );
+    expect(pages.filter((a) => (a.payload as { outbox_row_id?: string }).outbox_row_id === outboxId)).toEqual([]);
+  }, 60_000);
 });

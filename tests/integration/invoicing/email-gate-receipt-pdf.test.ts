@@ -30,6 +30,7 @@ import { NextRequest } from 'next/server';
 
 import { db, runInTenant } from '@/lib/db';
 import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
+import { findFailedAutoEmailsByInvoice } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
 import { GET as outboxDispatch } from '@/app/api/cron/outbox-dispatch/route';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
@@ -501,6 +502,83 @@ describe('T166-09 — invoice_paid email gate on receipt_pdf_status', () => {
       .from(auditLog)
       .where(and(eq(auditLog.tenantId, tenant.ctx.slug), sql`${auditLog.payload}->>'outbox_row_id' = ${outboxId}`));
     expect(audits.map((a) => a.eventType).sort()).toEqual(['auto_email_delivery_failed', 'email_dispatch_failed']);
+  }, 60_000);
+
+  // Task #71 (L-2) — a void invoice's receipt never renders, so its
+  // paid-receipt email must not wait on it forever. Void is terminal and not
+  // shipping is the intended outcome (review round 1): the row closes on the
+  // first tick, with no failure audit and no page.
+  it('#71 L-2 — a void invoice with a pending receipt closes its email at once, without a failure audit', async () => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set({
+          status: 'void',
+          voidedAt: new Date(),
+          voidReason: 'R129 void before receipt render',
+          voidedByUserId: user.userId,
+        })
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    });
+    const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true);
+
+    const resp = await outboxDispatch(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+    expect(resp.status).toBe(200);
+    const [rowAfter] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(rowAfter?.status).toBe('permanently_failed');
+    expect(rowAfter?.lastError).toContain('invoice_void');
+    const audits = await db
+      .select({ eventType: auditLog.eventType })
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenant.ctx.slug), sql`${auditLog.payload}->>'outbox_row_id' = ${outboxId}`));
+    expect(audits).toEqual([]);
+    // Not a delivery failure: the invoice detail page's failed-email banner
+    // (FR-026) does not list it.
+    expect(await findFailedAutoEmailsByInvoice(invoiceId, tenant.ctx.slug)).toEqual([]);
+  }, 60_000);
+
+  // Task #71 /code-review — the email for a voided sale is not sent even
+  // when the receipt rendered before the void (it would link a VOID-stamped
+  // receipt under a "payment received" message).
+  it('#71 L-2 — a void invoice with a rendered receipt closes its email too', async () => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set({
+          receiptPdfStatus: 'rendered',
+          receiptPdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${invoiceId}_receipt_v13.pdf`,
+          status: 'void',
+          voidedAt: new Date(),
+          voidReason: 'R129 void after receipt render',
+          voidedByUserId: user.userId,
+        })
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    });
+    const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true);
+
+    const resp = await outboxDispatch(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+    expect(resp.status).toBe(200);
+    const [rowAfter] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(rowAfter?.status).toBe('permanently_failed');
+    expect(rowAfter?.lastError).toContain('invoice_void');
   }, 60_000);
 
   // /code-review on #742 — a `failed` receipt is not terminal: the reconcile

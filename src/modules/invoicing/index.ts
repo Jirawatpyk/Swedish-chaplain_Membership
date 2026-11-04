@@ -608,6 +608,9 @@ export { BlobChangedSinceUploadError, BlobKeyNotFoundError } from './application
 // `f4AuditAdapter` is the F4-side audit emitter (writes to
 // `audit_log` with `retention_years` map). `receiptPdfRenderEnqueueAdapter`
 // is the cron-trigger adapter for the async receipt-PDF worker.
+// Task #71 — the receipt reconcile cron re-renders on the current template.
+// A plain constant (the registry module has no imports).
+export { CURRENT_TEMPLATE_VERSION } from './infrastructure/pdf/template-registry';
 export { drizzleTenantSettingsRepo } from './infrastructure/repos/drizzle-tenant-settings-repo';
 // PR #173 round-2 review — narrow tx-threaded fiscal-year-start read for F8's
 // re-anchor (avoids a nested pooled connection inside the settlement tx).

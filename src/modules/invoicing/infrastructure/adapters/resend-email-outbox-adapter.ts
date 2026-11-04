@@ -146,6 +146,9 @@ export async function findFailedAutoEmailsByInvoice(
         AND notification_type = 'invoice_auto_email'::notification_type
         AND status = 'permanently_failed'::outbox_status
         AND context_data->>'invoice_id' = ${invoiceId}
+        -- Task #71 — a void invoice's receipt email is closed on purpose,
+        -- not a delivery failure.
+        AND coalesce(last_error, '') NOT LIKE 'receipt_pdf_gate_skip:invoice_void%'
       ORDER BY updated_at DESC
       LIMIT 20
     `);
