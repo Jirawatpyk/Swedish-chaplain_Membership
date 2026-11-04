@@ -217,10 +217,12 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
             ),
           )
           // Review round 3 (code-review #1) — stuck rows last (false < true),
-          // the same rule as the caller's isStuck.
+          // the same rule as the caller's isStuck. Round 4 follow-up
+          // (code-review #4): created_at at millisecond precision, as the
+          // driver hands it to isStuckAt, so the two never disagree.
           .orderBy(
             asc(
-              sql`(${orphans.attempts} >= ${ORPHAN_STUCK_ATTEMPTS}::int AND ${orphans.createdAt} <= ${stuckAgeCutoff.toISOString()}::timestamptz)`,
+              sql`(${orphans.attempts} >= ${ORPHAN_STUCK_ATTEMPTS}::int AND date_trunc('milliseconds', ${orphans.createdAt}) <= ${stuckAgeCutoff.toISOString()}::timestamptz)`,
             ),
             asc(orphans.attempts),
             asc(orphans.createdAt),

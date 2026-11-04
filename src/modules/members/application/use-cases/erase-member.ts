@@ -25,7 +25,7 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, rootCause } from '@/lib/log-id';
 import { pgErrorCode } from '@/lib/db-errors';
 import { erasureMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
@@ -231,6 +231,16 @@ export type EraseMemberMeta = {
   deadlineAt?: Date;
 };
 
+// Spec 140 s2c review round 4 follow-up (code-review #1) — the step of a
+// failed wrapper Error, so the log tells a benign race from a DB fault. Only a
+// code-authored message passes (`lookup_failed:repo.unexpected`,
+// `change_request_race:1`): lowercase words with an optional `:code`, no
+// spaces, so driver text can never reach the log through it.
+const STEP_MESSAGE = /^[a-z_]+(?::[a-z0-9_.]+)?$/;
+function eraseStep(e: unknown): string | undefined {
+  return e instanceof Error && STEP_MESSAGE.test(e.message) ? e.message : undefined;
+}
+
 class EraseNotFoundError extends Error {
   constructor() {
     super('not_found');
@@ -274,7 +284,15 @@ export async function eraseMember(
     if (preflight.error.code === 'repo.not_found')
       return err({ type: 'not_found' });
     logger.error(
-      { err: preflight.error, memberId, requestId: meta.requestId },
+      // Review round 4 follow-up (code-review #2) — the repo code, the cause's
+      // class and SQLSTATE, never the RepoError with its driver cause.
+      {
+        repoCode: preflight.error.code,
+        err: errKind(rootCause(preflight.error)),
+        code: pgErrorCode(preflight.error),
+        memberId,
+        requestId: meta.requestId,
+      },
       'erase-member: pre-flight existence read failed',
     );
     return err({ type: 'server_error', message: 'erase pre-flight read failed' });
@@ -334,7 +352,7 @@ export async function eraseMember(
       logger.error(
         // Review round 4 (code-review #7) — the class and the SQLSTATE code,
         // never the Error: a driver message can carry the subject's address.
-        { err: errKind(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
+        { err: errKind(e), step: eraseStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
         'erase-member: requested-audit failed',
       );
       return err({ type: 'server_error', message: 'erase request audit failed' });
@@ -425,10 +443,11 @@ export async function eraseMember(
       if (!current.ok) {
         if (current.error.code === 'repo.not_found')
           throw new EraseNotFoundError();
-        // Preserve the repo `cause` (SQLSTATE + Postgres message, present on the
-        // `repo.unexpected` variant) so the outer `catch (e)` logs the DB detail,
-        // not just the bare code string. (ES2022 Error cause; forensics-only —
-        // the operation still fails + rolls back identically.)
+        // Preserve the repo `cause` (present on the `repo.unexpected` variant)
+        // so the outer `catch (e)` logs its SQLSTATE (`code: pgErrorCode(e)`)
+        // and this step (`step`), never the Postgres message (spec 140 s2c
+        // review round 4). Forensics-only: the operation still fails and rolls
+        // back identically.
         throw new Error(`lookup_failed:${current.error.code}`, {
           cause: 'cause' in current.error ? current.error.cause : undefined,
         });
@@ -753,7 +772,7 @@ export async function eraseMember(
     logger.error(
       // Review round 4 (code-review #7) — the class and the SQLSTATE code,
       // never the Error: a driver message can carry the subject's address.
-      { err: errKind(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
+      { err: errKind(e), step: eraseStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
       'erase-member: scrub tx failed',
     );
     return err({ type: 'server_error', message: 'erase scrub failed' });
@@ -1332,7 +1351,7 @@ export async function eraseMember(
       logger.error(
         // Review round 4 (code-review #7) — the class and the SQLSTATE code,
         // never the Error: a driver message can carry the subject's address.
-        { err: errKind(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
+        { err: errKind(e), step: eraseStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
         'erase-member: member_erased audit failed',
       );
     }

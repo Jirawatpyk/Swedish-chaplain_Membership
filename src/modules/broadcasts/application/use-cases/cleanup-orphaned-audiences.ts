@@ -290,7 +290,9 @@ async function drainOrphans(
   // Review round 4 (code-review #4) — read only when the first list came back
   // full: a shorter one already holds every drainable row, young ones included.
   let inGraceOnly: ReadonlyArray<OrphanedResendIdRef> = [];
-  if (pastFirst.length === ORPHAN_DRAIN_LIMIT) {
+  // Review round 4 follow-up (code-review #7) — `>=`: a list longer than its
+  // limit is full too.
+  if (pastFirst.length >= ORPHAN_DRAIN_LIMIT) {
     try {
       inGraceOnly = await deps.orphans.listDrainableOrphans(ORPHAN_DRAIN_LIMIT, graceCutoff, { inGraceOnly: true });
     } catch (e) {

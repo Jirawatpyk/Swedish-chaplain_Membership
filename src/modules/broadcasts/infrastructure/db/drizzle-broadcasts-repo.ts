@@ -2806,8 +2806,11 @@ export function makeDrizzleBroadcastsRepo(
         -- Review round 4 (code-review #2) — STUCK rows rank first (tries at
         -- ORPHAN_STUCK_ATTEMPTS or more AND older than ORPHAN_STUCK_MIN_AGE_MS):
         -- pass (b) releases a stuck audience rather than deleting it, so it
-        -- gets the detach first. now() is the scrub tx clock; it only orders
-        -- the rows, so a row that crosses the age mid-erasure costs nothing.
+        -- gets the detach first. now() is the scrub tx clock and pass (b)
+        -- judges stuck later on the app clock (round 4 follow-up, code-review
+        -- #3): a row that turns stuck between the two can miss the detach past
+        -- the cap and then be released by pass (b). RoPA 8d residual 6 names
+        -- it; the address is still removed when the drain deletes the audience.
         SELECT DISTINCT o.resource_id AS audience_id,
                         e.email AS email
         FROM (
