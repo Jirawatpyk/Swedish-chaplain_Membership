@@ -160,7 +160,7 @@ describe('acknowledgeChangeRequest — the failure log (T105: every narrowing ex
     expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.objectContaining({ err: 'repo.unexpected', cause: 'TypeError' }), 'change-request.acknowledge.failed');
   });
 
-  it('a throw that is not a repo error is logged by its class name (an Error) or its string form (a non-Error), cause undefined', async () => {
+  it('a throw that is not a repo error is logged by its class name (an Error) or `unknown` (a non-Error), cause undefined', async () => {
     const a = makeDeps();
     a.repo.findByIdInTx = async () => {
       throw new TypeError('connection reset');
@@ -172,6 +172,8 @@ describe('acknowledgeChangeRequest — the failure log (T105: every narrowing ex
       throw 'connection reset';
     };
     expect(await acknowledgeChangeRequest(b.deps, input)).toEqual({ ok: false, error: { type: 'server_error', message: 'acknowledge: connection reset' } });
-    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.objectContaining({ err: 'connection reset', cause: undefined }), 'change-request.acknowledge.failed');
+    // Spec 140 s2d (#736c) — the log line takes the class (`unknown` for a non-Error);
+    // the Result keeps the string form until follow-up (1).
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.objectContaining({ err: 'unknown', cause: undefined }), 'change-request.acknowledge.failed');
   });
 });

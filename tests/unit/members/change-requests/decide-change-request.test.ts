@@ -667,14 +667,16 @@ describe('decideChangeRequest — T105 coverage: every field key applies, every 
     expect(audit.events).toHaveLength(0);
   });
 
-  it('a NON-Error throw inside the transaction is logged in its string form', async () => {
+  it('a NON-Error throw inside the transaction is logged as `unknown`, never its string form', async () => {
     const { deps, repo } = makeDeps();
     repo.findByIdInTx = async () => {
       throw 'connection reset';
     };
     const r = await decideChangeRequest(deps, input(ALL_APPROVED));
     expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'decide: unexpected' } });
-    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'connection reset' }), 'change-request.decide.unexpected');
+    // Spec 140 s2d (#736c) — the log line takes the class (`unknown` for a non-Error);
+    // the Result keeps the string form until follow-up (1).
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'unknown' }), 'change-request.decide.unexpected');
   });
 
   it('the probe audit itself failing is logged (the not_found refusal stands regardless)', async () => {

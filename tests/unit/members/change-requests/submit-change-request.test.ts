@@ -1009,7 +1009,7 @@ describe('submitChangeRequest — T105 coverage: every narrowing and defence arm
     expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'repo.unexpected', cause: 'Error' }), 'change-request.submit.tx_aborted');
   });
 
-  it('the conflict re-read rejecting with a NON-Error is logged in its string form and falls through to server_error', async () => {
+  it('the conflict re-read rejecting with a NON-Error is logged as `unknown` and falls through to server_error', async () => {
     const { deps, repo } = makeDeps();
     repo.failNext('insertInTx', { code: 'repo.conflict', reason: 'change_request_pending_exists' });
     vi.mocked(runInTenant)
@@ -1017,16 +1017,18 @@ describe('submitChangeRequest — T105 coverage: every narrowing and defence arm
       .mockRejectedValueOnce('neon down');
     const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
     expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
-    expect(loggerWarn).toHaveBeenCalledWith(expect.objectContaining({ err: 'neon down' }), 'change-request.submit.conflict_reread_failed');
+    // Spec 140 s2d (#736c) — the log line takes the class (`unknown` for a non-Error);
+    // the Result keeps the string form until follow-up (1).
+    expect(loggerWarn).toHaveBeenCalledWith(expect.objectContaining({ err: 'unknown' }), 'change-request.submit.conflict_reread_failed');
   });
 
-  it('a NON-Error throw inside the transaction is logged in its string form — server_error, never a swallowed success', async () => {
+  it('a NON-Error throw inside the transaction is logged as `unknown` — server_error, never a swallowed success', async () => {
     const { deps, repo } = makeDeps();
     repo.findPendingBySubmitterInTx = async () => {
       throw 'connection reset';
     };
     const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
     expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'submit: unexpected' } });
-    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'connection reset' }), 'change-request.submit.unexpected');
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'unknown' }), 'change-request.submit.unexpected');
   });
 });
