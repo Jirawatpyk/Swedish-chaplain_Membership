@@ -78,7 +78,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { errKind } from '@/lib/log-id';
-import { pgErrorCode } from '@/lib/db-errors';
+import { pgErrorCode, pgErrorMeta } from '@/lib/db-errors';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 
@@ -350,12 +350,14 @@ async function drainOrphans(
   const readErased = async (): Promise<ErasedRead> => {
     let step: ErasedReadStep = 'requesters';
     try {
-      const requesterIds = await deps.orphans.listInGraceRequesterIds(graceCutoff, ORPHAN_ERASED_REQUESTER_CAP);
-      // Spec 140 s2d (#736a) — the repo's LIMIT bounds the list, so a full
-      // list means more requesters may exist: theirs wait the grace.
-      if (requesterIds.length >= ORPHAN_ERASED_REQUESTER_CAP) {
+      // Spec 140 s2d (#736a) — the repo's LIMIT bounds the list. Review round 2
+      // (code-review #10) — read cap + 1, so the capped line means truncated:
+      // more requesters than the cap exist, and theirs wait the grace.
+      const listed = await deps.orphans.listInGraceRequesterIds(graceCutoff, ORPHAN_ERASED_REQUESTER_CAP + 1);
+      if (listed.length > ORPHAN_ERASED_REQUESTER_CAP) {
         logger.warn({ tenantId, cap: ORPHAN_ERASED_REQUESTER_CAP }, 'broadcasts.orphan_drain.erased_requesters_capped');
       }
+      const requesterIds = listed.slice(0, ORPHAN_ERASED_REQUESTER_CAP);
       if (requesterIds.length === 0) return NO_ERASED_READ;
       step = 'bridge';
       const erased = await deps.membersBridge.filterErasedMemberIds(deps.tenant, requesterIds);
@@ -369,7 +371,11 @@ async function drainOrphans(
         failed: false,
       };
     } catch (e) {
-      logger.warn({ tenantId, step, err: errKind(e), code: pgErrorCode(e) }, 'broadcasts.orphan_drain.erased_read_failed');
+      // Review round 2 (code-review #7) — the constraint / table / column names too, never `detail`.
+      logger.warn(
+        { tenantId, step, err: errKind(e), code: pgErrorCode(e), pg: pgErrorMeta(e) },
+        'broadcasts.orphan_drain.erased_read_failed',
+      );
       return { ...NO_ERASED_READ, failed: true };
     }
   };

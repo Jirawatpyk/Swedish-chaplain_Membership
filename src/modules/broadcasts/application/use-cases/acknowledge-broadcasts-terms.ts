@@ -31,7 +31,7 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errLogFields } from '@/lib/log-id';
+import { errLogFields, hashId } from '@/lib/log-id';
 import { safeAuditEmit } from './_safe-audit-emit';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '@/modules/members';
@@ -106,7 +106,8 @@ export async function acknowledgeBroadcastsTerms(
           ...errLogFields(result.error.cause),
           tenantId: deps.tenant.slug,
           memberId: input.memberId,
-          userId: input.actorUserId,
+          // Review round 2 (code-review #9) — hashed, never the raw id (rules.md § Secrets).
+          userIdHash: hashId(input.actorUserId),
           requestId: input.requestId,
         },
         'broadcasts.acknowledge.repo_error',

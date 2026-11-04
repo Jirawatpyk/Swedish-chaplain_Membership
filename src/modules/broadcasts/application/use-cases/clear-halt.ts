@@ -15,7 +15,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errLogFields } from '@/lib/log-id';
+import { errLogFields, hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort } from '../ports/audit-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
@@ -96,7 +96,8 @@ export async function clearHalt(
           ...errLogFields(auditErr),
           tenantId: deps.tenant.slug,
           memberId: input.memberId,
-          actorUserId: input.actorUserId,
+          // Review round 2 (code-review #9) — hashed, never the raw id (rules.md § Secrets).
+          actorUserIdHash: hashId(input.actorUserId),
         },
         'broadcasts.clear_halt.audit_emit_failed',
       );

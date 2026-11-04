@@ -11,7 +11,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errLogFields } from '@/lib/log-id';
+import { errLogFields, hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '@/modules/members';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
@@ -110,7 +110,8 @@ export async function getMemberBroadcast(
             tenantId: deps.tenant.slug,
             memberId: input.memberId,
             broadcastId: input.broadcastId,
-            actorUserId: input.actorUserId,
+            // Review round 2 (code-review #9) — hashed, never the raw id (rules.md § Secrets).
+            actorUserIdHash: hashId(input.actorUserId),
             requestId: input.requestId,
           },
           'broadcasts.cross_member_probe.audit_emit_failed',

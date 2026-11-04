@@ -65,6 +65,8 @@ import type { EmailLower } from '../domain/value-objects/email-lower';
  * keeps for a log line's `step`) with the driver error as its `cause`, so
  * `pgErrorCode` reaches the SQLSTATE. The repo code is a closed RepoError
  * token; the cause is never written to a log line (`err: errKind(e)`).
+ * Review round 2 (spec L1, code-review #5) — every bridge read failure throws
+ * through here; none builds its own message.
  */
 function failedRead(read: string, error: { readonly code: string }): Error {
   return new Error(`${read}:${error.code}`, { cause: rootCause(error) });
@@ -133,9 +135,8 @@ export const membersBridge: MembersBridgePort = {
         },
         'broadcasts.members_bridge.segment_read_failed',
       );
-      throw new Error(
-        `members-bridge.getMembersBySegment: ${result.error.code} — refusing to resolve an empty audience`,
-      );
+      // Review round 2 (spec L1) — refuse to resolve an empty audience: throw the step.
+      throw failedRead('members_bridge_get_members_by_segment', result.error);
     }
     return result.value.map(brandRecipient);
   },
@@ -183,9 +184,8 @@ export const membersBridge: MembersBridgePort = {
           },
           'broadcasts.members_bridge.contacts_page_failed',
         );
-        throw new Error(
-          `members-bridge.getContactsBySegment: ${page.error.code} — refusing to resolve a partial audience`,
-        );
+        // Review round 2 (spec L1) — refuse to resolve a partial audience: throw the step.
+        throw failedRead('members_bridge_get_contacts_by_segment', page.error);
       }
       for (const r of page.value) {
         out.push({
@@ -238,9 +238,8 @@ export const membersBridge: MembersBridgePort = {
         },
         'broadcasts.members_bridge.opted_out_count_failed',
       );
-      throw new Error(
-        `members-bridge.countOptedOutContactsBySegment: ${result.error.code} — refusing to guess the preference count`,
-      );
+      // Review round 2 (spec L1) — refuse to guess the preference count: throw the step.
+      throw failedRead('members_bridge_count_opted_out_contacts', result.error);
     }
     return result.value;
   },
@@ -280,9 +279,7 @@ export const membersBridge: MembersBridgePort = {
     );
     if (result.ok) return true;
     if (result.error.code === 'repo.not_found') return false;
-    throw new Error(
-      `members-bridge.memberExistsInTenant: ${result.error.code}`,
-    );
+    throw failedRead('members_bridge_member_exists', result.error);
   },
 
   async lookupContactEmailInTenant(
@@ -319,9 +316,7 @@ export const membersBridge: MembersBridgePort = {
     );
     if (!result.ok) {
       if (result.error.code === 'repo.not_found') return null;
-      throw new Error(
-        `members-bridge.lookupMemberPrimaryContactEmailInTenant: ${result.error.code}`,
-      );
+      throw failedRead('members_bridge_lookup_member_primary_contact_email', result.error);
     }
     if (result.value === null) return null;
     return brandRecipient(result.value);
@@ -420,7 +415,7 @@ export const membersBridge: MembersBridgePort = {
     // reason. Same doctrine as the lookups above: throw, let the caller map
     // it (`clear_halt.server_error` → 500; the webhook tx rolls back and
     // Resend retries).
-    throw new Error(`members-bridge.setMemberHalt: ${String(result.error.code)}`);
+    throw failedRead('members_bridge_set_member_halt', result.error);
   },
 
   async markBroadcastsAcknowledged(
@@ -528,9 +523,8 @@ export const membersBridge: MembersBridgePort = {
         },
         'broadcasts.members_bridge.marketing_opt_out_lookup_failed',
       );
-      throw new Error(
-        `marketing opt-out lookup failed (${result.error.code}) — refusing to resolve fail-open`,
-      );
+      // Review round 2 (spec L1) — refuse to resolve fail-open: throw the step.
+      throw failedRead('members_bridge_filter_marketing_opted_out', result.error);
     }
     const out = new Set<EmailLower>();
     for (const e of result.value) {

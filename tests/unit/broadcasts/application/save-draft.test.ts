@@ -237,7 +237,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
       return [];
     },
     async getMemberPrimaryContact() {
-      if (opts.primaryContactThrows) throw new Error('members-bridge.getMemberPrimaryContact: repo.unexpected');
+      if (opts.primaryContactThrows) throw new Error('members_bridge_get_member_primary_contact:repo.unexpected');
       return opts.primaryContact !== null && opts.primaryContact !== undefined
         ? unsafeBrandEmailLower(opts.primaryContact)
         : null;
