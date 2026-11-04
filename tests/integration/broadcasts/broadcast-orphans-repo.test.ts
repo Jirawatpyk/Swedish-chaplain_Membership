@@ -366,7 +366,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
 
   // Review round 4 follow-up (code-review #4) — the driver gives the app
   // created_at in milliseconds, so a row 0.4 ms past the stuck cutoff is stuck
-  // to `isStuckAt`. The SQL sort must agree: it sorts the row as stuck (last).
+  // to `isOrphanStuck`. The SQL sort must agree: it sorts the row as stuck (last).
   it('[code-review #4] a row 0.4 ms past the stuck cutoff sorts as stuck, as the app judges it', async () => {
     const solo = await createTestTenant('test-swecham');
     try {
