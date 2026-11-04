@@ -1026,7 +1026,7 @@ and appeared **nowhere in this document** — not in § 21.1, not in § 21.3, no
 § 21.6 dashboard. They were added one at a time by review rounds (F5R1-E*, F5R2-SF-*,
 F5R3 CR-*, A.14/A.15/A.16) and, unlike the designed set, they are almost all
 **failure-path counters**: each one exists because some catch block would otherwise be
-silent once pino logs roll off at 30 days. Proposed alert rules are in § 21.3a.
+silent once pino logs roll off after 1 day (Pro plan without Observability Plus, § 2). Proposed alert rules are in § 21.3a.
 
 Names below are the **wire names** (what `metrics.ts` emits). Several docstrings refer to
 a shorter dot-notation alias (`webhook.dispatch_failed_total`); the emitted name always
@@ -1060,7 +1060,7 @@ use** — see § 26.2 for why the shipped name wins over a tidier one.
 | `payments_webhook_dispatch_recovery_replay_total` | counter | `tenant`, `event_type` | F5R1-E8. The step-6 idempotency upsert found an existing `processor_events` row with `processed_at` still NULL — the previous attempt died mid-flight. Recovery is safe (sub-use-cases are idempotent); a sustained rate means chronic Vercel timeouts / OOM / exporter back-pressure |
 | `payments_webhook_unresolved_row_adopted_total` | counter | `tenant`, `event_type` | 132 (D-031). A replay adopted the NULL-tenant `processor_events` row its first, unresolved delivery left (unknown account, or an env / api-version rejection since corrected); the dispatch then runs and stamps it. Expected only after an operator replays an event from the Stripe dashboard. The adopting replay is not also counted in `payments_webhook_dispatch_recovery_replay_total` (a concurrent replay that loses the adoption race is: it re-dispatches like a crash recovery); the durable record is the `webhook_unresolved_event_adopted` audit row (10 y) |
 | `payments_webhook_duplicate_tenant_mismatch_total` | counter | `tenant`, `event_type` | 132 (D-031). A duplicate delivery whose stored `processor_events` tenant is not the resolved tenant (a NULL row the repo would not adopt, or another tenant's) was acknowledged without dispatch. Any non-zero value wants a look: read the row as `neondb_owner` |
-| `payments_webhook_reject_audit_failed_total` | counter | _(none)_ | F5R1-E1. The audit write on a webhook-**reject** path (signature / api-version / livemode / unknown-account) threw. Without it a chronic audit-rail outage silently drops the forensic trail, since pino rolls off at 30 days but `audit_log` holds 5/10y compliance retention |
+| `payments_webhook_reject_audit_failed_total` | counter | _(none)_ | F5R1-E1. The audit write on a webhook-**reject** path (signature / api-version / livemode / unknown-account) threw. Without it a chronic audit-rail outage silently drops the forensic trail, since pino rolls off after 1 day (§ 2) but `audit_log` holds 5/10y compliance retention |
 | `payments_webhook_revalidate_path_failed_total` | counter | _(none)_ | F5R1-IMP3. `revalidatePath` threw on the dispatch tail. Webhook still 200-acks (`markProcessed` already committed) — **cosmetic only**: admin UI may show stale Paid/Refunded status until manual reload |
 
 **Bridge, gateway + audit-rail integrity**

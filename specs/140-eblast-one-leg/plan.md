@@ -1955,6 +1955,13 @@ Parts 1–3 touch `cancel-in-flight-broadcasts-for-member.ts` and run one after 
 | **A full share is visible** (Verify finding, pdpa L-d, reliability L-2) | The erased-rows read asks for share + 1. `tick_complete.orphans.erasedShareFull: true` when more rows exist than the share. The docs say `deferred` and `waiting` count "of the rows seen this run" | route body, `observability.md`, `cron-jobs.md` | drain unit · "16 erased rows → erasedShareFull true, 10 settled" |
 | **The erased reads and the past-grace list run in parallel** (code-review #5) | `Promise.all`, each side caught on its own. The failure flags are unchanged | the 240 s budget | drain unit · the existing failure cases stay green (the order of calls is no longer asserted) |
 
+**Build notes (round 1):**
+- Row 4 also reads `.error`. The row named only `cause`; `UseCaseAbort` keeps the RepoError at `.error`.
+- Row 1 also needed a pino `hooks.logMethod`. Serializers alone cannot do the job: pino copies `err.message` into `msg`, and `formatters.log` flattens the Error before any serializer sees it.
+- The stricter gate found 12 typed token / id reads in 7 files. They now pass through locals, and the values logged are unchanged.
+- The events `pino-audit-port` still logs `{ name, message, stack }` as a plain object. That is #740.
+- Vercel facts were measured on 2026-11-04: Pro plan, runtime logs kept 1 day, no drain listed.
+
 **Fixes:**
 - code-review #7: `CleanupOrphanedAudiencesError.message` becomes `errClass`, and the route logs `err: result.error.errClass`.
 - reliability nit: `observability.md` rows for `dispatch_begun_delete` (`probe: 'threw'`) and `refused_draft_delete_unconfirmed` (`err` always present).
