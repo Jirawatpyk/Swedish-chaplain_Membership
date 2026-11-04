@@ -221,8 +221,8 @@ import type { TerminalBroadcastDraftRef } from '../ports/broadcasts-repo';
 import type { BroadcastOrphansRepo, OrphanedResendIdRef } from '../ports/broadcast-orphans-repo';
 import {
   AUDIENCE_CLEANUP_GRACE_MS,
-  ORPHAN_STUCK_ATTEMPTS,
-  ORPHAN_STUCK_MIN_AGE_MS,
+  isOrphanStuck,
+  orphanStuckCutoff,
   type OrphanOutcome,
 } from '../../domain/value-objects/orphaned-resend-id';
 import { asBroadcastId } from '../../domain/broadcast';
@@ -961,9 +961,9 @@ export async function cancelInFlightBroadcastsForMember(
       // Review round 4 (code-review #3, reliability LOW-A) — judged at an
       // explicit instant: the over-limit exit passes the list time (the SQL
       // stuck cutoff's instant); the undecided and deadline exits pass now.
-      const isStuckAt = (orphan: OrphanedResendIdRef, atMs: number) =>
-        orphan.attempts >= ORPHAN_STUCK_ATTEMPTS && atMs - orphan.createdAt.getTime() >= ORPHAN_STUCK_MIN_AGE_MS;
-      const isStuck = (orphan: OrphanedResendIdRef) => isStuckAt(orphan, deps.clock.now().getTime());
+      // Spec 140 s2d (#736b) — the rule is the Domain's isOrphanStuck, the
+      // same one both repos' SQL applies (orphanStuckSql).
+      const isStuck = (orphan: OrphanedResendIdRef) => isOrphanStuck(orphan, deps.clock.now().getTime());
       const reportStuck = (orphan: OrphanedResendIdRef, exit: 'undecided' | 'deadline' | 'over_limit', extra: Record<string, unknown> = {}) => {
         audienceOrphansStuckCount += 1;
         logger.warn(
@@ -973,7 +973,7 @@ export async function cancelInFlightBroadcastsForMember(
       };
       // Pass (b)'s non-settling exits: a stuck row is reported, any other deferred.
       const deferOrReport = (orphan: OrphanedResendIdRef, exit: 'deadline' | 'over_limit', atMs = deps.clock.now().getTime()) => {
-        if (isStuckAt(orphan, atMs)) reportStuck(orphan, exit);
+        if (isOrphanStuck(orphan, atMs)) reportStuck(orphan, exit);
         else deferOrphan(orphan);
       };
       /**
@@ -1065,7 +1065,7 @@ export async function cancelInFlightBroadcastsForMember(
         audienceOrphans = await deps.orphans.listUnsettledAudienceOrphans(
           ERASURE_AUDIENCE_ORPHAN_LIMIT + 1,
           new Date(listedAtMs - AUDIENCE_CLEANUP_GRACE_MS),
-          new Date(listedAtMs - ORPHAN_STUCK_MIN_AGE_MS),
+          orphanStuckCutoff(new Date(listedAtMs)),
         );
       } catch (e) {
         orphanUnexpected(e, null, 'broadcasts.cascade.audience_orphan_list_failed');
