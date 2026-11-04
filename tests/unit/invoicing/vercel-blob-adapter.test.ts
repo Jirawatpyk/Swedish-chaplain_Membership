@@ -209,12 +209,15 @@ describe('vercelBlobAdapter — #60 conditional delete', () => {
     );
   });
 
-  // #729 L1 — two sweeps overlapping (a manual run on the schedule) can both
-  // delete a key: the second finds it gone, which is the goal, not a failure.
-  it("a delete of a key that is already gone resolves (the SDK's BlobNotFoundError)", async () => {
+  // #729 L1 — a delete of a key already gone is reported by the port's own
+  // class, so a caller (the orphan sweep) can tell "gone" from a failure.
+  it("the SDK's BlobNotFoundError on delete → the port's BlobKeyNotFoundError", async () => {
     const { BlobNotFoundError } = await vi.importActual<typeof import('@vercel/blob')>('@vercel/blob');
     delMock.mockRejectedValue(new BlobNotFoundError());
     const { vercelBlobAdapter } = await loadAdapter();
-    await expect(vercelBlobAdapter.delete(KEY, { ifMatch: '"etag-a"' })).resolves.toBeUndefined();
+    const { BlobKeyNotFoundError } = await import('@/modules/invoicing/application/ports/blob-storage-port');
+    await expect(vercelBlobAdapter.delete(KEY, { ifMatch: '"etag-a"' })).rejects.toBeInstanceOf(
+      BlobKeyNotFoundError,
+    );
   });
 });

@@ -159,7 +159,12 @@ describe('/api/cron/invoicing/sweep-orphan-blobs — contract (#729)', () => {
     const res = await POST(makeRequest(AUTH, '?dryRun=1'));
     expect(runSweepMock).toHaveBeenCalledWith({ dryRun: true, deadlineMs: expect.any(Number) });
     expect(runPruneMock).not.toHaveBeenCalled();
-    expect(await res.json()).toMatchObject({ certs: { skipped: 'dry_run' }, pdfs: { dryRun: true, wouldDelete: 1 } });
+    // The gate is open here, but this run deletes nothing: say so (code review #6).
+    expect(await res.json()).toMatchObject({
+      deletesEnabled: false,
+      certs: { skipped: 'dry_run' },
+      pdfs: { dryRun: true, wouldDelete: 1 },
+    });
   });
 
   it('500 when either half fails, and the other half still runs', async () => {
