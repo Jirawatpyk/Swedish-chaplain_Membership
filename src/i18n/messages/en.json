@@ -2993,7 +2993,7 @@
             "memberErased": "This member's personal data has been erased at their request. No new invoice can be issued for them — discard this draft.",
             "duplicateLiveBill": "An invoice for this member and plan year already exists."
           },
-          "viewConflictingInvoice": "View existing invoice",
+          "viewConflictingInvoice": "Open existing invoice",
           "unresolved": "Unable to verify",
           "unresolvedAria": "Unable to verify this draft's price, coverage, or whether it would be refused",
           "unresolvedTooltip": "We couldn't confirm this draft's price, coverage, or whether it would be refused. Review it manually before issuing.",

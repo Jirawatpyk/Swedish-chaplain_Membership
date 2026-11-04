@@ -2993,7 +2993,7 @@
             "memberErased": "Den här medlemmens personuppgifter har raderats på medlemmens begäran. Ingen ny faktura kan utfärdas — ta bort det här utkastet.",
             "duplicateLiveBill": "En faktura för den här medlemmen och det här verksamhetsåret finns redan."
           },
-          "viewConflictingInvoice": "Visa befintlig faktura",
+          "viewConflictingInvoice": "Öppna befintlig faktura",
           "unresolved": "Kan inte verifieras",
           "unresolvedAria": "Kan inte verifiera pris, täckning eller om utkastet skulle nekas",
           "unresolvedTooltip": "Vi kunde inte bekräfta det här utkastets pris, täckning, eller om det skulle nekas. Granska manuellt innan du utfärdar.",
