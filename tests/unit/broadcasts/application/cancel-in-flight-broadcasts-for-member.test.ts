@@ -38,7 +38,7 @@ import {
   ERASURE_AUDIENCE_ORPHAN_LIMIT,
   cancelInFlightBroadcastsForMember,
 } from '@/modules/broadcasts/application/use-cases/cancel-in-flight-broadcasts-for-member';
-import { ORPHAN_STUCK_ATTEMPTS, ORPHAN_SUPERSEDING_STATUSES } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
+import { ORPHAN_STUCK_ATTEMPTS, ORPHAN_STUCK_MIN_AGE_MS, ORPHAN_SUPERSEDING_STATUSES } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
 import { TERMINAL_BROADCAST_STATUSES } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import { logger } from '@/lib/logger';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
@@ -1556,6 +1556,30 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         ok: true,
         value: { unexpectedErrorCount: 0, deferredCount: 0, audienceOrphansStuckCount: ERASURE_AUDIENCE_ORPHAN_LIMIT },
       });
+    });
+
+    // Review round 4 (code-review #3, reliability LOW-A) — the over-limit
+    // marker is judged at the instant the list was read (the SQL stuck cutoff
+    // came from it), not at the later "now": a marker that turns 2 h old in
+    // between was sorted as not stuck, so it is deferred (withheld), never
+    // reported (released).
+    it('a marker row that turns 2 h old after the list is deferred, not reported', async () => {
+      const base = Date.parse('2026-05-03T00:00:00Z');
+      const fresh = Array.from({ length: ERASURE_AUDIENCE_ORPHAN_LIMIT }, (_, i) => ({ ...stuckAud(i, YOUNG), attempts: 0 }));
+      // 1 min short of ORPHAN_STUCK_MIN_AGE_MS at list time; 1 min past it after.
+      const marker = stuckAud(99, new Date(base - ORPHAN_STUCK_MIN_AGE_MS + 60_000));
+      const deps = makeDeps({ audienceOrphans: [...fresh, marker] });
+      let t = base;
+      deps.clock.now = () => new Date(t);
+      const list = deps.orphans.listUnsettledAudienceOrphans;
+      const original = list.getMockImplementation()!;
+      list.mockImplementationOnce(async (...args: Parameters<typeof original>) => {
+        const rows = await original(...args);
+        t += 2 * 60_000;
+        return rows;
+      });
+      const result = await cancelInFlightBroadcastsForMember(deps, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, deferredCount: 1, audienceOrphansStuckCount: 0 } });
     });
 
     it('attempts ≥ 8 but younger than 2 h still withholds', async () => {
