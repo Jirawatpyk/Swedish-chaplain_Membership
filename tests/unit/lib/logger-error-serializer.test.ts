@@ -6,6 +6,12 @@
  * passes under `err` / `error` / `cause`, the written line carries only the
  * error's class and SQLSTATE.
  *
+ * Review round 2 (code-review #1, #2; pdpa H-2; security M1; the maintainer's
+ * decision of 4 Nov 2026) — any non-string value under those keys, an Error
+ * or a plain object with any field, becomes closed tokens plus stack frames:
+ * `type`, `code`, `repoCode`, `errCode`, `statusCode`, `declineCode`,
+ * `frames`. Never `message`, `stack`, `detail`, `params` or `query`.
+ *
  * Captures the REAL `logger`'s output by spying on its destination stream, so
  * the test reads the production options (redaction, PAN formatter, the error
  * reduction), not a copy of them.
@@ -54,19 +60,36 @@ function expectNoErrorText(): void {
   expect(lines.join('')).not.toMatch(/a@x\.io|Failed query|update contacts|"params"|"query"|Key \(|duplicate key/);
 }
 
+/** The only keys the reducer writes (review round 2). */
+const REDUCED_KEYS = ['type', 'code', 'repoCode', 'errCode', 'statusCode', 'declineCode', 'frames'];
+
+/** The reduced value under `key` of a parsed line, with no key outside the closed set. */
+function reduced(line: Record<string, unknown>, key = 'err'): Record<string, unknown> {
+  const value = line[key] as Record<string, unknown>;
+  expect(typeof value).toBe('object');
+  for (const k of Object.keys(value)) expect(REDUCED_KEYS).toContain(k);
+  return value;
+}
+
+/** The reduced value without its frames, for an exact comparison. */
+function tokens(value: Record<string, unknown>): Record<string, unknown> {
+  const { frames: _frames, ...rest } = value;
+  return rest;
+}
+
 describe('the logger reduces an error at the root', () => {
   it('logger.error({ err: drizzleQueryError }) writes no params, no query and no message', () => {
     logger.error({ err: leakyDbError() });
     expectNoErrorText();
-    expect(written().err).toEqual({ type: 'DrizzleQueryError', code: '23505' });
+    expect(tokens(reduced(written()))).toEqual({ type: 'DrizzleQueryError', code: '23505' });
   });
 
   it('reduces `error` and `cause` the same way, beside a message', () => {
     logger.error({ error: leakyDbError(), cause: leakyDbError() }, 'op.failed');
     expectNoErrorText();
     const line = written();
-    expect(line.error).toEqual({ type: 'DrizzleQueryError', code: '23505' });
-    expect(line.cause).toEqual({ type: 'DrizzleQueryError', code: '23505' });
+    expect(tokens(reduced(line, 'error'))).toEqual({ type: 'DrizzleQueryError', code: '23505' });
+    expect(tokens(reduced(line, 'cause'))).toEqual({ type: 'DrizzleQueryError', code: '23505' });
     expect(line.msg).toBe('op.failed');
   });
 
@@ -75,21 +98,97 @@ describe('the logger reduces an error at the root', () => {
     logger.error(leakyDbError());
     expectNoErrorText();
     expect(lines).toHaveLength(2);
-    expect((JSON.parse(lines[0]!) as { err: unknown }).err).toEqual({ type: 'unknown', code: '23505' });
-    expect((JSON.parse(lines[1]!) as { err: unknown }).err).toEqual({ type: 'DrizzleQueryError', code: '23505' });
+    // Review round 2 — the RepoError keeps its own closed code as `repoCode`.
+    expect(reduced(JSON.parse(lines[0]!) as Record<string, unknown>)).toEqual({
+      type: 'unknown',
+      repoCode: 'repo.unexpected',
+      code: '23505',
+    });
+    expect(tokens(reduced(JSON.parse(lines[1]!) as Record<string, unknown>))).toEqual({ type: 'DrizzleQueryError', code: '23505' });
   });
 
-  it('keeps a string value, a token object, and the key-based redaction', () => {
+  it('keeps a string value and the key-based redaction; a plain object of any shape is reduced', () => {
     logger.error({ err: 'DrizzleQueryError', error: { kind: 'timeout' }, password: 'hunter2' }, 'op.failed');
     const line = written();
     expect(line.err).toBe('DrizzleQueryError');
-    expect(line.error).toEqual({ kind: 'timeout' });
+    // Review round 2 — `kind` is not one of the closed fields.
+    expect(line.error).toEqual({ type: 'unknown' });
     expect(line.password).toBe('[REDACTED]');
   });
 
   it('reduces an error bound on a child logger', () => {
     logger.child({ err: leakyDbError() }).error('child.failed');
     expectNoErrorText();
-    expect(written().err).toEqual({ type: 'DrizzleQueryError', code: '23505' });
+    expect(tokens(reduced(written()))).toEqual({ type: 'DrizzleQueryError', code: '23505' });
+  });
+});
+
+describe('the root reducer writes tokens and frames, never text (review round 2)', () => {
+  it('a Drizzle-shaped plain object writes no message or email, and keeps its frames', () => {
+    logger.error({
+      err: {
+        name: 'DrizzleQueryError',
+        message: `Failed query: update contacts set email = $1\nparams: ${EMAIL}`,
+        stack: `DrizzleQueryError: Failed query: update contacts set email = $1\nparams: ${EMAIL}\n    at f (x.ts:1:1)\n    at g (y.ts:2:2)`,
+      },
+    });
+    expectNoErrorText();
+    expect(reduced(written())).toEqual({ type: 'DrizzleQueryError', frames: ['at f (x.ts:1:1)', 'at g (y.ts:2:2)'] });
+  });
+
+  it('an events-style { name, message, stack } under `error` is reduced the same way', () => {
+    logger.error({ error: { name: 'NeonDbError', message: `insert failed for ${EMAIL}`, stack: `NeonDbError: insert failed for ${EMAIL}\n    at h (z.ts:3:3)` } }, 'audit.failed');
+    expectNoErrorText();
+    expect(reduced(written(), 'error')).toEqual({ type: 'NeonDbError', frames: ['at h (z.ts:3:3)'] });
+  });
+
+  it('a Stripe-shaped error keeps errCode, statusCode and declineCode, never its message or raw payload', () => {
+    class StripeCardError extends Error {
+      readonly code = 'card_declined';
+      readonly statusCode = 402;
+      readonly decline_code = 'insufficient_funds';
+      readonly raw = { message: `Card for ${EMAIL} declined`, billing_details: { email: EMAIL } };
+    }
+    logger.error({ err: new StripeCardError(`Your card was declined (${EMAIL}).`) });
+    expectNoErrorText();
+    expect(tokens(reduced(written()))).toEqual({
+      type: 'StripeCardError',
+      errCode: 'card_declined',
+      statusCode: 402,
+      declineCode: 'insufficient_funds',
+    });
+  });
+
+  it('a RepoError a thrown Error wraps at `.error` (UseCaseAbort) keeps its repoCode and the SQLSTATE', () => {
+    class UseCaseAbort extends Error {
+      constructor(readonly error: unknown) {
+        super('aborted');
+      }
+    }
+    logger.error({ err: new UseCaseAbort({ code: 'repo.unexpected', cause: leakyDbError() }) });
+    expectNoErrorText();
+    expect(tokens(reduced(written()))).toEqual({ type: 'UseCaseAbort', repoCode: 'repo.unexpected', code: '23505' });
+  });
+
+  it('frames never carry the message, even a multi-line one with "at" lines; at most 8 frames', () => {
+    const message = `boom\n    at ${EMAIL} (Failed query)\n    at second ${EMAIL}`;
+    const e = new Error(message);
+    const frames = Array.from({ length: 12 }, (_, i) => `    at fn${i} (file${i}.ts:${i}:1)`);
+    e.stack = `Error: ${message}\n${frames.join('\n')}`;
+    logger.error({ err: e });
+    expectNoErrorText();
+    const value = reduced(written());
+    expect(value.frames).toEqual(frames.slice(0, 8).map((f) => f.trim()));
+  });
+
+  it('never writes message, stack, detail, params or query, whatever the shape', () => {
+    logger.error({
+      err: { message: EMAIL, stack: EMAIL, detail: EMAIL, params: [EMAIL], query: EMAIL, code: 'Bad Code With Spaces' },
+      cause: [EMAIL],
+    });
+    expectNoErrorText();
+    const line = written();
+    expect(JSON.stringify(line)).not.toMatch(/"message"|"stack"|"detail"|Bad Code/);
+    expect(line.cause).toEqual({ type: 'unknown' });
   });
 });
