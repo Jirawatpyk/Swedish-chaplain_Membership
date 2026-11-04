@@ -155,7 +155,7 @@ export function errLogFields(failure: unknown): {
     };
   }
   const sqlState = pgErrorCode(failure);
-  const errCode = failure instanceof Error ? ownErrorCode(failure, sqlState) : undefined;
+  const errCode = ownErrorCode(failure, sqlState);
   return {
     err: errKind(failure),
     ...(sqlState !== undefined ? { code: sqlState } : {}),
@@ -164,7 +164,8 @@ export function errLogFields(failure: unknown): {
 }
 
 /** A thrown Error's own token-shaped `.code` that is not the SQLSTATE already logged as `code`, else `undefined`. */
-function ownErrorCode(e: Error, sqlState: string | undefined): string | undefined {
+function ownErrorCode(e: unknown, sqlState: string | undefined): string | undefined {
+  if (!(e instanceof Error)) return undefined;
   const own = (e as { code?: unknown }).code;
   return typeof own === 'string' && own !== sqlState && ERROR_CODE.test(own) ? own : undefined;
 }
