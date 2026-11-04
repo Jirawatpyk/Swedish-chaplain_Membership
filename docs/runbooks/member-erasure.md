@@ -247,8 +247,13 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      settled broadcast rows are in the counts above (`deleted` / `absent` →
      cleared, `retained` → retained, `handed` → already sent, RoPA 8c;
      `superseded` — a sent row holds the id — is in none of them), so with orphans the TERMINAL-query equality reads "+ the member's
-     settled broadcast orphans whose id no terminal row holds". Check nothing
-     is left (read-only):
+     settled broadcast orphans whose id no terminal row holds". The orphans
+     counted include rows the `cleanup-audiences` drain settled BEFORE this
+     erasure ran, and `absent` ones (Resend never held, or no longer holds,
+     the copy): the count means "copies confirmed gone at Resend", not
+     "drafts this erasure deleted" (MEASURED in the s2c Verify, 4 Nov 2026:
+     one drain-settled `absent` row plus one `deleted` draft gave
+     `resend_drafts_cleared: 2`). Check nothing is left (read-only):
 
      ```sql
      -- the step-4 ORPHAN query: rows still unsettled for this member

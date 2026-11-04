@@ -1660,6 +1660,26 @@ Dev and prod share the broadcasts key, so the account state matches.
 - pdpa L-3: no cascade-port contract case, which predates this PR; a follow-up issue.
 - reliability: a commit whose driver throws after COMMIT misses the counter. This class predates the PR.
 
+### Slice 2c — Verify on the final HEAD: the maintainer's `/verify` (4 Nov 2026, on `d7beaa6f4`): PASS
+
+:3400, Neon dev, tenant swecham, flag OFF. Resend used the sink address only; no `/send`, no cancel. Erasures ran through `POST /api/members/{id}/erase` as super-admin.
+- **Safety:** 0 approved rows due, 0 unsettled orphans, and Resend held only `General`.
+- **Wrong Bearer → 401;** the row was unchanged.
+- **Drain with the 404 confirm (round 2):** an `attach_lost` orphan with a random id, 2 h old → `orphans {listed:1, settled:1}`, and the row settled `absent`. The call took 4.8 s. The log shows `delete_once` at 10:24:11.967, then `retrieve_once` at 10:24:15.322 (the DELETE time plus `REPROBE_PAUSE_MS`), then `orphan_drain.settled`.
+- **An erased requester skips the grace (round 3):** a young orphan, written after its member was erased → one tick → settled `absent` 5 s after it was written.
+- **The grace still holds for a member who is not erased:** a young orphan → `waiting:1`; the row stayed unsettled.
+- **Erasure pass (a):**
+  - A real sink draft was held by the member's `persist_failed` orphan.
+  - Erase → 200 `cascadesComplete`. The draft answered 404, the orphan settled `deleted`, and `member_erased` showed `resend_drafts_cleared: 2`, `resend_copies_retained: 0`, `audience_orphans_stuck_count: 0`.
+  - Re-erase → `re_drive: true` with the same counts. A second cleanup → `listed:0`, and `settled_at` was unchanged.
+- **Finding (docs, fixed):** the count was 2, not the 1 the Verify brief expected. The same member was the requester of the drain-settled `absent` orphan above, and by the documented rule (`deleted` / `absent` → cleared, every settled orphan of the member) both count. The rule is unchanged. The runbook (step 4) and RoPA 8d now say the number means "copies confirmed gone at Resend", including the drain's earlier settles, not "drafts this erasure deleted".
+- **Not driven:**
+  - the stuck-release exit (`audience_orphans_stuck_count > 0`), which needs 8 or more undecided Resend answers over 2 h;
+  - the `err` / `code` log fields of `erase-member.ts`, which are failure catches. No WARN or ERROR line occurred.
+
+  Both rest on the unit and integration tests.
+- **Teardown:** clean. The Resend audience is deleted and only `General` is left. The seeds and orphan rows are deleted, and the probe spec is removed.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
