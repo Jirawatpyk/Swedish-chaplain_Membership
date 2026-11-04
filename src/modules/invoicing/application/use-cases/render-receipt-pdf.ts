@@ -300,7 +300,7 @@ export async function renderReceiptPdf(
       );
 
       // Atomic flip pending → rendered.
-      const updated = await deps.invoiceRepo.applyReceiptPdf(tx, {
+      const { invoice: updated, landed } = await deps.invoiceRepo.applyReceiptPdf(tx, {
         tenantId: input.tenantId,
         invoiceId,
         blobKey: receiptBlobKey,
@@ -310,18 +310,17 @@ export async function renderReceiptPdf(
 
       // Task #71 (L-1) — the UPDATE is a no-op when another worker rendered
       // first or the row was voided after our read. The 10-year audit row
-      // names this attempt's key and sha, so it is written only when the row
-      // now holds this attempt's write.
-      const writeLanded =
-        updated.status !== 'void' &&
-        updated.receiptPdf?.blobKey === receiptBlobKey &&
-        updated.receiptPdf.sha256 === rendered.sha256;
-      if (!writeLanded) {
+      // records a render, so it is written only when this attempt's UPDATE
+      // changed the row: a same-version race loser holds the winner's key
+      // and sha (the render is deterministic), so comparing them is not
+      // enough.
+      if (!landed) {
         logger.warn(
           {
             tenantId: input.tenantId,
             invoiceId,
-            reason: updated.status === 'void' ? 'void' : 'race_lost',
+            // Not `reason`: the logger redacts that key.
+            outcome: updated.status === 'void' ? 'void' : 'race_lost',
           },
           'invoicing.receipt_render.write_lost',
         );

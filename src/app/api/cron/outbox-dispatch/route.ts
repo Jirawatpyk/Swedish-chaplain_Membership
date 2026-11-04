@@ -1008,10 +1008,23 @@ async function dispatchOne(
         // instead of a forever-stuck queue).
         // Task #71 (L-2) — a void invoice's receipt never renders (the worker
         // refuses a non-paid row and the reconcile cron skips it), so waiting
-        // would loop forever. Fail it by the ladder: the paid-receipt email
-        // for a voided sale does not ship.
+        // would loop forever. Void is terminal and not shipping the
+        // paid-receipt email for a voided sale is the intended outcome, so
+        // the row closes now: no retry ladder, no failure audit, no page.
         if (invRow.status === 'void' && invRow.receipt_pdf_status !== 'rendered') {
-          return gateFail('invoice_void', 'invoice voided before its receipt rendered; the paid-receipt email will not ship');
+          await tx
+            .update(notificationsOutbox)
+            .set({
+              status: 'permanently_failed' as const,
+              lastError: 'receipt_pdf_gate_skip:invoice_void — invoice voided before its receipt rendered; the paid-receipt email is not sent',
+              updatedAt: now,
+            })
+            .where(eq(notificationsOutbox.id, row.id));
+          logger.info(
+            { requestId, outboxRowId: row.id, invoiceId },
+            'outbox.receipt_pdf_gate_invoice_void — the paid-receipt email for a voided invoice is not sent',
+          );
+          return 'permanent';
         }
         if (invRow.receipt_pdf_status === 'failed') {
           return gateFail('pdf_render_failed', 'receipt PDF render failed; waiting on the reconcile re-render');
@@ -1030,11 +1043,10 @@ async function dispatchOne(
           return 'skipped';
         }
         // status === 'rendered'. Task #70 — link the key the row holds,
-        // never the key frozen into the outbox context at payment: the
-        // reconcile cron re-enqueues a stuck render with the invoice's
-        // issue-time template version, so after a template bump the worker
-        // writes `_receipt_v{issue}` while the context names
-        // `_receipt_v{current}` — a stray the orphan sweep deletes.
+        // never the key frozen into the outbox context at payment: a
+        // re-render can land on another template version than the one
+        // frozen at payment (a template bump in between), so its key
+        // differs, and the frozen one is a stray the orphan sweep deletes.
         if (!invRow.receipt_pdf_blob_key) {
           // Rendered with no key is an inconsistent row: fail closed so the
           // email exits via the permanent-fail ladder, never a dead link.
