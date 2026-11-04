@@ -204,3 +204,42 @@ describe('pgErrorMeta (spec 140 s2d, #736c)', () => {
     expect(pgErrorMeta(Object.assign(new Error('x'), { code: '23505' }))).toEqual({});
   });
 });
+
+/**
+ * Spec 140 s2d review round 2 (code-review #3, security L2) — the cause walk
+ * is bounded, and only a SQLSTATE-shaped code counts. An unbounded walk over
+ * a cyclic `.cause` is a synchronous loop: the log call that reaches it never
+ * returns. A Stripe or Node `.code` (`card_declined`, `ECONNRESET`) is not a
+ * SQLSTATE, and the walk goes on past it to the Postgres error beneath.
+ */
+describe('pgErrorCode / pgErrorMeta — bounded walk, SQLSTATE-shaped codes only (review round 2)', () => {
+  function cyclic(): Error {
+    const a = new Error('a');
+    const b = new Error('b');
+    (a as Error & { cause?: unknown }).cause = b;
+    (b as Error & { cause?: unknown }).cause = a;
+    return a;
+  }
+
+  it('a cyclic cause returns instead of looping', () => {
+    expect(pgErrorCode(cyclic())).toBeUndefined();
+    expect(pgErrorMeta(cyclic())).toBeUndefined();
+  }, 5_000);
+
+  it('stops after 10 hops: a SQLSTATE 11 links down is not read', () => {
+    let chain: unknown = pgError('40P01', 'deadlock detected');
+    for (let i = 0; i < 10; i += 1) chain = withCause(new Error(`wrap ${i}`), chain);
+    expect(pgErrorCode(chain)).toBeUndefined();
+    let nine: unknown = pgError('40P01', 'deadlock detected');
+    for (let i = 0; i < 9; i += 1) nine = withCause(new Error(`wrap ${i}`), nine);
+    expect(pgErrorCode(nine)).toBe('40P01');
+  });
+
+  it('skips a code that is not a SQLSTATE and reads the Postgres error beneath it', () => {
+    const stripe = withCause(Object.assign(new Error('Your card was declined.'), { code: 'card_declined' }), pgError('57P01', 'terminating'));
+    expect(pgErrorCode(stripe)).toBe('57P01');
+    expect(pgErrorCode(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))).toBeUndefined();
+    expect(pgErrorCode(pgError('repo.unexpected', 'x'))).toBeUndefined();
+    expect(pgErrorMeta(Object.assign(new Error('x'), { code: 'card_declined', constraint_name: 'nope' }))).toBeUndefined();
+  });
+});
