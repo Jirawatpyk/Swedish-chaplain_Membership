@@ -694,7 +694,13 @@ export const invoicingMetrics = {
    * Alert: bounce rate > 5% over 1h (see docs/observability.md).
    */
   autoEmailBounce(
-    reason: 'invalid_recipient' | 'max_retries' | 'no_template_handler' | 'attachment_sha_mismatch',
+    reason:
+      | 'invalid_recipient'
+      | 'max_retries'
+      | 'no_template_handler'
+      | 'attachment_sha_mismatch'
+      // Task #70 — the async receipt gate gave up on an invoice_paid email.
+      | 'receipt_pdf_gate',
   ): void {
     counter(
       'invoicing_auto_email_bounces_total',
