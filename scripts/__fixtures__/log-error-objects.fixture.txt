@@ -30,6 +30,14 @@ declare function approvalErrKind(e: unknown): string;
 declare function retryableSubKind(s: string | undefined): string;
 declare function isTimeout(e: unknown): boolean;
 declare const attempts: number;
+declare class GatewayThrowable extends Error {
+  readonly kind: string;
+  readonly subKind?: string;
+  readonly reason: string;
+}
+declare class UnlistedError extends Error {
+  readonly detailText: string;
+}
 
 export async function refusedForms(): Promise<void> {
   try {
@@ -66,6 +74,28 @@ export async function refusedForms(): Promise<void> {
     logger.error({ broken: isBroken(e) }, 'x'); // refused
     logger.child({ err: e }); // refused
     deps.logger.child({ cause: e.message }); // refused
+    // Review round 2 (security #4, code-review #8) — one hop through a local.
+    const { message } = e;
+    logger.warn({ message }); // refused
+    const m = e.message;
+    logger.warn({ m }); // refused
+    const { detail: d, ...rest } = e;
+    logger.warn({ d }); // refused
+    logger.warn({ rest }); // refused
+    const alias = e;
+    logger.warn({ failure: alias }); // refused
+    const reasonText = e instanceof GatewayThrowable ? e.reason : undefined;
+    logger.warn({ reasonText }); // refused
+    const wrongField: GatewayThrowable['subKind'] = e.reason;
+    logger.warn({ wrongField }); // refused
+    const unlisted: UnlistedError['detailText'] = e.detailText;
+    logger.warn({ unlisted }); // refused
+  }
+  {
+    const { errClass } = result.error;
+    logger.error({ err: errClass }); // refused
+    const causeClass = result.error.cause;
+    logger.error({ err: causeClass }); // refused
   }
   try {
     await Promise.resolve();
@@ -106,6 +136,12 @@ export async function allowedForms(): Promise<void> {
     logger.error({ err: approvalErrKind(e), timedOut: isTimeout(e) }, 'x'); // allowed
     logger.error({ sub: retryableSubKind(classifyThrown(e).subKind), finite: Number.isFinite(attempts) }, 'x'); // allowed
     logger.child({ err: errKind(e), code: pgErrorCode(e) }); // allowed
+    // Review round 2 — a token field read into a local stays a token; a
+    // reviewed class field is allowed only when annotated with its class.
+    const { code: c, kind: k, name: n } = e;
+    logger.error({ c, k, n }); // allowed
+    const subKind: GatewayThrowable['subKind'] | undefined = e instanceof GatewayThrowable ? e.subKind : undefined;
+    logger.error({ subKind }); // allowed
   }
   logger.error({ err: errKind(rootCause(result.error)), repoCode: result.error.code }, 'x'); // allowed
   logger.error({ kind: result.error.kind }, 'x'); // allowed

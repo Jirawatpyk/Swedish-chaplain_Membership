@@ -75,6 +75,29 @@ describe('findLogErrorObjects', () => {
     expect(findLogErrorObjects('row.tsx', src).map((f) => f.line)).toEqual([2, 6]);
   });
 
+  // Review round 2 (security #4, code-review #8) — a value read off an error
+  // into a local is as error-ish as the read itself: one hop, by scope.
+  it('follows one hop: a local destructured or assigned off an error is refused where it is logged', () => {
+    const src = [
+      'try { run(); } catch (e) {',
+      '  const { message } = e;',
+      '  logger.warn({ message });',
+      '  const m = e.message;',
+      '  logger.warn({ m });',
+      '  const { code } = e;',
+      '  logger.warn({ code });',
+      '}',
+      'function f(result: R) {',
+      '  const { errClass } = result.error;',
+      "  logger.error({ err: errClass }, 'x');",
+      '}',
+      'function g(result: R) {',
+      "  logger.error({ errClass }, 'x');",
+      '}',
+    ].join('\n');
+    expect(lines(src)).toEqual([3, 5, 11]);
+  });
+
   it('counts every logger call it parsed, for the real-tree floor', () => {
     const src = [
       "logger.info({ id }, 'a');",
