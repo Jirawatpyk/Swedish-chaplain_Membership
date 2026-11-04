@@ -1449,12 +1449,12 @@ when answering a DSR:
   statement's bound values, emails included) and a message quoting them.
   Since that PR `src/lib/logger.ts` reduces such a value before the line is
   written, and `pnpm check:log-error-objects` refuses error objects and error
-  text under any key in the members and broadcasts modules. Review round 2:
+  text under any key in the members and broadcasts modules. Review rounds 2 and 3:
   error objects of any shape under `err` / `error` / `cause` are reduced at
   the root, in every module, to token-shaped values (shape-checked) and stack frames (never a
   message, stack, detail, params or query); error text in any form (strings,
-  `e.message`, `String(e)`) under any key outside members and broadcasts is
-  still open (#740). The lines written before the merge are residual 10. The US2d reconciler + the US3-B redaction cron authenticate
+  `e.message`, `String(e)`) under any key, or an error object under any other
+  key, outside members and broadcasts is still open (#740). The lines written before the merge are residual 10. The US2d reconciler + the US3-B redaction cron authenticate
   with a constant-time `CRON_SECRET` Bearer check.
 - **Solo-maintainer substitute** (Constitution Principle IX) — automated review +
   DB-level defence-in-depth substitute the ≥2-reviewer rule for this PII surface.

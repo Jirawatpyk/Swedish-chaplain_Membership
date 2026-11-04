@@ -89,27 +89,39 @@ a child logger's bindings. Review round 2 (the maintainer's decision of
 4 Nov 2026, every module): ANY non-string value under those keys, an Error or
 a plain object with any field, becomes token-shaped values (shape-checked)
 plus stack frames, never `message`, `stack`, `detail`, `params` or `query`.
-Review round 3 made every kept value shape-checked; the output is frozen:
+Review round 3 made every kept value shape-checked; the output is frozen.
+Review round 4 put every code-like value on one shape, `CODE_SHAPE` in
+`src/lib/log-id.ts`: a letter first, at most 64 characters, at most 4 digits.
 - `type`: the class (`errKind`) of an Error; for a plain object its `name` only
-  when that is an error class name (`/^[A-Z]\w*(Error|Exception)$/`), else
+  when that is an error class name
+  (`/^(?=.{1,64}$)(?:[A-Z]\w*)?(?:Error|Exception)$/`: a bare `Error` is one), else
   `unknown`; `unreducible` when reading the value threw (a throwing getter
   never turns a log call into a throw);
-- `errType`: a plain object's own `type` discriminant, when token-shaped
-  (`/^[a-z][a-z0-9_]{0,47}$/`): `{ type: 'server_error' }` writes
+- `errType`: a plain object's own `type` discriminant, when a lowercase token
+  (`LOWER_TOKEN`: `CODE_SHAPE` then `[a-z][a-z0-9_-]*(?:[.:][a-z][a-z0-9_-]*){0,3}$`,
+  so `last-admin-protection`, `resolve.server_error` and `gateway_5xx` pass and a
+  hex digest or `a_123456789` does not): `{ type: 'server_error' }` writes
   `{ type: 'unknown', errType: 'server_error' }`;
 - `code`: the SQLSTATE (`pgErrorCode`; at most 10 `.cause` hops, and only a
   `/^(?=.*\d)[0-9A-Z]{5}$/` code counts, so Node `EPIPE` is not one);
 - `repoCode`: a Result error's own code (`RESULT_CODE`-validated by
-  `errLogFields`: lowercase words, at most 4 digits, so a uuid or a digit
-  string is `unrecognised`), on the value or a RepoError it wraps at
+  `errLogFields`: `CODE_SHAPE`, then lowercase words that each start with a
+  letter, so a uuid or a digit string is `unrecognised`), on the value or a
+  RepoError it wraps at
   `.cause` / `.error`;
-- `errCode`: an Error's own token-shaped `.code` that is not the SQLSTATE
-  (Node `ECONNRESET` / `EPIPE`, Stripe `card_declined`), never a plain
-  object's; `...errLogFields(e)` returns it too;
+- `errCode`: the first token-shaped `.code` (`ERROR_CODE`, on `CODE_SHAPE`)
+  that is not the SQLSTATE, on an Error or along its cause chain (`walkCauses`,
+  at most 10 hops; the wrapped Result error is `repoCode` instead): Node
+  `ECONNRESET` / `EPIPE`, also under a `DrizzleQueryError`, Stripe
+  `card_declined`. Never for a plain object; `...errLogFields(e)` returns it too;
 - `statusCode` (an integer); `declineCode` (Stripe's `decline_code`) and
   `kind` (a Result error's discriminant), each a lowercase token as `errType`;
-- `frames`: the lines of `.stack` shaped like a frame
-  (`/^\s+at .*:\d+:\d+\)?$/`), at most 8 of at most 300 characters; the
+- `frames`: the lines of `.stack` shaped like a frame, whose location starts
+  like a path (a drive, `/`, `file:`, `node:`, `webpack…`, `<anonymous>`) and
+  holds no space:
+  `/^\s+at (?:[\w$#.<>[\] ]+ \()?(?:async )?(?:[A-Za-z]:\\|\/|file:|node:|webpack|<anonymous>)\S*:\d+:\d+\)?$/`.
+  A local checkout whose path holds a space loses its frames; Vercel's
+  `/var/task` and an ESM `file://` URL do not. At most 8 of at most 300 characters; the
   header (every line before the first frame) is never searched for the
   message, so no message line is kept.
 Any other field of a plain object is dropped. A string value is kept. Any
