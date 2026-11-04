@@ -263,11 +263,12 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
 
   /**
    * Spec 140 s2c review round 3 (code-review #2) — the in-grace-only list
-   * (`{ inGraceOnly: true }`): rows created at or after the cutoff, oldest
-   * first, so 20 failing past-grace rows cannot hide an erased requester's
-   * young row from the drain.
+   * (`{ inGraceOnly: true }`): rows created at or after the cutoff, so 20
+   * failing past-grace rows cannot hide an erased requester's young row from
+   * the drain. Review round 4 (code-review #1) — newest first: the erased
+   * requester's post-pass orphan is the newest row.
    */
-  it('[code-review #2] the in-grace-only list holds only the rows inside the grace, oldest first', async () => {
+  it('[code-review #2] the in-grace-only list holds only the rows inside the grace, newest first', async () => {
     const solo = await createTestTenant('test-swecham');
     try {
       const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
@@ -280,9 +281,36 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
         );
       }
       const young = await repo.listDrainableOrphans(20, GRACE_CUTOFF(), { inGraceOnly: true });
-      expect(young.map((o) => o.resourceId)).toEqual([ids.mid, ids.fresh]);
+      expect(young.map((o) => o.resourceId)).toEqual([ids.fresh, ids.mid]);
       // The default list is unchanged: past-grace first.
       expect((await repo.listDrainableOrphans(20, GRACE_CUTOFF()))[0]?.resourceId).toBe(ids.old);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
+
+  /**
+   * Spec 140 s2c review round 4 (code-review #1, reliability LOW-B, pdpa L-1)
+   * — a backlog of older in-grace rows does not push the newest row (an
+   * erased requester's post-pass orphan) out of the in-grace-only list.
+   */
+  it('[code-review #1] 21 in-grace rows: the newest is listed', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      const ids = Array.from({ length: 21 }, (_, i) => `rb-ig-${i}-${randomUUID()}`);
+      // ids[i] is (21 - i) minutes old: ids[20] is the newest.
+      for (const [i, id] of ids.entries()) {
+        await runInTenant(solo.ctx, (tx) =>
+          tx.execute(sql`
+            INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at)
+            VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'broadcast', ${id}, 'attach_lost', ${new Date(Date.now() - (21 - i) * 60 * 1000).toISOString()}::timestamptz)`),
+        );
+      }
+      const young = (await repo.listDrainableOrphans(20, GRACE_CUTOFF(), { inGraceOnly: true })).map((o) => o.resourceId);
+      expect(young).toHaveLength(20);
+      expect(young).toContain(ids[20]);
+      expect(young).not.toContain(ids[0]);
     } finally {
       await solo.cleanup().catch(() => {});
     }

@@ -244,8 +244,9 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
   it(`reads at most ORPHAN_DRAIN_LIMIT (${ORPHAN_DRAIN_LIMIT}) rows and settles them ORPHAN_DRAIN_CONCURRENCY (${ORPHAN_DRAIN_CONCURRENCY}) at a time`, async () => {
     const h = harness({ orphans: Array.from({ length: 12 }, (_, i) => orphan(i + 1)) });
     await h.run();
-    // Review round 3 (code-review #2) — two lists (past-grace first; in-grace only), each at the limit.
-    expect(h.listLimits).toEqual([ORPHAN_DRAIN_LIMIT, ORPHAN_DRAIN_LIMIT]);
+    // Review round 4 (code-review #4) — 12 rows is a short first list: it holds
+    // every drainable row, so the in-grace-only list is not read.
+    expect(h.listLimits).toEqual([ORPHAN_DRAIN_LIMIT]);
     expect(ORPHAN_DRAIN_LIMIT).toBe(20);
     expect(ORPHAN_DRAIN_CONCURRENCY).toBe(5);
     expect(h.peak()).toBe(ORPHAN_DRAIN_CONCURRENCY);
@@ -402,11 +403,36 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
   });
 
   it('[code-review #2] an in-grace list that fails is logged and the past-grace rows still drain', async () => {
-    const h = harness({ orphans: [orphan(1)], inGraceListThrows: true });
+    // Review round 4 (code-review #4) — a full first list, so the second is read.
+    const h = harness({ orphans: Array.from({ length: ORPHAN_DRAIN_LIMIT }, (_, i) => orphan(i + 1)), inGraceListThrows: true });
     const res = await h.run();
-    expect(h.settled).toEqual([['o-1', 'deleted']]);
-    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 1, settled: 1, listFailed: false });
+    expect(h.settled).toHaveLength(ORPHAN_DRAIN_LIMIT);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: ORPHAN_DRAIN_LIMIT, settled: ORPHAN_DRAIN_LIMIT, listFailed: false });
     const line = error.mock.calls.find((c) => c[1] === 'broadcasts.orphan_drain.list_failed');
     expect(line?.[0]).toEqual({ tenantId: tenant.slug, list: 'in_grace', err: 'Error' });
+  });
+
+  /**
+   * Spec 140 s2c review round 4 (code-review #4) — the in-grace-only list is
+   * read only when the first list came back full (ORPHAN_DRAIN_LIMIT rows); a
+   * shorter first list already holds every drainable row, young ones included.
+   */
+  it('[code-review #4] a short first list skips the second', async () => {
+    const h = harness({
+      orphans: [...Array.from({ length: 4 }, (_, i) => orphan(i + 1)), orphan(9, { createdAt: YOUNG, requestedByMemberId: 'm-erased' })],
+      erased: { 'm-erased': 'erased' },
+    });
+    const res = await h.run();
+    expect(h.listModes).toEqual(['all']);
+    expect(h.listLimits).toEqual([ORPHAN_DRAIN_LIMIT]);
+    expect(h.settled.map(([id]) => id).sort()).toEqual(['o-1', 'o-2', 'o-3', 'o-4', 'o-9']);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 5, settled: 5, deferred: 0 });
+  });
+
+  it('[code-review #4] a full first list reads the in-grace-only list as well', async () => {
+    const h = harness({ orphans: Array.from({ length: ORPHAN_DRAIN_LIMIT }, (_, i) => orphan(i + 1)) });
+    await h.run();
+    expect(h.listModes).toEqual(['all', 'in_grace']);
+    expect(h.listLimits).toEqual([ORPHAN_DRAIN_LIMIT, ORPHAN_DRAIN_LIMIT]);
   });
 });
