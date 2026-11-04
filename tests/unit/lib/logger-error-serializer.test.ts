@@ -146,7 +146,7 @@ describe('the root reducer writes tokens and frames, never text (review round 2)
   // (`{ err: result.error }`, about 100 sites outside members + broadcasts)
   // keeps its closed `kind` token; free text beside it is still dropped.
   it('a Result error keeps its token-shaped kind, never free text beside it', () => {
-    logger.warn({ err: { kind: 'not_found', detail: `no row for ${EMAIL}` } }, 'lookup.failed');
+    logger.error({ err: { kind: 'not_found', detail: `no row for ${EMAIL}` } }, 'lookup.failed');
     expectNoErrorText();
     expect(reduced(written())).toEqual({ type: 'unknown', kind: 'not_found' });
   });
@@ -154,12 +154,12 @@ describe('the root reducer writes tokens and frames, never text (review round 2)
   // Review round 3 follow-up — this repo's discriminants are dotted
   // (`resolve.server_error`, `process_webhook.server_error`).
   it('a dotted or colon-joined kind is kept', () => {
-    logger.warn({ err: { kind: 'process_webhook.server_error' } }, 'webhook.failed');
+    logger.error({ err: { kind: 'process_webhook.server_error' } }, 'webhook.failed');
     expect(reduced(written())).toEqual({ type: 'unknown', kind: 'process_webhook.server_error' });
   });
 
   it('a kind that is not token-shaped is dropped', () => {
-    logger.warn({ err: { kind: 'free text with spaces' } }, 'lookup.failed');
+    logger.error({ err: { kind: 'free text with spaces' } }, 'lookup.failed');
     expect(reduced(written())).toEqual({ type: 'unknown' });
   });
 
@@ -216,7 +216,7 @@ describe('the root reducer writes tokens and frames, never text (review round 2)
 
 describe('the reducer keeps a Result type and only token-shaped values (review round 3)', () => {
   it('a plain object `type` discriminant is written as errType; the output type still means the class', () => {
-    logger.warn({ err: { type: 'server_error', message: EMAIL } }, 'op.failed');
+    logger.error({ err: { type: 'server_error', message: EMAIL } }, 'op.failed');
     expectNoErrorText();
     expect(reduced(written())).toEqual({ type: 'unknown', errType: 'server_error' });
   });
@@ -226,14 +226,14 @@ describe('the reducer keeps a Result type and only token-shaped values (review r
     ['a base64url value', 'dGhpcy1pcy1zZWNyZXQ_eA'],
     ['digits', '0812345678'],
   ])('%s under code / kind / name / declineCode / type is not written', (_label, value) => {
-    logger.warn({ err: { code: value, kind: value, name: value, declineCode: value, type: value } }, 'op.failed');
-    logger.warn({ err: Object.assign(new Error('x'), { code: value, kind: value, declineCode: value }) }, 'op.failed');
+    logger.error({ err: { code: value, kind: value, name: value, declineCode: value, type: value } }, 'op.failed');
+    logger.error({ err: Object.assign(new Error('x'), { code: value, kind: value, declineCode: value }) }, 'op.failed');
     expect(lines).toHaveLength(2);
     expect(lines.join('')).not.toContain(value);
   });
 
   it('a plain object name becomes type only when it is an error class name', () => {
-    logger.warn({ err: { name: 'lowercase_name' }, error: { name: 'NeonDbError' }, cause: { name: 'Bob' } }, 'op.failed');
+    logger.error({ err: { name: 'lowercase_name' }, error: { name: 'NeonDbError' }, cause: { name: 'Bob' } }, 'op.failed');
     const line = written();
     expect(reduced(line)).toEqual({ type: 'unknown' });
     expect(reduced(line, 'error')).toEqual({ type: 'NeonDbError' });
@@ -241,7 +241,7 @@ describe('the reducer keeps a Result type and only token-shaped values (review r
   });
 
   it('errCode is written only for an Error instance, never for a plain object', () => {
-    logger.warn({ err: { code: 'ECONNRESET' }, error: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }, 'op.failed');
+    logger.error({ err: { code: 'ECONNRESET' }, error: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }, 'op.failed');
     const line = written();
     expect(reduced(line).errCode).toBeUndefined();
     expect(tokens(reduced(line, 'error'))).toEqual({ type: 'Error', errCode: 'ECONNRESET' });
@@ -301,32 +301,32 @@ describe('one shared token shape (review round 4, row 1)', () => {
     ['a 64-character lowercase hex value', HEX],
     ['a word then nine digits', 'a_123456789'],
   ])('%s under kind is not written', (_label, value) => {
-    logger.warn({ err: { kind: value } }, 'op.failed');
+    logger.error({ err: { kind: value } }, 'op.failed');
     expect(reduced(written())).toEqual({ type: 'unknown' });
     expect(lines.join('')).not.toContain(value);
   });
 
   it('a hyphenated kind is kept, and a dotted one still is', () => {
-    logger.warn({ err: { kind: 'last-admin-protection' }, error: { kind: 'resolve.server_error' } }, 'op.failed');
+    logger.error({ err: { kind: 'last-admin-protection' }, error: { kind: 'resolve.server_error' } }, 'op.failed');
     const line = written();
     expect(reduced(line)).toEqual({ type: 'unknown', kind: 'last-admin-protection' });
     expect(reduced(line, 'error')).toEqual({ type: 'unknown', kind: 'resolve.server_error' });
   });
 
   it('a digit-led word inside a kind is kept (gateway_5xx)', () => {
-    logger.warn({ err: { kind: 'gateway_5xx' } }, 'op.failed');
+    logger.error({ err: { kind: 'gateway_5xx' } }, 'op.failed');
     expect(reduced(written())).toEqual({ type: 'unknown', kind: 'gateway_5xx' });
   });
 });
 
 describe('a bare Error name, capped (review round 4, row 2)', () => {
   it('{ name: "Error" } gives type "Error"', () => {
-    logger.warn({ err: { name: 'Error' } }, 'op.failed');
+    logger.error({ err: { name: 'Error' } }, 'op.failed');
     expect(reduced(written())).toEqual({ type: 'Error' });
   });
 
   it('a 10 KB name ending in Error gives "unknown"', () => {
-    logger.warn({ err: { name: `${'A'.repeat(10_240)}Error` } }, 'op.failed');
+    logger.error({ err: { name: `${'A'.repeat(10_240)}Error` } }, 'op.failed');
     expect(reduced(written())).toEqual({ type: 'unknown' });
   });
 });
