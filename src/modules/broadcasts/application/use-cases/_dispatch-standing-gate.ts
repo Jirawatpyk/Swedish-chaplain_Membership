@@ -55,6 +55,7 @@ import type { BroadcastsGatewayPort, DeleteBroadcastOnceOutcome } from '../ports
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { StandingRefusalFailureReason } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { readMemberSendStanding, type MemberSendStandingDeps, type StandingRefusal } from './_member-send-standing';
+import { classifyResendDraftAnswer } from './_classify-resend-draft-answer';
 import { isHandedStatus } from './_probe-refused-send';
 
 /** The standing reads a dispatch leg makes. */
@@ -220,17 +221,24 @@ export async function deleteDraftBeforeRefusal(
     // Review round 5 — no line here: the caller logs its final outcome once.
     return { ...undecided, errClass: 'threw', err: errKind(e) };
   }
-  if (outcome === 'deleted' || outcome === 'absent') {
+  // Spec 140 s2d (#735) — the table is `classifyResendDraftAnswer`'s. The
+  // erased refusal never probes; a standing / terminal one's 403 is `probe`,
+  // which its wrapper (`deleteDraftBeforeStandingRefusal`) runs.
+  const answer =
+    ids.refusal === 'erased'
+      ? classifyResendDraftAnswer('erased_refusal', outcome, null, draft.probedStatus)
+      : classifyResendDraftAnswer('standing_refusal', outcome, null, draft.probedStatus);
+  if (answer.kind === 'deleted' || answer.kind === 'absent') {
     logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_deleted');
-    return { kind: 'cleared', draftOutcome: outcome };
+    return { kind: 'cleared', draftOutcome: answer.kind };
   }
-  if (outcome === 'forbidden' && draft.probedStatus === 'cancelled') {
+  if (answer.kind === 'unsendable') {
     logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_cancelled_unsendable');
-    return { kind: 'cleared', draftOutcome: 'cancelled' };
+    return { kind: 'cleared', draftOutcome: answer.status };
   }
   // Review rounds 4–5 (code-review #9) — no line here: the caller decides the
   // final outcome (a standing refusal probes a 403 first) and logs it once.
-  return { ...undecided, errClass: outcome, err: null };
+  return { ...undecided, errClass: answer.deleted, err: null };
 }
 
 /**
