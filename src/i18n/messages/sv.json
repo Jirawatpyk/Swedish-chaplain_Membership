@@ -3544,7 +3544,7 @@
           "invalid_lines": "Det här utkastets rader är ogiltiga — ta bort det och skapa ett nytt.",
           "buyer_tax_id_required_for_registrant": "Den här medlemmen är momsregistrerad men saknar skatte-ID — lägg till skatte-ID:t, eller avmarkera kryssrutan för momsregistrering på medlemsposten om numret inte är känt ännu.",
           "membership_coverage_overlap": "En annan faktura täcker redan den här medlemsperioden, så den här utfärdades inte — inget skapades. Kontrollera medlemmens fakturor: om den andra är obetald, annullera den först; om den är betald, utfärda en kreditnota för det återstående beloppet i stället.",
-          "membership_coverage_overlap_linked": "En annan faktura täcker redan den här medlemsperioden, så den här utfärdades inte — inget skapades. Öppna den nedan: om den är obetald, makulera den först; om den är betald, utfärda i stället en kreditnota för det återstående beloppet.",
+          "membership_coverage_overlap_linked": "En annan faktura täcker redan den här medlemsperioden, så den här utfärdades inte — inget skapades. Öppna den nedan: om den är obetald, annullera den först; om den är betald, utfärda i stället en kreditnota för det återstående beloppet.",
           "openBlockingInvoice": "Öppna faktura {number}",
           "openBlockingInvoiceNoNumber": "Öppna fakturan som täcker perioden",
           "temporary": "Ett tillfälligt problem stoppade utfärdandet av fakturan — inget skapades. Försök igen och kontakta supporten om det fortsätter.",
