@@ -1930,6 +1930,57 @@ The steps:
 
 Parts 1–3 touch `cancel-in-flight-broadcasts-for-member.ts` and run one after another.
 
+### Slice 2d — review round 1 (`/code-review high 741`: 9; security APPROVE WITH FIXES: 1 MEDIUM, 3 LOW; pdpa APPROVE WITH CONDITIONS: 1 HIGH (docs), 1 MEDIUM, 4 LOW; reliability MERGEABLE: 1 MEDIUM, 3 LOW; the maintainer's /verify PASS with one finding; 4 Nov 2026)
+
+**Review metrics:** round 1 (full) · 9 + 4 + 6 + 4 items (code-review, security, pdpa, reliability) + 1 Verify finding · cap: ≥ 2 full + ≤ 2 targeted.
+
+**Verify (the maintainer's `/verify` on `b6f552a9b`, PASS):**
+- An erased requester's young row sat behind 25 live in-grace rows. It was settled in the same tick: `settled:1`, `waiting:20`, `erasedReadFailed:false`.
+- The share cap took 10 of 15 rows, and the next tick took the remaining 5.
+- The erase flow is unchanged: the draft returned 404, `resend_drafts_cleared: 1`, and a re-drive gave the same count.
+- A wrong Bearer returned 401.
+- No log line contained SQL text or an email.
+- **Finding:** the rows the share left over show in no counter (`deferred: 0`).
+
+**Plan rows added before the fixes (D-043, neighbours named).**
+
+| Mechanism (asked by) | State / rule | Neighbours | Test that goes red first |
+|---|---|---|---|
+| **The logger reduces any Error at the root** (code-review #2, altitude) | `src/lib/logger.ts` gains pino `serializers` for `err` / `error` / `cause`. An Error, or an object carrying `cause`, `query`, `params` or `detail`, becomes `{ type: errKind(x), code: pgErrorCode(x) }`; a string value is kept. Every module is covered at one choke point, and the gate stays as the backstop for other keys and `.message`. #740 narrows to the non-`err` keys | every `logger.*` call in the repo; `REDACT_PATHS`; the RoPA `:1443` control | lib unit · "`logger.error({ err: drizzleQueryError })` writes no `params` / `query` / message" (pino destination capture) |
+| **The gate sees every error-borne field** (security M1, code-review #1, security L2, L3) | On an error-ish base (a caught identifier, or a chain through `.error` / `.cause`), only `code` / `kind` / `name` are allowed. These are refused: element access, a method call on error text (`e.toString()`, `e.message.slice()`), `JSON.stringify` / `String` of an object or array literal holding an error, and `logger.child(...)` arguments. Safe callees are an explicit set (`SAFE_CALLS` + `approvalErrKind`, `retryableSubKind`, `isTimeout`, `Number.isFinite`), not a name regex. A floor on logger calls parsed in the real tree (≥ 300). `ScriptKind` comes from the file extension | `scripts/lib/log-error-objects-rules.ts`, its fixture, its unit test | gate unit · fixture lines for each new refused form, red on the current rule |
+| **The erased path tells which read failed, with its SQLSTATE** (reliability M-1, code-review #4) | `filterErasedMemberIds` throws `members_bridge_filter_erased:<repoCode>` with `{ cause }`. The drain tracks `step: 'requesters' \| 'bridge' \| 'rows'` and logs it on `erased_read_failed`. The bridge's other throws get the same shape (`errStep`-compatible, with `cause`) | `members-bridge.ts` throws; `process-webhook-event` delivered_email lines; `observability.md` | drain unit · "a bridge failure logs `step: 'bridge'` and the SQLSTATE" |
+| **`errLogFields` reads a wrapped RepoError** (code-review #8) | For a thrown Error whose `cause` is RepoError-shaped (`{ code: string }`), it also returns `repoCode` and walks `pgErrorCode` through it | the ~40 sites; `UseCaseAbort` | lib unit · "a UseCaseAbort carrying a RepoError logs its repoCode and SQLSTATE" |
+| **The requester list favours the newest** (code-review #3, security L4, reliability L-3) | `listInGraceRequesterIds` orders by `max(created_at) DESC`, so a post-erasure orphan, the newest, is inside the 50 | RoPA residual (1) | repo integration · "51 requesters: the newest requester is listed" |
+| **The share is spent on rows only this path reaches** (reliability L-1) | `listUnsettledOrphansForRequesters` orders by `(created_at >= graceCutoff) DESC, attempts, created_at, orphan_id`, so in-grace rows come first and past-grace rows (which the past-grace list also reaches) come after | the drain | repo integration · "an erased requester's 10 past-grace rows do not crowd out a young one" |
+| **A full share is visible** (Verify finding, pdpa L-d, reliability L-2) | The erased-rows read asks for share + 1. `tick_complete.orphans.erasedShareFull: true` when more rows exist than the share. The docs say `deferred` and `waiting` count "of the rows seen this run" | route body, `observability.md`, `cron-jobs.md` | drain unit · "16 erased rows → erasedShareFull true, 10 settled" |
+| **The erased reads and the past-grace list run in parallel** (code-review #5) | `Promise.all`, each side caught on its own. The failure flags are unchanged | the 240 s budget | drain unit · the existing failure cases stay green (the order of calls is no longer asserted) |
+
+**Fixes:**
+- code-review #7: `CleanupOrphanedAudiencesError.message` becomes `errClass`, and the route logs `err: result.error.errClass`.
+- reliability nit: `observability.md` rows for `dispatch_begun_delete` (`probe: 'threw'`) and `refused_draft_delete_unconfirmed` (`err` always present).
+
+**Docs:**
+- pdpa H-1:
+  - Correct RoPA `:1443`: `REDACT_PATHS` works by key. Error objects bypassed it until this PR's serializer. Non-`err` keys outside members + broadcasts are still #740.
+  - Add a dated residual for the log lines written before the merge:
+    - which fields: any column value or JSON payload of a failed statement;
+    - where they are held: Vercel runtime logs only;
+    - retention: unverified, `observability.md` states 30 days;
+    - they cannot be reached by erasure;
+    - the residual closes itself after the merge date plus the retention;
+    - the assessment that this is not a notifiable breach (Art. 5(2); PDPA §37 not triggered).
+  - **The maintainer confirms in the Vercel dashboard that there is no log drain or log integration, and the plan's runtime-log retention.** Until then, the RoPA says "unverified".
+- pdpa M-1: #740's body names the six auth routes and `otel-tracer.ts` `withSpan` (I-8).
+- pdpa L-a: the `cron-jobs.md` orphans fields.
+- pdpa L-c: "waits the grace, then joins the past-grace queue".
+- pdpa L-b: record in this plan that the reconciler re-drive is the accepted proof that `member_erased` is eventually written after a drain/cascade race. The "counted once" half is tested.
+
+**Accepted:**
+- code-review #6: the `erased_refusal` policy stays. It names a real rule (no GET after a 403), and the classifier's own table pins it (M7). Merging it into `standing_refusal` would hide that rule in the wrapper.
+- code-review #9: the 136-cell characterization matrix is what the plan reviewers required before the refactor (pdpa H-4, architect H2). It is the evidence that behaviour did not change, and it stays.
+- security INFO #5 / #6: the RLS-masked two-tenant tests and the 32-bit `hashId` are existing classes.
+- The open question on `ApprovalDependencyError.causeKind` (security): the builder checks its constructor calls while adding the explicit callee set, and reports.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
