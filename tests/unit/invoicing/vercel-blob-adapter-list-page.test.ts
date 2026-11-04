@@ -24,8 +24,15 @@ describe('vercelBlobAdapter.listPage (#729)', () => {
       hasMore: true,
     });
     const { vercelBlobAdapter } = await import('@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter');
-    const page = await vercelBlobAdapter.listPage('invoicing/t/', 'c0', 500);
-    expect(listMock).toHaveBeenCalledWith({ prefix: 'invoicing/t/', cursor: 'c0', limit: 500, token: 'test-token' });
+    const signal = new AbortController().signal;
+    const page = await vercelBlobAdapter.listPage('invoicing/t/', 'c0', 500, { signal });
+    expect(listMock).toHaveBeenCalledWith({
+      prefix: 'invoicing/t/',
+      cursor: 'c0',
+      limit: 500,
+      token: 'test-token',
+      abortSignal: signal,
+    });
     expect(page).toEqual({
       items: [{ key: 'invoicing/t/2026/a_v13.pdf', uploadedAt, etag: '"e1"' }],
       cursor: 'next-1',
@@ -37,7 +44,14 @@ describe('vercelBlobAdapter.listPage (#729)', () => {
     listMock.mockResolvedValueOnce({ blobs: [], hasMore: false });
     const { vercelBlobAdapter } = await import('@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter');
     const page = await vercelBlobAdapter.listPage('invoicing/t/', undefined, 1000);
-    expect(listMock).toHaveBeenCalledWith({ prefix: 'invoicing/t/', limit: 1000, token: 'test-token' });
+    // Without a caller signal the adapter still bounds the call: the SDK
+    // retries a 5xx for minutes (reliability H2).
+    expect(listMock).toHaveBeenCalledWith({
+      prefix: 'invoicing/t/',
+      limit: 1000,
+      token: 'test-token',
+      abortSignal: expect.any(AbortSignal),
+    });
     expect(page).toEqual({ items: [], cursor: undefined, hasMore: false });
   });
 });

@@ -10,7 +10,9 @@
  *   (c) the admin voided instead of retrying;
  *   (d) a template-version bump left the old `_v{n}` key behind.
  * The sweep never matches a key by pattern: it keeps a key iff the row it
- * names references exactly that key, re-checked under the invoice row lock.
+ * names references exactly that key. One lock-free batch read per page keeps
+ * every referenced key; only the rest are re-checked under the invoice row
+ * lock (or, for a credit note, deleted on the etag).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -18,6 +20,7 @@ const metricMock = vi.hoisted(() => ({ orphanBlobCleanupFailed: vi.fn() }));
 vi.mock('@/lib/metrics', () => ({ invoicingMetrics: metricMock }));
 
 import {
+  ORPHAN_PDF_LIST_TIMEOUT_MS,
   ORPHAN_PDF_MIN_AGE_MS,
   parseOrphanPdfKey,
   sweepOrphanPdfs,
@@ -45,12 +48,14 @@ interface Item {
 interface Row {
   pdf: { blobKey: string } | null;
   receiptPdf: { blobKey: string } | null;
+  status?: string;
+  receiptPdfStatus?: 'pending' | 'rendered' | 'failed' | null;
 }
 
 function makeDeps(opts: {
   items: Item[];
   rows?: Record<string, Row>;
-  creditNotes?: Record<string, { pdf: { blobKey: string } }>;
+  creditNotes?: Record<string, string>;
   tenants?: string[];
   pageSize?: number;
   onLock?: (id: string, rows: Record<string, Row>) => void;
@@ -61,7 +66,7 @@ function makeDeps(opts: {
   const listing = [...opts.items];
   const pageSize = opts.pageSize ?? 1000;
   const blob = {
-    listPage: vi.fn(async (prefix: string, cursor: string | undefined, limit: number) => {
+    listPage: vi.fn(async (prefix: string, cursor: string | undefined, limit: number, _o?: { signal?: AbortSignal }) => {
       // A snapshot of the listing: a delete does not shift a later page
       // (Blob cursors are opaque positions, not offsets into a live array).
       const all = listing.filter((i) => i.key.startsWith(prefix));
@@ -89,20 +94,32 @@ function makeDeps(opts: {
       return rows[id] ?? null;
     }),
   };
-  const creditNoteRepo = {
-    findById: vi.fn(async (id: string, tenantId: string) => {
+  // The lock-free batch read: every key the named rows reference.
+  const referencedKeys = vi.fn(
+    async (tenantId: string, ids: { invoiceIds: readonly string[]; creditNoteIds: readonly string[] }) => {
       expect(tenantId).toBe(T);
-      return opts.creditNotes?.[id] ?? null;
-    }),
-  };
+      const keys = new Set<string>();
+      for (const id of ids.invoiceIds) {
+        const r = rows[id];
+        if (r?.pdf) keys.add(r.pdf.blobKey);
+        if (r?.receiptPdf) keys.add(r.receiptPdf.blobKey);
+      }
+      for (const id of ids.creditNoteIds) {
+        const k = opts.creditNotes?.[id];
+        if (k) keys.add(k);
+      }
+      return keys;
+    },
+  );
   const deps = {
     blob,
     clock: { nowIso: () => NOW.toISOString() },
     listTenantIds: vi.fn(async () => opts.tenants ?? [T]),
-    reposFor: vi.fn(() => ({ invoiceRepo, creditNoteRepo })),
+    referencedKeys,
+    reposFor: vi.fn(() => ({ invoiceRepo })),
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   };
-  return { deps: deps as unknown as SweepOrphanPdfsDeps, blob, store, invoiceRepo, creditNoteRepo, raw: deps };
+  return { deps: deps as unknown as SweepOrphanPdfsDeps, blob, store, invoiceRepo, referencedKeys, raw: deps };
 }
 
 const item = (key: string, uploadedAt = OLD, etag = `etag-${key}`): Item => ({ key, uploadedAt, etag });
@@ -111,9 +128,9 @@ beforeEach(() => metricMock.orphanBlobCleanupFailed.mockClear());
 
 describe('parseOrphanPdfKey', () => {
   it('reads the three PDF shapes and nothing else', () => {
-    expect(parseOrphanPdfKey(invoiceKey(INV), T)).toEqual({ kind: 'invoice', id: INV });
-    expect(parseOrphanPdfKey(receiptKey(INV), T)).toEqual({ kind: 'receipt', id: INV });
-    expect(parseOrphanPdfKey(cnKey(CN), T)).toEqual({ kind: 'credit_note', id: CN });
+    expect(parseOrphanPdfKey(invoiceKey(INV), T)).toEqual({ kind: 'invoice', id: INV, fy: '2026', templateVersion: 13 });
+    expect(parseOrphanPdfKey(receiptKey(INV, 12), T)).toEqual({ kind: 'receipt', id: INV, fy: '2026', templateVersion: 12 });
+    expect(parseOrphanPdfKey(cnKey(CN), T)).toEqual({ kind: 'credit_note', id: CN, fy: '2026', templateVersion: 13 });
     for (const k of [
       `invoicing/${T}/logos/logo.png`,
       `invoicing/${T}/zero-rate-certs/${INV}_1793700000000.pdf`,
@@ -171,14 +188,63 @@ describe('sweepOrphanPdfs (#729)', () => {
   });
 
   it('a referenced invoice, receipt or credit-note key is never deleted', async () => {
-    const { deps, blob } = makeDeps({
+    const { deps, blob, invoiceRepo } = makeDeps({
       items: [item(invoiceKey(INV)), item(receiptKey(INV)), item(cnKey(CN))],
       rows: { [INV]: { pdf: { blobKey: invoiceKey(INV) }, receiptPdf: { blobKey: receiptKey(INV) } } },
-      creditNotes: { [CN]: { pdf: { blobKey: cnKey(CN) } } },
+      creditNotes: { [CN]: cnKey(CN) },
     });
     const r = await sweepOrphanPdfs({}, deps);
     expect(blob.delete).not.toHaveBeenCalled();
+    // Kept by the lock-free batch read: no row lock is taken for them.
+    expect(invoiceRepo.findByIdInTxForUpdate).not.toHaveBeenCalled();
     expect(r).toMatchObject({ scanned: 3, deleted: 0, kept: 3 });
+  });
+
+  it('one lock-free batch read per page names every parsed id; young and unknown keys are left out', async () => {
+    const { deps, referencedKeys } = makeDeps({
+      items: [item(invoiceKey(INV)), item(receiptKey(INV)), item(cnKey(CN)), item(receiptKey(INV2), YOUNG), item(`invoicing/${T}/logos/l.png`)],
+      rows: { [INV]: { pdf: { blobKey: invoiceKey(INV) }, receiptPdf: { blobKey: receiptKey(INV) } } },
+      creditNotes: { [CN]: cnKey(CN) },
+    });
+    await sweepOrphanPdfs({}, deps);
+    expect(referencedKeys).toHaveBeenCalledTimes(1);
+    expect(referencedKeys).toHaveBeenCalledWith(T, { invoiceIds: [INV], creditNoteIds: [CN] });
+  });
+
+  it('a failed batch read keeps the whole page (fail-safe), counted as failed and metered', async () => {
+    const { deps, referencedKeys, blob, invoiceRepo } = makeDeps({ items: [item(receiptKey(INV)), item(cnKey(CN))] });
+    referencedKeys.mockRejectedValueOnce(new Error('db down'));
+    const r = await sweepOrphanPdfs({}, deps);
+    expect(blob.delete).not.toHaveBeenCalled();
+    expect(invoiceRepo.findByIdInTxForUpdate).not.toHaveBeenCalled();
+    expect(metricMock.orphanBlobCleanupFailed).toHaveBeenCalledWith('sweeper');
+    expect(r).toMatchObject({ failed: 2, deleted: 0 });
+  });
+
+  it.each(['pending', 'failed'] as const)(
+    'a paid invoice whose async receipt is %s keeps its receipt key, even on an unchanged etag (financial H-1)',
+    async (receiptPdfStatus) => {
+      // The async worker uploads before it locks the row; its re-render is
+      // byte-identical, so the etag check alone cannot tell its bytes apart.
+      const { deps, blob } = makeDeps({
+        items: [item(receiptKey(INV))],
+        rows: { [INV]: { pdf: { blobKey: invoiceKey(INV) }, receiptPdf: null, status: 'paid', receiptPdfStatus } },
+      });
+      const r = await sweepOrphanPdfs({}, deps);
+      expect(blob.delete).not.toHaveBeenCalled();
+      expect(r).toMatchObject({ kept: 1, deleted: 0 });
+    },
+  );
+
+  it('a paid invoice with a rendered receipt at another version: the stray receipt key is deleted', async () => {
+    const { deps, store } = makeDeps({
+      items: [item(receiptKey(INV, 13))],
+      rows: {
+        [INV]: { pdf: { blobKey: invoiceKey(INV, 12) }, receiptPdf: { blobKey: receiptKey(INV, 12) }, status: 'paid', receiptPdfStatus: 'rendered' },
+      },
+    });
+    await sweepOrphanPdfs({}, deps);
+    expect(store.has(receiptKey(INV, 13))).toBe(false);
   });
 
   it('race: a payment commits the key between the listing and the lock → kept', async () => {
@@ -229,12 +295,20 @@ describe('sweepOrphanPdfs (#729)', () => {
     expect(r).toMatchObject({ skippedUnknown: 3, scanned: 3 });
   });
 
-  it('an orphan credit-note PDF (no row) is deleted with its etag; the lookup is tenant-scoped', async () => {
-    const { deps, blob, creditNoteRepo } = makeDeps({ items: [item(cnKey(CN))] });
+  it('an orphan credit-note PDF (no row) is deleted with its etag, read straight from credit_notes', async () => {
+    const { deps, blob, referencedKeys, invoiceRepo } = makeDeps({ items: [item(cnKey(CN))] });
     const r = await sweepOrphanPdfs({}, deps);
-    expect(creditNoteRepo.findById).toHaveBeenCalledWith(CN, T);
+    expect(referencedKeys).toHaveBeenCalledWith(T, { invoiceIds: [], creditNoteIds: [CN] });
+    expect(invoiceRepo.findByIdInTxForUpdate).not.toHaveBeenCalled();
     expect(blob.delete).toHaveBeenCalledWith(cnKey(CN), { ifMatch: `etag-${cnKey(CN)}` });
     expect(r).toMatchObject({ deleted: 1 });
+  });
+
+  it('a credit-note dry run deletes nothing', async () => {
+    const { deps, blob } = makeDeps({ items: [item(cnKey(CN))] });
+    const r = await sweepOrphanPdfs({ dryRun: true }, deps);
+    expect(blob.delete).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ wouldDelete: 1, deleted: 0 });
   });
 
   it('a missing invoice row (a deleted draft) makes its PDF an orphan', async () => {
@@ -247,9 +321,42 @@ describe('sweepOrphanPdfs (#729)', () => {
     const keys = [INV, INV2].map((id) => item(receiptKey(id)));
     const { deps, blob } = makeDeps({ items: keys, pageSize: 1 });
     const r = await sweepOrphanPdfs({}, deps);
-    expect(blob.listPage).toHaveBeenNthCalledWith(1, `invoicing/${T}/`, undefined, expect.any(Number));
-    expect(blob.listPage).toHaveBeenNthCalledWith(2, `invoicing/${T}/`, '1', expect.any(Number));
-    expect(r).toMatchObject({ scanned: 2, deleted: 2, truncated: false });
+    expect(blob.listPage).toHaveBeenNthCalledWith(1, `invoicing/${T}/`, undefined, expect.any(Number), {
+      signal: expect.any(AbortSignal),
+    });
+    expect(blob.listPage).toHaveBeenNthCalledWith(2, `invoicing/${T}/`, '1', expect.any(Number), {
+      signal: expect.any(AbortSignal),
+    });
+    expect(r).toMatchObject({ scanned: 2, deleted: 2, truncated: false, tenantsCompleted: 1 });
+  });
+
+  it('each listing is bounded: a hung page is aborted and that tenant is skipped (reliability H2)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { deps, blob } = makeDeps({ items: [] });
+      blob.listPage.mockImplementationOnce(
+        (_p: string, _c: string | undefined, _l: number, o?: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            o?.signal?.addEventListener('abort', () => reject(o.signal!.reason));
+          }),
+      );
+      const run = sweepOrphanPdfs({}, deps);
+      await vi.advanceTimersByTimeAsync(ORPHAN_PDF_LIST_TIMEOUT_MS + 1);
+      const r = await run;
+      expect(r).toEqual({ kind: 'scan_failed' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('logs name the document, never its public Blob key (reliability L2)', async () => {
+    const { deps, raw } = makeDeps({ items: [item(receiptKey(INV, 12))] });
+    await sweepOrphanPdfs({}, deps);
+    const deleted = raw.logger.info.mock.calls.find((c) => c[0].event === 'orphan_pdf_sweep_deleted');
+    expect(deleted?.[0]).toMatchObject({ tenantId: T, docKind: 'receipt', documentId: INV, fy: '2026', templateVersion: 12 });
+    for (const fn of [raw.logger.info, raw.logger.warn, raw.logger.error]) {
+      for (const c of fn.mock.calls) expect(JSON.stringify(c)).not.toContain(receiptKey(INV, 12));
+    }
   });
 
   it('dry run deletes nothing and reports what it would delete', async () => {
@@ -263,10 +370,11 @@ describe('sweepOrphanPdfs (#729)', () => {
   });
 
   it('stops at the deletion cap and says it was truncated', async () => {
-    const { deps, store } = makeDeps({ items: [INV, INV2].map((id) => item(receiptKey(id))) });
+    const { deps, store, raw } = makeDeps({ items: [INV, INV2].map((id) => item(receiptKey(id))) });
     const r = await sweepOrphanPdfs({ maxDeletes: 1 }, deps);
     expect(store.size).toBe(1);
-    expect(r).toMatchObject({ deleted: 1, truncated: true });
+    expect(r).toMatchObject({ deleted: 1, truncated: true, tenantsCompleted: 0 });
+    expect(raw.logger.warn).toHaveBeenCalledWith(expect.objectContaining({ event: 'orphan_pdf_sweep_truncated' }), expect.any(String));
   });
 
   it('stops at the deadline and says it was truncated', async () => {
@@ -305,6 +413,20 @@ describe('sweepOrphanPdfs (#729)', () => {
       throw new Error('list 500');
     });
     const r = await sweepOrphanPdfs({}, b.deps);
-    expect(r).toMatchObject({ kind: 'ok', tenants: 2, deleted: 1 });
+    expect(r).toMatchObject({ kind: 'ok', tenants: 2, tenantsCompleted: 1, listFailed: 1, deleted: 1 });
+    // A listing failure is metered, not only logged (reliability M1).
+    expect(metricMock.orphanBlobCleanupFailed).toHaveBeenCalledWith('sweeper');
+  });
+
+  it('every tenant listing failing is scan_failed, so a dead Blob token cannot report green', async () => {
+    const c = makeDeps({ items: [], tenants: ['a', 'b'] });
+    c.blob.listPage.mockRejectedValue(new Error('403'));
+    expect(await sweepOrphanPdfs({}, c.deps)).toEqual({ kind: 'scan_failed' });
+  });
+
+  it('no tenants is ok, with a warning', async () => {
+    const d = makeDeps({ items: [], tenants: [] });
+    expect(await sweepOrphanPdfs({}, d.deps)).toMatchObject({ kind: 'ok', tenants: 0 });
+    expect(d.raw.logger.warn).toHaveBeenCalledWith(expect.objectContaining({ event: 'orphan_pdf_sweep_no_tenants' }), expect.any(String));
   });
 });

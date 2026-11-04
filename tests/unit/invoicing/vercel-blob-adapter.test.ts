@@ -208,4 +208,13 @@ describe('vercelBlobAdapter — #60 conditional delete', () => {
       BlobChangedSinceUploadError,
     );
   });
+
+  // #729 L1 — two sweeps overlapping (a manual run on the schedule) can both
+  // delete a key: the second finds it gone, which is the goal, not a failure.
+  it("a delete of a key that is already gone resolves (the SDK's BlobNotFoundError)", async () => {
+    const { BlobNotFoundError } = await vi.importActual<typeof import('@vercel/blob')>('@vercel/blob');
+    delMock.mockRejectedValue(new BlobNotFoundError());
+    const { vercelBlobAdapter } = await loadAdapter();
+    await expect(vercelBlobAdapter.delete(KEY, { ifMatch: '"etag-a"' })).resolves.toBeUndefined();
+  });
 });

@@ -1,8 +1,8 @@
 /**
  * #729 (task 63) — the orphan PDF sweeper against live Neon.
  *
- * Real invoice / credit-note repos (RLS + the explicit tenant predicate) and
- * an in-memory Blob store. A key is kept iff the row it names references
+ * The real invoice repo and the real lock-free reference read (RLS + the
+ * explicit tenant predicate) with an in-memory Blob store. A key is kept iff the row it names references
  * exactly that key; each tenant's sweep lists only its own folder, so it can
  * never read or delete another tenant's PDFs (Principle I).
  */
@@ -10,13 +10,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { asSatang } from '@/lib/money';
 import { runInTenant } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
-import { makeDrizzleCreditNoteRepo, makeDrizzleInvoiceRepo } from '@/modules/invoicing';
+import { makeDrizzleInvoiceRepo, makeDrizzleOrphanPdfReferenceRepo } from '@/modules/invoicing';
 import {
   ORPHAN_PDF_MIN_AGE_MS,
   sweepOrphanPdfs,
@@ -70,6 +71,7 @@ async function seedPaidInvoice(
   planId: string,
   invoiceId: string,
   keys: { pdf: string; receipt: string | null },
+  receiptPdfStatus: 'pending' | 'rendered' = 'rendered',
 ): Promise<string> {
   const memberId = randomUUID();
   await runInTenant(tenant.ctx, async (tx) => {
@@ -91,7 +93,7 @@ async function seedPaidInvoice(
       draftByUserId: user.userId,
       status: 'paid',
       pdfDocKind: 'invoice',
-      receiptPdfStatus: 'rendered',
+      receiptPdfStatus,
       fiscalYear: FISCAL_YEAR,
       sequenceNumber: ++seedSequence,
       documentNumber: `OPS-2026-${String(Math.floor(Math.random() * 900000) + 100000)}`,
@@ -173,6 +175,9 @@ async function setUpTenant(user: TestUser, planId: string): Promise<TestTenant> 
 }
 
 
+const referencedKeys = (tenantId: string, ids: { invoiceIds: readonly string[]; creditNoteIds: readonly string[] }) =>
+  runInTenant(asTenantContext(tenantId), (tx) => makeDrizzleOrphanPdfReferenceRepo(tx).referencedKeys(tenantId, ids));
+
 function memoryBlob(keys: string[]) {
   const old = new Date(Date.now() - ORPHAN_PDF_MIN_AGE_MS - 60_000);
   const store = new Map(keys.map((k) => [k, { key: k, uploadedAt: old, etag: `e-${k}` }]));
@@ -215,6 +220,7 @@ describe('#729 — orphan PDF sweeper (live Neon)', () => {
     const paid = randomUUID();
     const voided = randomUUID();
     const other = randomUUID();
+    const rendering = randomUUID();
     await seedPaidInvoice(a, user, planId, paid, {
       pdf: k(a, `${paid}_v12.pdf`),
       receipt: k(a, `${paid}_receipt_v12.pdf`),
@@ -222,12 +228,17 @@ describe('#729 — orphan PDF sweeper (live Neon)', () => {
     // (c) a row with an invoice PDF but no receipt: its receipt key is an orphan.
     await seedPaidInvoice(a, user, planId, voided, { pdf: k(a, `${voided}_v13.pdf`), receipt: null });
     await seedPaidInvoice(b, user, planId, other, { pdf: k(b, `${other}_v13.pdf`), receipt: null });
+    // Financial H-1: the async receipt worker has uploaded but not yet written
+    // the key (paid, receipt pending). Its bytes are kept.
+    await seedPaidInvoice(a, user, planId, rendering, { pdf: k(a, `${rendering}_v13.pdf`), receipt: null }, 'pending');
 
     const blob = memoryBlob([
       k(a, `${paid}_v12.pdf`), // referenced
       k(a, `${paid}_receipt_v12.pdf`), // referenced (an older template version)
       k(a, `${paid}_receipt_v13.pdf`), // (d) the bumped retry nobody references
       k(a, `${voided}_v13.pdf`), // referenced
+      k(a, `${rendering}_v13.pdf`), // referenced
+      k(a, `${rendering}_receipt_v13.pdf`), // the worker's in-flight receipt: kept
       k(a, `${voided}_receipt_v13.pdf`), // (c) orphan
       k(a, `${randomUUID()}_v13.pdf`), // (a) no row at all
       k(a, `credit-note_${randomUUID()}_v13.pdf`), // credit note with no row
@@ -243,20 +254,20 @@ describe('#729 — orphan PDF sweeper (live Neon)', () => {
         blob: blob.port,
         clock: { nowIso: () => new Date().toISOString() },
         listTenantIds: async () => [a.ctx.slug],
-        reposFor: (tenantId) => ({
-          invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
-          creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
-        }),
+        referencedKeys,
+        reposFor: (tenantId) => ({ invoiceRepo: makeDrizzleInvoiceRepo(tenantId) }),
       },
     );
 
-    expect(r).toMatchObject({ kind: 'ok', deleted: 4, kept: 3, skippedUnknown: 1, failed: 0 });
+    expect(r).toMatchObject({ kind: 'ok', deleted: 4, kept: 5, skippedUnknown: 1, failed: 0 });
     expect(blob.prefixes).toEqual([`invoicing/${a.ctx.slug}/`]);
     const left = new Set(blob.store.keys());
     for (const kept of [
       k(a, `${paid}_v12.pdf`),
       k(a, `${paid}_receipt_v12.pdf`),
       k(a, `${voided}_v13.pdf`),
+      k(a, `${rendering}_v13.pdf`),
+      k(a, `${rendering}_receipt_v13.pdf`),
       `invoicing/${a.ctx.slug}/logos/logo.png`,
     ]) {
       expect(left.has(kept), kept).toBe(true);
@@ -270,6 +281,11 @@ describe('#729 — orphan PDF sweeper (live Neon)', () => {
   it('a tenant cannot see another tenant\'s row: A\'s repos read B\'s invoice as missing (RLS + predicate)', async () => {
     const id = randomUUID();
     await seedPaidInvoice(b, user, planId, id, { pdf: k(b, `${id}_v13.pdf`), receipt: null });
+    // The lock-free read: A asking for B's id finds no reference.
+    expect([...(await referencedKeys(a.ctx.slug, { invoiceIds: [id], creditNoteIds: [] }))]).toEqual([]);
+    expect([...(await referencedKeys(b.ctx.slug, { invoiceIds: [id], creditNoteIds: [] }))]).toEqual([
+      k(b, `${id}_v13.pdf`),
+    ]);
     const repo = makeDrizzleInvoiceRepo(a.ctx.slug);
     const seen = await repo.withTx((tx) => repo.findByIdInTxForUpdate(tx, id as never, a.ctx.slug));
     expect(seen).toBeNull();
