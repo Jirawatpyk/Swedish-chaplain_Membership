@@ -2109,6 +2109,33 @@ No High or Medium remains. pdpa rules that #735 and #736 may close on merge. The
 
 **Verify:** after these fixes, the maintainer re-runs `/verify` on the final HEAD: the drain tick (25 live rows plus the erased row; a 15-row share shows `erasedShareFull`), the erase flow, and a log scan.
 
+### Slice 2d — Verify on the final head: the maintainer's `/verify` (5 Nov 2026, on `a6cc78bb8`): PASS
+
+The run used :3400 against Neon dev, tenant swecham, with the import flag OFF. Resend used the sink address only; there was no `/send` and no cancel. Erasures went through `POST /api/members/{id}/erase` as super-admin.
+
+- **Safety:** 0 approved rows were due, 0 orphans were unsettled, and Resend held only `General`.
+- **An erased requester behind a busy grace window (#736a):**
+  - Member A was erased.
+  - 25 young orphans were then written for live member B, followed by 1 for A, so A's row was the newest.
+  - One tick returned `{listed:21, settled:1, waiting:20, erasedReadFailed:false, erasedShareFull:false}`.
+  - A's row settled `absent`, and B's 25 stayed unsettled.
+- **Share cap:**
+  - 15 more orphans were written for A.
+  - Tick 1 returned `settled:10, erasedShareFull:true`, with 5 of A's rows left.
+  - Tick 2 returned `settled:5, erasedShareFull:false`, with 0 left.
+- **Wrong Bearer:** returned 401, and the counts did not change.
+- **Erase flow:**
+  - A real sink draft was held by C's `persist_failed` orphan.
+  - The erase returned 200. The draft then answered 404, and the orphan settled `deleted`.
+  - `member_erased` showed `drafts:1, retained:0, stuck:0`. A re-erase returned `re_drive:true` with the same counts.
+- **Log scan** of the run (430 lines): 0 emails, and 0 lines containing `Failed query` or `params:`.
+- **Finding (fixed in the same Verify):** the happy flows wrote no `err` / `error` / `cause` line, so the root reducer had not run at runtime. It was then driven on purpose:
+  - The local server was started with `DATABASE_URL` pointing at a closed port. This was a process env override only: no Vercel env and no writes.
+  - `POST /api/auth/sign-in` was sent with `probe.person@example.test`. It returned 500.
+  - The `sign-in.infra-error` line carried `err: { type: 'DrizzleQueryError', errCode: 'ECONNREFUSED', frames: [8 path-like frames] }`.
+  - The line had no message, so no `Failed query: select … params: probe.person@example.test`: the email appeared 0 times, and `Failed query`, `params:` and `select ` appeared 0 times.
+- **Teardown:** clean. The Resend audience was deleted, leaving only `General`. 42 orphan rows and 3 members were deleted. The probe spec was removed and :3400 was stopped.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
