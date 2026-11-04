@@ -2292,6 +2292,35 @@ describe('eraseMember — the repo cause threads the SQLSTATE code into the log 
       spy.mockRestore();
     }
   });
+
+  // Spec 140 s2d review round 2 (code-review #7) — pgErrorMeta is used: the
+  // scrub tx's catch logs the constraint an incident needs, and never the
+  // driver's `detail`, which quotes the row's values.
+  it('a 23505 in the scrub tx logs its constraint name, never the detail', async () => {
+    const unique = {
+      code: '23505',
+      message: 'duplicate key value violates unique constraint "contacts_email_uniq"',
+      constraint_name: 'contacts_email_uniq',
+      table_name: 'contacts',
+      detail: 'Key (email)=(subject@example.com) already exists.',
+    };
+    const deps = buildEraseDeps();
+    deps.contactRepo.scrubPiiForMemberInTx = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.unexpected', cause: unique } }) as never,
+    );
+    const spy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    try {
+      const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      expect(res.ok).toBe(false);
+      const call = spy.mock.calls.find((c) => c[1] === 'erase-member: scrub tx failed');
+      const fields = call?.[0] as { code?: unknown; pg?: unknown };
+      expect(fields.code).toBe('23505');
+      expect(fields.pg).toEqual({ constraint: 'contacts_email_uniq', table: 'contacts' });
+      expect(JSON.stringify(fields)).not.toMatch(/subject@example\.com|Key \(|duplicate key/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 /**
