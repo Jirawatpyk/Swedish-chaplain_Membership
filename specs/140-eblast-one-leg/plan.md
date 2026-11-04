@@ -2074,6 +2074,35 @@ Parts 1–3 touch `cancel-in-flight-broadcasts-for-member.ts` and run one after 
 - pdpa L-1: the shape-only token rule now applies to plain objects (row 1), and no live site logs a domain object under `err`.
 - security #8: `hashId` is 32-bit and unkeyed. This predates the PR.
 
+### Slice 2d — review round 4, targeted, the last (`/code-review high 7765aa48f..79320dbcd`: 9; security APPROVE (signed): 2 LOW; pdpa APPROVE: 4 LOW; reliability MERGEABLE: 2 LOW, 1 nit; 4–5 Nov 2026)
+
+**Review metrics:** round 4 (targeted #2) · 9 + 2 + 4 + 3 items · cap: 2 full + 2 targeted, **reached**.
+
+No High or Medium remains. pdpa rules that #735 and #736 may close on merge. The fixes below are the reviewers' own specified LOW fixes. No further review round runs. The PR names these commits as the unreviewed delta.
+
+**Fix rows (before GREEN; each has a RED):**
+
+| Mechanism (asked by) | Rule | RED |
+|---|---|---|
+| **One shared token shape** (code-review #5, #8; security L1) | `log-id.ts` exports the `CODE_SHAPE` building block: a letter first, at most 4 digits, at most 64 characters. `RESULT_CODE`, `ERROR_CODE` and the logger's `LOWER_TOKEN` are built from it. `LOWER_TOKEN` also accepts `-`, so `last-admin-protection` passes. An uppercase `kind` such as `INVALID_STATE_TRANSITION` is refused, which is accepted: that type has no logger caller | a 64-character lowercase hex value and `a_123456789` under `kind` are not written; a hyphenated kind is kept |
+| **A bare `Error` name, capped** (code-review #6, reliability LOW-1) | `ERROR_CLASS_NAME = /^(?=.{1,64}$)(?:[A-Z]\w*)?(?:Error\|Exception)$/` | `{ name: 'Error' }` gives `type: 'Error'`; a 10 KB name gives `'unknown'` |
+| **`errCode` from the cause chain** (reliability LOW-2) | `errLogFields` and the reducer read the first token-shaped, non-SQLSTATE own `.code` along `walkCauses` (exported, bounded) | a DrizzleQueryError over `ECONNRESET` gives `errCode: 'ECONNRESET'` |
+| **A frame must look like a frame** (code-review #4) | A kept frame matches `^\s+at (?:[\w$.<>\[\] ]+ \()?(?:[A-Za-z]:\\\|/\|file:\|node:\|webpack\|<anonymous>)[^\s]*:\d+:\d+\)?$`, so the location must start like a path, not free text | a message line `    at somchai@example.com 0812345678:1:2` is not kept |
+| **The gate closes the reassignment holes** (code-review #1–#3; security L2) | A reassignment taint survives the outer declaration pass. Taint also covers compound assignment (`+=`, `\|\|=`, `??=`), destructuring assignment, a for-of whose binding was declared earlier, and an `AwaitExpression` (`unwrap` strips it) | fixture lines for each form, refused |
+
+**Fixes:**
+- code-review #9: the `ResolveSegmentError` docblock says `message` is token-only. `dispatch-scheduled-broadcast.ts:1073-1077` forwards `errClass` the same way `mapResolveError` does.
+- reliability nit: the `db-errors.ts` SQLSTATE comment states the correct reason (every class's subclass holds a digit).
+- pdpa L-c: the stale `recordException` clause in `process-webhook-event.ts:677-678`.
+
+**Docs:**
+- pdpa L-a: RoPA `:1451-1455` becomes "Review rounds 2 and 3", and the open clause gets "or an error object under any other key".
+- pdpa L-d: the round-3 plan row's regex text matches the shipped `LOWER_TOKEN`.
+- `observability.md`: the reducer fields, consistent with the above.
+- The main session adds `src/app/unsubscribe/[token]/page.tsx:123` to #740 (pdpa L-b), and adds the audit payload `reason: shape.reason` (`dispatch-scheduled-broadcast.ts:1535`, code-review #7) to #739.
+
+**Verify:** after these fixes, the maintainer re-runs `/verify` on the final HEAD: the drain tick (25 live rows plus the erased row; a 15-row share shows `erasedShareFull`), the erase flow, and a log scan.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
