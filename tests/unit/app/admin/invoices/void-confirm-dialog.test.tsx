@@ -587,3 +587,18 @@ describe('VoidConfirmDialog — the number to type (board Admin-void)', () => {
     expect(screen.getByLabelText('Type the tax invoice number to confirm')).toBeInTheDocument();
   });
 });
+
+// R124 — the #48 / #61 status row sits in the form's flex stack. Idle it must
+// take no space (it used to hold min-h-5, so the stack showed gap + 20 px +
+// gap, 68 px above the card), yet stay mounted so a later "waiting" or
+// "still working" line is announced.
+describe('VoidConfirmDialog — the idle status row takes no space (R124)', () => {
+  it('is mounted and empty, and cancels the gap before it', () => {
+    const { container } = renderDialog();
+    const row = container.querySelector('div[role="status"][aria-live="polite"]:not(.sr-only)');
+    expect(row).not.toBeNull();
+    expect(row!.childNodes).toHaveLength(0);
+    expect(row!.className).not.toMatch(/\bmin-h-5\b/);
+    expect(row!.className).toMatch(/\bempty:-mt-/);
+  });
+});
