@@ -9,6 +9,7 @@
  *      credit-note PDFs no row references. The rule lives in
  *      `src/modules/invoicing/application/use-cases/sweep-orphan-pdfs.ts`.
  * Each half runs even when the other fails; either failing answers 500.
+ * The cert prune runs on production only (it has no dry run).
  *
  * Delete gate: the PDF sweep deletes only on a production deployment with
  * `FEATURE_ORPHAN_PDF_SWEEP_DELETE` on, and is a dry run anywhere else. A
@@ -66,6 +67,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let failed = false;
   if (askedDryRun) {
     certs = { skipped: 'dry_run' };
+  } else if (env.vercelEnv !== 'production') {
+    // No dry run exists for the prune, and a non-production deployment (or a
+    // local machine) can hold a token for production's store with another
+    // branch's pins (R126 F2): it deletes nothing there.
+    certs = { skipped: 'not_production' };
   } else {
     try {
       const r = await runPruneOrphanedZeroRateCerts({});

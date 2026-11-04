@@ -396,7 +396,12 @@ response says `deletesEnabled: false`). A preview's Neon branch can lag the
 Blob store it may share a token with, so a real delete there could remove a
 live document's PDF. `deletesEnabled` says whether *this* run deletes (false
 for `?dryRun=1` too). A dry run applies the same keep rule on a plain read and
-never locks an invoice row. The cert prune is not gated (live since 088).
+never locks an invoice row. The cert prune has no dry run, so it runs on a
+production deployment only (`VERCEL_ENV=production`), in both routes; anywhere
+else it answers `skipped: 'not_production'`. R126 found a local `.env.local`
+Blob token that reached a store holding production-looking swecham PDFs while
+the pins came from the dev branch: a prune there would have deleted live
+certificate scans. **Keep local and preview Blob tokens on a dev-only store.**
 
 **First production rollout.** After the merge the nightly run is a dry run
 (the flag defaults off). Read one night's response or the
@@ -409,7 +414,8 @@ a production deploy** — and the next night deletes.
 
 **Run it.** `curl -H "Authorization: Bearer $CRON_SECRET" "https://<host>/api/cron/invoicing/sweep-orphan-blobs?dryRun=1"`
 is a PDF dry run and skips the cert prune; without `?dryRun=1` both halves run
-(the PDF half still obeys the delete gate). Response:
+on production (the PDF half still obeys the delete gate; off production the
+cert prune is skipped). Response:
 `{ ok, deletesEnabled, certs: { scanned, swept, skipped, cutoff }, pdfs: {
 dryRun, tenants, tenantsCompleted, scanned, deleted, wouldDelete, kept,
 skippedYoung, skippedUnknown, failed, alreadyGone, listFailed, truncated } }`.
