@@ -1989,6 +1989,56 @@ Parts 1–3 touch `cancel-in-flight-broadcasts-for-member.ts` and run one after 
 - security INFO #5 / #6: the RLS-masked two-tenant tests and the 32-bit `hashId` are existing classes.
 - The open question on `ApprovalDependencyError.causeKind` (security): the builder checks its constructor calls while adding the explicit callee set, and reports.
 
+### Slice 2d — review round 2 (`/code-review high 741`: 10; security APPROVE WITH FIXES: 1 MEDIUM, 3 LOW; pdpa APPROVE WITH CONDITIONS: 2 HIGH, 1 MEDIUM, 2 LOW; reliability MERGEABLE: 1 MEDIUM, 2 LOW; spec-compliance PARTIAL: 2 HIGH, 4 MEDIUM, 9 LOW; 4 Nov 2026)
+
+**Review metrics:** round 2 (full) · 10 + 4 + 5 + 3 + 15 items (code-review, security, pdpa, reliability, spec-compliance) · cap: 2 full (reached) + ≤ 2 targeted.
+
+**Maintainer decisions (4 Nov 2026):**
+- **The root logger keeps only tokens plus stack frames, in every module.** It never keeps the message.
+- **Log destination VERIFIED.** The Vercel dashboard (Team → Settings → Drains) shows "No drains are associated with this team". The maintainer reports no log integration either.
+
+**Housekeeping:**
+- `origin/main` is merged at `2e74b2a17`. The one conflict was the `docs/changelog.md` top lines; both are kept.
+- Until this merge, CI had never run on the PR: GitHub reported it as conflicting (spec H1).
+
+**Plan rows added before the fixes (D-043, neighbours named).**
+
+| Mechanism (asked by) | State / rule | Neighbours | Test that goes red first |
+|---|---|---|---|
+| **The root reducer emits tokens and frames, never text** (code-review #1, #2; pdpa H-2; security M1; reliability MED) | Any value under `err`, `error` or `cause` (an Error, or a plain object with any field) becomes the following, built from closed tokens only: <br>• `type`: `errKind`, or a token-shaped string `name` on a plain object <br>• `code`: the SQLSTATE <br>• `repoCode`: `RESULT_CODE`-validated, read from the value itself or a wrapped RepoError <br>• `errCode`: a string `.code` matching `/^[A-Za-z0-9_.:-]{1,64}$/`, e.g. Node `ECONNRESET` or Stripe `card_declined` <br>• `statusCode`: an integer <br>• `declineCode`: token-shaped <br>• `frames`: the stack with its first line(s) up to the first `    at ` removed, capped at 8 frames <br>`message`, `stack`, `detail`, `params` and `query` are never emitted. A string value under those keys is kept, because the string form is #740's scope | every `logger.*` call in the repo; `errLogFields` (shares `RESULT_CODE`); the RoPA `:1443` control | lib unit: `{ err: { name: 'DrizzleQueryError', message: 'Failed query … a@x.io', stack } }` writes no message or email; a Stripe-shaped error keeps `errCode` / `statusCode`; a RepoError keeps `repoCode`; frames carry no message |
+| **The cause walk is bounded** (code-review #3, security L2) | `pgErrorCode` / `pgErrorMeta` (and the reducer's own walk) stop after 10 hops. A code is used only if it matches `/^[0-9A-Z]{5}$/` | every caller of `pgErrorCode` | lib unit: a cyclic cause returns, and does not hang |
+| **One step regex** (code-review #6) | `erase-member.ts` imports `errStep` from `src/lib/log-id.ts`. `eraseStep` / `STEP_MESSAGE` are removed, and the gate's safe set drops `eraseStep` | the erase-member catches and their 10 forensics rows | the existing rows stay green (refactor) |
+| **Every bridge read failure has a step and a SQLSTATE** (spec L1, code-review #5) | Every remaining `members-bridge.ts` throw becomes `failedRead`. The builder greps `members-bridge\.` and reports the count | `broadcasts-recipient-count.ts` (the message match), the test stubs that use the old text | bridge unit: each read's failure message matches `errStep` and carries `cause` |
+| **The capped warning means truncated** (code-review #10) | `listInGraceRequesterIds` reads `cap + 1`. `erased_requesters_capped` fires only when more exist | the drain | drain unit: "exactly 50 requesters → no capped line" |
+| **`pgErrorMeta` is used, not dead** (code-review #7) | Wired into the erase-member scrub-tx catch and the drain's `erased_read_failed` (as `pg: pgErrorMeta(e)`) | the gate's safe set | erase-member unit: a 23505 cause logs its constraint name, and never the detail |
+| **Destructuring off a caught error is checked** (security #4, code-review #8) | The gate follows one hop: `const { x } = e` / `const x = e.y`, where `e` is a caught binding or a `.error` / `.cause` chain, makes `x` error-ish unless `y` is `code` / `kind` / `name`. The 12 typed-token reads are rewritten as allowed forms, e.g. `importId` is passed in from the caller's own variable rather than read off the error, or are listed in a reviewed `TOKEN_FIELDS_BY_TYPE` for a named error class | the gate, its fixture, the 12 sites | gate unit: fixture lines `const { message } = e; logger.warn({ message })` are refused |
+| **Raw user ids on edited lines are hashed** (code-review #9) | `acknowledge-broadcasts-terms.ts`, `resend-bounced-invite.ts`, `verify-contact-email.ts`, `clear-halt.ts` and `get-member-broadcast.ts` log `userIdHash: hashId(…)` | rules.md § Secrets | unit: the line carries the hash, not the id |
+
+**Docs:**
+- **RoPA residual 10:**
+  - The destination is VERIFIED (dashboard, 2026-11-04), and the retention is 1 day (MEASURED).
+  - Note the 3 uninspected warn lines.
+  - Add the DSR sentence: an erasure answered before merge + 1 day may still have the subject's values in these lines, and the answer names this residual and its expiry date.
+  - "No such line exists" now holds only for the members + broadcasts sweep and the root reducer. Error TEXT in string form, under any key in other modules, stays open (#740).
+- **RoPA `:1453`:** "error text in any form (strings, `e.message`, `String(e)`) under any key outside members and broadcasts is still open (#740); error objects of any shape under `err` / `error` / `cause` are reduced at the root".
+- **The #740 comment is corrected.** It names the string-form sites in invoicing (`issue-credit-note.ts:1232,1420`, `export-paid-invoices-csv.ts:262`, `membership-access-bridge.ts:58`) and events (`create-event.ts:264`, `drizzle-tenant-webhook-config-repository.ts:97`, `import-csv.ts:1991` `stack:`), and error text passed as the `msg` argument.
+- **Plan row 1 of round 1:** its "#740 narrows to the non-`err` keys" is superseded by this round's row 1.
+- **`broadcast-audience-build.md`:** the erased-rows ordering, in-grace first.
+- **`observability.md`:**
+  - the `tick_complete` row: "may include rows also counted in `deferred`";
+  - the reducer's output fields;
+  - the logger-call floor names `MIN_LOGGER_CALLS`;
+  - the "1-hour grace" text names `AUDIENCE_CLEANUP_GRACE_MS` (also in `member-erasure.md` and `cron-jobs.md`).
+- **`observability.md` § 2:** the destination is VERIFIED by the dashboard.
+
+**Accepted:**
+- reliability LOW: `Promise.all` is outside the stop budget. This is pre-existing; `statement_timeout` bounds each read.
+- spec L4: `inArray` is used, not `uuid[]`. The result is the same.
+- spec L9: stale test stub texts that no assertion reads. They are updated with the bridge row where they are touched.
+- security INFO #5: the plain `RepoError` `repoCode` is restored by row 1.
+
+**Verify:** after these fixes, the maintainer re-runs `/verify` on the final HEAD (spec M1): the drain tick (25 live rows plus the erased row, a 15-row share → `erasedShareFull`), the erase flow, and a log scan.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
