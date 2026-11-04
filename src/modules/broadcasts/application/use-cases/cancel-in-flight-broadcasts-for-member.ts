@@ -227,7 +227,7 @@ import {
 } from '../../domain/value-objects/orphaned-resend-id';
 import { asBroadcastId } from '../../domain/broadcast';
 import { classifyResendDraftAnswer } from './_classify-resend-draft-answer';
-import { isHandedStatus, probedStatusOf } from './_probe-refused-send';
+import { probedStatusOf } from './_probe-refused-send';
 import { settleOrphanAtResend } from './_settle-orphan-at-resend';
 import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
@@ -474,44 +474,44 @@ export async function cancelInFlightBroadcastsForMember(
       const startedAt = Date.now();
       const deleted = await deps.broadcastsGateway.deleteBroadcastOnce(resendId);
       const deleteMs = Date.now() - startedAt;
-      if (deleted.kind === 'deleted') {
+      // Spec 140 s2d (#735) — the table is `classifyResendDraftAnswer`'s `in_flight` policy.
+      const first = classifyResendDraftAnswer('in_flight', deleted.kind, null);
+      if (first.kind === 'deleted') {
         logger.info(
           { ...logBase, broadcastId: broadcast.broadcastId as string, resendBroadcastId: resendId, outcome: deleted.kind, deleteMs },
           'broadcasts.cascade.dispatch_begun_delete',
         );
         return { kind: 'cancel', resendOutcome: 'deleted' };
       }
-      if (deleted.kind !== 'absent' && deleted.kind !== 'forbidden') {
-        throw new ResendUnsettledError(deleted.kind);
-      }
+      if (first.kind === 'undecided') throw new ResendUnsettledError(first.deleted);
       // Review round 2 (code-review #1) — two not-founds need time between
       // them, or the GET can repeat a stale 404 for a send Resend accepted:
       // the same pause the import leg takes before it re-mints. Not after a
-      // 403, which is not a not-found.
-      if (deleted.kind === 'absent') {
+      // 403, which is not a not-found (`pause` is set only after a 404).
+      if (first.pause) {
         await (deps.pauseBeforeReprobe ?? sleepBeforeReprobe)(REPROBE_PAUSE_MS);
       }
       const probe = await deps.broadcastsGateway.retrieveBroadcastOnce(resendId);
-      const probed = probe.kind === 'present' ? probe.status : probe.kind;
       logger.info(
         {
           ...logBase,
           broadcastId: broadcast.broadcastId as string,
           resendBroadcastId: resendId,
-          outcome: deleted.kind,
-          probe: probed,
+          outcome: first.deleted,
+          probe: probedStatusOf(probe),
           // Both calls (and the pause after a 404): the time the row lock was held for Resend.
           resendMs: Date.now() - startedAt,
           deleteMs,
         },
         'broadcasts.cascade.dispatch_begun_delete',
       );
-      if (isHandedStatus(probed)) return { kind: 'already_sent', resendStatus: probed };
-      if (deleted.kind === 'absent' && probed === 'not_found') return { kind: 'cancel', resendOutcome: 'absent' };
+      const answer = classifyResendDraftAnswer('in_flight', first.deleted, probe);
+      if (answer.kind === 'handed') return { kind: 'already_sent', resendStatus: answer.status };
+      if (answer.kind === 'absent') return { kind: 'cancel', resendOutcome: 'absent' };
       // A 403 to a DELETE of a cancelled broadcast (MEASURED): only a draft
       // can be sent, so nothing of it can go out — the gate's arm, too.
-      if (deleted.kind === 'forbidden' && probed === 'cancelled') return { kind: 'cancel', resendOutcome: 'cancelled_at_resend' };
-      throw new ResendUnsettledError(`${deleted.kind}_probe_${probed}`);
+      if (answer.kind === 'unsendable') return { kind: 'cancel', resendOutcome: 'cancelled_at_resend' };
+      throw new ResendUnsettledError(`${answer.deleted}_probe_${answer.probed}`);
     };
 
     /**
