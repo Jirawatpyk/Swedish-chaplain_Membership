@@ -76,6 +76,7 @@ import {
   marketingUnsubscribes,
   broadcastSegmentDefinitions,
   broadcastImages,
+  broadcastOrphanedResendIds,
   tenantImageSourceAllowlist,
   broadcastTemplates,
   broadcastVersions,
@@ -206,6 +207,9 @@ export async function createTestTenant(
     // position here is free. They were missing from this list until
     // 2026-09-27, when a sweep of the `dev` branch found 51 + 23 leaked rows.
     await db.delete(broadcastImages).where(eq(broadcastImages.tenantId, slug));
+    // Spec 140 s2c — no FK (its broadcast and member ids are snapshots), so
+    // position is free; chamber_app has no DELETE, the owner does.
+    await db.delete(broadcastOrphanedResendIds).where(eq(broadcastOrphanedResendIds.tenantId, slug));
     await db
       .delete(tenantImageSourceAllowlist)
       .where(eq(tenantImageSourceAllowlist.tenantId, slug));

@@ -209,6 +209,7 @@ function makeDeps(overrides: Partial<{
             alreadySentCount: 0,
             resendDraftsCleared: 0,
             resendCopiesRetained: 0,
+            audienceOrphansStuckCount: 0,
           }) as const,
       ),
     };
@@ -468,6 +469,7 @@ describe('archiveMember use case (R009)', () => {
         alreadySentCount: 0,
         resendDraftsCleared: 0,
         resendCopiesRetained: 0,
+        audienceOrphansStuckCount: 0,
       }));
       const deps = makeDeps({
         broadcastsCascade: { cancelInFlightForMember },
@@ -559,6 +561,7 @@ describe('archiveMember use case (R009)', () => {
         alreadySentCount: 0,
         resendDraftsCleared: 0,
         resendCopiesRetained: 0,
+        audienceOrphansStuckCount: 0,
         deferredCount: 0,
       }));
       const deps = makeDeps({

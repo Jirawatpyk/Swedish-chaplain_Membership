@@ -31,6 +31,11 @@ const marketingTurnCountSpy = vi.fn();
 // this wire contract is about, so only the constant is provided — the REAL one.
 vi.mock('@/modules/broadcasts', async () => ({
   MARKETING_TURN_STATUSES: (await import('@/modules/broadcasts/domain/stage/whose-turn')).MARKETING_TURN_STATUSES,
+  // Spec 140 s2c - the create_unconfirmed gauge's window, the REAL one.
+  ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS: (await import('@/modules/broadcasts/domain/value-objects/orphaned-resend-id'))
+    .ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS,
+  ORPHAN_UNSETTLED_GAUGE_AGE_HOURS: (await import('@/modules/broadcasts/domain/value-objects/orphaned-resend-id'))
+    .ORPHAN_UNSETTLED_GAUGE_AGE_HOURS,
 }));
 vi.mock('@/lib/env', () => ({
   env: { isDevelopment: false, features: { memberChangeApproval: true } },
@@ -173,7 +178,9 @@ describe('GET /api/internal/metrics/broadcasts-gauges — F119 E-Blast stage gau
     expect(stageSql).toHaveLength(1);
     expect(stageSql[0]).toMatch(/status::text/);
     expect(stageSql[0]).not.toMatch(/status\s*(=|IN)\s*\(?'/);
-    expect(dbTransactionMock).toHaveBeenCalledTimes(2);
+    // The broadcasts and members halves, then the two orphan gauges' own
+    // transactions (spec 140 s2c review round 1, code-review #10).
+    expect(dbTransactionMock).toHaveBeenCalledTimes(4);
   });
 
   it('a tenant present ONLY in the stage rows joins the observed set', async () => {

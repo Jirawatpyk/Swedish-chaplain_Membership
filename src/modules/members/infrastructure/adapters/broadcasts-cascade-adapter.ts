@@ -29,6 +29,7 @@ export const noopBroadcastsCascadeAdapter: BroadcastsCascadePort = {
       alreadySentCount: 0,
       resendDraftsCleared: 0,
       resendCopiesRetained: 0,
+      audienceOrphansStuckCount: 0,
     };
   },
 };
@@ -84,6 +85,7 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
         resendDraftsCleared: result.value.resendDraftsCleared,
         resendCopiesRetained: result.value.resendCopiesRetained,
         deferredCount: result.value.deferredCount,
+        audienceOrphansStuckCount: result.value.audienceOrphansStuckCount,
       };
     }
     return {
@@ -93,6 +95,7 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
       alreadySentCount: result.value.alreadySentCount,
       resendDraftsCleared: result.value.resendDraftsCleared,
       resendCopiesRetained: result.value.resendCopiesRetained,
+      audienceOrphansStuckCount: result.value.audienceOrphansStuckCount,
     };
   },
 };

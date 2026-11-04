@@ -178,6 +178,24 @@ describe('T179 — JCC-test tenant fixture (multi-tenant readiness invariant)', 
             retrieveBroadcastOnce: async (): Promise<never> => {
               throw new Error('not used in the archive mode');
             },
+            deleteAudience: async (): Promise<never> => {
+              throw new Error('not used in the archive mode');
+            },
+          },
+          // Spec 140 s2c — read only in the erasure mode.
+          orphans: {
+            listMemberOrphans: async (): Promise<never> => {
+              throw new Error('not used in the archive mode');
+            },
+            listUnsettledAudienceOrphans: async (): Promise<never> => {
+              throw new Error('not used in the archive mode');
+            },
+            settleOrphan: async (): Promise<never> => {
+              throw new Error('not used in the archive mode');
+            },
+            markOrphanAttempted: async (): Promise<never> => {
+              throw new Error('not used in the archive mode');
+            },
           },
         },
         {
@@ -189,7 +207,7 @@ describe('T179 — JCC-test tenant fixture (multi-tenant readiness invariant)', 
       );
       expect(result.ok).toBe(true);
       expect(result).toEqual(
-        ok({ cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 }),
+        ok({ cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 }),
       );
 
       // Invariant: every repo + audit call carries the SAME tenant slug.

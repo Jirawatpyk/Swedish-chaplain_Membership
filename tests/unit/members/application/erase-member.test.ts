@@ -40,6 +40,13 @@ vi.mock('@/lib/db', () => ({
   runInTenant: (_ctx: unknown, fn: (tx: never) => unknown) => fn({} as never),
 }));
 
+// Spec 140 s2c review round 3 (code-review #4) — the stuck-release counter.
+const { orphanStuckReleasedSpy } = vi.hoisted(() => ({ orphanStuckReleasedSpy: vi.fn() }));
+vi.mock('@/lib/metrics', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/metrics')>('@/lib/metrics');
+  return { ...actual, erasureMetrics: { ...actual.erasureMetrics, orphanStuckReleased: orphanStuckReleasedSpy } };
+});
+
 const META = { actorUserId: 'admin-1', requestId: 'req-1' };
 const MEMBER_ID = asMemberId('m-1');
 const MISSING_ID = asMemberId('missing');
@@ -598,7 +605,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
   it('spec 139: records broadcasts_already_sent_count on the member_erased DPO payload', async () => {
     const deps = buildEraseDeps();
     deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
-      async () => ({ outcome: 'ok', cancelledCount: 1, skippedConcurrentCount: 0, alreadySentCount: 2, resendDraftsCleared: 0, resendCopiesRetained: 0 }) as const,
+      async () => ({ outcome: 'ok', cancelledCount: 1, skippedConcurrentCount: 0, alreadySentCount: 2, resendDraftsCleared: 0, resendCopiesRetained: 0, audienceOrphansStuckCount: 0 }) as const,
     );
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(res.ok).toBe(true);
@@ -626,6 +633,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
           alreadySentCount: 0,
           resendDraftsCleared: 2,
           resendCopiesRetained: 1,
+          audienceOrphansStuckCount: 0,
         }) as const,
     );
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
@@ -638,6 +646,87 @@ describe('eraseMember — requested audit + atomic scrub', () => {
       broadcasts_already_sent_count: 0,
       resend_drafts_cleared: 2,
       resend_copies_retained: 1,
+    });
+  });
+
+  // Spec 140 s2c review round 2 (security F2, pdpa M-3) — a stuck tenant
+  // audience orphan released without withholding is on the completion proof.
+  it('spec 140 s2c: member_erased carries audience_orphans_stuck_count', async () => {
+    const deps = buildEraseDeps();
+    deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
+      async () =>
+        ({
+          outcome: 'ok',
+          cancelledCount: 0,
+          skippedConcurrentCount: 0,
+          alreadySentCount: 0,
+          resendDraftsCleared: 0,
+          resendCopiesRetained: 0,
+          audienceOrphansStuckCount: 2,
+        }) as const,
+    );
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    const erased = deps.audit.recordInTx.mock.calls.find(
+      (c) => (c[2] as { type: string }).type === 'member_erased',
+    );
+    expect((erased?.[2] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      audience_orphans_stuck_count: 2,
+    });
+  });
+
+  // Spec 140 s2c review round 3 (code-review #4, reliability LOW-2) —
+  // `broadcasts_cascade_orphan_stuck_total` counts RELEASED erasures: one add
+  // of the count when member_erased is written, nothing on a withheld run, a
+  // failed member_erased write, or a count of 0.
+  describe('spec 140 s2c review round 3 — the stuck counter counts released erasures', () => {
+    const cascade = (outcome: 'ok' | 'cascade_partial_failure', audienceOrphansStuckCount: number) =>
+      vi.fn(
+        async () =>
+          ({
+            outcome,
+            cancelledCount: 0,
+            skippedConcurrentCount: 0,
+            unexpectedErrorCount: outcome === 'ok' ? 0 : 1,
+            alreadySentCount: 0,
+            resendDraftsCleared: 0,
+            resendCopiesRetained: 0,
+            deferredCount: 0,
+            audienceOrphansStuckCount,
+          }) as never,
+      );
+
+    it('an emitted erasure adds the count once', async () => {
+      orphanStuckReleasedSpy.mockReset();
+      const deps = buildEraseDeps();
+      deps.broadcastsCascade.cancelInFlightForMember = cascade('ok', 2);
+      await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      expect(orphanStuckReleasedSpy).toHaveBeenCalledTimes(1);
+      expect(orphanStuckReleasedSpy).toHaveBeenCalledWith(2, deps.tenant.slug);
+    });
+
+    it('a withheld run adds nothing', async () => {
+      orphanStuckReleasedSpy.mockReset();
+      const deps = buildEraseDeps();
+      deps.broadcastsCascade.cancelInFlightForMember = cascade('cascade_partial_failure', 2);
+      await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+      expect(types).not.toContain('member_erased');
+      expect(orphanStuckReleasedSpy).not.toHaveBeenCalled();
+    });
+
+    it('a member_erased write that fails, or a count of 0, adds nothing', async () => {
+      orphanStuckReleasedSpy.mockReset();
+      const failed = buildEraseDeps();
+      failed.broadcastsCascade.cancelInFlightForMember = cascade('ok', 2);
+      failed.audit.recordInTx = vi.fn(async (_tx: unknown, _ctx: unknown, ev: { type: string }) =>
+        ev.type === 'member_erased' ? { ok: false, error: { kind: 'audit_failed' } } : ok(undefined),
+      ) as never;
+      await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, failed);
+      const zero = buildEraseDeps();
+      zero.broadcastsCascade.cancelInFlightForMember = cascade('ok', 0);
+      await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, zero);
+      expect(orphanStuckReleasedSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -789,6 +878,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
           alreadySentCount: 0,
           resendDraftsCleared: 0,
           resendCopiesRetained: 0,
+          audienceOrphansStuckCount: 0,
           deferredCount: 0,
         }) as const,
     );
@@ -819,6 +909,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
             alreadySentCount: 0,
             resendDraftsCleared: 1,
             resendCopiesRetained: 0,
+            audienceOrphansStuckCount: 0,
             deferredCount: 2,
           }) as const,
       );
@@ -851,6 +942,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
             alreadySentCount: 3,
             resendDraftsCleared: 0,
             resendCopiesRetained: 0,
+            audienceOrphansStuckCount: 0,
             deferredCount: 0,
           }) as const,
       );
@@ -2011,11 +2103,16 @@ describe('US3-A — Art.12 attestation in member_erasure_requested payload', () 
  * Money-path coverage remediation — the `'cause' in X ? X.cause : undefined`
  * forensic-threading ternaries. Every failure stub in this suite historically
  * omitted `cause`, so all TEN true-arms were dead: a Neon SQLSTATE never
- * provably survived into the logged Error. Each row drives ONE site with a
- * cause-bearing repo error and asserts the outer log carries it verbatim.
+ * provably survived into the log. Each row drives ONE site with a
+ * cause-bearing repo error and asserts the outer log carries the SQLSTATE
+ * code. Spec 140 s2c review round 4 (code-review #7) — the log carries the
+ * error CLASS (`err: errKind(e)`) and the SQLSTATE code (`code:
+ * pgErrorCode(e)`), never the Error itself: a driver message on the erasure
+ * path can carry the subject's address.
  */
-describe('eraseMember — repo cause threads into the logged Error (forensics)', () => {
-  const CAUSE = { sqlState: '40P01', message: 'deadlock detected' };
+describe('eraseMember — the repo cause threads the SQLSTATE code into the log (forensics)', () => {
+  // A Postgres error's shape (postgres-js / Neon): a `code` and a `message`.
+  const CAUSE = { code: '40P01', message: 'deadlock detected' };
   const failing = () =>
     ({ ok: false, error: { code: 'repo.unexpected', cause: CAUSE } }) as never;
   const failAuditType = (d: StubbedEraseDeps, type: string) => {
@@ -2023,6 +2120,21 @@ describe('eraseMember — repo cause threads into the logged Error (forensics)',
       async (_tx: unknown, _ctx: unknown, ev: { type: string }) =>
         ev.type === type ? failing() : ok(undefined),
     ) as never;
+  };
+
+  // Review round 4 follow-up (code-review #1) — the code-authored step of
+  // the failed wrapper, so an operator can tell a benign race from a DB fault.
+  const STEPS: Readonly<Record<string, string>> = {
+    'member_erasure_requested audit': 'audit_failed',
+    'pre-scrub findByIdInTx': 'lookup_failed:repo.unexpected',
+    'member scrubPiiInTx': 'member_scrub_failed:repo.unexpected',
+    'contact scrubPiiForMemberInTx': 'contact_scrub_failed:repo.unexpected',
+    'session revoke': 'session_revoke_failed:repo.unexpected',
+    'user_sessions_revoked audit': 'audit_failed',
+    'token invalidation': 'token_invalidation_failed:repo.unexpected',
+    'linked-login email read': 'linked_login_email_read_failed:repo.unexpected',
+    'outbox cancel': 'outbox_cancel_failed:repo.unexpected',
+    'member_erased audit': 'audit_failed',
   };
 
   const ROWS: ReadonlyArray<
@@ -2111,8 +2223,8 @@ describe('eraseMember — repo cause threads into the logged Error (forensics)',
     ],
   ];
 
-  describe.each(ROWS)('%s', (_label, apply, expectedLog, wantOk) => {
-    it('preserves error.cause for forensics', async () => {
+  describe.each(ROWS)('%s', (label, apply, expectedLog, wantOk) => {
+    it('logs the error class, the step and the SQLSTATE code, never the message', async () => {
       const deps = buildEraseDeps();
       apply(deps);
       const spy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
@@ -2134,12 +2246,36 @@ describe('eraseMember — repo cause threads into the logged Error (forensics)',
         }
         const call = spy.mock.calls.find((c) => c[1] === expectedLog);
         expect(call, `expected a "${expectedLog}" log`).toBeDefined();
-        const logged = (call?.[0] as { err?: unknown }).err;
-        expect((logged as Error).cause).toEqual(CAUSE);
+        const fields = call?.[0] as { err?: unknown; code?: unknown; step?: unknown };
+        expect(fields.err).toBe('Error');
+        expect(fields.code).toBe(CAUSE.code);
+        expect(fields.step).toBe(STEPS[label]);
+        expect(JSON.stringify(fields)).not.toContain(CAUSE.message);
       } finally {
         spy.mockRestore();
       }
     });
+  });
+
+  // Review round 4 follow-up (code-review #2) — the pre-flight read logged the
+  // whole RepoError, its driver cause included.
+  it('the pre-flight read failure logs the repo code, the cause class and the SQLSTATE, never the message', async () => {
+    const deps = buildEraseDeps();
+    deps.memberRepo.findErasedAtById = vi.fn(async () => failing());
+    const spy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    try {
+      const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      expect(res.ok).toBe(false);
+      const call = spy.mock.calls.find((c) => c[1] === 'erase-member: pre-flight existence read failed');
+      expect(call).toBeDefined();
+      const fields = call?.[0] as { err?: unknown; code?: unknown; repoCode?: unknown };
+      expect(fields.repoCode).toBe('repo.unexpected');
+      expect(typeof fields.err).toBe('string');
+      expect(fields.code).toBe(CAUSE.code);
+      expect(JSON.stringify(fields)).not.toContain(CAUSE.message);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

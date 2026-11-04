@@ -45,6 +45,7 @@ import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-at
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { emailTransactionalBridge } from '@/modules/broadcasts/infrastructure/email-transactional-bridge';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
@@ -228,6 +229,7 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
     const buildDeps = () => ({
       tenant: tenant.ctx,
       broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
+      orphans: makeDrizzleBroadcastOrphansRepo(tenant.ctx.slug),
       audienceMode: 'primary_only' as const,
       audienceCeiling: 5000,
       broadcastsGateway: makeTrackedGateway(tracker),
@@ -338,6 +340,7 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
     const buildDeps = () => ({
       tenant: tenant.ctx,
       broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
+      orphans: makeDrizzleBroadcastOrphansRepo(tenant.ctx.slug),
       audienceMode: 'primary_only' as const,
       audienceCeiling: 5000,
       broadcastsGateway: recordingGateway,

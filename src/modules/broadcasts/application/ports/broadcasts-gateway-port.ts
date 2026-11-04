@@ -236,7 +236,16 @@ export type DeleteBroadcastOnceOutcome =
  * cascade still treats `failed` as unexpected.
  */
 export type RetrieveBroadcastOnceOutcome =
-  | { readonly kind: 'present'; readonly status: RetrievedBroadcastResource['status'] | 'failed' }
+  | {
+      readonly kind: 'present';
+      readonly status: RetrievedBroadcastResource['status'] | 'failed';
+      /**
+       * Spec 140 s2c review round 2 (reliability nit) — the body's `sent_at`
+       * when it is a string, else `null`. The adapter always sets it; review
+       * round 3 (code-review #6) made it required, so a double must too.
+       */
+      readonly sentAt: string | null;
+    }
   | { readonly kind: 'not_found' }
   | { readonly kind: 'retryable' }
   | { readonly kind: 'other' };
@@ -540,6 +549,16 @@ export interface BroadcastsGatewayPort {
    * draft or scheduled broadcast, and `/send` works only on a draft — so a
    * DELETE that lands first makes any later `/send` 404, and a send that
    * landed first makes the DELETE 403.
+   *
+   * The fourth exception (spec 140 s2c) is an id read from the ORPHAN TABLE
+   * (`broadcast_orphaned_resend_ids`, migration 0325), by the
+   * `cleanup-audiences` drain and the erasure cascade's orphan pass
+   * (`_settle-orphan-at-resend.ts`). Either reads an id only while NO
+   * non-terminal `broadcasts` row of the tenant holds it (type-matched,
+   * `BroadcastOrphansRepo`), and Resend arbitrates as above: a copy a tick has
+   * handed to `/send` answers 403 and the one GET reads it handed. (The import
+   * leg's `failTerminally` choke point, also spec 140 s2c, is the second
+   * caller's path: `deleteDraftBeforeStandingRefusal` on the row's re-read id.)
    */
   deleteBroadcastOnce(broadcastId: string): Promise<DeleteBroadcastOnceOutcome>;
 

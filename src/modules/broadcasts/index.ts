@@ -84,6 +84,11 @@ export {
   isTerminalStatus,
   type BroadcastStatus,
 } from './domain/value-objects/broadcast-status';
+// Spec 140 s2c — the gauges route's window for the `create_unconfirmed` orphan gauge.
+export {
+  ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS,
+  ORPHAN_UNSETTLED_GAUGE_AGE_HOURS,
+} from './domain/value-objects/orphaned-resend-id';
 export {
   BROADCAST_SEGMENT_TYPES,
   isBroadcastSegmentType,
@@ -421,6 +426,7 @@ export {
 
 // --- PR-2 Task 4 — cleanup-orphaned-audiences cron (defect #5) -----------
 export {
+  AUDIENCE_CLEANUP_GRACE_MS,
   cleanupOrphanedAudiences,
   type CleanupOrphanedAudiencesDeps,
   type CleanupOrphanedAudiencesInput,

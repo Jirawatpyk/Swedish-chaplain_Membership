@@ -995,6 +995,28 @@ export const erasureMetrics = {
   },
 
   /**
+   * `broadcasts_cascade_orphan_stuck_total{tenant}` — spec 140 s2c review
+   * round 2 (security F2, pdpa M-3), moved here by review round 3
+   * (code-review #4, reliability LOW-2): the STUCK tenant audience orphans
+   * (`ORPHAN_STUCK_ATTEMPTS` tries and older than `ORPHAN_STUCK_MIN_AGE_MS`)
+   * that COMPLETED erasures released. One add of
+   * `member_erased.audience_orphans_stuck_count` (a minimum) per written
+   * `member_erased`, only when it is above 0; a withheld run or a re-drive
+   * that does not complete adds nothing. Each copy is still at Resend and its
+   * row unsettled. Alarm at any increase; runbook
+   * `docs/runbooks/member-erasure.md` step 4. The name keeps its
+   * `broadcasts_` prefix: the alert rows read it.
+   */
+  orphanStuckReleased(count: number, tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_cascade_orphan_stuck_total',
+        'Stuck tenant audience orphans released by completed erasures (member_erased written), a minimum',
+      ).add(count, { tenant: tenantId });
+    });
+  },
+
+  /**
    * COMP-1 US3-C — sub-processor erasure propagation outcome, per tenant.
    * Fired once per `eraseMember` post-commit cascade. `resendOutcome` is the
    * Resend audience-contact removal aggregate (`ok` = every captured pair
@@ -3173,6 +3195,74 @@ export const broadcastsMetrics = {
       observeGauge(
         'broadcasts_audience_import_stuck_count',
         'Broadcasts whose Resend contact import was submitted but never completed within 30 min',
+        { tenant: tenantId },
+        count,
+      );
+    });
+  },
+
+  /**
+   * `broadcasts_retention_orphan_prune_failed_total{tenant}` — spec 140 s2c
+   * review round 1 (reliability L-2): the F7 retention sweep's prune of the
+   * orphaned Resend id record (`prune_orphaned_resend_ids`, kept for
+   * `ORPHAN_ROW_RETENTION_DAYS` = 90) failed. Alarm at any increase.
+   */
+  retentionOrphanPruneFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_retention_orphan_prune_failed_total',
+        'F7 retention sweep runs whose orphaned-Resend-id prune failed',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts_orphaned_resend_ids_unsettled{tenant}` — spec 140 s2c review
+   * round 1: orphan rows with an id still unsettled more than
+   * `ORPHAN_UNSETTLED_GAUGE_AGE_HOURS` (24 h) after they were written — a
+   * copy at Resend the drain keeps failing to settle (a stuck tenant audience
+   * included). Zero-filled. **Alarm** at ≥ 1; runbook
+   * `docs/runbooks/broadcast-audience-build.md` § E.
+   */
+  orphanedResendIdsUnsettled(tenantId: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_orphaned_resend_ids_unsettled',
+        'Orphaned Resend ids (with an id) still unsettled more than ORPHAN_UNSETTLED_GAUGE_AGE_HOURS (24 h) after they were recorded',
+        { tenant: tenantId },
+        count,
+      );
+    });
+  },
+
+  /** `broadcasts_orphaned_resend_ids_unsettled_oldest_age_seconds{tenant}` — the oldest of those rows' age; 0 when none. */
+  orphanedResendIdsUnsettledOldestAgeSeconds(tenantId: string, seconds: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_orphaned_resend_ids_unsettled_oldest_age_seconds',
+        'Age of the oldest orphaned Resend id still unsettled more than ORPHAN_UNSETTLED_GAUGE_AGE_HOURS (24 h) after it was recorded',
+        { tenant: tenantId },
+        seconds,
+      );
+    });
+  },
+
+  /**
+   * `broadcasts_orphaned_resend_ids_unconfirmed{tenant}` — spec 140 s2c (DL5b):
+   * `create_unconfirmed` orphan rows created in the last
+   * `ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS` (24 h) — a `createBroadcast` that
+   * ended in a network failure, a timeout or a 5xx, which may have minted a
+   * draft whose id we never received (no sweep can reach it). Zero-filled by
+   * the gauges cron. **Alarm** (not page) at ≥ 1; runbook
+   * `docs/runbooks/broadcast-audience-build.md` § orphaned Resend ids.
+   * (Review round 2, spec N3 — this docblock had drifted above the prune
+   * counter.)
+   */
+  orphanedResendIdsUnconfirmed(tenantId: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_orphaned_resend_ids_unconfirmed',
+        'create_unconfirmed orphan rows (a createBroadcast that may have minted a draft we never learnt the id of) in the last ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS (24 h)',
         { tenant: tenantId },
         count,
       );

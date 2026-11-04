@@ -77,7 +77,8 @@ describe('resendBroadcastsGateway.retrieveBroadcastOnce (spec 139 review round 1
     ['scheduled', 'unknown'],
   ] as const)('200 with status %s → present %s: one GET /broadcasts/{id}, authorised, carrying an abort signal', async (raw, status) => {
     stubFetch(() => json(200, { object: 'broadcast', id: BROADCAST_ID, status: raw }));
-    expect(await retrieveOnce(BROADCAST_ID)).toEqual({ kind: 'present', status });
+    // Review round 2 (reliability nit) — `sentAt` too: null when the body has none.
+    expect(await retrieveOnce(BROADCAST_ID)).toEqual({ kind: 'present', status, sentAt: null });
     expect(captured).toHaveLength(1);
     expect(captured[0]).toMatchObject({
       url: `https://api.resend.com/broadcasts/${encodeURIComponent(BROADCAST_ID)}`,
@@ -85,6 +86,13 @@ describe('resendBroadcastsGateway.retrieveBroadcastOnce (spec 139 review round 1
       hasSignal: true,
     });
     expect(captured[0]!.authorization).toMatch(/^Bearer /);
+  });
+
+  it('[review round 2] a 200 with a string sent_at carries it as sentAt; a non-string one reads null', async () => {
+    stubFetch(() => json(200, { object: 'broadcast', id: BROADCAST_ID, status: 'sent', sent_at: '2026-11-03T10:00:00.000Z' }));
+    expect(await retrieveOnce(BROADCAST_ID)).toEqual({ kind: 'present', status: 'sent', sentAt: '2026-11-03T10:00:00.000Z' });
+    stubFetch(() => json(200, { object: 'broadcast', id: BROADCAST_ID, status: 'sent', sent_at: 17 }));
+    expect(await retrieveOnce(BROADCAST_ID)).toEqual({ kind: 'present', status: 'sent', sentAt: null });
   });
 
   it.each([404, 410])('%i → not_found', async (status) => {

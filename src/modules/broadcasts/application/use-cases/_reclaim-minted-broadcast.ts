@@ -8,9 +8,14 @@
  *
  * 2026-09-10 follow-ups (2) + (6). Best-effort, and the grade is decided by
  * whether the reclaim worked — on every arm alike: reclaimed → info; reclaim
- * failed → error at critical, because that is the one an operator has to act
- * on (the resource exists at Resend, no row references it, and no cron will
- * find it — `cleanup-orphaned-audiences` deletes audiences, not broadcasts).
+ * failed → error at critical (the resource exists at Resend and no row
+ * references it).
+ *
+ * Spec 140 s2c (DL6) — answers `'reclaimed' | 'leaked'` so the CALLER (the
+ * persist helper, which holds the requester) records a leaked id in
+ * `broadcast_orphaned_resend_ids`; the `cleanup-audiences` drain then deletes
+ * it at Resend. The record is not written here: a shared gateway helper holds
+ * no requester and must not grow writers [A2].
  *
  * The tick's outcome is decided BEFORE this runs; nothing here changes the
  * return. And per the port docblock: never on an id read from the row.
@@ -37,7 +42,7 @@ export async function reclaimMintedBroadcast(
     readonly observedStatus?: string;
     readonly logPrefix: 'broadcasts.dispatch' | 'broadcasts.audience_import';
   },
-): Promise<void> {
+): Promise<'reclaimed' | 'leaked'> {
   try {
     await deps.broadcastsGateway.deleteBroadcast(resendBroadcastId);
     logger.info(
@@ -51,6 +56,7 @@ export async function reclaimMintedBroadcast(
       },
       `${ctx.logPrefix}.minted_broadcast_reclaimed`,
     );
+    return 'reclaimed';
   } catch (reclaimErr) {
     logger.error(
       {
@@ -65,5 +71,6 @@ export async function reclaimMintedBroadcast(
       },
       `${ctx.logPrefix}.minted_broadcast_leaked`,
     );
+    return 'leaked';
   }
 }

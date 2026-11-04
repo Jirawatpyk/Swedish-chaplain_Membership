@@ -506,6 +506,8 @@ function makeDeps(opts: {
       locale: 'en' as const,
       // F119 — required port; no brand configured for these cases.
       brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
+      // Spec 140 s2c - the orphan record; these cases do not read it.
+      orphans: { async recordOrphanedResendId() {} },
       resolveRecipients: async () => resolverAnswer(),
       // The pause before re-probing a `not_found` inherited id: recorded, never waited.
       pauseBeforeReprobe: async (ms: number) => {
@@ -776,7 +778,7 @@ function makeDeps(opts: {
         },
         async retrieveBroadcastOnce() {
           rec.gatewayCalls.push('retrieveBroadcastOnce');
-          return { kind: 'present' as const, status: opts.retrieveOnceStatus ?? ('draft' as const) };
+          return { kind: 'present' as const, status: opts.retrieveOnceStatus ?? ('draft' as const), sentAt: null };
         },
       },
       audit: {
@@ -4072,7 +4074,11 @@ describe('buildAudienceTick — the remaining restart / fence arms', () => {
     expect(rec.memberEmails).toEqual([]);
   });
 
-  it('the send 404s and the re-read itself FAILS → the ordinary resource_missing arm', async () => {
+  // Spec 140 s2c [A3] — the resource_missing arm ends in `failTerminally`, whose
+  // choke point re-reads the row first; with `findById` failing on every call
+  // that re-read fails too, so the answer is the retryable one and nothing
+  // terminal is written (the next tick tries again).
+  it('the send 404s and the re-read itself FAILS → the resource_missing arm, whose choke-point re-read fails too: retryable, no terminal write', async () => {
     const { deps, rec } = makeDeps({
       ...TICK2,
       resendBroadcastId: 'rb-0',
@@ -4082,8 +4088,8 @@ describe('buildAudienceTick — the remaining restart / fence arms', () => {
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(res.ok ? null : res.error.kind).toBe('broadcast_resend_resource_missing');
-    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(res.ok ? null : res.error).toMatchObject({ kind: 'dispatch.server_error', message: 'terminal_reread_failed', phase: 'terminal_write' });
+    expect(rec.transitions).toEqual([]);
   });
 
   it.each([

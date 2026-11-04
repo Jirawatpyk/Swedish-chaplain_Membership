@@ -35,8 +35,12 @@ vi.mock('@/lib/logger', () => ({
 
 import {
   CASCADE_CAS_RETRIES,
+  ERASURE_AUDIENCE_ORPHAN_LIMIT,
   cancelInFlightBroadcastsForMember,
 } from '@/modules/broadcasts/application/use-cases/cancel-in-flight-broadcasts-for-member';
+import { ORPHAN_STUCK_ATTEMPTS, ORPHAN_STUCK_MIN_AGE_MS, ORPHAN_SUPERSEDING_STATUSES } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
+import { TERMINAL_BROADCAST_STATUSES } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import { logger } from '@/lib/logger';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { REPROBE_PAUSE_MS } from '@/modules/broadcasts/application/use-cases/_reprobe-pause';
 import { asTenantContext } from '@/modules/tenants';
@@ -98,6 +102,18 @@ function makeDeps(overrides: {
   terminalRows?: ReadonlyArray<{ broadcastId: string; status: string; resendBroadcastId: string }> | 'throws';
   /** Spec 140 s1 — a per-Resend-id DELETE answer; falls back to `deleteOutcome`. */
   deleteOutcomeById?: Readonly<Record<string, 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other' | 'throws'>>;
+  /** Spec 140 s2c — the member's broadcast orphan rows (`listMemberOrphans`); `'throws'` = the read fails. */
+  memberOrphans?: ReadonlyArray<OrphanFixture> | 'throws';
+  /** Spec 140 s2c — the tenant's unsettled audience orphans (`listUnsettledAudienceOrphans`); `'throws'` = the read fails. */
+  audienceOrphans?: ReadonlyArray<OrphanFixture> | 'throws';
+  /** Spec 140 s2c — audience ids whose `deleteAudience` throws. */
+  deleteAudienceThrows?: ReadonlyArray<string>;
+  /** Spec 140 s2c — the settle CAS throws. */
+  settleThrows?: boolean;
+  /** Spec 140 s2c review round 1 — what the settle CAS answers. Default `true`. */
+  settleReturns?: boolean;
+  /** Spec 140 s2c review round 1 — `markOrphanAttempted` throws. */
+  markThrows?: boolean;
 }) {
   const rows = (overrides.inFlightRows ?? []).map(makeBroadcastRow);
   // F119 round-4 B6 — mirror db.transaction: a callback that returns COMMITS,
@@ -186,7 +202,7 @@ function makeDeps(overrides: {
       const probe = overrides.probe ?? 'sent';
       if (probe === 'throws') throw new Error('a fake that breaks the never-throws contract');
       if (probe === 'not_found' || probe === 'retryable' || probe === 'other') return { kind: probe };
-      return { kind: 'present' as const, status: probe };
+      return { kind: 'present' as const, status: probe, sentAt: null };
     }),
   };
   // Review round 2 (code-review #1) — the pause between a DELETE 404 and its
@@ -194,15 +210,89 @@ function makeDeps(overrides: {
   const pauseBeforeReprobe = vi.fn(async (ms: number) => {
     calls.push(`pause:${ms}${openTx > 0 ? '' : ':no-lock'}`);
   });
+  // Spec 140 s2c — the orphan record. Its calls go to their own list, so the
+  // s1 call-order assertions above are unchanged.
+  const orphanCalls: string[] = [];
+  const settles: Array<[string, string]> = [];
+  const attempted: string[] = [];
+  let audienceInFlight = 0;
+  let audiencePeak = 0;
+  const orphans = {
+    listMemberOrphans: vi.fn(async (forMember: string) => {
+      orphanCalls.push(`listMember:${forMember}`);
+      if (overrides.memberOrphans === 'throws') throw new Error('Neon: orphan list failed');
+      return (overrides.memberOrphans ?? []).map(orphanRef);
+    }),
+    listUnsettledAudienceOrphans: vi.fn(async (limit: number, _audienceGraceCutoff?: Date, stuckAgeCutoff?: Date) => {
+      orphanCalls.push(`listAudiences:${limit}`);
+      if (overrides.audienceOrphans === 'throws') throw new Error('Neon: orphan list failed');
+      // Review round 3 (code-review #1) — the repo's first sort key: stuck rows
+      // (by the caller's cutoff) last. A stable sort keeps the fixture order
+      // (the repo's attempts, created_at) within each group.
+      const stuck = (r: ReturnType<typeof orphanRef>) =>
+        stuckAgeCutoff !== undefined && r.attempts >= ORPHAN_STUCK_ATTEMPTS && r.createdAt.getTime() <= stuckAgeCutoff.getTime() ? 1 : 0;
+      return (overrides.audienceOrphans ?? []).map(orphanRef).sort((a, b) => stuck(a) - stuck(b)).slice(0, limit);
+    }),
+    settleOrphan: vi.fn(async (orphanId: string, outcome: string) => {
+      if (overrides.settleThrows === true) throw new Error('57P01');
+      settles.push([orphanId, outcome]);
+      return overrides.settleReturns ?? true;
+    }),
+    markOrphanAttempted: vi.fn(async (orphanId: string) => {
+      if (overrides.markThrows === true) throw new Error('57P01');
+      attempted.push(orphanId);
+      return true;
+    }),
+  };
+  const deleteAudience = vi.fn(async (id: string) => {
+    orphanCalls.push(`deleteAudience:${id}`);
+    audienceInFlight += 1;
+    audiencePeak = Math.max(audiencePeak, audienceInFlight);
+    await Promise.resolve();
+    audienceInFlight -= 1;
+    if (overrides.deleteAudienceThrows?.includes(id) === true) throw { kind: 'retryable', subKind: 'timeout', reason: 'aborted' };
+  });
   return {
     broadcastsRepo,
     audit,
     clock,
-    broadcastsGateway,
+    broadcastsGateway: { ...broadcastsGateway, deleteAudience },
     pauseBeforeReprobe,
+    orphans,
+    orphanCalls,
+    settles,
+    attempted,
+    audiencePeak: () => audiencePeak,
     txOutcomes,
     calls,
   } as never;
+}
+
+/** Spec 140 s2c — an orphan row as the fake repo answers it. */
+interface OrphanFixture {
+  readonly orphanId: string;
+  readonly broadcastId: string;
+  readonly resourceId: string;
+  readonly resourceType?: 'broadcast' | 'audience';
+  readonly outcome?: 'deleted' | 'absent' | 'retained' | 'handed' | 'superseded' | null;
+  readonly attempts?: number;
+  readonly heldBySentRow?: boolean;
+  readonly createdAt?: Date;
+}
+
+function orphanRef(o: OrphanFixture) {
+  return {
+    orphanId: o.orphanId,
+    broadcastId: o.broadcastId,
+    requestedByMemberId: memberId as string,
+    resourceType: o.resourceType ?? 'broadcast',
+    resourceId: o.resourceId,
+    reason: o.resourceType === 'audience' ? 'audience_leaked' : 'attach_lost',
+    createdAt: o.createdAt ?? new Date('2026-05-02T00:00:00Z'),
+    outcome: o.outcome ?? null,
+    attempts: o.attempts ?? 0,
+    heldBySentRow: o.heldBySentRow ?? false,
+  };
 }
 
 describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
@@ -319,7 +409,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         txOutcomes: string[];
       };
       const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       // Round-4 B6 — the lost attempt leaves its tx (rolled back); the retry commits.
       expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
       expect(deps.broadcastsRepo.applyTransition.mock.calls.map((c) => c[5])).toEqual(['approved', 'in_design']);
@@ -338,7 +428,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         findByIdImpl: async () => ({ status: 'awaiting_member_approval' }),
       }) as { broadcastsRepo: { applyTransition: ReturnType<typeof vi.fn> }; txOutcomes: string[] };
       const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.broadcastsRepo.applyTransition).toHaveBeenCalledTimes(1 + CASCADE_CAS_RETRIES);
       // Round-4 B6 — every lost attempt rolls its tx back; none commits.
       expect(deps.txOutcomes).toEqual(Array.from({ length: 1 + CASCADE_CAS_RETRIES }, () => 'rolled_back'));
@@ -356,7 +446,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         },
       });
       const result = await cancelInFlightBroadcastsForMember(deps, { tenant, memberId, requestId: 'req-1' });
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
     });
 
     it('the row is gone on the re-read → a benign skip (nothing left in flight)', async () => {
@@ -368,7 +458,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         findByIdImpl: async () => null,
       });
       const result = await cancelInFlightBroadcastsForMember(deps, { tenant, memberId, requestId: 'req-1' });
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
     });
   });
 
@@ -393,7 +483,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       })(),
     }) as { txOutcomes: string[]; broadcastsRepo: { applyTransition: ReturnType<typeof vi.fn> } };
     const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
-    expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+    expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
     expect(deps.broadcastsRepo.applyTransition).toHaveBeenCalledTimes(2);
     expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
     expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['unexpected_error', 'cancelled']);
@@ -413,7 +503,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         broadcastsRepo: { lockForUpdate: ReturnType<typeof vi.fn>; findByIdInTx: ReturnType<typeof vi.fn> };
       };
       const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.calls).toEqual([`lock:${broadcastIdA}`, `read:${broadcastIdA}`, `cas:${broadcastIdA}`]);
       // The same tx handle for the lock and the read.
       expect(deps.broadcastsRepo.lockForUpdate.mock.calls[0]?.[0]).toBe(deps.broadcastsRepo.findByIdInTx.mock.calls[0]?.[0]);
@@ -441,7 +531,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         audit: { emit: ReturnType<typeof vi.fn> };
       };
       const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
       // DE4 — archive never deletes at Resend.
       expect(deps.calls.filter((c) => c.startsWith('delete:') || c.startsWith('probe:'))).toEqual([]);
@@ -469,7 +559,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         lockedRowImpl: async (id) => ({ broadcastId: id, status: 'approved', resendBroadcastId: null, audienceImportId: 'imp-live-1' }),
       }) as { calls: string[] };
       const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.calls).toContain(`cas:${broadcastIdA}`);
     });
 
@@ -480,7 +570,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         findByIdImpl: async () => null,
       }) as { calls: string[] };
       const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
     });
   });
@@ -589,7 +679,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         deleteOutcome: 'deleted',
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.calls).toEqual([...lockA, `cas:${broadcastIdA}`, 'evidence:count']);
       expect(deps.broadcastsGateway.retrieveBroadcastOnce).not.toHaveBeenCalled();
       // The cancel tx, then the count read.
@@ -607,7 +697,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         probe: 'not_found',
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       // Review round 2 (code-review #1) — REPROBE_PAUSE_MS between the 404 and
       // the GET, under the lock, as the import leg waits before its re-probe.
       expect(deps.calls).toEqual([...lockA, `pause:${REPROBE_PAUSE_MS}`, 'probe:rb-live-1', `cas:${broadcastIdA}`, 'evidence:count']);
@@ -624,7 +714,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         probe: 'cancelled',
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.calls).toEqual([...lockA, 'probe:rb-live-1', `cas:${broadcastIdA}`, 'evidence:count']);
       const [cancelled] = eventsOf(deps, 'broadcast_cancelled');
       expect(cancelled?.[1]).toMatchObject({ payload: expect.objectContaining({ resendOutcome: 'cancelled_at_resend' }) });
@@ -644,7 +734,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
             probe: status,
           }) as unknown as Seen;
           const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-          expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+          expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
           expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
           // The probe ran under the row lock; the evidence check on a tx of its own after it.
           // A pause only after a 404, never after a 403.
@@ -686,7 +776,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
             probe,
           }) as unknown as Seen;
           const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-          expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+          expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
           expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
           expect(deps.calls).toContain('probe:rb-live-1');
           expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
@@ -714,7 +804,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         probe,
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.calls).toEqual([...lockA, ...pauseAfter(deleteOutcome), 'probe:rb-live-1', 'evidence:count']);
       expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
       expect(deps.audit.emit).not.toHaveBeenCalled();
@@ -730,7 +820,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
           deleteOutcome: outcome,
         }) as unknown as Seen;
         const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-        expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+        expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
         expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
         expect(deps.broadcastsGateway.retrieveBroadcastOnce).not.toHaveBeenCalled();
         expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
@@ -748,7 +838,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
       // member_erased must still say this E-Blast went out.
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.audit.emit).not.toHaveBeenCalled();
       expect(deps.calls).toEqual([...lockA, 'probe:rb-live-1', `evidence:${broadcastIdA}`, 'evidence:count']);
       expect(deps.txOutcomes).toEqual(['committed', 'committed', 'committed']);
@@ -759,7 +849,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       // longer in flight; an accumulated count would say 0 here.
       const deps = makeDeps({ inFlightRows: [], alreadySentEvidence: [broadcastIdA, broadcastIdB] }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 2, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 2, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.calls).toEqual(['evidence:count']);
       expect(deps.broadcastsRepo.readAlreadySentEvidenceInTx).toHaveBeenCalledWith(expect.anything(), tenant.slug, { memberId, broadcastId: null });
     });
@@ -767,7 +857,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
     it('P7 — the archive mode never reads the evidence: its count is 0', async () => {
       const deps = makeDeps({ inFlightRows: [], alreadySentEvidence: [broadcastIdA] }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.broadcastsRepo.readAlreadySentEvidenceInTx).not.toHaveBeenCalled();
     });
 
@@ -777,7 +867,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         evidenceCountThrows: true,
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
     });
 
     // Review round 2 (reliability LOW-1) — ONE evidence row, not two: the
@@ -793,7 +883,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         findByIdImpl: async () => ({ status: 'partially_sent' }),
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['already_sent']);
       const blocked = eventsOf(deps, 'broadcast_concurrent_action_blocked');
       // The durable evidence row only, on its own tx.
@@ -839,7 +929,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         findByIdImpl: async () => ({ status: 'sending' }),
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(eventsOf(deps, 'broadcast_concurrent_action_blocked')).toHaveLength(1);
     });
 
@@ -854,7 +944,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         },
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.txOutcomes).toEqual(['committed', 'rolled_back', 'committed']);
     });
 
@@ -868,7 +958,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         },
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.calls).toEqual([...lockA, `cas:${broadcastIdA}`, 'evidence:count']);
       expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
     });
@@ -894,7 +984,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         deleteOutcome: 'deleted',
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.broadcastsGateway.deleteBroadcastOnce).toHaveBeenCalledTimes(1);
       expect(deps.calls).toEqual([
         `lock:${broadcastIdA}`,
@@ -915,14 +1005,14 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         lockedRowImpl: handedRow({ resendBroadcastId: '' }),
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
     });
 
     it('a row with no Resend id is cancelled exactly as before — no Resend call', async () => {
       const deps = makeDeps({ inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }] }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
     });
   });
@@ -967,6 +1057,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         resendDraftsCleared: 0,
         resendCopiesRetained: 0,
         deferredCount: 0,
+        audienceOrphansStuckCount: 0,
         ...v,
       },
     });
@@ -1082,7 +1173,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         ...erasureInput,
         deadlineAt: new Date('2026-05-02T23:59:59Z'),
       });
-      expect(result).toEqual(value({ unexpectedErrorCount: 2, deferredCount: 2 }));
+      expect(result).toEqual(value({ unexpectedErrorCount: 2, deferredCount: 2, audienceOrphansStuckCount: 0 }));
       expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
       // Review round 2 (code-review #4) — a deferral is its own label, not the
       // stop-the-line `unexpected_error`; it still withholds member_erased.
@@ -1103,7 +1194,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         // 00:00:01 (before the deadline), row B at 00:00:02 (not before it).
         deadlineAt: new Date('2026-05-03T00:00:02Z'),
       });
-      expect(result).toEqual(value({ resendDraftsCleared: 1, unexpectedErrorCount: 1, deferredCount: 1 }));
+      expect(result).toEqual(value({ resendDraftsCleared: 1, unexpectedErrorCount: 1, deferredCount: 1, audienceOrphansStuckCount: 0 }));
       expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['terminal_draft_cleared', 'deferred']);
       expect(deps.broadcastsGateway.deleteBroadcastOnce).toHaveBeenCalledTimes(1);
     });
@@ -1173,6 +1264,370 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       expect(result).toEqual(value({}));
       expect(deps.broadcastsRepo.listTerminalWithResendIdOwnedByMember).not.toHaveBeenCalled();
       expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Spec 140 s2c (DL10) — the erasure also settles the member's known-id
+   * orphan rows at Resend [P H-1 for the tenant's audiences]. The member's
+   * broadcast orphans count into the existing `resendDraftsCleared` /
+   * `resendCopiesRetained`; a handed one is already-sent evidence keyed on the
+   * row's snapshot `broadcast_id`, counted without writing an evidence row
+   * [P M-2]; settled rows are counted again on a re-drive with no Resend call
+   * [A6a]; an id the terminal pass already counted is not counted twice. The
+   * tenant's audience orphans are deleted and NOT counted [P L-1]. Anything
+   * undecided withholds `member_erased` (`unexpectedErrorCount`).
+   */
+  describe('spec 140 s2c — the erasure settles the member\'s orphans and the tenant\'s leaked audiences', () => {
+    const erasureInput = { tenant, memberId, requestId: 'req-1', onDispatchBegun: 'delete_then_cancel' as const };
+    type Seen = {
+      calls: string[];
+      orphanCalls: string[];
+      settles: Array<[string, string]>;
+      audit: { emit: ReturnType<typeof vi.fn> };
+      orphans: { listMemberOrphans: ReturnType<typeof vi.fn>; listUnsettledAudienceOrphans: ReturnType<typeof vi.fn> };
+      broadcastsGateway: { deleteBroadcastOnce: ReturnType<typeof vi.fn>; retrieveBroadcastOnce: ReturnType<typeof vi.fn> };
+    };
+    const value = (v: Partial<Record<string, number>>) => ({
+      ok: true,
+      value: {
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        unexpectedErrorCount: 0,
+        alreadySentCount: 0,
+        resendDraftsCleared: 0,
+        resendCopiesRetained: 0,
+        deferredCount: 0,
+        audienceOrphansStuckCount: 0,
+        ...v,
+      },
+    });
+    const o1 = { orphanId: 'o-1', broadcastId: broadcastIdA, resourceId: 'rb-orphan-1' };
+    const o2 = { orphanId: 'o-2', broadcastId: broadcastIdB, resourceId: 'rb-orphan-2' };
+    const aud = { orphanId: 'o-aud', broadcastId: broadcastIdB, resourceId: 'aud-leaked', resourceType: 'audience' as const };
+
+    it.each([
+      ['deleted', undefined, 'deleted', { resendDraftsCleared: 1 }],
+      // Review round 2 (code-review #4) — a 404 settles absent once a GET confirms it.
+      ['absent', 'not_found', 'absent', { resendDraftsCleared: 1 }],
+      ['forbidden', 'cancelled', 'retained', { resendCopiesRetained: 1 }],
+      ['forbidden', 'failed', 'retained', { resendCopiesRetained: 1 }],
+    ] as const)('a member broadcast orphan: DELETE %s (GET %s) settles %s and counts into the draft fields', async (deleteOutcome, probe, outcome, counts) => {
+      const deps = makeDeps({ memberOrphans: [o1], deleteOutcome, ...(probe === undefined ? {} : { probe }) }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value(counts));
+      expect(deps.settles).toEqual([['o-1', outcome]]);
+      expect(deps.orphans.listMemberOrphans).toHaveBeenCalledWith(memberId);
+    });
+
+    it('[P M-2] a handed member orphan settles handed and counts as already sent, keyed on its broadcast_id, with NO evidence row written', async () => {
+      const deps = makeDeps({ memberOrphans: [o1], deleteOutcome: 'forbidden', probe: 'sent' }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value({ alreadySentCount: 1 }));
+      expect(deps.settles).toEqual([['o-1', 'handed']]);
+      expect(deps.audit.emit).not.toHaveBeenCalled();
+    });
+
+    it('[P M-2] a handed orphan of a broadcast that already has evidence, or two of one broadcast, count once', async () => {
+      const twin = { orphanId: 'o-1b', broadcastId: broadcastIdA, resourceId: 'rb-orphan-1b', outcome: 'handed' as const };
+      const deps = makeDeps({
+        memberOrphans: [{ ...o1, outcome: 'handed' }, twin, { ...o2, outcome: 'handed' }],
+        alreadySentEvidence: [broadcastIdB],
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      // B is in the evidence (1); A is not, and its two handed orphans add 1.
+      expect(result).toEqual(value({ alreadySentCount: 2 }));
+    });
+
+    it('[A6a] a re-drive counts the settled rows again with no Resend call', async () => {
+      const deps = makeDeps({
+        memberOrphans: [{ ...o1, outcome: 'deleted' }, { ...o2, outcome: 'retained' }],
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value({ resendDraftsCleared: 1, resendCopiesRetained: 1 }));
+      expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
+      expect(deps.settles).toEqual([]);
+    });
+
+    it('an orphan whose id a terminal row holds is settled but not counted twice', async () => {
+      const terminal = { broadcastId: broadcastIdA, status: 'failed_to_dispatch', resendBroadcastId: 'rb-orphan-1' };
+      const deps = makeDeps({ terminalRows: [terminal], memberOrphans: [o1] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value({ resendDraftsCleared: 1 }));
+      expect(deps.settles).toEqual([['o-1', 'deleted']]);
+    });
+
+    it.each([
+      ['an undecided DELETE', { memberOrphans: [o1], deleteOutcome: 'retryable' as const }],
+      ['a settle CAS that throws', { memberOrphans: [o1], settleThrows: true }],
+      ['a member orphan list that fails', { memberOrphans: 'throws' as const }],
+    ])('%s withholds member_erased (unexpectedErrorCount)', async (_label, opts) => {
+      const deps = makeDeps(opts) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, resendDraftsCleared: 0 } });
+    });
+
+    it('[P H-1] the tenant\'s unsettled audience orphans are deleted and settled, and NOT counted into the draft fields', async () => {
+      const deps = makeDeps({ audienceOrphans: [aud] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value({}));
+      expect(deps.orphanCalls).toContain('deleteAudience:aud-leaked');
+      expect(deps.settles).toEqual([['o-aud', 'deleted']]);
+    });
+
+    it.each([
+      ['a delete that throws', { audienceOrphans: [aud], deleteAudienceThrows: ['aud-leaked'] }],
+      ['an audience list that fails', { audienceOrphans: 'throws' as const }],
+    ])('[P H-1] %s on an audience orphan withholds member_erased', async (_label, opts) => {
+      const deps = makeDeps(opts) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1 } });
+    });
+
+    it(`[P H-1] more audience orphans than ERASURE_AUDIENCE_ORPHAN_LIMIT: the rest are deferred and withhold member_erased`, async () => {
+      const many = Array.from({ length: ERASURE_AUDIENCE_ORPHAN_LIMIT + 1 }, (_, i) => ({ ...aud, orphanId: `o-aud-${i}`, resourceId: `aud-${i}` }));
+      const deps = makeDeps({ audienceOrphans: many }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(deps.orphans.listUnsettledAudienceOrphans).toHaveBeenCalledWith(ERASURE_AUDIENCE_ORPHAN_LIMIT + 1, expect.any(Date), expect.any(Date));
+      expect(deps.settles).toHaveLength(ERASURE_AUDIENCE_ORPHAN_LIMIT);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, deferredCount: 1 } });
+    });
+
+    it('past the caller\'s deadline an unsettled orphan is deferred (no Resend call) and withholds member_erased', async () => {
+      const deps = makeDeps({ memberOrphans: [o1, { ...o2, outcome: 'deleted' }], audienceOrphans: [aud] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, { ...erasureInput, deadlineAt: new Date('2026-05-02T00:00:00Z') });
+      // The settled row is still counted; the two unsettled ones are deferred.
+      expect(result).toEqual(value({ resendDraftsCleared: 1, unexpectedErrorCount: 2, deferredCount: 2, audienceOrphansStuckCount: 0 }));
+      expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
+      expect(deps.orphanCalls.filter((c) => c.startsWith('deleteAudience'))).toEqual([]);
+    });
+
+    it('the archive mode reads no orphan', async () => {
+      const deps = makeDeps({ memberOrphans: [o1], audienceOrphans: [aud] }) as unknown as Seen;
+      await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
+      expect(deps.orphanCalls).toEqual([]);
+    });
+  });
+
+  /**
+   * Spec 140 s2c review round 1 (code-review #1, #2, #6; reliability M-2, L-1;
+   * pdpa M-B): an undecided settle marks the row attempted; a settle whose CAS
+   * lost withholds (the re-drive counts the settled row); and in pass (b) a
+   * tenant audience orphan tried `ORPHAN_STUCK_ATTEMPTS` (8) times or more is
+   * REPORTED (`orphan_stuck`), not withheld — a member's own orphans still
+   * withhold. Pass (b) settles at concurrency 5.
+   */
+  describe('spec 140 s2c review round 1 — attempts, the stuck rule, the CAS', () => {
+    const erasureInput = { tenant, memberId, requestId: 'req-1', onDispatchBegun: 'delete_then_cancel' as const };
+    type Seen = { attempted: string[]; settles: Array<[string, string]>; audiencePeak: () => number };
+    const aud = (n: number, attempts = 0) => ({ orphanId: `o-aud-${n}`, broadcastId: broadcastIdB, resourceId: `aud-${n}`, resourceType: 'audience' as const, attempts });
+
+    it('a stuck tenant audience orphan does not withhold; a fresh one does', async () => {
+      expect(ORPHAN_STUCK_ATTEMPTS).toBe(8);
+      const stuck = makeDeps({ audienceOrphans: [aud(1, ORPHAN_STUCK_ATTEMPTS)], deleteAudienceThrows: ['aud-1'] }) as unknown as Seen;
+      const stuckRun = await cancelInFlightBroadcastsForMember(stuck as never, erasureInput);
+      expect(stuckRun).toMatchObject({ ok: true, value: { unexpectedErrorCount: 0 } });
+      expect(stuck.attempted).toEqual(['o-aud-1']);
+      const fresh = makeDeps({ audienceOrphans: [aud(1, ORPHAN_STUCK_ATTEMPTS - 1)], deleteAudienceThrows: ['aud-1'] }) as unknown as Seen;
+      const freshRun = await cancelInFlightBroadcastsForMember(fresh as never, erasureInput);
+      expect(freshRun).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1 } });
+    });
+
+    it("the member's OWN orphan still withholds however many attempts it has", async () => {
+      const deps = makeDeps({
+        memberOrphans: [{ orphanId: 'o-1', broadcastId: broadcastIdA, resourceId: 'rb-o1', attempts: 50 }],
+        deleteOutcome: 'retryable',
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1 } });
+      expect(deps.attempted).toEqual(['o-1']);
+    });
+
+    it('a settle whose CAS lost withholds (the re-drive counts the settled row)', async () => {
+      const deps = makeDeps({
+        memberOrphans: [{ orphanId: 'o-1', broadcastId: broadcastIdA, resourceId: 'rb-o1' }],
+        settleReturns: false,
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, resendDraftsCleared: 0 } });
+    });
+
+    it('a failed attempt mark still withholds, and is logged', async () => {
+      const deps = makeDeps({
+        memberOrphans: [{ orphanId: 'o-1', broadcastId: broadcastIdA, resourceId: 'rb-o1' }],
+        deleteOutcome: 'retryable',
+        markThrows: true,
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1 } });
+    });
+
+    it('pass (b) settles the tenant audience orphans five at a time', async () => {
+      const deps = makeDeps({ audienceOrphans: Array.from({ length: 12 }, (_, i) => aud(i)) }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 0 } });
+      expect(deps.settles).toHaveLength(12);
+      expect(deps.audiencePeak()).toBe(5);
+    });
+  });
+
+  /**
+   * Spec 140 s2c review round 2 — pass (a) through the shared outcome table:
+   * code-review #2 (`superseded`: settled with no Resend call, never counted,
+   * on the first run or a re-drive) and code-review #4 (a DELETE 404 is
+   * confirmed by a GET after REPROBE_PAUSE_MS).
+   */
+  describe('spec 140 s2c review round 2 — superseded, the 404 confirm', () => {
+    const erasureInput = { tenant, memberId, requestId: 'req-1', onDispatchBegun: 'delete_then_cancel' as const };
+    type Seen = {
+      settles: Array<[string, string]>;
+      calls: string[];
+      broadcastsGateway: { deleteBroadcastOnce: ReturnType<typeof vi.fn> };
+    };
+    const o1 = { orphanId: 'o-1', broadcastId: broadcastIdA, resourceId: 'rb-o1' };
+
+    it('[code-review #2] an orphan whose id a sent row holds is superseded, not handed, and never counted', async () => {
+      const deps = makeDeps({ memberOrphans: [{ ...o1, heldBySentRow: true }], deleteOutcome: 'forbidden', probe: 'sent' }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0 } });
+      expect(deps.settles).toEqual([['o-1', 'superseded']]);
+      expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
+    });
+
+    it('[code-review #2] a re-drive does not count a settled superseded row', async () => {
+      const deps = makeDeps({ memberOrphans: [{ ...o1, outcome: 'superseded' }] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0 } });
+    });
+
+    it('[code-review #4] a 404 then a GET draft is not absent: it withholds member_erased', async () => {
+      const deps = makeDeps({ memberOrphans: [o1], deleteOutcome: 'absent', probe: 'draft' }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, resendDraftsCleared: 0 } });
+      expect(deps.settles).toEqual([]);
+      expect(deps.calls.filter((c) => !c.startsWith('evidence'))).toEqual(['delete:rb-o1:no-lock', `pause:${REPROBE_PAUSE_MS}:no-lock`, 'probe:rb-o1:no-lock']);
+    });
+  });
+
+  /**
+   * Spec 140 s2c review round 2 (security F1/F2, code-review #1, reliability
+   * MED, pdpa M-3) — a tenant audience orphan is STUCK when it has been tried
+   * `ORPHAN_STUCK_ATTEMPTS` times AND is older than `ORPHAN_STUCK_MIN_AGE_MS`
+   * (2 h, by the injected clock against `created_at`). Pass (b) applies the
+   * rule at every exit — undecided, past the deadline, over the limit — and a
+   * stuck row never withholds: it is counted (`audienceOrphansStuckCount`, the
+   * `member_erased` field; review round 3 moved the counter to the emit in
+   * `erase-member.ts`).
+   */
+  describe('spec 140 s2c review round 2 — the stuck rule needs age, at every pass (b) exit', () => {
+    const erasureInput = { tenant, memberId, requestId: 'req-1', onDispatchBegun: 'delete_then_cancel' as const };
+    // The harness clock is 2026-05-03T00:00Z.
+    const OLD = new Date('2026-05-02T00:00:00Z');
+    const YOUNG = new Date('2026-05-02T23:00:00Z');
+    const stuckAud = (n: number, createdAt = OLD) => ({
+      orphanId: `o-aud-${n}`,
+      broadcastId: broadcastIdB,
+      resourceId: `aud-${n}`,
+      resourceType: 'audience' as const,
+      attempts: ORPHAN_STUCK_ATTEMPTS,
+      createdAt,
+    });
+    // Review round 3 (code-review #1, security LOW, reliability LOW-1) — the
+    // over-limit exit judges only the marker row (LIMIT + 1). The list sorts
+    // stuck rows LAST, by a cutoff from the same clock as the stuck rule, so a
+    // stuck marker means every unlisted row is stuck too: a young row with more
+    // attempts is listed ahead of them and settled, never left unseen.
+    it('the audience list sorts stuck rows last: a stuck marker row means every unlisted row is stuck', async () => {
+      const rows = Array.from({ length: ERASURE_AUDIENCE_ORPHAN_LIMIT + 1 }, (_, i) => stuckAud(i));
+      // Not stuck (1 h old); the pre-round-3 order (attempts, age) put it after all 21.
+      const young = { ...stuckAud(99, YOUNG), attempts: ORPHAN_STUCK_ATTEMPTS + 1 };
+      const deps = makeDeps({ audienceOrphans: [...rows, young], deleteAudienceThrows: rows.map((r) => r.resourceId) });
+      const seen = deps as unknown as { settles: Array<[string, string]>; orphans: { listUnsettledAudienceOrphans: ReturnType<typeof vi.fn> } };
+      const result = await cancelInFlightBroadcastsForMember(deps, erasureInput);
+      expect(seen.settles).toEqual([['o-aud-99', 'deleted']]);
+      // The grace cutoff (now − 1 h) and the stuck cutoff (now − ORPHAN_STUCK_MIN_AGE_MS).
+      expect(seen.orphans.listUnsettledAudienceOrphans).toHaveBeenCalledWith(
+        ERASURE_AUDIENCE_ORPHAN_LIMIT + 1,
+        new Date('2026-05-02T23:00:00Z'),
+        new Date('2026-05-02T22:00:00Z'),
+      );
+      // 19 undecided + the marker; the 21st stuck row is unlisted, so the count is a minimum.
+      expect(result).toMatchObject({
+        ok: true,
+        value: { unexpectedErrorCount: 0, deferredCount: 0, audienceOrphansStuckCount: ERASURE_AUDIENCE_ORPHAN_LIMIT },
+      });
+    });
+
+    // Review round 4 (code-review #3, reliability LOW-A) — the over-limit
+    // marker is judged at the instant the list was read (the SQL stuck cutoff
+    // came from it), not at the later "now": a marker that turns 2 h old in
+    // between was sorted as not stuck, so it is deferred (withheld), never
+    // reported (released).
+    it('a marker row that turns 2 h old after the list is deferred, not reported', async () => {
+      const base = Date.parse('2026-05-03T00:00:00Z');
+      const fresh = Array.from({ length: ERASURE_AUDIENCE_ORPHAN_LIMIT }, (_, i) => ({ ...stuckAud(i, YOUNG), attempts: 0 }));
+      // 1 min short of ORPHAN_STUCK_MIN_AGE_MS at list time; 1 min past it after.
+      const marker = stuckAud(99, new Date(base - ORPHAN_STUCK_MIN_AGE_MS + 60_000));
+      const deps = makeDeps({ audienceOrphans: [...fresh, marker] });
+      const seen = deps as unknown as {
+        clock: { now: () => Date };
+        orphans: { listUnsettledAudienceOrphans: ReturnType<typeof vi.fn<(...args: unknown[]) => Promise<unknown>>> };
+      };
+      let t = base;
+      seen.clock.now = () => new Date(t);
+      const list = seen.orphans.listUnsettledAudienceOrphans;
+      const original = list.getMockImplementation()!;
+      list.mockImplementationOnce(async (...args: unknown[]) => {
+        const rows = await original(...args);
+        t += 2 * 60_000;
+        return rows;
+      });
+      const result = await cancelInFlightBroadcastsForMember(deps, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, deferredCount: 1, audienceOrphansStuckCount: 0 } });
+    });
+
+    it('attempts ≥ 8 but younger than 2 h still withholds', async () => {
+      const deps = makeDeps({ audienceOrphans: [stuckAud(1, YOUNG)], deleteAudienceThrows: ['aud-1'] });
+      const result = await cancelInFlightBroadcastsForMember(deps, erasureInput);
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, audienceOrphansStuckCount: 0 } });
+    });
+
+    it('a stuck audience orphan past the deadline does not withhold; a young one is deferred', async () => {
+      const deps = makeDeps({ audienceOrphans: [stuckAud(1), stuckAud(2, YOUNG)] }) as unknown as { orphanCalls: string[] };
+      const result = await cancelInFlightBroadcastsForMember(deps as never, { ...erasureInput, deadlineAt: new Date('2026-05-02T00:00:00Z') });
+      expect(result).toMatchObject({ ok: true, value: { unexpectedErrorCount: 1, deferredCount: 1, audienceOrphansStuckCount: 1 } });
+      expect(deps.orphanCalls.filter((c) => c.startsWith('deleteAudience'))).toEqual([]);
+    });
+  });
+
+  /**
+   * Spec 140 s2c review round 3 — code-review #5: a run whose only news is a
+   * released stuck audience orphan still logs `broadcasts.cascade.completed`;
+   * reliability nit: a superseding status is TERMINAL (a non-terminal holder
+   * already hides the orphan from every list, so it could never supersede).
+   */
+  describe('spec 140 s2c review round 3 — the summary log and the superseding statuses', () => {
+    const erasureInput = { tenant, memberId, requestId: 'req-1', onDispatchBegun: 'delete_then_cancel' as const };
+
+    it('[code-review #5] a released stuck audience orphan alone still logs broadcasts.cascade.completed', async () => {
+      vi.mocked(logger.info).mockClear();
+      const stuck = {
+        orphanId: 'o-aud-1',
+        broadcastId: broadcastIdB,
+        resourceId: 'aud-1',
+        resourceType: 'audience' as const,
+        attempts: ORPHAN_STUCK_ATTEMPTS,
+        createdAt: new Date('2026-05-02T00:00:00Z'),
+      };
+      const deps = makeDeps({ audienceOrphans: [stuck], deleteAudienceThrows: ['aud-1'] });
+      await cancelInFlightBroadcastsForMember(deps, erasureInput);
+      const line = vi.mocked(logger.info).mock.calls.find((c) => c[1] === 'broadcasts.cascade.completed');
+      expect(line?.[0]).toMatchObject({ audienceOrphansStuckCount: 1, unexpectedErrorCount: 0 });
+    });
+
+    it('[reliability nit] every ORPHAN_SUPERSEDING_STATUSES member is terminal', () => {
+      const terminal: ReadonlyArray<string> = TERMINAL_BROADCAST_STATUSES;
+      expect(ORPHAN_SUPERSEDING_STATUSES.filter((s) => !terminal.includes(s))).toEqual([]);
     });
   });
 });

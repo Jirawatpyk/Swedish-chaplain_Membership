@@ -240,6 +240,84 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      sweep removes rows). A non-zero `resend_copies_retained` is residual 8d:
      record on the DSR ticket that an unsent copy remains at Resend; a handed
      row is 8c (above);
+   - **spec 140 s2c — the orphan rows.** The cascade also settled the member's
+     own BROADCAST orphans in `broadcast_orphaned_resend_ids` (ids our side
+     left at Resend on no live row) and the tenant's leaked audiences; an
+     undecided broadcast orphan of the member withholds `member_erased`. Their
+     settled broadcast rows are in the counts above (`deleted` / `absent` →
+     cleared, `retained` → retained, `handed` → already sent, RoPA 8c;
+     `superseded` — a sent row holds the id — is in none of them), so with orphans the TERMINAL-query equality reads "+ the member's
+     settled broadcast orphans whose id no terminal row holds". The orphans
+     counted include rows the `cleanup-audiences` drain settled BEFORE this
+     erasure ran, and `absent` ones (Resend never held, or no longer holds,
+     the copy): the count means "copies confirmed gone at Resend", not
+     "drafts this erasure deleted" (MEASURED in the s2c Verify, 4 Nov 2026:
+     one drain-settled `absent` row plus one `deleted` draft gave
+     `resend_drafts_cleared: 2`). Check nothing is left (read-only):
+
+     ```sql
+     -- the step-4 ORPHAN query: rows still unsettled for this member
+     SELECT orphan_id, resource_type, resource_id, reason, created_at
+       FROM broadcast_orphaned_resend_ids
+      WHERE tenant_id = '<tenant>' AND requested_by_member_id = '<member_id>'
+        AND settled_at IS NULL;
+     ```
+
+     **The tenant's leaked audiences** (review round 1, pdpa M-B). The
+     erasure also settles every unsettled AUDIENCE orphan of the tenant,
+     whoever requested it (they hold recipients' contacts), and asks Resend to
+     detach the member's addresses from up to
+     `ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT` (10) of them, the most-attempted
+     first (review round 2, pdpa H-1, capped by review round 3; in
+     `subprocessor_erasure_propagated`); one past the cap is deleted whole by
+     this pass or the drain. One that is STUCK —
+     `ORPHAN_STUCK_ATTEMPTS` (8) tries AND older than `ORPHAN_STUCK_MIN_AGE_MS`
+     (2 h), review round 2 — is reported (`broadcasts.cascade.orphan_stuck`)
+     at any exit of the pass and does not withhold this erasure;
+     `member_erased.audience_orphans_stuck_count` says how many this run
+     released (a minimum: the stuck rows the pass listed, review round 3; the
+     query below lists them all). When it is above 0: list them, delete each
+     by hand **within the § H-1 remediation SLA of the erasure that released it (`member_erasure_requested` + 30 days, PDPA by analogy; the default for every subject)**, record
+     the audience ids and the date on the DSR ticket, and say so in the DSR
+     answer (RoPA 8d residual 5):
+
+     ```sql
+     -- the step-4 TENANT AUDIENCE query (read-only)
+     SELECT orphan_id, resource_id, attempts, last_attempted_at, created_at
+       FROM broadcast_orphaned_resend_ids
+      WHERE tenant_id = '<tenant>' AND resource_type = 'audience'
+        AND settled_at IS NULL
+      ORDER BY attempts DESC, created_at;
+     ```
+
+     **Manual settle:** delete the audience in the Resend dashboard (or
+     confirm it answers 404); the next `cleanup-audiences` run reads the 404
+     and settles the row `deleted` itself — do not write the row by hand.
+
+     A `create_unconfirmed` row (no `resource_id`) is never settled: it is the
+     unknown-id mint of RoPA 8d. Give the DSR its count, and follow "How to
+     find one" there:
+
+     ```sql
+     -- the DSR count query. Rows are pruned after ORPHAN_ROW_RETENTION_DAYS
+     -- (90 days), so for an older E-Blast history the answer is "at least N"
+     -- (review round 1, pdpa M-C).
+     SELECT count(*) AS create_unconfirmed
+       FROM broadcast_orphaned_resend_ids
+      WHERE tenant_id = '<tenant>' AND requested_by_member_id = '<member_id>'
+        AND reason = 'create_unconfirmed';
+     ```
+
+     A row with an id written after the cascade's pass (a tick in flight) is
+     drained by `cleanup-audiences` normally on the next tick (an erased
+     requester's row skips the grace); at worst one tick after the 1-hour
+     grace (`AUDIENCE_CLEANUP_GRACE_MS`, while a terminal holder's audience
+     grace runs); later only while Resend's answer stays undecided, or on a
+     busy tenant while more than 20 newer in-grace rows and a past-grace
+     backlog keep it out of both drain lists (RoPA 8d residual 1). If the
+     first run returned one, re-run the ORPHAN query after one interval
+     (`*/15 * * * *`, `vercel.json`); if it is still there, re-run it after
+     the 1-hour grace; if it is STILL there, settle it by hand as in residual 5;
    - **run the step 3b STATE query on every erasure, whatever the count says**
      (`sent_at >= member_erasure_requested`, statuses `sending` / `sent` /
      `partially_sent` / `partial_delivery_accepted`). Any row it returns is

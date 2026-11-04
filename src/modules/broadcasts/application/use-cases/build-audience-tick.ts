@@ -74,6 +74,8 @@ import {
 } from './_dispatch-standing-gate';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
+import { recordOrphanBestEffort } from './_record-orphaned-resend-id';
+import type { BroadcastOrphansRepo, RecordOrphanInput } from '../ports/broadcast-orphans-repo';
 import { rereadAfterLostRace } from './_reread-after-lost-race';
 import { isHandedStatus, probeRefusedSend } from './_probe-refused-send';
 import type { BroadcastsRepo, LeaseCheck, LeaseToken, ReleaseOutcome } from '../ports/broadcasts-repo';
@@ -454,6 +456,13 @@ export interface BuildAudienceTickDeps {
   /** Waits `ms` before the `not_found` re-probe (`REPROBE_PAUSE_MS`); tests pass a recorder. Default: a timer. */
   readonly pauseBeforeReprobe?: (ms: number) => Promise<void>;
   /**
+   * Spec 140 s2c (DL5b, DL6) — where an id this tick leaves on no row is
+   * recorded (`broadcast_orphaned_resend_ids`), so the `cleanup-audiences`
+   * drain and the erasure cascade can settle it at Resend. REQUIRED: a
+   * composition that forgot it would leak drafts and audiences silently.
+   */
+  readonly orphans: Pick<BroadcastOrphansRepo, 'recordOrphanedResendId'>;
+  /**
    * Spec 140 s2b (DL9) — when the cron invocation began and its `maxDuration`.
    * REQUIRED: no row starts after `ROW_START_CUTOFF_MS` (`_dispatch-lease.ts`),
    * so a row started at the cutoff finishes its longest path (`W_MAX_MS`) plus
@@ -655,15 +664,21 @@ async function leaseGate(
  *   delete answers 404, which counts as deleted).
  *
  * An audience that is kept unread, or whose delete is undecided, is the leak
- * an operator must see: `audience_leaked` at ERROR, with the id.
+ * an operator must see: `audience_leaked` at ERROR, with the id. Spec 140 s2c
+ * (DL6) — and an orphan row (`audience_leaked`, resource type `audience`), so
+ * the drain deletes it; while a non-terminal row holds it (a read-back that
+ * failed on a write that landed) the drain skips it.
  */
 async function reclaimUnattachedAudience(
   deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   audienceId: string,
   mode: 'lease_lost' | 'read_back',
+  requestedByMemberId: string,
 ): Promise<void> {
   const ids = { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, resendAudienceId: audienceId };
+  const recordAudienceLeak = () =>
+    recordOrphan(deps, input, { requestedByMemberId, resourceType: 'audience', resourceId: audienceId, reason: 'audience_leaked' });
   if (mode === 'read_back') {
     let onRow: boolean;
     try {
@@ -671,6 +686,7 @@ async function reclaimUnattachedAudience(
       onRow = row?.resendAudienceId === audienceId;
     } catch (e) {
       logger.error({ ...ids, step: 'read_back', err: errKind(e), severity: 'critical' }, 'broadcasts.audience_import.audience_leaked');
+      await recordAudienceLeak();
       return;
     }
     if (onRow) {
@@ -686,6 +702,7 @@ async function reclaimUnattachedAudience(
       { ...ids, step: 'delete_audience', err: errKind(e), errorKind: classifyThrown(e).kind, severity: 'critical' },
       'broadcasts.audience_import.audience_leaked',
     );
+    await recordAudienceLeak();
   }
 }
 
@@ -1061,6 +1078,17 @@ async function applySendStanding(
     if (cleared.kind === 'handed') {
       return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
     }
+    // Spec 140 s2c (R1 #5) — the draft may still be at Resend: recorded before
+    // the terminal write, so the drain reaches it once the row is terminal.
+    // (`undeleted` implies the row carried an id: `none` is `cleared`.)
+    if (cleared.kind === 'undeleted' && rowDraft !== null) {
+      await recordOrphan(deps, input, {
+        requestedByMemberId: broadcast.requestedByMemberId,
+        resourceType: 'broadcast',
+        resourceId: rowDraft.resendBroadcastId,
+        reason: 'refused_draft_undeleted',
+      });
+    }
     return failTerminally(
       deps,
       input,
@@ -1087,6 +1115,8 @@ async function applySendStanding(
           actorRole: null,
           requestId: null,
         }),
+        // Spec 140 s2c — the gate's delete above IS this row's reclaim.
+        draftSettled: true,
       },
     );
   }
@@ -1115,6 +1145,8 @@ async function applySendStanding(
         notifyMember: false,
         payloadExtra: { standing: 'erased', resendDraftOutcome: cleared.draftOutcome },
         concurrentLossIsSkip: true,
+        // Spec 140 s2c — the erased wrapper's delete above IS this row's reclaim.
+        draftSettled: true,
       },
     );
   }
@@ -1131,11 +1163,15 @@ async function applySendStanding(
   });
 }
 
-/** The three Resend-side ids a restart reads off the row (the broadcast id RAW — `''` included). */
+/**
+ * The three Resend-side ids a restart reads off the row (the broadcast id RAW —
+ * `''` included), plus the requester, which an orphan row records (spec 140 s2c).
+ */
 interface RowIds {
   readonly audienceId: string | null;
   readonly importId: string | null;
   readonly resendBroadcastId: string | null;
+  readonly requestedByMemberId: string;
 }
 
 /**
@@ -1155,7 +1191,24 @@ function rowIds(broadcast: Broadcast): RowIds {
     audienceId: broadcast.resendAudienceId ?? null,
     importId: broadcast.audienceImportId,
     resendBroadcastId: broadcast.resendBroadcastId ?? null,
+    requestedByMemberId: broadcast.requestedByMemberId,
   };
+}
+
+/**
+ * Spec 140 s2c — record an id this tick leaves on no row (best-effort, own
+ * tx; `_record-orphaned-resend-id.ts`), at the caller, which holds the id and
+ * the requester [A2].
+ */
+function recordOrphan(
+  deps: LeasedTickDeps,
+  input: BuildAudienceTickInput,
+  orphan: Omit<RecordOrphanInput, 'broadcastId'>,
+): Promise<void> {
+  return recordOrphanBestEffort(deps.orphans, { tenantId: deps.tenant.slug, logPrefix: 'broadcasts.audience_import' }, {
+    broadcastId: input.broadcastId,
+    ...orphan,
+  });
 }
 
 /**
@@ -1301,8 +1354,15 @@ async function restartAudienceBuild(
       if (!opts.bidIsDead || isRetryableThrow(classifyThrown(e).kind)) return failed('delete_broadcast', e);
       // Warn, not info: the cancelled resource stays at Resend (it cannot be
       // deleted) and the release below drops its id from the row, so this
-      // line is its only record.
+      // line and the orphan row below are its only record.
       logger.warn({ ...ids, err: errKind(e) }, `broadcasts.audience_import.${names.failed}_dead_broadcast_kept`);
+      // Spec 140 s2c — and its record: the drain settles it (`retained`).
+      await recordOrphan(deps, input, {
+        requestedByMemberId: row.requestedByMemberId,
+        resourceType: 'broadcast',
+        resourceId: resendBroadcastId,
+        reason: 'dead_broadcast_kept',
+      });
     }
   }
   // 3. The audience.
@@ -1353,6 +1413,15 @@ async function restartAudienceBuild(
  */
 function isAudienceMissing(failure: GatewayFailure): boolean {
   return !failure.retryable && failure.kind === 'permanent' && (failure.code === 'not_found' || failure.code === 'http_404');
+}
+
+/**
+ * Spec 140 s2c (DL5b) — the `createBroadcast` failures that may have minted a
+ * draft we never learnt the id of: the request may have reached Resend. A 429
+ * (`api`) was refused before anything was created.
+ */
+function isCreateUnconfirmed(subKind: string | undefined): boolean {
+  return subKind === 'network' || subKind === 'timeout' || subKind === 'server_5xx';
 }
 
 /**
@@ -1818,7 +1887,7 @@ async function submitImport(
       // ack looks the same), so the reclaim reads the row back first. Review
       // round 4 (reliability LOW-3) — then the transient answer, not a thrown
       // `uncaught_error` (the bug bucket that pages): nothing was sent.
-      await reclaimUnattachedAudience(deps, input, audienceId, 'read_back');
+      await reclaimUnattachedAudience(deps, input, audienceId, 'read_back', broadcast.requestedByMemberId);
       logger.warn(
         { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendAudienceId: audienceId, err: errKind(attachFault) },
         'broadcasts.audience_import.attach_audience_failed',
@@ -1826,7 +1895,13 @@ async function submitImport(
       return err({ kind: 'dispatch.server_error', message: 'attach_audience_failed', errClass: errKind(attachFault), phase: 'attach_audience' });
     }
     if (!attached.ok) {
-      await reclaimUnattachedAudience(deps, input, audienceId, isLeaseLost(attached.error) ? 'lease_lost' : 'read_back');
+      await reclaimUnattachedAudience(
+        deps,
+        input,
+        audienceId,
+        isLeaseLost(attached.error) ? 'lease_lost' : 'read_back',
+        broadcast.requestedByMemberId,
+      );
       return err(attached.error);
     }
   }
@@ -2213,6 +2288,18 @@ async function confirmImport(
         // re-probed `not_found`) answers the different question of minting.
         return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId }, inherited.observedResendStatus === 'cancelled');
       }
+      // Spec 140 s2c (DL5b) — a network failure, a timeout or a 5xx may have
+      // minted a draft whose id we never received (one attempt, DL5a): an
+      // id-less row the gauge counts. Not a 429 (`api`: rate-limited, nothing
+      // was created) and not a 4xx (refused).
+      if (createdRb.error.retryable && isCreateUnconfirmed(createdRb.error.subKind)) {
+        await recordOrphan(deps, input, {
+          requestedByMemberId: broadcast.requestedByMemberId,
+          resourceType: 'broadcast',
+          resourceId: null,
+          reason: 'create_unconfirmed',
+        });
+      }
       return onGatewayFailure(deps, input, broadcast, createdRb.error, importId);
     }
     mintedId = createdRb.value.broadcastId;
@@ -2223,6 +2310,7 @@ async function confirmImport(
   const persistRefused = await persistBroadcastIdBeforeSend(deps, input, {
     resendBroadcastId,
     resendAudienceId: audienceId,
+    requestedByMemberId: broadcast.requestedByMemberId,
     minted,
     lease: deps.lease,
     fence: {
@@ -2240,6 +2328,16 @@ async function confirmImport(
       { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, replacedResendBroadcastId: inheritedId, resendBroadcastId, observedResendStatus: inherited.observedResendStatus ?? 'not_found' },
       'broadcasts.audience_import.dead_broadcast_replaced',
     );
+    // Spec 140 s2c [A7] — only a `cancelled` id is still at Resend (a
+    // `not_found` one is gone): recorded, so the drain settles it.
+    if (inherited.observedResendStatus === 'cancelled') {
+      await recordOrphan(deps, input, {
+        requestedByMemberId: broadcast.requestedByMemberId,
+        resourceType: 'broadcast',
+        resourceId: inheritedId,
+        reason: 'dead_broadcast_replaced',
+      });
+    }
   }
 
   // Same idempotency key shape the single-tick path uses, and the SAME key on
@@ -2712,6 +2810,92 @@ async function advanceToSending(
 }
 
 /**
+ * Spec 140 s2c, item 4 — delete the Resend draft the row holds before a
+ * terminal write (`failTerminally`'s choke point; plan.md § Slice 2c [A2–A4]).
+ *
+ * 1. RE-READ the row [A3]: the Step-1 snapshot can be stale (a sibling's
+ *    persist after it). A read that fails decides nothing: a retryable
+ *    `dispatch.server_error` (phase `terminal_write`), no Resend call, no
+ *    terminal write; the next tick tries again.
+ * 2. No id (or `''`) → nothing to delete; the terminal write goes ahead.
+ * 3. The pre-call lease check (`leaseGate`, step `terminal_reclaim`) [A4]: lost
+ *    → `lease_lost` (row 9), expiring → `lease_expiring`, a failed check →
+ *    retryable. None writes a terminal row.
+ * 4. `deleteDraftBeforeStandingRefusal` (`_dispatch-standing-gate.ts`, the full
+ *    outcome set) with no probed status, so a 403 is decided by its one GET:
+ *    - `cleared` (`deleted` / `absent` / `cancelled` / `failed`) → terminal,
+ *      `resendDraftOutcome` in the payload;
+ *    - `handed` → the mail is out (a sibling sent it, or this tick's own
+ *      earlier send landed): no terminal write, no member email. Review round 1
+ *      (code-review #5) — the row is caught up to `sending` through the
+ *      existing `catchUpHanded`, with the RE-READ row, rather than left
+ *      `approved` to loop; a catch-up that loses answers as that path does (a
+ *      concurrent skip);
+ *    - `undeleted` → an orphan row `terminal_reclaim_undecided` (the drain
+ *      reaches it once the row is terminal), then terminal with
+ *      `resendDraftOutcome: 'undeleted'` + `resendDraftErrClass`.
+ *    The helper's own log lines say `refusal: 'terminal'` (review round 2,
+ *    code-review #5; this docblock fixed in round 3, #7); this function adds
+ *    no line of its own beyond the orphan record.
+ *
+ * W_max is unchanged (`_dispatch-lease.ts`): tick 2 already counts these two
+ * calls in `TICK2_RESEND_CALLS`, and on tick 1 they replace the standing gate's
+ * two (the refuse arms pass `draftSettled`), so `TICK1_BOUNDED_CALLS` holds.
+ *
+ * Documented, not fixed: a delete that lands followed by a terminal CAS that
+ * loses leaves the row `approved` holding a 404 id; the next tick's probe reads
+ * `not_found` twice and re-mints.
+ */
+async function reclaimDraftBeforeTerminal(
+  deps: LeasedTickDeps,
+  input: BuildAudienceTickInput,
+  broadcast: Broadcast,
+): Promise<
+  | { readonly stop: Result<BuildAudienceTickOutput, BuildAudienceTickError> }
+  | { readonly payloadExtra?: Readonly<Record<string, string>> }
+> {
+  const ids = { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string };
+  let current: Broadcast | null;
+  try {
+    current = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+  } catch (e) {
+    logger.warn({ ...ids, step: 'terminal_reclaim', err: errKind(e) }, 'broadcasts.audience_import.terminal_reread_failed');
+    return {
+      stop: err({ kind: 'dispatch.server_error', message: 'terminal_reread_failed', errClass: errKind(e), phase: 'terminal_write' }),
+    };
+  }
+  if (current === null) return {};
+  const draftId = current.resendBroadcastId ?? '';
+  if (draftId === '') return {};
+  const gated = await leaseGate(deps, input, 'terminal_reclaim');
+  if (gated !== null) return { stop: gated };
+  const cleared = await deleteDraftBeforeStandingRefusal(
+    deps.broadcastsGateway,
+    { ...ids, leg: 'import' },
+    { resendBroadcastId: draftId, probedStatus: null },
+    'terminal',
+  );
+  if (cleared.kind === 'handed') {
+    return {
+      stop: await catchUpHanded(deps, input, current, deps.clock.now(), draftId, {
+        handed: true,
+        status: cleared.resendStatus,
+        // Review round 2 (reliability nit) — the GET's own send time.
+        sentAt: cleared.sentAt,
+      }),
+    };
+  }
+  if (cleared.kind === 'cleared') return { payloadExtra: { resendDraftOutcome: cleared.draftOutcome } };
+  await recordOrphan(deps, input, {
+    requestedByMemberId: broadcast.requestedByMemberId,
+    resourceType: 'broadcast',
+    resourceId: draftId,
+    reason: 'terminal_reclaim_undecided',
+  });
+  return { payloadExtra: { resendDraftOutcome: 'undeleted', resendDraftErrClass: cleared.errClass } };
+}
+
+/**
  * A terminal import failure: the row moves to `failed_to_dispatch` so it is not
  * re-polled forever, and the reason survives in the audit trail. Deliberately
  * NOT a retry — every reason here is a statement about a job that already
@@ -2769,8 +2953,23 @@ async function failTerminally(
       readonly resourceType: 'audience' | 'broadcast' | 'import';
       readonly resourceId: string;
     };
+    /**
+     * Spec 140 s2c — the two standing-refusal arms deleted the row's draft
+     * already (`deleteDraftBeforeStandingRefusal` / the erased wrapper, under
+     * their own lease check), so the choke point below must not delete it a
+     * second time. Every other caller leaves it unset.
+     */
+    readonly draftSettled?: true;
   } = {},
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
+  // Spec 140 s2c, item 4 (pdpa M-1) — THE CHOKE POINT: no terminal row on this
+  // leg keeps a Resend draft it could have deleted. Before the terminal tx.
+  let payloadExtra = opts.payloadExtra;
+  if (opts.draftSettled !== true) {
+    const reclaimed = await reclaimDraftBeforeTerminal(deps, input, broadcast);
+    if ('stop' in reclaimed) return reclaimed.stop;
+    if (reclaimed.payloadExtra !== undefined) payloadExtra = { ...(payloadExtra ?? {}), ...reclaimed.payloadExtra };
+  }
   const auditEventType = opts.auditEventType ?? 'broadcast_failed_to_dispatch';
   const notifyMember = opts.notifyMember ?? true;
   const now = deps.clock.now();
@@ -2819,7 +3018,7 @@ async function failTerminally(
           importId: error.importId,
           reason,
           failedAt: now.toISOString(),
-          ...(opts.payloadExtra ?? {}),
+          ...(payloadExtra ?? {}),
         },
         requestId: null,
       });
@@ -3029,7 +3228,11 @@ async function onResolveFailure(
     // itself. Spec 140 s2b — so does a lost lease (`failTerminally`'s
     // concurrent skip): nothing was written, and answering `mapped` would have
     // the cron count `permanent_failed` for a row this tick no longer owns.
-    if (!terminal.ok && (terminal.error.kind === 'dispatch.server_error' || isLeaseLost(terminal.error))) return terminal;
+    // Review round 1 (reliability M-1) — every non-terminal stop passes through
+    // (`lease_expiring`, a handed draft caught up at the choke point), not only
+    // the server error and the lost lease: only a RECORDED terminal state
+    // answers the resolver's kind.
+    if (terminal.ok || terminal.error.kind !== 'audience_import_failed') return terminal;
     return err(mapped);
   }
 

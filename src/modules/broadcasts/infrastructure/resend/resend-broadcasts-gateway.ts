@@ -892,7 +892,28 @@ export function createResendBroadcastsGateway({
               logger.info({ audienceId }, 'resend.broadcasts.audience_already_absent');
               return; // idempotent: already gone
             }
-            throw classifyResendError(result.error ?? undefined, 'audience', audienceId);
+            const refused = classifyResendError(result.error ?? undefined, 'audience', audienceId);
+            // Spec 140 s2c Verify finding — MEASURED 2026-11-03 on the sink
+            // account while it held only the `General` segment: a DELETED
+            // audience answers DELETE 403 `validation_error` "Cannot delete last
+            // audience." (Resend checks "last audience" before the id), while
+            // GET answers 404. So a 403, and only a 403, is probed ONCE, on the
+            // same signal (inside this call's budget): 404 / 410 → already gone;
+            // anything else (found, 5xx, a throw) → the DELETE's own `permanent`
+            // classification, which `boundedCall` does not retry.
+            if (httpStatusOf(result.error) === 403) {
+              let probe: ResendSdkResponse<{ id: string }> | null = null;
+              try {
+                probe = (await sdk.audiences.get(audienceId, { signal })) as ResendSdkResponse<{ id: string }>;
+              } catch {
+                throw refused;
+              }
+              if (probe.error && isProviderGone(probe.error)) {
+                logger.info({ audienceId, via: 'probe_after_403' }, 'resend.broadcasts.audience_already_absent');
+                return;
+              }
+            }
+            throw refused;
           }
           logger.info({ audienceId }, 'resend.broadcasts.audience_deleted');
         },
@@ -1228,17 +1249,20 @@ function deleteOnceOutcomeFor(status: number): DeleteBroadcastOnceOutcome {
 
 function retrieveOnceOutcomeFor(status: number, text: string): RetrieveBroadcastOnceOutcome {
   if (status >= 200 && status < 300) {
-    let raw: unknown;
+    let body: { status?: unknown; sent_at?: unknown } | null;
     try {
-      raw = (JSON.parse(text) as { status?: unknown } | null)?.status;
+      body = JSON.parse(text) as { status?: unknown; sent_at?: unknown } | null;
     } catch {
       return { kind: 'other' };
     }
+    const raw = body?.status;
     if (typeof raw !== 'string') return { kind: 'other' };
+    // Review round 2 (reliability nit) — a string `sent_at` only; anything else is null.
+    const sentAt = typeof body?.sent_at === 'string' ? body.sent_at : null;
     // Spec 140 s1 — MEASURED 2026-10-29 (an audience deleted under a queued
     // broadcast). Named by this reader only; `normaliseStatus` keeps it
     // `unknown` for every other caller (see `RetrieveBroadcastOnceOutcome`).
-    return { kind: 'present', status: raw === 'failed' ? 'failed' : normaliseStatus(raw) };
+    return { kind: 'present', status: raw === 'failed' ? 'failed' : normaliseStatus(raw), sentAt };
   }
   if (status === 404 || status === 410) return { kind: 'not_found' };
   if (status === 429 || status >= 500) return { kind: 'retryable' };
