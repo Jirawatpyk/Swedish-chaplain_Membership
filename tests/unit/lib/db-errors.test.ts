@@ -14,6 +14,7 @@ import {
   isLastAdminTriggerError,
   isUniqueViolation,
   pgErrorCode,
+  pgErrorMeta,
   primaryContactTriggerViolation,
 } from '@/lib/db-errors';
 
@@ -168,5 +169,38 @@ describe('pgErrorCode', () => {
     expect(pgErrorCode(new Error('plain'))).toBeUndefined();
     expect(pgErrorCode('boom')).toBeUndefined();
     expect(pgErrorCode(null)).toBeUndefined();
+  });
+});
+
+describe('pgErrorMeta (spec 140 s2d, #736c)', () => {
+  // A PostgresError as postgres-js builds it: the names are metadata, while
+  // `detail` / `where` / `hint` / `message` can quote the row's values.
+  const pg = Object.assign(new Error('duplicate key value violates unique constraint "contacts_email_uniq"'), {
+    code: '23505',
+    constraint_name: 'contacts_email_uniq',
+    table_name: 'contacts',
+    column_name: 'email',
+    detail: 'Key (email)=(ann@example.com) already exists.',
+    where: 'SQL statement "insert into contacts values (ann@example.com)"',
+    hint: 'ann@example.com',
+  });
+
+  it('reads only the constraint, table and column names, through a Drizzle wrapper', () => {
+    const wrapped = withCause(new Error('Failed query: insert into contacts (email) values ($1) params: ann@example.com'), pg);
+    const meta = pgErrorMeta(wrapped);
+    expect(meta).toEqual({ constraint: 'contacts_email_uniq', table: 'contacts', column: 'email' });
+    expect(JSON.stringify(meta)).not.toMatch(/ann@example\.com|Key \(|insert into|duplicate key/);
+  });
+
+  it('omits a name the driver did not set, and keeps a non-string name out', () => {
+    const partial = Object.assign(new Error('x'), { code: '23503', constraint_name: 'fk_x', table_name: 42 });
+    expect(pgErrorMeta(partial)).toEqual({ constraint: 'fk_x' });
+  });
+
+  it('is undefined when no PostgresError is in the chain', () => {
+    expect(pgErrorMeta(new Error('plain'))).toBeUndefined();
+    expect(pgErrorMeta('boom')).toBeUndefined();
+    expect(pgErrorMeta(null)).toBeUndefined();
+    expect(pgErrorMeta(Object.assign(new Error('x'), { code: '23505' }))).toEqual({});
   });
 });
