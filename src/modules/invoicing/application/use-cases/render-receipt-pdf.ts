@@ -308,6 +308,26 @@ export async function renderReceiptPdf(
         templateVersion: input.templateVersion,
       });
 
+      // Task #71 (L-1) — the UPDATE is a no-op when another worker rendered
+      // first or the row was voided after our read. The 10-year audit row
+      // names this attempt's key and sha, so it is written only when the row
+      // now holds this attempt's write.
+      const writeLanded =
+        updated.status !== 'void' &&
+        updated.receiptPdf?.blobKey === receiptBlobKey &&
+        updated.receiptPdf.sha256 === rendered.sha256;
+      if (!writeLanded) {
+        logger.warn(
+          {
+            tenantId: input.tenantId,
+            invoiceId,
+            reason: updated.status === 'void' ? 'void' : 'race_lost',
+          },
+          'invoicing.receipt_render.write_lost',
+        );
+        return ok(updated);
+      }
+
       // Audit — `receipt_rendered` (10y retention, tax-doc-touching).
       // Adapter computes retention via `f4RetentionFor` on the event
       // type so emitters don't carry it.

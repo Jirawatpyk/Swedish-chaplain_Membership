@@ -977,8 +977,8 @@ async function dispatchOne(
         // Read on the tenant transaction runInTenant hands over, so RLS
         // scopes it as well as the explicit tenant predicate.
         const [invRow] = await runInTenant(tenantCtx, async (tenantTx) =>
-          tenantTx.execute<{ receipt_pdf_status: string | null; receipt_pdf_blob_key: string | null }>(
-            sqlTag`SELECT receipt_pdf_status, receipt_pdf_blob_key FROM invoices
+          tenantTx.execute<{ status: string; receipt_pdf_status: string | null; receipt_pdf_blob_key: string | null }>(
+            sqlTag`SELECT status, receipt_pdf_status, receipt_pdf_blob_key FROM invoices
                    WHERE tenant_id = ${row.tenantId} AND invoice_id = ${invoiceId}
                    LIMIT 1`,
           ),
@@ -1006,6 +1006,13 @@ async function dispatchOne(
         // 'failed' receipt drains the email row via the normal max-
         // retries → permanent-fail ladder (operator gets a single page
         // instead of a forever-stuck queue).
+        // Task #71 (L-2) — a void invoice's receipt never renders (the worker
+        // refuses a non-paid row and the reconcile cron skips it), so waiting
+        // would loop forever. Fail it by the ladder: the paid-receipt email
+        // for a voided sale does not ship.
+        if (invRow.status === 'void' && invRow.receipt_pdf_status !== 'rendered') {
+          return gateFail('invoice_void', 'invoice voided before its receipt rendered; the paid-receipt email will not ship');
+        }
         if (invRow.receipt_pdf_status === 'failed') {
           return gateFail('pdf_render_failed', 'receipt PDF render failed; waiting on the reconcile re-render');
         }
