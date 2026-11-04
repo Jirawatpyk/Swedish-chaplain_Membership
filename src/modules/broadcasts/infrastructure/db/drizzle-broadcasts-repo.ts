@@ -2692,7 +2692,8 @@ export function makeDrizzleBroadcastsRepo(
      * settled, a stuck one included, may hold the address.
      *
      * Review round 3 (code-review #3) — that arm reads at most
-     * `ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT` (10) orphans, most attempts first,
+     * `ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT` (10) orphans, most attempts first
+     * (stuck ones ahead of them since round 4, below),
      * then the oldest, so the pairs stay `addresses × 10` at worst. An orphan
      * past the cap is not detached; the erasure's audience pass and the drain
      * delete its audience outright (RoPA 8d names the residual).

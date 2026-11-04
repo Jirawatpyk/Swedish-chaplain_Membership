@@ -124,7 +124,9 @@ export const AUDIENCE_CLEANUP_GRACE_MS = 60 * 60 * 1000;
 /**
  * Review round 3 (code-review #3) — the 8a detach derivation's leaked-audience
  * arm reads at most this many unsettled audience orphans of the tenant, the
- * most-attempted first, so an erasure's detach pairs stay bounded. An orphan
+ * most-attempted first, so an erasure's detach pairs stay bounded. Review
+ * round 4 (code-review #2) — stuck ones (the `ORPHAN_STUCK_ATTEMPTS` rule)
+ * rank ahead of the attempts order. An orphan
  * past the cap is not detached: the erasure's audience pass and the drain
  * delete the whole audience (RoPA 8d, the detach-cap residual).
  */

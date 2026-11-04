@@ -37,7 +37,11 @@
  *     `member_erased` is drained on the next tick (a failed erased read waits).
  *     Review round 3 (code-review #2): a second list reads the in-grace rows
  *     only, and the erased requesters' rows go first, so past-grace rows that
- *     keep failing cannot fill the run ahead of them;
+ *     keep failing cannot fill the run ahead of them. Review round 4: that
+ *     list reads newest first, and only when the first came back full. The
+ *     reverse trade (reliability LOW-C): an erased requester's young rows come
+ *     first, so 20 or more of them defer the past-grace rows, for at most the
+ *     grace (by then they are past it and sort with the rest);
  *   - no chunk starts once `ORPHAN_DRAIN_STOP_MS` has passed since the run
  *     began; the rest go next run. Review round 3 (code-review #10): a
  *     broadcast row's worst case is a DELETE, `REPROBE_PAUSE_MS`, then a GET
