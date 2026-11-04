@@ -48,7 +48,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { errKind } from '@/lib/log-id';
+import { errKind, errStep } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { RecipientSegment } from '../../domain/recipient-segment';
 import type { AudienceMode } from '../../domain/audience-mode';
@@ -306,9 +306,12 @@ export async function resolveSegmentRecipients(
     } catch (e) {
       // The bridge already logged the class of failure; the caller decides
       // whether this is a retry (dispatch) or a 500 (submit).
+      // Spec 140 s2d review round 3 (code-review #5) — the bridge's step token
+      // (`members_bridge_<read>:<code>`), else the error class; never the
+      // thrown text, which for a Drizzle wrapper quotes the bound parameters.
       return err({
         kind: 'resolve.server_error',
-        message: e instanceof Error ? e.message : 'unknown error',
+        message: errStep(e) ?? errKind(e),
         errClass: errKind(e),
       });
     }

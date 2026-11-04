@@ -179,11 +179,11 @@ async function countRecipientsInner(
           // failed. The message is safe by construction, and the guarantee
           // lives at the source, not here: `resolve.server_error` has ONE
           // construction site (`resolve-segment-recipients.ts`, its `try`
-          // wrapping only the bridge reads), and every bridge throw is a
-          // fixed-format `members_bridge_<read>:<error code>` step (spec 140
-          // s2d review round 2: every read throws through `failedRead`) —
-          // never a row value, never an address. If a bridge ever throws a
-          // message built from data, fix it THERE.
+          // wrapping only the bridge reads), which since spec 140 s2d review
+          // round 3 stores `errStep(e) ?? errKind(e)`: the fixed-format
+          // `members_bridge_<read>:<error code>` step every bridge read
+          // throws through `failedRead`, else the error class. Never the
+          // thrown text, never a row value, never an address.
           { tenantId: deps.tenant.slug, correlationId: input.correlationId, err: result.error.message },
           'broadcasts.recipient_count.resolve_failed',
         );

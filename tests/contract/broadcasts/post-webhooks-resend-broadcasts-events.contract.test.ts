@@ -327,7 +327,7 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
   it('use-case error → 500 dispatch_failed (Resend retries)', async () => {
     constructEventMock.mockReturnValue(buildVerifiedEvent('delivered'));
     processWebhookEventMock.mockResolvedValue(
-      err({ kind: 'process_webhook.server_error', message: 'db down' }),
+      err({ kind: 'process_webhook.server_error', errClass: 'Error' }),
     );
     const route = await importRoute();
     const res = await route.POST(makeRequest({ body: '{}' }));

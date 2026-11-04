@@ -78,7 +78,9 @@ export async function getMemberBroadcast(
           tenantId: deps.tenant.slug,
           memberId: input.memberId,
           broadcastId: input.broadcastId,
-          actorUserId: input.actorUserId,
+          // Spec 140 s2d review round 3 (security #7) — hashed, like the
+          // audit-failure line below (rules.md § Secrets).
+          actorUserIdHash: hashId(input.actorUserId),
           requestId: input.requestId,
         },
         'broadcasts.enumeration_probe.not_found',
