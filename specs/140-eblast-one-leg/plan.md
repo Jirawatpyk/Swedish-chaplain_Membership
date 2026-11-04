@@ -2046,6 +2046,34 @@ Parts 1–3 touch `cancel-in-flight-broadcasts-for-member.ts` and run one after 
 
 **Verify:** after these fixes, the maintainer re-runs `/verify` on the final HEAD (spec M1): the drain tick (25 live rows plus the erased row, a 15-row share → `erasedShareFull`), the erase flow, and a log scan.
 
+### Slice 2d — review round 3, targeted (`/code-review high 2d6c5218d..0d3608c1f`: 10; security APPROVE WITH FIXES: 7 LOW; pdpa APPROVE WITH CONDITIONS: 1 HIGH (pre-existing), 1 MEDIUM, 2 LOW; reliability MERGEABLE: 1 MEDIUM; 4 Nov 2026)
+
+**Review metrics:** round 3 (targeted #1) · 10 + 7 + 4 + 1 items · cap: 2 full + ≤ 2 targeted; round 4 is the last.
+
+**Plan rows added before the fixes (D-043, neighbours named).**
+
+| Mechanism (asked by) | State / rule | Neighbours | Test that goes red first |
+|---|---|---|---|
+| **The reducer keeps a Result `type` and only token-shaped values** (code-review #1, reliability MED, security #1) | **Plain object `type` discriminant:** a token-shaped `type` (`/^[a-z][a-z0-9_]{0,47}$/`) is written as `errType`; the output `type` still means the class. <br>**`kind`:** uses the same lowercase token rule. <br>**`name`:** a plain object's `name` becomes `type` only if it matches `/^[A-Z]\w*(Error\|Exception)$/`; otherwise `'unknown'`. <br>**`errCode`:** written only for an Error instance, never for a plain object; `RESULT_CODE` already judged the code. <br>**`declineCode`:** uses the lowercase token rule. <br>**Failure and immutability:** the reducer is wrapped in `try/catch` → `{ type: 'unreducible' }`, so a throwing getter cannot turn a log call into a throw (security #3), and its output is frozen (security #4). | ~160 `{ type }` Result unions; the `kind` case; the docs field list | lib unit: `{ err: { type: 'server_error', message: EMAIL } }` → `{ type: 'unknown', errType: 'server_error' }`; a uuid / base64url / digits under `code` / `kind` / `name` / `declineCode` is not written; a throwing `stack` getter yields `unreducible` |
+| **Frames are cut by structure, not by message text** (code-review #4, security #2) | The header is every line before the first frame. A frame is kept only if it matches `^\s+at .*:\d+:\d+\)?$`. `split(message)` is removed | the reducer | lib unit: a one-letter message keeps its frames intact; a stack read before the message was mutated yields no message line |
+| **SQLSTATE must hold a digit; Node codes stay visible** (code-review #2, #3) | `pgErrorCode` accepts `/^(?=.*\d)[0-9A-Z]{5}$/`, so `EPIPE` / `EPERM` are not read as a SQLSTATE. `errLogFields`, for a thrown Error whose own `.code` is a token but not a SQLSTATE, also returns `errCode`, so the explicit `...errLogFields(e)` sites keep `ECONNRESET` / `ETIMEDOUT` | every `errLogFields` site; the reducer | lib unit: `{ code: 'EPIPE' }` → no `code`, `errCode: 'EPIPE'`; `ECONNRESET` reaches `errLogFields` |
+| **Every cause walk is bounded** (code-review #8) | One shared `walkCauses(e, fn)` with `MAX_CAUSE_HOPS`, used by every `db-errors.ts` walker (`isUniqueViolation*`, `isExclusionViolation*`, `isLastAdminTriggerError`, `primaryContactTriggerViolation`, `errorChainMessage`, `describeStorageError`) | their callers | lib unit: a cyclic cause returns from each walker |
+| **The broadcasts webhook and segment resolver stop carrying raw error text** (pdpa H-1, code-review #5) | `process-webhook-event.ts`'s `server_error` Result carries `errClass: errKind(e)` plus `step: errStep(e)`, not `message: e.message`. The route (`src/app/api/webhooks/resend-broadcasts/route.ts:~596`) logs those, not `detail: message`. `resolve-segment-recipients.ts` stores `errStep(e) ?? errKind(e)`, and `broadcasts-recipient-count.ts` logs that. HTTP response shapes are unchanged | the route's tests and contract; the two use cases' tests | route unit: a DrizzleQueryError during processing writes no email; resolver unit: a thrown Failed-query message is not carried |
+| **The gate taints any expression an inline log would refuse, follows reassignment and for-of, and memoises** (code-review #6, #9, #10; security #5) | `readsOffError` becomes `refusal(init) !== null` for an identifier-named declaration. Assignment (`x = e.message`) and `for (const m of e.x)` taint too. A `TOKEN_FIELDS_BY_TYPE` annotation is honoured only when the initializer is a direct property read, with no `as` or `!`. The tainted set is computed once per block | the 17 annotated sites (keep 0 findings) | gate unit: fixture lines for template / `+` / `&&` / `String(e)` initialisers, reassignment, for-of, and `(e as any).reason`, each refused |
+
+**Fixes:**
+- security #7: `get-member-broadcast.ts:79-81` hashes `actorUserId` and `memberId`'s actor, like `:114`.
+
+**Docs:**
+- security #1 / #6, code-review #7: the field list in `observability.md` and the plan row 1 of round 2 name `kind` and `errType` as token-shaped. "Closed tokens" becomes "token-shaped values (shape-checked)". The `plan.md:2041` example is corrected.
+- pdpa M-1: residual 10 gains one line saying that OTel span status and exception text are a separate sink, tracked in #740, and that whether Vercel stores traces on this plan is UNMEASURED.
+- pdpa L-2: the open clause adds "or an error object under any other key".
+- #740 (main session): add the span sites (`withActiveSpan` in `admin/events`, `eventcreate` webhook `:917-919`, `broadcasts/submit:142`, `resend-broadcasts:580`) and `admin/settings/member-changes/route.ts:64`.
+
+**Accepted:**
+- pdpa L-1: the shape-only token rule now applies to plain objects (row 1), and no live site logs a domain object under `err`.
+- security #8: `hashId` is 32-bit and unkeyed. This predates the PR.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
