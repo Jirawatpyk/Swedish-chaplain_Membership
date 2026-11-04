@@ -127,6 +127,27 @@ export async function refusedForms(): Promise<void> {
   logger.error({ err: result.error.cause }, 'x'); // refused
   logger.error({ err: rootCause(result.error) }, 'x'); // refused
   logger.error({ err: error.message ?? 'none' }, 'x'); // refused
+  // Review round 3 (code-review #6, #9, #10; security #5) — a local is
+  // tainted by any initializer an inline log would refuse, by a reassignment
+  // and by a for-of over an error; an annotation does not cover a cast.
+  try {
+    await Promise.resolve();
+  } catch (e) {
+    const viaTemplate = `failed: ${e.message}`;
+    logger.error({ viaTemplate }); // refused
+    const viaPlus = 'failed: ' + e.message;
+    logger.error({ viaPlus }); // refused
+    const viaAnd = attempts > 0 && e.message;
+    logger.error({ viaAnd }); // refused
+    const viaString = String(e);
+    logger.error({ viaString }); // refused
+    let reassigned = 'none';
+    reassigned = e.message;
+    logger.error({ reassigned }); // refused
+    for (const item of e.errors) logger.error({ item }); // refused
+    const castReason: BuildAudienceTickError['reason'] = (e as any).reason;
+    logger.error({ castReason }); // refused
+  }
 }
 
 export async function allowedForms(): Promise<void> {
@@ -158,4 +179,11 @@ export async function allowedForms(): Promise<void> {
   logger.error({ actor: hashId(actorUserId) }, 'x'); // allowed
   logger.error({ outcomeKind, errClass, pgCode }, 'x'); // allowed
   logger.error({ err: errClass, step: 'insert_row' }, 'x'); // allowed
+  try {
+    await Promise.resolve();
+  } catch (e) {
+    // Review round 3 — a template over a token field stays a token.
+    const label = `failed:${e.code}`;
+    logger.error({ label }); // allowed
+  }
 }
