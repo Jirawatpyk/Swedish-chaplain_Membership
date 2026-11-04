@@ -24,12 +24,12 @@
  * physical email transport).
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 
 import { db, runInTenant } from '@/lib/db';
-import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
+import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { GET as outboxDispatch } from '@/app/api/cron/outbox-dispatch/route';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
@@ -457,5 +457,46 @@ describe('T166-09 — invoice_paid email gate on receipt_pdf_status', () => {
     expect(rowAfter?.status).toBe('pending');
     expect(rowAfter?.attempts).toBe(1);
     expect(rowAfter?.lastError).toContain('rendered_without_key');
+  }, 60_000);
+
+  // Task #70 review (financial M-1) — every attempt-bumping gate arm said it
+  // "exits via the permanent-fail ladder", yet none checked MAX_ATTEMPTS: a
+  // broken row was pushed back 60 s forever, with no audit and no alert. On
+  // the last attempt the row is permanently failed and audited.
+  it.each([
+    ['rendered_without_key', { receiptPdfStatus: 'rendered' as const, receiptPdfBlobKey: null }],
+    ['pdf_render_failed', { receiptPdfStatus: 'failed' as const }],
+  ])('#70 M-1 — the %s arm on its last attempt is permanently failed and audited', async (reason, set) => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set(set)
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    });
+    const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true);
+    // MAX_ATTEMPTS is 5: four attempts already spent.
+    await db.update(notificationsOutbox).set({ attempts: 4 }).where(eq(notificationsOutbox.id, outboxId));
+
+    const resp = await outboxDispatch(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+    expect(resp.status).toBe(200);
+
+    const [rowAfter] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(rowAfter?.status).toBe('permanently_failed');
+    expect(rowAfter?.attempts).toBe(5);
+    expect(rowAfter?.lastError).toContain(reason);
+    const audits = await db
+      .select({ eventType: auditLog.eventType })
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenant.ctx.slug), sql`${auditLog.payload}->>'outbox_row_id' = ${outboxId}`));
+    expect(audits.map((a) => a.eventType).sort()).toEqual(['auto_email_delivery_failed', 'email_dispatch_failed']);
   }, 60_000);
 });
