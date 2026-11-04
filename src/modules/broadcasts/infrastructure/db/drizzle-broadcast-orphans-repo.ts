@@ -8,7 +8,7 @@
  * (D-029) — the NOT EXISTS subquery's `broadcasts` reference included — so the
  * application predicate and RLS + FORCE are two walls, not one.
  */
-import { and, asc, eq, gte, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, isNull, sql } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
@@ -154,13 +154,16 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
           isNotNull(orphans.resourceId),
           notHeldByLiveRow(ctx.slug, audienceGraceCutoff),
         );
-        // Review round 3 (code-review #2) — the in-grace-only list, oldest first.
+        // Review round 3 (code-review #2) — the in-grace-only list.
+        // Review round 4 (code-review #1) — newest first: an erased requester's
+        // post-pass orphan is the newest row, so a backlog of older in-grace
+        // rows cannot push it past the limit.
         if (options?.inGraceOnly === true) {
           const rows = await tx
             .select(columns(ctx.slug))
             .from(orphans)
             .where(and(base, gte(orphans.createdAt, audienceGraceCutoff)))
-            .orderBy(asc(orphans.createdAt), asc(orphans.orphanId))
+            .orderBy(desc(orphans.createdAt), desc(orphans.orphanId))
             .limit(limit);
           return rows.map(toRef);
         }

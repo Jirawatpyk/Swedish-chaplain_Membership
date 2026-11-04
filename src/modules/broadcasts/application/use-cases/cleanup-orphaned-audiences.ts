@@ -283,11 +283,15 @@ async function drainOrphans(
   // an erased requester's young row is reached even when ORPHAN_DRAIN_LIMIT
   // past-grace rows that keep failing fill the first one (RoPA 8d residual
   // (1)). A failure here is logged; the first list still drains.
+  // Review round 4 (code-review #4) — read only when the first list came back
+  // full: a shorter one already holds every drainable row, young ones included.
   let inGraceOnly: ReadonlyArray<OrphanedResendIdRef> = [];
-  try {
-    inGraceOnly = await deps.orphans.listDrainableOrphans(ORPHAN_DRAIN_LIMIT, graceCutoff, { inGraceOnly: true });
-  } catch (e) {
-    logger.error({ tenantId, list: 'in_grace', err: errKind(e) }, 'broadcasts.orphan_drain.list_failed');
+  if (pastFirst.length === ORPHAN_DRAIN_LIMIT) {
+    try {
+      inGraceOnly = await deps.orphans.listDrainableOrphans(ORPHAN_DRAIN_LIMIT, graceCutoff, { inGraceOnly: true });
+    } catch (e) {
+      logger.error({ tenantId, list: 'in_grace', err: errKind(e) }, 'broadcasts.orphan_drain.list_failed');
+    }
   }
   // One row per orphanId across both lists.
   const byId = new Map<string, OrphanedResendIdRef>();
