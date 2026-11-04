@@ -35,6 +35,7 @@ import type { VerifiedBroadcastEvent } from '@/modules/broadcasts/application/po
 import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import { ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { DrizzleQueryError } from 'drizzle-orm';
 
 const FROZEN_NOW = new Date('2026-06-15T05:00:00Z');
 const tenant = asTenantContext('test-tenant');
@@ -1515,5 +1516,70 @@ describe('helpers: shape conformance', () => {
   });
   it('unsafeBrandEmailLower preserves shape', () => {
     expect(unsafeBrandEmailLower('a@b.com')).toBe('a@b.com');
+  });
+});
+
+/**
+ * Spec 140 s2d review round 3 (pdpa H-1, code-review #5) — the `server_error`
+ * Result carries the error's class and a code-authored step, never its
+ * message: a Drizzle `Failed query:` message quotes the recipient's email.
+ */
+describe('process-webhook-event — server_error carries no error text (review round 3)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('a DrizzleQueryError thrown during processing is { errClass }, with no message and no email', async () => {
+    vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const pg = Object.assign(new Error('duplicate key value violates unique constraint "d"'), { code: '23505' });
+    const broadcasts = makeBroadcastsRepo({ currentBroadcast: baseBroadcast() });
+    broadcasts.port.withTx = () =>
+      Promise.reject(new DrizzleQueryError('insert into deliveries (email) values ($1)', ['alice@example.com'], pg));
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: { broadcastId, sent: 0, delivered: 0, bounced: 0, softBounced: 0, complained: 0 },
+    });
+    const result = await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: makeUnsubscribesRepo().port,
+        membersBridge: makeMembersBridge().port,
+        audit: makeAudit().port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      { broadcastId, event: buildEvent('delivered'), requestId: null },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({ kind: 'process_webhook.server_error', errClass: 'DrizzleQueryError' });
+    expect(JSON.stringify(result.error)).not.toMatch(/alice@example\.com|Failed query/);
+  });
+
+  it('a code-authored step thrown during processing is carried as step', async () => {
+    const broadcasts = makeBroadcastsRepo({ currentBroadcast: baseBroadcast() });
+    broadcasts.port.withTx = () => Promise.reject(new Error('lookup_failed:repo.unexpected'));
+    vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const result = await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: makeDeliveriesRepo({
+          upsertInsertedSequence: [true],
+          aggregate: { broadcastId, sent: 0, delivered: 0, bounced: 0, softBounced: 0, complained: 0 },
+        }).port,
+        marketingUnsubscribes: makeUnsubscribesRepo().port,
+        membersBridge: makeMembersBridge().port,
+        audit: makeAudit().port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      { broadcastId, event: buildEvent('delivered'), requestId: null },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({
+      kind: 'process_webhook.server_error',
+      errClass: 'Error',
+      step: 'lookup_failed:repo.unexpected',
+    });
   });
 });

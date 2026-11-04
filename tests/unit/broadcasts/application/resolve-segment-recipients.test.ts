@@ -1478,4 +1478,32 @@ describe('resolve-segment-recipients — orphan reasons + the SQL-excluded opt-o
     expect(result.error.errClass).not.toContain('alice@example.com');
   });
 
+  // Spec 140 s2d review round 3 (code-review #5) — `message` holds the
+  // bridge's step token or the error class, never the thrown text.
+  it('a thrown Failed-query message is not carried: message is the error class', async () => {
+    const deps = makeDeps({ audienceMode: 'all_contacts', contacts: [contact('m1', 'c-p1', 'p1@example.com')] });
+    class DrizzleQueryError extends Error {}
+    deps.membersBridge.getContactsBySegment = async () => {
+      throw new DrizzleQueryError('Failed query: select * from contacts where email = $1\nparams: alice@example.com');
+    };
+    const result = await resolveSegmentRecipients(deps, input());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({ kind: 'resolve.server_error', message: 'DrizzleQueryError', errClass: 'DrizzleQueryError' });
+  });
+
+  it("a bridge read's step token is carried as the message", async () => {
+    const deps = makeDeps({ audienceMode: 'all_contacts', contacts: [contact('m1', 'c-p1', 'p1@example.com')] });
+    deps.membersBridge.getContactsBySegment = async () => {
+      throw new Error('members_bridge_get_contacts_by_segment:repo.unexpected');
+    };
+    const result = await resolveSegmentRecipients(deps, input());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatchObject({
+      kind: 'resolve.server_error',
+      message: 'members_bridge_get_contacts_by_segment:repo.unexpected',
+    });
+  });
+
 });
