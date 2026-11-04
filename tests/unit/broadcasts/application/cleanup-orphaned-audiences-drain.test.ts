@@ -435,14 +435,15 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     });
     await h.run();
     expect(h.bridgeCalls).toEqual([['m-a', 'm-b']]);
-    expect(h.erasedPath).toEqual([`requesters:${ORPHAN_ERASED_REQUESTER_CAP}`, 'bridge', `rows:m-a:${ORPHAN_DRAIN_ERASED_SHARE + 1}`]);
+    // Review round 2 (code-review #10) — the requester read asks for cap + 1.
+    expect(h.erasedPath).toEqual([`requesters:${ORPHAN_ERASED_REQUESTER_CAP + 1}`, 'bridge', `rows:m-a:${ORPHAN_DRAIN_ERASED_SHARE + 1}`]);
     expect(h.settled.map(([id]) => id).sort()).toEqual(['o-1', 'o-3', 'o-4']);
   });
 
   it('no in-grace requester → no bridge call and no row read', async () => {
     const h = harness({ orphans: [orphan(1)] });
     await h.run();
-    expect(h.erasedPath).toEqual([`requesters:${ORPHAN_ERASED_REQUESTER_CAP}`]);
+    expect(h.erasedPath).toEqual([`requesters:${ORPHAN_ERASED_REQUESTER_CAP + 1}`]);
   });
 
   /**
@@ -535,7 +536,34 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     });
     await h.run();
     const line = warn.mock.calls.find((c) => c[1] === 'broadcasts.orphan_drain.erased_read_failed');
-    expect(line?.[0]).toEqual({ tenantId: tenant.slug, step: 'bridge', err: 'Error', code: '57P01' });
+    expect(line?.[0]).toEqual({ tenantId: tenant.slug, step: 'bridge', err: 'Error', code: '57P01', pg: {} });
+  });
+
+  // Review round 2 (code-review #7) — pgErrorMeta is used: the constraint
+  // name an incident needs, never the row's values in `detail`.
+  it('a 23505 under the erased read logs its constraint name, never the detail', async () => {
+    const pg = Object.assign(new Error('duplicate key value violates unique constraint "x_uniq"'), {
+      code: '23505',
+      constraint_name: 'x_uniq',
+      table_name: 'broadcast_orphans',
+      detail: 'Key (email)=(a@x.io) already exists.',
+    });
+    const h = harness({
+      orphans: [orphan(9, { createdAt: YOUNG, requestedByMemberId: 'm-erased' })],
+      erased: { 'm-erased': 'erased' },
+      erasedPathThrows: 'rows',
+      erasedPathError: new Error('Failed query: select … params: a@x.io', { cause: pg }),
+    });
+    await h.run();
+    const line = warn.mock.calls.find((c) => c[1] === 'broadcasts.orphan_drain.erased_read_failed');
+    expect(line?.[0]).toEqual({
+      tenantId: tenant.slug,
+      step: 'rows',
+      err: 'Error',
+      code: '23505',
+      pg: { constraint: 'x_uniq', table: 'broadcast_orphans' },
+    });
+    expect(JSON.stringify(line?.[0])).not.toMatch(/a@x\.io|Key \(/);
   });
 
   // Review round 1 (code-review #5) — the erased reads and the past-grace list run side by side.
@@ -582,14 +610,25 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     expect(res.ok ? res.value.orphans : null).toMatchObject({ settled: 1, waiting: 0 });
   });
 
-  it('ORPHAN_ERASED_REQUESTER_CAP in-grace requesters → logged (erased_requesters_capped) and the run carries on', async () => {
-    const many = Array.from({ length: ORPHAN_ERASED_REQUESTER_CAP }, (_, i) => orphan(i + 1, { createdAt: YOUNG, requestedByMemberId: `m-${i}` }));
+  // Review round 2 (code-review #10) — the capped line means truncated: the
+  // read asks for cap + 1, and only a list longer than the cap is capped.
+  it('more than ORPHAN_ERASED_REQUESTER_CAP in-grace requesters → logged (erased_requesters_capped), the bridge gets the cap, the run carries on', async () => {
+    const many = Array.from({ length: ORPHAN_ERASED_REQUESTER_CAP + 1 }, (_, i) => orphan(i + 1, { createdAt: YOUNG, requestedByMemberId: `m-${i}` }));
     const h = harness({ orphans: [...many, orphan(999)], erased: { 'm-3': 'erased' } });
     const res = await h.run();
+    expect(h.bridgeCalls[0]).toHaveLength(ORPHAN_ERASED_REQUESTER_CAP);
     expect(h.settled.map(([id]) => id).sort()).toEqual(['o-4', 'o-999']);
     expect(res.ok ? res.value.orphans : null).toMatchObject({ settled: 2, erasedReadFailed: false });
     const line = warn.mock.calls.find((c) => c[1] === 'broadcasts.orphan_drain.erased_requesters_capped');
     expect(line?.[0]).toEqual({ tenantId: tenant.slug, cap: ORPHAN_ERASED_REQUESTER_CAP });
+  });
+
+  it('exactly ORPHAN_ERASED_REQUESTER_CAP in-grace requesters → no capped line, all of them asked', async () => {
+    const exact = Array.from({ length: ORPHAN_ERASED_REQUESTER_CAP }, (_, i) => orphan(i + 1, { createdAt: YOUNG, requestedByMemberId: `m-${i}` }));
+    const h = harness({ orphans: exact });
+    await h.run();
+    expect(h.bridgeCalls[0]).toHaveLength(ORPHAN_ERASED_REQUESTER_CAP);
+    expect(warn.mock.calls.some((c) => c[1] === 'broadcasts.orphan_drain.erased_requesters_capped')).toBe(false);
   });
 
   it('fewer in-grace requesters than the cap → no capped line', async () => {

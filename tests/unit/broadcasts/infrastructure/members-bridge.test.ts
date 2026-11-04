@@ -29,6 +29,7 @@ const f3 = vi.hoisted(() => ({
   countBroadcastOptedOutContacts: vi.fn(),
   findErasedAtById: vi.fn(),
   findErasedIdsInTx: vi.fn(),
+  findById: vi.fn(),
 }));
 
 // Spec 140 s2d (#736a) - filterErasedMemberIds opens its own tenant tx.
@@ -41,6 +42,7 @@ vi.mock('@/modules/members', () => ({
     kind: 'member-repo-stub',
     findErasedAtById: (...a: unknown[]) => f3.findErasedAtById(...a),
     findErasedIdsInTx: (...a: unknown[]) => f3.findErasedIdsInTx(...a),
+    findById: (...a: unknown[]) => f3.findById(...a),
   },
   drizzleContactRepo: { kind: 'contact-repo-stub' },
   asMemberId: (id: string) => id,
@@ -248,6 +250,45 @@ describe('membersBridge — the other lookups discriminate "no data" from "no an
       'members_bridge_get_member_primary_contact:repo.unexpected',
       'members_bridge_get_members_halted:repo.unexpected',
       'members_bridge_lookup_contact_email:repo.unexpected',
+    ]);
+    for (const e of thrown) expect(pgErrorCode(e)).toBe('57P01');
+  });
+
+  // Spec 140 s2d review round 2 (spec L1, code-review #5) — EVERY bridge read
+  // failure is a step token with the cause, not only the four round 1 moved:
+  // the segment reads, the existence read, the primary-contact lookup, the
+  // halt write and the opt-out filter used a free-text message
+  // (`members-bridge.<method>: <code> — refusing …`) with no cause, so no
+  // caller's log could name the read or reach the SQLSTATE.
+  it('every remaining read throws a members_bridge_<read>:<repoCode> step with the cause', async () => {
+    const cause = Object.assign(new Error('terminating connection'), { code: '57P01' });
+    const failed = () => err({ code: 'repo.unexpected' as const, cause });
+    const email = unsafeBrandEmailLower('a@b.co');
+    const caught = (p: Promise<unknown>) => p.then(() => null, (e: unknown) => e);
+    f3.getMembersBySegment.mockResolvedValueOnce(failed());
+    f3.getBroadcastRecipientContacts.mockResolvedValueOnce(failed());
+    f3.countBroadcastOptedOutContacts.mockResolvedValueOnce(failed());
+    f3.findById.mockResolvedValueOnce(failed());
+    vi.mocked(f3mod.lookupMemberPrimaryContactEmailInTenant).mockResolvedValueOnce(failed() as never);
+    vi.mocked(f3mod.setMemberHalt).mockResolvedValueOnce(failed() as never);
+    vi.mocked(f3mod.filterMarketingOptedOutEmails).mockResolvedValueOnce(failed() as never);
+    const thrown = [
+      await caught(membersBridge.getMembersBySegment(tenant, 'all_members', {})),
+      await caught(membersBridge.getContactsBySegment(tenant, 'all_members', {})),
+      await caught(membersBridge.countOptedOutContactsBySegment(tenant, 'all_members', {}, null)),
+      await caught(membersBridge.memberExistsInTenant(tenant, 'm-1')),
+      await caught(membersBridge.lookupMemberPrimaryContactEmailInTenant(tenant, email)),
+      await caught(membersBridge.setMemberHalt(tenant, 'm-1', false, 'admin')),
+      await caught(membersBridge.filterMarketingOptedOut(tenant, [email])),
+    ];
+    expect(thrown.map((e) => errStep(e))).toEqual([
+      'members_bridge_get_members_by_segment:repo.unexpected',
+      'members_bridge_get_contacts_by_segment:repo.unexpected',
+      'members_bridge_count_opted_out_contacts:repo.unexpected',
+      'members_bridge_member_exists:repo.unexpected',
+      'members_bridge_lookup_member_primary_contact_email:repo.unexpected',
+      'members_bridge_set_member_halt:repo.unexpected',
+      'members_bridge_filter_marketing_opted_out:repo.unexpected',
     ]);
     for (const e of thrown) expect(pgErrorCode(e)).toBe('57P01');
   });
