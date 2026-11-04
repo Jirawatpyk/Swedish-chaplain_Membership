@@ -430,6 +430,9 @@ describe('T166-09 — invoice_paid email gate on receipt_pdf_status', () => {
     const signed = sign.mock.calls.map((c) => c[0]);
     expect(signed).toContain(committed);
     expect(signed).not.toContain(frozen);
+    // The row records the key it actually sent, so an audit of sent rows
+    // (the runbook's pre-flag query) never flags a correct send.
+    expect((rowAfter?.contextData as Record<string, unknown>).pdf_blob_key).toBe(committed);
   }, 60_000);
 
   it('#70 — rendered with no receipt key fails closed: attempts bumped, nothing sent', async () => {
@@ -498,5 +501,38 @@ describe('T166-09 — invoice_paid email gate on receipt_pdf_status', () => {
       .from(auditLog)
       .where(and(eq(auditLog.tenantId, tenant.ctx.slug), sql`${auditLog.payload}->>'outbox_row_id' = ${outboxId}`));
     expect(audits.map((a) => a.eventType).sort()).toEqual(['auto_email_delivery_failed', 'email_dispatch_failed']);
+  }, 60_000);
+
+  // /code-review on #742 — a `failed` receipt is not terminal: the reconcile
+  // cron re-renders it. The gate's retries follow the dispatcher's standard
+  // ladder (60 s, 5 min, 30 min, 3 h), not a flat 60 s that spends all five
+  // attempts in five minutes and gives up before the re-render lands.
+  it('#70 — a gate retry follows the standard backoff ladder (2nd attempt waits ~5 min)', async () => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set({ receiptPdfStatus: 'failed' })
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    });
+    const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true);
+    await db.update(notificationsOutbox).set({ attempts: 1 }).where(eq(notificationsOutbox.id, outboxId));
+
+    await outboxDispatch(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+
+    const [rowAfter] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(rowAfter?.status).toBe('pending');
+    expect(rowAfter?.attempts).toBe(2);
+    const delta = rowAfter!.nextRetryAt!.getTime() - Date.now();
+    expect(delta).toBeGreaterThan(240_000);
+    expect(delta).toBeLessThan(360_000);
   }, 60_000);
 });
