@@ -1884,6 +1884,18 @@ The steps:
   - (1) Result `message: e.message` flowing into `src/app` routes and HTTP bodies (`update-member.ts:632`, `change-plan.ts:501`, …);
   - (2) the same log rule for invoicing, payments, events, renewals and `src/app`.
 
+**Part 1 (#735) outcome and two log defects it found (4 Nov 2026)**
+
+**Commits:** matrix `24549745d` (136 cells, green on the old code) → classifier RED `90f32fc36` → GREEN `b08e79b49` → one `refactor` commit per caller, `890c14572` … `dde0d77ba`. The matrix stayed unchanged and green through every refactor commit.
+
+**Mutation proof:**
+- M1–M6: each turned the matrix red.
+- M7 (the erased refusal's "403 stays undecided, no probe") is caught only by the classifier's own table. No caller can observe it, because the standing policy also maps that answer to `undecided{forbidden}`.
+
+**Two existing defects, both pinned by the matrix, fixed in the #736c part with RED first:**
+- (L1) `settleAtResend`: when the GET throws after a 404 or 403, no `dispatch_begun_delete` line is written. That loses `deleteMs` / `resendMs`, the time the row lock was held for Resend.
+- (L2) `broadcasts.dispatch.refused_draft_delete_unconfirmed` has two field shapes: an `err` key after a DELETE `retryable` / `other` / throw, and none after a `probe_*` reading.
+
 **#736d: contract test** (architect L5; pdpa I-3)
 - `describeContract` asserts only shape invariants on both adapters: the outcome is in the closed set, the counts are non-negative integers, and every field of each arm is present.
 - f7's passthroughs are asserted separately: `deferredCount` / `unexpectedErrorCount` on the partial arm, and the `deadlineAt` / `onDispatchBegun` opts.
