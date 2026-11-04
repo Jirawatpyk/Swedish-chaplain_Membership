@@ -308,16 +308,22 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
         AND reason = 'create_unconfirmed';
      ```
 
-     A row with an id written after the cascade's pass (a tick in flight) is
-     drained by `cleanup-audiences` normally on the next tick (an erased
-     requester's row skips the grace); at worst one tick after the 1-hour
-     grace (`AUDIENCE_CLEANUP_GRACE_MS`, while a terminal holder's audience
-     grace runs); later only while Resend's answer stays undecided, or on a
-     busy tenant while more than 20 newer in-grace rows and a past-grace
-     backlog keep it out of both drain lists (RoPA 8d residual 1). If the
-     first run returned one, re-run the ORPHAN query after one interval
-     (`*/15 * * * *`, `vercel.json`); if it is still there, re-run it after
-     the 1-hour grace; if it is STILL there, settle it by hand as in residual 5;
+     A row with an id written after the cascade's pass (a refusal tick,
+     `failTerminally`, a reconcile re-drive) is settled by `cleanup-audiences`
+     on the first run after it is written: since spec 140 s2d (#736a) the
+     drain reads an erased requester's rows by requester, first, at most
+     `ORPHAN_DRAIN_ERASED_SHARE` (10) a run, so other members' newer rows
+     cannot hold it back (RoPA 8d residual 1). It waits longer only while
+     Resend's answer stays undecided, while a terminal row within the 1-hour
+     grace holds its audience, while more than 10 erased-requester rows are
+     queued (the rest go on the next runs), or when the run's erased read
+     failed (`tick_complete` `orphans.erasedReadFailed: true`,
+     `broadcasts.orphan_drain.erased_read_failed`) or was capped
+     (`broadcasts.orphan_drain.erased_requesters_capped`): those two wait the
+     1-hour grace. If the first run returned one, re-run the ORPHAN
+     query after one interval (`*/15 * * * *`, `vercel.json`); if it is still
+     there, re-run it after the 1-hour grace; if it is STILL there (an
+     undecided answer), settle it by hand as in residual 5;
    - **run the step 3b STATE query on every erasure, whatever the count says**
      (`sent_at >= member_erasure_requested`, statuses `sending` / `sent` /
      `partially_sent` / `partial_delivery_accepted`). Any row it returns is

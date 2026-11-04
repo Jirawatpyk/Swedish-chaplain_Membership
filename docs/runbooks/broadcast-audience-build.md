@@ -191,10 +191,21 @@ network failure, a timeout or a 5xx).
   `maxDuration` 300 s). It never lists an id a NON-TERMINAL row holds
   (type-matched), an audience a row went terminal with less than `GRACE_MS`
   ago (the audience loop's grace, review round 1), nor a `create_unconfirmed`
-  row. It reads rows past the grace first, then `ORDER BY attempts,
+  row. The settle order (spec 140 s2d, #736a): FIRST the erased requesters'
+  rows — the run reads the distinct requesters of the unsettled rows inside
+  the grace (at most `ORPHAN_ERASED_REQUESTER_CAP`, 50; a full read logs
+  `broadcasts.orphan_drain.erased_requesters_capped`), asks the members
+  bridge which are erased (one query, ids in, ids out), and reads those
+  requesters' unsettled rows of any age, `ORDER BY attempts, created_at`, at
+  most `ORPHAN_DRAIN_ERASED_SHARE` (10); THEN the past-grace list fills the
+  rest of the 20, rows past the grace first, then `ORDER BY attempts,
   created_at`: rows the grace holds back cannot fill the 20 (review round 2),
   and every undecided answer increments the row's `attempts`, so a row that
-  never settles cannot hold the head of the queue (review round 1). The
+  never settles cannot hold the head of the queue (review round 1). An
+  in-grace row of a live requester waits (`orphans.waiting`). A failed read on
+  the erased path logs `broadcasts.orphan_drain.erased_read_failed` once and
+  sets `orphans.erasedReadFailed` (not `listFailed`): the past-grace rows
+  still drain and the erased requester's young rows wait the grace. The
   erasure cascade settles the requester's own BROADCAST orphans and the
   tenant's leaked audiences (`member-erasure.md` step 4).
 - **What a row's `outcome` means.** `deleted` / `absent` — gone (`absent`
