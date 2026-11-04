@@ -76,6 +76,8 @@ const PDFS_OK = {
   failed: 0,
   listFailed: 0,
   truncated: false,
+  breakdown: [{ docKind: 'receipt', fy: '2025', templateVersion: 12, wouldDelete: 0, deleted: 1, kept: 2, alreadyGone: 0, failed: 0 }],
+  otherGroups: 0,
 };
 const CERTS_OK = { kind: 'ok', scanned: 3, swept: 1, skipped: 2, cutoff: new Date('2026-11-02T21:00:00.000Z') };
 
@@ -127,6 +129,10 @@ describe('/api/cron/invoicing/sweep-orphan-blobs — contract (#729)', () => {
       certs: { scanned: 3, swept: 1, skipped: 2, cutoff: '2026-11-02T21:00:00.000Z' },
       pdfs: { dryRun: false, tenants: 1, deleted: 1, kept: 2, truncated: false },
     });
+    // #72 — the breakdown reaches the response, so a `?dryRun=1` call answers
+    // the rollout question without reading logs.
+    expect(body.pdfs.breakdown).toEqual(PDFS_OK.breakdown);
+    expect(body.pdfs.otherGroups).toBe(0);
     expect(body.pdfs.kind).toBeUndefined();
   });
 

@@ -512,3 +512,70 @@ describe('sweepOrphanPdfs (#729)', () => {
     expect(d.raw.logger.warn).toHaveBeenCalledWith(expect.objectContaining({ event: 'orphan_pdf_sweep_no_tenants' }), expect.any(String));
   });
 });
+
+// Task #72 (relay rev 33) — the first prod dry run wrote 256 log lines, all
+// per-key `would_delete`, and its `orphan_pdf_sweep_done` line never reached
+// the log (Vercel caps lines per request). Per-key lines are a bounded
+// sample; the summary always lands and carries a breakdown by
+// docKind × fy × templateVersion, which the response returns too.
+describe('sweepOrphanPdfs — bounded logs and the breakdown (#72)', () => {
+  const uuid = (n: number) => `${n.toString(16).padStart(8, '0')}-0000-4000-8000-000000000000`;
+  const done = (raw: { logger: { info: { mock: { calls: unknown[][] } } } }) =>
+    raw.logger.info.mock.calls.filter((c) => (c[0] as { event: string }).event === 'orphan_pdf_sweep_done');
+
+  it('600 would-deletes write at most 20 per-key lines and exactly one summary', async () => {
+    const items = Array.from({ length: 600 }, (_, i) => item(receiptKey(uuid(i + 1))));
+    const { deps, raw } = makeDeps({ items });
+    const r = await sweepOrphanPdfs({ dryRun: true, maxDeletes: 10_000 }, deps);
+    expect(r).toMatchObject({ kind: 'ok', wouldDelete: 600 });
+    const perKey = raw.logger.info.mock.calls.filter((c) => (c[0] as { event: string }).event === 'orphan_pdf_sweep_would_delete');
+    expect(perKey.length).toBeLessThanOrEqual(20);
+    const summaries = done(raw);
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]![0]).toMatchObject({ suppressedLines: { info: 600 - perKey.length, error: 0 } });
+  });
+
+  it('30 failing deletes write at most 20 error lines; the summary counts the rest', async () => {
+    const items = Array.from({ length: 30 }, (_, i) => item(cnKey(uuid(i + 1))));
+    const { deps, raw } = makeDeps({ items, deleteError: () => new Error('blob 503') });
+    const r = await sweepOrphanPdfs({}, deps);
+    expect(r).toMatchObject({ failed: 30 });
+    const errors = raw.logger.error.mock.calls.filter((c) => (c[0] as { event: string }).event === 'orphan_pdf_sweep_failed');
+    expect(errors).toHaveLength(20);
+    expect(done(raw)[0]![0]).toMatchObject({ suppressedLines: { error: 10 } });
+  });
+
+  it('the breakdown groups every outcome by docKind × fy × templateVersion, in the summary and the result', async () => {
+    const inv12 = `invoicing/${T}/2025/${INV}_v12.pdf`;
+    const items = [
+      item(inv12), // kept by the batch read
+      item(invoiceKey(INV, 13)), // deleted
+      item(receiptKey(INV2, 12)), // deleted
+      item(`invoicing/${T}/2025/${INV2}_receipt_v12.pdf`), // deleted
+      item(cnKey(CN, 13)), // failed
+    ];
+    const { deps, raw } = makeDeps({
+      items,
+      rows: { [INV]: { pdf: { blobKey: inv12 }, receiptPdf: null } },
+      deleteError: (key) => (key === cnKey(CN, 13) ? new Error('blob 503') : undefined),
+    });
+    const r = await sweepOrphanPdfs({}, deps);
+    const expected = [
+      { docKind: 'credit_note', fy: '2026', templateVersion: 13, wouldDelete: 0, deleted: 0, kept: 0, alreadyGone: 0, failed: 1 },
+      { docKind: 'invoice', fy: '2025', templateVersion: 12, wouldDelete: 0, deleted: 0, kept: 1, alreadyGone: 0, failed: 0 },
+      { docKind: 'invoice', fy: '2026', templateVersion: 13, wouldDelete: 0, deleted: 1, kept: 0, alreadyGone: 0, failed: 0 },
+      { docKind: 'receipt', fy: '2025', templateVersion: 12, wouldDelete: 0, deleted: 1, kept: 0, alreadyGone: 0, failed: 0 },
+      { docKind: 'receipt', fy: '2026', templateVersion: 12, wouldDelete: 0, deleted: 1, kept: 0, alreadyGone: 0, failed: 0 },
+    ];
+    expect(r).toMatchObject({ kind: 'ok', breakdown: expected, otherGroups: 0 });
+    expect(done(raw)[0]![0]).toMatchObject({ breakdown: expected, otherGroups: 0 });
+  });
+
+  it('the breakdown is capped at 50 groups; the rest are counted', async () => {
+    const items = Array.from({ length: 60 }, (_, i) => item(`invoicing/${T}/2026/${uuid(i + 1)}_v${i + 1}.pdf`));
+    const { deps } = makeDeps({ items });
+    const r = await sweepOrphanPdfs({ dryRun: true }, deps);
+    expect(r).toMatchObject({ kind: 'ok', otherGroups: 10 });
+    expect((r as { breakdown: unknown[] }).breakdown).toHaveLength(50);
+  });
+});
