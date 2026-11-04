@@ -142,6 +142,17 @@ describe('the root reducer writes tokens and frames, never text (review round 2)
     expect(reduced(written(), 'error')).toEqual({ type: 'NeonDbError', frames: ['at h (z.ts:3:3)'] });
   });
 
+  // Spec 140 s2d (review round 2 follow-up) — a Result error logged whole
+  // (`{ err: result.error }`, about 100 sites outside members + broadcasts)
+  // keeps its closed `kind` token; free text beside it is still dropped.
+  it('a Result error keeps its token-shaped kind, never free text beside it', () => {
+    logger.warn({ err: { kind: 'not_found', detail: `no row for ${EMAIL}` } }, 'lookup.failed');
+    expectNoErrorText();
+    expect(reduced(written())).toEqual({ type: 'unknown', kind: 'not_found' });
+    logger.warn({ err: { kind: 'free text with spaces' } }, 'lookup.failed');
+    expect(reduced(written())).toEqual({ type: 'unknown' });
+  });
+
   it('a Stripe-shaped error keeps errCode, statusCode and declineCode, never its message or raw payload', () => {
     class StripeCardError extends Error {
       readonly code = 'card_declined';
