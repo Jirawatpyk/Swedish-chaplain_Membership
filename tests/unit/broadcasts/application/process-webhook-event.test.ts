@@ -34,6 +34,7 @@ import type { EmailTransactionalPort } from '@/modules/broadcasts/application/po
 import type { VerifiedBroadcastEvent } from '@/modules/broadcasts/application/ports/webhook-verifier-port';
 import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import { ok } from '@/lib/result';
+import { logger } from '@/lib/logger';
 
 const FROZEN_NOW = new Date('2026-06-15T05:00:00Z');
 const tenant = asTenantContext('test-tenant');
@@ -1134,6 +1135,64 @@ describe('process-webhook-event — outbox best-effort + observability fallback 
     expect(
       audit.emits.find((e) => e.eventType === 'broadcast_quota_consumed'),
     ).toBeDefined();
+  });
+});
+
+/**
+ * Spec 140 s2d review round 1 (reliability M-1) — a failed members read on
+ * the delivered-summary path logs WHICH read failed (`step`, the bridge's
+ * code-authored token) beside its class and SQLSTATE.
+ */
+describe('process-webhook-event — delivered_email failure lines name their step', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([
+    ['getMemberPrimaryContact', 'error', 'broadcasts.delivered_email.member_lookup_failed', 'members_bridge_get_member_primary_contact:repo.unexpected'],
+    ['getMemberPreferredLocale', 'warn', 'broadcasts.delivered_email.locale_resolve_failed', 'members_bridge_get_member_preferred_locale:repo.unexpected'],
+  ] as const)('%s throws → the %s line carries step and code', async (failing, level, msg, step) => {
+    const spy = vi.spyOn(logger, level).mockImplementation(() => undefined as never);
+    const pg = Object.assign(new Error('terminating connection'), { code: '57P01' });
+    const boom = () => Promise.reject(new Error(step, { cause: pg }));
+    const broadcasts = makeBroadcastsRepo({ currentBroadcast: baseBroadcast({ estimatedRecipientCount: 1 }) });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: { broadcastId, sent: 0, delivered: 1, bounced: 0, softBounced: 0, complained: 0 },
+    });
+    const members: MembersBridgePort = {
+      async getMembersBySegment() { return []; },
+      getMemberPrimaryContact: failing === 'getMemberPrimaryContact' ? boom : async () => unsafeBrandEmailLower('alice@example.com'),
+      async memberExistsInTenant() { return true; },
+      async lookupContactEmailInTenant() { return null; },
+      async lookupMemberPrimaryContactEmailInTenant() { return null; },
+      async getMemberErasedAt() { return { erasedAt: null }; },
+      async filterErasedMemberIds() { return []; },
+      async getMembersHaltedInTenant() { return []; },
+      async setMemberHalt() { return ok(undefined); },
+      async markBroadcastsAcknowledged() { return ok({ previouslyNull: true }); },
+      async filterMarketingOptedOut() { return new Set(); },
+      async getContactsBySegment() { return []; },
+      async countOptedOutContactsBySegment() { return 0; },
+      getMemberPreferredLocale: failing === 'getMemberPreferredLocale' ? boom : async () => null,
+    };
+    const transport: EmailTransactionalPort = {
+      async sendAdminNotification() {},
+      async sendMemberEmail() {},
+    };
+    await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: makeUnsubscribesRepo().port,
+        membersBridge: members,
+        audit: makeAudit().port,
+        clock: { now: () => FROZEN_NOW },
+        emailTransactional: transport,
+      },
+      { broadcastId, event: buildEvent('delivered'), requestId: null },
+    );
+    const line = spy.mock.calls.find((c) => c[1] === msg);
+    expect(line?.[0]).toMatchObject({ step, err: 'Error', code: '57P01' });
   });
 });
 

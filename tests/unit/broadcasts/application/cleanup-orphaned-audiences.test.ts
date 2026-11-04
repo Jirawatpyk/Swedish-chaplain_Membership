@@ -373,8 +373,8 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('cleanup.server_error');
-      // Spec 140 s2c — the error CLASS, never the driver's message.
-      expect(result.error.message).toBe('Error');
+      // Spec 140 s2c — the error CLASS, never the driver's message (review round 1: named errClass).
+      expect(result.error.errClass).toBe('Error');
     }
   });
 });

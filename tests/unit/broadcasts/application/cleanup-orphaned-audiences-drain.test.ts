@@ -77,6 +77,8 @@ interface Opts {
   readonly erased?: Record<string, 'erased' | 'live'>;
   /** Spec 140 s2d (#736a) — which read of the erased-requester path throws. */
   readonly erasedPathThrows?: 'requesters' | 'bridge' | 'rows';
+  /** What that read throws (default: a plain Error with a driver-like message). */
+  readonly erasedPathError?: unknown;
   /** The audience pass's candidates (terminal rows still holding an audience). */
   readonly terminal?: ReadonlyArray<{ broadcastId: string; resendAudienceId: string }>;
   readonly terminalListThrows?: boolean;
@@ -93,6 +95,9 @@ function harness(opts: Opts) {
   /** Spec 140 s2d (#736a) — every read of the erased-requester path, in order. */
   const erasedPath: string[] = [];
   const bridgeCalls: string[][] = [];
+  /** Review round 1 (code-review #5) — every read of either path, in the order it STARTED. */
+  const readOrder: string[] = [];
+  const erasedThrow = () => opts.erasedPathError ?? new Error('Neon: password authentication failed for user x');
   let inFlight = 0;
   let peak = 0;
   const step = async (label: string) => {
@@ -119,6 +124,7 @@ function harness(opts: Opts) {
     orphans: {
       async listDrainableOrphans(limit: number, cutoff: Date) {
         listLimits.push(limit);
+        readOrder.push('past');
         if (opts.listThrows === true) throw new Error('Neon: password authentication failed for user x');
         // The repo's order: past-grace rows first, then attempts, then age (a
         // stable sort keeps the fixture order inside a tie).
@@ -134,7 +140,9 @@ function harness(opts: Opts) {
       // inside the grace, at most `cap`.
       async listInGraceRequesterIds(cutoff: Date, cap: number) {
         erasedPath.push(`requesters:${cap}`);
-        if (opts.erasedPathThrows === 'requesters') throw new Error('Neon: password authentication failed for user x');
+        readOrder.push('requesters');
+        await Promise.resolve();
+        if (opts.erasedPathThrows === 'requesters') throw erasedThrow();
         const young = opts.orphans.filter((o) => o.createdAt.getTime() >= cutoff.getTime());
         return [...new Set(young.map((o) => o.requestedByMemberId))].slice(0, cap);
       },
@@ -142,7 +150,8 @@ function harness(opts: Opts) {
       // attempts then age, at most `limit`.
       async listUnsettledOrphansForRequesters(ids: readonly string[], limit: number) {
         erasedPath.push(`rows:${[...ids].join(',')}:${limit}`);
-        if (opts.erasedPathThrows === 'rows') throw new Error('Neon: password authentication failed for user x');
+        readOrder.push('rows');
+        if (opts.erasedPathThrows === 'rows') throw erasedThrow();
         return opts.orphans
           .filter((o) => ids.includes(o.requestedByMemberId))
           .sort((a, b) => a.attempts - b.attempts || a.createdAt.getTime() - b.createdAt.getTime())
@@ -163,7 +172,8 @@ function harness(opts: Opts) {
       async filterErasedMemberIds(_t: unknown, ids: readonly string[]) {
         bridgeCalls.push([...ids]);
         erasedPath.push('bridge');
-        if (opts.erasedPathThrows === 'bridge') throw new Error('members read failed');
+        readOrder.push('bridge');
+        if (opts.erasedPathThrows === 'bridge') throw opts.erasedPathError ?? new Error('members read failed');
         return ids.filter((id) => opts.erased?.[id] === 'erased');
       },
     },
@@ -189,7 +199,7 @@ function harness(opts: Opts) {
     },
   };
   const run = () => cleanupOrphanedAudiences(deps as never, { graceMs: GRACE_MS, limit: 50 });
-  return { run, settled, attempted, calls, listLimits, peak: () => peak, erasedPath, bridgeCalls };
+  return { run, settled, attempted, calls, listLimits, peak: () => peak, erasedPath, bridgeCalls, readOrder };
 }
 
 let warn: ReturnType<typeof vi.spyOn>;
@@ -341,7 +351,7 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     const line = warn.mock.calls.find((c) => c[1] === 'broadcasts.audience_cleanup.delete_failed');
     expect(line?.[0]).toEqual({ tenantId: tenant.slug, broadcastId: 'bc-1', err: 'unknown' });
     const failed = await harness({ orphans: [], terminalListThrows: true }).run();
-    expect(failed.ok ? null : failed.error).toMatchObject({ kind: 'cleanup.server_error', message: 'Error' });
+    expect(failed.ok ? null : failed.error).toMatchObject({ kind: 'cleanup.server_error', errClass: 'Error' });
   });
 
   // Spec 140 s2c review round 1 (code-review #2, #4, #6 / reliability L-1).
@@ -364,7 +374,7 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     expect(h.settled).toEqual([['o-1', 'deleted']]);
     expect(res.ok ? null : res.error).toMatchObject({
       kind: 'cleanup.server_error',
-      message: 'Error',
+      errClass: 'Error',
       orphans: { listed: 1, settled: 1 },
     });
   });
@@ -425,7 +435,7 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     });
     await h.run();
     expect(h.bridgeCalls).toEqual([['m-a', 'm-b']]);
-    expect(h.erasedPath).toEqual([`requesters:${ORPHAN_ERASED_REQUESTER_CAP}`, 'bridge', `rows:m-a:${ORPHAN_DRAIN_ERASED_SHARE}`]);
+    expect(h.erasedPath).toEqual([`requesters:${ORPHAN_ERASED_REQUESTER_CAP}`, 'bridge', `rows:m-a:${ORPHAN_DRAIN_ERASED_SHARE + 1}`]);
     expect(h.settled.map(([id]) => id).sort()).toEqual(['o-1', 'o-3', 'o-4']);
   });
 
@@ -509,10 +519,57 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
       expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 3, settled: 2, waiting: 1, listFailed: false, erasedReadFailed: true });
       const lines = warn.mock.calls.filter((c) => c[1] === 'broadcasts.orphan_drain.erased_read_failed');
       expect(lines).toHaveLength(1);
-      expect(lines[0]?.[0]).toEqual({ tenantId: tenant.slug, err: 'Error', code: undefined });
+      expect(lines[0]?.[0]).toEqual({ tenantId: tenant.slug, step: where, err: 'Error', code: undefined });
       expect(error.mock.calls.some((c) => c[1] === 'broadcasts.orphan_drain.list_failed')).toBe(false);
     },
   );
+
+  // Review round 1 (reliability M-1, code-review #4) — which read failed, with its SQLSTATE.
+  it("a bridge failure logs step: 'bridge' and the SQLSTATE", async () => {
+    const pg = Object.assign(new Error('terminating connection due to administrator command'), { code: '57P01' });
+    const h = harness({
+      orphans: [orphan(9, { createdAt: YOUNG, requestedByMemberId: 'm-erased' })],
+      erased: { 'm-erased': 'erased' },
+      erasedPathThrows: 'bridge',
+      erasedPathError: new Error('members_bridge_filter_erased:repo.unexpected', { cause: pg }),
+    });
+    await h.run();
+    const line = warn.mock.calls.find((c) => c[1] === 'broadcasts.orphan_drain.erased_read_failed');
+    expect(line?.[0]).toEqual({ tenantId: tenant.slug, step: 'bridge', err: 'Error', code: '57P01' });
+  });
+
+  // Review round 1 (code-review #5) — the erased reads and the past-grace list run side by side.
+  it('the past-grace list starts before the erased chain reaches the members bridge', async () => {
+    const h = harness({
+      orphans: [orphan(1), orphan(9, { createdAt: YOUNG, requestedByMemberId: 'm-erased' })],
+      erased: { 'm-erased': 'erased' },
+    });
+    await h.run();
+    expect(h.readOrder.indexOf('past')).toBeGreaterThanOrEqual(0);
+    expect(h.readOrder.indexOf('past')).toBeLessThan(h.readOrder.indexOf('bridge'));
+  });
+
+  // Review round 1 (the maintainer's /verify finding, pdpa L-d, reliability L-2) — a full share shows.
+  it('16 erased rows → erasedShareFull true, 10 settled', async () => {
+    const young = Array.from({ length: 16 }, (_, i) =>
+      orphan(i + 1, { createdAt: new Date(YOUNG.getTime() - i * 1000), requestedByMemberId: 'm-erased' }),
+    );
+    const h = harness({ orphans: young, erased: { 'm-erased': 'erased' } });
+    const res = await h.run();
+    expect(ORPHAN_DRAIN_ERASED_SHARE).toBe(10);
+    expect(h.settled).toHaveLength(10);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ settled: 10, erasedShareFull: true, erasedReadFailed: false });
+  });
+
+  it('a share that holds every erased row → erasedShareFull false', async () => {
+    const young = Array.from({ length: ORPHAN_DRAIN_ERASED_SHARE }, (_, i) =>
+      orphan(i + 1, { createdAt: new Date(YOUNG.getTime() - i * 1000), requestedByMemberId: 'm-erased' }),
+    );
+    const h = harness({ orphans: young, erased: { 'm-erased': 'erased' } });
+    const res = await h.run();
+    expect(h.settled).toHaveLength(ORPHAN_DRAIN_ERASED_SHARE);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ settled: ORPHAN_DRAIN_ERASED_SHARE, erasedShareFull: false });
+  });
 
   it('[pdpa H-1] requester erased 3 h before the orphan was written, the row in grace → settled this tick', async () => {
     // The bridge answers ids only: there is no erased_at window to fall out of.

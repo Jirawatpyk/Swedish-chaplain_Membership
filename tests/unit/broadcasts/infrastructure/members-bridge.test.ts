@@ -63,6 +63,8 @@ vi.mock('@/lib/logger', () => ({ logger: log }));
 import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
 import * as f3mod from '@/modules/members';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
+import { errStep } from '@/lib/log-id';
+import { pgErrorCode } from '@/lib/db-errors';
 
 const tenant = asTenantContext('test-tenant');
 
@@ -226,6 +228,30 @@ describe('membersBridge — the other lookups discriminate "no data" from "no an
     expect(await membersBridge.lookupMemberPrimaryContactEmailInTenant(tenant, email)).toBeNull();
   });
 
+  // Spec 140 s2d review round 1 (reliability M-1, code-review #4) — a failed
+  // read throws a step token (`errStep`-compatible) with the driver error as
+  // its `cause`, so a caller's log names the read and its SQLSTATE.
+  it('a failed read throws a members_bridge_<read>:<repoCode> step with the cause', async () => {
+    const cause = Object.assign(new Error('terminating connection'), { code: '57P01' });
+    const failed = () => err({ code: 'repo.unexpected' as const, cause });
+    const email = unsafeBrandEmailLower('a@b.co');
+    const caught = (p: Promise<unknown>) => p.then(() => null, (e: unknown) => e);
+    vi.mocked(f3mod.getMemberPrimaryContact).mockResolvedValueOnce(failed() as never);
+    vi.mocked(f3mod.getMembersHaltedInTenant).mockResolvedValueOnce(failed() as never);
+    vi.mocked(f3mod.lookupContactEmailInTenant).mockResolvedValueOnce(failed() as never);
+    const thrown = [
+      await caught(membersBridge.getMemberPrimaryContact(tenant, 'm-1')),
+      await caught(membersBridge.getMembersHaltedInTenant(tenant)),
+      await caught(membersBridge.lookupContactEmailInTenant(tenant, email)),
+    ];
+    expect(thrown.map((e) => errStep(e))).toEqual([
+      'members_bridge_get_member_primary_contact:repo.unexpected',
+      'members_bridge_get_members_halted:repo.unexpected',
+      'members_bridge_lookup_contact_email:repo.unexpected',
+    ]);
+    for (const e of thrown) expect(pgErrorCode(e)).toBe('57P01');
+  });
+
   // Review 2026-09-07 round 2 (C4, errors HIGH) — the WRITE path 20 lines
   // below the four lookups above still collapsed every repo failure into
   // "that member does not exist": an admin clearing a halt during a Neon
@@ -291,6 +317,14 @@ describe('membersBridge.getMemberErasedAt (spec 139 DE1)', () => {
       /repo\.unexpected/,
     );
   });
+
+  it('repo.unexpected throws members_bridge_get_member_erased_at:repo.unexpected with the cause', async () => {
+    const cause = Object.assign(new Error('terminating connection'), { code: '57P01' });
+    f3.findErasedAtById.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const, cause }));
+    const thrown = await membersBridge.getMemberErasedAt(tenant, 'm-1').then(() => null, (e: unknown) => e);
+    expect(errStep(thrown)).toBe('members_bridge_get_member_erased_at:repo.unexpected');
+    expect(pgErrorCode(thrown)).toBe('57P01');
+  });
 });
 
 /**
@@ -320,6 +354,21 @@ describe('membersBridge.filterErasedMemberIds (spec 140 s2d, #736a)', () => {
   it('repo.unexpected THROWS', async () => {
     f3.findErasedIdsInTx.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const, cause: new Error('neon down') }));
     await expect(membersBridge.filterErasedMemberIds(tenant, ['m-1'])).rejects.toThrow(/repo\.unexpected/);
+  });
+
+  // Review round 1 (reliability M-1, code-review #4) — a step token the drain's
+  // log can carry (`errStep`), and the driver error as its `cause`, so
+  // `pgErrorCode` reaches the SQLSTATE.
+  it('repo.unexpected throws members_bridge_filter_erased:repo.unexpected with the cause', async () => {
+    const cause = Object.assign(new Error('terminating connection'), { code: '57P01' });
+    f3.findErasedIdsInTx.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const, cause }));
+    const thrown = await membersBridge.filterErasedMemberIds(tenant, ['m-1']).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(errStep(thrown)).toBe('members_bridge_filter_erased:repo.unexpected');
+    expect((thrown as Error).cause).toBe(cause);
+    expect(pgErrorCode(thrown)).toBe('57P01');
   });
 });
 
