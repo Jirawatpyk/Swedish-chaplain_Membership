@@ -28,14 +28,19 @@ const f3 = vi.hoisted(() => ({
   getMembersBySegment: vi.fn(),
   countBroadcastOptedOutContacts: vi.fn(),
   findErasedAtById: vi.fn(),
-  findErasedMemberIds: vi.fn(),
+  findErasedIdsInTx: vi.fn(),
 }));
+
+// Spec 140 s2d (#736a) - filterErasedMemberIds opens its own tenant tx.
+const TX = vi.hoisted(() => ({ kind: 'tenant-tx-stub' }));
+const runInTenantSpy = vi.hoisted(() => vi.fn(async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn(TX)));
+vi.mock('@/lib/db', () => ({ runInTenant: runInTenantSpy }));
 
 vi.mock('@/modules/members', () => ({
   drizzleMemberRepo: {
     kind: 'member-repo-stub',
     findErasedAtById: (...a: unknown[]) => f3.findErasedAtById(...a),
-    findErasedMemberIds: (...a: unknown[]) => f3.findErasedMemberIds(...a),
+    findErasedIdsInTx: (...a: unknown[]) => f3.findErasedIdsInTx(...a),
   },
   drizzleContactRepo: { kind: 'contact-repo-stub' },
   asMemberId: (id: string) => id,
@@ -290,26 +295,30 @@ describe('membersBridge.getMemberErasedAt (spec 139 DE1)', () => {
 
 /**
  * Spec 140 s2d (#736a) — the orphan drain's erased-requester read: ids in,
- * ids out, ONE members read (`findErasedMemberIds`). An empty list makes no
+ * ids out, ONE members read (`findErasedIdsInTx`, in a tenant tx). An empty list makes no
  * read. A failed read THROWS: the drain logs it once and lets the requester's
  * young rows wait the grace, never reading "not erased" silently.
  */
 describe('membersBridge.filterErasedMemberIds (spec 140 s2d, #736a)', () => {
-  it('answers the erased ids, read once through findErasedMemberIds with the tenant context', async () => {
-    f3.findErasedMemberIds.mockResolvedValueOnce(ok(['m-2']));
+  it('answers the erased ids, read once through findErasedIdsInTx in a tenant tx', async () => {
+    f3.findErasedIdsInTx.mockClear();
+    f3.findErasedIdsInTx.mockResolvedValueOnce(ok(new Set(['m-2'])));
     expect(await membersBridge.filterErasedMemberIds(tenant, ['m-1', 'm-2'])).toEqual(['m-2']);
-    expect(f3.findErasedMemberIds).toHaveBeenCalledTimes(1);
-    expect(f3.findErasedMemberIds).toHaveBeenCalledWith(tenant, ['m-1', 'm-2']);
+    expect(f3.findErasedIdsInTx).toHaveBeenCalledTimes(1);
+    expect(f3.findErasedIdsInTx).toHaveBeenCalledWith(TX, tenant.slug, ['m-1', 'm-2']);
+    expect(runInTenantSpy).toHaveBeenCalledWith(tenant, expect.any(Function));
   });
 
   it('no ids → [] with no read', async () => {
-    f3.findErasedMemberIds.mockClear();
+    f3.findErasedIdsInTx.mockClear();
+    runInTenantSpy.mockClear();
     expect(await membersBridge.filterErasedMemberIds(tenant, [])).toEqual([]);
-    expect(f3.findErasedMemberIds).not.toHaveBeenCalled();
+    expect(f3.findErasedIdsInTx).not.toHaveBeenCalled();
+    expect(runInTenantSpy).not.toHaveBeenCalled();
   });
 
   it('repo.unexpected THROWS', async () => {
-    f3.findErasedMemberIds.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const, cause: new Error('neon down') }));
+    f3.findErasedIdsInTx.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const, cause: new Error('neon down') }));
     await expect(membersBridge.filterErasedMemberIds(tenant, ['m-1'])).rejects.toThrow(/repo\.unexpected/);
   });
 });

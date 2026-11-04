@@ -32,6 +32,9 @@ describe('spec 139 DE6 — getMemberErasedAt is tenant-scoped (live Neon, two te
   let tenantB: TestTenant;
   let erasedInA: string;
   let liveInB: string;
+  /** Spec 140 s2d (#736a) - a second member per tenant for the batched read. */
+  let liveInA: string;
+  let erasedInB: string;
 
   async function seedMember(tenant: TestTenant, erasedAt: Date | null): Promise<string> {
     const planId = `p139-de6-${randomUUID().slice(0, 8)}`;
@@ -63,6 +66,8 @@ describe('spec 139 DE6 — getMemberErasedAt is tenant-scoped (live Neon, two te
     ({ a: tenantA, b: tenantB } = await createTwoTestTenants());
     erasedInA = await seedMember(tenantA, ERASED_AT);
     liveInB = await seedMember(tenantB, null);
+    liveInA = await seedMember(tenantA, null);
+    erasedInB = await seedMember(tenantB, ERASED_AT);
   }, 120_000);
 
   afterAll(async () => {
@@ -82,5 +87,26 @@ describe('spec 139 DE6 — getMemberErasedAt is tenant-scoped (live Neon, two te
   ])('tenant $reader reading tenant $owner\'s member id → null (no such member here), never its state', async ({ reader }) => {
     const [ctx, foreignId] = reader === 'A' ? [tenantA.ctx, liveInB] : [tenantB.ctx, erasedInA];
     expect(await membersBridge.getMemberErasedAt(ctx, foreignId)).toBeNull();
+  });
+
+  /**
+   * Spec 140 s2d (#736a, B1) — the orphan drain's batched erased read
+   * (`filterErasedMemberIds`): ids in, ids out, one tenant-fenced query.
+   * A live id is filtered out; another tenant's erased member is never
+   * returned, whichever side asks.
+   */
+  it("filterErasedMemberIds answers only this tenant's erased ids", async () => {
+    expect(await membersBridge.filterErasedMemberIds(tenantA.ctx, [erasedInA, liveInA])).toEqual([erasedInA]);
+    expect(await membersBridge.filterErasedMemberIds(tenantA.ctx, [liveInA])).toEqual([]);
+    expect(await membersBridge.filterErasedMemberIds(tenantB.ctx, [erasedInB, liveInB])).toEqual([erasedInB]);
+  });
+
+  it("filterErasedMemberIds: tenant B's erased member is never returned for tenant A (and back)", async () => {
+    expect(await membersBridge.filterErasedMemberIds(tenantA.ctx, [erasedInB, liveInB, erasedInA])).toEqual([erasedInA]);
+    expect(await membersBridge.filterErasedMemberIds(tenantB.ctx, [erasedInA, liveInA])).toEqual([]);
+  });
+
+  it('filterErasedMemberIds: no ids → []', async () => {
+    expect(await membersBridge.filterErasedMemberIds(tenantA.ctx, [])).toEqual([]);
   });
 });
