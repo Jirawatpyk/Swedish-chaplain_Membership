@@ -218,14 +218,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         // would leave invoice flipped to 'pending' with NO outbox
         // row, and the next reconcile tick wouldn't pick it up
         // (filter is `WHERE status='failed'`) — silent data loss.
-        await runInTenant(asTenantContext(row.tenantId), async (tx) => {
+        const reEnqueuedRow = await runInTenant(asTenantContext(row.tenantId), async (tx) => {
           // For stuck-pending rows we don't need a status flip (already
           // 'pending') but we DO bump updatedAt to reset the orphan
           // window — and we re-enqueue the outbox row regardless. The
           // WHERE clause matches the source row's actual status (either
           // 'failed' or 'pending') to keep this idempotent under
           // concurrent ticks.
-          await tx
+          const stillPaid = await tx
             .update(invoices)
             .set({
               receiptPdfStatus: 'pending',
@@ -244,12 +244,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               and(
                 eq(invoices.tenantId, row.tenantId),
                 eq(invoices.invoiceId, row.invoiceId),
+                // Task #71 — re-check under the write: a void committed since
+                // the lock-free scan must not be re-enqueued.
+                eq(invoices.status, 'paid'),
                 or(
                   eq(invoices.receiptPdfStatus, 'failed'),
                   eq(invoices.receiptPdfStatus, 'pending'),
                 ),
               ),
-            );
+            )
+            .returning({ invoiceId: invoices.invoiceId });
+          if (stillPaid.length === 0) return false;
           await receiptPdfRenderEnqueueAdapter.enqueue(tx, {
             tenantId: row.tenantId,
             invoiceId: row.invoiceId,
@@ -261,7 +266,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             templateVersion: CURRENT_TEMPLATE_VERSION,
             recipientEmail,
           });
+          return true;
         });
+        if (!reEnqueuedRow) continue;
         reEnqueued += 1;
         logger.warn(
           {
@@ -306,7 +313,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
                 invoice_id: row.invoiceId,
                 fiscal_year: row.fiscalYear,
                 pdf_template_version: row.pdfTemplateVersion,
-                receipt_template_version: CURRENT_TEMPLATE_VERSION,
                 attempts: row.receiptPdfRenderAttempts,
                 source: 'cron.receipt_pdf_reconcile',
               },

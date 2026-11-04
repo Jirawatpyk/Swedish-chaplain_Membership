@@ -691,6 +691,25 @@ async function dispatchReceiptPdfRender(
     return 'sent';
   }
 
+  // Task #71 — the worker refuses a void invoice (`invalid_state`): its
+  // receipt can never render, so the row closes now, quietly. Retrying would
+  // spend the whole ladder and then page on-call for an outcome void decided.
+  if (result.error.code === 'invalid_state' && result.error.status === 'void') {
+    await tx
+      .update(notificationsOutbox)
+      .set({
+        status: 'permanently_failed' as const,
+        lastError: 'receipt_pdf_render_skip:invoice_void — the invoice is void; its receipt is not rendered',
+        updatedAt: now,
+      })
+      .where(eq(notificationsOutbox.id, row.id));
+    logger.info(
+      { requestId, outboxRowId: row.id, invoiceId },
+      'outbox.receipt_pdf_render_invoice_void — the receipt of a void invoice is not rendered',
+    );
+    return 'permanent';
+  }
+
   // Failure path: bump attempts + decide retry vs permanent.
   const nextAttempt = row.attempts + 1;
   // review-20260428-102639.md S8 closure — `data_corruption` is
@@ -1011,12 +1030,14 @@ async function dispatchOne(
         // would loop forever. Void is terminal and not shipping the
         // paid-receipt email for a voided sale is the intended outcome, so
         // the row closes now: no retry ladder, no failure audit, no page.
-        if (invRow.status === 'void' && invRow.receipt_pdf_status !== 'rendered') {
+        // Also after a rendered receipt: the email would link a VOID-stamped
+        // receipt under a "payment received" message.
+        if (invRow.status === 'void') {
           await tx
             .update(notificationsOutbox)
             .set({
               status: 'permanently_failed' as const,
-              lastError: 'receipt_pdf_gate_skip:invoice_void — invoice voided before its receipt rendered; the paid-receipt email is not sent',
+              lastError: 'receipt_pdf_gate_skip:invoice_void — the invoice is void; the paid-receipt email is not sent',
               updatedAt: now,
             })
             .where(eq(notificationsOutbox.id, row.id));
