@@ -1974,6 +1974,7 @@ Parts 1–3 touch `cancel-in-flight-broadcasts-for-member.ts` and run one after 
 - pdpa L-a: the `cron-jobs.md` orphans fields.
 - pdpa L-c: "waits the grace, then joins the past-grace queue".
 - pdpa L-b: record in this plan that the reconciler re-drive is the accepted proof that `member_erased` is eventually written after a drain/cascade race. The "counted once" half is tested.
+  - **Recorded (pdpa L-b, 4 Nov 2026):** after a drain/cascade race (the drain's settle CAS wins, the cascade's `orphan_settle_lost` withholds `member_erased`), the accepted proof that `member_erased` is eventually written is the reconciler re-drive: `reconcile-erasures` drives the erasure again and the re-drive counts the already-settled row. No test runs the race end to end; the "counted once" half is tested (the cascade counts every settled orphan of the member, the drain's settles included).
 
 **Accepted:**
 - code-review #6: the `erased_refusal` policy stays. It names a real rule (no GET after a 403), and the classifier's own table pins it (M7). Merging it into `standing_refusal` would hide that rule in the wrapper.

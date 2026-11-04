@@ -801,7 +801,14 @@ Per tenant, inside `cleanupOrphanedAudiences`:
    (240 s): the route's **`maxDuration = 300`** (`CLEANUP_MAX_DURATION_MS`,
    pinned by `cleanup-orphaned-audiences-drain.test.ts`) leaves the last chunk's
    two bounded calls room to finish. The response carries `orphans`
-   (`listed`, `settled`, `undecided`, `waiting`, `deferred`, `listFailed`).
+   (`listed`, `settled`, `undecided`, `waiting`, `deferred`, `listFailed`,
+   `erasedReadFailed`, `erasedShareFull`). `waiting` and `deferred` count of
+   the rows seen this run. `erasedReadFailed: true` — the erased-requester
+   read failed (`broadcasts.orphan_drain.erased_read_failed`, its `step` says
+   which read); an erased requester's young rows wait the grace, then join
+   the past-grace queue. `erasedShareFull: true` — the erased requesters had
+   more rows than `ORPHAN_DRAIN_ERASED_SHARE` (10); the rest go on the next
+   runs, and no other counter shows them.
    What each outcome means and what to do with a stuck row:
    `broadcast-audience-build.md` § E.
 

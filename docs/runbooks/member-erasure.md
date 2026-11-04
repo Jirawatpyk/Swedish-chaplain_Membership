@@ -316,11 +316,13 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      cannot hold it back (RoPA 8d residual 1). It waits longer only while
      Resend's answer stays undecided, while a terminal row within the 1-hour
      grace holds its audience, while more than 10 erased-requester rows are
-     queued (the rest go on the next runs), or when the run's erased read
+     queued (the rest go on the next runs; `tick_complete`
+     `orphans.erasedShareFull: true`), or when the run's erased read
      failed (`tick_complete` `orphans.erasedReadFailed: true`,
-     `broadcasts.orphan_drain.erased_read_failed`) or was capped
-     (`broadcasts.orphan_drain.erased_requesters_capped`): those two wait the
-     1-hour grace. If the first run returned one, re-run the ORPHAN
+     `broadcasts.orphan_drain.erased_read_failed`, its `step` names the read)
+     or was capped (`broadcasts.orphan_drain.erased_requesters_capped`):
+     those two wait the 1-hour grace, then join the past-grace queue. If the
+     first run returned one, re-run the ORPHAN
      query after one interval (`*/15 * * * *`, `vercel.json`); if it is still
      there, re-run it after the 1-hour grace; if it is STILL there (an
      undecided answer), settle it by hand as in residual 5;

@@ -34,11 +34,11 @@ document with the auth section.
 
 | Signal | Tool | Storage | Access |
 |---|---|---|---|
-| **Logs** | `pino` (Node) → Vercel Logs → Vercel UI (F1) → Grafana Cloud / Datadog (F2+) | 30 days in Vercel, 1 year in long-term (F2+) | Vercel dashboard, on-call runbook |
+| **Logs** | `pino` (Node) → Vercel Logs → Vercel UI (F1) → Grafana Cloud / Datadog (F2+) | **1 day in Vercel** (Pro plan without Observability Plus; MEASURED 2026-11-04 with the read-only API: a `since: 23h` runtime-log read worked, `26h` and `30d` were refused — "Hobby retains 1 hour, Pro 1 day, and Enterprise 3 days without Plus"; the 30 days this row used to state needs Observability Plus). No log drain listed (`GET /v1/drains` 404, 2026-11-04); marketplace integrations could not be listed (403). 1 year in long-term (F2+) | Vercel dashboard, on-call runbook |
 | **Traces** | `@vercel/otel` → Vercel OpenTelemetry collector | 14 days | Vercel dashboard |
 | **Metrics** | Vercel Analytics (automatic) + custom via OTel → Vercel Metrics (F1) → Grafana Cloud (F2+) | Varies | Vercel dashboard, public status page (F2+) |
 | **Audit log** | Postgres `audit_log` table | ≥ 5 years | Admin audit viewer (F9), DB read-only role |
-| **Errors** | pino logs + future Sentry integration | 30 days | On-call |
+| **Errors** | pino logs + future Sentry integration | 1 day (the Logs row; MEASURED 2026-11-04) | On-call |
 | **Uptime / synthetic** | Vercel Speed Insights + future external checks (Pingdom / UptimeRobot) | Varies | Public status page (F2+) |
 
 **F1 scope**: Vercel-built-in tools only (logs, Analytics, Speed Insights,
@@ -80,11 +80,22 @@ Every log line is a JSON object with at least:
 **Error fields** (spec 140 s2d, #736c). An error never goes on a log line as
 an object, its `cause`, its `.message` / `.stack`, or `String(e)`: drizzle-orm's
 `DrizzleQueryError` has enumerable `query` and `params`, a `Failed query:`
-message quotes the bound parameters (emails, names, payloads), and pino has no
-error serializer here and redacts by KEY, not by string content. A line carries:
+message quotes the bound parameters (emails, names, payloads), and pino redacts
+by KEY, not by string content. Since review round 1 (code-review #2)
+`src/lib/logger.ts` reduces any Error, or any object carrying `cause` /
+`query` / `params` / `detail`, under the keys `err`, `error` and `cause` to
+`{ type, code }` (class and SQLSTATE) before the line is written: a `logMethod`
+hook for the call's fields (pino copies `err.message` into `msg` when no
+message is given) and serializers for a child logger's bindings. A string
+value is kept. Any other key, and error TEXT under any key, is not reduced:
+that is the gate's job below, and #740 for the modules outside it. A line
+carries:
 - `err: errKind(e)`: the error class. For a RepoError, `errKind(rootCause(x.error))`
   plus `repoCode: x.error.code`. `...errLogFields(failure)` (`src/lib/log-id.ts`)
-  spreads these, plus `code`, for a thrown value or a Result error.
+  spreads these, plus `code`, for a thrown value or a Result error, and (review
+  round 1, code-review #8) for a thrown Error that wraps a Result error at its
+  `.cause` or, for `UseCaseAbort`, its `.error`: `repoCode` and the SQLSTATE
+  under it.
 - `code: pgErrorCode(e)`: the SQLSTATE.
 - `pgErrorMeta(e)` (`src/lib/db-errors.ts`) where the constraint name helps an
   incident. It returns `{ constraint, table, column }` names only, never
@@ -97,11 +108,18 @@ error serializer here and redacts by KEY, not by string content. A line carries:
 - A user id as `hashId(id)` (`actorUserIdHash`, `userIdHash`).
 
 `pnpm check:log-error-objects` (in `pnpm check` and CI's static job) parses
-`src/modules/{members,broadcasts}/**` with the TypeScript compiler API and
-refuses these forms inside `logger.<level>(…)` arguments. Its positive control
-is `scripts/__fixtures__/log-error-objects.fixture.txt`. It is a tripwire, not
+`src/modules/{members,broadcasts}/**` with the TypeScript compiler API (a
+`.tsx` file as TSX) and refuses these forms inside `logger.<level>(…)` and
+`logger.child(…)` arguments. Since review round 1: on an error-ish base (a
+caught or error-named identifier, or a chain through `.error` / `.cause`) only
+`.code`, `.kind` and `.name` are read; element access, a method on an error or
+its text (`e.toString()`, `e.message.slice()`), and a call whose literal
+argument holds an error (`JSON.stringify({ e })`) are refused; the safe
+callees are an explicit set, not a name pattern; and the run fails if it
+parsed fewer than 300 logger calls. Its positive control is
+`scripts/__fixtures__/log-error-objects.fixture.txt`. It is a tripwire, not
 proof: a value laundered through a local first passes it. The other modules and
-`src/app` are a follow-up.
+`src/app` are a follow-up (#740).
 
 ---
 
@@ -1470,8 +1488,9 @@ Vercel's edge / function access logs may capture the full request URL.
    `docs/runbooks/credential-compromise.md`) bounds the breach window
    to 90 days. Cadence escalates to monthly if a CHK048 follow-up
    audit detects token-shaped strings in the Vercel access-log export.
-3. **Vercel log retention window** is 30 days on the current plan —
-   tokens older than that age out automatically.
+3. **Vercel log retention window** is 1 day on the current plan (Pro
+   without Observability Plus; MEASURED 2026-11-04, § 2) — tokens older than
+   that age out automatically.
 4. **No PII in token payload** beyond the recipient's own email — the
    minimum identity needed to action the unsubscribe.
 
@@ -1697,17 +1716,19 @@ never `concurrent_skip`); a row held by another tick (`observedStatus`
 | `broadcasts.{dispatch,audience_import}.orphan_recorded` | info | `tenantId`, `broadcastId`, `resourceType`, `resourceId`, `orphanReason` | Spec 140 s2c — an id our side left on no live row was written to `broadcast_orphaned_resend_ids` (own tx, best-effort). The `cleanup-audiences` drain settles it at Resend; the erasure cascade settles the requester's. `orphanReason` is the closed `ORPHAN_REASONS` token (never `reason`: that key is redacted). |
 | `broadcasts.{dispatch,audience_import}.orphan_record_failed` | **error** (`severity: 'critical'`) | `tenantId`, `broadcastId`, `resourceType`, `resourceId`, `orphanReason`, `err` | Spec 140 s2c [P M-3] — the orphan insert failed: the id is on no row and in no table. The tick's answer is unchanged. Delete the resource at Resend by `resourceId` (a `create_unconfirmed` line has `resourceId: null`: see RoPA 8d, "How to find one"). |
 | `broadcasts.audience_import.terminal_reread_failed` | warn | `tenantId`, `broadcastId`, `err` | Spec 140 s2c — `failTerminally`'s choke point could not re-read the row before a terminal write: nothing terminal is written, the tick answers `dispatch.server_error` (phase `terminal_write`, message `terminal_reread_failed`) and the next tick tries again. |
+| `broadcasts.cascade.dispatch_begun_delete` | info | `tenantId`, `memberId`, `useCase`, `broadcastId`, `resendBroadcastId`, `outcome` (the DELETE's kind), `probe` (the GET's status, or `'threw'`; absent after a deleted DELETE), `resendMs`, `deleteMs` | Spec 140 s1 — the erasure cascade's DELETE (and, after a 404 / 403, its one GET) of an in-flight row's draft, under the row lock. `probe: 'threw'` (spec 140 s2d, #736c L1): the GET threw; the line is still written so the lock time is not lost, then the throw rolls the lock tx back. |
+| `broadcasts.dispatch.refused_draft_delete_unconfirmed` | warn | `tenantId`, `broadcastId`, `leg`, `refusal`, `resendBroadcastId`, `probedStatus`, `outcome`, `errClass`, `err`, `observedResendStatus` (standing / terminal arms) | Spec 140 s1 — a refusal's draft DELETE decided nothing, so the draft stays (recorded `resendDraftOutcome: 'undeleted'` on the standing arm). `err` is ALWAYS present (spec 140 s2d, #736c L2): the error class when a call threw, `null` when nothing threw. Never provider text. |
 | `broadcasts.orphan_drain.settled` | info | `tenantId`, `orphanId`, `resourceType`, `resourceId`, `orphanReason`, `outcome` | Spec 140 s2c (DL6) — the `cleanup-audiences` drain settled one orphan row at Resend (`deleted` / `absent` / `retained` / `handed`). |
 | `resend.broadcasts.audience_already_absent` | info | `audienceId`, `via` (absent, or `'probe_after_403'`) | `deleteAudience` found the audience already gone: the DELETE answered 404 / 410 (no `via`), or it answered 403 and the one `GET` probe answered 404 / 410 (`via: 'probe_after_403'`; Resend answers a deleted audience's DELETE with 403 "Cannot delete last audience." while it holds one other audience, MEASURED 2026-11-03 on the sink account holding only `General`). Every caller (cleanup, the orphan drain, the erasure's audience pass) treats it as deleted. |
-| `cron.broadcasts.cleanup_audiences.tick_complete` | info | `tenantId`, `processed`, `deleted`, `failed`, `orphans` | Spec 140 s2c — the top-level `processed` / `deleted` / `failed` count the TERMINAL-AUDIENCE loop only (`listTerminalBroadcastsWithLiveAudience`, up to the route's `LIMIT` = 50); `orphans` (`listed`, `settled`, `undecided`, `waiting`, `deferred`, `listFailed`, `erasedReadFailed`) counts the orphan drain (up to `ORPHAN_DRAIN_LIMIT` = 20; `settled` only when the settle CAS won). Spec 140 s2d (#736a): `listed` is the rows of the run's two reads, one per orphan id — the erased requesters' rows (at most `ORPHAN_DRAIN_ERASED_SHARE` = 10) and the past-grace list (20); `waiting` is the in-grace rows of requesters not known to be erased; `deferred` adds an erased requester's in-grace rows the share left out; `erasedReadFailed: true` means the erased-requester read failed this run (`broadcasts.orphan_drain.erased_read_failed`). The HTTP body carries the same fields. Since review round 1 (code-review #4) a failed audience list still runs the drain: `cron.broadcasts.cleanup_audiences.server_error` (500) carries `orphans` too. |
+| `cron.broadcasts.cleanup_audiences.tick_complete` | info | `tenantId`, `processed`, `deleted`, `failed`, `orphans` | Spec 140 s2c — the top-level `processed` / `deleted` / `failed` count the TERMINAL-AUDIENCE loop only (`listTerminalBroadcastsWithLiveAudience`, up to the route's `LIMIT` = 50); `orphans` (`listed`, `settled`, `undecided`, `waiting`, `deferred`, `listFailed`, `erasedReadFailed`, `erasedShareFull`) counts the orphan drain (up to `ORPHAN_DRAIN_LIMIT` = 20; `settled` only when the settle CAS won). Spec 140 s2d (#736a): `listed` is the rows of the run's two reads, one per orphan id — the erased requesters' rows (at most `ORPHAN_DRAIN_ERASED_SHARE` = 10) and the past-grace list (20); `waiting` is the in-grace rows of requesters not known to be erased; `deferred` adds an erased requester's in-grace rows the share left out. Review round 1 (pdpa L-d): `waiting` and `deferred` count OF THE ROWS SEEN THIS RUN (the two reads), not every unsettled row. `erasedShareFull: true` (review round 1, the maintainer's /verify finding) means the erased requesters had more unsettled rows than the share (the read asks for share + 1): the rest wait for the next run and are in no other counter. `erasedReadFailed: true` means the erased-requester read failed this run (`broadcasts.orphan_drain.erased_read_failed`). The HTTP body carries the same fields. Since review round 1 (code-review #4) a failed audience list still runs the drain: `cron.broadcasts.cleanup_audiences.server_error` (500) carries `orphans` too. |
 | `broadcasts.orphan_drain.undecided` | warn | `tenantId`, `orphanId`, `resourceType`, `resourceId`, `orphanReason`, `answer` | The drain's Resend answer decided nothing (`answer` is a closed token: the DELETE's kind, `forbidden_probe_<status>`, or `threw_<kind>`); the row stays unsettled for the next run. The same row every 15 minutes is a permanent answer: delete it by hand. |
 | `broadcasts.orphan_drain.settle_failed` | warn | `tenantId`, `orphanId`, `resourceType`, `resourceId`, `orphanReason`, `err` | The settle CAS faulted after Resend answered; the next run asks Resend again (its DELETE then answers 404 → `absent`). |
 | `broadcasts.orphan_drain.attempt_mark_failed` / `broadcasts.cascade.orphan_attempt_mark_failed` | warn | `tenantId`, `orphanId`, `err` | Spec 140 s2c review round 1 — the attempt counter could not be incremented after an undecided answer; the row keeps its place in the queue for one more run. |
 | `broadcasts.cascade.orphan_stuck` | warn | `tenantId`, `memberId`, `orphanId`, `resourceType`, `resourceId`, `attempts`, `exit` (`undecided` / `deadline` / `over_limit`), `answer` (on `undecided`) | Spec 140 s2c review rounds 1–2 (code-review #1, pdpa M-B, security F1) — a STUCK TENANT AUDIENCE orphan (`ORPHAN_STUCK_ATTEMPTS` tries AND older than `ORPHAN_STUCK_MIN_AGE_MS`) met at any exit of an erasure's pass (b): REPORTED, not withheld, so another member's erasure can complete. Counted by `member_erased.audience_orphans_stuck_count`, by `broadcasts_cascade_orphan_stuck_total` once that `member_erased` is written (review round 3; a withheld run logs the line and adds nothing), and (after 24 h) `broadcasts_orphaned_resend_ids_unsettled`; settle it by hand (`member-erasure.md` step 4). A member's OWN BROADCAST orphans always withhold. |
 | `broadcasts.cascade.orphan_settle_lost` | error | `tenantId`, `memberId`, `orphanId`, `resourceType`, `resourceId` | The settle CAS found the row already settled (the drain won): `member_erased` is withheld and the re-drive counts the settled row (code-review #6). |
 | `cron.broadcasts_gauges.orphan_query_failed` | **error** | `requestId`, `gauge` (`unconfirmed` / `unsettled`), `err` | Spec 140 s2c review round 1 — one orphan gauge's read failed in its own transaction; the other and every sibling are still observed, and the tick answers 500 with `orphanGaugesOk: false`. |
-| `broadcasts.orphan_drain.list_failed` | **error** | `tenantId`, `err` | The drain could not read its past-grace list; the audience pass still ran and the route answers 200 (`orphans.listFailed: true`). The erased requesters' rows are read before it and still drain (spec 140 s2d, #736a). |
-| `broadcasts.orphan_drain.erased_read_failed` | warn | `tenantId`, `err`, `code` | Spec 140 s2d (#736a, pdpa M-3) — the erased-requester read failed (the in-grace requester list, the members bridge's `filterErasedMemberIds`, or those requesters' rows); written once per run. `listFailed` stays false and the past-grace rows still drain; an erased requester's young rows wait the 1-hour grace (`orphans.erasedReadFailed: true`). `code` is the SQLSTATE (`pgErrorCode`) when there is one. Repeated runs: check Neon, then the requester's rows by hand (`member-erasure.md` step 4). |
+| `broadcasts.orphan_drain.list_failed` | **error** | `tenantId`, `err` | The drain could not read its past-grace list; the audience pass still ran and the route answers 200 (`orphans.listFailed: true`). The erased requesters' rows are read beside it (review round 1: `Promise.all`, each read caught on its own) and still drain (spec 140 s2d, #736a). |
+| `broadcasts.orphan_drain.erased_read_failed` | warn | `tenantId`, `step` (`requesters` / `bridge` / `rows`), `err`, `code` | Spec 140 s2d (#736a, pdpa M-3) — the erased-requester read failed (the in-grace requester list, the members bridge's `filterErasedMemberIds`, or those requesters' rows; review round 1, reliability M-1: `step` names which, and the bridge's throw carries the driver error as its `cause`, so `code` reaches the SQLSTATE); written once per run. `listFailed` stays false and the past-grace rows still drain; an erased requester's young rows wait the 1-hour grace (`orphans.erasedReadFailed: true`). `code` is the SQLSTATE (`pgErrorCode`) when there is one. Repeated runs: check Neon, then the requester's rows by hand (`member-erasure.md` step 4). |
 | `broadcasts.orphan_drain.erased_requesters_capped` | warn | `tenantId`, `cap` | Spec 140 s2d (#736a) — the run read `ORPHAN_ERASED_REQUESTER_CAP` (50) distinct requesters of in-grace rows, so more may exist; an erased requester past the cap waits the 1-hour grace. The drain carries on. |
 | `broadcasts.orphan_drain.stopped_at_budget` | warn | `tenantId`, `stoppedDeferred` | No chunk started after `ORPHAN_DRAIN_STOP_MS` (240 s of the route's `maxDuration` 300 s); `stoppedDeferred` rows (the ones the budget cut) wait for the next run. The route's `orphans.deferred` is the total, the rows over `ORPHAN_DRAIN_LIMIT` included (review round 4). |
 | `broadcasts.cascade.orphan_settled` / `orphan_unresolved` / `orphan_settle_failed` / `orphan_list_failed` / `audience_orphan_list_failed` | info / error | `tenantId`, `memberId`, `orphanId`, `resourceType`, `resourceId`, `answer` or `err` | Spec 140 s2c (DL10) — the erasure's orphan pass. Every error line withholds `member_erased` (`unexpectedErrorCount`), and `reconcile-erasures` drives the erasure again. |
