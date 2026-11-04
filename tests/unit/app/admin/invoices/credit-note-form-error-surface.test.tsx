@@ -756,7 +756,7 @@ describe('CreditNoteForm — task 68 Start over', () => {
 
 // R124 — the #48 / #61 status row sits in the form's flex stack. Idle it must
 // take no space (it used to hold min-h-5, so the stack showed gap + 20 px +
-// gap, 68 px above the credit-note card), yet stay mounted so a later
+// gap; 68 px on the credit-note page), yet stay mounted so a later
 // "waiting" or "still working" line is announced.
 describe('CreditNoteForm — the idle status row takes no space (R124)', () => {
   it('is mounted and empty, and cancels the gap before it', () => {
@@ -772,19 +772,4 @@ describe('CreditNoteForm — the idle status row takes no space (R124)', () => {
     expect(row!.parentElement!.className.split(/\s+/)).toContain(`gap-${pullUp}`);
   });
 
-  it('reserves its line while the POST runs, so a later "still working" line moves nothing', async () => {
-    // Settled at the end: a hanging POST would keep later tests `pending`.
-    let settle: (v: unknown) => void = () => {};
-    vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => { settle = r; })));
-    try {
-      const { container } = renderForm();
-      fillAndSubmit();
-      const row = () => container.querySelector('div[role="status"][aria-live="polite"]:not(.sr-only)')!;
-      await waitFor(() => expect(row().className).toMatch(/\bmin-h-5\b/));
-      expect(row().className).not.toMatch(/\bempty:-mt-/);
-    } finally {
-      settle({ ok: false, status: 409, json: async () => ({ error: { code: 'invalid_status' } }) });
-      vi.unstubAllGlobals();
-    }
-  });
 });

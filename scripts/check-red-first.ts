@@ -22,12 +22,7 @@ import { findRedFirstViolations, type BranchCommit } from './lib/red-first';
  * branch's commits from `main`, so an entry only matters while its branch is
  * open; delete it once that PR merges.
  */
-const ALLOW: ReadonlyArray<{ readonly sha: string; readonly why: string }> = [
-  {
-    sha: 'c5bc2f9c6',
-    why: '138 — the commit whose shared RED/GREEN prompted this gate (retro 2026-10-29); disclosed in the PR',
-  },
-];
+const ALLOW: ReadonlyArray<{ readonly sha: string; readonly why: string }> = [];
 
 function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).replace(/\r/g, '');

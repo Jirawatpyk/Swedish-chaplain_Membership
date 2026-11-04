@@ -512,7 +512,7 @@ describe('PaymentForm — an unknown outcome is not a failure (#57, #58, #59)', 
 
 // R124 — the #48 / #61 status row sits in the form's flex stack. Idle it must
 // take no space (it used to hold min-h-5, so the stack showed gap + 20 px +
-// gap, 68 px above the credit-note card), yet stay mounted so a later
+// gap; 68 px on the credit-note page), yet stay mounted so a later
 // "waiting" or "still working" line is announced.
 describe('PaymentForm — the idle status row takes no space (R124)', () => {
   it('is mounted and empty, and cancels the gap before it', () => {
