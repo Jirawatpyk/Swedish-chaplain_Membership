@@ -408,10 +408,22 @@ certificate scans. **Keep local and preview Blob tokens on a dev-only store.**
 log line, or `pdfs.breakdown` in the response of a `?dryRun=1` call. The
 breakdown counts every candidate by `docKind × fy × templateVersion`
 (`wouldDelete`, `deleted`, `kept`, `alreadyGone`, `failed`; first 50 groups,
-the rest in `otherGroups`): each `wouldDelete` group should be an older
-template version than the one its documents are on now. Groups with
-something to act on are listed first; `otherGroups` keeps the totals of any
-groups past 50.
+the rest in `otherGroups`). Groups with something to act on are listed
+first; `otherGroups` keeps the totals of any groups past 50.
+
+Each `wouldDelete` key should belong to no live row: sample a few
+`documentId`s from the per-key lines against `invoices` / `credit_notes`
+(read-only). A superseded template version is one cause; a deleted row is
+another (the first prod run, R128, found only v12 PDFs whose rows no longer
+exist, every live invoice also being on v12). While a run hits the 500 cap,
+`kept` can be 0 until a run reaches the live keys; the keep path is guarded
+twice (the batch `referencedKeys` read, then the locked re-read in
+`deleteOrphanPdfUnderLock`).
+
+After the first deleting night (21:00 UTC) with the flag on, check:
+- the `orphan_pdf_sweep_done` line shows `deleted` ≤ 500 and `failed: 0`;
+- 2–3 live invoice and receipt PDFs still open from `/admin`;
+- once the sweep reaches the live keys, `kept` is above 0.
 
 **Log lines are a sample (#72).** Vercel keeps a bounded number of log lines
 per request; the first prod run stopped at 256 and lost its summary.
