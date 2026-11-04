@@ -955,9 +955,12 @@ export async function cancelInFlightBroadcastsForMember(
       };
       // Review round 2 — the stuck rule (`ORPHAN_STUCK_ATTEMPTS` docblock):
       // tries AND age, by the injected clock.
-      const isStuck = (orphan: OrphanedResendIdRef) =>
-        orphan.attempts >= ORPHAN_STUCK_ATTEMPTS &&
-        deps.clock.now().getTime() - orphan.createdAt.getTime() >= ORPHAN_STUCK_MIN_AGE_MS;
+      // Review round 4 (code-review #3, reliability LOW-A) — judged at an
+      // explicit instant: the over-limit exit passes the list time (the SQL
+      // stuck cutoff's instant); the undecided and deadline exits pass now.
+      const isStuckAt = (orphan: OrphanedResendIdRef, atMs: number) =>
+        orphan.attempts >= ORPHAN_STUCK_ATTEMPTS && atMs - orphan.createdAt.getTime() >= ORPHAN_STUCK_MIN_AGE_MS;
+      const isStuck = (orphan: OrphanedResendIdRef) => isStuckAt(orphan, deps.clock.now().getTime());
       const reportStuck = (orphan: OrphanedResendIdRef, exit: 'undecided' | 'deadline' | 'over_limit', extra: Record<string, unknown> = {}) => {
         audienceOrphansStuckCount += 1;
         logger.warn(
@@ -966,8 +969,8 @@ export async function cancelInFlightBroadcastsForMember(
         );
       };
       // Pass (b)'s non-settling exits: a stuck row is reported, any other deferred.
-      const deferOrReport = (orphan: OrphanedResendIdRef, exit: 'deadline' | 'over_limit') => {
-        if (isStuck(orphan)) reportStuck(orphan, exit);
+      const deferOrReport = (orphan: OrphanedResendIdRef, exit: 'deadline' | 'over_limit', atMs = deps.clock.now().getTime()) => {
+        if (isStuckAt(orphan, atMs)) reportStuck(orphan, exit);
         else deferOrphan(orphan);
       };
       /**
@@ -1049,11 +1052,13 @@ export async function cancelInFlightBroadcastsForMember(
 
       // (b) The tenant's leaked audiences [P H-1]: deleted, not counted.
       let audienceOrphans: ReadonlyArray<OrphanedResendIdRef> = [];
+      // Review round 3 (code-review #1) — the list sorts stuck rows last, by
+      // the cutoff of the rule isStuck applies (same clock), so a stuck
+      // marker row (the LIMIT + 1st) means every unlisted row is stuck too.
+      // Review round 4 (code-review #3) — the marker is judged at this same
+      // instant, so the sort and the predicate cannot disagree.
+      const listedAtMs = deps.clock.now().getTime();
       try {
-        // Review round 3 (code-review #1) — the list sorts stuck rows last, by
-        // the cutoff of the rule isStuck applies (same clock), so a stuck
-        // marker row (the LIMIT + 1st) means every unlisted row is stuck too.
-        const listedAtMs = deps.clock.now().getTime();
         audienceOrphans = await deps.orphans.listUnsettledAudienceOrphans(
           ERASURE_AUDIENCE_ORPHAN_LIMIT + 1,
           new Date(listedAtMs - AUDIENCE_CLEANUP_GRACE_MS),
@@ -1065,7 +1070,7 @@ export async function cancelInFlightBroadcastsForMember(
       // Review round 1 — five at a time (the drain's concurrency); the
       // deadline is checked before each chunk, and the rest are deferred.
       const due = audienceOrphans.slice(0, ERASURE_AUDIENCE_ORPHAN_LIMIT);
-      for (const orphan of audienceOrphans.slice(ERASURE_AUDIENCE_ORPHAN_LIMIT)) deferOrReport(orphan, 'over_limit');
+      for (const orphan of audienceOrphans.slice(ERASURE_AUDIENCE_ORPHAN_LIMIT)) deferOrReport(orphan, 'over_limit', listedAtMs);
       for (let i = 0; i < due.length; i += ERASURE_AUDIENCE_ORPHAN_CONCURRENCY) {
         const chunk = due.slice(i, i + ERASURE_AUDIENCE_ORPHAN_CONCURRENCY);
         if (pastDeadline()) {
