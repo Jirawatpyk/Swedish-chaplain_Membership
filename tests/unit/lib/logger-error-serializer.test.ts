@@ -151,6 +151,13 @@ describe('the root reducer writes tokens and frames, never text (review round 2)
     expect(reduced(written())).toEqual({ type: 'unknown', kind: 'not_found' });
   });
 
+  // Review round 3 follow-up — this repo's discriminants are dotted
+  // (`resolve.server_error`, `process_webhook.server_error`).
+  it('a dotted or colon-joined kind is kept', () => {
+    logger.warn({ err: { kind: 'process_webhook.server_error' } }, 'webhook.failed');
+    expect(reduced(written())).toEqual({ type: 'unknown', kind: 'process_webhook.server_error' });
+  });
+
   it('a kind that is not token-shaped is dropped', () => {
     logger.warn({ err: { kind: 'free text with spaces' } }, 'lookup.failed');
     expect(reduced(written())).toEqual({ type: 'unknown' });
