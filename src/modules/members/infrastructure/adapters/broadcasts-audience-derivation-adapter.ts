@@ -36,7 +36,7 @@ export const noopBroadcastsAudienceDerivationAdapter: BroadcastsAudienceDerivati
 
 export const f7BroadcastsAudienceDerivationAdapter: BroadcastsAudienceDerivationPort =
   {
-    async listMemberAudienceContactsInTx(tx, tenantSlug, emails) {
+    async listMemberAudienceContactsInTx(tx, tenantSlug, emails, asOf) {
       // Construct the tenant-bound repo and forward the CALLER'S tx — the read
       // runs inside the atomic members-scrub tx, capturing the live emails
       // before the same tx's delivery tombstone redacts them. The repo asserts
@@ -44,7 +44,9 @@ export const f7BroadcastsAudienceDerivationAdapter: BroadcastsAudienceDerivation
       // (`TenantSlug`, threaded from `deps.tenant.slug`), and the repo method
       // takes a `TenantSlug`, so it flows straight through with NO `asTenantSlug`
       // re-validation.
+      // Spec 140 s2d (#736b) — `asOf` goes through unchanged: broadcasts
+      // derives its stuck cutoff from it.
       const repo = makeDrizzleBroadcastsRepo(tenantSlug);
-      return repo.listMemberResendAudienceContactsInTx(tx, tenantSlug, emails);
+      return repo.listMemberResendAudienceContactsInTx(tx, tenantSlug, emails, asOf);
     },
   };

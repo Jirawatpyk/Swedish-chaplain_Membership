@@ -394,6 +394,11 @@ export async function eraseMember(
     readonly audienceId: string;
     readonly email: string;
   }> = [];
+  // Spec 140 s2d (#736b) — the DETACH instant: read just before the scrub tx
+  // starts (not the pre-flight `now` above), and handed to broadcasts as the
+  // `asOf` its leaked-audience cap judges the stuck rule at. Broadcasts' pass
+  // (b) judges again later, after commit; RoPA 8d residual 6 names that gap.
+  const detachAsOf = deps.clock.now();
   try {
     await runInTenant(deps.tenant, async (tx) => {
       // F114 (FR-030, T078) — the member's change requests, in the SAME tx
@@ -557,6 +562,7 @@ export async function eraseMember(
           tx,
           deps.tenant.slug,
           tombstoneEmails,
+          detachAsOf,
         );
 
       // COMP-1 FIX-9 — element-wise redact the erased member's email out of

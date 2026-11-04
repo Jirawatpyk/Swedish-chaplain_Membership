@@ -13,7 +13,6 @@ import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
 import {
-  ORPHAN_STUCK_ATTEMPTS,
   ORPHAN_SUPERSEDING_STATUSES,
   type OrphanOutcome,
   type OrphanReason,
@@ -25,6 +24,7 @@ import type {
 } from '../../application/ports/broadcast-orphans-repo';
 import { broadcastOrphanedResendIds as orphans, broadcasts } from '../schema';
 import { assertTenantBoundTx } from './drizzle-broadcasts-repo';
+import { orphanStuckSql } from './_orphan-stuck-sql';
 
 /** `TERMINAL_BROADCAST_STATUSES` as SQL binds — derived from the Domain, never hand-listed. */
 const TERMINAL_IN = sql.join(
@@ -219,11 +219,11 @@ export function makeDrizzleBroadcastOrphansRepo(tenantId: string): BroadcastOrph
           // Review round 3 (code-review #1) — stuck rows last (false < true),
           // the same rule as the caller's isStuck. Round 4 follow-up
           // (code-review #4): created_at at millisecond precision, as the
-          // driver hands it to isStuckAt, so the two never disagree.
+          // driver hands it to the app, so the two never disagree.
+          // Spec 140 s2d (#736b) — the rule is orphanStuckSql, shared with
+          // the detach cap; the cutoff is the caller's.
           .orderBy(
-            asc(
-              sql`(${orphans.attempts} >= ${ORPHAN_STUCK_ATTEMPTS}::int AND date_trunc('milliseconds', ${orphans.createdAt}) <= ${stuckAgeCutoff.toISOString()}::timestamptz)`,
-            ),
+            asc(orphanStuckSql(sql`${orphans.attempts}`, sql`${orphans.createdAt}`, stuckAgeCutoff)),
             asc(orphans.attempts),
             asc(orphans.createdAt),
             asc(orphans.orphanId),

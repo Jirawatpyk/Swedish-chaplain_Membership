@@ -412,7 +412,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     expect(await orphansA.settleOrphan(settledRow!.orphanId, 'deleted')).toBe(true);
 
     const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
-    const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, tenantA.ctx.slug, [email.toUpperCase()]));
+    const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, tenantA.ctx.slug, [email.toUpperCase()], new Date()));
     const ids = pairs.map((p) => p.audienceId);
     expect(pairs).toContainEqual({ audienceId: stuck, email });
     expect(ids).not.toContain(settled);
@@ -446,7 +446,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
           VALUES (${tenantB.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${otherTenant}, 'audience_leaked', 99)`),
       );
       const repo = makeDrizzleBroadcastsRepo(solo.ctx.slug);
-      const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email]));
+      const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email], new Date()));
       const audiences = [...new Set(pairs.map((p) => p.audienceId))].sort();
       // attempts 0 and 1 are past the cap.
       expect(ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT).toBe(10);
@@ -480,7 +480,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
         }
       }
       const repo = makeDrizzleBroadcastsRepo(solo.ctx.slug);
-      const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email]));
+      const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email], new Date()));
       const audiences = new Set(pairs.map((p) => p.audienceId));
       expect(audiences.size).toBe(ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT);
       for (const id of stuck) expect(audiences).toContain(id);

@@ -506,7 +506,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     });
 
     const pairs = await repo.withTx(async (tx) =>
-      repo.listMemberResendAudienceContactsInTx(tx, slug, [email]),
+      repo.listMemberResendAudienceContactsInTx(tx, slug, [email], new Date()),
     );
 
     expect(pairs).toContainEqual({ audienceId, email });
@@ -541,7 +541,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     });
 
     const pairs = await repo.withTx(async (tx) =>
-      repo.listMemberResendAudienceContactsInTx(tx, slug, [email]),
+      repo.listMemberResendAudienceContactsInTx(tx, slug, [email], new Date()),
     );
 
     expect(pairs).toContainEqual({ audienceId, email });
@@ -601,7 +601,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     });
 
     const pairs = await repo.withTx(async (tx) =>
-      repo.listMemberResendAudienceContactsInTx(tx, slug, [erased]),
+      repo.listMemberResendAudienceContactsInTx(tx, slug, [erased], new Date()),
     );
 
     // The audience is live (`audience_deleted_at IS NULL`) and one webhook has
