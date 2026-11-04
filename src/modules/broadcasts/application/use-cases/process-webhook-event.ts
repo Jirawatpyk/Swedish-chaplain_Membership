@@ -674,8 +674,7 @@ export async function processWebhookEvent(
     // Spec 140 s2d (#736c) — the class and SQLSTATE only. The message is not
     // safe either: a Drizzle `Failed query:` message quotes the bound
     // parameters (the recipient's email), and `REDACT_PATHS` match field
-    // names, not string content. The stack stays on the OTel span's
-    // recordException path, which never goes to log sinks.
+    // names, not string content.
     logger.error(
       {
         ...errLogFields(e),

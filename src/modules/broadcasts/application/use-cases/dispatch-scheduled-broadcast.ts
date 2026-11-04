@@ -1071,9 +1071,14 @@ export async function dispatchScheduledBroadcast(
     // must never fall through to the branches below, which would mark the
     // broadcast failed with a fabricated "empty audience" reason.
     if (!resolvedResult.ok && resolvedResult.error.kind === 'resolve.server_error') {
+      // Spec 140 s2d review round 4 (code-review #9) — forward the resolver's
+      // class, as build-audience-tick's `mapResolveError` does, so the cron
+      // prints it rather than 'unclassified'.
+      const { errClass } = resolvedResult.error;
       return err({
         kind: 'dispatch.server_error',
         message: resolvedResult.error.message,
+        ...(errClass === undefined ? {} : { errClass }),
         phase: 'resolve',
       });
     }
