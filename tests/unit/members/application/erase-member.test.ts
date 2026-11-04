@@ -2103,11 +2103,16 @@ describe('US3-A — Art.12 attestation in member_erasure_requested payload', () 
  * Money-path coverage remediation — the `'cause' in X ? X.cause : undefined`
  * forensic-threading ternaries. Every failure stub in this suite historically
  * omitted `cause`, so all TEN true-arms were dead: a Neon SQLSTATE never
- * provably survived into the logged Error. Each row drives ONE site with a
- * cause-bearing repo error and asserts the outer log carries it verbatim.
+ * provably survived into the log. Each row drives ONE site with a
+ * cause-bearing repo error and asserts the outer log carries the SQLSTATE
+ * code. Spec 140 s2c review round 4 (code-review #7) — the log carries the
+ * error CLASS (`err: errKind(e)`) and the SQLSTATE code (`code:
+ * pgErrorCode(e)`), never the Error itself: a driver message on the erasure
+ * path can carry the subject's address.
  */
-describe('eraseMember — repo cause threads into the logged Error (forensics)', () => {
-  const CAUSE = { sqlState: '40P01', message: 'deadlock detected' };
+describe('eraseMember — the repo cause threads the SQLSTATE code into the log (forensics)', () => {
+  // A Postgres error's shape (postgres-js / Neon): a `code` and a `message`.
+  const CAUSE = { code: '40P01', message: 'deadlock detected' };
   const failing = () =>
     ({ ok: false, error: { code: 'repo.unexpected', cause: CAUSE } }) as never;
   const failAuditType = (d: StubbedEraseDeps, type: string) => {
@@ -2204,7 +2209,7 @@ describe('eraseMember — repo cause threads into the logged Error (forensics)',
   ];
 
   describe.each(ROWS)('%s', (_label, apply, expectedLog, wantOk) => {
-    it('preserves error.cause for forensics', async () => {
+    it('logs the error class and the SQLSTATE code, never the message', async () => {
       const deps = buildEraseDeps();
       apply(deps);
       const spy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
@@ -2226,8 +2231,10 @@ describe('eraseMember — repo cause threads into the logged Error (forensics)',
         }
         const call = spy.mock.calls.find((c) => c[1] === expectedLog);
         expect(call, `expected a "${expectedLog}" log`).toBeDefined();
-        const logged = (call?.[0] as { err?: unknown }).err;
-        expect((logged as Error).cause).toEqual(CAUSE);
+        const fields = call?.[0] as { err?: unknown; code?: unknown };
+        expect(fields.err).toBe('Error');
+        expect(fields.code).toBe(CAUSE.code);
+        expect(JSON.stringify(fields)).not.toContain(CAUSE.message);
       } finally {
         spy.mockRestore();
       }

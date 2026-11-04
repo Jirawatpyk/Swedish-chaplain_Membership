@@ -261,6 +261,23 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 12, settled: ORPHAN_DRAIN_CONCURRENCY, deferred: 12 - ORPHAN_DRAIN_CONCURRENCY });
   });
 
+  // Review round 4 (code-review #6, reliability nit) — the warn line names
+  // the rows the budget cut only (stoppedDeferred); the output's deferred
+  // stays the total, the cap overflow included.
+  it('stopped_at_budget logs the budget-cut count; the output deferred is the total', async () => {
+    const h = harness({
+      orphans: [...Array.from({ length: ORPHAN_DRAIN_LIMIT }, (_, i) => orphan(i + 1)), orphan(99, { createdAt: YOUNG, requestedByMemberId: 'm-erased' })],
+      erased: { 'm-erased': 'erased' },
+      stepMs: ORPHAN_DRAIN_STOP_MS,
+    });
+    const res = await h.run();
+    const cut = ORPHAN_DRAIN_LIMIT - ORPHAN_DRAIN_CONCURRENCY;
+    // One row over the cap, then `cut` rows past the budget.
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: ORPHAN_DRAIN_LIMIT + 1, deferred: 1 + cut });
+    const line = warn.mock.calls.find((c) => c[1] === 'broadcasts.orphan_drain.stopped_at_budget');
+    expect(line?.[0]).toEqual({ tenantId: tenant.slug, stoppedDeferred: cut });
+  });
+
   it('the stop leaves room for one chunk inside the route maxDuration (CLEANUP_MAX_DURATION_MS)', () => {
     const m = /export const maxDuration = (\d+);\r?\n/.exec(readFileSync(ROUTE, 'utf8'));
     expect(Number(m?.[1]) * 1000).toBe(CLEANUP_MAX_DURATION_MS);
