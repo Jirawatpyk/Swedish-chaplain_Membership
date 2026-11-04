@@ -10,9 +10,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  describeStorageError,
   errorChainMessage,
+  isExclusionViolation,
+  isExclusionViolationOnConstraint,
   isLastAdminTriggerError,
   isUniqueViolation,
+  isUniqueViolationOnConstraint,
   pgErrorCode,
   pgErrorMeta,
   primaryContactTriggerViolation,
@@ -250,5 +254,49 @@ describe('pgErrorCode — a SQLSTATE holds a digit (review round 3)', () => {
     expect(pgErrorCode(pgError('EPERM', 'operation not permitted'))).toBeUndefined();
     expect(pgErrorCode(pgError('23505', 'duplicate key'))).toBe('23505');
     expect(pgErrorCode(pgError('P0001', 'raise'))).toBe('P0001');
+  });
+});
+
+/**
+ * Spec 140 s2d review round 3 (code-review #8) — every cause walk in
+ * `db-errors.ts` is bounded by one shared walker. A cyclic `.cause` is a
+ * synchronous loop that no vitest timeout can interrupt, so the chain counts
+ * its own reads and throws past 1,000: an unbounded walker fails with
+ * "unbounded cause walk" instead of hanging the worker.
+ */
+describe('every cause walk is bounded (review round 3)', () => {
+  function cyclic(): Error {
+    let reads = 0;
+    const a = Object.assign(new Error('a'), { code: '00000' });
+    const b = Object.assign(new Error('b'), { code: '00000' });
+    for (const [from, to] of [[a, b], [b, a]] as const) {
+      Object.defineProperty(from, 'cause', {
+        get() {
+          reads += 1;
+          if (reads > 1_000) throw new Error('unbounded cause walk');
+          return to;
+        },
+      });
+    }
+    return a;
+  }
+
+  it.each([
+    ['isLastAdminTriggerError', () => isLastAdminTriggerError(cyclic())],
+    ['primaryContactTriggerViolation', () => primaryContactTriggerViolation(cyclic())],
+    ['errorChainMessage', () => errorChainMessage(cyclic())],
+    ['pgErrorCode', () => pgErrorCode(cyclic())],
+    ['pgErrorMeta', () => pgErrorMeta(cyclic())],
+    ['isUniqueViolation', () => isUniqueViolation(cyclic())],
+    ['isUniqueViolationOnConstraint', () => isUniqueViolationOnConstraint(cyclic(), 'c')],
+    ['isExclusionViolation', () => isExclusionViolation(cyclic())],
+    ['isExclusionViolationOnConstraint', () => isExclusionViolationOnConstraint(cyclic(), 'c')],
+    ['describeStorageError', () => describeStorageError(cyclic())],
+  ])('%s returns on a cyclic cause', (_name, walk) => {
+    expect(walk).not.toThrow();
+  }, 5_000);
+
+  it('errorChainMessage keeps at most 11 links (the 10-hop bound) and still joins them', () => {
+    expect(errorChainMessage(cyclic()).split(' | ')).toHaveLength(11);
   });
 });
