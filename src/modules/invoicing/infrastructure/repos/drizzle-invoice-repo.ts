@@ -1343,7 +1343,7 @@ export function makeDrizzleInvoiceRepo(
      * re-render still lands (and credit requires receiptPdfStatus='rendered'
      * FIRST, so a pending-render + credit race cannot occur).
      */
-    async applyReceiptPdf(txUnknown, input): Promise<Invoice> {
+    async applyReceiptPdf(txUnknown, input): Promise<{ invoice: Invoice; landed: boolean }> {
       const tx = txUnknown as TenantTx;
       // DO NOT SET `receiptDocumentNumberRaw` in this UPDATE — it is
       // stamped atomically in `applyPayment` (both sync + async paths
@@ -1352,7 +1352,7 @@ export function makeDrizzleInvoiceRepo(
       // the UI "Receipt No." surface that reads this field. Drizzle's
       // partial `.set({...})` omits unmentioned columns from the SQL
       // UPDATE entirely so the existing value is preserved.
-      await tx
+      const changed = await tx
         .update(invoices)
         .set({
           receiptPdfBlobKey: input.blobKey,
@@ -1374,7 +1374,8 @@ export function makeDrizzleInvoiceRepo(
             // re-fetch below still returns the (void) row unchanged.
             ne(invoices.status, 'void'),
           ),
-        );
+        )
+        .returning({ invoiceId: invoices.invoiceId });
       // Re-fetch via the public read path so callers always receive a
       // domain Invoice (not the raw row).
       const [row] = await tx
@@ -1403,7 +1404,10 @@ export function makeDrizzleInvoiceRepo(
           ),
         )
         .orderBy(asc(invoiceLines.position));
-      return rowsToInvoice(row as InvoiceRow, lineRows.map(rowToLine));
+      return {
+        invoice: rowsToInvoice(row as InvoiceRow, lineRows.map(rowToLine)),
+        landed: changed.length > 0,
+      };
     },
 
     /**

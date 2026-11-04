@@ -23,6 +23,7 @@ import { asInvoiceLineId, type InvoiceLine } from '@/modules/invoicing/domain/in
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
+import { logger } from '@/lib/logger';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
@@ -168,11 +169,18 @@ function makeDeps(
       parkVoidPdfReconcile: vi.fn(async () => {}),
       applyVoid: vi.fn(),
       applyIssueAsPaid: vi.fn(),
-      applyReceiptPdf: vi.fn(async () =>
-        invoice
-          ? ({ ...invoice, receiptPdfStatus: 'rendered' } as Invoice)
+      // Echoes the write and reports it landed, as the repo does when its
+      // UPDATE changes the row.
+      applyReceiptPdf: vi.fn(async (_tx, w: { blobKey: string; sha256: Sha256Hex; templateVersion: number }) => ({
+        invoice: invoice
+          ? ({
+              ...invoice,
+              receiptPdfStatus: 'rendered',
+              receiptPdf: { blobKey: w.blobKey, sha256: w.sha256, templateVersion: w.templateVersion },
+            } as Invoice)
           : (null as unknown as Invoice),
-      ),
+        landed: true,
+      })),
       applyReceiptPdfFailure: vi.fn(async () => ({
         kind: 'failed' as const,
         invoice: invoice
@@ -428,5 +436,83 @@ describe('renderReceiptPdf — async worker callback', () => {
       expect(r.error.code).toBe('render_failed');
     }
     expect(deps.invoiceRepo.applyReceiptPdfFailure).toHaveBeenCalledTimes(1);
+  });
+
+  // Task #71 L-1 — `receipt_rendered` is a 10-year audit row naming the
+  // receipt's key and sha. It is written only when this attempt's write is
+  // the one the row holds: a race loser (another worker rendered first) or a
+  // row voided between the read and the write leaves the UPDATE a no-op.
+  it('#71 L-1: race lost (row holds another key) → no receipt_rendered audit, still ok', async () => {
+    const invoice = makePaidPendingInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    (deps.invoiceRepo.applyReceiptPdf as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      invoice: {
+        ...invoice,
+        receiptPdfStatus: 'rendered',
+        receiptPdf: {
+          blobKey: `invoicing/test-swecham/2026/${INVOICE_ID}_receipt_v13.pdf`,
+          sha256: Sha256Hex.ofUnsafe('c'.repeat(64)),
+          templateVersion: 13,
+        },
+      } as Invoice,
+      landed: false,
+    });
+    const r = await renderReceiptPdf(deps, input);
+    expect(r.ok).toBe(true);
+    const events = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1].eventType);
+    expect(events).not.toContain('receipt_rendered');
+  });
+
+  it('#71 L-1: row voided before the write (no-op) → no receipt_rendered audit', async () => {
+    const invoice = makePaidPendingInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    (deps.invoiceRepo.applyReceiptPdf as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      invoice: { ...invoice, status: 'void' } as Invoice,
+      landed: false,
+    });
+    const r = await renderReceiptPdf(deps, input);
+    expect(r.ok).toBe(true);
+    const events = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1].eventType);
+    expect(events).not.toContain('receipt_rendered');
+  });
+
+  // Review round 1 (thai-tax M) — the render is deterministic, so a race
+  // loser at the same template version holds the SAME key and sha as the
+  // winner. Only the UPDATE's own row count says whose write landed.
+  it('#71 L-1: byte-identical race loser (same key and sha, UPDATE changed nothing) → no duplicate audit', async () => {
+    const invoice = makePaidPendingInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    (deps.invoiceRepo.applyReceiptPdf as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (_tx, w: { blobKey: string; sha256: Sha256Hex; templateVersion: number }) => ({
+        invoice: {
+          ...invoice,
+          receiptPdfStatus: 'rendered',
+          receiptPdf: { blobKey: w.blobKey, sha256: w.sha256, templateVersion: w.templateVersion },
+        } as Invoice,
+        landed: false,
+      }),
+    );
+    const r = await renderReceiptPdf(deps, input);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.receiptPdfStatus).toBe('rendered');
+    const events = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1].eventType);
+    expect(events).not.toContain('receipt_rendered');
+  });
+
+  // Review round 1 (thai-tax M) — the logger redacts any `reason` key, so the
+  // lost-write line names its cause under `outcome`.
+  it('#71 L-1: the lost-write WARN names its cause under a key the logger keeps', async () => {
+    const invoice = makePaidPendingInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    (deps.invoiceRepo.applyReceiptPdf as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      invoice: { ...invoice, status: 'void' } as Invoice,
+      landed: false,
+    });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    await renderReceiptPdf(deps, input);
+    const call = warn.mock.calls.find((c) => c[1] === 'invoicing.receipt_render.write_lost');
+    expect(call?.[0]).toMatchObject({ outcome: 'void' });
+    expect(call?.[0]).not.toHaveProperty('reason');
+    warn.mockRestore();
   });
 });

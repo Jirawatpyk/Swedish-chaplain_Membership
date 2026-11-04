@@ -516,6 +516,11 @@ export interface InvoiceRepo {
    * row unchanged). On a row in 'failed' state, this method clears
    * the failure marker and rotates back to 'rendered' so the
    * reconciliation cron retry path lands here too.
+   *
+   * Task #71 — `landed` is true only when this UPDATE changed the row. It is
+   * false when another worker rendered first (the render is deterministic,
+   * so the winner's key and sha can equal this attempt's) or the row is
+   * void; the caller audits `receipt_rendered` only when it landed.
    */
   applyReceiptPdf(
     tx: unknown,
@@ -526,7 +531,7 @@ export interface InvoiceRepo {
       readonly sha256: Sha256Hex;
       readonly templateVersion: number;
     },
-  ): Promise<Invoice>;
+  ): Promise<{ readonly invoice: Invoice; readonly landed: boolean }>;
 
   /**
    * T166-11 — Reconciliation cron callback. Flips

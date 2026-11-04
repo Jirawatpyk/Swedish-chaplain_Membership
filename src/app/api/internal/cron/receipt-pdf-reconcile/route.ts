@@ -67,6 +67,7 @@ import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { asTenantContext } from '@/modules/tenants';
 import {
+  CURRENT_TEMPLATE_VERSION,
   receiptPdfRenderEnqueueAdapter,
   f4AuditAdapter,
 } from '@/modules/invoicing';
@@ -158,8 +159,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               lt(invoices.updatedAt, sql`now() - ${STUCK_PENDING_INTERVAL}`),
             ),
           ),
+          // Task #71 (L-2) — only a paid row's receipt renders: the worker
+          // refuses a void/credited row (`invalid_state`), so re-enqueueing
+          // one would loop every tick.
+          eq(invoices.status, 'paid'),
           isNotNull(invoices.fiscalYear),
-          isNotNull(invoices.pdfTemplateVersion),
         ),
       );
   } catch (e) {
@@ -189,13 +193,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return snap?.primary_contact_email ?? 'system:reconcile@swecham.test';
     })();
 
-    // The DB-level isNotNull filter on these two columns guarantees
-    // values, but TS can't see through Drizzle's column nullability.
-    if (row.fiscalYear === null || row.pdfTemplateVersion === null) {
+    // The DB-level isNotNull filter guarantees a value, but TS can't see
+    // through Drizzle's column nullability.
+    if (row.fiscalYear === null) {
       continue;
     }
     const fiscalYear = row.fiscalYear;
-    const pdfTemplateVersion = row.pdfTemplateVersion;
 
     try {
       if (row.receiptPdfRenderAttempts < MAX_RENDER_ATTEMPTS) {
@@ -215,14 +218,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         // would leave invoice flipped to 'pending' with NO outbox
         // row, and the next reconcile tick wouldn't pick it up
         // (filter is `WHERE status='failed'`) — silent data loss.
-        await runInTenant(asTenantContext(row.tenantId), async (tx) => {
+        const reEnqueuedRow = await runInTenant(asTenantContext(row.tenantId), async (tx) => {
           // For stuck-pending rows we don't need a status flip (already
           // 'pending') but we DO bump updatedAt to reset the orphan
           // window — and we re-enqueue the outbox row regardless. The
           // WHERE clause matches the source row's actual status (either
           // 'failed' or 'pending') to keep this idempotent under
           // concurrent ticks.
-          await tx
+          const stillPaid = await tx
             .update(invoices)
             .set({
               receiptPdfStatus: 'pending',
@@ -241,20 +244,31 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               and(
                 eq(invoices.tenantId, row.tenantId),
                 eq(invoices.invoiceId, row.invoiceId),
+                // Task #71 — re-check under the write: a void committed since
+                // the lock-free scan must not be re-enqueued.
+                eq(invoices.status, 'paid'),
                 or(
                   eq(invoices.receiptPdfStatus, 'failed'),
                   eq(invoices.receiptPdfStatus, 'pending'),
                 ),
               ),
-            );
+            )
+            .returning({ invoiceId: invoices.invoiceId });
+          if (stillPaid.length === 0) return false;
           await receiptPdfRenderEnqueueAdapter.enqueue(tx, {
             tenantId: row.tenantId,
             invoiceId: row.invoiceId,
             fiscalYear,
-            templateVersion: pdfTemplateVersion,
+            // Task #71 (M-2) — the current template, as the sync
+            // record-payment render and the first enqueue use. The invoice's
+            // `pdf_template_version` is its issue-time version, not the
+            // receipt's; the email links whatever key the row then holds.
+            templateVersion: CURRENT_TEMPLATE_VERSION,
             recipientEmail,
           });
+          return true;
         });
+        if (!reEnqueuedRow) continue;
         reEnqueued += 1;
         logger.warn(
           {

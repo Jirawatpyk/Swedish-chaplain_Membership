@@ -404,11 +404,44 @@ the pins came from the dev branch: a prune there would have deleted live
 certificate scans. **Keep local and preview Blob tokens on a dev-only store.**
 
 **First production rollout.** After the merge the nightly run is a dry run
-(the flag defaults off). Read one night's response or the
-`orphan_pdf_sweep_would_delete` logs: `wouldDelete` should be the handful of
-known orphans, and every `would_delete` line should name a document with no
-committed PDF at that version. A dry run counts toward the 500 cap, so
-`truncated: true` there is not the whole backlog. Before turning deletes on,
+(the flag defaults off). Read one run's summary: the `orphan_pdf_sweep_done`
+log line, or `pdfs.breakdown` in the response of a `?dryRun=1` call. The
+breakdown counts every candidate by `docKind × fy × templateVersion`
+(`wouldDelete`, `deleted`, `kept`, `alreadyGone`, `failed`; first 50 groups,
+the rest in `otherGroups`). Groups with something to act on are listed
+first; `otherGroups` keeps the totals of any groups past 50.
+
+Each `wouldDelete` key should belong to no live row: sample a few
+`documentId`s from the per-key lines against `invoices` / `credit_notes`
+(read-only). A superseded template version is one cause; a deleted row is
+another (the first prod run, R128, found only v12 PDFs whose rows no longer
+exist, every live invoice also being on v12). While a run hits the 500 cap,
+`kept` can be 0 until a run reaches the live keys; the keep path is guarded
+twice (the batch `referencedKeys` read, then the locked re-read in
+`deleteOrphanPdfUnderLock`).
+
+After the first deleting night (21:00 UTC) with the flag on, check:
+- the `orphan_pdf_sweep_done` line shows `deleted` ≤ 500 and `failed: 0`;
+- 2–3 live invoice and receipt PDFs still open from `/admin`;
+- once the sweep reaches the live keys, `kept` is above 0.
+
+**Log lines are a sample (#72).** Vercel keeps a bounded number of log lines
+per request; the first prod run stopped at 256 and lost its summary.
+- Each per-key info event (`orphan_pdf_sweep_would_delete`, `_deleted`,
+  `_already_gone`) logs its first 20 keys per run.
+- `orphan_pdf_sweep_failed` logs a random sample of 20 failures, drawn over
+  the whole run, so a key that fails every night is named eventually. They
+  are written just before the summary. The summary also lists
+  `failedTenants`.
+- Anything left out is counted in `suppressedLines` (in both the summary and
+  the response).
+- The route also caps every non-summary line of the request at 200, across
+  both halves, cert prune included. The summaries
+  (`zero_rate_cert_prune_completed`, `orphan_pdf_sweep_done`, `_truncated`)
+  always pass. The response gives the count as `suppressedLogLines`.
+
+A dry run counts toward the 500 cap, so `truncated: true` there is not the
+whole backlog. Before turning deletes on,
 also check that no receipt email already sent links a key the sweep would
 delete (task #70: before that fix the email linked the key frozen at payment,
 which a reconciled render after a template bump did not write). Read-only,
@@ -426,7 +459,8 @@ on production (the PDF half still obeys the delete gate; off production the
 cert prune is skipped). Response:
 `{ ok, deletesEnabled, certs: { scanned, swept, skipped, cutoff }, pdfs: {
 dryRun, tenants, tenantsCompleted, scanned, deleted, wouldDelete, kept,
-skippedYoung, skippedUnknown, failed, alreadyGone, listFailed, truncated } }`.
+skippedYoung, skippedUnknown, failed, alreadyGone, listFailed, truncated,
+breakdown, otherGroups, suppressedLines }, suppressedLogLines }`.
 `truncated: true` means it stopped at 500 deletions or the 240 s budget, or a listing page said there was
 more but gave no cursor (WARN `orphan_pdf_sweep_truncated` /
 `orphan_pdf_sweep_cursor_missing`); the next run continues, tenants in id order.

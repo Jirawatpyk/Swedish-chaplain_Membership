@@ -8,6 +8,7 @@
 import { sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import type { LineLogger } from '@/lib/log-budget';
 import { asTenantContext } from '@/modules/tenants';
 import {
   makeDrizzleInvoiceRepo,
@@ -21,7 +22,11 @@ import { systemClock } from '@/modules/invoicing/application/ports/clock-port';
 
 export type { SweepOrphanPdfsOutput } from '@/modules/invoicing';
 
-export async function runSweepOrphanPdfs(input: SweepOrphanPdfsInput): Promise<SweepOrphanPdfsOutput> {
+export async function runSweepOrphanPdfs(
+  input: SweepOrphanPdfsInput,
+  /** #72 — a request-scoped logger (the cron route's line budget). */
+  log: LineLogger = logger,
+): Promise<SweepOrphanPdfsOutput> {
   return sweepOrphanPdfs(input, {
     blob: vercelBlobAdapter,
     clock: systemClock,
@@ -42,6 +47,6 @@ export async function runSweepOrphanPdfs(input: SweepOrphanPdfsInput): Promise<S
         makeDrizzleOrphanPdfReferenceRepo(tx).referencedKeys(tenantId, ids),
       ),
     reposFor: (tenantId) => ({ invoiceRepo: makeDrizzleInvoiceRepo(tenantId) }),
-    logger,
+    logger: log,
   });
 }

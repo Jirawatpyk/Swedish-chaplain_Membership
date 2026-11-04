@@ -23,6 +23,7 @@ import { NextRequest } from 'next/server';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { GET as reconcileCron } from '@/app/api/internal/cron/receipt-pdf-reconcile/route';
+import { CURRENT_TEMPLATE_VERSION } from '@/modules/invoicing';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
@@ -63,6 +64,7 @@ async function seedFailedInvoice(
   tenant: TestTenant,
   user: TestUser,
   attempts: number,
+  overrides: Partial<typeof invoices.$inferInsert> = {},
 ): Promise<{ invoiceId: string }> {
   const memberId = randomUUID();
   const invoiceId = randomUUID();
@@ -159,6 +161,7 @@ async function seedFailedInvoice(
       receiptPdfStatus: 'failed',
       receiptPdfRenderAttempts: attempts,
       receiptPdfLastError: 'simulated render error',
+      ...overrides,
     });
     await tx.insert(invoiceLines).values({
       tenantId: tenant.ctx.slug,
@@ -482,5 +485,63 @@ describe('R1-CG-2 — receipt PDF reconcile cron', () => {
         (r.contextData as { invoice_id?: string }).invoice_id === invoiceId,
     );
     expect(matchedOutbox.length).toBe(0);
+  }, 60_000);
+
+  async function newRenderRows(invoiceId: string, before: Set<string>) {
+    const rows = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.tenantId, tenant.ctx.slug),
+          eq(notificationsOutbox.notificationType, 'receipt_pdf_render'),
+        ),
+      );
+    return rows.filter(
+      (r) => (r.contextData as { invoice_id?: string }).invoice_id === invoiceId && !before.has(r.id),
+    );
+  }
+
+  async function renderRowIds(): Promise<Set<string>> {
+    const rows = await db
+      .select({ id: notificationsOutbox.id })
+      .from(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.tenantId, tenant.ctx.slug),
+          eq(notificationsOutbox.notificationType, 'receipt_pdf_render'),
+        ),
+      );
+    return new Set(rows.map((r) => r.id));
+  }
+
+  // Task #71 (M-2) — a reconciled receipt renders on the CURRENT template,
+  // as the sync record-payment path and the first enqueue do — never on the
+  // invoice's issue-time version (the seed issues at v1).
+  it('#71: the re-enqueued render carries the current template version, not the issue version', async () => {
+    const before = await renderRowIds();
+    const { invoiceId } = await seedFailedInvoice(tenant, user, 1);
+    const resp = await callCron();
+    expect(resp.status).toBe(200);
+    const rows = await newRenderRows(invoiceId, before);
+    expect(rows.length).toBe(1);
+    expect((rows[0]!.contextData as { template_version?: number }).template_version).toBe(
+      CURRENT_TEMPLATE_VERSION,
+    );
+  }, 60_000);
+
+  // Task #71 (L-2) — a voided invoice's receipt is never rendered (the worker
+  // refuses a non-paid row), so the cron must not keep re-enqueueing it.
+  it('#71: a void invoice with a failed receipt is not re-enqueued', async () => {
+    const before = await renderRowIds();
+    const { invoiceId } = await seedFailedInvoice(tenant, user, 1, {
+      status: 'void',
+      voidedAt: new Date(),
+      voidReason: 'R129 void before receipt render',
+      voidedByUserId: user.userId,
+    });
+    const resp = await callCron();
+    expect(resp.status).toBe(200);
+    expect((await newRenderRows(invoiceId, before)).length).toBe(0);
   }, 60_000);
 });

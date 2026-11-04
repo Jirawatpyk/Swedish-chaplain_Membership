@@ -28,6 +28,7 @@ import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { env } from '@/lib/env';
 import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
+import { budgetedLogger } from '@/lib/log-budget';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { runPruneOrphanedZeroRateCerts } from '@/lib/invoicing-cert-prune-deps';
 import { runSweepOrphanPdfs } from '@/lib/invoicing-orphan-pdf-sweep-deps';
@@ -39,6 +40,8 @@ export const maxDuration = 300;
 const ROUTE = '/api/cron/invoicing/sweep-orphan-blobs';
 /** Work budget for both halves; the rest of maxDuration is headroom. */
 const BUDGET_MS = 240_000;
+/** Non-summary log lines for the whole request (Vercel keeps 256). */
+const LOG_LINE_BUDGET = 200;
 
 // Vercel Cron calls with GET; one handler serves both.
 export const GET = POST;
@@ -62,6 +65,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Whether THIS run's PDF sweep deletes.
   const deletesEnabled = !pdfDryRun;
 
+  // #72 — one line budget for both halves: Vercel keeps a bounded number of
+  // log lines per request, and the summaries must always land.
+  const SUMMARY_EVENTS = new Set([
+    'zero_rate_cert_prune_completed',
+    'zero_rate_cert_prune_scan_failed',
+    'orphan_pdf_sweep_done',
+    'orphan_pdf_sweep_truncated',
+    'orphan_pdf_sweep_scan_failed',
+  ]);
+  const requestLog = budgetedLogger(logger, LOG_LINE_BUDGET, (meta) => SUMMARY_EVENTS.has(String(meta.event)));
+
   // 1. Zero-rate certificate prune.
   let certs: Record<string, unknown>;
   let failed = false;
@@ -74,7 +88,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     certs = { skipped: 'not_production' };
   } else {
     try {
-      const r = await runPruneOrphanedZeroRateCerts({});
+      const r = await runPruneOrphanedZeroRateCerts({}, requestLog.logger);
       if (r.kind === 'scan_failed') {
         failed = true;
         certs = { scanFailed: true };
@@ -94,7 +108,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const r = await runSweepOrphanPdfs({
       dryRun: pdfDryRun,
       deadlineMs: Math.max(0, BUDGET_MS - (Date.now() - startedAt)),
-    });
+    }, requestLog.logger);
     if (r.kind === 'scan_failed') {
       failed = true;
       pdfs = { scanFailed: true };
@@ -109,7 +123,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (failed) {
-    return NextResponse.json({ error: { code: 'scan_failed' }, deletesEnabled, certs, pdfs, requestId }, { status: 500 });
+    return NextResponse.json(
+      { error: { code: 'scan_failed' }, deletesEnabled, certs, pdfs, suppressedLogLines: requestLog.suppressed(), requestId },
+      { status: 500 },
+    );
   }
-  return NextResponse.json({ ok: true, deletesEnabled, certs, pdfs, requestId }, { status: 200 });
+  return NextResponse.json(
+    { ok: true, deletesEnabled, certs, pdfs, suppressedLogLines: requestLog.suppressed(), requestId },
+    { status: 200 },
+  );
 }
