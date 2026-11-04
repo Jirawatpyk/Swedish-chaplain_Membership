@@ -77,6 +77,32 @@ Every log line is a JSON object with at least:
 - `email` → hashed to `hashed:sha256(email)[0..8]` for correlation without
   PII exposure
 
+**Error fields** (spec 140 s2d, #736c). An error never goes on a log line as
+an object, its `cause`, its `.message` / `.stack`, or `String(e)`: drizzle-orm's
+`DrizzleQueryError` has enumerable `query` and `params`, a `Failed query:`
+message quotes the bound parameters (emails, names, payloads), and pino has no
+error serializer here and redacts by KEY, not by string content. A line carries:
+- `err: errKind(e)`: the error class. For a RepoError, `errKind(rootCause(x.error))`
+  plus `repoCode: x.error.code`. `...errLogFields(failure)` (`src/lib/log-id.ts`)
+  spreads these, plus `code`, for a thrown value or a Result error.
+- `code: pgErrorCode(e)`: the SQLSTATE.
+- `pgErrorMeta(e)` (`src/lib/db-errors.ts`) where the constraint name helps an
+  incident. It returns `{ constraint, table, column }` names only, never
+  `detail` / `where` / `hint` / `message`, which postgres-js fills with row
+  values.
+- A gateway's closed `classifyThrown(e).kind` (never its `reason`).
+- A code-authored `step` (`errStep(e)`: a thrown message only when it is a
+  token like `lookup_failed:repo.unexpected`). Never under the key `reason`,
+  which pino redacts.
+- A user id as `hashId(id)` (`actorUserIdHash`, `userIdHash`).
+
+`pnpm check:log-error-objects` (in `pnpm check` and CI's static job) parses
+`src/modules/{members,broadcasts}/**` with the TypeScript compiler API and
+refuses these forms inside `logger.<level>(…)` arguments. Its positive control
+is `scripts/__fixtures__/log-error-objects.fixture.txt`. It is a tripwire, not
+proof: a value laundered through a local first passes it. The other modules and
+`src/app` are a follow-up.
+
 ---
 
 ## 4. F1 Auth — metrics catalogue
