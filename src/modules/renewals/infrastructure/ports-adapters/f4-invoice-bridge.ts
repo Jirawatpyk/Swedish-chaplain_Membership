@@ -140,7 +140,15 @@ export interface IssueAndMarkPaidResult {
 
 export type F4BridgeError =
   | { readonly kind: 'create_invoice_failed'; readonly reason: string }
-  | { readonly kind: 'issue_invoice_failed'; readonly reason: string }
+  | {
+      readonly kind: 'issue_invoice_failed';
+      readonly reason: string;
+      /**
+       * #730 — on `membership_coverage_overlap`, the committed bill that
+       * already covers the period (null when F4 could not name it).
+       */
+      readonly blocking?: { readonly invoiceId: string; readonly status: string } | null;
+    }
   /**
    * Step 3 (recordPayment) failed AFTER step 1+2 successfully committed
    * an issued invoice with a §87 sequence number. This is recoverable
@@ -232,6 +240,13 @@ export const f4InvoiceBridge: F4InvoiceBridge = {
       return err({
         kind: 'issue_invoice_failed',
         reason: issued.error.code,
+        ...(issued.error.code === 'membership_coverage_overlap'
+          ? {
+              blocking: issued.error.blocking
+                ? { invoiceId: issued.error.blocking.invoiceId, status: issued.error.blocking.status }
+                : null,
+            }
+          : {}),
       });
     }
 

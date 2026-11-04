@@ -36,12 +36,13 @@ import {
   useState,
   useTransition,
 } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import type { FeedbackTone } from '@jirawatpyk/aura-react';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { toast } from '@/lib/toast';
-import { Alert, Badge, Button, RadioGroup, TextField } from '@jirawatpyk/aura-react';
+import { Alert, Badge, Button, RadioGroup, TextField, buttonClass } from '@jirawatpyk/aura-react';
 import { computeIssueReviewModel } from '../_lib/issue-review';
 import { type IssueTotalsByTreatment } from '../_lib/issue-summary-totals';
 import { formatSatangAmount } from '@/lib/format-thb';
@@ -117,7 +118,30 @@ type IssueFormError =
   | { readonly kind: 'unconfirmed' }
   // The READ_ONLY_MODE freeze refused it: nothing was written (#724 review).
   | { readonly kind: 'readOnly' }
-  | { readonly kind: 'failure'; readonly message: string };
+  | {
+      readonly kind: 'failure';
+      readonly message: string;
+      /** #730 — the committed bill a coverage overlap collided with, to link. */
+      readonly blocking?: { readonly invoiceId: string; readonly documentNumber: string | null };
+    };
+
+/**
+ * #730 — the bill a coverage-overlap 409 names (`blocking_invoice_id`, and the
+ * number printed on it when it has one). Only for that code; absent otherwise.
+ */
+function readBlockingBill(
+  code: string | undefined,
+  body: unknown,
+): { invoiceId: string; documentNumber: string | null } | null {
+  if (code !== 'membership_coverage_overlap') return null;
+  const error = (body as { error?: { blocking_invoice_id?: unknown; blocking_document_number?: unknown } } | null)
+    ?.error;
+  if (typeof error?.blocking_invoice_id !== 'string' || error.blocking_invoice_id === '') return null;
+  return {
+    invoiceId: error.blocking_invoice_id,
+    documentNumber: typeof error.blocking_document_number === 'string' ? error.blocking_document_number : null,
+  };
+}
 
 /** One tone per kind; a new kind must pick one (the wrapper's `data-tone` follows). */
 const ISSUE_ERROR_TONE = {
@@ -337,7 +361,14 @@ export function IssueInvoiceForm({
               routing.messageKey === 'errors.codeFallback' && routing.codeArg
                 ? t('errors.codeFallback', { code: routing.codeArg })
                 : t(routing.messageKey as 'errors.unknown');
-            setFormError({ kind: 'failure', message });
+            const blocking = readBlockingBill(code, errBody);
+            // #730 — with the covering bill linked, the copy points at it
+            // instead of asking the admin to search the member's invoices.
+            setFormError(
+              blocking
+                ? { kind: 'failure', message: t('errors.membership_coverage_overlap_linked'), blocking }
+                : { kind: 'failure', message },
+            );
           }
           return;
         }
@@ -678,6 +709,15 @@ export function IssueInvoiceForm({
                 >
                   {waitingForConnection ? t('errors.waitingForConnection') : t('errors.refreshAction')}
                 </Button>
+              ) : formError.kind === 'failure' && formError.blocking ? (
+                <Link
+                  href={`/admin/invoices/${formError.blocking.invoiceId}`}
+                  className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
+                >
+                  {formError.blocking.documentNumber
+                    ? t('errors.openBlockingInvoice', { number: formError.blocking.documentNumber })
+                    : t('errors.openBlockingInvoiceNoNumber')}
+                </Link>
               ) : undefined
             }
           >

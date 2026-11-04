@@ -259,6 +259,8 @@ export type IssueAutoDraftError =
       readonly kind: 'issue_failed';
       readonly errorCode: RenewalInvoiceErrorCode;
       readonly detail: string;
+      /** #730 — the bill a coverage overlap collided with, for the queue's link. */
+      readonly blocking?: { readonly invoiceId: string; readonly status: string } | null;
     };
 
 export type IssueAutoDraftedRenewalDeps = Pick<
@@ -559,6 +561,9 @@ export async function issueAutoDraftedRenewal(
       kind: 'issue_failed',
       errorCode: issued.errorCode,
       detail: issued.detail,
+      ...(issued.status === 'issue_failed' && issued.blocking !== undefined
+        ? { blocking: issued.blocking }
+        : {}),
     });
   }
 

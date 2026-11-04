@@ -24,6 +24,8 @@ import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { isExclusionViolation } from '@/lib/db-errors';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
+import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
@@ -304,4 +306,60 @@ describe('membership-coverage-exclude-guard — DB enforcement (mig 0281, live N
     expect(row?.from?.toISOString()).toBe('2026-01-01T00:00:00.000Z');
     expect(row?.to?.toISOString()).toBe('2027-01-01T00:00:00.000Z');
   }, 60_000);
+
+  // #730 (task 65) — the EXCLUDE does not say which bill it hit, so after an
+  // overlap refusal `issueInvoice` reads the committed bill that covers the
+  // draft's period with the constraint's own predicate (same tenant + member,
+  // blocks_coverage, half-open range overlap).
+  it('(H) #730 findCoverageBlockingBillInTx names the committed bill a draft overlaps', async () => {
+    const m = await seedMember();
+    const committed = await seedCommittedBill(m, 'issued', Y2026);
+    const draft = await seedDraftBill(m, Y2026_MID);
+    const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
+    const found = await runInTenant(tenant.ctx, (tx) =>
+      repo.findCoverageBlockingBillInTx!(tx, { tenantId: tenant.ctx.slug, invoiceId: asInvoiceId(draft) }),
+    );
+    expect(found?.invoiceId).toBe(committed);
+    expect(found?.status).toBe('issued');
+    expect(found?.documentNumber).toMatch(/^SC-2026-/);
+  }, 60_000);
+
+  it('(I) #730 no blocking bill: an adjacent term, another member, or another draft', async () => {
+    const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
+    const lookup = (id: string) =>
+      runInTenant(tenant.ctx, (tx) =>
+        repo.findCoverageBlockingBillInTx!(tx, { tenantId: tenant.ctx.slug, invoiceId: asInvoiceId(id) }),
+      );
+    const m1 = await seedMember();
+    await seedCommittedBill(m1, 'issued', Y2026);
+    expect(await lookup(await seedDraftBill(m1, Y2027))).toBeNull();
+    const m2 = await seedMember();
+    expect(await lookup(await seedDraftBill(m2, Y2026))).toBeNull();
+    const m3 = await seedMember();
+    await seedDraftBill(m3, Y2026);
+    expect(await lookup(await seedDraftBill(m3, Y2026_MID))).toBeNull();
+    // Review round 1 (financial L): tstzrange(NULL, NULL) is unbounded, not
+    // NULL — a draft with no coverage window must not match every bill.
+    const m4 = await seedMember();
+    await seedCommittedBill(m4, 'issued', Y2026);
+    expect(await lookup(await seedDraftBill(m4, null))).toBeNull();
+  }, 60_000);
+
+  // Principle I — the lookup is tenant-fenced: another tenant asking about this
+  // tenant's draft id sees nothing.
+  it('(J) #730 cross-tenant: tenant B cannot read tenant A\'s blocking bill', async () => {
+    const m = await seedMember();
+    await seedCommittedBill(m, 'issued', Y2026);
+    const draft = await seedDraftBill(m, Y2026_MID);
+    const other = await createTestTenant();
+    try {
+      const repo = makeDrizzleInvoiceRepo(other.ctx.slug);
+      const found = await runInTenant(other.ctx, (tx) =>
+        repo.findCoverageBlockingBillInTx!(tx, { tenantId: other.ctx.slug, invoiceId: asInvoiceId(draft) }),
+      );
+      expect(found).toBeNull();
+    } finally {
+      await other.cleanup().catch(() => {});
+    }
+  }, 120_000);
 });

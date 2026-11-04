@@ -66,7 +66,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { asSatang } from '@/lib/money';
 import { z } from 'zod';
-import type { InvoiceRepo } from '../ports/invoice-repo';
+import type { InvoiceRepo, LiveMembershipBillView } from '../ports/invoice-repo';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { EventRegistrationLookupPort } from '../ports/event-registration-lookup-port';
@@ -183,7 +183,15 @@ export type IssueInvoiceError =
    * back, no §87 number consumed) — distinct from `invoice_already_issued`, so
    * the admin is not told to refresh into the same draft.
    */
-  | { code: 'membership_coverage_overlap' }
+  | {
+      code: 'membership_coverage_overlap';
+      /**
+       * #730 — the committed bill that covers the period, read after the
+       * rollback (the EXCLUDE does not name it). Null when the read found
+       * none or failed; the refusal stands either way.
+       */
+      blocking: LiveMembershipBillView | null;
+    }
   | { code: 'settings_missing' }
   | { code: 'member_not_found' }
   | { code: 'member_archived' }
@@ -867,7 +875,7 @@ export async function issueInvoice(
       // is burned, and the orphan-PDF cleanup runs (this attempt owns the bytes
       // it uploaded). (23P01 is wrapped on `.cause` by Drizzle 0.45 — walk it.)
       if (isExclusionViolationOnConstraint(e, 'invoices_membership_coverage_no_overlap')) {
-        throw new IssueInvoiceInternalError({ code: 'membership_coverage_overlap' });
+        throw new IssueInvoiceInternalError({ code: 'membership_coverage_overlap', blocking: null });
       }
       throw e;
     }
@@ -1114,6 +1122,12 @@ export async function issueInvoice(
           );
         }
       }
+      if (e.error.code === 'membership_coverage_overlap') {
+        return err({
+          code: 'membership_coverage_overlap',
+          blocking: await findCoverageBlockingBill(deps, input),
+        });
+      }
       return err(e.error);
     }
     // 059 PR-A Task 4 fix (thai-tax-compliance-auditor HIGH) — the Domain
@@ -1154,5 +1168,29 @@ export async function issueInvoice(
       return err({ code: 'buyer_tax_id_required_for_registrant' });
     }
     throw e;
+  }
+}
+
+/**
+ * #730 — after a coverage-overlap refusal (the tx already rolled back), name
+ * the committed bill that covers the period so the admin can open it.
+ * Best-effort: a failed read is a WARN and `null`, never a second error.
+ */
+async function findCoverageBlockingBill(
+  deps: IssueInvoiceDeps,
+  input: IssueInvoiceInput,
+): Promise<LiveMembershipBillView | null> {
+  const find = deps.invoiceRepo.findCoverageBlockingBillInTx;
+  if (!find) return null;
+  try {
+    return await deps.invoiceRepo.withTx((tx) =>
+      find.call(deps.invoiceRepo, tx, { tenantId: input.tenantId, invoiceId: asInvoiceId(input.invoiceId) }),
+    );
+  } catch (lookupErr) {
+    logger.warn(
+      { err: errKind(lookupErr), invoiceId: input.invoiceId, tenantId: input.tenantId },
+      'issueInvoice: blocking-bill lookup after a coverage overlap failed',
+    );
+    return null;
   }
 }

@@ -1141,6 +1141,45 @@ export function makeDrizzleInvoiceRepo(
       return deleted.length > 0;
     },
 
+    async findCoverageBlockingBillInTx(txUnknown, input) {
+      // #730 — the EXCLUDE's own predicate (mig 0281): same tenant + member,
+      // `blocks_coverage` (a committed membership bill with a window), and a
+      // half-open range overlap. Both `invoices` references bind the tenant
+      // (D-029); RLS on the caller's tx is the second wall.
+      const tx = txUnknown as TenantTx;
+      const rows = (await tx.execute(sql`
+        SELECT b.invoice_id, b.status, b.document_number, b.bill_document_number_raw, b.total_satang
+          FROM invoices b
+          JOIN invoices d
+            ON d.tenant_id = ${input.tenantId}
+           AND d.invoice_id = ${input.invoiceId}
+           AND b.member_id = d.member_id
+           -- tstzrange(NULL, NULL) is unbounded, not NULL: a draft with no
+           -- coverage window must match nothing.
+           AND d.coverage_from IS NOT NULL
+         WHERE b.tenant_id = ${input.tenantId}
+           AND b.invoice_id <> d.invoice_id
+           AND b.blocks_coverage
+           AND tstzrange(b.coverage_from, b.coverage_to, '[)') && tstzrange(d.coverage_from, d.coverage_to, '[)')
+         ORDER BY b.created_at DESC, b.invoice_id DESC
+         LIMIT 1
+      `)) as unknown as Array<{
+        invoice_id: string;
+        status: InvoiceStatus;
+        document_number: string | null;
+        bill_document_number_raw: string | null;
+        total_satang: string | bigint | null;
+      }>;
+      const row = rows[0];
+      if (!row) return null;
+      return {
+        invoiceId: row.invoice_id,
+        status: row.status,
+        documentNumber: row.document_number ?? row.bill_document_number_raw ?? null,
+        totalSatang: row.total_satang === null ? null : BigInt(row.total_satang),
+      };
+    },
+
     async lockForUpdate(txUnknown, invoiceId: InvoiceId, tenantIdArg: string) {
       const tx = txUnknown as TenantTx;
       const rows = (await tx.execute(sql`

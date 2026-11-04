@@ -131,6 +131,26 @@ export async function POST(
     const status = issueErrorStatus(result.error.code, {
       event_no_tin_requires_paid_issue: 422,
     });
+    // #730 — a coverage overlap names the bill that covers the period: its id
+    // and the number printed on it, so the dialog can link it. Its status and
+    // total stay server-side.
+    if (result.error.code === 'membership_coverage_overlap') {
+      const { blocking } = result.error;
+      return NextResponse.json(
+        {
+          error: {
+            code: result.error.code,
+            ...(blocking
+              ? {
+                  blocking_invoice_id: blocking.invoiceId,
+                  ...(blocking.documentNumber ? { blocking_document_number: blocking.documentNumber } : {}),
+                }
+              : {}),
+          },
+        },
+        { status },
+      );
+    }
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
   // Cluster 5 (Finding 1) — surface the auto-email dispatch outcome so the

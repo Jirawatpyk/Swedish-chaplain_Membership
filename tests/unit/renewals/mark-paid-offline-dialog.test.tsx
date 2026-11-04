@@ -23,6 +23,12 @@ import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { MarkPaidOfflineDialog } from '@/app/(staff)/admin/renewals/_components/mark-paid-offline-dialog';
 
+const toastError = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/toast', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/toast')>();
+  return { ...actual, toast: { ...actual.toast, error: toastError } };
+});
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
@@ -144,5 +150,31 @@ describe('MarkPaidOfflineDialog on AURA', () => {
     await waitFor(() => expect(confirm).toHaveAttribute('aria-busy', 'true'));
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  // #730 /code-review — a coverage overlap that names its covering bill links
+  // it, with its OWN copy: never the live-bill "record the payment there",
+  // which is wrong for another plan year or a bill already paid.
+  it('#730 a coverage overlap with a covering bill toasts its own copy, with the link', async () => {
+    toastError.mockClear();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: { code: 'membership_coverage_overlap', existing_invoice_id: 'inv-9' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithCompany('Acme Co., Ltd.');
+    fireEvent.change(screen.getByRole('textbox', { name: M.paymentReferenceLabel }), {
+      target: { value: 'KBANK-1' },
+    });
+    typeDate(M.paymentDateLabel, '2026-09-24');
+    const confirm = screen.getByRole('button', { name: M.confirm });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    const [message, opts] = toastError.mock.calls[0] as [string, { action?: { label: string } }];
+    expect(message).toBe(M.error.membership_coverage_overlap);
+    expect(message).not.toBe(M.error.membership_bill_already_exists);
+    expect(opts.action?.label).toBe(M.viewExistingInvoice);
   });
 });

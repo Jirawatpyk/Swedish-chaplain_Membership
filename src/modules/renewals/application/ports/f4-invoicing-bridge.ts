@@ -162,6 +162,11 @@ export type IssueInvoiceForRenewalResult =
       readonly status: 'issue_failed';
       readonly errorCode: RenewalInvoiceErrorCode;
       readonly detail: string;
+      /**
+       * #730 — on `membership_coverage_overlap`, the committed bill that
+       * already covers the period (null when F4 could not name it).
+       */
+      readonly blocking?: { readonly invoiceId: string; readonly status: string } | null;
     };
 
 /**

@@ -309,15 +309,25 @@ export function MarkPaidOfflineDialog({
             // callbacks, so it completes this cycle and opens the next
             // one. Then close + refresh so the stale action is not
             // re-clicked.
-            toast.error(t('markPaidOffline.error.membership_bill_already_exists'), {
-              action: {
-                label: t('markPaidOffline.viewExistingInvoice'),
-                onClick: () => {
-                  router.push(existingBillHref);
+            // #730 — a coverage overlap links its covering bill too, with its
+            // own copy: that bill may be another plan year or already paid, so
+            // "record the payment there" would be wrong for it.
+            toast.error(
+              t(
+                err.code === 'membership_coverage_overlap'
+                  ? 'markPaidOffline.error.membership_coverage_overlap'
+                  : 'markPaidOffline.error.membership_bill_already_exists',
+              ),
+              {
+                action: {
+                  label: t('markPaidOffline.viewExistingInvoice'),
+                  onClick: () => {
+                    router.push(existingBillHref);
+                  },
                 },
+                duration: 30_000,
               },
-              duration: 30_000,
-            });
+            );
             closeStale();
             return true;
           }
