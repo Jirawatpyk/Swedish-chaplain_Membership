@@ -110,6 +110,10 @@ async function seedPaidInvoice(
       memberIdentitySnapshot: SNAP_MEMBER,
       pdfBlobKey: keys.pdf,
       receiptPdfBlobKey: keys.receipt,
+      // A receipt key comes with its sha and version, or the repo refuses the
+      // row as a partial receipt state (R126).
+      receiptPdfSha256: keys.receipt ? 'b'.repeat(64) : null,
+      receiptPdfTemplateVersion: keys.receipt ? 1 : null,
       pdfSha256: 'a'.repeat(64),
       pdfTemplateVersion: 1,
       paymentMethod: 'bank_transfer',
@@ -178,17 +182,31 @@ async function setUpTenant(user: TestUser, planId: string): Promise<TestTenant> 
 const referencedKeys = (tenantId: string, ids: { invoiceIds: readonly string[]; creditNoteIds: readonly string[] }) =>
   runInTenant(asTenantContext(tenantId), (tx) => makeDrizzleOrphanPdfReferenceRepo(tx).referencedKeys(tenantId, ids));
 
-function memoryBlob(keys: string[]) {
+/**
+ * An in-memory Blob store that pages TWO keys at a time over a snapshot of the
+ * listing (reliability M5): the sweep must page through every cursor, with
+ * deletes between pages, and still see each key exactly once.
+ */
+function memoryBlob(keys: string[], pageSize = 2) {
   const old = new Date(Date.now() - ORPHAN_PDF_MIN_AGE_MS - 60_000);
   const store = new Map(keys.map((k) => [k, { key: k, uploadedAt: old, etag: `e-${k}` }]));
   const prefixes: string[] = [];
+  const snapshots = new Map<string, Array<{ key: string; uploadedAt: Date; etag: string }>>();
   return {
     store,
     prefixes,
     port: {
-      listPage: async (prefix: string) => {
+      listPage: async (prefix: string, cursor: string | undefined) => {
         prefixes.push(prefix);
-        return { items: [...store.values()].filter((i) => i.key.startsWith(prefix)), cursor: undefined, hasMore: false };
+        if (cursor === undefined) snapshots.set(prefix, [...store.values()].filter((i) => i.key.startsWith(prefix)));
+        const all = snapshots.get(prefix)!;
+        const start = cursor === undefined ? 0 : Number(cursor);
+        const next = start + pageSize;
+        return {
+          items: all.slice(start, next),
+          cursor: next < all.length ? String(next) : undefined,
+          hasMore: next < all.length,
+        };
       },
       delete: async (key: string) => {
         store.delete(key);
@@ -260,7 +278,9 @@ describe('#729 — orphan PDF sweeper (live Neon)', () => {
     );
 
     expect(r).toMatchObject({ kind: 'ok', deleted: 4, kept: 5, skippedUnknown: 1, failed: 0 });
-    expect(blob.prefixes).toEqual([`invoicing/${a.ctx.slug}/`]);
+    // Ten of tenant A's keys at two a page: five pages, all under A's prefix.
+    expect(r).toMatchObject({ scanned: 10, tenantsCompleted: 1, truncated: false });
+    expect(blob.prefixes).toEqual(Array(5).fill(`invoicing/${a.ctx.slug}/`));
     const left = new Set(blob.store.keys());
     for (const kept of [
       k(a, `${paid}_v12.pdf`),

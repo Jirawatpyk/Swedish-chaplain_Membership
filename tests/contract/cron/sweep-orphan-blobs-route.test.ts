@@ -150,8 +150,17 @@ describe('/api/cron/invoicing/sweep-orphan-blobs — contract (#729)', () => {
     expect(res.status).toBe(200);
     expect(runSweepMock).toHaveBeenCalledWith({ dryRun: true, deadlineMs: expect.any(Number) });
     expect(await res.json()).toMatchObject({ deletesEnabled: false, pdfs: { dryRun: true, wouldDelete: 1 } });
-    // The cert prune is live behaviour already; the new gate does not touch it.
-    expect(runPruneMock).toHaveBeenCalledWith({});
+    // The cert prune has no dry run: it runs on production only (R126 F2).
+    if (vercelEnv === 'production') expect(runPruneMock).toHaveBeenCalledWith({});
+    else expect(runPruneMock).not.toHaveBeenCalled();
+  });
+
+  it('off production the cert prune is skipped and says so (R126 F2)', async () => {
+    envMock.vercelEnv = 'preview';
+    const res = await POST(makeRequest(AUTH));
+    expect(res.status).toBe(200);
+    expect(runPruneMock).not.toHaveBeenCalled();
+    expect(await res.json()).toMatchObject({ certs: { skipped: 'not_production' } });
   });
 
   it('?dryRun=1 is a PDF dry run and skips the cert prune (which has no dry run)', async () => {
