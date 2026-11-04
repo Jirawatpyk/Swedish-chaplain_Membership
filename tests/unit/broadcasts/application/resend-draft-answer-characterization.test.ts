@@ -278,15 +278,17 @@ describe('characterization — settleAtResend (in-flight arm, erasure mode)', ()
     expect(run.counts).toEqual({ delete: 1, get: probed ? 1 : 0, deleteAudience: 0 });
     expect(run.pauses).toEqual(d === 'absent' ? [REPROBE_PAUSE_MS] : []);
 
-    // The `dispatch_begun_delete` line: written once the answers are in; none when a call threw.
+    // The `dispatch_begun_delete` line: written once the answers are in; none when the DELETE threw.
+    // Spec 140 s2d (#736c, L1) — a GET that throws after a 404 / 403 still writes it, with
+    // `probe: 'threw'` and both timings: the row lock was held for Resend all the same.
     const expected: Array<readonly [string, string, Record<string, unknown>]> = [];
     if (d === 'deleted') {
       expected.push(['info', 'broadcasts.cascade.dispatch_begun_delete', { ...ids, outcome: 'deleted', deleteMs: expect.any(Number) }]);
-    } else if (probed && g !== 'throw') {
+    } else if (probed) {
       expected.push([
         'info',
         'broadcasts.cascade.dispatch_begun_delete',
-        { ...ids, outcome: d, probe: reading(g!), resendMs: expect.any(Number), deleteMs: expect.any(Number) },
+        { ...ids, outcome: d, probe: g === 'throw' ? 'threw' : reading(g!), resendMs: expect.any(Number), deleteMs: expect.any(Number) },
       ]);
     }
 
@@ -609,8 +611,8 @@ describe('characterization — deleteDraftBeforeStandingRefusal', () => {
     } else {
       expect(result).toEqual({ kind: 'undeleted', errClass: exp.errClass });
       const fields: Record<string, unknown> = { ...base, outcome: exp.outcome, observedResendStatus: exp.observed, errClass: exp.errClass };
-      // A throw, or a DELETE answer with no GET, carries `err`; a GET reading does not.
-      if (exp.err !== null || g === null) fields['err'] = exp.err;
+      // Spec 140 s2d (#736c, L2) — one shape: `err` is always there, null when nothing threw.
+      fields['err'] = exp.err;
       expect(lines).toEqual([['warn', 'broadcasts.dispatch.refused_draft_delete_unconfirmed', fields]]);
     }
     expectNoSentAt(lines);
