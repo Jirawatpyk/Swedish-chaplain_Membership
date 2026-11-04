@@ -731,12 +731,13 @@ export async function submitBroadcast(
   // "too large" would be a fabricated reason in an append-only table.
   if (!resolved.ok) {
     if (resolved.error.kind === 'resolve.server_error') {
+      // Spec 140 s2d (#736c) — the bounded class, never the free-text message.
+      const { errClass } = resolved.error;
       logger.error(
         {
           tenantId: deps.tenant.slug,
           memberId: input.memberId,
-          // Spec 140 s2d (#736c) — the bounded class, never the free-text message.
-          err: resolved.error.errClass,
+          err: errClass,
         },
         'broadcasts.submit.recipient_resolution_failed',
       );

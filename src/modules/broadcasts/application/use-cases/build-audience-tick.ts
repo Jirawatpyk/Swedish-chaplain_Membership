@@ -2971,6 +2971,8 @@ async function failTerminally(
     if (reclaimed.payloadExtra !== undefined) payloadExtra = { ...(payloadExtra ?? {}), ...reclaimed.payloadExtra };
   }
   const auditEventType = opts.auditEventType ?? 'broadcast_failed_to_dispatch';
+  // Review round 1 (check:log-error-objects) — the import id, read off the Result error once for the log lines.
+  const { importId } = error;
   const notifyMember = opts.notifyMember ?? true;
   const now = deps.clock.now();
   const reason =
@@ -3061,7 +3063,7 @@ async function failTerminally(
         errorKind: error.kind,
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId,
-        importId: error.importId,
+        importId,
         dispatchFailureKind: reason,
         expectedStatus: 'approved',
         observedStatus: lostCas?.observedStatus ?? null,
@@ -3092,11 +3094,13 @@ async function failTerminally(
   // only now, once the terminal write committed: before the fenced write it
   // also printed for a tick that then lost its lease (which logs only
   // `lease_lost`) or lost the CAS (which logs `cleanup_failed`).
+  const observed = error.kind === 'audience_import_failed' ? error.observed : ageMsOrNull;
+  const expected = error.kind === 'audience_import_failed' ? error.expected : IMPORT_STUCK_AFTER_MS;
   logger.error(
     {
       tenantId: deps.tenant.slug,
       broadcastId: input.broadcastId,
-      importId: error.importId,
+      importId,
       errorKind: error.kind,
       // NOT `reason` (round 3 finding 3-12). `'reason'` and `'*.reason'` are in
       // `logger.ts` REDACT_PATHS, deliberately broad because a Stripe SDK error
@@ -3116,8 +3120,8 @@ async function failTerminally(
       // `broadcast-failed-to-dispatch-email.test.ts` iterates it rather than a
       // copy, so adding a member without its three locales fails a test.
       dispatchFailureKind: reason,
-      observed: error.kind === 'audience_import_failed' ? error.observed : ageMsOrNull,
-      expected: error.kind === 'audience_import_failed' ? error.expected : IMPORT_STUCK_AFTER_MS,
+      observed,
+      expected,
     },
     'broadcasts.audience_import.failed',
   );

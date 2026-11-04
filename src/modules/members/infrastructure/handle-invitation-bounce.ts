@@ -120,8 +120,9 @@ export async function handleInvitationBounce(
         if (result.value.marked) marked += 1;
       } else {
         failed += 1;
+        const errType = result.error.type;
         logger.error(
-          { tenantId: t.tenantId, contactId: t.contactId, requestId, err: result.error.type },
+          { tenantId: t.tenantId, contactId: t.contactId, requestId, err: errType },
           'invitation_bounce.mark_failed',
         );
       }

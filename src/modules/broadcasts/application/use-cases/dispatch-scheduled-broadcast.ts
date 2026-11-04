@@ -1392,6 +1392,7 @@ export async function dispatchScheduledBroadcast(
     // that is quiet about a permanent leak.
     if (e instanceof BroadcastConcurrentMutationError) {
       if (resendAudienceId !== '') {
+        const { observedStatus } = e;
         try {
           await deps.broadcastsGateway.deleteAudience(resendAudienceId);
           logger.info(
@@ -1399,7 +1400,7 @@ export async function dispatchScheduledBroadcast(
               tenantId: deps.tenant.slug,
               broadcastId: input.broadcastId as string,
               resendAudienceId,
-              observedStatus: e.observedStatus,
+              observedStatus,
             },
             'broadcasts.dispatch.audience_attach_lost_reclaimed',
           );

@@ -94,11 +94,12 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
         // cycle in-flight. Log + return `cascade_failed` so the F3
         // caller emits a metric / audit signal. Phase 9 verify-fix —
         // propagate `errName` from the use-case Result for triage.
+        const { errName } = result.error;
         logger.error(
           {
             // Spec 140 s2d (#736c) — the closed kind and the class, never the message.
             err: result.error.kind,
-            errName: result.error.errName,
+            errName,
             tenantId: tenant.slug,
             memberId: memberId as string,
             cascade: 'f8_in_flight_cycle_cancel',
@@ -236,17 +237,13 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
       });
 
       if (!result.ok) {
+        const errName = result.error.kind === 'restore.server_error' ? result.error.errName : undefined;
+        const planId = result.error.kind === 'restore.plan_not_resolvable' ? result.error.planId : undefined;
         logger.error(
           {
             err: result.error.kind,
-            errName:
-              result.error.kind === 'restore.server_error'
-                ? result.error.errName
-                : undefined,
-            planId:
-              result.error.kind === 'restore.plan_not_resolvable'
-                ? result.error.planId
-                : undefined,
+            errName,
+            planId,
             tenantId: tenant.slug,
             memberId: memberId as string,
             cascade: 'f8_undelete_cycle_restore',

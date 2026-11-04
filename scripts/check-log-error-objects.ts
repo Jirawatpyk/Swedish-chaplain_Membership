@@ -8,9 +8,11 @@
  * log. The rule is `scripts/lib/log-error-objects-rules.ts` (TypeScript
  * compiler API, CRLF- and multi-line-proof); this file is only the I/O.
  *
- * Allowed values: `errKind(…)`, `pgErrorCode(…)`, `pgErrorMeta(…)`,
- * `classifyThrown(…).kind`, `hashId(…)`, and identifiers named `code` or
- * ending in `Code` / `Kind` / `Class`.
+ * Allowed values: the explicit safe callees (`errKind(…)`, `pgErrorCode(…)`,
+ * `pgErrorMeta(…)`, `errLogFields(…)`, `hashId(…)`, … — the set in the rule),
+ * `classifyThrown(…).kind`, `.code` / `.kind` / `.name` of an error, and
+ * identifiers named `code` or ending in `Code` / `Kind` / `Class` that are not
+ * a caught binding. `logger.child(…)` arguments are read too.
  *
  * A TRIPWIRE, not proof of completeness: it reads each `logger.<level>(…)`
  * call syntactically, so text laundered through a local or an unknown helper
@@ -29,12 +31,18 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { findLogErrorObjects } from './lib/log-error-objects-rules';
+import { findLogErrorObjects, scanLogErrorObjects } from './lib/log-error-objects-rules';
 
 const ROOTS = ['src/modules/members', 'src/modules/broadcasts'] as const;
 const FIXTURE = 'scripts/__fixtures__/log-error-objects.fixture.txt';
 /** A floor, not a pin: the scope rotting to a handful of files must fail loudly. */
 const MIN_FILES_PER_ROOT = 50;
+/**
+ * Review round 1 — a floor on the logger calls the rule PARSED in the real
+ * tree: a parse that silently stops recognising logger calls must fail
+ * loudly, not pass at zero findings.
+ */
+const MIN_LOGGER_CALLS = 300;
 
 function walk(dir: string, out: string[]): string[] {
   for (const entry of readdirSync(dir)) {
@@ -70,6 +78,7 @@ if (fixtureFindings.length === 0 || refusedMarked === 0) {
 
 // --- the real tree ----------------------------------------------------------
 let fileCount = 0;
+let loggerCalls = 0;
 for (const root of ROOTS) {
   const files = walk(root, []);
   if (files.length < MIN_FILES_PER_ROOT) {
@@ -77,10 +86,17 @@ for (const root of ROOTS) {
   }
   fileCount += files.length;
   for (const file of files) {
-    for (const f of findLogErrorObjects(file, readFileSync(file, 'utf8'))) {
+    const scan = scanLogErrorObjects(file, readFileSync(file, 'utf8'));
+    loggerCalls += scan.loggerCalls;
+    for (const f of scan.findings) {
       failures.push(`${file}:${f.line}\n    ${f.message}`);
     }
   }
+}
+if (loggerCalls < MIN_LOGGER_CALLS) {
+  failures.push(
+    `FLOOR: the rule parsed ${loggerCalls} logger call(s) in the real tree (expected >= ${MIN_LOGGER_CALLS}); the parse has rotted.`,
+  );
 }
 
 if (failures.length > 0) {
@@ -96,6 +112,6 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `✓ check:log-error-objects — ${fileCount} file(s) in members + broadcasts, no error object or text in a log line; ` +
+  `✓ check:log-error-objects — ${fileCount} file(s) and ${loggerCalls} logger call(s) in members + broadcasts, no error object or text in a log line; ` +
     `${refusedMarked} refused form(s) in the positive control, each found.`,
 );

@@ -58,11 +58,12 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
       // distinguishes this from the no-in-flight case (which returns
       // `outcome: 'ok'` with zeros). Ops can re-run cascade manually
       // via the audit-driven cleanup runbook.
+      // The F7 use case carries the error CLASS here (`errKind`), never a
+      // message (spec 140 s1 review round 4; spec 140 s2d (#736c) names it `errClass`).
+      const { errClass } = result.error;
       logger.error(
         {
-          // The F7 use case carries the error CLASS here (`errKind`), never a
-          // message (spec 140 s1 review round 4; spec 140 s2d (#736c) names it `errClass`).
-          err: result.error.errClass,
+          err: errClass,
           tenantId: tenant.slug,
           memberId: memberId as string,
           cascade: 'f7_in_flight_broadcast_cancel',
