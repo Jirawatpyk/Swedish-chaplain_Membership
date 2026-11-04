@@ -168,9 +168,14 @@ function makeDeps(
       parkVoidPdfReconcile: vi.fn(async () => {}),
       applyVoid: vi.fn(),
       applyIssueAsPaid: vi.fn(),
-      applyReceiptPdf: vi.fn(async () =>
+      // Echoes the write, as the repo's re-fetch does when the UPDATE lands.
+      applyReceiptPdf: vi.fn(async (_tx, w: { blobKey: string; sha256: Sha256Hex; templateVersion: number }) =>
         invoice
-          ? ({ ...invoice, receiptPdfStatus: 'rendered' } as Invoice)
+          ? ({
+              ...invoice,
+              receiptPdfStatus: 'rendered',
+              receiptPdf: { blobKey: w.blobKey, sha256: w.sha256, templateVersion: w.templateVersion },
+            } as Invoice)
           : (null as unknown as Invoice),
       ),
       applyReceiptPdfFailure: vi.fn(async () => ({
@@ -428,5 +433,40 @@ describe('renderReceiptPdf — async worker callback', () => {
       expect(r.error.code).toBe('render_failed');
     }
     expect(deps.invoiceRepo.applyReceiptPdfFailure).toHaveBeenCalledTimes(1);
+  });
+
+  // Task #71 L-1 — `receipt_rendered` is a 10-year audit row naming the
+  // receipt's key and sha. It is written only when this attempt's write is
+  // the one the row holds: a race loser (another worker rendered first) or a
+  // row voided between the read and the write leaves the UPDATE a no-op.
+  it('#71 L-1: race lost (row holds another key) → no receipt_rendered audit, still ok', async () => {
+    const invoice = makePaidPendingInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    (deps.invoiceRepo.applyReceiptPdf as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ...invoice,
+      receiptPdfStatus: 'rendered',
+      receiptPdf: {
+        blobKey: `invoicing/test-swecham/2026/${INVOICE_ID}_receipt_v13.pdf`,
+        sha256: Sha256Hex.ofUnsafe('c'.repeat(64)),
+        templateVersion: 13,
+      },
+    } as Invoice);
+    const r = await renderReceiptPdf(deps, input);
+    expect(r.ok).toBe(true);
+    const events = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1].eventType);
+    expect(events).not.toContain('receipt_rendered');
+  });
+
+  it('#71 L-1: row voided before the write (no-op) → no receipt_rendered audit', async () => {
+    const invoice = makePaidPendingInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    (deps.invoiceRepo.applyReceiptPdf as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ...invoice,
+      status: 'void',
+    } as Invoice);
+    const r = await renderReceiptPdf(deps, input);
+    expect(r.ok).toBe(true);
+    const events = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1].eventType);
+    expect(events).not.toContain('receipt_rendered');
   });
 });
