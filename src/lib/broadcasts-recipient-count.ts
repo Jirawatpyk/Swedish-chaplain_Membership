@@ -180,7 +180,8 @@ async function countRecipientsInner(
           // lives at the source, not here: `resolve.server_error` has ONE
           // construction site (`resolve-segment-recipients.ts`, its `try`
           // wrapping only the bridge reads), and every bridge throw is a
-          // fixed-format `members-bridge.<method>: <error code>` string —
+          // fixed-format `members-bridge.<method>: <error code>` (or, since
+          // spec 140 s2d round 1, `members_bridge_<read>:<error code>`) string —
           // never a row value, never an address. If a bridge ever throws a
           // message built from data, fix it THERE.
           { tenantId: deps.tenant.slug, correlationId: input.correlationId, err: result.error.message },
