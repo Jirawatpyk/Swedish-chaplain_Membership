@@ -281,6 +281,18 @@ export {
 } from './application/use-cases/prune-orphaned-zero-rate-certs';
 export type { ZeroRateCertPruneRepo } from './application/ports/zero-rate-cert-prune-repo';
 
+// #729 — the daily orphan invoice / receipt / credit-note PDF sweep. Composed
+// by `src/lib/invoicing-orphan-pdf-sweep-deps.ts` for the cron route.
+export {
+  sweepOrphanPdfs,
+  parseOrphanPdfKey,
+  ORPHAN_PDF_MIN_AGE_MS,
+  type SweepOrphanPdfsInput,
+  type SweepOrphanPdfsOutput,
+  type SweepOrphanPdfsDeps,
+} from './application/use-cases/sweep-orphan-pdfs';
+export type { OrphanPdfReferenceRepo } from './application/ports/orphan-pdf-reference-repo';
+
 export {
   exportPaidInvoicesCsv,
   exportPaidInvoicesCsvSchema,
@@ -612,6 +624,7 @@ export {
   makeDrizzleTaxRegisterRepo,
 } from './infrastructure/repos/drizzle-invoice-repo';
 export { makeDrizzleZeroRateCertPruneRepo } from './infrastructure/repos/drizzle-zero-rate-cert-prune-repo';
+export { makeDrizzleOrphanPdfReferenceRepo } from './infrastructure/repos/drizzle-orphan-pdf-reference-repo';
 export { vercelBlobAdapter } from './infrastructure/adapters/vercel-blob-adapter';
 // F119 T027 (research R12, FR-041a/b) — READ-only public URL of the invoice
 // logo for the E-Blast email header. Bound here to the F4 settings repo +

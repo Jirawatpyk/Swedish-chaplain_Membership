@@ -750,10 +750,12 @@ export const invoicingMetrics = {
    * after the tx rolled back, possibly printed with a released document
    * number. Since #60 all three paths overwrite on retry, so the stored file
    * cannot drift from the committed sha256, but an invoice that is never
-   * retried keeps the orphan. Alert: any non-zero rate — ops checks the
-   * logged key (runbook `record-payment-unconfirmed.md` § 2).
+   * retried keeps the orphan. `sweeper` (#729) is the daily orphan PDF sweep
+   * failing to check or delete one; it retries the key the next night.
+   * Alert: any non-zero rate — ops checks the logged key (runbook
+   * `record-payment-unconfirmed.md` § 2).
    */
-  orphanBlobCleanupFailed(useCase: 'issue' | 'issue_as_paid' | 'record_payment'): void {
+  orphanBlobCleanupFailed(useCase: 'issue' | 'issue_as_paid' | 'record_payment' | 'sweeper'): void {
     safeMetric(() => {
       counter(
         'invoicing_orphan_blob_cleanup_failed_total',
