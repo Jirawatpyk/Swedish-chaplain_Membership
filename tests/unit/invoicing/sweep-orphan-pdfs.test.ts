@@ -529,10 +529,12 @@ describe('sweepOrphanPdfs — bounded logs and the breakdown (#72)', () => {
     const r = await sweepOrphanPdfs({ dryRun: true, maxDeletes: 10_000 }, deps);
     expect(r).toMatchObject({ kind: 'ok', wouldDelete: 600 });
     const perKey = raw.logger.info.mock.calls.filter((c) => (c[0] as { event: string }).event === 'orphan_pdf_sweep_would_delete');
-    expect(perKey.length).toBeLessThanOrEqual(20);
+    expect(perKey).toHaveLength(20);
     const summaries = done(raw);
     expect(summaries).toHaveLength(1);
-    expect(summaries[0]![0]).toMatchObject({ suppressedLines: { info: 600 - perKey.length, error: 0 } });
+    expect(summaries[0]![0]).toMatchObject({ suppressedLines: { info: 580, error: 0 } });
+    // The result says it too, in case the log itself is lost.
+    expect(r).toMatchObject({ suppressedLines: { info: 580, error: 0 } });
   });
 
   it('30 failing deletes write at most 20 error lines; the summary counts the rest', async () => {
@@ -567,15 +569,54 @@ describe('sweepOrphanPdfs — bounded logs and the breakdown (#72)', () => {
       { docKind: 'receipt', fy: '2025', templateVersion: 12, wouldDelete: 0, deleted: 1, kept: 0, alreadyGone: 0, failed: 0 },
       { docKind: 'receipt', fy: '2026', templateVersion: 12, wouldDelete: 0, deleted: 1, kept: 0, alreadyGone: 0, failed: 0 },
     ];
-    expect(r).toMatchObject({ kind: 'ok', breakdown: expected, otherGroups: 0 });
-    expect(done(raw)[0]![0]).toMatchObject({ breakdown: expected, otherGroups: 0 });
+    const none = { groups: 0, wouldDelete: 0, deleted: 0, kept: 0, alreadyGone: 0, failed: 0 };
+    expect(r).toMatchObject({ kind: 'ok', otherGroups: none });
+    expect(done(raw)[0]![0]).toMatchObject({ otherGroups: none });
+    // Groups with something to act on come first, then the kept-only ones.
+    const rows = (r as { breakdown: typeof expected }).breakdown;
+    expect(rows).toEqual([expected[0], expected[2], expected[3], expected[4], expected[1]]);
+    expect(done(raw)[0]![0]).toMatchObject({ breakdown: rows });
+    // The breakdown adds up to the top-level counters.
+    const sum = (f: keyof (typeof expected)[number]) => rows.reduce((n, g) => n + (g[f] as number), 0);
+    expect(r).toMatchObject({ deleted: sum('deleted'), kept: sum('kept'), failed: sum('failed') });
   });
 
   it('the breakdown is capped at 50 groups; the rest are counted', async () => {
     const items = Array.from({ length: 60 }, (_, i) => item(`invoicing/${T}/2026/${uuid(i + 1)}_v${i + 1}.pdf`));
     const { deps } = makeDeps({ items });
     const r = await sweepOrphanPdfs({ dryRun: true }, deps);
-    expect(r).toMatchObject({ kind: 'ok', otherGroups: 10 });
+    // The dropped groups keep their totals, so nothing to act on is hidden.
+    expect(r).toMatchObject({ kind: 'ok', otherGroups: { groups: 10, wouldDelete: 10 } });
     expect(r.kind === 'ok' && r.breakdown).toHaveLength(50);
+  });
+
+  it('each per-key event has its own sample: already-gone keys cannot crowd out deleted ones', async () => {
+    const gone = Array.from({ length: 25 }, (_, i) => item(cnKey(uuid(i + 1))));
+    const real = Array.from({ length: 5 }, (_, i) => item(cnKey(uuid(i + 100))));
+    const goneKeys = new Set(gone.map((g) => g.key));
+    const { deps, raw } = makeDeps({
+      items: [...gone, ...real],
+      deleteError: (key) => (goneKeys.has(key) ? new BlobKeyNotFoundError() : undefined),
+    });
+    await sweepOrphanPdfs({}, deps);
+    const ev = (e: string) => raw.logger.info.mock.calls.filter((c) => (c[0] as { event: string }).event === e);
+    expect(ev('orphan_pdf_sweep_already_gone')).toHaveLength(20);
+    expect(ev('orphan_pdf_sweep_deleted')).toHaveLength(5);
+  });
+
+  it('the failure sample is drawn across the whole run, not just the first keys, and names the tenants', async () => {
+    const items = Array.from({ length: 40 }, (_, i) => item(cnKey(uuid(i + 1))));
+    const { deps, raw } = makeDeps({ items, deleteError: () => new Error('blob 503') });
+    // Reservoir sampling: with random() = 0 every later failure replaces slot 0.
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      await sweepOrphanPdfs({}, deps);
+    } finally {
+      spy.mockRestore();
+    }
+    const failed = raw.logger.error.mock.calls.filter((c) => (c[0] as { event: string }).event === 'orphan_pdf_sweep_failed');
+    expect(failed).toHaveLength(20);
+    expect(failed.map((c) => (c[0] as { documentId: string }).documentId)).toContain(uuid(40));
+    expect(done(raw)[0]![0]).toMatchObject({ failedTenants: [T], suppressedLines: { error: 20 } });
   });
 });

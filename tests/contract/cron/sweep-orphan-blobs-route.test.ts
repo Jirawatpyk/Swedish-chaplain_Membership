@@ -77,7 +77,8 @@ const PDFS_OK = {
   listFailed: 0,
   truncated: false,
   breakdown: [{ docKind: 'receipt', fy: '2025', templateVersion: 12, wouldDelete: 0, deleted: 1, kept: 2, alreadyGone: 0, failed: 0 }],
-  otherGroups: 0,
+  otherGroups: { groups: 0, wouldDelete: 0, deleted: 0, kept: 0, alreadyGone: 0, failed: 0 },
+  suppressedLines: { info: 0, error: 0 },
 };
 const CERTS_OK = { kind: 'ok', scanned: 3, swept: 1, skipped: 2, cutoff: new Date('2026-11-02T21:00:00.000Z') };
 
@@ -119,8 +120,8 @@ describe('/api/cron/invoicing/sweep-orphan-blobs — contract (#729)', () => {
   it('a scheduled call on production with the flag on runs the cert prune, then a real PDF sweep', async () => {
     const res = await POST(makeRequest(AUTH));
     expect(res.status).toBe(200);
-    expect(runPruneMock).toHaveBeenCalledWith({});
-    expect(runSweepMock).toHaveBeenCalledWith({ dryRun: false, deadlineMs: expect.any(Number) });
+    expect(runPruneMock).toHaveBeenCalledWith({}, expect.anything());
+    expect(runSweepMock).toHaveBeenCalledWith({ dryRun: false, deadlineMs: expect.any(Number) }, expect.anything());
     expect(runPruneMock.mock.invocationCallOrder[0]!).toBeLessThan(runSweepMock.mock.invocationCallOrder[0]!);
     const body = await res.json();
     expect(body).toMatchObject({
@@ -132,7 +133,14 @@ describe('/api/cron/invoicing/sweep-orphan-blobs — contract (#729)', () => {
     // #72 — the breakdown reaches the response, so a `?dryRun=1` call answers
     // the rollout question without reading logs.
     expect(body.pdfs.breakdown).toEqual(PDFS_OK.breakdown);
-    expect(body.pdfs.otherGroups).toBe(0);
+    expect(body.pdfs.otherGroups).toEqual(PDFS_OK.otherGroups);
+    // #72 — both halves log through one request-scoped budget, so Vercel's
+    // per-request line cap can never drop the summaries.
+    const certLogger = runPruneMock.mock.calls[0]![1];
+    const pdfLogger = runSweepMock.mock.calls[0]![1];
+    expect(certLogger).toBeDefined();
+    expect(certLogger).toBe(pdfLogger);
+    expect(body.suppressedLogLines).toBe(0);
     expect(body.pdfs.kind).toBeUndefined();
   });
 
@@ -154,10 +162,10 @@ describe('/api/cron/invoicing/sweep-orphan-blobs — contract (#729)', () => {
     runSweepMock.mockResolvedValue({ ...PDFS_OK, dryRun: true, deleted: 0, wouldDelete: 1 });
     const res = await POST(makeRequest(AUTH));
     expect(res.status).toBe(200);
-    expect(runSweepMock).toHaveBeenCalledWith({ dryRun: true, deadlineMs: expect.any(Number) });
+    expect(runSweepMock).toHaveBeenCalledWith({ dryRun: true, deadlineMs: expect.any(Number) }, expect.anything());
     expect(await res.json()).toMatchObject({ deletesEnabled: false, pdfs: { dryRun: true, wouldDelete: 1 } });
     // The cert prune has no dry run: it runs on production only (R126 F2).
-    if (vercelEnv === 'production') expect(runPruneMock).toHaveBeenCalledWith({});
+    if (vercelEnv === 'production') expect(runPruneMock).toHaveBeenCalledWith({}, expect.anything());
     else expect(runPruneMock).not.toHaveBeenCalled();
   });
 
@@ -172,7 +180,7 @@ describe('/api/cron/invoicing/sweep-orphan-blobs — contract (#729)', () => {
   it('?dryRun=1 is a PDF dry run and skips the cert prune (which has no dry run)', async () => {
     runSweepMock.mockResolvedValue({ ...PDFS_OK, dryRun: true, deleted: 0, wouldDelete: 1 });
     const res = await POST(makeRequest(AUTH, '?dryRun=1'));
-    expect(runSweepMock).toHaveBeenCalledWith({ dryRun: true, deadlineMs: expect.any(Number) });
+    expect(runSweepMock).toHaveBeenCalledWith({ dryRun: true, deadlineMs: expect.any(Number) }, expect.anything());
     expect(runPruneMock).not.toHaveBeenCalled();
     // The gate is open here, but this run deletes nothing: say so (code review #6).
     expect(await res.json()).toMatchObject({
