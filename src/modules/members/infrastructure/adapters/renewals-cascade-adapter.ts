@@ -12,6 +12,8 @@ import {
   cancelInFlightCyclesForMember,
   restoreCycleForMember,
   makeRenewalsDeps,
+  type CancelInFlightCyclesForMemberError,
+  type RestoreCycleForMemberError,
 } from '@/modules/renewals';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -94,7 +96,9 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
         // cycle in-flight. Log + return `cascade_failed` so the F3
         // caller emits a metric / audit signal. Phase 9 verify-fix —
         // propagate `errName` from the use-case Result for triage.
-        const { errName } = result.error;
+        // Review round 2 — annotated with its type, the check:log-error-objects
+        // allowlist (TOKEN_FIELDS_BY_TYPE).
+        const errName: CancelInFlightCyclesForMemberError['errName'] = result.error.errName;
         logger.error(
           {
             // Spec 140 s2d (#736c) — the closed kind and the class, never the message.
@@ -237,8 +241,12 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
       });
 
       if (!result.ok) {
-        const errName = result.error.kind === 'restore.server_error' ? result.error.errName : undefined;
-        const planId = result.error.kind === 'restore.plan_not_resolvable' ? result.error.planId : undefined;
+        // Review round 2 — `errName` annotated with its type (TOKEN_FIELDS_BY_TYPE);
+        // `planId` is the caller's own value: `restoreCycleForMember` answers
+        // `plan_not_resolvable` with the `input.planId` it was given.
+        const errName: Extract<RestoreCycleForMemberError, { kind: 'restore.server_error' }>['errName'] | undefined =
+          result.error.kind === 'restore.server_error' ? result.error.errName : undefined;
+        const planId = result.error.kind === 'restore.plan_not_resolvable' ? memberResult.value.planId : undefined;
         logger.error(
           {
             err: result.error.kind,

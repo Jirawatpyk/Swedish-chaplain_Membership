@@ -1392,7 +1392,8 @@ export async function dispatchScheduledBroadcast(
     // that is quiet about a permanent leak.
     if (e instanceof BroadcastConcurrentMutationError) {
       if (resendAudienceId !== '') {
-        const { observedStatus } = e;
+        // Review round 2 — annotated with its class (check:log-error-objects TOKEN_FIELDS_BY_TYPE).
+        const observedStatus: BroadcastConcurrentMutationError['observedStatus'] = e.observedStatus;
         try {
           await deps.broadcastsGateway.deleteAudience(resendAudienceId);
           logger.info(

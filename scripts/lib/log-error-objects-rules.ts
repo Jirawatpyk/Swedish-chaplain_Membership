@@ -26,10 +26,16 @@
  * Parsed with the TypeScript compiler API, not a regex, so it is CRLF-proof
  * and multi-line-proof; a `.tsx` file is parsed as TSX.
  *
+ * Review round 2 (security #4, code-review #8): one hop through a local is
+ * followed. `const { x } = e` and `const x = e.y` (also as an arm of `?:` /
+ * `??` / `||`) make `x` error-ish unless `y` is a token field, or the local is
+ * annotated with a type in the reviewed `TOKEN_FIELDS_BY_TYPE`.
+ *
  * A TRIPWIRE, not proof of completeness: it reads each `logger.<level>(…)`
- * call's arguments syntactically. A value laundered through a local first
- * (`const code = String(e); logger.warn({ err: code })`) or through a helper
- * in the safe set passes. The sweep that preceded it was done by hand.
+ * call's arguments syntactically. A value laundered through a call into a
+ * local (`const code = String(e); logger.warn({ err: code })`), through two
+ * locals, or through a helper in the safe set passes. The sweep that preceded
+ * it was done by hand.
  */
 import ts from 'typescript';
 
@@ -138,9 +144,180 @@ function caughtNames(node: ts.Node): ReadonlySet<string> {
   return names;
 }
 
-function isErrorIdentifier(name: string, caught: ReadonlySet<string>): boolean {
-  // Review round 1 — a caught binding is an error whatever it is called.
-  if (caught.has(name)) return true;
+/** What the rule knows at a logger call: the names that hold an error, and the fields that are tokens. */
+interface Scope {
+  /** Every enclosing catch binding, plus the locals read off an error one hop up ({@link taintedNames}). */
+  readonly errors: ReadonlySet<string>;
+  /** The fields read off an error that are closed tokens: {@link TOKEN_FIELDS}, or more for an annotated local. */
+  readonly tokens: ReadonlySet<string>;
+}
+
+/**
+ * Spec 140 s2d review round 2 (security #4, code-review #8) — the reviewed
+ * per-type allowlist: a field of a named error class or Result-error type that
+ * is a closed token, read off an error-ish base into a local. The local must
+ * say which type it reads, as its type annotation: `const x: T['f'] = e.f`, or
+ * `Extract<T, …>['f']` for one variant of a union, optionally with `undefined`,
+ * `null` or literal members. The initializer may read only that field: tsc
+ * checks the value has the annotated type, and this rule checks the type name
+ * and the field against the list. A name alone (round 1's `SAFE_NAME` on a
+ * caught binding) is never enough. Each entry says why the field is closed.
+ */
+const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
+  // `resend-broadcasts-gateway.ts` — `GatewayThrowableSubKind`, a closed
+  // union of literals set by the gateway's classifier; never Resend's text.
+  GatewayThrowable: new Set(['subKind']),
+  // `broadcasts-repo.ts` — the row status the CAS read (`BroadcastStatus`, a
+  // DB enum, or the `LEASE_LOST` / `LEASE_HELD` constants) and the status a
+  // lease-lost probe read (`BroadcastStatus | null`).
+  BroadcastConcurrentMutationError: new Set(['observedStatus', 'rowStatus']),
+  // `cancel-in-flight-broadcasts-for-member.ts` — its one construction site
+  // sets `errClass: errKind(e)`, an error class name.
+  CancelInFlightForMemberError: new Set(['errClass']),
+  // `resolve-segment-recipients.ts` — every construction site sets
+  // `errClass: errKind(e)`, an error class name.
+  ResolveSegmentError: new Set(['errClass']),
+  // renewals `cancel-in-flight-cycles-for-member.ts` — `errName` is an
+  // Error's `.name` (its class or a code-set name) or `'UnknownError'`.
+  CancelInFlightCyclesForMemberError: new Set(['errName']),
+  // renewals `restore-cycle-for-member.ts` — `errName` is an Error's `.name`
+  // or `'UnknownError'`, as above.
+  RestoreCycleForMemberError: new Set(['errName']),
+  // `mark-invitation-bounced.ts` — `type` is the literal `'server_error'`.
+  MarkInvitationBouncedError: new Set(['type']),
+  // `build-audience-tick.ts` — a descriptor the tick builds, not a thrown
+  // error: `reason` is `ImportFailureReason` (a const tuple of literals),
+  // `importId` an opaque Resend import id or null, `observed` / `expected`
+  // numbers or null.
+  BuildAudienceTickError: new Set(['reason', 'importId', 'observed', 'expected']),
+};
+
+/** `T` for `T['f']`, and for `Extract<T, …>['f']`; else null. */
+function allowlistedTypeName(node: ts.TypeNode): string | null {
+  if (!ts.isTypeReferenceNode(node) || !ts.isIdentifier(node.typeName)) return null;
+  if (node.typeName.text !== 'Extract') return node.typeName.text;
+  const first = node.typeArguments?.[0];
+  return first !== undefined && ts.isTypeReferenceNode(first) && ts.isIdentifier(first.typeName) ? first.typeName.text : null;
+}
+
+/** The fields a local's type annotation names from {@link TOKEN_FIELDS_BY_TYPE}; empty unless EVERY member is listed. */
+function annotatedTokenFields(decl: ts.VariableDeclaration): ReadonlySet<string> {
+  const type = decl.type;
+  if (type === undefined) return new Set();
+  const members = ts.isUnionTypeNode(type) ? type.types : [type];
+  const fields = new Set<string>();
+  for (const m of members) {
+    if (m.kind === ts.SyntaxKind.UndefinedKeyword) continue;
+    // `null` and a literal (`'audience_import_stuck'`) add no field: they are constants.
+    if (ts.isLiteralTypeNode(m)) continue;
+    if (ts.isIndexedAccessTypeNode(m) && ts.isLiteralTypeNode(m.indexType) && ts.isStringLiteral(m.indexType.literal)) {
+      const typeName = allowlistedTypeName(m.objectType);
+      const field = m.indexType.literal.text;
+      if (typeName !== null && TOKEN_FIELDS_BY_TYPE[typeName]?.has(field) === true) {
+        fields.add(field);
+        continue;
+      }
+    }
+    return new Set();
+  }
+  return fields;
+}
+
+/** Every identifier a binding name binds (`x`, `{ a, b: c }`, `[d, ...e]`). */
+function boundNames(name: ts.BindingName, out: string[] = []): string[] {
+  if (ts.isIdentifier(name)) out.push(name.text);
+  else for (const el of name.elements) if (!ts.isOmittedExpression(el)) boundNames(el.name, out);
+  return out;
+}
+
+/**
+ * True when `expr` is a direct read off an error-ish base that the rule would
+ * refuse in a log line: the error itself, a non-token field, its text, or an
+ * element of it — also as an arm of `?:`, `??` or `||`. A call's result is not
+ * followed (the rule reads calls at the log line: an unknown callee is refused
+ * there, a safe one is not).
+ */
+function readsOffError(sf: ts.SourceFile, expr: ts.Expression, scope: Scope): boolean {
+  const node = unwrap(expr);
+  if (ts.isConditionalExpression(node)) {
+    return readsOffError(sf, node.whenTrue, scope) || readsOffError(sf, node.whenFalse, scope);
+  }
+  if (
+    ts.isBinaryExpression(node) &&
+    (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || node.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+  ) {
+    return readsOffError(sf, node.left, scope) || readsOffError(sf, node.right, scope);
+  }
+  if (ts.isIdentifier(node) || ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+    return refusal(sf, node, scope) !== null;
+  }
+  return false;
+}
+
+/** The locals of one declaration that hold an error or its text: one hop, never chained. */
+function taintedByDeclaration(sf: ts.SourceFile, decl: ts.VariableDeclaration): string[] {
+  const init = decl.initializer;
+  if (init === undefined) return [];
+  const scope: Scope = { errors: caughtNames(decl), tokens: TOKEN_FIELDS };
+  if (ts.isIdentifier(decl.name)) {
+    const extra = annotatedTokenFields(decl);
+    const tokens = extra.size === 0 ? TOKEN_FIELDS : new Set([...TOKEN_FIELDS, ...extra]);
+    return readsOffError(sf, init, { ...scope, tokens }) ? [decl.name.text] : [];
+  }
+  const base = shapeOf(init, scope);
+  if (base === null || base === 'token') return [];
+  if (base === 'text' || ts.isArrayBindingPattern(decl.name)) return boundNames(decl.name);
+  const out: string[] = [];
+  for (const el of decl.name.elements) {
+    const key = el.propertyName ?? el.name;
+    const field = ts.isIdentifier(key) || ts.isStringLiteral(key) ? key.text : null;
+    if (el.dotDotDotToken !== undefined || field === null || !TOKEN_FIELDS.has(field)) boundNames(el.name, out);
+  }
+  return out;
+}
+
+/**
+ * Spec 140 s2d review round 2 (security #4, code-review #8) — the locals in
+ * scope at `call` that were destructured or assigned off an error-ish base
+ * (`const { x } = e`, `const x = e.y`, `const x = e`), unless the field is a
+ * token (`code` / `kind` / `name`) or an annotated {@link TOKEN_FIELDS_BY_TYPE}
+ * field. Lexical: the `const` / `let` statements before the call in each
+ * enclosing block, the innermost declaration of a name deciding it, and a
+ * function's parameters shadowing an outer local. One hop only: a local read
+ * off a tainted local is not followed.
+ */
+function taintedNames(sf: ts.SourceFile, call: ts.Node): ReadonlySet<string> {
+  const tainted = new Set<string>();
+  const decided = new Set<string>();
+  for (let cur: ts.Node | undefined = call.parent; cur !== undefined; cur = cur.parent) {
+    if (ts.isFunctionLike(cur)) {
+      for (const p of cur.parameters) for (const n of boundNames(p.name)) decided.add(n);
+    }
+    if (!(ts.isBlock(cur) || ts.isSourceFile(cur) || ts.isCaseClause(cur) || ts.isDefaultClause(cur) || ts.isModuleBlock(cur))) {
+      continue;
+    }
+    const level = new Set<string>();
+    for (const stmt of cur.statements) {
+      if (stmt.end > call.pos || !ts.isVariableStatement(stmt)) continue;
+      for (const decl of stmt.declarationList.declarations) {
+        const names = boundNames(decl.name);
+        const bad = new Set(taintedByDeclaration(sf, decl));
+        for (const n of names) {
+          if (decided.has(n)) continue;
+          level.add(n);
+          if (bad.has(n)) tainted.add(n);
+          else tainted.delete(n);
+        }
+      }
+    }
+    for (const n of level) decided.add(n);
+  }
+  return tainted;
+}
+
+function isErrorIdentifier(name: string, scope: Scope): boolean {
+  // Review round 1 — a scope binding is an error whatever it is called.
+  if (scope.errors.has(name)) return true;
   if (SAFE_NAME.test(name)) return false;
   return ERROR_NAMES.has(name) || ERROR_SUFFIX.test(name);
 }
@@ -148,38 +325,38 @@ function isErrorIdentifier(name: string, caught: ReadonlySet<string>): boolean {
 /** What an expression yields: an error object, error text, a token read off an error, or none of these. */
 type Shape = 'error' | 'text' | 'token' | null;
 
-function shapeOf(expr: ts.Expression, caught: ReadonlySet<string>): Shape {
+function shapeOf(expr: ts.Expression, scope: Scope): Shape {
   const node = unwrap(expr);
-  if (ts.isIdentifier(node)) return isErrorIdentifier(node.text, caught) ? 'error' : null;
+  if (ts.isIdentifier(node)) return isErrorIdentifier(node.text, scope) ? 'error' : null;
   if (ts.isPropertyAccessExpression(node)) {
     const field = node.name.text;
-    const base = shapeOf(node.expression, caught);
+    const base = shapeOf(node.expression, scope);
     if (TEXT_FIELDS.has(field)) return 'text';
-    if (base === 'error') return TOKEN_FIELDS.has(field) ? 'token' : 'error';
+    if (base === 'error') return scope.tokens.has(field) ? 'token' : 'error';
     if (base === 'text') return 'text';
     if (base === 'token') return 'token';
     return OBJECT_FIELDS.has(field) ? 'error' : null;
   }
   if (ts.isElementAccessExpression(node)) {
-    const base = shapeOf(node.expression, caught);
+    const base = shapeOf(node.expression, scope);
     return base === 'error' || base === 'text' ? 'error' : null;
   }
   return null;
 }
 
 /** The first refusal inside a literal argument, walked like a fields object. */
-function literalRefusal(sf: ts.SourceFile, node: ts.Expression, caught: ReadonlySet<string>): string | null {
+function literalRefusal(sf: ts.SourceFile, node: ts.Expression, scope: Scope): string | null {
   const inner: LogErrorFinding[] = [];
-  checkContainer(sf, node, caught, inner);
+  checkContainer(sf, node, scope, inner);
   return inner[0]?.message ?? null;
 }
 
 /** Why `expr` would put error text or an error object on the line, or null. */
-function refusal(sf: ts.SourceFile, expr: ts.Expression, caught: ReadonlySet<string>): string | null {
+function refusal(sf: ts.SourceFile, expr: ts.Expression, scope: Scope): string | null {
   const node = unwrap(expr);
 
   if (ts.isIdentifier(node)) {
-    return isErrorIdentifier(node.text, caught) ? `the error object \`${node.text}\`` : null;
+    return isErrorIdentifier(node.text, scope) ? `the error object \`${node.text}\`` : null;
   }
 
   if (ts.isPropertyAccessExpression(node)) {
@@ -189,10 +366,10 @@ function refusal(sf: ts.SourceFile, expr: ts.Expression, caught: ReadonlySet<str
       return CLASSIFY_SAFE_FIELDS.has(field) ? null : `\`classifyThrown(…).${field}\` (only .kind is a closed token)`;
     }
     if (TEXT_FIELDS.has(field)) return `\`.${field}\``;
-    const baseShape = shapeOf(base, caught);
+    const baseShape = shapeOf(base, scope);
     if (baseShape === 'text') return `\`.${field}\` of error text`;
     if (baseShape === 'error') {
-      if (TOKEN_FIELDS.has(field)) return null;
+      if (scope.tokens.has(field)) return null;
       return OBJECT_FIELDS.has(field)
         ? `the error object \`.${field}\``
         : `\`.${field}\` of an error (only .code / .kind / .name)`;
@@ -203,7 +380,7 @@ function refusal(sf: ts.SourceFile, expr: ts.Expression, caught: ReadonlySet<str
   }
 
   if (ts.isElementAccessExpression(node)) {
-    const baseShape = shapeOf(node.expression, caught);
+    const baseShape = shapeOf(node.expression, scope);
     return baseShape === 'error' || baseShape === 'text' ? 'element access on an error or its text' : null;
   }
 
@@ -213,7 +390,7 @@ function refusal(sf: ts.SourceFile, expr: ts.Expression, caught: ReadonlySet<str
     if (name === 'classifyThrown') return '`classifyThrown(…)` whole (its `reason` is the message)';
     const callee = unwrap(node.expression);
     if (ts.isPropertyAccessExpression(callee)) {
-      const receiver = shapeOf(callee.expression, caught);
+      const receiver = shapeOf(callee.expression, scope);
       if (receiver === 'error' || receiver === 'text') {
         return `\`.${callee.name.text}()\` on an error or its text`;
       }
@@ -222,8 +399,8 @@ function refusal(sf: ts.SourceFile, expr: ts.Expression, caught: ReadonlySet<str
       const a = unwrap(arg);
       const inner =
         ts.isObjectLiteralExpression(a) || ts.isArrayLiteralExpression(a)
-          ? literalRefusal(sf, a, caught)
-          : refusal(sf, arg, caught);
+          ? literalRefusal(sf, a, scope)
+          : refusal(sf, arg, scope);
       if (inner !== null) return `\`${name ?? 'a call'}(…)\` of ${inner}`;
     }
     return null;
@@ -231,14 +408,14 @@ function refusal(sf: ts.SourceFile, expr: ts.Expression, caught: ReadonlySet<str
 
   if (ts.isTemplateExpression(node)) {
     for (const span of node.templateSpans) {
-      const inner = refusal(sf, span.expression, caught);
+      const inner = refusal(sf, span.expression, scope);
       if (inner !== null) return `a template embedding ${inner}`;
     }
     return null;
   }
 
   if (ts.isConditionalExpression(node)) {
-    return refusal(sf, node.whenTrue, caught) ?? refusal(sf, node.whenFalse, caught);
+    return refusal(sf, node.whenTrue, scope) ?? refusal(sf, node.whenFalse, scope);
   }
 
   if (ts.isBinaryExpression(node)) {
@@ -249,7 +426,7 @@ function refusal(sf: ts.SourceFile, expr: ts.Expression, caught: ReadonlySet<str
       op === ts.SyntaxKind.AmpersandAmpersandToken ||
       op === ts.SyntaxKind.PlusToken
     ) {
-      return refusal(sf, node.left, caught) ?? refusal(sf, node.right, caught);
+      return refusal(sf, node.left, scope) ?? refusal(sf, node.right, scope);
     }
     return null;
   }
@@ -269,25 +446,25 @@ function lineOf(sf: ts.SourceFile, node: ts.Node): number {
 function checkContainer(
   sf: ts.SourceFile,
   node: ts.Expression,
-  caught: ReadonlySet<string>,
+  scope: Scope,
   out: LogErrorFinding[],
 ): void {
   const n = unwrap(node);
   if (ts.isObjectLiteralExpression(n)) {
     for (const prop of n.properties) {
       if (ts.isShorthandPropertyAssignment(prop)) {
-        if (isErrorIdentifier(prop.name.text, caught)) {
+        if (isErrorIdentifier(prop.name.text, scope)) {
           out.push({ line: lineOf(sf, prop), message: `shorthand \`{ ${prop.name.text} }\` logs the error object` });
         }
       } else if (ts.isSpreadAssignment(prop)) {
-        const why = refusal(sf, prop.expression, caught);
+        const why = refusal(sf, prop.expression, scope);
         if (why !== null) out.push({ line: lineOf(sf, prop), message: `spread of ${why}` });
       } else if (ts.isPropertyAssignment(prop)) {
         const init = unwrap(prop.initializer);
         if (ts.isObjectLiteralExpression(init) || ts.isArrayLiteralExpression(init)) {
-          checkContainer(sf, init, caught, out);
+          checkContainer(sf, init, scope, out);
         } else {
-          const why = refusal(sf, prop.initializer, caught);
+          const why = refusal(sf, prop.initializer, scope);
           if (why !== null) out.push({ line: lineOf(sf, prop), message: `${prop.name.getText(sf)}: ${why}` });
         }
       }
@@ -295,10 +472,10 @@ function checkContainer(
     return;
   }
   if (ts.isArrayLiteralExpression(n)) {
-    for (const el of n.elements) checkContainer(sf, el, caught, out);
+    for (const el of n.elements) checkContainer(sf, el, scope, out);
     return;
   }
-  const why = refusal(sf, n, caught);
+  const why = refusal(sf, n, scope);
   if (why !== null) out.push({ line: lineOf(sf, n), message: why });
 }
 
@@ -317,8 +494,8 @@ export function scanLogErrorObjects(fileName: string, source: string): LogErrorS
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node) && isLoggerCall(node)) {
       loggerCalls += 1;
-      const caught = caughtNames(node);
-      for (const arg of node.arguments) checkContainer(sf, arg, caught, findings);
+      const scope: Scope = { errors: new Set([...caughtNames(node), ...taintedNames(sf, node)]), tokens: TOKEN_FIELDS };
+      for (const arg of node.arguments) checkContainer(sf, arg, scope, findings);
     }
     ts.forEachChild(node, visit);
   };

@@ -81,7 +81,7 @@ import type { EblastNotificationOutboxPort } from '../ports/eblast-notification-
 import { sanitizeHtml } from './sanitize-html';
 import { validateImageSourceAllowlist } from './validate-image-source-allowlist';
 import { validateCustomRecipients } from './validate-custom-recipients';
-import { isMissingAddressOrphan, resolveSegmentRecipients } from './resolve-segment-recipients';
+import { isMissingAddressOrphan, resolveSegmentRecipients, type ResolveSegmentError } from './resolve-segment-recipients';
 import { computeQuotaCounter } from './compute-quota-counter';
 import { readMemberSendStanding } from './_member-send-standing';
 
@@ -732,7 +732,8 @@ export async function submitBroadcast(
   if (!resolved.ok) {
     if (resolved.error.kind === 'resolve.server_error') {
       // Spec 140 s2d (#736c) — the bounded class, never the free-text message.
-      const { errClass } = resolved.error;
+      // Review round 2 — annotated with its type (check:log-error-objects TOKEN_FIELDS_BY_TYPE).
+      const errClass: Extract<ResolveSegmentError, { kind: 'resolve.server_error' }>['errClass'] = resolved.error.errClass;
       logger.error(
         {
           tenantId: deps.tenant.slug,

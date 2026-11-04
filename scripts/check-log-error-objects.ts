@@ -12,11 +12,14 @@
  * `pgErrorMeta(…)`, `errLogFields(…)`, `hashId(…)`, … — the set in the rule),
  * `classifyThrown(…).kind`, `.code` / `.kind` / `.name` of an error, and
  * identifiers named `code` or ending in `Code` / `Kind` / `Class` that are not
- * a caught binding. `logger.child(…)` arguments are read too.
+ * a caught binding nor a local read off an error (review round 2: one hop, or
+ * a local annotated with a `TOKEN_FIELDS_BY_TYPE` type). `logger.child(…)`
+ * arguments are read too.
  *
  * A TRIPWIRE, not proof of completeness: it reads each `logger.<level>(…)`
- * call syntactically, so text laundered through a local or an unknown helper
- * first passes. There is no pragma; rename the value or reduce it to a token.
+ * call syntactically, so text laundered through a call into a local, two
+ * locals, or an unknown helper first passes. There is no pragma; reduce the
+ * value to a token, or annotate a reviewed class field.
  *
  * Positive control: `scripts/__fixtures__/log-error-objects.fixture.txt`
  * holds every refused form, one per line marked `// refused`, and allowed

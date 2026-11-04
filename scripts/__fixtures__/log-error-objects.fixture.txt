@@ -38,6 +38,10 @@ declare class GatewayThrowable extends Error {
 declare class UnlistedError extends Error {
   readonly detailText: string;
 }
+type BuildAudienceTickError =
+  | { readonly kind: 'audience_import_failed'; readonly reason: 'provider_failed' }
+  | { readonly kind: 'audience_import_stuck' };
+declare const tickError: BuildAudienceTickError;
 
 export async function refusedForms(): Promise<void> {
   try {
@@ -142,6 +146,12 @@ export async function allowedForms(): Promise<void> {
     logger.error({ c, k, n }); // allowed
     const subKind: GatewayThrowable['subKind'] | undefined = e instanceof GatewayThrowable ? e.subKind : undefined;
     logger.error({ subKind }); // allowed
+  }
+  {
+    const error = tickError;
+    const reason: Extract<BuildAudienceTickError, { kind: 'audience_import_failed' }>['reason'] | 'audience_import_stuck' =
+      error.kind === 'audience_import_failed' ? error.reason : 'audience_import_stuck';
+    logger.error({ reason }); // allowed
   }
   logger.error({ err: errKind(rootCause(result.error)), repoCode: result.error.code }, 'x'); // allowed
   logger.error({ kind: result.error.kind }, 'x'); // allowed
