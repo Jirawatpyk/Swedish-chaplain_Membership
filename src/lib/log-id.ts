@@ -97,6 +97,11 @@ const RESULT_CODE = /^[a-z0-9_.:-]{1,64}$/;
  *   (`pgErrorCode`) when there is one.
  * - A Result error (`{ code, cause? }`, a RepoError and kin): `err` is the
  *   class of its `cause`, `repoCode` its own code, `code` the cause's SQLSTATE.
+ * - Review round 1 (code-review #8) — a thrown Error that wraps a Result error
+ *   at `.cause`, or at `.error` (where `UseCaseAbort` keeps it; the plan row
+ *   named only `cause`): `err` is the thrown class, `repoCode` the wrapped
+ *   code, `code` the SQLSTATE under it. A driver error is `{ code }`-shaped
+ *   too but is an Error, so it is never read as a wrapped Result error.
  *
  * Spread it: `logger.error({ ...errLogFields(e), requestId }, 'op.failed')`.
  */
@@ -118,6 +123,25 @@ export function errLogFields(failure: unknown): {
       ...(sqlState !== undefined ? { code: sqlState } : {}),
     };
   }
+  const wrapped = failure instanceof Error ? wrappedResultError(failure) : undefined;
+  if (wrapped !== undefined) {
+    const sqlState = pgErrorCode(rootCause(wrapped.error));
+    return {
+      err: errKind(failure),
+      repoCode: RESULT_CODE.test(wrapped.code) ? wrapped.code : 'unrecognised',
+      ...(sqlState !== undefined ? { code: sqlState } : {}),
+    };
+  }
   const sqlState = pgErrorCode(failure);
   return { err: errKind(failure), ...(sqlState !== undefined ? { code: sqlState } : {}) };
+}
+
+/** A Result error (`{ code: string }`, not itself an Error) at a thrown Error's `.cause`, else its `.error`. */
+function wrappedResultError(e: Error): { readonly error: unknown; readonly code: string } | undefined {
+  for (const candidate of [e.cause, (e as { error?: unknown }).error]) {
+    if (typeof candidate !== 'object' || candidate === null || candidate instanceof Error) continue;
+    const code = (candidate as { code?: unknown }).code;
+    if (typeof code === 'string') return { error: candidate, code };
+  }
+  return undefined;
 }
