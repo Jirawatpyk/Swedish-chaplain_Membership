@@ -87,6 +87,7 @@ Also: the new ceiling env, the Segments names, `docs/decisions.md` D-042, go-liv
 | 2a | Bounded Resend calls (one signal spans every attempt, C = 10 s); no in-process retry on creates; the legacy leg skips import rows; `propagate` bounded | DL5a, DL7, DL8, carry R3 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2` | #719 · done |
 | 2b | Lease + fencing token + pre-call check + row-start cutoff; migration 0322 (lease columns + trigger list); the live-lease legacy skip | DL1–DL4, DL9, cell 23, carry R4 | drizzle-migration, security, reliability, spec-compliance | `140-eblast-one-leg-s2b` | #723 · done |
 | 2c | Orphan-id table (migration 0325) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; an audience whose reclaim was undecided (`audience_leaked`, s2b round 2) gets an orphan row and is drained; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | #734 · done |
+| 2d | Close #735 + #736 by fixing them: one Resend draft-answer classifier (behaviour kept); erased requesters drained directly through the members bridge; one stuck predicate (detach cap on the app clock); log hygiene across members + broadcasts (raw Error / RepoError objects and `e.message`) with a gate; a cascade-port contract test. No migration | #735, #736 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2d` | — · open |
 | 3 | Error classes + import-leg table fixes; `listAudiences` per-invocation time budget | DT1–DT5 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
 | 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | — · open |
 
@@ -1694,6 +1695,112 @@ Dev and prod share the broadcasts key, so the account state matches.
 - #3: the detach cap ranks on the DB clock, and pass (b) judges stuck later on the app clock. A row crossing the 2 h age mid-erasure can miss the detach. Stated in RoPA 8d residual 6 and the SQL comment, which claimed it "costs nothing".
 - #5: on a busy tenant, more than 20 newer in-grace rows plus a past-grace backlog can keep an erased requester's row out of both lists past the grace. Stated in RoPA residual (1) and runbook step 4, with a manual settle. The reviewer's root fix (a flag set at erasure) is a new mechanism, left for the s3 or s4 follow-ups.
 - #6: the stuck rule is written three ways (JS, Drizzle, raw SQL). A shared predicate builder is a refactor across two repos.
+
+### Slice 2d — build plan (#735, #736; agreed 4 Nov 2026)
+
+#### Context
+The maintainer asked to close #735 and #736 by fixing them. Both are follow-ups from the s2c review of PR #734 (merged `1ba174afe`):
+- **#735:** collapse the Resend settle tables.
+- **#736:**
+  - an erased requester's drain under load;
+  - one stuck predicate;
+  - log hygiene;
+  - a cascade-port contract test.
+
+**Size L** (`docs/workflow.md` § Sizes): it is on the PII erasure path and spans two modules, members and broadcasts. It runs as one slice of spec 140 (`140-eblast-one-leg-s2d`), before s3, in a worktree cut from `origin/main` (`1ba174afe`). No migration. That matters because #733's 0326 is still pending, and a new number would collide again.
+
+**The maintainer declined the questions, so I chose:**
+- (a) **#735 is a pure refactor.** Every caller keeps today's behaviour, so W_max, the lease budget and the 100 % pins are untouched.
+- (b) **Log hygiene covers every site** (the maintainer chose this): undelete-member, the ~11 raw Error/RepoError object sites and the ~25 raw `e.message` sites in members + broadcasts. A gate stops new ones.
+
+#### Build (RED → GREEN per row; plan rows in `specs/140-eblast-one-leg/plan.md` before GREEN, neighbours named)
+
+##### 1. #735: one Resend draft-answer classifier
+Today there are four tables:
+- `settleTerminalDraft`: `cancel-in-flight-broadcasts-for-member.ts:523`;
+- `settleAtResend` (the in-flight arm): same file, `:472`;
+- `deleteDraftBeforeRefusal` / `…StandingRefusal`: `_dispatch-standing-gate.ts:202` / `:309`;
+- `settleOrphanAtResend`: `_settle-orphan-at-resend.ts:44`.
+
+**The change:**
+- **New** `src/modules/broadcasts/application/use-cases/_classify-resend-draft-answer.ts`. A pure function: (DELETE outcome, optional GET outcome) → a canonical answer `deleted | absent | retained{status} | handed{status, sentAt} | undecided{reason}`.
+- **A second helper**, `settleDraftAtResend(gateway, id, policy)`, runs the calls. Each caller states its policy explicitly:
+  - `confirmAbsent`: pause + GET after a 404; only the orphan and in-flight arms set it;
+  - `probeOn403`: the erased refusal does not probe;
+  - `priorProbe`: the tick's earlier `cancelled`;
+  - how `failed` maps.
+- **Each caller keeps its own result shape and log lines** and maps from the canonical answer. Pinned behaviour and log names do not change.
+- **Tests:**
+  - a table-driven unit for the classifier: every (DELETE × GET) cell, one row each;
+  - the existing caller tests stay as they are and must stay green; they are the proof that behaviour did not change;
+  - the 100 % pin on `_dispatch-standing-gate.ts` is kept.
+
+##### 2. #736a: erased requesters drained directly, no sort tuning
+- **Members bridge:** `MembersBridgePort.listMembersErasedSince(tenant, since, limit)` (`broadcasts/application/ports/members-bridge-port.ts`). It is backed by the members barrel's `listErasedMembers` (`members/infrastructure/db/member-erasure-evidence-reads.ts:97`), which reads newest first: page until `erasedAt < since`. Add a `since` option there if paging is clumsy.
+- **Orphans repo:** `BroadcastOrphansRepo.listUnsettledOrphansForRequesters(ids, limit)`, any type, unsettled, `requested_by_member_id = ANY(...)`, with the same `notHeldByLiveRow` rule. It is tenant-fenced, and the 0325 partial unsettled index covers it.
+- **Drain:**
+  - `since = now - AUDIENCE_CLEANUP_GRACE_MS` (plus a margin);
+  - erased requesters' rows first, then the past-grace list, within `ORPHAN_DRAIN_LIMIT`;
+  - **remove the `inGraceOnly` second list and its option**, which is now redundant.
+- **Docs:** RoPA 8d residual (1) goes back to "drained within one tick" without the busy-tenant caveat; runbook step 4 drops the manual-settle fallback.
+- **Tests:**
+  - drain unit: "25 newer in-grace rows from live members do not hold back an erased requester's row";
+  - repo integration: the requester list;
+  - bridge contract case.
+
+##### 3. #736b: one stuck predicate
+- **Domain** (`domain/value-objects/orphaned-resend-id.ts`): `isOrphanStuck(o, atMs)` replaces the use case's `isStuckAt`.
+- **Infrastructure:** one SQL fragment builder `orphanStuckSql(attemptsCol, createdAtCol, cutoff: Date)`, using `date_trunc('milliseconds', …) <= cutoff`. Both repos use it, and the cutoff is always passed in.
+- **Detach arm:** `listMemberResendAudienceContactsInTx` gains `asOf: Date`. Members passes `deps.clock.now()` (`erase-member.ts:267`) through the derivation port, its adapter and the no-op stub. The cutoff is derived in broadcasts, so SQL `now()` is gone.
+- **Docs:** RoPA residual 6 drops the two-clock clause.
+- **Tests:**
+  - a unit test for `isOrphanStuck`;
+  - a repo integration test: the detach cap and the erasure sort agree for a row at the boundary;
+  - grep `tests/` and `src/` for the symbols, since this is an arity change.
+
+##### 4. #736c: log hygiene
+Change each raw-object site to `err: errKind(rootCause(x))` (or `errKind(e)`) plus `code: pgErrorCode(x)` (and `repoCode` for a RepoError). The model is `erase-member.ts:355`. The sites:
+- `undelete-member.ts:347`;
+- `bulk-action.ts:167`;
+- `bulk-enrol-auto-invoice.ts:241,266`;
+- `bulk-unenrol-auto-invoice.ts:180`;
+- `inline-edit.ts:135`;
+- `resend-bounced-invite.ts:218`;
+- `invite-portal.ts:154`;
+- `invite-user-for-member.ts:366`;
+- `invite-colleague.ts:301`;
+- `broadcasts/infrastructure/members-bridge.ts:455`.
+
+One unit test per behaviour class (raw object never logged), on representative sites. Then:
+- **The ~25 raw `e.message` / `String(e)` sites as well** (the Explore list: members `bulk-action.ts:382`, `create-member.ts:759`, `renewals-cascade-adapter.ts:98,167,269`, …; broadcasts `process-webhook-event.ts:803,843,878`, `_safe-audit-emit.ts:85,141`, `submit-broadcast.ts:738`, …). Each one becomes `err: errKind(e)` plus `code` and, where useful, a code-authored `step`.
+  - Where a site deliberately logs a CODE-AUTHORED reason (e.g. `sanitize-html.ts:59`), keep it only if the text cannot carry input. Otherwise use a fixed enum.
+  - `broadcasts-cascade-adapter.ts:65` is already an `errKind`, so it stays.
+- **A new gate**, `scripts/check-log-error-objects.ts`, wired into `pnpm check`. Inside `logger.*(` calls in `src/modules/**` it refuses:
+  - `err: <identifier>` / `err: x.error` / `cause: x.error`;
+  - `.message` / `String(e)` values.
+
+  The regex is CRLF-safe and the gate has a positive control (D-033 rules).
+
+##### 5. #736d: cascade-port contract test
+`tests/contract/broadcasts-cascade-port.contract.test.ts`, following the `describeContract(name, makePort)` pattern of `tests/contract/event-attendees-port.contract.test.ts`. It runs against `noopBroadcastsCascadeAdapter` and `f7BroadcastsCascadeAdapter` (F7 use case stubbed at its boundary) and asserts:
+- the arms;
+- every count field (`resendDraftsCleared`, `resendCopiesRetained`, `audienceOrphansStuckCount`, …) passed through, and non-negative.
+
+#### Process
+- **Reviews:** `chamber-os-architect` and `pdpa-gdpr-compliance-officer` read the plan before the build.
+- **Builds:** one subagent per part, run in order, with full briefs. The main session runs the gates serially in the foreground (memory is tight). Then `pnpm check` once.
+- **Verify:** hand the maintainer a `/verify` command for the drain path with an erased requester behind 25 live in-grace rows, plus the erase flow.
+- **Review cap:** `/code-review high` plus the surface reviewers, ≥ 2 full + ≤ 2 targeted.
+- **Merge:** only on the word. The PR closes #735 and #736.
+
+#### Verification
+- `pnpm check`, contract, unit for broadcasts + members, and the integration files for erasure, drain and the orphans repo, one at a time.
+- `/verify`, driven by the maintainer, on :3400 against Neon dev:
+  - erase member A;
+  - seed 25 in-grace orphans for live members, plus one young orphan for A;
+  - one cleanup tick → A's row is settled;
+  - erase flow: `member_erased` counts are unchanged from s2c;
+  - wrong Bearer → 401.
 
 ## Rollout
 
