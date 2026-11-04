@@ -576,6 +576,6 @@ describe('sweepOrphanPdfs — bounded logs and the breakdown (#72)', () => {
     const { deps } = makeDeps({ items });
     const r = await sweepOrphanPdfs({ dryRun: true }, deps);
     expect(r).toMatchObject({ kind: 'ok', otherGroups: 10 });
-    expect((r as { breakdown: unknown[] }).breakdown).toHaveLength(50);
+    expect(r.kind === 'ok' && r.breakdown).toHaveLength(50);
   });
 });

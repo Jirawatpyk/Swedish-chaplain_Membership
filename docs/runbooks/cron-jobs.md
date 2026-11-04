@@ -404,10 +404,16 @@ the pins came from the dev branch: a prune there would have deleted live
 certificate scans. **Keep local and preview Blob tokens on a dev-only store.**
 
 **First production rollout.** After the merge the nightly run is a dry run
-(the flag defaults off). Read one night's response or the
-`orphan_pdf_sweep_would_delete` logs: `wouldDelete` should be the handful of
-known orphans, and every `would_delete` line should name a document with no
-committed PDF at that version. A dry run counts toward the 500 cap, so
+(the flag defaults off). Read one run's summary: the `orphan_pdf_sweep_done`
+log line, or `pdfs.breakdown` in the response of a `?dryRun=1` call. The
+breakdown counts every candidate by `docKind × fy × templateVersion`
+(`wouldDelete`, `deleted`, `kept`, `alreadyGone`, `failed`; first 50 groups,
+the rest in `otherGroups`): each `wouldDelete` group should be an older
+template version than the one its documents are on now. Per-key lines
+(`orphan_pdf_sweep_would_delete` / `_deleted` / `_already_gone`, and
+`_failed`) are only a sample of 20 each per run, counted in the summary's
+`suppressedLines`, because Vercel keeps a bounded number of log lines per
+request (the first prod run stopped at 256 and lost its summary, #72). A dry run counts toward the 500 cap, so
 `truncated: true` there is not the whole backlog. Before turning deletes on,
 also check that no receipt email already sent links a key the sweep would
 delete (task #70: before that fix the email linked the key frozen at payment,
