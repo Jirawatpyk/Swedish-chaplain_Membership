@@ -14,7 +14,9 @@
  * a pinned hex value, preventing a silent log-correlation break.
  */
 import { describe, expect, it } from 'vitest';
-import { hashId } from '@/lib/log-id';
+import { DrizzleQueryError } from 'drizzle-orm';
+import { errLogFields, hashId } from '@/lib/log-id';
+import { UseCaseAbort } from '@/modules/members/application/tx-abort';
 
 describe('hashId() — djb2 log-correlation hash', () => {
   it('produces a stable, pinned output for a known input', () => {
@@ -66,5 +68,42 @@ describe('hashId() — djb2 log-correlation hash', () => {
     for (const s of samples) {
       expect(hashId(s).length).toBeLessThanOrEqual(8);
     }
+  });
+});
+
+/**
+ * Spec 140 s2d review round 1 (code-review #8) — a thrown Error that wraps a
+ * RepoError. The plan row named only `cause`; `UseCaseAbort` keeps its
+ * RepoError at `.error`, so both are read (`cause` first).
+ */
+describe('errLogFields() — a thrown Error wrapping a RepoError', () => {
+  const pg = Object.assign(new Error('duplicate key value violates unique constraint "c"'), { code: '23505' });
+  const repoError = { code: 'repo.unexpected', cause: new DrizzleQueryError('insert into t values ($1)', ['a@x.io'], pg) };
+
+  it('a UseCaseAbort carrying a RepoError logs its repoCode and SQLSTATE', () => {
+    expect(errLogFields(new UseCaseAbort(repoError))).toEqual({
+      err: 'UseCaseAbort',
+      repoCode: 'repo.unexpected',
+      code: '23505',
+    });
+  });
+
+  it('an Error whose cause is a RepoError logs its repoCode and SQLSTATE', () => {
+    expect(errLogFields(new Error('lookup_failed', { cause: repoError }))).toEqual({
+      err: 'Error',
+      repoCode: 'repo.unexpected',
+      code: '23505',
+    });
+  });
+
+  it('a wrapped code that is not a closed token is "unrecognised"; a plain Error adds no repoCode', () => {
+    expect(errLogFields(new UseCaseAbort({ code: 'Key (email)=(a@x.io)' }))).toEqual({
+      err: 'UseCaseAbort',
+      repoCode: 'unrecognised',
+    });
+    expect(errLogFields(new Error('boom'))).toEqual({ err: 'Error' });
+    expect(errLogFields(pg)).toEqual({ err: 'Error', code: '23505' });
+    // A driver error is `{ code }`-shaped too, but an Error: it is the SQLSTATE, never a repoCode.
+    expect(errLogFields(repoError.cause)).toEqual({ err: 'DrizzleQueryError', code: '23505' });
   });
 });
