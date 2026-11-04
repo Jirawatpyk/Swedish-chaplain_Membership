@@ -1102,6 +1102,45 @@ describe('markPaidOffline — error paths', () => {
     },
   );
 
+  // #730 (task 65) — the DB coverage EXCLUDE refused the issue: another
+  // committed bill already covers this period, so a retry can never pass.
+  // With the blocking bill named, it is the same fact as the pre-flight guard
+  // (`membership_bill_already_exists` + deep-link); without it, a permanent
+  // code of its own — never the transient "please try again".
+  it('#730: a coverage overlap naming its blocking bill → membership_bill_already_exists', async () => {
+    const cycle = buildCycle();
+    const { deps } = fakeDeps(cycle, async () => ({
+      ok: false,
+      error: {
+        kind: 'issue_invoice_failed',
+        reason: 'membership_coverage_overlap',
+        blocking: { invoiceId: 'inv-blocking', status: 'paid' },
+      },
+    }));
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toEqual({
+        kind: 'membership_bill_already_exists',
+        existingInvoiceId: 'inv-blocking',
+        existingStatus: 'paid',
+      });
+    }
+  });
+
+  it('#730: a coverage overlap with no blocking bill → f4_permanent_failure membership_coverage_overlap', async () => {
+    const cycle = buildCycle();
+    const { deps } = fakeDeps(cycle, async () => ({
+      ok: false,
+      error: { kind: 'issue_invoice_failed', reason: 'membership_coverage_overlap', blocking: null },
+    }));
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toEqual({ kind: 'f4_permanent_failure', reason: 'membership_coverage_overlap' });
+    }
+  });
+
   it('returns f4_orphan_invoice when bridge reports record_payment_failed', async () => {
     const cycle = buildCycle();
     const { deps } = fakeDeps(cycle, async () => ({

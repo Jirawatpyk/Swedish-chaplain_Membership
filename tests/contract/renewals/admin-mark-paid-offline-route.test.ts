@@ -286,6 +286,21 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     expect(body.error).not.toHaveProperty('stage');
   });
 
+  // #730 — a coverage overlap with no blocking bill found is a permanent
+  // conflict (another committed bill covers the period): 409, its own code,
+  // never the transient f4_failure.
+  it('#730 409 membership_coverage_overlap — permanent, its own code', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    markPaidOfflineMock.mockResolvedValueOnce(
+      err({ kind: 'f4_permanent_failure', reason: 'membership_coverage_overlap' }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('membership_coverage_overlap');
+  });
+
   it('400 invalid_body when payment_reference is PAN-like (W-01)', async () => {
     // Round 6 S-R5-2 — contract-layer guard so a future regression
     // that drops the zod `refine` cannot land silently. 16 consecutive

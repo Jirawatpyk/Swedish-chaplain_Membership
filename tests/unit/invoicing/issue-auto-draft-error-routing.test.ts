@@ -95,6 +95,16 @@ describe('routeIssueAutoDraftError', () => {
     });
   });
 
+  it('#730 the EXCLUDE race naming the blocking bill carries its id, so the queue links it', () => {
+    expect(
+      routeIssueAutoDraftError({
+        code: 'issue_failed',
+        error_code: 'membership_coverage_overlap',
+        conflicting_invoice_id: 'inv-blocking',
+      }),
+    ).toEqual({ kind: 'refusal_reason', reasonKey: 'duplicateLiveBill', conflictingInvoiceId: 'inv-blocking' });
+  });
+
   it('an unrecognised or missing code falls back to the generic issueFailed copy', () => {
     expect(routeIssueAutoDraftError({ code: 'something_new' })).toEqual({
       kind: 'generic',

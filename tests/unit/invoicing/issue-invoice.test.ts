@@ -416,6 +416,62 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     );
   });
 
+  // #730 (task 65) — the EXCLUDE does not say which bill it collided with, so
+  // after the rollback the use case reads the committed bill whose coverage
+  // overlaps this draft's, and names it (the dialog and the renewals surfaces
+  // link to it). The read is best-effort: it never masks the refusal.
+  function overlapDeps() {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    const pgErr = Object.assign(
+      new Error('conflicting key value violates exclusion constraint "invoices_membership_coverage_no_overlap"'),
+      { code: '23P01', constraint_name: 'invoices_membership_coverage_no_overlap' },
+    );
+    deps.invoiceRepo.applyIssue = vi.fn(async () => {
+      throw Object.assign(new Error('Failed query'), { cause: pgErr });
+    });
+    return deps;
+  }
+  const BLOCKING = {
+    invoiceId: '99999999-9999-4999-8999-999999999999',
+    status: 'paid' as const,
+    documentNumber: 'RC-2026-000042',
+    totalSatang: 1_070_000n,
+  };
+
+  it('#730: membership_coverage_overlap names the committed bill that blocks it', async () => {
+    const deps = overlapDeps();
+    deps.invoiceRepo.findCoverageBlockingBillInTx = vi.fn(async () => BLOCKING);
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toEqual({ code: 'membership_coverage_overlap', blocking: BLOCKING });
+    }
+    expect(deps.invoiceRepo.findCoverageBlockingBillInTx).toHaveBeenCalledWith(expect.anything(), {
+      tenantId: 'test-swecham',
+      invoiceId: INVOICE_ID,
+    });
+  });
+
+  it('#730: a failed blocking-bill read leaves the refusal intact, with blocking null', async () => {
+    const deps = overlapDeps();
+    deps.invoiceRepo.findCoverageBlockingBillInTx = vi.fn(async () => {
+      throw new Error('connection reset');
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toEqual({ code: 'membership_coverage_overlap', blocking: null });
+  });
+
+  it('#730: no blocking-bill read on any other refusal', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    deps.invoiceRepo.applyIssue = vi.fn(async () => {
+      throw new InvoiceApplyConflictError('applyIssue');
+    });
+    deps.invoiceRepo.findCoverageBlockingBillInTx = vi.fn(async () => BLOCKING);
+    await issueInvoice(deps, input);
+    expect(deps.invoiceRepo.findCoverageBlockingBillInTx).not.toHaveBeenCalled();
+  });
+
   it('a 23P01 on a DIFFERENT exclusion constraint is NOT mapped to invoice_already_issued (constraint-specific)', async () => {
     // Specificity: only the membership-coverage EXCLUDE maps to the duplicate
     // error; any other 23P01 must surface through its normal (unexpected) path,
