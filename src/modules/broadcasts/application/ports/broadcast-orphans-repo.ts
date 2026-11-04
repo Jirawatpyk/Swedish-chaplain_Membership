@@ -100,7 +100,9 @@ export interface BroadcastOrphansRepo {
    * Spec 140 s2d (#736a) — the DISTINCT `requested_by_member_id` of the
    * unsettled rows with a known id created at or after `graceCutoff`, at most
    * `cap`. The drain asks the members bridge which of them are erased. No
-   * holder rule here: the row read below applies it.
+   * holder rule here: the row read below applies it. Review round 1: ordered
+   * by each requester's newest row first (`max(created_at) DESC`), so a capped
+   * list holds the requester whose orphan was written last.
    */
   listInGraceRequesterIds(graceCutoff: Date, cap: number): Promise<ReadonlyArray<string>>;
 
@@ -108,8 +110,9 @@ export interface BroadcastOrphansRepo {
    * Spec 140 s2d (#736a) — the unsettled rows with a known id of the given
    * requesters, of ANY age and type, under the SAME holder rule as
    * `listDrainableOrphans` (the audience grace included, B2), `ORDER BY
-   * attempts, created_at, orphan_id`, at most `limit`. Empty ids → `[]` with
-   * no query.
+   * (created_at >= audienceGraceCutoff) DESC, attempts, created_at,
+   * orphan_id` (review round 1: in-grace rows first, which only this read
+   * reaches), at most `limit`. Empty ids → `[]` with no query.
    */
   listUnsettledOrphansForRequesters(
     requestedByMemberIds: ReadonlyArray<string>,
