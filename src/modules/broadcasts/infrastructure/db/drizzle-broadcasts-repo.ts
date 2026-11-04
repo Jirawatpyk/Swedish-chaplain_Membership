@@ -55,7 +55,11 @@ import {
   TRANSITION_FIELDS,
 } from '../../application/ports/broadcasts-repo';
 import { CASCADE_CANCELLATION_REASONS } from '../../domain/value-objects/cascade-cancellation-reason';
-import { ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT } from '../../domain/value-objects/orphaned-resend-id';
+import {
+  ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT,
+  ORPHAN_STUCK_ATTEMPTS,
+  ORPHAN_STUCK_MIN_AGE_MS,
+} from '../../domain/value-objects/orphaned-resend-id';
 import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
@@ -2693,6 +2697,12 @@ export function makeDrizzleBroadcastsRepo(
      * past the cap is not detached; the erasure's audience pass and the drain
      * delete its audience outright (RoPA 8d names the residual).
      *
+     * Review round 4 (code-review #2) — STUCK orphans first (the stuck rule of
+     * `ORPHAN_STUCK_ATTEMPTS`: tries AND `ORPHAN_STUCK_MIN_AGE_MS`), then most
+     * attempts, then the oldest. Pass (b) releases a stuck audience rather
+     * than deleting it, so the stuck ones get the detach first. `now()` is the
+     * scrub transaction's clock; it only orders the rows.
+     *
      * Review round 3 (security INFO-2) — this SELECT runs INSIDE the members
      * scrub transaction (`broadcasts-audience-derivation-adapter.ts`), so a
      * grant or RLS regression on `broadcast_orphaned_resend_ids` aborts the
@@ -2792,6 +2802,11 @@ export function makeDrizzleBroadcastsRepo(
         -- first (the stuck ones), then the oldest; past the cap, pass (b) and
         -- the drain delete the audience outright. Every name in the capped
         -- subquery is qualified (alias capped) and fenced on the tenant.
+        -- Review round 4 (code-review #2) — STUCK rows rank first (tries at
+        -- ORPHAN_STUCK_ATTEMPTS or more AND older than ORPHAN_STUCK_MIN_AGE_MS):
+        -- pass (b) releases a stuck audience rather than deleting it, so it
+        -- gets the detach first. now() is the scrub tx clock; it only orders
+        -- the rows, so a row that crosses the age mid-erasure costs nothing.
         SELECT DISTINCT o.resource_id AS audience_id,
                         e.email AS email
         FROM (
@@ -2801,7 +2816,9 @@ export function makeDrizzleBroadcastsRepo(
             AND capped.resource_type = 'audience'
             AND capped.settled_at IS NULL
             AND capped.resource_id IS NOT NULL
-          ORDER BY capped.attempts DESC, capped.created_at ASC, capped.orphan_id ASC
+          ORDER BY (capped.attempts >= ${ORPHAN_STUCK_ATTEMPTS}::int
+                    AND capped.created_at <= now() - (${ORPHAN_STUCK_MIN_AGE_MS}::bigint * interval '1 millisecond')) DESC,
+                   capped.attempts DESC, capped.created_at ASC, capped.orphan_id ASC
           LIMIT ${ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT}
         ) o
         CROSS JOIN unnest(${emailArray}) AS e(email)
