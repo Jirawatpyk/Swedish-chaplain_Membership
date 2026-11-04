@@ -573,7 +573,7 @@ describe('sweepOrphanPdfs — bounded logs and the breakdown (#72)', () => {
     expect(r).toMatchObject({ kind: 'ok', otherGroups: none });
     expect(done(raw)[0]![0]).toMatchObject({ otherGroups: none });
     // Groups with something to act on come first, then the kept-only ones.
-    const rows = (r as { breakdown: typeof expected }).breakdown;
+    const rows = (r as unknown as { breakdown: typeof expected }).breakdown;
     expect(rows).toEqual([expected[0], expected[2], expected[3], expected[4], expected[1]]);
     expect(done(raw)[0]![0]).toMatchObject({ breakdown: rows });
     // The breakdown adds up to the top-level counters.

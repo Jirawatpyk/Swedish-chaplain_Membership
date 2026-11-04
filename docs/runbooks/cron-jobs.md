@@ -409,12 +409,27 @@ log line, or `pdfs.breakdown` in the response of a `?dryRun=1` call. The
 breakdown counts every candidate by `docKind × fy × templateVersion`
 (`wouldDelete`, `deleted`, `kept`, `alreadyGone`, `failed`; first 50 groups,
 the rest in `otherGroups`): each `wouldDelete` group should be an older
-template version than the one its documents are on now. Per-key lines
-(`orphan_pdf_sweep_would_delete` / `_deleted` / `_already_gone`, and
-`_failed`) are only a sample of 20 each per run, counted in the summary's
-`suppressedLines`, because Vercel keeps a bounded number of log lines per
-request (the first prod run stopped at 256 and lost its summary, #72). A dry run counts toward the 500 cap, so
-`truncated: true` there is not the whole backlog. Before turning deletes on,
+template version than the one its documents are on now. Groups with
+something to act on are listed first; `otherGroups` keeps the totals of any
+groups past 50.
+
+**Log lines are a sample (#72).** Vercel keeps a bounded number of log lines
+per request; the first prod run stopped at 256 and lost its summary.
+- Each per-key info event (`orphan_pdf_sweep_would_delete`, `_deleted`,
+  `_already_gone`) logs its first 20 keys per run.
+- `orphan_pdf_sweep_failed` logs a random sample of 20 failures, drawn over
+  the whole run, so a key that fails every night is named eventually. They
+  are written just before the summary. The summary also lists
+  `failedTenants`.
+- Anything left out is counted in `suppressedLines` (in both the summary and
+  the response).
+- The route also caps every non-summary line of the request at 200, across
+  both halves, cert prune included. The summaries
+  (`zero_rate_cert_prune_completed`, `orphan_pdf_sweep_done`, `_truncated`)
+  always pass. The response gives the count as `suppressedLogLines`.
+
+A dry run counts toward the 500 cap, so `truncated: true` there is not the
+whole backlog. Before turning deletes on,
 also check that no receipt email already sent links a key the sweep would
 delete (task #70: before that fix the email linked the key frozen at payment,
 which a reconciled render after a template bump did not write). Read-only,
@@ -432,7 +447,8 @@ on production (the PDF half still obeys the delete gate; off production the
 cert prune is skipped). Response:
 `{ ok, deletesEnabled, certs: { scanned, swept, skipped, cutoff }, pdfs: {
 dryRun, tenants, tenantsCompleted, scanned, deleted, wouldDelete, kept,
-skippedYoung, skippedUnknown, failed, alreadyGone, listFailed, truncated } }`.
+skippedYoung, skippedUnknown, failed, alreadyGone, listFailed, truncated,
+breakdown, otherGroups, suppressedLines }, suppressedLogLines }`.
 `truncated: true` means it stopped at 500 deletions or the 240 s budget, or a listing page said there was
 more but gave no cursor (WARN `orphan_pdf_sweep_truncated` /
 `orphan_pdf_sweep_cursor_missing`); the next run continues, tenants in id order.
