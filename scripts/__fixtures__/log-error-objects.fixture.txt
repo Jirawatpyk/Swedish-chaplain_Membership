@@ -148,6 +148,48 @@ export async function refusedForms(): Promise<void> {
     const castReason: BuildAudienceTickError['reason'] = (e as any).reason;
     logger.error({ castReason }); // refused
   }
+  // Review round 4 (code-review #1–#3; security L2) — a reassignment taint
+  // survives an outer declaration, and compound and destructuring assignment,
+  // a for-of over an earlier binding and `await` taint too.
+  {
+    let crossBlock = 'none';
+    try {
+      await Promise.resolve();
+    } catch (e) {
+      crossBlock = e.message;
+      logger.error({ crossBlock }); // refused
+    }
+  }
+  try {
+    await Promise.resolve();
+  } catch (e) {
+    let plusEq = 'failed: ';
+    plusEq += e.message;
+    logger.error({ plusEq }); // refused
+    let orEq: string | undefined;
+    orEq ||= e.message;
+    logger.error({ orEq }); // refused
+    let nullishEq: string | undefined;
+    nullishEq ??= e.message;
+    logger.error({ nullishEq }); // refused
+    let renamed = '';
+    ({ message: renamed } = e);
+    logger.error({ renamed }); // refused
+    let message = '';
+    ({ message } = e);
+    logger.error({ message }); // refused
+    let first = '';
+    [first] = e.errors;
+    logger.error({ first }); // refused
+    let looped;
+    for (looped of e.errors) logger.error({ looped }); // refused
+    let last;
+    for (last of e.errors) void last;
+    logger.error({ last }); // refused
+    const body = await e.response.text();
+    logger.error({ body }); // refused
+    logger.error({ body: await e.response.text() }); // refused
+  }
 }
 
 export async function allowedForms(): Promise<void> {
@@ -185,5 +227,11 @@ export async function allowedForms(): Promise<void> {
     // Review round 3 — a template over a token field stays a token.
     const label = `failed:${e.code}`;
     logger.error({ label }); // allowed
+    // Review round 4 — a token field destructured by assignment stays a token.
+    let tokenCode = '';
+    ({ code: tokenCode } = e);
+    logger.error({ tokenCode }); // allowed
+    const awaitedKind = await classifyThrown(e).kind;
+    logger.error({ awaitedKind }); // allowed
   }
 }
