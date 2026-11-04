@@ -910,6 +910,7 @@ async function dispatchOne(
     // `receipt_pdf_status='rendered'` and re-queue (without bumping
     // attempts) when still pending — the next cron tick re-evaluates
     // after the worker uploads.
+    let receiptKeyOverride: string | null = null;
     if (
       row.notificationType === 'invoice_auto_email' &&
       (row.contextData as Record<string, unknown>).depends_on_receipt_pdf === true
@@ -919,8 +920,8 @@ async function dispatchOne(
       if (invoiceId && row.tenantId) {
         const tenantCtx = asTenantContext(row.tenantId);
         const [invRow] = await runInTenant(tenantCtx, async () =>
-          tx.execute<{ receipt_pdf_status: string | null }>(
-            sqlTag`SELECT receipt_pdf_status FROM invoices
+          tx.execute<{ receipt_pdf_status: string | null; receipt_pdf_blob_key: string | null }>(
+            sqlTag`SELECT receipt_pdf_status, receipt_pdf_blob_key FROM invoices
                    WHERE tenant_id = ${row.tenantId} AND invoice_id = ${invoiceId}
                    LIMIT 1`,
           ),
@@ -984,7 +985,36 @@ async function dispatchOne(
             .where(eq(notificationsOutbox.id, row.id));
           return 'skipped';
         }
-        // status === 'rendered' → fall through to dispatch.
+        // status === 'rendered'. Task #70 — link the key the row holds,
+        // never the key frozen into the outbox context at payment: the
+        // reconcile cron re-enqueues a stuck render with the invoice's
+        // issue-time template version, so after a template bump the worker
+        // writes `_receipt_v{issue}` while the context names
+        // `_receipt_v{current}` — a stray the orphan sweep deletes.
+        if (!invRow.receipt_pdf_blob_key) {
+          // Rendered with no key is an inconsistent row: fail closed so the
+          // email exits via the permanent-fail ladder, never a dead link.
+          await tx
+            .update(notificationsOutbox)
+            .set({
+              attempts: row.attempts + 1,
+              nextRetryAt: new Date(now.getTime() + 60_000),
+              lastError:
+                'receipt_pdf_gate_skip:rendered_without_key — receipt_pdf_status=rendered but receipt_pdf_blob_key is null',
+              updatedAt: now,
+            })
+            .where(eq(notificationsOutbox.id, row.id));
+          return 'skipped';
+        }
+        if (invRow.receipt_pdf_blob_key !== ctx.pdf_blob_key) {
+          // No keys in the log: the store is public by URL (PG-1).
+          logger.warn(
+            { requestId, outboxRowId: row.id, invoiceId },
+            'outbox.receipt_key_rebound — sending the rendered receipt key, not the key frozen at payment',
+          );
+          receiptKeyOverride = invRow.receipt_pdf_blob_key;
+        }
+        // Fall through to dispatch.
       } else {
         // Defensive: gate flag set but no invoice_id / tenant_id —
         // malformed context_data. Bump attempts so it exits via
@@ -1055,7 +1085,12 @@ async function dispatchOne(
       return 'permanent';
     }
 
-    const built = await buildPayload(row, prefetchedBytes);
+    const built = await buildPayload(
+      receiptKeyOverride === null
+        ? row
+        : { ...row, contextData: { ...(row.contextData as Record<string, unknown>), pdf_blob_key: receiptKeyOverride } },
+      prefetchedBytes,
+    );
     // F114 — a deterministic miss (request / recipient gone) permanent-fails
     // on the first tick; `null` and a named transient (#400 item 4:
     // `read_failed`) keep the retry ladder below, each under its own reason.
