@@ -35,7 +35,8 @@
  * it: each attempt mints a FRESH `creditNoteId` via `randomUUID()` (line
  * ~200), so the blob key is unique per attempt — a retry never collides
  * with a prior attempt's orphan, and re-render byte-drift cannot corrupt a
- * later success. The orphan is at worst dead bytes a future sweeper reclaims.
+ * later success. The orphan is at worst dead bytes the daily orphan PDF sweep
+ * reclaims (#729, `sweep-orphan-pdfs`).
  *
  * RBAC: admin only (route handler guard).
  * Concurrent race: two admins issuing partial credit notes against the

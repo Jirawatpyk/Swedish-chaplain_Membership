@@ -55,6 +55,7 @@ gone on Pro.
 | **F4 redact-expired-event-buyers** (054 Task 15) | **`POST /api/cron/invoicing/redact-expired-event-buyers`** | **`0 5 * * *`** (daily 05:00 UTC = 12:00 ICT) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F4 redact-expired-event-buyers) |
 | **redact-expired-member-invoices** (COMP-1 US3-B) | **`POST /api/cron/invoicing/redact-expired-member-invoices`** | **`0 5 * * *`** (daily 05:00 UTC = 12:00 ICT) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § COMP-1 redact-expired-member-invoices) |
 | **088 prune-orphaned-zero-rate-certs** (US8 UX-B2) | **`POST /api/cron/invoicing/prune-orphaned-zero-rate-certs`** | **`0 21 * * *`** (daily 21:00 UTC = 04:00 ICT next day) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § 088 prune-orphaned-zero-rate-certs) |
+| **063 sweep-orphan-pdfs** (#729) | **`GET /api/cron/invoicing/sweep-orphan-pdfs`** | **`37 21 * * *`** (daily 21:37 UTC = 04:37 ICT next day) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § 063 sweep-orphan-pdfs) |
 | **F7 broadcasts dispatch** | **`POST /api/cron/broadcasts/dispatch-scheduled`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 dispatch) |
 | **F7 reconcile-stuck-sending** | **`POST /api/cron/broadcasts/reconcile-stuck-sending`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 reconcile) |
 | **F7 prune-expired-drafts** | **`POST /api/cron/broadcasts/prune-expired-drafts`** | **`30 4 * * *`** (daily 04:30 UTC) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 prune-drafts) |
@@ -164,7 +165,7 @@ with the exceptions below):
 | F7 `dispatch-scheduled` | Catches up — on the first tick every overdue `approved` E-Blast is re-checked against its member's standing: a **suspended** member's is **HELD** (stays `approved`, sends once the member pays); a **halted** or **terminated** member's is **REFUSED** permanently (`failed_to_dispatch`, member emailed, slot released); the rest send. See [eblast-approval.md § Dispatch standing refusal](./eblast-approval.md#dispatch-standing-refusal) | Nothing on a clean row: the FR-021 retry hour counts from the first retryable Resend failure (`dispatch_first_failed_at`, mig `0311`), not from `scheduled_for`. **Residual (not fixed, by design — a paused cron cannot write):** a row that had ALREADY failed before the freeze keeps its clock, so a freeze longer than the rest of its hour makes its next retryable failure terminal (a hold, by contrast, resets the clock every tick). **Mitigation:** after lifting a long freeze, clear the clock with SQL — `UPDATE broadcasts SET dispatch_first_failed_at = NULL WHERE status = 'approved' AND dispatch_first_failed_at IS NOT NULL` (`broadcasts` is RLS + FORCE: as the migration owner, or after `SET LOCAL app.current_tenant = '<tenant>'` once per tenant; `eblast-approval.md` § Dispatch standing refusal). Re-timing from the staff page is NOT a general substitute: confirm-schedule refuses a legacy-approved row (`current_round = 0`, `round_zero`) and a row a tick already handed to Resend (`resend_broadcast_id` or `audience_import_id` set, `sending_started`); it clears the clock only on a round ≥ 1 row with neither id. (An import-leg row HELD on tick 2 carries neither once the first held tick has abandoned its pending import, so it can be re-timed.) |
 | `auto-draft-coordinator` | Catches up inside the lead window | A cycle whose `expires_at` passes during the freeze never gets an auto-draft (window `expires_at > now AND <= now + lead`, lead ≈ 30 days) — only a freeze of about a month reaches this. |
 | `enter-awaiting-payment`, `lapse-cycles-on-grace-expiry`, `prune-auto-drafts`, `reconcile-issued-orphans`, `reconcile-coverage-ends`, weekly at-risk / tier-upgrade / prune-consumed-tokens / reconcile-pending-applications | Catch up fully | Predicates compare against `now` or current state. A late lapse still waits for its 14-day statutory warning. |
-| Redactions, retention sweeps, `outbox-purge`, `prune-orphaned-zero-rate-certs`, `prune-expired-invitations`, `lockout-cleanup`, `reclaim-orphan-audiences`, `cleanup-audiences`, `reconcile-stuck-sending`, `reconcile-erasures`, F9 export jobs + snapshot refresh | Catch up fully | Cutoffs are `now − retention`; `sweep-error-csv-blobs` drains 100 per run, so a backlog takes several days. An expired lockout is already ignored at sign-in; the cron only tidies the row. |
+| Redactions, retention sweeps, `outbox-purge`, `prune-orphaned-zero-rate-certs`, `sweep-orphan-pdfs`, `prune-expired-invitations`, `lockout-cleanup`, `reclaim-orphan-audiences`, `cleanup-audiences`, `reconcile-stuck-sending`, `reconcile-erasures`, F9 export jobs + snapshot refresh | Catch up fully | Cutoffs are `now − retention`; `sweep-error-csv-blobs` drains 100 per run, so a backlog takes several days. An expired lockout is already ignored at sign-in; the cron only tidies the row. |
 
 **Operator checklist when lifting a freeze that lasted more than a day:** watch
 the first `dispatch-scheduled` and `outbox-dispatch` ticks for Resend errors;
@@ -357,6 +358,46 @@ event-buyer cron to credit notes if the case is reachable).
 ### Handler module
 
 `src/app/api/cron/invoicing/redact-expired-member-invoices/route.ts`
+
+## 063 — sweep-orphan-pdfs (#729)
+
+Daily reclaim of invoice, receipt and credit-note PDFs that no row references.
+Issue, issue-as-paid, record payment and the credit-note issue upload their PDF
+to a deterministic key inside the transaction
+(`invoicing/{tenant}/{fy}/{invoiceId}_v{n}.pdf`, `…_receipt_v{n}.pdf`,
+`…/credit-note_{id}_v{n}.pdf`). The catch-path cleanup covers a use case that
+fails by itself; this sweep covers the rest: a function killed after the
+upload, a caller-owned transaction that rolled back after the use case
+returned ok, a void instead of a retry, and a template bump that left `_v{n}`
+behind (see `record-payment-unconfirmed.md` § 2).
+
+**Keep rule.** A key is kept iff the row it names references exactly that key.
+Invoice and receipt keys are re-checked under the invoice `FOR UPDATE` lock and
+deleted while it is held, conditional on the listed etag; credit-note keys are
+checked against `credit_notes.pdf_blob_key` and deleted on the etag. Only keys
+at least 1 h old are looked at. `logos/`, `zero-rate-certs/` and any other
+shape are never touched. A failed check keeps the key until the next run.
+
+**Run it.** `curl -H "Authorization: Bearer $CRON_SECRET" "https://<host>/api/cron/invoicing/sweep-orphan-pdfs?dryRun=1"`
+reports `wouldDelete` and deletes nothing; drop `?dryRun=1` for a real run.
+Response: `{ ok, dryRun, tenants, scanned, deleted, wouldDelete, kept,
+skippedYoung, skippedUnknown, failed, truncated }`. `truncated: true` means it
+stopped at 500 deletions or 240 s; the next run continues.
+
+**Alarm.** `invoicing_orphan_blob_cleanup_failed_total{use_case="sweeper"}` and
+the `orphan_pdf_sweep_failed` ERROR log (key, document id, doc kind): a check
+or delete failed, and the key stays until the next night. A sustained 500
+`scan_failed` means the tenant list read failed.
+
+**Safety.** It never deletes a committed document's file: every committed PDF
+is the key its row references. A deleted orphan was never sent (its email
+outbox row rolled back with it). Not audited: the bytes never became a tax
+document. READ_ONLY_MODE skips it; it catches up fully.
+
+### Handler module
+
+`src/app/api/cron/invoicing/sweep-orphan-pdfs/route.ts` → `src/lib/invoicing-orphan-pdf-sweep-deps.ts` →
+`src/modules/invoicing/application/use-cases/sweep-orphan-pdfs.ts`
 
 ## 088 — prune-orphaned-zero-rate-certs (NEW — US8 UX-B2)
 
@@ -1273,7 +1314,7 @@ on cron-job.org in **Asia/Bangkok** (UTC+7) are shifted **−7h** in
 uniformly. Weekly F8 jobs also shift day-of-week (Sun ICT → Sat UTC;
 Sat ICT → Fri UTC).
 
-### Authoritative `vercel.json` ↔ logical-schedule mapping (39 jobs)
+### Authoritative `vercel.json` ↔ logical-schedule mapping (40 jobs)
 
 Pro plan limit is 40 cron jobs/project — **39 used, 1 headroom** (counted from
 `vercel.json` on 2026-09-25, with the 0310 `retention-sweep` added; the count
@@ -1321,6 +1362,7 @@ not at review. The table below had drifted too: it listed 36 of the 39 until
 | `/api/cron/invoicing/redact-expired-event-buyers` | `0 5 * * *` | 05:00 UTC (12:00 ICT) | GET+POST |
 | `/api/cron/invoicing/redact-expired-member-invoices` | `0 5 * * *` | 05:00 UTC (12:00 ICT) | GET+POST |
 | `/api/cron/invoicing/prune-orphaned-zero-rate-certs` | `0 21 * * *` | 21:00 UTC (04:00 ICT next day) | GET+POST |
+| `/api/cron/invoicing/sweep-orphan-pdfs` | `37 21 * * *` | 21:37 UTC (04:37 ICT next day) | GET+POST |
 | `/api/internal/retention/sweep-eventcreate-idempotency` | `30 20 * * *` | **03:30 ICT** (20:30 UTC) | GET+POST |
 | `/api/internal/retention/pseudonymise-eventcreate` | `0 21 * * *` | **04:00 ICT** (21:00 UTC) | GET+POST |
 | `/api/internal/retention/sweep-error-csv-blobs` | `0 22 * * *` | 22:00 UTC (05:00 ICT) | GET+POST |

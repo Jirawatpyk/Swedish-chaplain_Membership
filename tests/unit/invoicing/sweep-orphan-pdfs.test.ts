@@ -58,10 +58,13 @@ function makeDeps(opts: {
 }) {
   const rows = opts.rows ?? {};
   const store = new Map(opts.items.map((i) => [i.key, i]));
+  const listing = [...opts.items];
   const pageSize = opts.pageSize ?? 1000;
   const blob = {
     listPage: vi.fn(async (prefix: string, cursor: string | undefined, limit: number) => {
-      const all = [...store.values()].filter((i) => i.key.startsWith(prefix));
+      // A snapshot of the listing: a delete does not shift a later page
+      // (Blob cursors are opaque positions, not offsets into a live array).
+      const all = listing.filter((i) => i.key.startsWith(prefix));
       const start = cursor ? Number(cursor) : 0;
       const n = Math.min(limit, pageSize);
       const items = all.slice(start, start + n);
@@ -196,9 +199,9 @@ describe('sweepOrphanPdfs (#729)', () => {
     const { deps, store } = makeDeps({
       items: [item(receiptKey(INV))],
       rows: { [INV]: { pdf: null, receiptPdf: null } },
+      // A retry overwrote the key after the listing, before the lock.
+      onLock: () => store.set(receiptKey(INV), { ...store.get(receiptKey(INV))!, etag: 'etag-new' }),
     });
-    // A retry overwrote the key after the listing.
-    store.set(receiptKey(INV), { ...store.get(receiptKey(INV))!, etag: 'etag-new' });
     const r = await sweepOrphanPdfs({}, deps);
     expect(store.has(receiptKey(INV))).toBe(true);
     expect(r).toMatchObject({ kept: 1, deleted: 0 });

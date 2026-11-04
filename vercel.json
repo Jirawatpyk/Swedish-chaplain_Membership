@@ -37,6 +37,7 @@
     { "path": "/api/cron/invoicing/redact-expired-event-buyers", "schedule": "0 5 * * *" },
     { "path": "/api/cron/invoicing/redact-expired-member-invoices", "schedule": "0 5 * * *" },
     { "path": "/api/cron/invoicing/prune-orphaned-zero-rate-certs", "schedule": "0 21 * * *" },
+    { "path": "/api/cron/invoicing/sweep-orphan-pdfs", "schedule": "37 21 * * *" },
 
     { "path": "/api/internal/retention/sweep-eventcreate-idempotency", "schedule": "30 20 * * *" },
     { "path": "/api/internal/retention/pseudonymise-eventcreate", "schedule": "0 21 * * *" },

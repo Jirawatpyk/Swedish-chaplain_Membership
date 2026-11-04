@@ -13,6 +13,7 @@ import {
   BlobKeyNotFoundError,
   type BlobStoragePort,
 } from '../../application/ports/blob-storage-port';
+import type { OrphanPdfBlobPage, OrphanPdfBlobPort } from '../../application/ports/orphan-pdf-blob-port';
 import { env } from '@/lib/env';
 
 /** #60 — upper bound on one Blob delete, retries included. */
@@ -37,7 +38,7 @@ async function headForRead(key: string): Promise<{ readonly url: string }> {
   }
 }
 
-export const vercelBlobAdapter: BlobStoragePort = {
+export const vercelBlobAdapter: BlobStoragePort & OrphanPdfBlobPort = {
   async uploadPdf(input: {
     readonly key: string;
     readonly body: Uint8Array;
@@ -172,5 +173,21 @@ export const vercelBlobAdapter: BlobStoragePort = {
       token: env.blob.readWriteToken,
     });
     return result.blobs.map((b) => b.pathname);
+  },
+
+  async listPage(prefix: string, cursor: string | undefined, limit: number): Promise<OrphanPdfBlobPage> {
+    // #729 — the orphan sweeper pages a whole tenant folder; the pathname is
+    // the key (`put` never adds a random suffix).
+    const result = await list({
+      prefix,
+      ...(cursor !== undefined ? { cursor } : {}),
+      limit,
+      token: env.blob.readWriteToken,
+    });
+    return {
+      items: result.blobs.map((b) => ({ key: b.pathname, uploadedAt: b.uploadedAt, etag: b.etag })),
+      cursor: result.cursor,
+      hasMore: result.hasMore,
+    };
   },
 };
