@@ -344,7 +344,8 @@ describe('characterization — settleAtResend (in-flight arm, erasure mode)', ()
 // ---------------------------------------------------------------------------
 
 type TerminalExp =
-  | { readonly r: 'cleared' | 'retained' }
+  | { readonly r: 'cleared' }
+  | { readonly r: 'retained' }
   | { readonly r: 'handed'; readonly status: Handed }
   | { readonly r: 'unexpected'; readonly resendOutcome: string | null };
 
