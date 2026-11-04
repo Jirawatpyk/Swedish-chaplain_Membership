@@ -1569,11 +1569,15 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       // 1 min short of ORPHAN_STUCK_MIN_AGE_MS at list time; 1 min past it after.
       const marker = stuckAud(99, new Date(base - ORPHAN_STUCK_MIN_AGE_MS + 60_000));
       const deps = makeDeps({ audienceOrphans: [...fresh, marker] });
+      const seen = deps as unknown as {
+        clock: { now: () => Date };
+        orphans: { listUnsettledAudienceOrphans: ReturnType<typeof vi.fn<(...args: unknown[]) => Promise<unknown>>> };
+      };
       let t = base;
-      deps.clock.now = () => new Date(t);
-      const list = deps.orphans.listUnsettledAudienceOrphans;
+      seen.clock.now = () => new Date(t);
+      const list = seen.orphans.listUnsettledAudienceOrphans;
       const original = list.getMockImplementation()!;
-      list.mockImplementationOnce(async (...args: Parameters<typeof original>) => {
+      list.mockImplementationOnce(async (...args: unknown[]) => {
         const rows = await original(...args);
         t += 2 * 60_000;
         return rows;
