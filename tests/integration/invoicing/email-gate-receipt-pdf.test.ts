@@ -40,6 +40,7 @@ import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
 
 // The dispatcher's email send is a no-op here: tests/integration-setup.ts
 // replaces `emailSender` for every integration suite.
@@ -191,6 +192,7 @@ async function enqueueInvoicePaidEmailRow(
   tenant: TestTenant,
   invoiceId: string,
   dependsOnReceiptPdf: boolean,
+  frozenKey = 'invoicing/test/t166-gate.pdf',
 ): Promise<string> {
   const id = randomUUID();
   await db.insert(notificationsOutbox).values({
@@ -202,7 +204,7 @@ async function enqueueInvoicePaidEmailRow(
     contextData: {
       event_type: 'invoice_paid',
       invoice_id: invoiceId,
-      pdf_blob_key: 'invoicing/test/t166-gate.pdf',
+      pdf_blob_key: frozenKey,
       pdf_template_version: 1,
       depends_on_receipt_pdf: dependsOnReceiptPdf,
     },
@@ -385,5 +387,75 @@ describe('T166-09 — invoice_paid email gate on receipt_pdf_status', () => {
     // queue, not skip-loop forever.
     expect(rowAfter?.attempts).toBe(1);
     expect(rowAfter?.lastError).toContain('pdf_render_failed');
+  }, 60_000);
+
+  // Task #70 (financial M-1 on #738) — the payment freezes the receipt key
+  // at the CURRENT template version, but the reconcile cron re-enqueues a
+  // stuck render with the invoice's ISSUE version. After a template bump
+  // the worker writes `_receipt_v{issue}` and the row references it, while
+  // the frozen key names `_receipt_v{current}` — a stray the orphan sweep
+  // deletes. The email must link the key the row holds.
+  it('#70 — a rendered receipt is linked by the row\'s key, not the key frozen at payment', async () => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
+    const frozen = `invoicing/${tenant.ctx.slug}/2026/${invoiceId}_receipt_v13.pdf`;
+    const committed = `invoicing/${tenant.ctx.slug}/2026/${invoiceId}_receipt_v12.pdf`;
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set({
+          receiptPdfStatus: 'rendered',
+          receiptPdfBlobKey: committed,
+          receiptPdfSha256: 'd'.repeat(64),
+          receiptPdfTemplateVersion: 12,
+        })
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    });
+    const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true, frozen);
+    const sign = vi.mocked(vercelBlobAdapter.signDownloadUrl);
+    sign.mockClear();
+
+    const resp = await outboxDispatch(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+    expect(resp.status).toBe(200);
+
+    const [rowAfter] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(rowAfter?.status).toBe('sent');
+    const signed = sign.mock.calls.map((c) => c[0]);
+    expect(signed).toContain(committed);
+    expect(signed).not.toContain(frozen);
+  }, 60_000);
+
+  it('#70 — rendered with no receipt key fails closed: attempts bumped, nothing sent', async () => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set({ receiptPdfStatus: 'rendered', receiptPdfBlobKey: null })
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)));
+    });
+    const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true);
+
+    const resp = await outboxDispatch(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+    );
+    expect(resp.status).toBe(200);
+
+    const [rowAfter] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(rowAfter?.status).toBe('pending');
+    expect(rowAfter?.attempts).toBe(1);
+    expect(rowAfter?.lastError).toContain('rendered_without_key');
   }, 60_000);
 });
