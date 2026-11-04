@@ -226,7 +226,8 @@ import {
   type OrphanOutcome,
 } from '../../domain/value-objects/orphaned-resend-id';
 import { asBroadcastId } from '../../domain/broadcast';
-import { isHandedStatus } from './_probe-refused-send';
+import { classifyResendDraftAnswer } from './_classify-resend-draft-answer';
+import { isHandedStatus, probedStatusOf } from './_probe-refused-send';
 import { settleOrphanAtResend } from './_settle-orphan-at-resend';
 import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
@@ -527,22 +528,24 @@ export async function cancelInFlightBroadcastsForMember(
       const resendId = row.resendBroadcastId;
       const deleted = await deps.broadcastsGateway.deleteBroadcastOnce(resendId);
       const ids = { ...logBase, broadcastId: row.broadcastId as string, status: row.status, resendBroadcastId: resendId };
-      if (deleted.kind === 'deleted' || deleted.kind === 'absent') {
+      // Spec 140 s2d (#735) — the table is `classifyResendDraftAnswer`'s `terminal_draft` policy.
+      const first = classifyResendDraftAnswer('terminal_draft', deleted.kind, null);
+      if (first.kind === 'deleted' || first.kind === 'absent') {
         logger.info({ ...ids, outcome: deleted.kind }, 'broadcasts.cascade.terminal_draft');
         return { kind: 'cleared' };
       }
-      if (deleted.kind !== 'forbidden') throw new ResendUnsettledError(deleted.kind);
+      if (first.kind === 'undecided') throw new ResendUnsettledError(first.deleted);
       const probe = await deps.broadcastsGateway.retrieveBroadcastOnce(resendId);
-      const probed = probe.kind === 'present' ? probe.status : probe.kind;
-      logger.info({ ...ids, outcome: deleted.kind, probe: probed }, 'broadcasts.cascade.terminal_draft');
+      logger.info({ ...ids, outcome: first.deleted, probe: probedStatusOf(probe) }, 'broadcasts.cascade.terminal_draft');
       // POSITIVE: a status that proves the copy can never be sent again
       // (cancelled, failed), or that it was already handed (queued, sending,
       // sent — a disclosure, residual 8c). `draft` after a 403 is a restricted
       // key, `unknown` is unmeasured, and a not-found after a 403 is
       // inconsistent — all fail closed.
-      if (isHandedStatus(probed)) return { kind: 'handed', resendStatus: probed };
-      if (probed === 'cancelled' || probed === 'failed') return { kind: 'retained' };
-      throw new ResendUnsettledError(`${deleted.kind}_probe_${probed}`);
+      const answer = classifyResendDraftAnswer('terminal_draft', first.deleted, probe);
+      if (answer.kind === 'handed') return { kind: 'handed', resendStatus: answer.status };
+      if (answer.kind === 'unsendable') return { kind: 'retained' };
+      throw new ResendUnsettledError(`${answer.deleted}_probe_${answer.probed}`);
     };
 
     /**
