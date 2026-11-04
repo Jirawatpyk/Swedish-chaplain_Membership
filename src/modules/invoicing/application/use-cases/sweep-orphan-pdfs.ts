@@ -65,6 +65,16 @@ export const ORPHAN_PDF_MIN_AGE_MS = 60 * 60 * 1000;
 /** The longest one listing page may take before that tenant is skipped. */
 export const ORPHAN_PDF_LIST_TIMEOUT_MS = 20_000;
 const PAGE_SIZE = 1000;
+/**
+ * #72 — Vercel keeps a bounded number of log lines per request (the first
+ * prod run stopped at 256 and lost its summary). Per-key lines are a sample:
+ * this many lines per info event (would_delete / deleted / already_gone) and
+ * a reservoir of this many failures per run; the rest are only counted in the
+ * summary. The route adds a request-wide budget across both cron halves.
+ */
+export const ORPHAN_PDF_LOG_SAMPLE = 20;
+/** The breakdown keeps this many groups; the rest are counted. */
+const BREAKDOWN_MAX_GROUPS = 50;
 const DEFAULT_MAX_DELETES = 500;
 const DEFAULT_DEADLINE_MS = 240_000;
 
@@ -124,6 +134,18 @@ export interface SweepOrphanPdfsDeps {
   };
 }
 
+/** Outcomes of one `docKind × fy × templateVersion` group of candidate keys. */
+export interface OrphanPdfBreakdownRow {
+  readonly docKind: OrphanPdfKind;
+  readonly fy: string;
+  readonly templateVersion: number;
+  readonly wouldDelete: number;
+  readonly deleted: number;
+  readonly kept: number;
+  readonly alreadyGone: number;
+  readonly failed: number;
+}
+
 export type SweepOrphanPdfsOutput =
   | {
       readonly kind: 'ok';
@@ -144,10 +166,28 @@ export type SweepOrphanPdfsOutput =
       /** Tenants skipped because a listing page (or their repos) failed. */
       readonly listFailed: number;
       readonly truncated: boolean;
+      /** Every candidate outcome by docKind × fy × templateVersion (sorted). */
+      readonly breakdown: readonly OrphanPdfBreakdownRow[];
+      /** The groups past the first 50 of the breakdown, with their totals. */
+      readonly otherGroups: {
+        readonly groups: number;
+        readonly wouldDelete: number;
+        readonly deleted: number;
+        readonly kept: number;
+        readonly alreadyGone: number;
+        readonly failed: number;
+      };
+      /** Per-key log lines left out of the sample (#72). */
+      readonly suppressedLines: { readonly info: number; readonly error: number };
     }
   | { readonly kind: 'scan_failed' };
 
 type Outcome = 'deleted' | 'would_delete' | 'kept' | 'gone' | 'failed';
+/** The per-key logger: a bounded sample of the run's logger (#72). */
+interface SampledLog {
+  info(meta: Record<string, unknown>, msg: string): void;
+  error(meta: Record<string, unknown>, msg: string): void;
+}
 type Candidate = { readonly item: OrphanPdfBlobItem; readonly parsed: ParsedOrphanPdfKey };
 
 /** Whether the locked row still owns `key` (rule 2 in the header). */
@@ -196,12 +236,74 @@ export async function sweepOrphanPdfs(
   };
   let truncated = false;
   const outOfBudget = () => Date.now() >= deadline || c.deleted + c.wouldDelete >= maxDeletes;
-  const count = (o: Outcome) => {
-    if (o === 'deleted') c.deleted += 1;
-    else if (o === 'would_delete') c.wouldDelete += 1;
-    else if (o === 'kept') c.kept += 1;
-    else if (o === 'gone') c.alreadyGone += 1;
-    else c.failed += 1;
+  interface GroupCounts {
+    docKind: OrphanPdfKind;
+    fy: string;
+    templateVersion: number;
+    wouldDelete: number;
+    deleted: number;
+    kept: number;
+    alreadyGone: number;
+    failed: number;
+  }
+  const groups = new Map<string, GroupCounts>();
+  /** One place updates the counters and the breakdown, so they always agree. */
+  const record = (p: ParsedOrphanPdfKey, o: Outcome) => {
+    const id = `${p.kind}|${p.fy}|${p.templateVersion}`;
+    let g = groups.get(id);
+    if (g === undefined) {
+      g = {
+        docKind: p.kind,
+        fy: p.fy,
+        templateVersion: p.templateVersion,
+        wouldDelete: 0,
+        deleted: 0,
+        kept: 0,
+        alreadyGone: 0,
+        failed: 0,
+      };
+      groups.set(id, g);
+    }
+    const field =
+      o === 'deleted'
+        ? 'deleted'
+        : o === 'would_delete'
+          ? 'wouldDelete'
+          : o === 'kept'
+            ? 'kept'
+            : o === 'gone'
+              ? 'alreadyGone'
+              : 'failed';
+    c[field] += 1;
+    g[field] += 1;
+  };
+  // #72 — per-key lines are a sample. Each info event has its own budget, so
+  // one event cannot crowd out another; failures are a reservoir over the
+  // whole run (written just before the summary), so every night shows a
+  // different slice and a key that fails every night is eventually named.
+  const suppressed = { info: 0, error: 0 };
+  const infoBudget = new Map<string, number>();
+  const failureSample: Array<{ meta: Record<string, unknown>; msg: string }> = [];
+  let failuresSeen = 0;
+  const failedTenants = new Set<string>();
+  const sampled: SampledLog = {
+    info(meta, msg) {
+      const event = String(meta.event);
+      const left = infoBudget.get(event) ?? ORPHAN_PDF_LOG_SAMPLE;
+      if (left > 0) {
+        infoBudget.set(event, left - 1);
+        log?.info(meta, msg);
+      } else suppressed.info += 1;
+    },
+    error(meta, msg) {
+      failuresSeen += 1;
+      if (typeof meta.tenantId === 'string') failedTenants.add(meta.tenantId);
+      if (failureSample.length < ORPHAN_PDF_LOG_SAMPLE) failureSample.push({ meta, msg });
+      else {
+        const j = Math.floor(Math.random() * failuresSeen);
+        if (j < ORPHAN_PDF_LOG_SAMPLE) failureSample[j] = { meta, msg };
+      }
+    },
   };
   const tenantSkipped = (tenantId: string, step: 'repos' | 'list', e: unknown) => {
     c.listFailed += 1;
@@ -263,7 +365,7 @@ export async function sweepOrphanPdfs(
           });
         } catch (e) {
           // Fail-safe: nothing on this page is deleted; next run retries it.
-          c.failed += candidates.length;
+          for (const x of candidates) record(x.parsed, 'failed');
           invoicingMetrics.orphanBlobCleanupFailed('sweeper');
           log?.error(
             { event: 'orphan_pdf_sweep_lookup_failed', tenantId, keys: candidates.length, err: errKind(e) },
@@ -275,14 +377,14 @@ export async function sweepOrphanPdfs(
       if (referenced !== null) {
         for (const { item, parsed } of candidates) {
           if (referenced.has(item.key)) {
-            c.kept += 1;
+            record(parsed, 'kept');
             continue;
           }
           if (outOfBudget()) {
             truncated = true;
             break tenants;
           }
-          count(await sweepOne(item, parsed, tenantId, repos, deps, dryRun));
+          record(parsed, await sweepOne(item, parsed, tenantId, repos, deps, dryRun, sampled, nowMs));
         }
       }
       if (page.hasMore && page.cursor === undefined) {
@@ -308,14 +410,51 @@ export async function sweepOrphanPdfs(
   }
 
   const { tenantsCompleted, ...counts } = c;
-  const result = { kind: 'ok' as const, dryRun, tenants: tenantIds.length, tenantsCompleted, ...counts, truncated };
+  // Groups with something to act on first, then kept-only ones; each part in
+  // key order. Groups past the cap keep their totals in `otherGroups`.
+  const actionable = (g: GroupCounts) => g.wouldDelete + g.deleted + g.alreadyGone + g.failed > 0;
+  const sorted = [...groups.values()].sort(
+    (a, b) =>
+      Number(actionable(b)) - Number(actionable(a)) ||
+      a.docKind.localeCompare(b.docKind) ||
+      a.fy.localeCompare(b.fy) ||
+      a.templateVersion - b.templateVersion,
+  );
+  const breakdown: readonly OrphanPdfBreakdownRow[] = sorted.slice(0, BREAKDOWN_MAX_GROUPS);
+  const rest = sorted.slice(BREAKDOWN_MAX_GROUPS);
+  const sumOf = (f: 'wouldDelete' | 'deleted' | 'kept' | 'alreadyGone' | 'failed') =>
+    rest.reduce((n, g) => n + g[f], 0);
+  const otherGroups = {
+    groups: rest.length,
+    wouldDelete: sumOf('wouldDelete'),
+    deleted: sumOf('deleted'),
+    kept: sumOf('kept'),
+    alreadyGone: sumOf('alreadyGone'),
+    failed: sumOf('failed'),
+  };
+  for (const f of failureSample) log?.error(f.meta, f.msg);
+  suppressed.error = failuresSeen - failureSample.length;
+  const result = {
+    kind: 'ok' as const,
+    dryRun,
+    tenants: tenantIds.length,
+    tenantsCompleted,
+    ...counts,
+    truncated,
+    breakdown,
+    otherGroups,
+    suppressedLines: suppressed,
+  };
   if (truncated) {
     log?.warn(
       { event: 'orphan_pdf_sweep_truncated', tenants: tenantIds.length, tenantsCompleted, deleted: c.deleted },
       'orphan PDF sweep: stopped at its deadline or deletion cap; the next run continues',
     );
   }
-  log?.info({ event: 'orphan_pdf_sweep_done', ...result, ms: Date.now() - startedAt }, 'orphan PDF sweep finished');
+  log?.info(
+    { event: 'orphan_pdf_sweep_done', ...result, failedTenants: [...failedTenants].slice(0, 20), ms: Date.now() - startedAt },
+    'orphan PDF sweep finished',
+  );
   return result;
 }
 
@@ -326,8 +465,9 @@ async function sweepOne(
   repos: ReturnType<SweepOrphanPdfsDeps['reposFor']>,
   deps: SweepOrphanPdfsDeps,
   dryRun: boolean,
+  log: SampledLog,
+  nowMs: number,
 ): Promise<Outcome> {
-  const log = deps.logger;
   // The document, never its key: the store is public by URL (PG-1).
   const meta = {
     tenantId,
@@ -335,10 +475,10 @@ async function sweepOne(
     documentId: parsed.id,
     fy: parsed.fy,
     templateVersion: parsed.templateVersion,
-    ageMinutes: Math.round((new Date(deps.clock.nowIso()).getTime() - item.uploadedAt.getTime()) / 60_000),
+    ageMinutes: Math.round((nowMs - item.uploadedAt.getTime()) / 60_000),
   };
   const wouldDelete = (): Outcome => {
-    log?.info({ event: 'orphan_pdf_sweep_would_delete', ...meta }, 'orphan PDF sweep: would delete');
+    log.info({ event: 'orphan_pdf_sweep_would_delete', ...meta }, 'orphan PDF sweep: would delete');
     return 'would_delete';
   };
   try {
@@ -369,15 +509,15 @@ async function sweepOne(
       );
       if (outcome !== 'deleted') return 'kept';
     }
-    log?.info({ event: 'orphan_pdf_sweep_deleted', ...meta }, 'orphan PDF sweep: deleted an unreferenced PDF');
+    log.info({ event: 'orphan_pdf_sweep_deleted', ...meta }, 'orphan PDF sweep: deleted an unreferenced PDF');
     return 'deleted';
   } catch (e) {
     if (e instanceof BlobKeyNotFoundError) {
       // Already gone (an overlapping run): the goal holds; nothing was deleted now.
-      log?.info({ event: 'orphan_pdf_sweep_already_gone', ...meta }, 'orphan PDF sweep: key already gone');
+      log.info({ event: 'orphan_pdf_sweep_already_gone', ...meta }, 'orphan PDF sweep: key already gone');
       return 'gone';
     }
-    log?.error(
+    log.error(
       { event: 'orphan_pdf_sweep_failed', ...meta, err: errKind(e) },
       'orphan PDF sweep: could not check or delete a PDF; kept until the next run',
     );

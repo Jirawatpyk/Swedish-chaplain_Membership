@@ -19,6 +19,7 @@
 import { sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import type { LineLogger } from '@/lib/log-budget';
 import { asTenantContext } from '@/modules/tenants';
 import {
   pruneOrphanedZeroRateCerts,
@@ -39,6 +40,8 @@ export type { PruneOrphanedZeroRateCertsOutput } from '@/modules/invoicing';
  */
 export async function runPruneOrphanedZeroRateCerts(
   input: PruneOrphanedZeroRateCertsInput,
+  /** #72 — a request-scoped logger (the cron route's line budget). */
+  log: LineLogger = logger,
 ): Promise<PruneOrphanedZeroRateCertsOutput> {
   return pruneOrphanedZeroRateCerts(input, {
     blob: vercelBlobAdapter,
@@ -57,6 +60,6 @@ export async function runPruneOrphanedZeroRateCerts(
       runInTenant(asTenantContext(tenantId), async (tx) =>
         fn(makeDrizzleZeroRateCertPruneRepo(tx)),
       ),
-    logger,
+    logger: log,
   });
 }
