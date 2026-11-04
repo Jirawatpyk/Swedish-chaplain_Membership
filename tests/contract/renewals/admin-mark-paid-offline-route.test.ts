@@ -299,6 +299,20 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error.code).toBe('membership_coverage_overlap');
+    expect(body.error).not.toHaveProperty('existing_invoice_id');
+  });
+
+  it('#730 409 membership_coverage_overlap — forwards the covering bill id for the link', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    markPaidOfflineMock.mockResolvedValueOnce(
+      err({ kind: 'f4_permanent_failure', reason: 'membership_coverage_overlap', blockingInvoiceId: 'inv-blocking' }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('membership_coverage_overlap');
+    expect(body.error.existing_invoice_id).toBe('inv-blocking');
   });
 
   it('400 invalid_body when payment_reference is PAN-like (W-01)', async () => {

@@ -178,6 +178,13 @@ describe('resolveExistingBillHref (duplicate-membership-bill deep-link)', () => 
     ).toBe(`/admin/invoices/${encodeURIComponent('a/b c')}`);
   });
 
+  it('#730 also links the covering bill of a coverage overlap', () => {
+    expect(
+      resolveExistingBillHref({ code: 'membership_coverage_overlap', existing_invoice_id: 'inv-9' }),
+    ).toBe('/admin/invoices/inv-9');
+    expect(resolveExistingBillHref({ code: 'membership_coverage_overlap' })).toBeNull();
+  });
+
   it('returns null WITHOUT an id (→ generic toast)', () => {
     expect(
       resolveExistingBillHref({ code: 'membership_bill_already_exists' }),

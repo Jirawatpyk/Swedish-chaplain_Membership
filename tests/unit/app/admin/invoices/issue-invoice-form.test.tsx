@@ -611,6 +611,9 @@ describe('IssueInvoiceForm — failure branch is focused + destructive (FR-032)'
       const alert = await screen.findByTestId('issue-invoice-error');
       const link = within(alert).getByRole('link', { name: /RC-2026-000042/ });
       expect(link).toHaveAttribute('href', '/admin/invoices/inv-blocking');
+      // Review round 1 (UX M): with the link there, the copy does not send the
+      // admin to search the member's invoices.
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.issue.errors.membership_coverage_overlap_linked);
     } finally {
       vi.unstubAllGlobals();
     }

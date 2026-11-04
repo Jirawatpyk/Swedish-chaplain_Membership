@@ -338,6 +338,11 @@ describe('membership-coverage-exclude-guard — DB enforcement (mig 0281, live N
     const m3 = await seedMember();
     await seedDraftBill(m3, Y2026);
     expect(await lookup(await seedDraftBill(m3, Y2026_MID))).toBeNull();
+    // Review round 1 (financial L): tstzrange(NULL, NULL) is unbounded, not
+    // NULL — a draft with no coverage window must not match every bill.
+    const m4 = await seedMember();
+    await seedCommittedBill(m4, 'issued', Y2026);
+    expect(await lookup(await seedDraftBill(m4, null))).toBeNull();
   }, 60_000);
 
   // Principle I — the lookup is tenant-fenced: another tenant asking about this

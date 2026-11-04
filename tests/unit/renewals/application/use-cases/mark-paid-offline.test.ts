@@ -1104,10 +1104,11 @@ describe('markPaidOffline — error paths', () => {
 
   // #730 (task 65) — the DB coverage EXCLUDE refused the issue: another
   // committed bill already covers this period, so a retry can never pass.
-  // With the blocking bill named, it is the same fact as the pre-flight guard
-  // (`membership_bill_already_exists` + deep-link); without it, a permanent
-  // code of its own — never the transient "please try again".
-  it('#730: a coverage overlap naming its blocking bill → membership_bill_already_exists', async () => {
+  // Review round 1 (financial M): not `membership_bill_already_exists` — the
+  // covering bill is usually another plan year and may be paid, so "record the
+  // payment there" would be wrong. Its own permanent code, with the bill's id
+  // for a link — never the transient "please try again".
+  it('#730: a coverage overlap naming its blocking bill → permanent, with the bill id', async () => {
     const cycle = buildCycle();
     const { deps } = fakeDeps(cycle, async () => ({
       ok: false,
@@ -1121,9 +1122,9 @@ describe('markPaidOffline — error paths', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error).toEqual({
-        kind: 'membership_bill_already_exists',
-        existingInvoiceId: 'inv-blocking',
-        existingStatus: 'paid',
+        kind: 'f4_permanent_failure',
+        reason: 'membership_coverage_overlap',
+        blockingInvoiceId: 'inv-blocking',
       });
     }
   });

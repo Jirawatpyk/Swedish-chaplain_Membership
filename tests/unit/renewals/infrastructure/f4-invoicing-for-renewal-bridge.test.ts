@@ -157,3 +157,46 @@ describe('088 T069 — f4InvoicingForRenewalBridge number resolution (FR-018)', 
     expect(result.supersedeWarnings).toEqual([]);
   });
 });
+
+// #730 — the bridge forwards the bill a coverage overlap collided with, so the
+// queue (issue-auto-drafted) can link it.
+describe('#730 — f4InvoicingForRenewalBridge forwards the coverage-overlap blocking bill', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('issueExistingDraftForRenewal: membership_coverage_overlap → issue_failed with blocking', async () => {
+    mockedIssue.mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'membership_coverage_overlap',
+        blocking: { invoiceId: 'inv-blocking', status: 'paid', documentNumber: 'RC-1', totalSatang: 1n },
+      },
+    } as unknown as Awaited<ReturnType<typeof issueMembershipBill>>);
+    const result = await f4InvoicingForRenewalBridge.issueExistingDraftForRenewal({
+      tenantId: 't',
+      invoiceId: 'inv-draft',
+      actorUserId: 'u',
+      autoEmailOnIssue: false,
+      requestId: null,
+    } as never);
+    expect(result).toMatchObject({
+      status: 'issue_failed',
+      errorCode: 'membership_coverage_overlap',
+      blocking: { invoiceId: 'inv-blocking', status: 'paid' },
+    });
+  });
+
+  it('issueExistingDraftForRenewal: any other code carries no blocking', async () => {
+    mockedIssue.mockResolvedValue({
+      ok: false,
+      error: { code: 'overflow', fiscalYear: 2026 },
+    } as unknown as Awaited<ReturnType<typeof issueMembershipBill>>);
+    const result = await f4InvoicingForRenewalBridge.issueExistingDraftForRenewal({
+      tenantId: 't',
+      invoiceId: 'inv-draft',
+      actorUserId: 'u',
+      autoEmailOnIssue: false,
+      requestId: null,
+    } as never);
+    expect(result).not.toHaveProperty('blocking');
+  });
+});
