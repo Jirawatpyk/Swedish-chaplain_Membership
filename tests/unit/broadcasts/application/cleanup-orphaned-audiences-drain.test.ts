@@ -57,6 +57,8 @@ function orphan(n: number, patch: Partial<OrphanedResendIdRef> = {}): OrphanedRe
 
 interface Opts {
   readonly orphans: ReadonlyArray<OrphanedResendIdRef>;
+  /** The first list returns every row, past its limit (a repo that over-returns). */
+  readonly firstListOverReturns?: boolean;
   readonly deleteOnce?: Record<string, DeleteOnce>;
   readonly retrieveOnce?: Record<string, { kind: 'present'; status: string; sentAt?: string | null } | { kind: 'not_found' } | { kind: 'retryable' }>;
   readonly deleteAudienceThrows?: ReadonlySet<string>;
@@ -121,7 +123,7 @@ function harness(opts: Opts) {
         // `limit`: the fixture order is the past-grace-first order; the
         // in-grace-only list keeps only the rows inside the grace.
         const rows = inGraceOnly ? opts.orphans.filter((o) => o.createdAt.getTime() >= cutoff.getTime()) : opts.orphans;
-        return rows.slice(0, limit);
+        return !inGraceOnly && opts.firstListOverReturns === true ? rows : rows.slice(0, limit);
       },
       async settleOrphan(orphanId: string, outcome: string) {
         if (opts.settleThrows === true) throw new Error('57P01');
@@ -444,6 +446,14 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     expect(h.listLimits).toEqual([ORPHAN_DRAIN_LIMIT]);
     expect(h.settled.map(([id]) => id).sort()).toEqual(['o-1', 'o-2', 'o-3', 'o-4', 'o-9']);
     expect(res.ok ? res.value.orphans : null).toMatchObject({ listed: 5, settled: 5, deferred: 0 });
+  });
+
+  // Review round 4 follow-up (code-review #7) — the gate is `>=`, not `===`:
+  // a first list that comes back longer than the limit still counts as full.
+  it('[code-review #7] a first list longer than the limit still reads the in-grace-only list', async () => {
+    const h = harness({ orphans: Array.from({ length: ORPHAN_DRAIN_LIMIT + 1 }, (_, i) => orphan(i + 1)), firstListOverReturns: true });
+    await h.run();
+    expect(h.listModes).toEqual(['all', 'in_grace']);
   });
 
   it('[code-review #4] a full first list reads the in-grace-only list as well', async () => {

@@ -2122,6 +2122,21 @@ describe('eraseMember — the repo cause threads the SQLSTATE code into the log 
     ) as never;
   };
 
+  // Review round 4 follow-up (code-review #1) — the code-authored step of
+  // the failed wrapper, so an operator can tell a benign race from a DB fault.
+  const STEPS: Readonly<Record<string, string>> = {
+    'member_erasure_requested audit': 'audit_failed',
+    'pre-scrub findByIdInTx': 'lookup_failed:repo.unexpected',
+    'member scrubPiiInTx': 'member_scrub_failed:repo.unexpected',
+    'contact scrubPiiForMemberInTx': 'contact_scrub_failed:repo.unexpected',
+    'session revoke': 'session_revoke_failed:repo.unexpected',
+    'user_sessions_revoked audit': 'audit_failed',
+    'token invalidation': 'token_invalidation_failed:repo.unexpected',
+    'linked-login email read': 'linked_login_email_read_failed:repo.unexpected',
+    'outbox cancel': 'outbox_cancel_failed:repo.unexpected',
+    'member_erased audit': 'audit_failed',
+  };
+
   const ROWS: ReadonlyArray<
     readonly [label: string, apply: (d: StubbedEraseDeps) => void, log: string, wantOk: boolean]
   > = [
@@ -2208,8 +2223,8 @@ describe('eraseMember — the repo cause threads the SQLSTATE code into the log 
     ],
   ];
 
-  describe.each(ROWS)('%s', (_label, apply, expectedLog, wantOk) => {
-    it('logs the error class and the SQLSTATE code, never the message', async () => {
+  describe.each(ROWS)('%s', (label, apply, expectedLog, wantOk) => {
+    it('logs the error class, the step and the SQLSTATE code, never the message', async () => {
       const deps = buildEraseDeps();
       apply(deps);
       const spy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
@@ -2231,14 +2246,36 @@ describe('eraseMember — the repo cause threads the SQLSTATE code into the log 
         }
         const call = spy.mock.calls.find((c) => c[1] === expectedLog);
         expect(call, `expected a "${expectedLog}" log`).toBeDefined();
-        const fields = call?.[0] as { err?: unknown; code?: unknown };
+        const fields = call?.[0] as { err?: unknown; code?: unknown; step?: unknown };
         expect(fields.err).toBe('Error');
         expect(fields.code).toBe(CAUSE.code);
+        expect(fields.step).toBe(STEPS[label]);
         expect(JSON.stringify(fields)).not.toContain(CAUSE.message);
       } finally {
         spy.mockRestore();
       }
     });
+  });
+
+  // Review round 4 follow-up (code-review #2) — the pre-flight read logged the
+  // whole RepoError, its driver cause included.
+  it('the pre-flight read failure logs the repo code, the cause class and the SQLSTATE, never the message', async () => {
+    const deps = buildEraseDeps();
+    deps.memberRepo.findErasedAtById = vi.fn(async () => failing());
+    const spy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    try {
+      const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      expect(res.ok).toBe(false);
+      const call = spy.mock.calls.find((c) => c[1] === 'erase-member: pre-flight existence read failed');
+      expect(call).toBeDefined();
+      const fields = call?.[0] as { err?: unknown; code?: unknown; repoCode?: unknown };
+      expect(fields.repoCode).toBe('repo.unexpected');
+      expect(typeof fields.err).toBe('string');
+      expect(fields.code).toBe(CAUSE.code);
+      expect(JSON.stringify(fields)).not.toContain(CAUSE.message);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

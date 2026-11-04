@@ -359,6 +359,29 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     }
   });
 
+  // Review round 4 follow-up (code-review #4) — the driver gives the app
+  // created_at in milliseconds, so a row 0.4 ms past the stuck cutoff is stuck
+  // to `isStuckAt`. The SQL sort must agree: it sorts the row as stuck (last).
+  it('[code-review #4] a row 0.4 ms past the stuck cutoff sorts as stuck, as the app judges it', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      const cutoff = STUCK_CUTOFF();
+      const boundary = `aud-edge-${randomUUID()}`;
+      const youngTried = `aud-young-${randomUUID()}`;
+      await runInTenant(solo.ctx, (tx) =>
+        tx.execute(sql`
+          INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at, attempts)
+          VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${boundary}, 'audience_leaked', ${cutoff.toISOString()}::timestamptz + interval '400 microseconds', 8),
+                 (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${youngTried}, 'audience_leaked', ${new Date(Date.now() - HOUR / 2).toISOString()}::timestamptz, 9)`),
+      );
+      const listed = await repo.listUnsettledAudienceOrphans(10, GRACE_CUTOFF(), cutoff);
+      expect(listed.map((o) => o.resourceId)).toEqual([youngTried, boundary]);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
+
   /**
    * Spec 140 s2c review round 2 (pdpa H-1) — the 8a detach derivation
    * (`listMemberResendAudienceContactsInTx`) pairs the erased member's
