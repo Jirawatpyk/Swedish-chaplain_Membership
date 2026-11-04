@@ -38,7 +38,8 @@
  *
  * ── Fail-safe ────────────────────────────────────────────────────────────
  * A failed batch read keeps its whole page; a failed locked read keeps the
- * key (both retried next run). A failed delete is logged and metered and the
+ * key (both retried next run). A dry run applies the same rule on a plain
+ * read and never locks a row. A failed delete is logged and metered and the
  * run goes on. Each listing page is bounded by
  * {@link ORPHAN_PDF_LIST_TIMEOUT_MS}; a failed listing skips that tenant, is
  * counted and metered, and every tenant failing is `scan_failed`, so a dead
@@ -49,11 +50,12 @@
  *
  * Pure Application logic (Principle III).
  */
+import { errKind } from '@/lib/log-id';
 import { invoicingMetrics } from '@/lib/metrics';
 import { deleteOrphanPdfUnderLock } from '../lib/delete-orphan-pdf';
 import type { ClockPort } from '../ports/clock-port';
 import type { InvoiceRepo } from '../ports/invoice-repo';
-import { BlobChangedSinceUploadError } from '../ports/blob-storage-port';
+import { BlobChangedSinceUploadError, BlobKeyNotFoundError } from '../ports/blob-storage-port';
 import type { OrphanPdfBlobItem, OrphanPdfBlobPort } from '../ports/orphan-pdf-blob-port';
 import type { OrphanPdfReferenceRepo } from '../ports/orphan-pdf-reference-repo';
 import type { Invoice, InvoiceId } from '../../domain/invoice';
@@ -113,7 +115,7 @@ export interface SweepOrphanPdfsDeps {
   readonly referencedKeys: OrphanPdfReferenceRepo['referencedKeys'];
   /** The tenant's invoice repo; it opens its own RLS-scoped transaction. */
   readonly reposFor: (tenantId: string) => {
-    readonly invoiceRepo: Pick<InvoiceRepo, 'withTx' | 'findByIdInTxForUpdate'>;
+    readonly invoiceRepo: Pick<InvoiceRepo, 'withTx' | 'findByIdInTxForUpdate' | 'findByIdInTx'>;
   };
   readonly logger?: {
     info(meta: Record<string, unknown>, msg: string): void;
@@ -137,16 +139,16 @@ export type SweepOrphanPdfsOutput =
       readonly skippedYoung: number;
       readonly skippedUnknown: number;
       readonly failed: number;
-      /** Tenants skipped because a listing page failed. */
+      /** Unreferenced keys already gone when the delete arrived. */
+      readonly alreadyGone: number;
+      /** Tenants skipped because a listing page (or their repos) failed. */
       readonly listFailed: number;
       readonly truncated: boolean;
     }
   | { readonly kind: 'scan_failed' };
 
-type Outcome = 'deleted' | 'would_delete' | 'kept' | 'failed';
+type Outcome = 'deleted' | 'would_delete' | 'kept' | 'gone' | 'failed';
 type Candidate = { readonly item: OrphanPdfBlobItem; readonly parsed: ParsedOrphanPdfKey };
-
-const errKind = (e: unknown) => (e instanceof Error ? e.constructor.name : 'unknown');
 
 /** Whether the locked row still owns `key` (rule 2 in the header). */
 function rowOwnsKey(row: Invoice, key: string, kind: OrphanPdfKind): boolean {
@@ -173,7 +175,7 @@ export async function sweepOrphanPdfs(
   try {
     tenantIds = await deps.listTenantIds();
   } catch (e) {
-    log?.error({ event: 'orphan_pdf_sweep_scan_failed', errKind: errKind(e) }, 'orphan PDF sweep: tenant list failed');
+    log?.error({ event: 'orphan_pdf_sweep_scan_failed', err: errKind(e) }, 'orphan PDF sweep: tenant list failed');
     return { kind: 'scan_failed' };
   }
   if (tenantIds.length === 0) {
@@ -188,6 +190,7 @@ export async function sweepOrphanPdfs(
     skippedYoung: 0,
     skippedUnknown: 0,
     failed: 0,
+    alreadyGone: 0,
     listFailed: 0,
     tenantsCompleted: 0,
   };
@@ -197,11 +200,26 @@ export async function sweepOrphanPdfs(
     if (o === 'deleted') c.deleted += 1;
     else if (o === 'would_delete') c.wouldDelete += 1;
     else if (o === 'kept') c.kept += 1;
+    else if (o === 'gone') c.alreadyGone += 1;
     else c.failed += 1;
+  };
+  const tenantSkipped = (tenantId: string, step: 'repos' | 'list', e: unknown) => {
+    c.listFailed += 1;
+    invoicingMetrics.orphanBlobCleanupFailed('sweeper');
+    log?.warn(
+      { event: 'orphan_pdf_sweep_list_failed', tenantId, step, err: errKind(e) },
+      'orphan PDF sweep: listing failed; tenant skipped until the next run',
+    );
   };
 
   tenants: for (const tenantId of tenantIds) {
-    const repos = deps.reposFor(tenantId);
+    let repos: ReturnType<SweepOrphanPdfsDeps['reposFor']>;
+    try {
+      repos = deps.reposFor(tenantId);
+    } catch (e) {
+      tenantSkipped(tenantId, 'repos', e);
+      continue tenants;
+    }
     const prefix = `invoicing/${tenantId}/`;
     let cursor: string | undefined;
     do {
@@ -210,16 +228,17 @@ export async function sweepOrphanPdfs(
         break tenants;
       }
       let page;
+      const remaining = deadline - Date.now();
+      const signal = AbortSignal.timeout(Math.max(1, Math.min(ORPHAN_PDF_LIST_TIMEOUT_MS, remaining)));
       try {
-        const signal = AbortSignal.timeout(Math.max(1, Math.min(ORPHAN_PDF_LIST_TIMEOUT_MS, deadline - Date.now())));
         page = await deps.blob.listPage(prefix, cursor, PAGE_SIZE, { signal });
       } catch (e) {
-        c.listFailed += 1;
-        invoicingMetrics.orphanBlobCleanupFailed('sweeper');
-        log?.warn(
-          { event: 'orphan_pdf_sweep_list_failed', tenantId, errKind: errKind(e) },
-          'orphan PDF sweep: listing failed; tenant skipped until the next run',
-        );
+        // Aborted by the run's own budget, not by a slow Blob: out of time.
+        if (signal.aborted && remaining < ORPHAN_PDF_LIST_TIMEOUT_MS) {
+          truncated = true;
+          break tenants;
+        }
+        tenantSkipped(tenantId, 'list', e);
         continue tenants;
       }
 
@@ -247,7 +266,7 @@ export async function sweepOrphanPdfs(
           c.failed += candidates.length;
           invoicingMetrics.orphanBlobCleanupFailed('sweeper');
           log?.error(
-            { event: 'orphan_pdf_sweep_lookup_failed', tenantId, keys: candidates.length, errKind: errKind(e) },
+            { event: 'orphan_pdf_sweep_lookup_failed', tenantId, keys: candidates.length, err: errKind(e) },
             'orphan PDF sweep: reference lookup failed; page kept until the next run',
           );
         }
@@ -265,6 +284,15 @@ export async function sweepOrphanPdfs(
           }
           count(await sweepOne(item, parsed, tenantId, repos, deps, dryRun));
         }
+      }
+      if (page.hasMore && page.cursor === undefined) {
+        // The rest of the folder cannot be reached: never report it checked.
+        truncated = true;
+        log?.warn(
+          { event: 'orphan_pdf_sweep_cursor_missing', tenantId },
+          'orphan PDF sweep: a page said there was more but gave no cursor; tenant left unfinished',
+        );
+        continue tenants;
       }
       cursor = page.hasMore ? page.cursor : undefined;
     } while (cursor !== undefined);
@@ -313,12 +341,6 @@ async function sweepOne(
     log?.info({ event: 'orphan_pdf_sweep_would_delete', ...meta }, 'orphan PDF sweep: would delete');
     return 'would_delete';
   };
-  // The delete a dry run replaces: report it, change nothing.
-  const dryBlob = {
-    delete: async () => {
-      throw new DryRunStop();
-    },
-  };
   try {
     if (parsed.kind === 'credit_note') {
       // The batch read found no credit_notes row with this key.
@@ -329,9 +351,14 @@ async function sweepOne(
         if (e instanceof BlobChangedSinceUploadError) return 'kept';
         throw e;
       }
+    } else if (dryRun) {
+      // The same keep rule on a plain read: a report never locks a live row.
+      const { invoiceRepo } = repos;
+      const row = await invoiceRepo.withTx((tx) => invoiceRepo.findByIdInTx(tx, parsed.id as InvoiceId, tenantId));
+      return row !== null && rowOwnsKey(row, item.key, parsed.kind) ? 'kept' : wouldDelete();
     } else {
       const outcome = await deleteOrphanPdfUnderLock(
-        { invoiceRepo: repos.invoiceRepo, blob: dryRun ? dryBlob : deps.blob },
+        { invoiceRepo: repos.invoiceRepo, blob: deps.blob },
         {
           invoiceId: parsed.id as InvoiceId,
           tenantId,
@@ -345,15 +372,16 @@ async function sweepOne(
     log?.info({ event: 'orphan_pdf_sweep_deleted', ...meta }, 'orphan PDF sweep: deleted an unreferenced PDF');
     return 'deleted';
   } catch (e) {
-    if (e instanceof DryRunStop) return wouldDelete();
+    if (e instanceof BlobKeyNotFoundError) {
+      // Already gone (an overlapping run): the goal holds; nothing was deleted now.
+      log?.info({ event: 'orphan_pdf_sweep_already_gone', ...meta }, 'orphan PDF sweep: key already gone');
+      return 'gone';
+    }
     log?.error(
-      { event: 'orphan_pdf_sweep_failed', ...meta, errKind: errKind(e) },
+      { event: 'orphan_pdf_sweep_failed', ...meta, err: errKind(e) },
       'orphan PDF sweep: could not check or delete a PDF; kept until the next run',
     );
     invoicingMetrics.orphanBlobCleanupFailed('sweeper');
     return 'failed';
   }
 }
-
-/** Thrown by the dry-run blob in place of a delete (never escapes). */
-class DryRunStop extends Error {}

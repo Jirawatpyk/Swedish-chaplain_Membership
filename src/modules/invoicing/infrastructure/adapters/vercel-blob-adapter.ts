@@ -161,9 +161,9 @@ export const vercelBlobAdapter: BlobStoragePort & OrphanPdfBlobPort = {
       if (e instanceof BlobPreconditionFailedError) {
         throw new BlobChangedSinceUploadError({ cause: e });
       }
-      // #729 L1 — the key is already gone (an overlapping sweep, a retried
-      // cleanup): the delete's goal holds, so it is not a failure.
-      if (e instanceof BlobNotFoundError) return;
+      // #729 L1 — the key is already gone: say so with the port's class, so a
+      // caller can tell "gone" from a failure (the orphan sweep counts it).
+      if (e instanceof BlobNotFoundError) throw new BlobKeyNotFoundError({ cause: e });
       throw e;
     }
   },

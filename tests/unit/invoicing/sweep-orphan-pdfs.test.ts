@@ -123,7 +123,7 @@ function makeDeps(opts: {
     clock: { nowIso: () => NOW.toISOString() },
     listTenantIds: vi.fn(async () => opts.tenants ?? [T]),
     referencedKeys,
-    reposFor: vi.fn(() => ({ invoiceRepo })),
+    reposFor: vi.fn((_tenantId: string) => ({ invoiceRepo })),
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   };
   return { deps: deps as unknown as SweepOrphanPdfsDeps, blob, store, invoiceRepo, referencedKeys, raw: deps };

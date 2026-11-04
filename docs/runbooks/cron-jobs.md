@@ -394,7 +394,9 @@ check keeps the key until the next run.
 `FEATURE_ORPHAN_PDF_SWEEP_DELETE=true`; anywhere else it is a dry run (the
 response says `deletesEnabled: false`). A preview's Neon branch can lag the
 Blob store it may share a token with, so a real delete there could remove a
-live document's PDF. The cert prune is not gated (live since 088).
+live document's PDF. `deletesEnabled` says whether *this* run deletes (false
+for `?dryRun=1` too). A dry run applies the same keep rule on a plain read and
+never locks an invoice row. The cert prune is not gated (live since 088).
 
 **First production rollout.** After the merge the nightly run is a dry run
 (the flag defaults off). Read one night's response or the
@@ -410,9 +412,10 @@ is a PDF dry run and skips the cert prune; without `?dryRun=1` both halves run
 (the PDF half still obeys the delete gate). Response:
 `{ ok, deletesEnabled, certs: { scanned, swept, skipped, cutoff }, pdfs: {
 dryRun, tenants, tenantsCompleted, scanned, deleted, wouldDelete, kept,
-skippedYoung, skippedUnknown, failed, listFailed, truncated } }`.
-`truncated: true` means it stopped at 500 deletions or the 240 s budget (WARN
-`orphan_pdf_sweep_truncated`); the next run continues, tenants in id order.
+skippedYoung, skippedUnknown, failed, alreadyGone, listFailed, truncated } }`.
+`truncated: true` means it stopped at 500 deletions or the 240 s budget, or a listing page said there was
+more but gave no cursor (WARN `orphan_pdf_sweep_truncated` /
+`orphan_pdf_sweep_cursor_missing`); the next run continues, tenants in id order.
 
 **Alarm.** `invoicing_orphan_blob_cleanup_failed_total{use_case="sweeper"}`:
 a reference lookup, a locked check, a delete or a tenant listing failed. The
@@ -429,7 +432,7 @@ deliberate.
 is the key its row references. A deleted orphan was never sent (its email
 outbox row rolled back with it). Not audited: the bytes never became a tax
 document (the deletions are in the logs above). A key already gone counts as
-deleted, so an overlapping manual run is harmless. READ_ONLY_MODE skips both
+`alreadyGone`, not as a failure, so an overlapping manual run is harmless. READ_ONLY_MODE skips both
 halves; they catch up fully.
 
 ### Handler module

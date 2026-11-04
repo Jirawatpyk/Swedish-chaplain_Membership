@@ -25,6 +25,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { env } from '@/lib/env';
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { runPruneOrphanedZeroRateCerts } from '@/lib/invoicing-cert-prune-deps';
@@ -41,8 +42,6 @@ const BUDGET_MS = 240_000;
 // Vercel Cron calls with GET; one handler serves both.
 export const GET = POST;
 
-const errKind = (e: unknown) => (e instanceof Error ? e.constructor.name : 'unknown');
-
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
   const startedAt = Date.now();
@@ -57,7 +56,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (frozen) return frozen;
 
   const askedDryRun = request.nextUrl?.searchParams.get('dryRun') === '1';
-  const deletesEnabled = env.features.orphanPdfSweepDelete && env.vercelEnv === 'production';
+  const gateOpen = env.features.orphanPdfSweepDelete && env.vercelEnv === 'production';
+  const pdfDryRun = askedDryRun || !gateOpen;
+  // Whether THIS run's PDF sweep deletes.
+  const deletesEnabled = !pdfDryRun;
 
   // 1. Zero-rate certificate prune.
   let certs: Record<string, unknown>;
@@ -76,7 +78,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch (e) {
       failed = true;
       certs = { scanFailed: true };
-      logger.error({ requestId, route: ROUTE, step: 'certs', errKind: errKind(e) }, 'cron.sweep_orphan_blobs.threw');
+      logger.error({ requestId, route: ROUTE, step: 'certs', err: errKind(e) }, 'cron.sweep_orphan_blobs.threw');
     }
   }
 
@@ -84,7 +86,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let pdfs: Record<string, unknown>;
   try {
     const r = await runSweepOrphanPdfs({
-      dryRun: askedDryRun || !deletesEnabled,
+      dryRun: pdfDryRun,
       deadlineMs: Math.max(0, BUDGET_MS - (Date.now() - startedAt)),
     });
     if (r.kind === 'scan_failed') {
@@ -97,7 +99,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     failed = true;
     pdfs = { scanFailed: true };
-    logger.error({ requestId, route: ROUTE, step: 'pdfs', errKind: errKind(e) }, 'cron.sweep_orphan_blobs.threw');
+    logger.error({ requestId, route: ROUTE, step: 'pdfs', err: errKind(e) }, 'cron.sweep_orphan_blobs.threw');
   }
 
   if (failed) {
