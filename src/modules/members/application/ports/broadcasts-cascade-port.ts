@@ -138,6 +138,12 @@ export type CascadeResult =
       readonly resendDraftsCleared: number;
       /** Spec 140 s1 — terminal rows whose Resend copy Resend would not delete (0 outside erasure). */
       readonly resendCopiesRetained: number;
+      /**
+       * Spec 140 s2c review round 2 — STUCK tenant audience orphans the erasure
+       * released without withholding `member_erased` (0 outside erasure).
+       * Review round 3 — a minimum: the listed stuck rows only.
+       */
+      readonly audienceOrphansStuckCount: number;
     }
   | {
       readonly outcome: 'cascade_partial_failure';
@@ -153,5 +159,6 @@ export type CascadeResult =
        * warn, not "broadcasts remain in flight"; `member_erased` still withheld.
        */
       readonly deferredCount: number;
+      readonly audienceOrphansStuckCount: number;
     }
   | { readonly outcome: 'cascade_failed' };

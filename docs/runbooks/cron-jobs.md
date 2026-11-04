@@ -789,8 +789,21 @@ Per tenant, inside `cleanupOrphanedAudiences`:
 3. On success: stamps `audience_deleted_at = now()` via
    `broadcastsRepo.markAudienceDeletedInTx` inside a per-item tenant-bound tx
    (`broadcastsRepo.withTx`) — Constitution Principle I (RLS via `runInTenant`).
-4. On throw: logs a structured warning; the row stays eligible for the next tick.
+4. On throw: logs a structured warning (`err: errKind(e)`, `tenantId`, never the
+   message); the row stays eligible for the next tick.
    `failed` counter increments; the batch continues (best-effort, never aborts).
+5. **Spec 140 s2c — the orphan drain**, a second pass: up to `ORPHAN_DRAIN_LIMIT`
+   (20) rows of `broadcast_orphaned_resend_ids`, `ORPHAN_DRAIN_CONCURRENCY` (5)
+   at a time, settled at Resend (`deleteBroadcastOnce` and, after a 403, one
+   `retrieveBroadcastOnce`; `deleteAudience` for an audience row) and stamped by
+   a settle CAS. The same 1-hour grace applies to a row's `created_at`, except
+   for an erased requester's row. No chunk starts after `ORPHAN_DRAIN_STOP_MS`
+   (240 s): the route's **`maxDuration = 300`** (`CLEANUP_MAX_DURATION_MS`,
+   pinned by `cleanup-orphaned-audiences-drain.test.ts`) leaves the last chunk's
+   two bounded calls room to finish. The response carries `orphans`
+   (`listed`, `settled`, `undecided`, `waiting`, `deferred`, `listFailed`).
+   What each outcome means and what to do with a stuck row:
+   `broadcast-audience-build.md` § E.
 
 ### Setup steps (one-time)
 
@@ -906,7 +919,14 @@ no live DB row. **No DB write on success** — there is no row to stamp.
 
 Daily cron that **enforces the RoPA's retention of E-Blasts**
 (`docs/compliance/processing-records.md`, F7 retention table: 5 years; a row's
-own `retention_years` may say 10). Before it, nothing deleted a `broadcasts`
+own `retention_years` may say 10). Since spec 140 s2c it also **prunes the
+orphaned Resend id record** after its run row: `prune_orphaned_resend_ids`
+(SECURITY DEFINER, migration 0325) deletes settled rows and `create_unconfirmed`
+rows older than `ORPHAN_ROW_RETENTION_DAYS` (90 days), only in the tenant the
+call is bound to, and refuses a younger cutoff. An unsettled row with an id is
+never pruned. Best-effort: a failure logs
+`broadcasts.retention_sweep.orphan_prune_failed` and the run answers as before
+(`orphanRowsPruned: null`). Before it, nothing deleted a `broadcasts`
 row on age. Native Vercel Cron, `50 20 * * *` UTC (03:50 ICT), GET = POST,
 `maxDuration = 300`. **Not gated on `FEATURE_F7_BROADCASTS`**: retention is an
 obligation on data already held, whether or not the feature is still on.

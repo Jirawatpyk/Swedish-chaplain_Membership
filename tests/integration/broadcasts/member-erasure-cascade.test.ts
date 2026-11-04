@@ -237,6 +237,26 @@ const UNUSED_GATEWAY = {
   async retrieveBroadcastOnce(): Promise<never> {
     throw new Error('retrieveBroadcastOnce must not be called in the archive mode');
   },
+  // Spec 140 s2c — the erasure mode's leaked-audience pass.
+  async deleteAudience(): Promise<never> {
+    throw new Error('deleteAudience must not be called in the archive mode');
+  },
+};
+
+/** Spec 140 s2c — the orphan record, read only in the erasure mode. */
+const UNUSED_ORPHANS = {
+  async listMemberOrphans(): Promise<never> {
+    throw new Error('listMemberOrphans must not be called in the archive mode');
+  },
+  async listUnsettledAudienceOrphans(): Promise<never> {
+    throw new Error('listUnsettledAudienceOrphans must not be called in the archive mode');
+  },
+  async settleOrphan(): Promise<never> {
+    throw new Error('settleOrphan must not be called in the archive mode');
+  },
+  async markOrphanAttempted(): Promise<never> {
+    throw new Error('markOrphanAttempted must not be called in the archive mode');
+  },
 };
 
 describe('T178a — cancelInFlightBroadcastsForMember (F3 cascade boundary)', () => {
@@ -250,7 +270,7 @@ describe('T178a — cancelInFlightBroadcastsForMember (F3 cascade boundary)', ()
     const audit = makeStubAudit();
 
     const result = await cancelInFlightBroadcastsForMember(
-      { broadcastsRepo: repo.port, audit: audit.port, clock, broadcastsGateway: UNUSED_GATEWAY },
+      { broadcastsRepo: repo.port, audit: audit.port, clock, broadcastsGateway: UNUSED_GATEWAY, orphans: UNUSED_ORPHANS },
       {
         tenant,
         memberId: memberId as never,
@@ -294,7 +314,7 @@ describe('T178a — cancelInFlightBroadcastsForMember (F3 cascade boundary)', ()
     const audit = makeStubAudit();
 
     const result = await cancelInFlightBroadcastsForMember(
-      { broadcastsRepo: repo.port, audit: audit.port, clock, broadcastsGateway: UNUSED_GATEWAY },
+      { broadcastsRepo: repo.port, audit: audit.port, clock, broadcastsGateway: UNUSED_GATEWAY, orphans: UNUSED_ORPHANS },
       {
         tenant,
         memberId: memberId as never,
@@ -321,7 +341,7 @@ describe('T178a — cancelInFlightBroadcastsForMember (F3 cascade boundary)', ()
     const audit = makeStubAudit();
 
     const result = await cancelInFlightBroadcastsForMember(
-      { broadcastsRepo: repo.port, audit: audit.port, clock, broadcastsGateway: UNUSED_GATEWAY },
+      { broadcastsRepo: repo.port, audit: audit.port, clock, broadcastsGateway: UNUSED_GATEWAY, orphans: UNUSED_ORPHANS },
       {
         tenant,
         memberId: memberId as never,
@@ -354,7 +374,7 @@ describe('T178a — cancelInFlightBroadcastsForMember (F3 cascade boundary)', ()
     const audit = makeStubAudit();
 
     const result = await cancelInFlightBroadcastsForMember(
-      { broadcastsRepo: repo.port, audit: audit.port, clock, broadcastsGateway: UNUSED_GATEWAY },
+      { broadcastsRepo: repo.port, audit: audit.port, clock, broadcastsGateway: UNUSED_GATEWAY, orphans: UNUSED_ORPHANS },
       {
         tenant,
         memberId: memberId as never,

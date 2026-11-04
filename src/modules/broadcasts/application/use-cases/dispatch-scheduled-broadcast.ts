@@ -99,6 +99,8 @@ import { resendDashboardName } from '../format/resend-dashboard-name';
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 import { probeRefusedSend } from './_probe-refused-send';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
+import { recordOrphanBestEffort } from './_record-orphaned-resend-id';
+import type { BroadcastOrphansRepo } from '../ports/broadcast-orphans-repo';
 import { rereadAfterLostRace } from './_reread-after-lost-race';
 
 export type DispatchScheduledBroadcastError =
@@ -182,6 +184,13 @@ export interface DispatchScheduledBroadcastDeps {
    * chrome (fail-soft, metered) — a brand outage must never fail a send.
    */
   readonly brandChrome: BrandChromePort;
+  /**
+   * Spec 140 s2c (DL6) — where an id this tick leaves on no row is recorded
+   * (`broadcast_orphaned_resend_ids`): a minted broadcast whose reclaim
+   * leaked (through `persistBroadcastIdBeforeSend`), an audience whose reclaim
+   * leaked, a refused row's undeleted draft. REQUIRED, like `brandChrome`.
+   */
+  readonly orphans: Pick<BroadcastOrphansRepo, 'recordOrphanedResendId'>;
   readonly membersBridge: MembersBridgePort;
   readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
   readonly eventAttendees: EventAttendeesRepository;
@@ -862,6 +871,18 @@ export async function dispatchScheduledBroadcast(
       if (cleared.kind === 'handed') {
         return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
       }
+      // Spec 140 s2c (R1 #5) — the draft may still be at Resend: recorded
+      // before the terminal write, so the drain reaches it once the row is
+      // terminal. (`undeleted` implies an id: an empty one is `cleared`.)
+      if (cleared.kind === 'undeleted') {
+        await recordOrphanBestEffort(deps.orphans, { tenantId: deps.tenant.slug, logPrefix: 'broadcasts.dispatch' }, {
+          broadcastId: input.broadcastId,
+          requestedByMemberId: broadcast.requestedByMemberId,
+          resourceType: 'broadcast',
+          resourceId: rowDraft.resendBroadcastId,
+          reason: 'refused_draft_undeleted',
+        });
+      }
       const { reason } = standing;
       const recorded = await failDispatchAndAudit(
         deps,
@@ -1302,6 +1323,7 @@ export async function dispatchScheduledBroadcast(
       const persistRefused = await persistBroadcastIdBeforeSend(deps, input, {
         resendBroadcastId,
         resendAudienceId,
+        requestedByMemberId: requestingMember,
         minted: true,
         lease: null,
         logPrefix: 'broadcasts.dispatch',
@@ -1395,6 +1417,14 @@ export async function dispatchScheduledBroadcast(
             },
             'broadcasts.dispatch.audience_attach_lost_leaked',
           );
+          // Spec 140 s2c [A5] — and its orphan row, so the drain deletes it.
+          await recordOrphanBestEffort(deps.orphans, { tenantId: deps.tenant.slug, logPrefix: 'broadcasts.dispatch' }, {
+            broadcastId: input.broadcastId,
+            requestedByMemberId: requestingMember,
+            resourceType: 'audience',
+            resourceId: resendAudienceId,
+            reason: 'audience_leaked',
+          });
         }
       }
       // The REAL status from the probe, never a literal.

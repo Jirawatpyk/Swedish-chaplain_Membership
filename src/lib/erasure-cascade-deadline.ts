@@ -26,6 +26,9 @@ export const ERASURE_CASCADE_RESERVE_MS = 60_000;
  * deadline `reconcile-erasures` stops STARTING members: one whole row (a 10 s
  * DELETE, a 10 s GET and the evidence tx), so a member started at the cutoff
  * can still settle a row before its deadline instead of deferring them all.
+ * Spec 140 s2c review round 2 — the longest row is now a DELETE 404 confirmed
+ * by a GET after `REPROBE_PAUSE_MS`: 10 s + 3 s + 10 s + the settle tx ≈ 24 s,
+ * still inside this floor (the in-flight arm's 404 confirm already had it).
  */
 export const ERASURE_MEMBER_START_FLOOR_MS = 30_000;
 

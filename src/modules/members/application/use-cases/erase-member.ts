@@ -25,7 +25,8 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, rootCause } from '@/lib/log-id';
+import { pgErrorCode } from '@/lib/db-errors';
 import { erasureMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -230,6 +231,16 @@ export type EraseMemberMeta = {
   deadlineAt?: Date;
 };
 
+// Spec 140 s2c review round 4 follow-up (code-review #1) — the step of a
+// failed wrapper Error, so the log tells a benign race from a DB fault. Only a
+// code-authored message passes (`lookup_failed:repo.unexpected`,
+// `change_request_race:1`): lowercase words with an optional `:code`, no
+// spaces, so driver text can never reach the log through it.
+const STEP_MESSAGE = /^[a-z_]+(?::[a-z0-9_.]+)?$/;
+function eraseStep(e: unknown): string | undefined {
+  return e instanceof Error && STEP_MESSAGE.test(e.message) ? e.message : undefined;
+}
+
 class EraseNotFoundError extends Error {
   constructor() {
     super('not_found');
@@ -273,7 +284,15 @@ export async function eraseMember(
     if (preflight.error.code === 'repo.not_found')
       return err({ type: 'not_found' });
     logger.error(
-      { err: preflight.error, memberId, requestId: meta.requestId },
+      // Review round 4 follow-up (code-review #2) — the repo code, the cause's
+      // class and SQLSTATE, never the RepoError with its driver cause.
+      {
+        repoCode: preflight.error.code,
+        err: errKind(rootCause(preflight.error)),
+        code: pgErrorCode(preflight.error),
+        memberId,
+        requestId: meta.requestId,
+      },
       'erase-member: pre-flight existence read failed',
     );
     return err({ type: 'server_error', message: 'erase pre-flight read failed' });
@@ -331,7 +350,9 @@ export async function eraseMember(
       });
     } catch (e) {
       logger.error(
-        { err: e, memberId, requestId: meta.requestId },
+        // Review round 4 (code-review #7) — the class and the SQLSTATE code,
+        // never the Error: a driver message can carry the subject's address.
+        { err: errKind(e), step: eraseStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
         'erase-member: requested-audit failed',
       );
       return err({ type: 'server_error', message: 'erase request audit failed' });
@@ -422,10 +443,11 @@ export async function eraseMember(
       if (!current.ok) {
         if (current.error.code === 'repo.not_found')
           throw new EraseNotFoundError();
-        // Preserve the repo `cause` (SQLSTATE + Postgres message, present on the
-        // `repo.unexpected` variant) so the outer `catch (e)` logs the DB detail,
-        // not just the bare code string. (ES2022 Error cause; forensics-only —
-        // the operation still fails + rolls back identically.)
+        // Preserve the repo `cause` (present on the `repo.unexpected` variant)
+        // so the outer `catch (e)` logs its SQLSTATE (`code: pgErrorCode(e)`)
+        // and this step (`step`), never the Postgres message (spec 140 s2c
+        // review round 4). Forensics-only: the operation still fails and rolls
+        // back identically.
         throw new Error(`lookup_failed:${current.error.code}`, {
           cause: 'cause' in current.error ? current.error.cause : undefined,
         });
@@ -598,8 +620,9 @@ export async function eraseMember(
       if (!scrubMember.ok) {
         if (scrubMember.error.code === 'repo.not_found')
           throw new EraseNotFoundError();
-        // Thread the repo `cause` (SQLSTATE + PG message) into the Error so the
-        // outer catch's `err: e` log carries the DB detail. Forensics-only.
+        // Thread the repo `cause` into the Error so the outer catch logs its
+        // SQLSTATE (`code: pgErrorCode(e)`, review round 4 code-review #7),
+        // never its message. Forensics-only.
         throw new Error(`member_scrub_failed:${scrubMember.error.code}`, {
           cause: 'cause' in scrubMember.error ? scrubMember.error.cause : undefined,
         });
@@ -747,7 +770,9 @@ export async function eraseMember(
   } catch (e) {
     if (e instanceof EraseNotFoundError) return err({ type: 'not_found' });
     logger.error(
-      { err: e, memberId, requestId: meta.requestId },
+      // Review round 4 (code-review #7) — the class and the SQLSTATE code,
+      // never the Error: a driver message can carry the subject's address.
+      { err: errKind(e), step: eraseStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
       'erase-member: scrub tx failed',
     );
     return err({ type: 'server_error', message: 'erase scrub failed' });
@@ -836,6 +861,8 @@ export async function eraseMember(
   // and the copies Resend would not delete (RoPA 8d); carried on `member_erased`.
   let resendDraftsCleared = 0;
   let resendCopiesRetained = 0;
+  // Spec 140 s2c review round 2 — stuck tenant audience orphans released.
+  let audienceOrphansStuckCount = 0;
 
   try {
     const r = await deps.broadcastsCascade.cancelInFlightForMember(deps.tenant, memberId, {
@@ -851,6 +878,7 @@ export async function eraseMember(
       broadcastsAlreadySentCount = r.alreadySentCount;
       resendDraftsCleared = r.resendDraftsCleared;
       resendCopiesRetained = r.resendCopiesRetained;
+      audienceOrphansStuckCount = r.audienceOrphansStuckCount;
     }
     // Broadcasts `cascade_partial_failure` is NOT benign (unlike F8 renewals
     // below): it means `unexpectedErrorCount > 0` — one or more broadcasts hit
@@ -872,6 +900,7 @@ export async function eraseMember(
         resendDraftsCleared: r.resendDraftsCleared,
         resendCopiesRetained: r.resendCopiesRetained,
         deferredCount: r.deferredCount,
+        audienceOrphansStuckCount: r.audienceOrphansStuckCount,
         cascade: 'f7_in_flight_broadcast_cancel',
       };
       // Spec 140 s1 review round 3 (code-review #3) — when every unexpected row
@@ -1291,6 +1320,12 @@ export async function eraseMember(
             // completing run's values are whole, re-drive or not.
             resend_drafts_cleared: resendDraftsCleared,
             resend_copies_retained: resendCopiesRetained,
+            // Spec 140 s2c review round 2 (security F2, pdpa M-3) — the tenant's
+            // STUCK audience orphans this run released without withholding
+            // (RoPA 8d): each copy is still at Resend, its row unsettled and
+            // owned by the runbook. Per run, unlike the counts above, and a
+            // minimum (review round 3): only the stuck rows the pass listed.
+            audience_orphans_stuck_count: audienceOrphansStuckCount,
             // L4 (DPO-log honesty): on a re-drive completion (alreadyErased) the
             // first pass already stamped contacts.removed_at, so this pass's
             // linked-user read is [] and the two counts above are 0/0. The flag
@@ -1305,10 +1340,18 @@ export async function eraseMember(
             cause: 'cause' in done.error ? done.error.cause : undefined,
           });
       });
+      // Spec 140 s2c review round 3 (code-review #4, reliability LOW-2) — the
+      // stuck counter counts RELEASED erasures: once, after member_erased is
+      // written, never on a withheld run.
+      if (audienceOrphansStuckCount > 0) {
+        erasureMetrics.orphanStuckReleased(audienceOrphansStuckCount, deps.tenant.slug);
+      }
     } catch (e) {
       allCascadesClean = false;
       logger.error(
-        { err: e, memberId, requestId: meta.requestId },
+        // Review round 4 (code-review #7) — the class and the SQLSTATE code,
+        // never the Error: a driver message can carry the subject's address.
+        { err: errKind(e), step: eraseStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
         'erase-member: member_erased audit failed',
       );
     }

@@ -50,6 +50,7 @@ import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/applicati
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
 import { emailTransactionalBridge } from '@/modules/broadcasts/infrastructure/email-transactional-bridge';
 import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
@@ -302,6 +303,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
         {
           tenant: tenant.ctx,
           broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
+          orphans: makeDrizzleBroadcastOrphansRepo(tenant.ctx.slug),
           audienceMode: 'primary_only' as const,
           audienceCeiling: 5000,
           broadcastsGateway: gateway,
@@ -409,6 +411,9 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
           deletes.push(rid);
           return { kind: 'deleted' as const };
         },
+        async deleteAudience(): Promise<never> {
+          throw new Error('deleteAudience is not used here');
+        },
         async retrieveBroadcastOnce(): Promise<never> {
           throw new Error('retrieveBroadcastOnce is not used here');
         },
@@ -445,7 +450,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
 
     it('ARCHIVE: the attach commits while the cascade is waiting → the row is skipped and stays approved with its id; nothing is deleted at Resend', async () => {
       const { cascaded, id, resendId, deletes } = await raceTheCascade('archive');
-      expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(await readRow(id)).toMatchObject({ status: 'approved', resendBroadcastId: resendId, cancelledAt: null });
       expect(deletes).toEqual([]);
     }, 60_000);
@@ -455,7 +460,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
       // Spec 140 s1 — the row it has just cancelled is counted cleared from
       // that settlement; review round 1 (reliability L-2): the terminal pass
       // does not DELETE it a second time in the same run.
-      expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 1, resendCopiesRetained: 0, deferredCount: 0 } });
+      expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 1, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deletes).toEqual([resendId]);
       expect(await readRow(id)).toMatchObject({ status: 'cancelled', resendBroadcastId: resendId, cancellationReason: 'gdpr_erasure_request' });
     }, 60_000);

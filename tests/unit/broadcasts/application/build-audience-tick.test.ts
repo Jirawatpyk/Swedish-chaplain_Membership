@@ -157,6 +157,8 @@ function makeDeps(opts: {
       locale: 'en' as const,
       // F119 — required port; no brand configured for these cases.
       brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
+      // Spec 140 s2c - the orphan record; these cases do not read it.
+      orphans: { async recordOrphanedResendId() {} },
       /**
        * Injected rather than composed here: the resolver's own dependency
        * graph (members bridge, unsubscribes, attendees, plans) is large, and
@@ -192,6 +194,10 @@ function makeDeps(opts: {
           return 'approved';
         },
         async findByIdInTx() {
+          return broadcast;
+        },
+        // Spec 140 s2c — the failTerminally choke point re-reads the row.
+        async findById() {
           return broadcast;
         },
         async attachAudienceId(_tx: unknown, _t: unknown, _b: unknown, id: string) {

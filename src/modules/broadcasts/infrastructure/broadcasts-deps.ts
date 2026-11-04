@@ -13,6 +13,7 @@ import {
   findBroadcastByResendAudienceIdsBypassRls,
   makeDrizzleBroadcastsRepo,
 } from './db/drizzle-broadcasts-repo';
+import { makeDrizzleBroadcastOrphansRepo } from './db/drizzle-broadcast-orphans-repo';
 import { makeDrizzleBroadcastSegmentDefinitionsRepo } from './db/drizzle-broadcast-segment-definitions-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-unsubscribes-repo';
 import { rfc5321EmailValidator } from './email-validator/rfc5321-email-validator';
@@ -492,6 +493,8 @@ export async function makeDispatchScheduledBroadcastDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    // Spec 140 s2c — the orphaned Resend id record (migration 0325).
+    orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
     // Spec 140 s2a review round 2 (CR#2): the legacy leg's createBroadcast
     // retries a 5xx inside the budget. Deleted with the leg in slice 4.
     broadcastsGateway: legacyResendBroadcastsGateway,
@@ -574,6 +577,8 @@ export function makeSweepExpiredBroadcastsDeps(
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     broadcastsGateway: resendBroadcastsGateway,
     imagesRepo: drizzleBroadcastImagesRepo,
+    // Spec 140 s2c [P M-1] — the orphaned Resend id record's retention prune.
+    orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
     audit: f7AuditAdapter,
     clock: systemClock,
     requestId,
@@ -632,6 +637,9 @@ export function makeCancelInFlightBroadcastsForMemberDeps(tenantId: string) {
     // ONE `deleteBroadcastOnce` and, after a 404 / 403, ONE
     // `retrieveBroadcastOnce`, both under the row lock.
     broadcastsGateway: resendBroadcastsGateway,
+    // Spec 140 s2c (DL10) — the erasure mode settles the member's orphan rows
+    // and the tenant's leaked audiences (`deleteAudience`).
+    orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
   };
 }
 
@@ -942,6 +950,8 @@ import type { CleanupOrphanedAudiencesDeps } from '../application/use-cases/clea
  * Deps: tenant context + `broadcastsRepo` (list + mark via `withTx`) +
  * `broadcastsGateway` (deleteAudience) + `clock` (grace cutoff).
  * Mirrors `makeReconcileStuckSendingDeps` — same adapters, leaner dep set.
+ * Spec 140 s2c — plus the orphan record the drain settles and the members
+ * bridge's erased read (an erased requester's young row skips the grace).
  */
 export function makeCleanupOrphanedAudiencesDeps(
   tenantId: string,
@@ -952,6 +962,8 @@ export function makeCleanupOrphanedAudiencesDeps(
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     broadcastsGateway: resendBroadcastsGateway,
     clock: systemClock,
+    orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
+    membersBridge,
   };
 }
 
@@ -1233,6 +1245,8 @@ export async function makeBuildAudienceTickDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    // Spec 140 s2c — the orphaned Resend id record (migration 0325).
+    orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
     broadcastsGateway: resendBroadcastsGateway,
     audit: f7AuditAdapter,
     clock: systemClock,

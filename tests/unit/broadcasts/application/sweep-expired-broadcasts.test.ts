@@ -32,6 +32,7 @@ import {
 import type { BroadcastImageRecord } from '@/modules/broadcasts/application/ports/broadcast-images-repo';
 import type { RetentionCandidate, RetentionCursor } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { asTenantContext } from '@/modules/tenants';
+import { ORPHAN_PRUNE_SKEW_MARGIN_MS, ORPHAN_ROW_RETENTION_DAYS } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
 
 const tenant = asTenantContext('test-tenant');
 const NOW = new Date('2031-06-15T20:50:00.000Z');
@@ -87,6 +88,8 @@ function makeDeps(opts: {
   auditThrows?: boolean;
   timeBudgetMs?: number;
   batchSize?: number;
+  /** Spec 140 s2c — what the orphan prune answers; `'throws'` = it fails. Default 0. */
+  pruned?: number | 'throws';
 }) {
   // The fake table: rows leave it only through `deleteExpiredForRetention`.
   const table = new Map<string, FakeRow>((opts.rows ?? []).map((r) => [r.broadcastId, r]));
@@ -157,6 +160,11 @@ function makeDeps(opts: {
       ownerIds.flatMap((id) => Array.from({ length: opts.imagesPerRow ?? 0 }, (_v, n) => imageOf(id, n))),
   );
 
+  const pruneOrphans = vi.fn(async (_cutoff: Date) => {
+    events.push('prune');
+    if (opts.pruned === 'throws') throw new Error('57P01 terminating connection');
+    return opts.pruned ?? 0;
+  });
   const emitTyped = vi.fn(async (_tx: unknown, event: { eventType: string }) => {
     if (opts.auditThrows && event.eventType === 'broadcast_retention_swept') throw new Error('audit down');
   });
@@ -174,6 +182,7 @@ function makeDeps(opts: {
     },
     broadcastsGateway: { deleteBroadcast },
     imagesRepo: { markDeletedByOwners },
+    orphans: { pruneOrphans },
     audit: { emit: vi.fn(async () => undefined), emitTyped } as never,
     clock: {
       now: () => {
@@ -186,7 +195,7 @@ function makeDeps(opts: {
     ...(opts.batchSize !== undefined ? { batchSize: opts.batchSize } : {}),
     ...(opts.timeBudgetMs !== undefined ? { timeBudgetMs: opts.timeBudgetMs } : {}),
   };
-  return { deps, table, events, listCalls, deleteCalls, gatewayCalls, txOpened, markDeletedByOwners, emitTyped };
+  return { deps, table, events, listCalls, deleteCalls, gatewayCalls, txOpened, markDeletedByOwners, emitTyped, pruneOrphans };
 }
 
 function runAudits(emitTyped: ReturnType<typeof vi.fn>) {
@@ -204,6 +213,7 @@ const ZERO_OUTPUT = {
   providerCopyRetainedAtProcessor: 0,
   oldestAnchor: null,
   newestAnchor: null,
+  orphanRowsPruned: 0,
 };
 
 beforeEach(() => {
@@ -528,5 +538,48 @@ describe('sweepExpiredBroadcasts — failures', () => {
     const result = await sweepExpiredBroadcasts(deps);
     expect(result).toEqual({ ok: false, error: { kind: 'retention_sweep.server_error', sweptCount: 0, cause: 'boom' } });
     expect(runAudits(emitTyped)[0]?.payload).toMatchObject({ completed: false, batches: 0 });
+  });
+});
+
+/**
+ * Spec 140 s2c [P M-1] — the run also prunes the orphaned Resend id record
+ * (`prune_orphaned_resend_ids`, 0325): settled rows and `create_unconfirmed`
+ * rows older than `ORPHAN_ROW_RETENTION_DAYS`. Once per run, after the run row,
+ * best-effort: a failed prune is logged and the sweep's answer is unchanged.
+ */
+describe('sweepExpiredBroadcasts — the orphan-record prune (spec 140 s2c)', () => {
+  // The cutoff is a further ORPHAN_PRUNE_SKEW_MARGIN_MS older: the SQL floor
+  // compares it with the DB's now(), so an app clock ahead of Neon's must not
+  // make it "too recent" and turn every daily prune into a refusal.
+  it('prunes once per run with the cutoff ORPHAN_ROW_RETENTION_DAYS + ORPHAN_PRUNE_SKEW_MARGIN_MS before the run, after the run row', async () => {
+    const { deps, events, pruneOrphans } = makeDeps({ pruned: 3 });
+    const result = await sweepExpiredBroadcasts(deps);
+    expect(result).toEqual({ ok: true, value: { ...ZERO_OUTPUT, orphanRowsPruned: 3 } });
+    expect(pruneOrphans).toHaveBeenCalledTimes(1);
+    expect(ORPHAN_PRUNE_SKEW_MARGIN_MS).toBe(60 * 60 * 1000);
+    expect(pruneOrphans).toHaveBeenCalledWith(
+      new Date(NOW.getTime() - ORPHAN_ROW_RETENTION_DAYS * 24 * 60 * 60 * 1000 - ORPHAN_PRUNE_SKEW_MARGIN_MS),
+    );
+    expect(events.at(-1)).toBe('prune');
+  });
+
+  it('a failed prune is logged with its class, counted, and the sweep still answers ok (orphanRowsPruned null)', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const counted = vi.spyOn(broadcastsMetrics, 'retentionOrphanPruneFailed');
+    const { deps } = makeDeps({ pruned: 'throws' });
+    const result = await sweepExpiredBroadcasts(deps);
+    // Review round 1 (reliability L-2) — a durable signal, not only a log line.
+    expect(counted).toHaveBeenCalledWith('test-tenant');
+    counted.mockRestore();
+    expect(result).toEqual({ ok: true, value: { ...ZERO_OUTPUT, orphanRowsPruned: null } });
+    const line = logged.warn.find((c) => c[1] === 'broadcasts.retention_sweep.orphan_prune_failed');
+    expect(line?.[0]).toEqual({ tenantId: 'test-tenant', err: 'Error' });
+  });
+
+  it('a sweep that fails still prunes (the record is independent of the E-Blast rows)', async () => {
+    const { deps, pruneOrphans } = makeDeps({ auditThrows: true });
+    const result = await sweepExpiredBroadcasts(deps);
+    expect(result.ok).toBe(false);
+    expect(pruneOrphans).toHaveBeenCalledTimes(1);
   });
 });

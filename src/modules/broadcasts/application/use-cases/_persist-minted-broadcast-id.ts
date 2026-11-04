@@ -35,6 +35,14 @@
  * delete on ANY arm (a hold that won owns its removal), so there is no reclaim
  * and nothing to read back.
  *
+ * Spec 140 s2c (DL6) — a minted id left on no row is RECORDED
+ * (`broadcast_orphaned_resend_ids`, best-effort, `recordOrphanBestEffort`) so
+ * the `cleanup-audiences` drain deletes it at Resend: a reclaim that leaked
+ * (`attach_lost` / `row_vanished` / `persist_failed`), and a DB fault whose
+ * read-back failed and kept the id (`read_back_failed_kept` — the id may be on
+ * the row after all; the drain skips it while a non-terminal row holds it). A
+ * reclaimed id, a landed id and an inherited id are not recorded.
+ *
  * `logPrefix` keeps each leg's log namespace — the names below are unchanged
  * from the code they replace (`broadcasts.dispatch.*` is the LIVE leg's, read
  * by runbooks and alerts); `logFields` adds a leg's extra ids (the import leg's
@@ -45,9 +53,11 @@ import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
+import type { BroadcastOrphansRepo } from '../ports/broadcast-orphans-repo';
 import type { BroadcastsRepo, LeaseToken } from '../ports/broadcasts-repo';
 import { BroadcastConcurrentMutationError, BroadcastNotFoundError } from '../ports/broadcasts-repo';
 import { reclaimMintedBroadcast } from './_reclaim-minted-broadcast';
+import { recordOrphanBestEffort } from './_record-orphaned-resend-id';
 
 /** The three refusals, in the shape both legs' error unions already carry. */
 export type PersistBroadcastIdRefusal =
@@ -65,10 +75,14 @@ export async function persistBroadcastIdBeforeSend(
     readonly tenant: TenantContext;
     readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'attachBroadcastId' | 'findById'>;
     readonly broadcastsGateway: Pick<BroadcastsGatewayPort, 'deleteBroadcast'>;
+    /** Spec 140 s2c — where a minted id left on no row is recorded. */
+    readonly orphans: Pick<BroadcastOrphansRepo, 'recordOrphanedResendId'>;
   },
   input: { readonly broadcastId: BroadcastId },
   args: {
     readonly resendBroadcastId: string;
+    /** Spec 140 s2c [A7] — the row's requester, stored on an orphan row (a snapshot, no FK). */
+    readonly requestedByMemberId: string;
     /** Logged by the reclaim only. */
     readonly resendAudienceId: string;
     readonly minted: boolean;
@@ -106,13 +120,22 @@ export async function persistBroadcastIdBeforeSend(
       resendBroadcastId,
       ...args.logFields,
     };
+    const recordOrphan = (reason: 'attach_lost' | 'row_vanished' | 'persist_failed' | 'read_back_failed_kept') =>
+      recordOrphanBestEffort(deps.orphans, { tenantId: deps.tenant.slug, logPrefix }, {
+        broadcastId: input.broadcastId,
+        requestedByMemberId: args.requestedByMemberId,
+        resourceType: 'broadcast',
+        resourceId: resendBroadcastId,
+        reason,
+      });
     const reclaim = async (why: 'attach_lost' | 'row_vanished' | 'persist_failed', observedStatus?: string) => {
       if (!args.minted) return;
-      await reclaimMintedBroadcast(deps, input, resendBroadcastId, args.resendAudienceId, {
+      const reclaimed = await reclaimMintedBroadcast(deps, input, resendBroadcastId, args.resendAudienceId, {
         why,
         logPrefix,
         ...(observedStatus === undefined ? {} : { observedStatus }),
       });
+      if (reclaimed === 'leaked') await recordOrphan(why);
     };
     if (persistErr instanceof BroadcastConcurrentMutationError) {
       if (!args.minted) logger.info(ids, `${logPrefix}.send_fence_lost`);
@@ -152,6 +175,8 @@ export async function persistBroadcastIdBeforeSend(
         await reclaim('persist_failed');
       } else if (idLanded === true) {
         logger.warn(ids, `${logPrefix}.persist_ack_lost_id_kept`);
+      } else {
+        await recordOrphan('read_back_failed_kept');
       }
     }
     return {

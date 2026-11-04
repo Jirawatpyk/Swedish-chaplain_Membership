@@ -30,7 +30,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import { sql } from 'drizzle-orm';
+import { vi } from 'vitest';
 import { runInTenant } from '@/lib/db';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { marketingUnsubscribes } from '@/modules/broadcasts/infrastructure/schema';
 import { asContactId, asMemberId, type UserId } from '@/modules/members';
 import type { ChangeRequestId } from '@/modules/members/domain/change-request/change-request';
@@ -174,5 +177,50 @@ describe('108 PR-D — broadcasts-gauges cron on live Neon (staff review P4.1)',
     expect(body.membersPendingTotal).toBeGreaterThanOrEqual(1);
     // `now() - MIN(submitted_at)` over a 2026-09-11 row: seconds, not zero
     expect(body.membersOldestAgeSecondsMax).toBeGreaterThan(0);
+  });
+
+  /**
+   * Spec 140 s2c review round 1 (security M, reliability M-3, spec M4) — the
+   * two orphan gauges' windows on the REAL database clock:
+   *   - unsettled: a row with an id unsettled for more than
+   *     `ORPHAN_UNSETTLED_GAUGE_AGE_HOURS` (24) counts, a 23 h one does not,
+   *     nor a settled one;
+   *   - unconfirmed: a `create_unconfirmed` row of the last
+   *     `ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS` (24) counts, a 25 h one not.
+   *     Review round 2 (spec M4): TWO rows in the window and ONE out, so a
+   *     gauge that counted the wrong side (1) cannot pass as the right one (2).
+   */
+  it('the orphan gauges count a 25 h unsettled row (not a 23 h one) and the 23 h + 1 h unconfirmed rows (not a 25 h one)', async () => {
+    const HOUR = 60 * 60 * 1000;
+    const at = (hoursAgo: number) => new Date(Date.now() - hoursAgo * HOUR).toISOString();
+    const row = (resourceId: string | null, reason: string, createdAt: string, settled: boolean) => sql`
+      INSERT INTO broadcast_orphaned_resend_ids
+        (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at, settled_at, outcome)
+      VALUES (${tenant.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'broadcast', ${resourceId}, ${reason},
+              ${createdAt}::timestamptz, ${settled ? createdAt : null}::timestamptz, ${settled ? 'deleted' : null})`;
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.execute(row(`rb-25h-${randomUUID()}`, 'attach_lost', at(25), false));
+      await tx.execute(row(`rb-23h-${randomUUID()}`, 'attach_lost', at(23), false));
+      await tx.execute(row(`rb-30h-settled-${randomUUID()}`, 'attach_lost', at(30), true));
+      await tx.execute(row(null, 'create_unconfirmed', at(23), false));
+      await tx.execute(row(null, 'create_unconfirmed', at(1), false));
+      await tx.execute(row(null, 'create_unconfirmed', at(25), false));
+    });
+    const unsettled = vi.spyOn(broadcastsMetrics, 'orphanedResendIdsUnsettled');
+    const age = vi.spyOn(broadcastsMetrics, 'orphanedResendIdsUnsettledOldestAgeSeconds');
+    const unconfirmed = vi.spyOn(broadcastsMetrics, 'orphanedResendIdsUnconfirmed');
+    try {
+      const res = await gaugesGet(req(SECRET));
+      expect(res.status).toBe(200);
+      expect(unsettled).toHaveBeenCalledWith(tenant.ctx.slug, 1);
+      expect(unconfirmed).toHaveBeenCalledWith(tenant.ctx.slug, 2);
+      const ours = age.mock.calls.find((c) => c[0] === tenant.ctx.slug);
+      expect(ours?.[1]).toBeGreaterThanOrEqual(24 * 3600);
+      expect(ours?.[1]).toBeLessThan(26 * 3600);
+    } finally {
+      unsettled.mockRestore();
+      age.mockRestore();
+      unconfirmed.mockRestore();
+    }
   });
 });

@@ -55,6 +55,11 @@ import {
   TRANSITION_FIELDS,
 } from '../../application/ports/broadcasts-repo';
 import { CASCADE_CANCELLATION_REASONS } from '../../domain/value-objects/cascade-cancellation-reason';
+import {
+  ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT,
+  ORPHAN_STUCK_ATTEMPTS,
+  ORPHAN_STUCK_MIN_AGE_MS,
+} from '../../domain/value-objects/orphaned-resend-id';
 import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
@@ -2680,6 +2685,30 @@ export function makeDrizzleBroadcastsRepo(
      *
      * Note this DETACHES; per U1 it does not delete the contact record at the
      * processor. See residual 8a in `docs/compliance/processing-records.md`.
+     *
+     * Spec 140 s2c review round 2 (pdpa H-1) — a third arm pairs the addresses
+     * with the tenant's UNSETTLED audience orphans (`broadcast_orphaned_resend_ids`,
+     * `resource_type = 'audience'`): a leaked audience the drain has not yet
+     * settled, a stuck one included, may hold the address.
+     *
+     * Review round 3 (code-review #3) — that arm reads at most
+     * `ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT` (10) orphans, most attempts first
+     * (stuck ones ahead of them since round 4, below),
+     * then the oldest, so the pairs stay `addresses × 10` at worst. An orphan
+     * past the cap is not detached; the erasure's audience pass and the drain
+     * delete its audience outright (RoPA 8d names the residual).
+     *
+     * Review round 4 (code-review #2) — STUCK orphans first (the stuck rule of
+     * `ORPHAN_STUCK_ATTEMPTS`: tries AND `ORPHAN_STUCK_MIN_AGE_MS`), then most
+     * attempts, then the oldest. Pass (b) releases a stuck audience rather
+     * than deleting it, so the stuck ones get the detach first. `now()` is the
+     * scrub transaction's clock; it only orders the rows.
+     *
+     * Review round 3 (security INFO-2) — this SELECT runs INSIDE the members
+     * scrub transaction (`broadcasts-audience-derivation-adapter.ts`), so a
+     * grant or RLS regression on `broadcast_orphaned_resend_ids` aborts the
+     * scrub, not just this arm; `verify-schema` pins its RLS + FORCE and
+     * the `chamber_app` DELETE / UPDATE grants (the 0325 check).
      */
     async listMemberResendAudienceContactsInTx(txUnknown, tenantIdArg, emails) {
       const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
@@ -2758,6 +2787,45 @@ export function makeDrizzleBroadcastsRepo(
           -- audience_deleted_at IS NULL above is the bound that actually
           -- matters: cleanup-orphaned-audiences deletes the audience at Resend
           -- before stamping it, so a stamped row has nothing left to detach.
+
+        UNION
+
+        -- Spec 140 s2c review round 2 (pdpa H-1) — the leaked-audience arm.
+        -- An UNSETTLED audience orphan of this tenant names an audience no
+        -- row carries any more (a leaked import, a replaced row), which may
+        -- still hold the address; a STUCK one can stay for days. Paired with
+        -- every address, as the arm above: a 404 is counted already_absent,
+        -- a failure resend_contacts_failed_count, and neither blocks the
+        -- erasure (the propagation is best-effort). Settled rows are gone at
+        -- Resend or never were. NO BACKTICKS in this comment (sql template).
+        -- Review round 3 (code-review #3) — at most
+        -- ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT orphans, the most-attempted
+        -- first (the stuck ones), then the oldest; past the cap, pass (b) and
+        -- the drain delete the audience outright. Every name in the capped
+        -- subquery is qualified (alias capped) and fenced on the tenant.
+        -- Review round 4 (code-review #2) — STUCK rows rank first (tries at
+        -- ORPHAN_STUCK_ATTEMPTS or more AND older than ORPHAN_STUCK_MIN_AGE_MS):
+        -- pass (b) releases a stuck audience rather than deleting it, so it
+        -- gets the detach first. now() is the scrub tx clock and pass (b)
+        -- judges stuck later on the app clock (round 4 follow-up, code-review
+        -- #3): a row that turns stuck between the two can miss the detach past
+        -- the cap and then be released by pass (b). RoPA 8d residual 6 names
+        -- it; the address is still removed when the drain deletes the audience.
+        SELECT DISTINCT o.resource_id AS audience_id,
+                        e.email AS email
+        FROM (
+          SELECT capped.resource_id
+          FROM broadcast_orphaned_resend_ids capped
+          WHERE capped.tenant_id = ${tenantIdArg}
+            AND capped.resource_type = 'audience'
+            AND capped.settled_at IS NULL
+            AND capped.resource_id IS NOT NULL
+          ORDER BY (capped.attempts >= ${ORPHAN_STUCK_ATTEMPTS}::int
+                    AND capped.created_at <= now() - (${ORPHAN_STUCK_MIN_AGE_MS}::bigint * interval '1 millisecond')) DESC,
+                   capped.attempts DESC, capped.created_at ASC, capped.orphan_id ASC
+          LIMIT ${ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT}
+        ) o
+        CROSS JOIN unnest(${emailArray}) AS e(email)
       `)) as unknown as Array<{ audience_id: string; email: string }>;
       return rows.map((r) => ({ audienceId: r.audience_id, email: r.email }));
     },

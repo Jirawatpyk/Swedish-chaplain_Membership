@@ -49,6 +49,7 @@ import type {
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { makeSubmitBroadcastDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
 import { emailTransactionalBridge } from '@/modules/broadcasts/infrastructure/email-transactional-bridge';
 import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
@@ -243,6 +244,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
       {
         tenant: tenant.ctx,
         broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
+        orphans: makeDrizzleBroadcastOrphansRepo(tenant.ctx.slug),
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
         broadcastsGateway: gateway,

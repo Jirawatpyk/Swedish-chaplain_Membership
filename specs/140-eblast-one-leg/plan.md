@@ -86,7 +86,7 @@ Also: the new ceiling env, the Segments names, `docs/decisions.md` D-042, go-liv
 | 1 | Erasure deletes reachable drafts; refusals delete their draft | ED1–ED5 | pdpa-gdpr, security, reliability, spec-compliance | `140-eblast-one-leg-s1` | #713 · done |
 | 2a | Bounded Resend calls (one signal spans every attempt, C = 10 s); no in-process retry on creates; the legacy leg skips import rows; `propagate` bounded | DL5a, DL7, DL8, carry R3 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2` | #719 · done |
 | 2b | Lease + fencing token + pre-call check + row-start cutoff; migration 0322 (lease columns + trigger list); the live-lease legacy skip | DL1–DL4, DL9, cell 23, carry R4 | drizzle-migration, security, reliability, spec-compliance | `140-eblast-one-leg-s2b` | #723 · done |
-| 2c | Orphan-id table (migration 0323) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; an audience whose reclaim was undecided (`audience_leaked`, s2b round 2) gets an orphan row and is drained; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | — · open |
+| 2c | Orphan-id table (migration 0325) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; an audience whose reclaim was undecided (`audience_leaked`, s2b round 2) gets an orphan row and is drained; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | #734 · done |
 | 3 | Error classes + import-leg table fixes; `listAudiences` per-invocation time budget | DT1–DT5 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
 | 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | — · open |
 
@@ -293,12 +293,12 @@ Lease: none / live-mine / live-other / expired. "Holder" = the tick that claimed
 | 7 | stale holder (lease expired + retaken) | any | live-other | — | every pre-call check false; every CAS 0 rows; no column written | `dispatch-lease-repo.test.ts` · it.each "stale token → 0 rows" over the 12 CAS + the check (new) | a |
 | 8 | holder, after a mint | approved | live-other at attach | — | concurrent skip; reclaim; orphan row if the reclaim fails | `build-audience-tick-lease.test.ts` · "a lost-token attach is a concurrent skip and the mint is reclaimed" (new) | a |
 | 9 | holder → `failTerminally` | approved | lost | — | no terminal write, no email, concurrent skip | same · "a lost lease never writes failed_to_dispatch" (new) | a |
-| 10 | holder → `failTerminally` | approved | live-mine | row holds a draft: deleted / absent / canceled / failed | reclaim, then terminal with `resendDraftOutcome` | same · it.each "choke point clears the draft" (new) | a |
-| 11 | same | same | same | 403 + handed | concurrent skip, no terminal | same · "choke point: a handed draft is a skip" (new) | a |
-| 12 | same | same | same | undecided | orphan `terminal_reclaim_undecided`, then terminal | same · "choke point: undecided writes an orphan row" (new) + `orphaned-resend-ids.test.ts` | a |
+| 10 | holder → `failTerminally` | approved | live-mine | row holds a draft: deleted / absent / canceled / failed | reclaim, then terminal with `resendDraftOutcome` | `build-audience-tick-orphans.test.ts` · it.each "DELETE %s (GET %o) → terminal with resendDraftOutcome %s, and no orphan row" + "[A3] re-reads the row, checks the lease, deletes the draft the RE-READ holds…" | a |
+| 11 | same | same | same | 403 + handed | no terminal, no email; since review round 1 the row is caught up to `sending` (`catchUpHanded`) | `build-audience-tick-orphans.test.ts` · "DELETE 403 whose GET reads queued (handed) → no terminal write, no member email" + "a handed draft at the choke point catches the row up to sending" | a |
+| 12 | same | same | same | undecided | orphan `terminal_reclaim_undecided`, then terminal | `build-audience-tick-orphans.test.ts` · "an undecided DELETE → an orphan row terminal_reclaim_undecided FIRST, then terminal…" + `orphaned-resend-ids.test.ts` (the CHECKs) | a |
 | 13 | holder dies | approved | live-mine (dead) | — | scan excludes until expiry (≤ 330 s), then row 2 | `cron-dispatch-scheduled.contract` · "the scan excludes a live lease" (new) | a |
 | 14 | holder, end of tick | any | live-mine / cleared | — | release; 0 rows not an error | `dispatch-lease-repo.test.ts` · "release clears only my token, any status" (new) | a |
-| 15 | holder → `createBroadcast` | approved | live-mine | timeout / retryable | one attempt; orphan `create_unconfirmed` (id NULL); FR-021 path | gateway `resend-gateway-bounded-calls.test.ts` · "createBroadcast is not retried" (new) **(b)** + `build-audience-tick-lease.test.ts` · "a retryable create writes create_unconfirmed" **(a)** | **a+b** |
+| 15 | holder → `createBroadcast` | approved | live-mine | timeout / retryable | one attempt; orphan `create_unconfirmed` (id NULL); FR-021 path | gateway `resend-gateway-bounded-calls.test.ts` · it.each(CREATES) "%s: one request on a 5xx" + "%s: one request on a timeout" **(b)** + `build-audience-tick-orphans.test.ts` · it.each "DL5b — createBroadcast ends in %s → create_unconfirmed with no id" and "… refused with %s → no row" **(a)** | **a+b** |
 | 16 | erasure (D-040) | approved | none / live-other | holds the row lock, then cancels | claim waits ≤ 23 s, then `wrong_status` skip | `dispatch-lease-erasure-order.test.ts` · DL3 (new, `chamber_app`) | a |
 | 17 | erasure | approved | live-mine (A mid-tick) | cancels (`applyTransition` clears the lease) | A's next check waits, sees no token → no call; A's CAS → 0 rows | same · "a cascade cancel mid-tick ends the holder" (new) | a |
 | 18 | erasure | approved | live-mine | undecided, no write | lease untouched; A's check waits at most `CHECK_LOCK_TIMEOUT_MS` (28 s = E + 5 s) behind the lock, then continues; past it, 55P03 → `lease_check_failed` (no call, retried next tick; review round 1, reliability L2) | `erasure-vs-dispatch-begun.test.ts` (existing, re-run); repo "a check behind a lock held longer than its lock_timeout fails (55P03), so the tick answers lease_check_failed" | a |
@@ -308,11 +308,11 @@ Lease: none / live-mine / live-other / expired. "Holder" = the tick that claimed
 | 22 | legacy leg | approved | any | import columns set | `import_row_skipped`, no call | `dispatch-scheduled-broadcast.test.ts` · DL7 (new case) | b |
 | 23 | legacy leg | approved | live-other; no import columns | — | `lease_held` skip (P3 extension) | same · "legacy skips a live lease" (new) | a (needs 0322) |
 | 24 | legacy leg | approved | none / expired; no import columns | — | unchanged | existing suite | b |
-| 25 | drain | — | — | id still on a `broadcasts` row | skipped | `cleanup-orphaned-audiences.test.ts` · "an id a row still holds is not drained" (new) | a |
-| 26 | drain | — | — | DELETE deleted / absent | settled as such | same · it.each (new) + `orphaned-resend-ids.test.ts` DL6 | a |
-| 27 | drain | — | — | 403 + canceled / failed → retained; + queued / sent → handed | settled | same · it.each (new) | a |
-| 28 | drain | — | — | retryable / other / 403 + draft | left for next tick | same · it.each (new) | a |
-| 29 | drain | — | — | id NULL (`create_unconfirmed`) | never drained; counted in the gauge | same · "unconfirmed rows are counted, not drained" (new) | a |
+| 25 | drain | — | — | id still on a `broadcasts` row | skipped (a non-terminal holder, type-matched; an audience's terminal holder for `GRACE_MS`). Review round 2: a `sent` / `partially_sent` / `partial_delivery_accepted` holder → settled `superseded`, no Resend call, never counted | `broadcast-orphans-repo.test.ts` · "[A1] a non-terminal holder hides the id…" + "an audience a row just went terminal with is not drained until GRACE_MS has passed" + "[code-review #2] an orphan whose id a sent row holds is superseded, not handed…" + `orphan-drain.test.ts`; drain / cascade / settle unit · "[code-review #2] an orphan whose id a sent row holds is superseded, not handed" | a |
+| 26 | drain | — | — | DELETE deleted / absent | settled as such; review round 2: `absent` only when a GET `REPROBE_PAUSE_MS` later answers `not_found`, any other GET is left (row 28) | `cleanup-orphaned-audiences-drain.test.ts` · it.each "a broadcast row whose DELETE answers %s (GET %o) settles %s" + `orphan-drain.test.ts`; settle unit · "[code-review #4] a 404 then a GET draft is not absent" | a |
+| 27 | drain | — | — | 403 + canceled / failed → retained; + queued / sent → handed | settled | `cleanup-orphaned-audiences-drain.test.ts` · the same it.each | a |
+| 28 | drain | — | — | retryable / other / 403 + draft | left for next tick, `attempts` + 1 (review round 1) | `cleanup-orphaned-audiences-drain.test.ts` · it.each "… is left for the next run" + "an undecided answer marks the row attempted…" | a |
+| 29 | drain | — | — | id NULL (`create_unconfirmed`) | never drained; counted in the gauge | `broadcast-orphans-repo.test.ts` · "records once per id … never lists create_unconfirmed" + `orphan-drain.test.ts` + `orphan-unconfirmed-gauge.test.ts` + `broadcasts-gauges-cron.test.ts` (the 24 h window, real DB) | a |
 | 30 | holder, after `/send` (ids attach, `sending` transition) | `sending` / `approved` | lost | — | not critical, counted `{step}` (review round 1, CR#1): `sending` (a sibling flipped it) INFO `lease_lost_after_send`; `approved` WARN, "unexpected" — no live holder can be taken over (round 3, reliability LOW-B) | `build-audience-tick-lease.test.ts` · "A4 — a lease lost after /send (the ids attach) on an approved row logs lease_lost_after_send at WARN…", "A4 — the same for a lease lost at the sending transition" | a |
 | 31 | same, plus the completion stamp | any other (a cancel after the mail went out; at the stamp only `failed_to_dispatch`, after `reconcile-stuck-sending` > 24 h) | lost | — | critical: `sent_but_transition_lost` (ids attach, transition) / `completion_stamp_failed` (stamp), counted `{step}`; an `approved` row at the stamp is a dead arm, pinned at WARN | same · "a lease cleared by a cancel after /send still logs sent_but_transition_lost (%s)", "A4 — a lease lost at the completion stamp on a failed_to_dispatch row logs completion_stamp_failed and counts it…", "dead-arm pin — a lease lost at the completion stamp on an approved row is the WARN line, counted" | a |
 | 32 | completion stamp (no status CAS) | `SENDING_STARTED_BROADCAST_STATUSES` | none (a webhook cleared it) | — | the stamp lands: fenced `token OR status IN SENDING_STARTED` (round 1 CR#2; round 2 spec L-e) | repo · "a webhook %s-transition before the stamp still lets the stamp land (no lease on the row)" × sending, sent, partially_sent, partial_delivery_accepted | a |
@@ -438,7 +438,7 @@ s2a was 2 cells and still reached the review cap. The remaining 25 cells split a
 | Slice | Covers | Migration | Cells |
 |---|---|---|---|
 | **2b — lease** | lease columns, plus the trigger GUC list; claim, release and the pre-call check (`clock_timestamp()`); the token in every row writer; `applyTransition` clears the lease on any status change; the row-start cutoff and the TTL; the scan excludes a live lease; the legacy leg skips a live lease (cell 23); a lost lease is a concurrent skip; carry **R4** | 0322 | 1–9, 13, 14, 16–18, 20, 21, 23 |
-| **2c — orphan ids** | `broadcast_orphaned_resend_ids` (RLS + FORCE); the eight writers, including `create_unconfirmed` with a NULL id (a 5xx is included, matching RoPA 8d: "a 5xx, a network failure, or our own timeout"); the drain in `cleanup-audiences` (`maxDuration` 300, stops at 240 s); the `failTerminally` reclaim choke point; the unconfirmed gauge; carry **R1 #5**; **#699 closes** | 0323 | 10–12, 15 (DL5b), 25–29 |
+| **2c — orphan ids** | `broadcast_orphaned_resend_ids` (RLS + FORCE); the eight writers, including `create_unconfirmed` with a NULL id (a 5xx is included, matching RoPA 8d: "a 5xx, a network failure, or our own timeout"); the drain in `cleanup-audiences` (`maxDuration` 300, stops at 240 s); the `failTerminally` reclaim choke point; the unconfirmed gauge; carry **R1 #5**; **#699 closes** | 0325 | 10–12, 15 (DL5b), 25–29 |
 
 - In 2b, cell 8 keeps today's critical `minted_broadcast_leaked` log (`_reclaim-minted-broadcast.ts:66`); 2c replaces it with an orphan row.
 - DL5b and DL6 move to 2c.
@@ -567,6 +567,219 @@ Cell 23 is test-only: the scan already excludes a leased row before it reaches t
 - **The live legacy leg gains three behaviours:** the cell-23 skip, cleared-lease writes, and the cutoff. *(Superseded by s2b review round 1, CR#5: the import leg only; the legacy leg has no cutoff.)* Prod held 0 `broadcasts` rows on 30 Oct 2026. The import leg stays dark (flag OFF).
 - **The migration is catalogue-only.** The trigger is re-created from the newest definition and checked against the live one.
 
+### Slice 2c — build plan (agreed 3 Nov 2026)
+
+Drafted from the code at `e477b3337`. `chamber-os-architect` and `pdpa-gdpr-compliance-officer` read it before approval; their findings are marked [Ax] / [Px]. It supersedes design items 1, 8, 9 and 10 where they differ (the generalised `resource_type` / `resource_id`; the drain's NOT EXISTS against non-terminal rows only [A1]; the choke point's helper and re-read [A2, A3]; the erasure extension).
+
+#### Decision: the erasure cascade settles the member's orphans
+The maintainer asked the main session to consult the advisor and pick best practice.
+
+**Why.** s1's `member_erased.resend_drafts_cleared` / `resend_copies_retained` state that every DB-reachable Resend copy was settled or counted, and that an undecided one withholds `member_erased`. Once orphan rows exist, those ids are DB-reachable. Leaving them to the cron would make the evidence overstate. pdpa confirmed this is the right Art. 17 / PDPA §33 answer.
+
+**What it means:**
+- The cascade settles the member's known-id orphans; the cron stays the backstop.
+- The row stores `requested_by_member_id`, a snapshot with no FK and no content.
+- `create_unconfirmed`, which has no id, stays outside: it is covered by a gauge and the DSR caveat.
+
+#### Build
+**Branch:** `140-eblast-one-leg-s2c` from `e477b3337`, in f142 (clean install, `.husky/_`).
+
+##### 1. Migration 0325
+`new-migration` skill; journal `when` 1798545600000; template 0308 (no DELETE grant).
+
+**Table `broadcast_orphaned_resend_ids`:**
+- columns: `tenant_id`, `orphan_id uuid DEFAULT gen_random_uuid()`, `broadcast_id uuid NOT NULL`, `requested_by_member_id uuid NOT NULL` (neither has an FK), `resource_type text CHECK IN ('broadcast','audience')`, `resource_id text NULL`, `reason text CHECK IN (…)`, `created_at`, `settled_at timestamptz NULL`, `outcome text NULL CHECK IN ('deleted','absent','retained','handed')`;
+- `reason` values: `attach_lost`, `row_vanished`, `persist_failed`, `read_back_failed_kept`, `dead_broadcast_replaced`, `dead_broadcast_kept`, `terminal_reclaim_undecided`, `refused_draft_undeleted`, `audience_leaked`, `create_unconfirmed`.
+
+**Keys and CHECKs:**
+- PK `(tenant_id, orphan_id)`.
+- Partial UNIQUE `(tenant_id, resource_type, resource_id) WHERE resource_id IS NOT NULL`.
+- Partial index `(tenant_id, created_at) WHERE settled_at IS NULL`.
+- `(resource_id IS NULL) = (reason = 'create_unconfirmed')`.
+- `create_unconfirmed` ⇒ `resource_type = 'broadcast'`.
+- `btrim(resource_id) <> ''`.
+- `(settled_at IS NULL) = (outcome IS NULL)`.
+
+**Access:**
+- RLS ENABLE + FORCE, with the policy on `app.current_tenant`.
+- `chamber_app` gets SELECT, INSERT and UPDATE.
+- `lock_timeout` 5 s.
+- A `db:verify` canary.
+
+**Retention [P M-1]:**
+- A `SECURITY DEFINER` function `prune_orphaned_resend_ids(tenant, cutoff)`, following the 0310 pattern with `search_path` pinned.
+- It deletes settled rows and `create_unconfirmed` rows older than `ORPHAN_ROW_RETENTION_DAYS = 90`.
+- The retention sweep calls it.
+
+**Deviation (record it):** the design's `resend_broadcast_id` becomes `resource_type` + `resource_id`, so audiences fit [A8: sound].
+
+##### 2. Repo port + adapter
+Every method is tenant-fenced, runs in `runInTenant`, and calls `assertTenantBoundTx`.
+
+**`recordOrphanedResendId`**
+- Own tx, best-effort, `ON CONFLICT DO NOTHING`.
+- On a failed insert it logs at ERROR critical with `resource_type`, `resource_id`, `broadcast_id` and `reason`, never content [P M-3].
+
+**`listDrainableOrphans`**
+- Rows that are unsettled, have a non-null id, and are past the grace period. **The grace is skipped when the requester's `erased_at IS NOT NULL`** [P H-2: a row written after `member_erased` is drained on the next 15-minute tick].
+- **AND NOT EXISTS a NON-TERMINAL `broadcasts` row in the same tenant holding that id, type-matched**: `broadcast` ↔ `resend_broadcast_id`, `audience` ↔ `resend_audience_id` [A1 BLOCKER, A8].
+- A terminal row cannot send again, and `deleteBroadcastOnce` is draft-only.
+
+**`listMemberOrphans`**
+- Settled and unsettled rows, so the counts are stable across a re-drive [A6a].
+- Same type-matched, non-terminal rule.
+
+**`settleOrphan`:** a CAS on `settled_at IS NULL`.
+
+**`countRecentUnconfirmedOrphans`:** for the gauge. It counts `create_unconfirmed` rows from the last 24 h, named as a constant [A7].
+
+##### 3. Writers
+Each writer is at the caller, which holds the repo and the member id. None goes inside a shared gateway helper [A2].
+
+| reason | Site | id |
+|---|---|---|
+| `attach_lost` / `row_vanished` / `persist_failed` | `_persist-minted-broadcast-id.ts` :117 / :122 / :152. Only when the reclaim leaked: `_reclaim-minted-broadcast.ts:40` returns `'reclaimed' \| 'leaked'`. The helper gains `requestedByMemberId` [A7] | minted |
+| `read_back_failed_kept` | `_persist-minted-broadcast-id.ts:148` | minted |
+| `dead_broadcast_replaced` | `build-audience-tick.ts:2239`. Only when the probe read `cancelled`, not `not_found` [A7] | replaced id |
+| `dead_broadcast_kept` | `build-audience-tick.ts:1305` | kept id |
+| `audience_leaked` | `reclaimUnattachedAudience` `build-audience-tick.ts:673` / `:685`, **and the legacy leg's `audience_attach_lost_leaked`** `dispatch-scheduled-broadcast.ts:1371-1397` [A5]. `resource_type = 'audience'` | audience id |
+| `refused_draft_undeleted` (R1 #5) | the refuse-arm callers of `deleteDraftBeforeStandingRefusal` (tick :1054, legacy :855) on `undeleted` | row's draft id |
+| `terminal_reclaim_undecided` | the choke point (item 4) | row's draft id |
+| `create_unconfirmed` | `build-audience-tick.ts`, just before `onGatewayFailure` (:2216), for `createBroadcast` subKind `network` \| `timeout` \| `server_5xx`, never `api`. 5xx is included, matching RoPA 8d. Import leg only: the legacy retry cannot see an intermediate mint, and s4 deletes that leg | NULL |
+
+The shared persist helper also runs on the legacy leg, at :1302.
+
+##### 4. Choke point in `failTerminally`
+Pdpa M-1; design item 10; `build-audience-tick.ts:2720`.
+
+**When it runs:**
+- `failTerminally` gains `draftSettled?: true`. The two refuse arms (:1064, :1103) pass it, so nothing is deleted twice.
+- For every other caller, it **re-reads the row** with `findById` [A3] and acts when the row holds `resend_broadcast_id`.
+- If that read fails, the answer is retryable `dispatch.server_error` with no terminal write.
+
+**Sequence:** a pre-call lease check, then `deleteDraftBeforeStandingRefusal` (`_dispatch-standing-gate.ts:300`, which has the full outcome set [A2]), **before** the terminal tx. The lease check answers [A4]:
+
+| Lease check | Answer |
+|---|---|
+| lost | row 9 |
+| expiring | `lease_expiring` |
+| failed | retryable |
+
+None of them writes a terminal row.
+
+**Outcomes of the delete:**
+
+| Outcome | Result |
+|---|---|
+| `deleted` / `absent` / `cancelled` / `failed` | terminal, with `resendDraftOutcome` |
+| `handed` | concurrent skip, labelled `unknown_or_already_processed` (as at :1062); no terminal write and no email |
+| `undeleted` | an orphan row `terminal_reclaim_undecided`, then terminal |
+
+**Documented, not fixed:** a successful delete followed by a lost CAS leaves the row `approved` holding a 404 id. The next tick re-mints it.
+
+**W_max is unchanged [A4]:**
+- tick 2 already counts the two calls (N = 9, `_dispatch-lease.ts:54-57`);
+- tick 1's 5C cannot double, because the standing gate's delete+GET and the choke point's are mutually exclusive (the refuse arms pass `draftSettled`);
+- the budget test pins that reasoning with a comment and assertion.
+
+##### 5. Drain
+In `cleanup-orphaned-audiences.ts`: a second pass after the audience loop, at concurrency 5, up to 20 rows.
+
+**Broadcast rows:**
+- `deleteBroadcastOnce`: `deleted` / `absent` settle as such.
+- `forbidden` → `retrieveBroadcastOnce`: canceled or failed → `retained`; queued or sent → `handed`.
+- Anything else is left for the next run.
+
+**Audience rows:** `deleteAudience`. A void answer (404 / 410 included) → `deleted`; a throw is left for the next run.
+
+**Never drained:** `create_unconfirmed`.
+
+**Other changes:**
+- The route gets `maxDuration = 300`, and the drain stops at 240 s.
+- `cause: e.message` (:108, :147) → `err: errKind(e)`, plus `tenantId`.
+- The port docblock (`broadcasts-gateway-port.ts:490-543`) gains a 4th documented exception: an id read from the orphan table.
+
+##### 6. Erasure
+In `cancel-in-flight-broadcasts-for-member.ts`, after the terminal-draft pass (:794-830). No row lock, so E is unchanged. Each call and its settle CAS run in their own short tx, under the cascade deadline; untried rows count as undecided [A6].
+
+**(a) The member's broadcast orphans (`listMemberOrphans`):**
+- The same outcome table as the drain. Settled outcomes count into the existing `resend_drafts_cleared` / `resend_copies_retained`.
+- `handed` → settle `handed`, and count it as already sent (8c) through the existing `broadcasts_already_sent_count` evidence. It is keyed on the snapshot `broadcast_id`, with no `recordAlreadySent` row write, because the row may be gone [P M-2, A6b].
+- Undecided → withhold `member_erased`; `reconcile-erasures` drives the erasure again.
+
+**(b) The tenant's unsettled audience orphans** [P H-1]. A leaked audience holds the recipients' contacts, so this is not keyed on the requester:
+- they are deleted, which is always correct because no non-terminal row holds them;
+- they are **not** counted into the draft fields [P L-1, A6c];
+- an undecided one withholds `member_erased`.
+
+**Race [A6d, P H-2]:** an orphan written after the pass is drained by the cron within one tick, because erased requesters skip the grace. RoPA states this window.
+
+##### 7. Gauge
+- `broadcasts_orphaned_resend_ids_unconfirmed{tenant}`: the last-24 h count, in `broadcasts-gauges/route.ts`, following the `audienceImportStuck` template (:256, :327, :355).
+- After migrating dev, run one `pnpm db:query` to confirm the route's role reads the FORCE-RLS table as it reads `broadcasts`.
+
+##### 8. Docs
+
+**RoPA 8d:**
+- The known-id leaked-mint residual is CLOSED by the drain and erasure.
+- Named residuals that remain:
+  - the post-pass window (P H-2);
+  - a failed orphan insert, which is log-only and deleted by hand (P M-3);
+  - `create_unconfirmed` (Review-by 2027-01-31). The DSR caveat now gives a per-member count, and "how to find one" starts from these rows (P L-2);
+  - a timed-out `createAudience` on a live row, which no sweep reaches [A5];
+  - the legacy leg's terminal drafts without a choke point, until s4.
+- Fix the stale sentence "slice 2b records `create_unconfirmed`".
+- List the table's columns and retention, `requested_by_member_id` included.
+- State the recipient-audience path.
+
+**RoPA :262:** "the part still open" becomes "a draft whose id we never received, or whose orphan insert failed".
+
+**#699** closes on merge.
+
+**Other docs:**
+- `observability.md`.
+- Runbooks:
+  - `broadcast-audience-build.md`;
+  - `member-erasure.md`: the step-4 orphan query and the DSR count query;
+  - `cron-jobs.md`: the cleanup `maxDuration`;
+  - the retention runbook: the prune.
+- The broadcasts rule; the changelog; the plan.md Slices row 2c. Every number names its constant.
+- **One line in `docs/retro.md`:** s2b's rounds 2–3 came mostly from the previous round's fixes. Guard: a reviewer-asked mechanism names its interaction with every existing writer before GREEN.
+
+#### Test plan (RED first, one row per behaviour)
+
+| Behaviour | Test |
+|---|---|
+| CHECKs, unique, RLS cross-tenant, the prune function (settled + unconfirmed > 90 d only) | `orphaned-resend-ids.test.ts` (new, integration, `chamber_app`) |
+| A leaked reclaim writes a row; a reclaimed one does not; the member id is stored | persist-helper unit, per case |
+| `dead_broadcast_replaced` only on cancelled; `dead_broadcast_kept`; `audience_leaked` on both legs; `refused_draft_undeleted` at the callers | tick unit + legacy unit |
+| `create_unconfirmed` on network / timeout / 5xx, never on 429 | tick unit · it.each |
+| Choke point: re-read; read fails → retryable; lease lost / expiring / failed answers; deleted / absent / cancelled / failed → terminal; handed → skip with no email; undeleted → orphan row then terminal; `draftSettled` → no second delete | tick unit · it.each |
+| Budget: tick 1 C count unchanged by the choke point | `dispatch-lease-budget.test.ts` |
+| Drain: a non-terminal holder is skipped; a terminal holder is drained; type-matched; outcomes; `create_unconfirmed` never drained; erased requester skips the grace; stops at 240 s | cleanup unit + DL6 integration |
+| Erasure: member broadcast orphans settled and counted (stable on a re-drive); handed counted as already sent; tenant audience orphans deleted and not counted; undecided withholds | cascade unit + `erasure-terminal-drafts` integration (extended) |
+| Gauge (24 h window); cleanup log hygiene | unit |
+| Already green, re-run: `audience-import-two-tick`, `erasure-vs-dispatch-begun`, `dispatch-lease-*`, `import-leg-lease-pair` | integration |
+
+#### Verify (D-044, the maintainer's `/verify`)
+Flag OFF, Resend sink address only, no `/send`, no Vercel env.
+- A seeded broadcast orphan with a random uuid, past the grace → GET `cleanup-audiences` → `absent`.
+- A seeded orphan holding a real sink **draft**, for a seeded member → erase → the draft answers 404, `resend_drafts_cleared` counts it, and the row is settled.
+- A wrong Bearer → 401.
+- Teardown, minding the outbox and approved-version gotchas.
+- **Test-only, not driven live** (review round 1, spec M5): the import-leg writers and the `failTerminally` choke point (tick unit; live would need a refused or failed send on a real draft); `create_unconfirmed` and both orphan gauges' windows (unit, contract, and `broadcasts-gauges-cron.test.ts` on the real DB clock); the stuck-audience rule and `attempts` (cascade unit, `broadcast-orphans-repo.test.ts`); the prune (`orphaned-resend-ids.test.ts`, `broadcast-retention-sweep.test.ts`).
+
+#### Review (D-043; L, sensitive)
+- ≥ 2 full `/code-review high` rounds plus ≤ 2 targeted.
+- drizzle-migration, security, reliability, pdpa, spec-compliance; staff review by security and senior-tester.
+- The builder runs scoped tests and one `pnpm check`; the main session runs the gates one at a time.
+- Merge on the maintainer's word only.
+
+#### Risks
+- The live legacy leg now writes orphan rows: best-effort, in its own tx. Prod held 0 `broadcasts` rows on 30 Oct 2026.
+- Erasure gains Resend calls, bounded by the cascade deadline. Untried counts as undecided, which triggers a re-drive.
+- The drain deletes ids read from a table. It is guarded by type-matched NOT EXISTS against non-terminal rows, the grace period, and DELETE being draft-only.
+
 ## Constitution Check
 
 | Principle | Result |
@@ -592,6 +805,45 @@ Cell 23 is test-only: the scan already excludes a leased row before it reaches t
 ## Evidence
 
 Filled in at Verify, one block per slice.
+
+### Slice 2c — build notes (3 Nov 2026)
+
+Branch `140-eblast-one-leg-s2c` (f142), from `1afa060d0` + the plan commit `4d59fa711`. Eight RED → GREEN pairs, each RED committed with its failing run first:
+
+| Mechanism | RED | GREEN |
+|---|---|---|
+| Migration 0325 (CHECKs, unique, RLS + FORCE, grants, prune) | `660ecce19` — 5/5 fail, `relation "broadcast_orphaned_resend_ids" does not exist` | `93028b107` |
+| `BroadcastOrphansRepo` + Drizzle adapter | `f8e071457` — both files fail to resolve the adapter | `194514e4a` |
+| The writers, both legs | `5039a24de` — 16 fail (e.g. `expected [] to deeply equal [ { …(5) } ]`) | `8a59aee5d` |
+| The `failTerminally` choke point | `fe4b4efdf` — 12 fail (the event list has no `reread` / `check` / delete) | `f8db7e955` |
+| The cleanup drain | `5d6e64a3f` — unit 19/19; `orphan-drain.test.ts` `expected [] to deeply equal [ Array(1) ]` | `5830a93b6` |
+| The erasure extension | `c87c76148` — unit 16 of 17 new; `erasure-terminal-drafts.test.ts` DL10 fails | `5f3992451` |
+| The gauge | `955e709ae` — `expected "spy" to be called with arguments: [ 'busy', 2 ]` | `04c074194` |
+| The retention prune | `108b1b990` — unit 4, integration 4 of 5 | `796f32f69` |
+
+Decisions made while building:
+
+1. **A port of its own.** `BroadcastOrphansRepo` (`ports/broadcast-orphans-repo.ts`), not five methods on `BroadcastsRepo`: the module keeps one port per table, and `BroadcastsRepo` has ~17 full fakes in `tests/`. Each consumer takes a `Pick<>` of it (the legs write only).
+2. **[P H-2] without a members join.** `listDrainableOrphans(limit)` returns unsettled known-id rows oldest first with NO grace; the drain applies the grace and asks `MembersBridgePort.getMemberErasedAt` once per requester for a row inside it (broadcasts infrastructure reads no members table today). A failed erased read waits for the grace. Oldest first means a row past the grace is never crowded out by a young one.
+3. **The gauge reads in the route**, the `audienceImportStuck` template (one grouped read on the owner role), so plan item 2's `countRecentUnconfirmedOrphans` port method was not built. The window is `ORPHAN_UNCONFIRMED_GAUGE_WINDOW_HOURS`, exported from the barrel; the two gauges contract suites' barrel mocks carry it.
+4. **The prune is fenced in SQL.** `prune_orphaned_resend_ids(tenant, cutoff)` runs as the owner (BYPASSRLS), so it refuses a tenant other than `app.current_tenant` (42501) and a cutoff younger than 90 days (22023), and filters `tenant_id`. `ORPHAN_ROW_RETENTION_DAYS` is pinned against the SQL floor by `orphaned-resend-ids.test.ts`. The sweep prunes after its run row, best-effort (`orphanRowsPruned: null` on a failure); the run row's payload is unchanged.
+5. **[P M-2] handed orphans.** `alreadySentCount` = the evidence count + one per DISTINCT handed-orphan `broadcast_id` whose `readAlreadySentEvidenceInTx(…, { broadcastId })` reads `broadcastRecorded: false`. No `recordAlreadySent` row is written. Settled rows count on every run, so a re-drive reports the same number.
+6. **No double count.** An orphan whose `resource_id` the terminal-draft pass listed this run (a `terminal_reclaim_undecided` / `refused_draft_undeleted` row on a now-terminal row) is settled but not counted again.
+7. **Audience backlog.** The erasure settles at most `ERASURE_AUDIENCE_ORPHAN_LIMIT` (20) tenant audience orphans per run; it reads one more, and a 21st is a deferral (withholds `member_erased`).
+8. **The choke point's log lines** come from `deleteDraftBeforeStandingRefusal` and so say `refusal: 'standing'`; the shared helper (100 % pinned) was not changed. A re-read failure is `dispatch.server_error` phase `terminal_write`, message `terminal_reread_failed` (no new phase, so the dispatch route's `dispatch_resolve_failed.total{phase}` labels are unchanged). One existing case changed meaning: "the send 404s and the re-read itself FAILS" now answers the retryable error with no terminal write, because its `findById` fails on every call.
+9. **The tick's `orphans` dep is REQUIRED** on both legs (the composition factories wire `makeDrizzleBroadcastOrphansRepo`); 81 legacy unit literals got `orphans: NO_ORPHANS`, five integration files the real adapter.
+10. **The drain's NOT EXISTS has no index on `broadcasts.resend_audience_id`.** It reads at most 20 orphans per run against one tenant's rows; adding the index would lock `broadcasts` on deploy. Revisit if a tenant's `broadcasts` grows large.
+11. **Deviation recorded (plan item 1, [A8]):** the slice-2 design's single `resend_broadcast_id` column is `resource_type` + `resource_id`, so a leaked audience fits the same table; the partial unique key is `(tenant_id, resource_type, resource_id)`.
+12. **The prune's clock skew** (found at the done-check, advisor): the SQL floor compares the app's cutoff with Neon's `now()`, so an app clock even slightly ahead of the DB's would refuse every daily prune (22023). The sweep's cutoff is now `ORPHAN_ROW_RETENTION_DAYS` + `ORPHAN_PRUNE_SKEW_MARGIN_MS` (1 h) old; the SQL floor is unchanged (RED `6cba852b0`, GREEN `cd66b7989`).
+13. **Renumbered 0323 → 0325** (maintainer, 3 Nov 2026): PR #728 takes 0323 / 0324 (`when` 1798545600000 / 1798545700000) and merges first. This file is idx 326, `when` 1798545800000. #728 has since merged into this branch, so 0323 / 0324 are present and there are no gaps (review round 1, migration L1). On dev the 0323 ledger row (`created_at` 1798545600000, hash `9c00afc2713a…3c0b`) was deleted by a one-off dev-only script, and the re-runnable file re-applied as 1798545800000 (ledger before: 413 / 1798545600000 on top; after: 414 / 1798545800000, no 1798545600000 row). **Hazard for #728 on dev:** with 1798545800000 already recorded, drizzle's migrate skips any entry with an older `when`, so #728's 0323 / 0324 will not apply on the shared dev branch by `pnpm db:migrate` alone; run-migrations' phase 4 then fails loudly with "not recorded". Whoever lands #728 must apply it on dev with that in mind (CI and prod are fresh / ordered and unaffected).
+
+Counts corrected: commit `5830a93b6` says "drain 20/20"; `cleanup-orphaned-audiences-drain.test.ts` holds 19 cases (32 with the cleanup unit and route suites). The `dispatch-lease-budget.test.ts` [A4] pin landed with its GREEN commit: it pins literals that already existed, so it could not be red first.
+
+**The gauges route's role (verified on dev after migrating, `pnpm db:query`):** `current_user = neondb_owner`, `rolbypassrls = true`; both `broadcasts` and `broadcast_orphaned_resend_ids` have `relforcerowsecurity = true`; with no tenant GUC set the role read 7 `broadcasts` rows (1 tenant) and the orphan table without error (0 rows at the time: the test tenants had been cleaned up), and the gauge's own predicate ran. So the route reads the new table exactly as it reads `broadcasts`.
+
+**Migration:** `pnpm db:migrate` on dev → `✓ Migrations applied`; `information_schema` / `pg_class` / `pg_policies` / `pg_proc` checked (RLS + FORCE, one policy, chamber_app `INSERT,SELECT,UPDATE`, the function `SECURITY DEFINER` with `search_path=pg_catalog, public`); `pnpm db:verify` → 28/28 canaries, the new one included.
+
+**Mutation proofs (each from a committed base, restored with `git restore` and re-grepped):** (a) the NON-TERMINAL condition dropped from the NOT EXISTS → `broadcast-orphans-repo.test.ts` [A1] and `orphan-drain.test.ts` red; (b) the choke point reads the snapshot instead of re-reading → 12 choke-point cases red; (c) the erasure skips the tenant's audience orphans → 5 unit cases and the DL10 integration case red.
 
 ### Slice 1 — build notes (decisions made while building)
 
@@ -944,7 +1196,6 @@ Run because `route.ts` changed after `147bf6150` (the span attribute `757d7d01f`
 | reliability L1 | A create slower than 10 s can leave an orphan segment | **Accepted, with a mechanism already there:** `reclaim-orphan-audiences` (daily, `vercel.json:13`) reaps named `broadcast-<tenant>-<id>` segments; a 10 s create against a 0.48 s RTT is rare |
 | security L1–L3 | The `addContactsToAudience` POST retry; propagate pair count; tick-1 rows without import columns | L1 accepted (it mints nothing sendable); L2 is covered by the propagate deadline; L3 is closed by s2b cell 23 (lease) |
 
-
 **Round-1 fix notes.**
 - Mutation proofs (from `043a72c9c`, each restored byte for byte): creates retrying every retryable → CR#1 5xx phase red; creates never retrying → CR#1 429 phase red; propagate ignoring the deadline, or not counting untried pairs → both deadline cases red; `deadlineAt` not threaded → "propagate receives the cascade deadline" red; the scan filter dropped → "flag OFF: the scan excludes import rows" red; the backstop returning the old kind → both DL7 cases red; the route bucketing it as `concurrent_skip` → the backstop contract case red.
 - **Contradiction found (runbook):** "cancel the row" is not always available. `cancel-broadcast.ts` refuses an `approved` row once `audience_import_id` is set (`hasDispatchBegun` → `sending_started`), so for such a row re-enabling the flag is the only route. (Corrected in round 2, CR#4: a row with only `audience_import_submitted_at` cannot exist; the CHECK `broadcasts_audience_import_coherent` sets both columns together.) `broadcast-audience-build.md` says so.
@@ -1203,6 +1454,246 @@ Run because `route.ts` changed after `147bf6150` (the span attribute `757d7d01f`
   - (b) the release miss answers `cas_lost` on a cleared token (base `9eee64c96`) → both stale-token release cases and "a release whose token was cleared reports lease_lost; an id drift reports cas_lost" red ("expected 'cas_lost' to be 'lease_lost'"; 3 failed).
 - **Decisions:** the pre-check covers a re-time only (`schedule` / `send_now` from `approved`): a cancel is a status change that ends the lease by design, and a promotion leaves `member_approved`, which no tick can hold. The claim skip's new value `held_by_another_tick` reaches no reader but the cron's `concurrent_skip` bucket.
 
+### Slice 2c — Verify: the maintainer's `/verify` (3 Nov 2026, on `abbe0bbb4`, then the finding re-driven on `19abd92d4`): PASS
+
+:3400, Neon dev (0325 applied), tenant swecham, flag OFF. Resend used the sink address only; no `/send`, no cancel.
+- **Drain:** a seeded orphan (`attach_lost`, a random id, 2 h old) → `cleanup-audiences` → `orphans {listed:1, settled:1}`, and the row settled `absent` (Resend 404).
+- **Wrong Bearer → 401;** the row was unchanged.
+- **A second run → `listed:0`;** nothing re-settled.
+- **Erasure:**
+  - A real sink draft was held by the member's `persist_failed` orphan.
+  - Erase → 200 `cascadesComplete`. The draft answered 404, the orphan settled `deleted`, and `member_erased.resend_drafts_cleared: 1`.
+  - Re-erase → a second `member_erased` (`re_drive: true`), still `resend_drafts_cleared: 1`, so the count is stable (A6a).
+- **Teardown:** clean; segments back to `General`.
+- **Finding (fixed):** the old audience loop failed every run on dev row `d9818abc…`. The cause and its plan row are below. After the fix (`b88b821d3` RED → `4432c9b30` GREEN), the cleanup answered `{deleted:1, failed:0}` and logged `audience_already_absent` with `via: probe_after_403`. The row got `audience_deleted_at`, and the next run had `processed:0`.
+
+### Slice 2c — Verify finding (the maintainer's `/verify`, 3 Nov 2026): a deleted audience answers 403 on DELETE
+
+**MEASURED 2026-11-03** on the shared sink account, while it held only the `General` segment:
+- `GET /audiences/5081ce60…` → 404 `not_found`;
+- `DELETE` of the same id → **403 `validation_error` "Cannot delete last audience."**
+
+Resend checks for the last audience before it checks whether the id exists. `deleteAudience` treats only 404 / 410 as absent, so a 403 throws. The effects:
+- the existing cleanup re-fails a terminal row every 15 minutes (`d9818abc…` on dev);
+- the 2c audience-orphan drain and the erasure's tenant audience pass would leave a gone audience unsettled for ever.
+
+Dev and prod share the broadcasts key, so the account state matches.
+
+**Plan row (D-043), added before GREEN:**
+
+| Mechanism | State / rule | Test that goes red first |
+|---|---|---|
+| A 403 on `deleteAudience` is probed | `deleteAudience` answers a 403 with one bounded `GET /audiences/{id}`: 404 / 410 → absent (log `audience_already_absent`, `via: 'probe_after_403'`); anything else → throw as today. Neighbours: the cleanup loop, the 2c drain and the erasure's audience pass all call `deleteAudience` and treat void as deleted, so every one of them gains the absent path | gateway unit · "a 403 'last audience' whose probe answers 404 is absent"; · "a 403 whose probe finds the audience throws" |
+
+**Also (docs):**
+- The cleanup response's top-level `processed` / `deleted` / `failed` count the audience loop; `orphans` counts the drain. Written in `observability.md`.
+
+### Slice 2c — review round 1 (`/code-review high 734`, migration MERGEABLE-with-conditions, security APPROVE WITH FIXES, pdpa APPROVE WITH CONDITIONS, reliability MERGEABLE, spec-compliance PARTIAL; 3 Nov 2026)
+
+**Review metrics:** round 1 · 10 + 5 + 5 + 6 + 10 + 11 items (code-review, migration, security, pdpa, reliability, spec-compliance) · cap: ≥ 2 full + ≤ 2 targeted.
+
+**Merge order (the maintainer, 3 Nov 2026):** #734 merges BEFORE #733. #733's `0326` has `when` 1798545900000; if it landed first, prod's migrator would skip 0325 and `vercel-build` would fail (migration HIGH).
+
+**Plan rows added before the fixes (D-043).** Each names the existing writers and readers it touches (the 3 Nov retro rule).
+
+| Mechanism (asked by) | State / rule | Neighbours | Test that goes red first |
+|---|---|---|---|
+| **Attempt counter + rotation** (code-review #2, security M, reliability M-3, pdpa L-A) | 0325 gains `attempts int NOT NULL DEFAULT 0` and `last_attempted_at timestamptz NULL`. Every undecided settle increments both (a CAS on `settled_at IS NULL`). The drain lists `ORDER BY attempts, created_at`, so a permanently undecided row cannot hold the head | the drain, the erasure passes (a) and (b), and the prune (which ignores both columns) | repo integration · "20 undecided rows do not starve a 21st" |
+| **A stuck tenant audience orphan stops blocking other members' erasures** (code-review #1, reliability M-2, pdpa M-B) | In erasure pass (b), a tenant audience orphan with `attempts ≥ ORPHAN_STUCK_ATTEMPTS` (= 8; *superseded by review round 2: AND older than `ORPHAN_STUCK_MIN_AGE_MS` = 2 h, since the tries alone are not a time*) is **reported, not withheld**: it is logged `cascade.orphan_stuck`, counted in the unsettled gauge, and runbook-owned. A member's own BROADCAST orphans (pass a) still withhold. Pass (b) settles at concurrency 5 | erasure pass (b), the gauge, the runbook, RoPA 8d | cascade unit · "a stuck tenant audience orphan does not withhold; a fresh one does" |
+| **Unsettled-orphan gauge** (security M, reliability M-3) | `broadcasts_orphaned_resend_ids_unsettled{tenant}`: rows with `settled_at IS NULL AND resource_id IS NOT NULL AND created_at < now() − 24 h`, plus `…_oldest_age_seconds`. It is in its own try, so a failure cannot dark the sibling gauges (code-review #10, applies to the unconfirmed gauge too). `observability.md` alarm: ≥ 1 | the gauges route | gauge integration (real DB) · "counts a 25 h unsettled row, not a 23 h one" (also pins the unconfirmed 24 h window, spec M4) |
+| **Audience orphans honour the post-terminal grace** (code-review #3, security L2) | For `resource_type = 'audience'`, the NOT EXISTS also treats a TERMINAL holder whose `updated_at` is within `GRACE_MS` (1 h) as live. This applies to the drain and to erasure pass (b) | the existing audience loop's grace (same `GRACE_MS`) | repo integration · "an audience a row just went terminal with is not drained" |
+| **The drain runs even when the audience loop's list fails** (code-review #4) | `cleanupOrphanedAudiences` runs `drainOrphans` after a failed audience list and still answers `cleanup.server_error`, now with the drain's counts | the route | cleanup unit · "a failed audience list still drains" |
+| **Handed at the choke point catches the row up** (code-review #5) | When the choke point reads `handed` on a row still `approved`, it goes through the existing `catchUpHanded` (→ `sending`) instead of a bare skip, so the row cannot loop. If the catch-up loses, the answer is a concurrent skip | `catchUpHanded` (:809), tick 2's handed probe | tick unit · "a handed draft at the choke point catches the row up to sending" |
+| **`onResolveFailure` passes every non-terminal stop through** (reliability M-1) | `if (terminal.ok \|\| terminal.error.kind !== 'audience_import_failed') return terminal;` so `lease_expiring` and the handed catch-up (`sent`) are not counted `permanent_failed` | the cron route's buckets | `build-audience-tick-orphans.test.ts` · it.each "onResolveFailure passes %s through, not the resolver kind" (a lease running short, a handed draft caught up) |
+| **Prune keeps `handed` rows** (pdpa M-A, option a) | The prune's settled arm adds `AND outcome <> 'handed'`. A handed row is the durable disclosure record, kept like an unsettled row | RoPA 8c / 8d retention line | orphaned-resend-ids integration · "a handed row is not pruned" |
+
+**Migration hardening (migration M1, M2):**
+- `search_path = pg_catalog, public, pg_temp` (0293 pattern). The canary checks the full value. A test runs the prune with a `CREATE TEMP TABLE` shadow present.
+- `GRANT UPDATE ("settled_at","outcome","attempts","last_attempted_at")` replaces the table-level UPDATE, after a `REVOKE UPDATE`. A test: `UPDATE … SET reason/created_at` as `chamber_app` → 42501.
+- On dev, the file's DDL is re-applied by a guarded one-off script (ADD COLUMN IF NOT EXISTS, REVOKE / GRANT, CREATE OR REPLACE). The ledger is not touched, because #733's 0326 is the newest row on dev. CI and prod run the file fresh.
+
+**Fixes (no new mechanism):**
+- code-review #6 / reliability L-1: the drain and the cascade count a settle only when its CAS won.
+- code-review #8: the stacked docblock.
+- code-review #9 / spec Low: `broadcast-retention-sweep.test.ts` back to LF.
+- pdpa L-B: `requestedByMemberId` on `orphan_record_failed`.
+- reliability L-2: counter `broadcasts_retention_orphan_prune_failed_total{tenant}`.
+- reliability nit: `step: 'terminal_reclaim'` on the choke point's `terminal_reread_failed`.
+
+**Docs:**
+- pdpa M-B: the `member-erasure.md` step-4 tenant audience query; the stuck rule; manual settle.
+- pdpa M-C: the DSR count covers `ORPHAN_ROW_RETENTION_DAYS`, so the answer is "at least N".
+- spec M1: the state-table Test column for cells 10–12, 15, 25–29.
+- spec M2: DL5b scoped to the import leg.
+- spec M3: the stale `audience_leaked` / `dead_broadcast_*` "only record" lines in `observability.md` and `broadcast-audience-build.md` (:67, :76).
+- spec M5: a Test-only line in the 2c Verify block.
+- Migration L1: the 0325 header and build note 13 (no gaps now).
+- Every number names its constant (changelog, metrics help, runbook "15 minutes").
+
+**Accepted (Low):**
+- code-review #7: the three Resend settle tables. They behave the same today. Collapsing them touches s1's pinned erasure path; follow-up issue **#735**.
+- security L3: erasure orphan pass lengths. Each item is bounded by C; the pre-item deadline check matches s1.
+- reliability L-3: a handed `read_back_failed_kept` row over-counts `broadcasts_already_sent_count` by one. The direction is safe (it over-reports a disclosure); RoPA notes it.
+- reliability L-4: a drain deletion has no `audit_log` row. The orphan row (`settled_at` + `outcome`) is the record, and handed rows are now kept indefinitely; non-handed settled rows live 90 days, as RoPA 8d states.
+- reliability nit: the budget-exhausted page before a handed choke point. It is one false page, and the next tick catches up.
+- migration L3 / L4: reason↔type pairing and the prune index. The writers own the pairing; the table is small.
+- security INFO: RLS masks the app predicates in the tests. This is a known class (s1).
+
+### Slice 2c — review round 2 (`/code-review high 734`, security APPROVE WITH FIXES, pdpa APPROVE WITH CONDITIONS, reliability MERGEABLE, migration file OK, spec-compliance PARTIAL; 4 Nov 2026)
+
+**Review metrics:** round 2 (full) · 10 + 4 + 7 + 5 + 6 + 12 items (code-review, security, pdpa, reliability, migration, spec-compliance) · cap: 2 full (reached) + ≤ 2 targeted.
+
+**CI (migration review, BLOCKING, environment):**
+- The shared CI Neon branch already holds #733's `0326` (…900000), so the CI migrator skips 0325 and Phase 4 fails.
+- **Owner: the maintainer.** Reset the CI branch from its parent, or apply 0325 there and add its ledger row.
+- Prod is unaffected; main's highest migration is 0324.
+
+**Plan rows added before the fixes (D-043, neighbours named).**
+
+| Mechanism (asked by) | State / rule | Neighbours | Test that goes red first |
+|---|---|---|---|
+| **The stuck rule also covers deferral, and needs age** (security F1, code-review #1, reliability MED, security L3) | A tenant audience orphan is stuck when `attempts >= ORPHAN_STUCK_ATTEMPTS` **and** `created_at` is older than `ORPHAN_STUCK_MIN_AGE_MS` (2 h). Pass (b) applies the rule at every exit: undecided, past the deadline, and over the limit. A stuck row never withholds | pass (b), the docs that say "about 2 h" | cascade unit · "21 stuck audience orphans past the limit do not withhold"; · "attempts ≥ 8 but younger than 2 h still withholds" |
+| **A stuck release is recorded** (security F2, pdpa M-3) | `member_erased` gains `audience_orphans_stuck_count`, and the counter `broadcasts_cascade_orphan_stuck_total{tenant}` is added | cascade port contract, the `member_erased` payload readers, RoPA 8d | cascade unit + port contract · the field and the counter |
+| **The subject's contact is detached from unsettled audience orphans** (pdpa H-1) | The 8a detach derivation (`listMemberResendAudienceContactsInTx`) gains a UNION arm over unsettled `resource_type = 'audience'` orphans in the tenant. It is best-effort: failures count into `resend_contacts_failed_count`, and it never blocks | the 8a detach, `subprocessorErasure.propagate` | integration · "a stuck audience orphan's audience is in the detach pairs" |
+| **A broadcast orphan held by a sending-started row settles `superseded`** (code-review #2) | `superseded` is a new `outcome`. When the id sits on a `sent` / `partially_sent` / `partial_delivery_accepted` row, the drain and pass (a) settle it `superseded` without calling Resend: the copy was delivered normally and is not erasure evidence. It is never counted in the erasure fields, and it can be pruned. Other terminal holders are unchanged | migration 0325 (outcome CHECK), the prune, the erasure counts, the terminal pass | repo integration + cascade unit · "an orphan whose id a sent row holds is superseded, not handed" |
+| **Past-grace rows sort first** (code-review #3, reliability LOW) | The list orders by `(created_at >= graceCutoff), attempts, created_at`, so in-grace rows cannot fill the 20 | the drain | repo integration · "20 in-grace rows do not hide an older drainable row" |
+| **A broadcast DELETE 404 is confirmed** (code-review #4) | Before settling `absent`, wait `REPROBE_PAUSE_MS` and send one `retrieveBroadcastOnce`. Only `not_found` settles `absent`; anything else is left for the next run | the drain, pass (a), W_max (unaffected: the drain and the erasure are not dispatch) | settle unit · "a 404 then a GET draft is not absent" |
+| **Settled once, enforced in the DB** (migration LOW) | A BEFORE UPDATE trigger refuses a change of `settled_at` / `outcome` once `settled_at IS NOT NULL` | `settleOrphan` (a CAS already), the prune | orphaned-resend-ids integration · "re-settling a settled row is refused" |
+| **Handed rows have a bound** (pdpa L-3) | The prune deletes `handed` rows after `ORPHAN_HANDED_RETENTION_YEARS` = 5 (the 8c evidence horizon) | the prune, RoPA retention | orphaned-resend-ids integration |
+
+**Fixes:**
+- code-review #5: the choke point passes `refusal: 'terminal'` to the shared helper, so the log names are honest.
+- code-review #8: `AUDIENCE_CLEANUP_GRACE_MS` moves next to the other orphan constants.
+- code-review #9: `isErased` runs over distinct requesters with `Promise.all`.
+- reliability nit: `catchUpHanded` passes the GET's `sent_at`.
+- spec N3: the metrics docblock.
+- migration: the canary checks the prune body (`handed`, years) and the `attempts` CHECK; header index comment.
+- spec M4: the unconfirmed gauge fixture is asymmetric (2 in, 1 out).
+- spec N2: mutation proofs from a committed base for the column grant and the stuck rule.
+- spec N4: tests for catch-up lost, and for `listUnsettledAudienceOrphans` ordering.
+
+**Docs:**
+- pdpa M-1: RoPA 8d residual (5), DSR wording, the Art. 12(3) clock.
+- pdpa M-2: "own BROADCAST orphans".
+- pdpa L-1 and L-2: the runbook bound; the 8c cross-ref.
+- spec M3: RoPA :255.
+- spec N5: the 2–24 h gauge window note.
+- reliability: an alert row for `orphanGaugesOk=false`.
+- spec Lows: the state-table pipes, the cell 15(b) name, the plan's `onResolveFailure` text, the "24 h" help string, blank lines.
+
+**Accepted (Low):**
+- code-review #6: a frozen gauge on query failure. Same as the broadcasts half; the tick answers 500 and the new alert row covers it.
+- code-review #7: the `draftSettled` flag. Two callers; the budget test pins both.
+- code-review #10: the member uuid in `orphan_record_failed`. pdpa L-B asked for it; member ids are logged under the house convention; it is not a user id.
+
+**Round-2 fix notes (Evidence).**
+- RED → GREEN pairs: migration `423e2fff4` → `b95ea19ed`; repo (sent holder, past-grace order) `c6f4f126f` → `2cb33f24e`; settle table (404 confirm, `superseded`) `8e90df846` → `a8a58a5b9`; stuck rule + `audience_orphans_stuck_count` `9c8381902` → `4a8696801`; detach arm `679746a4c` → `3ba0465a8`; choke point (`refusal: 'terminal'`, `sent_at`) `d110ab77c` → `e24e094f0`; erased reads `2ad335168` → `54277dd0d`. Test-only pins (spec N4 catch-up lost, spec M4 gauge 2 in / 1 out): `edac995a3`. Each RED commit body quotes its failure line.
+- Dev DDL (0325 edited in place, applied by a guarded scratch script in one transaction, the ledger untouched): 22 statements ok. `pnpm db:query`: the outcome CHECK lists `superseded`; the trigger `broadcast_orphaned_resend_ids_settled_once` is present and enabled (`O`); the prune body names `5 years`. `pnpm db:verify`: 29/29.
+- The D-029 shape gate caught a real gap in the first GREEN of `heldBySentRow`: Drizzle renders a SELECT-list column unqualified, so the subquery's `"tenant_id"` bound by SQL scope alone. Every name in that subquery is now written qualified (alias `held`).
+- Mutation proofs (from the committed base `42ffe6bc7`, each restored with `git restore` and the line grepped back): (a) the age condition removed from `isStuck` → "attempts ≥ 8 but younger than 2 h still withholds" and the deadline case fail; (c) the deferral exits ignoring the stuck rule (`false && isStuck`) → "21 stuck audience orphans past the limit do not withhold" and the deadline case fail; (b) the column grant: a table-level `GRANT UPDATE` cannot be tried by the integration suite without committing it on the shared dev branch, so the suite's three statements (`reason`, `created_at`, `resource_id`) were run as `chamber_app` inside ONE rolled-back dev transaction — `42501` under the shipped grant, `ok` under the mutant — and the table-level grants read `INSERT,SELECT` afterwards, the four column UPDATE grants intact.
+- The pinned `_dispatch-standing-gate.ts` stays 100/100/100/100 (a scoped coverage run over `tests/unit/broadcasts`).
+- The erasure's longest orphan row is now a DELETE 404 confirmed by a GET: 10 s + `REPROBE_PAUSE_MS` 3 s + 10 s + the settle tx ≈ 24 s, inside `ERASURE_MEMBER_START_FLOOR_MS` (30 s) and the 60 s `ERASURE_CASCADE_RESERVE_MS` (the in-flight arm's 404 confirm already had that shape). W_max (dispatch) is unaffected.
+- The stuck rule's over-limit exit judges the one row it can see (the list reads `ERASURE_AUDIENCE_ORPHAN_LIMIT + 1`). Superseded by review round 3 (the stuck-last sort): a stuck marker row now proves every unlisted row is stuck.
+
+**Verify:** a re-Verify on the final HEAD (spec N1), handed to the maintainer after the fixes.
+
+### Slice 2c — review round 3, targeted (`/code-review high 0543f031a..6d967f738`, security APPROVE, pdpa APPROVE WITH CONDITIONS, reliability MERGEABLE; 4 Nov 2026)
+
+**Review metrics:** round 3 (targeted #1) · 10 + 1 + 1 + 3 items (code-review, security, pdpa, reliability; the over-limit exit was found by three of them) · cap: 2 full + ≤ 2 targeted; round 4 is the last targeted round.
+
+**Plan rows added before the fixes (D-043, neighbours named).**
+
+| Mechanism (asked by) | State / rule | Neighbours | Test that goes red first |
+|---|---|---|---|
+| **Stuck rows sort last in the erasure audience list** (code-review #1, security LOW, reliability LOW-1) | `listUnsettledAudienceOrphans(limit, audienceGraceCutoff, stuckAgeCutoff)` orders by `(attempts >= ORPHAN_STUCK_ATTEMPTS AND created_at <= stuckAgeCutoff)` ascending first, then attempts, created_at, orphan_id. The use case passes `stuckAgeCutoff = now - ORPHAN_STUCK_MIN_AGE_MS` from the same injected clock as `isStuck`, so the sort and the predicate cannot disagree. When the marker row (`LIMIT + 1`) is stuck, every unlisted row is stuck too. `audience_orphans_stuck_count` stays a minimum (it counts the listed stuck rows); the payload docblock says so | erasure pass (b), every stub of the port method (arity change: tests swept by symbol), the drain (unchanged) | repo integration · "an old row with 8 attempts sorts after a young row with 9" + cascade unit · the "21 stuck" case rewritten to the real guarantee |
+| **An erased requester's young rows are not starved by a past-grace backlog** (code-review #2) | The drain lists past-grace rows as today, plus a second list of in-grace rows only (`listDrainableOrphans(limit, cutoff, { inGraceOnly: true })`, limit `ORPHAN_DRAIN_LIMIT`). Erased requesters' in-grace rows are processed first, then the past-grace rows, all within `ORPHAN_DRAIN_LIMIT` per run. RoPA residual (1), "drained by the cron within one tick", stays true | the drain, `isErased` (one read per distinct requester across both lists), RoPA 8d residual (1) | cleanup unit · "20 failing past-grace rows do not hold back an erased requester's young row" + repo integration · the in-grace-only list |
+| **The leaked-audience detach arm is capped** (code-review #3) | The third UNION arm reads at most `ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT` (10) unsettled audience orphans, most attempts first. Beyond the cap, the erasure's pass (b) and the drain delete the audience outright. A stuck audience past the cap is a named residual in RoPA 8d. Each pair still checks the deadline (subprocessor adapter :122), and untried pairs are logged by audience id | pdpa H-1 (round 2), the propagate loop, pass (b), RoPA 8d | repo integration · "12 unsettled audience orphans yield 10 audiences in the detach pairs, the most-attempted first" |
+| **The stuck counter counts released erasures** (code-review #4, reliability LOW-2) | `broadcasts_cascade_orphan_stuck_total{tenant}` moves from `reportStuck` to the `member_erased` emit in `erase-member.ts`: one `.add(audience_orphans_stuck_count)` per emitted erasure, nothing on a withheld run | the alert row in `observability.md`, the metrics inventory | erase-member unit · "a withheld run adds nothing; an emitted one adds the count" |
+
+**Fixes:**
+- code-review #5: `broadcasts.cascade.completed` is also logged when `audienceOrphansStuckCount > 0`.
+- code-review #6: `RetrieveBroadcastOnceOutcome.present.sentAt` is required (`string | null`); test doubles updated.
+- reliability nit: `partially_sent` leaves `ORPHAN_SUPERSEDING_STATUSES`. It is not terminal, so a holder in that state hides the orphan from every list.
+
+**Docs:**
+- pdpa M-1: RoPA residual (5), runbook step 4 and the `observability.md` alert row state the § H-1 SLA (`member_erasure_requested` + 30 days, PDPA by analogy, the default for every subject). "Extendable by two months" is dropped.
+- code-review #7: the `reclaimDraftBeforeTerminal` docblock says `refusal: 'terminal'`.
+- code-review #8: the 0325 header's Outcomes paragraph moves out of the retention paragraph.
+- code-review #9: the changelog names the superseding statuses (`sent`, `partial_delivery_accepted`).
+- code-review #10: the drain docblock budgets a broadcast row at DELETE + `REPROBE_PAUSE_MS` + GET.
+- security INFO-2: the detach derivation's docblock says its SELECT runs inside the scrub tx; a grant or RLS regression aborts the scrub (verify-schema pins the grants).
+
+**Accepted:**
+- pdpa I-1: no `tests/contract/` case for the cascade port's count fields. This predates the PR; it is tracked in a follow-up issue.
+- pdpa I-2: `heldBySentRow` matches on the Resend id alone. One id sits on one row.
+- security test gap: a 2-tenant live test for `heldBySentRow`. This is the RLS-masked class (s1); the app fence is in place.
+- security INFO-3: `sentAt` reaches `catchUpHanded` from the terminal path. This is the S8 path's existing shape.
+
+**Verify:** a re-Verify on the final HEAD (spec N1), handed to the maintainer after round 4.
+
+### Slice 2c — review round 4, targeted, the last (`/code-review high 6d967f738..45b1441a4`, pdpa APPROVE WITH CONDITIONS, reliability MERGEABLE; 4 Nov 2026)
+
+**Review metrics:** round 4 (targeted #2) · 9 + 3 + 3 items (code-review, pdpa, reliability; three mechanisms found by two of them) · cap: 2 full + 2 targeted, **reached**. No High or Medium remains, so no further round runs; the fixes below are the ones the reviewers specified, and the re-Verify covers the driven paths.
+
+**Plan rows (adjustments of round-3 mechanisms, before GREEN).**
+
+| Mechanism (asked by) | State / rule | Neighbours | Test that goes red first |
+|---|---|---|---|
+| **The in-grace list reads newest first** (code-review #1, reliability LOW-B, pdpa L-1) | `listDrainableOrphans(..., { inGraceOnly: true })` orders by `created_at DESC`. An erased requester's post-pass orphan is the newest row, so a backlog of older in-grace rows cannot push it out. The second list is read only when the first returned `ORPHAN_DRAIN_LIMIT` rows (code-review #4); otherwise the first already holds every drainable row | the drain, RoPA residual (1) | repo integration · "21 in-grace rows: the newest is listed" + drain unit · "a short first list skips the second" |
+| **The detach cap ranks stuck rows first** (code-review #2, reliability nit) | The capped subquery orders by `(attempts >= ORPHAN_STUCK_ATTEMPTS AND created_at <= now() - ORPHAN_STUCK_MIN_AGE_MS)` DESC, then attempts DESC, created_at, orphan_id. Stuck audiences are the ones pass (b) releases rather than deletes, so they get the detach first. `now()` is the scrub tx's clock; this is an ordering only | pass (b) (stuck last, complementary), RoPA residual 6 | repo integration · "10 young high-attempt rows do not crowd out 3 old stuck rows" |
+| **The over-limit marker is judged at the list time** (code-review #3, reliability LOW-A) | The marker row's stuck check uses `listedAtMs`, the same instant as the SQL `stuckAgeCutoff`, so the sort and the predicate agree. The deadline and undecided exits keep `now` | pass (b) | cascade unit · "a marker row that turns 2 h old after the list is deferred, not reported" (clock advanced between list and judge) |
+
+**Fixes:**
+- code-review #6, reliability nit: `stopped_at_budget` logs the budget-cut count only (`stoppedDeferred`), and `deferred` stays the total in the output.
+- code-review #7: `err: e` becomes `err: errKind(e), code: pgErrorCode(e)` in the `erase-member.ts` catches (:334, :750, :1327). `pgErrorCode` (`src/lib/db-errors.ts`) returns only the SQLSTATE, so the forensic purpose of the shipped cause-threading tests survives without the message text, which can carry the subject's address. The 10 forensics rows assert the class, the code, and the message's absence.
+- reliability nit: the `observability.md` row for `broadcasts.orphan_drain.list_failed` names the `list` field.
+
+**Docs:**
+- pdpa L-1: RoPA residual (1) and `member-erasure.md` step 4 give the honest bound. Normally the next tick; at worst one tick after the 1-hour grace (`AUDIENCE_CLEANUP_GRACE_MS`, while a terminal holder's audience grace runs); later only while Resend's answer stays undecided.
+- pdpa L-2: the DSR answer says the address was asked, best-effort, to be detached from up to `ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT` open recipient audiences, stuck ones first, and that which ones is not recorded (residual 6).
+- reliability LOW-C: the drain docblock states the trade. An erased requester's young rows come first, so 20 or more of them defer the past-grace rows for at most the grace.
+
+**Accepted:**
+- code-review #5: the erased reads are at most 2 × `ORPHAN_DRAIN_LIMIT` per run. With the second list read only on a full first list, they rarely exceed 20.
+- code-review #8: an erased requester's 20 failing young rows hold the run for at most the grace (LOW-C, documented).
+- code-review #9: a comment-only edit changes 0325's hash. The normal path matches by `created_at`, 0325 is unmerged, and prod and CI run it fresh.
+- pdpa L-3: no cascade-port contract case, which predates this PR; a follow-up issue.
+- reliability: a commit whose driver throws after COMMIT misses the counter. This class predates the PR.
+
+### Slice 2c — Verify on the final HEAD: the maintainer's `/verify` (4 Nov 2026, on `d7beaa6f4`): PASS
+
+:3400, Neon dev, tenant swecham, flag OFF. Resend used the sink address only; no `/send`, no cancel. Erasures ran through `POST /api/members/{id}/erase` as super-admin.
+- **Safety:** 0 approved rows due, 0 unsettled orphans, and Resend held only `General`.
+- **Wrong Bearer → 401;** the row was unchanged.
+- **Drain with the 404 confirm (round 2):** an `attach_lost` orphan with a random id, 2 h old → `orphans {listed:1, settled:1}`, and the row settled `absent`. The call took 4.8 s. The log shows `delete_once` at 10:24:11.967, then `retrieve_once` at 10:24:15.322 (the DELETE time plus `REPROBE_PAUSE_MS`), then `orphan_drain.settled`.
+- **An erased requester skips the grace (round 3):** a young orphan, written after its member was erased → one tick → settled `absent` 5 s after it was written.
+- **The grace still holds for a member who is not erased:** a young orphan → `waiting:1`; the row stayed unsettled.
+- **Erasure pass (a):**
+  - A real sink draft was held by the member's `persist_failed` orphan.
+  - Erase → 200 `cascadesComplete`. The draft answered 404, the orphan settled `deleted`, and `member_erased` showed `resend_drafts_cleared: 2`, `resend_copies_retained: 0`, `audience_orphans_stuck_count: 0`.
+  - Re-erase → `re_drive: true` with the same counts. A second cleanup → `listed:0`, and `settled_at` was unchanged.
+- **Finding (docs, fixed):** the count was 2, not the 1 the Verify brief expected. The same member was the requester of the drain-settled `absent` orphan above, and by the documented rule (`deleted` / `absent` → cleared, every settled orphan of the member) both count. The rule is unchanged. The runbook (step 4) and RoPA 8d now say the number means "copies confirmed gone at Resend", including the drain's earlier settles, not "drafts this erasure deleted".
+- **Not driven:**
+  - the stuck-release exit (`audience_orphans_stuck_count > 0`), which needs 8 or more undecided Resend answers over 2 h;
+  - the `err` / `code` log fields of `erase-member.ts`, which are failure catches. No WARN or ERROR line occurred.
+
+  Both rest on the unit and integration tests.
+- **Teardown:** clean. The Resend audience is deleted and only `General` is left. The seeds and orphan rows are deleted, and the probe spec is removed.
+
+### Slice 2c — a look at the round-4 fixes (`/code-review high 45b1441a4..692b641cc`, the maintainer's call past the cap; 4 Nov 2026)
+
+**Why:** rounds 2–4 each found defects in the previous round's fixes, and nobody had read the round-4 fixes. The maintainer asked for one `/code-review high` on them, with no further round, fixing High and Medium and recording Low.
+
+**7 items. Fixed (RED `5ede7c02a` → GREEN `9f08399ad`):**
+- #1 (Medium, ops): the `err: errKind(e)` change hid which scrub step failed. The three erase-member catches now also log `step`, the wrapper's code-authored message. It passes only when it matches `^[a-z_]+(:[a-z0-9_.]+)?$`, so driver text with spaces never reaches the log.
+- #2 (Medium, the rules' log hygiene): the pre-flight read logged the whole RepoError with its driver cause. It now logs `repoCode`, `err: errKind(rootCause(e))` and `code: pgErrorCode(e)`. `undelete-member.ts:347` has the same shape outside this PR; it goes to a follow-up issue.
+- #4 (Low): the stuck sort compared `created_at` in microseconds, while the app compares milliseconds. The sort now uses `date_trunc('milliseconds', created_at)`.
+- #7 (Low): the second drain list is gated on `>=` the limit, not `===`.
+
+**Recorded, not fixed:**
+- #3: the detach cap ranks on the DB clock, and pass (b) judges stuck later on the app clock. A row crossing the 2 h age mid-erasure can miss the detach. Stated in RoPA 8d residual 6 and the SQL comment, which claimed it "costs nothing".
+- #5: on a busy tenant, more than 20 newer in-grace rows plus a past-grace backlog can keep an erased requester's row out of both lists past the grace. Stated in RoPA residual (1) and runbook step 4, with a manual settle. The reviewer's root fix (a flag set at erasure) is a new mechanism, left for the s3 or s4 follow-ups.
+- #6: the stuck rule is written three ways (JS, Drizzle, raw SQL). A shared predicate builder is a refactor across two repos.
 
 ## Rollout
 

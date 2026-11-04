@@ -39,6 +39,7 @@ import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-at
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { emailTransactionalBridge } from '@/modules/broadcasts/infrastructure/email-transactional-bridge';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
@@ -260,6 +261,7 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
       {
         tenant: tenantA.ctx,
         broadcastsRepo: makeDrizzleBroadcastsRepo(tenantA.ctx.slug),
+        orphans: makeDrizzleBroadcastOrphansRepo(tenantA.ctx.slug),
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
         broadcastsGateway: makeRetryableGateway(),
@@ -381,6 +383,7 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
       {
         tenant: tenantA.ctx,
         broadcastsRepo: makeDrizzleBroadcastsRepo(tenantA.ctx.slug),
+        orphans: makeDrizzleBroadcastOrphansRepo(tenantA.ctx.slug),
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
         broadcastsGateway: makeRetryableGateway(),

@@ -325,6 +325,84 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     `);
   });
 
+  /**
+   * Spec 140 s2c Verify finding — MEASURED 2026-11-03 on the sink account while
+   * it held only the `General` segment: `GET /audiences/{id}` of a deleted
+   * audience → 404, but `DELETE` of it → 403 `validation_error` "Cannot delete
+   * last audience." (Resend checks "last audience" before it checks the id). So
+   * a 403 is probed ONCE, inside the same call budget: 404 / 410 → already gone;
+   * anything else → the DELETE's own classification is thrown.
+   */
+  describe("deleteAudience: a 403 is probed with one GET (the 'last audience' answer)", () => {
+    const lastAudience = () =>
+      json(403, { statusCode: 403, name: 'validation_error', message: 'Cannot delete last audience.' });
+
+    it("a 403 'last audience' whose probe answers 404 is absent", async () => {
+      const info = vi.spyOn(logger, 'info');
+      const calls = stubWire((n) =>
+        n === 1 ? lastAudience() : json(404, { statusCode: 404, name: 'not_found', message: 'Segment not found' }),
+      );
+      await expect(resendBroadcastsGateway.deleteAudience('aud_gone')).resolves.toBeUndefined();
+      expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+        'DELETE https://api.resend.com/segments/aud_gone',
+        'GET https://api.resend.com/segments/aud_gone',
+      ]);
+      expect(info).toHaveBeenCalledWith(
+        { audienceId: 'aud_gone', via: 'probe_after_403' },
+        'resend.broadcasts.audience_already_absent',
+      );
+      info.mockRestore();
+    });
+
+    it('a 403 whose probe finds the audience throws the DELETE classification (permanent), with no retry', async () => {
+      const calls = stubWire((n) =>
+        n === 1 ? lastAudience() : json(200, { object: 'segment', id: 'aud_1', name: 'General' }),
+      );
+      await expect(resendBroadcastsGateway.deleteAudience('aud_1')).rejects.toMatchObject({
+        name: 'GatewayThrowable',
+        kind: 'permanent',
+        code: 'validation_error',
+      });
+      expect(calls).toHaveLength(2);
+    });
+
+    it('a 403 whose probe fails (5xx) throws the DELETE classification, with no retry', async () => {
+      const calls = stubWire((n) =>
+        n === 1 ? lastAudience() : json(503, { statusCode: 503, name: 'internal_server_error', message: 'down' }),
+      );
+      await expect(resendBroadcastsGateway.deleteAudience('aud_1')).rejects.toMatchObject({
+        name: 'GatewayThrowable',
+        kind: 'permanent',
+        code: 'validation_error',
+      });
+      expect(calls).toHaveLength(2);
+    });
+
+    it('a 403 whose probe throws (network) throws the DELETE classification', async () => {
+      let n = 0;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          n += 1;
+          if (n === 1) return lastAudience();
+          throw new TypeError('fetch failed');
+        }),
+      );
+      await expect(resendBroadcastsGateway.deleteAudience('aud_1')).rejects.toMatchObject({
+        name: 'GatewayThrowable',
+        kind: 'permanent',
+        code: 'validation_error',
+      });
+      expect(n).toBe(2);
+    });
+
+    it('a 404 on the DELETE itself still needs no probe (one request)', async () => {
+      const calls = stubWire(() => json(404, { statusCode: 404, name: 'not_found', message: 'Segment not found' }));
+      await expect(resendBroadcastsGateway.deleteAudience('aud_gone')).resolves.toBeUndefined();
+      expect(calls).toHaveLength(1);
+    });
+  });
+
   it('deleteBroadcast, and a 404 counts as already gone', async () => {
     const calls = stubWire((n) =>
       n === 1 ? json(200, { object: 'broadcast', id: 'bc_1', deleted: true }) : json(404, { statusCode: 404, name: 'not_found', message: 'Broadcast not found' }),
