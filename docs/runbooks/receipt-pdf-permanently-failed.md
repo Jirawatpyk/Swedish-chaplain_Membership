@@ -109,8 +109,9 @@ Most common when a template change shipped without a backfill golden:
    The reconcile cron's own re-enqueue uses the current template
    (`CURRENT_TEMPLATE_VERSION`, #71), as the sync payment path does; it
    skips any invoice that is not `paid`. A void invoice's gated
-   `invoice_paid` email exits as `receipt_pdf_gate_skip:invoice_void` and
-   is permanently failed on its last attempt: it does not ship.
+   `invoice_paid` email closes on the first tick as
+   `permanently_failed` with `receipt_pdf_gate_skip:invoice_void` (no retry,
+   no failure audit, no page): it is not sent, by design.
 5. Wait for the next outbox-dispatch tick (60 s ladder) — verify
    `receipt_pdf_status='rendered'` and the gated `invoice_paid` email
    ships.
