@@ -60,7 +60,7 @@ rolls back after `recordPayment` returned ok. In each, a PDF carrying a
 released RC number can stay in Blob. It was never sent (the email outbox row
 rolled back too). The daily orphan PDF sweep reclaims them: a receipt,
 invoice or credit-note key that no row references, at least 1 h old, is deleted
-under the invoice row lock on its etag ([cron-jobs.md § 063 sweep-orphan-pdfs](./cron-jobs.md#063--sweep-orphan-pdfs-729), #729).
+under the invoice row lock on its etag ([cron-jobs.md § 063 sweep-orphan-blobs](./cron-jobs.md#063--sweep-orphan-blobs-729), #729).
 
 `kept_row_owns_key` means the locked re-read found a row pointing at the key.
 On the admin route that row is committed. Inside a caller-owned transaction

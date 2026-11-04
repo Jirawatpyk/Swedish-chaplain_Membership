@@ -5,25 +5,18 @@
  * RLS alone; and it reads `credit_notes` directly (no join that could drop a
  * row and read as "no reference" — reliability M2, financial L-1).
  */
-import { describe, expect, it, vi } from 'vitest';
-import type { RecordedStatement } from '../../../../helpers/tenant-sql-shape';
+import { describe, expect, it } from 'vitest';
+import {
+  SHAPE_TENANT as T,
+  recordingDb,
+  tenantPredicateViolations,
+  tenantScopedTables,
+} from '../../../../helpers/tenant-sql-shape';
+import { makeDrizzleOrphanPdfReferenceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-orphan-pdf-reference-repo';
 
-const rec = vi.hoisted(() => ({ statements: [] as RecordedStatement[], db: null as unknown }));
-vi.mock('@/lib/db', async (importOriginal) => {
-  const { recordingDb } = await import('../../../../helpers/tenant-sql-shape');
-  const r = recordingDb();
-  rec.statements = r.statements;
-  rec.db = r.db;
-  return { ...(await importOriginal<typeof import('@/lib/db')>()), db: r.db };
-});
-
-const { SHAPE_TENANT: T, tenantPredicateViolations, tenantScopedTables } = await import(
-  '../../../../helpers/tenant-sql-shape'
-);
-const { makeDrizzleOrphanPdfReferenceRepo } = await import(
-  '@/modules/invoicing/infrastructure/repos/drizzle-orphan-pdf-reference-repo'
-);
-
+// The repo takes the caller's tx (it never imports the db singleton), so a
+// recording db stands in for the runInTenant transaction.
+const rec = recordingDb();
 const TABLES = tenantScopedTables();
 const INV = '11111111-1111-4111-8111-111111111111';
 const CN = '33333333-3333-4333-8333-333333333333';

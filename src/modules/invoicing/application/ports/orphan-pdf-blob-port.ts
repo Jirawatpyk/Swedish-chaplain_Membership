@@ -20,5 +20,14 @@ export interface OrphanPdfBlobPage {
 }
 
 export interface OrphanPdfBlobPort extends Pick<BlobStoragePort, 'delete'> {
-  listPage(prefix: string, cursor: string | undefined, limit: number): Promise<OrphanPdfBlobPage>;
+  /**
+   * One page. `signal` bounds the call (the SDK retries a 5xx for minutes);
+   * without one the adapter applies its own timeout.
+   */
+  listPage(
+    prefix: string,
+    cursor: string | undefined,
+    limit: number,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<OrphanPdfBlobPage>;
 }

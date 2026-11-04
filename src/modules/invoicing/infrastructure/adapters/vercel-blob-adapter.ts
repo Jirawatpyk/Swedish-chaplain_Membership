@@ -18,6 +18,8 @@ import { env } from '@/lib/env';
 
 /** #60 — upper bound on one Blob delete, retries included. */
 const BLOB_DELETE_TIMEOUT_MS = 10_000;
+/** #729 — upper bound on one listing page when the caller gives no signal. */
+const BLOB_LIST_PAGE_TIMEOUT_MS = 20_000;
 
 /**
  * `head()` for a READ, with NOT-FOUND classified by the SDK's own class and
@@ -159,6 +161,9 @@ export const vercelBlobAdapter: BlobStoragePort & OrphanPdfBlobPort = {
       if (e instanceof BlobPreconditionFailedError) {
         throw new BlobChangedSinceUploadError({ cause: e });
       }
+      // #729 L1 — the key is already gone (an overlapping sweep, a retried
+      // cleanup): the delete's goal holds, so it is not a failure.
+      if (e instanceof BlobNotFoundError) return;
       throw e;
     }
   },
@@ -175,14 +180,21 @@ export const vercelBlobAdapter: BlobStoragePort & OrphanPdfBlobPort = {
     return result.blobs.map((b) => b.pathname);
   },
 
-  async listPage(prefix: string, cursor: string | undefined, limit: number): Promise<OrphanPdfBlobPage> {
+  async listPage(
+    prefix: string,
+    cursor: string | undefined,
+    limit: number,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<OrphanPdfBlobPage> {
     // #729 — the orphan sweeper pages a whole tenant folder; the pathname is
-    // the key (`put` never adds a random suffix).
+    // the key (`put` never adds a random suffix). Always bounded: the SDK
+    // retries a 5xx with backoff for minutes, past the route's maxDuration.
     const result = await list({
       prefix,
       ...(cursor !== undefined ? { cursor } : {}),
       limit,
       token: env.blob.readWriteToken,
+      abortSignal: options?.signal ?? AbortSignal.timeout(BLOB_LIST_PAGE_TIMEOUT_MS),
     });
     return {
       items: result.blobs.map((b) => ({ key: b.pathname, uploadedAt: b.uploadedAt, etag: b.etag })),

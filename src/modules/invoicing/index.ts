@@ -291,6 +291,7 @@ export {
   type SweepOrphanPdfsOutput,
   type SweepOrphanPdfsDeps,
 } from './application/use-cases/sweep-orphan-pdfs';
+export type { OrphanPdfReferenceRepo } from './application/ports/orphan-pdf-reference-repo';
 
 export {
   exportPaidInvoicesCsv,
@@ -623,6 +624,7 @@ export {
   makeDrizzleTaxRegisterRepo,
 } from './infrastructure/repos/drizzle-invoice-repo';
 export { makeDrizzleZeroRateCertPruneRepo } from './infrastructure/repos/drizzle-zero-rate-cert-prune-repo';
+export { makeDrizzleOrphanPdfReferenceRepo } from './infrastructure/repos/drizzle-orphan-pdf-reference-repo';
 export { vercelBlobAdapter } from './infrastructure/adapters/vercel-blob-adapter';
 // F119 T027 (research R12, FR-041a/b) — READ-only public URL of the invoice
 // logo for the E-Blast email header. Bound here to the F4 settings repo +

@@ -104,7 +104,7 @@ export interface BlobStoragePort {
 
   /**
    * Delete a key. The catch-path orphan deletes and the daily orphan PDF
-   * sweep (#729, `sweep-orphan-pdfs`) go through `deleteOrphanPdfUnderLock`
+   * sweep (#729, `sweep-orphan-blobs`) go through `deleteOrphanPdfUnderLock`
    * for invoice and receipt keys. With `ifMatch`, delete only if the stored
    * etag still matches; otherwise throw `BlobChangedSinceUploadError`.
    */
