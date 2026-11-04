@@ -358,8 +358,11 @@ async function drainOrphans(
 
   for (let i = 0; i < due.length; i += ORPHAN_DRAIN_CONCURRENCY) {
     if (deps.clock.now().getTime() - startedAtMs >= ORPHAN_DRAIN_STOP_MS) {
-      deferred += due.length - i;
-      logger.warn({ tenantId, deferred }, 'broadcasts.orphan_drain.stopped_at_budget');
+      // Review round 4 (code-review #6) — the line names the rows the budget
+      // cut only; the output's deferred stays the total (the cap overflow too).
+      const stoppedDeferred = due.length - i;
+      deferred += stoppedDeferred;
+      logger.warn({ tenantId, stoppedDeferred }, 'broadcasts.orphan_drain.stopped_at_budget');
       break;
     }
     await Promise.allSettled(due.slice(i, i + ORPHAN_DRAIN_CONCURRENCY).map(settleOne));

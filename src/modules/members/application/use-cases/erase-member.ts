@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
+import { pgErrorCode } from '@/lib/db-errors';
 import { erasureMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -331,7 +332,9 @@ export async function eraseMember(
       });
     } catch (e) {
       logger.error(
-        { err: e, memberId, requestId: meta.requestId },
+        // Review round 4 (code-review #7) — the class and the SQLSTATE code,
+        // never the Error: a driver message can carry the subject's address.
+        { err: errKind(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
         'erase-member: requested-audit failed',
       );
       return err({ type: 'server_error', message: 'erase request audit failed' });
@@ -598,8 +601,9 @@ export async function eraseMember(
       if (!scrubMember.ok) {
         if (scrubMember.error.code === 'repo.not_found')
           throw new EraseNotFoundError();
-        // Thread the repo `cause` (SQLSTATE + PG message) into the Error so the
-        // outer catch's `err: e` log carries the DB detail. Forensics-only.
+        // Thread the repo `cause` into the Error so the outer catch logs its
+        // SQLSTATE (`code: pgErrorCode(e)`, review round 4 code-review #7),
+        // never its message. Forensics-only.
         throw new Error(`member_scrub_failed:${scrubMember.error.code}`, {
           cause: 'cause' in scrubMember.error ? scrubMember.error.cause : undefined,
         });
@@ -747,7 +751,9 @@ export async function eraseMember(
   } catch (e) {
     if (e instanceof EraseNotFoundError) return err({ type: 'not_found' });
     logger.error(
-      { err: e, memberId, requestId: meta.requestId },
+      // Review round 4 (code-review #7) — the class and the SQLSTATE code,
+      // never the Error: a driver message can carry the subject's address.
+      { err: errKind(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
       'erase-member: scrub tx failed',
     );
     return err({ type: 'server_error', message: 'erase scrub failed' });
@@ -1324,7 +1330,9 @@ export async function eraseMember(
     } catch (e) {
       allCascadesClean = false;
       logger.error(
-        { err: e, memberId, requestId: meta.requestId },
+        // Review round 4 (code-review #7) — the class and the SQLSTATE code,
+        // never the Error: a driver message can carry the subject's address.
+        { err: errKind(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
         'erase-member: member_erased audit failed',
       );
     }
