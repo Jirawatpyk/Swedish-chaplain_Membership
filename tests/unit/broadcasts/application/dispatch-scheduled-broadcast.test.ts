@@ -4976,6 +4976,9 @@ describe('dispatch-scheduled-broadcast — 108 PR-C resolver contract (T076)', (
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.kind).toBe('dispatch.server_error');
+    // Spec 140 s2d review round 4 (code-review #9) - the resolver's error class
+    // is forwarded, as build-audience-tick's mapResolveError does.
+    expect(result.error).toMatchObject({ errClass: 'Error', phase: 'resolve' });
     expect(gw.audienceCalls).toHaveLength(0);
     expect(repo.transitions).toHaveLength(0);
     expect(audit.emits).toHaveLength(0);
