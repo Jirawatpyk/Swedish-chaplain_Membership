@@ -541,6 +541,16 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
     expect(warn.mock.calls.some((c) => c[1] === 'broadcasts.orphan_drain.erased_requesters_capped')).toBe(false);
   });
 
+  it("an erased requester's in-grace rows the share left out are deferred, not waiting", async () => {
+    const young = Array.from({ length: ORPHAN_DRAIN_ERASED_SHARE + 2 }, (_, i) =>
+      orphan(i + 1, { createdAt: new Date(YOUNG.getTime() - i * 1000), requestedByMemberId: 'm-erased' }),
+    );
+    const h = harness({ orphans: young, erased: { 'm-erased': 'erased' } });
+    const res = await h.run();
+    expect(h.settled).toHaveLength(ORPHAN_DRAIN_ERASED_SHARE);
+    expect(res.ok ? res.value.orphans : null).toMatchObject({ settled: ORPHAN_DRAIN_ERASED_SHARE, waiting: 0, deferred: 2 });
+  });
+
   // Review round 4 follow-up (code-review #7) — a past-grace list longer than
   // its limit still caps the run at ORPHAN_DRAIN_LIMIT.
   it('[code-review #7] a past-grace list longer than the limit still settles at most ORPHAN_DRAIN_LIMIT', async () => {
