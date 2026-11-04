@@ -144,6 +144,37 @@ export function pgErrorCode(error: unknown): string | undefined {
   return undefined;
 }
 
+/** What {@link pgErrorMeta} reads off a PostgresError: names only. */
+export interface PgErrorMeta {
+  readonly constraint?: string;
+  readonly table?: string;
+  readonly column?: string;
+}
+
+/**
+ * Spec 140 s2d (#736c) — the constraint / table / column NAMES of the first
+ * Postgres error in the `.cause` chain, or `undefined` when there is none. For
+ * LOGGING, beside `errKind(e)` and `pgErrorCode(e)`, where the constraint name
+ * is what an incident needs. Names are schema metadata; NEVER `detail`,
+ * `where`, `hint` or `message`, which postgres-js fills with the row's values
+ * (`Key (email)=(…) already exists.`). A non-string name is left out.
+ */
+export function pgErrorMeta(error: unknown): PgErrorMeta | undefined {
+  let cur: unknown = error;
+  while (cur !== null && cur !== undefined) {
+    if (isPostgresError(cur)) {
+      const pg = cur as { constraint_name?: unknown; table_name?: unknown; column_name?: unknown };
+      return {
+        ...(typeof pg.constraint_name === 'string' ? { constraint: pg.constraint_name } : {}),
+        ...(typeof pg.table_name === 'string' ? { table: pg.table_name } : {}),
+        ...(typeof pg.column_name === 'string' ? { column: pg.column_name } : {}),
+      };
+    }
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
 /**
  * SQLSTATE 23505 = unique_violation. Walks the cause chain so it
  * works with Drizzle 0.45+ wrapped errors. Returns true when any
