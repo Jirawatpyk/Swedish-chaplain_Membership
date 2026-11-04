@@ -1631,6 +1631,35 @@ Dev and prod share the broadcasts key, so the account state matches.
 
 **Verify:** a re-Verify on the final HEAD (spec N1), handed to the maintainer after round 4.
 
+### Slice 2c — review round 4, targeted, the last (`/code-review high 6d967f738..45b1441a4`, pdpa APPROVE WITH CONDITIONS, reliability MERGEABLE; 4 Nov 2026)
+
+**Review metrics:** round 4 (targeted #2) · 9 + 3 + 3 items (code-review, pdpa, reliability; three mechanisms found by two of them) · cap: 2 full + 2 targeted, **reached**. No High or Medium remains, so no further round runs; the fixes below are the ones the reviewers specified, and the re-Verify covers the driven paths.
+
+**Plan rows (adjustments of round-3 mechanisms, before GREEN).**
+
+| Mechanism (asked by) | State / rule | Neighbours | Test that goes red first |
+|---|---|---|---|
+| **The in-grace list reads newest first** (code-review #1, reliability LOW-B, pdpa L-1) | `listDrainableOrphans(..., { inGraceOnly: true })` orders by `created_at DESC`. An erased requester's post-pass orphan is the newest row, so a backlog of older in-grace rows cannot push it out. The second list is read only when the first returned `ORPHAN_DRAIN_LIMIT` rows (code-review #4); otherwise the first already holds every drainable row | the drain, RoPA residual (1) | repo integration · "21 in-grace rows: the newest is listed" + drain unit · "a short first list skips the second" |
+| **The detach cap ranks stuck rows first** (code-review #2, reliability nit) | The capped subquery orders by `(attempts >= ORPHAN_STUCK_ATTEMPTS AND created_at <= now() - ORPHAN_STUCK_MIN_AGE_MS)` DESC, then attempts DESC, created_at, orphan_id. Stuck audiences are the ones pass (b) releases rather than deletes, so they get the detach first. `now()` is the scrub tx's clock; this is an ordering only | pass (b) (stuck last, complementary), RoPA residual 6 | repo integration · "10 young high-attempt rows do not crowd out 3 old stuck rows" |
+| **The over-limit marker is judged at the list time** (code-review #3, reliability LOW-A) | The marker row's stuck check uses `listedAtMs`, the same instant as the SQL `stuckAgeCutoff`, so the sort and the predicate agree. The deadline and undecided exits keep `now` | pass (b) | cascade unit · "a marker row that turns 2 h old after the list is deferred, not reported" (clock advanced between list and judge) |
+
+**Fixes:**
+- code-review #6, reliability nit: `stopped_at_budget` logs the budget-cut count only (`stoppedDeferred`), and `deferred` stays the total in the output.
+- code-review #7: `err: e` becomes `err: errKind(e)` in the `erase-member.ts` catches (:334, :750, :1327).
+- reliability nit: the `observability.md` row for `broadcasts.orphan_drain.list_failed` names the `list` field.
+
+**Docs:**
+- pdpa L-1: RoPA residual (1) and `member-erasure.md` step 4 give the honest bound. Normally the next tick; at worst one tick after the 1-hour grace (`AUDIENCE_CLEANUP_GRACE_MS`, while a terminal holder's audience grace runs); later only while Resend's answer stays undecided.
+- pdpa L-2: the DSR answer says the address was asked, best-effort, to be detached from up to `ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT` open recipient audiences, stuck ones first, and that which ones is not recorded (residual 6).
+- reliability LOW-C: the drain docblock states the trade. An erased requester's young rows come first, so 20 or more of them defer the past-grace rows for at most the grace.
+
+**Accepted:**
+- code-review #5: the erased reads are at most 2 × `ORPHAN_DRAIN_LIMIT` per run. With the second list read only on a full first list, they rarely exceed 20.
+- code-review #8: an erased requester's 20 failing young rows hold the run for at most the grace (LOW-C, documented).
+- code-review #9: a comment-only edit changes 0325's hash. The normal path matches by `created_at`, 0325 is unmerged, and prod and CI run it fresh.
+- pdpa L-3: no cascade-port contract case, which predates this PR; a follow-up issue.
+- reliability: a commit whose driver throws after COMMIT misses the counter. This class predates the PR.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
