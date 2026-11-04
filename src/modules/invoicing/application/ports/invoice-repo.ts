@@ -215,6 +215,22 @@ export interface InvoiceRepo {
     },
   ): Promise<LiveMembershipBillView | null>;
 
+  /**
+   * #730 — the COMMITTED membership bill whose coverage overlaps this draft's:
+   * the bill the DB EXCLUDE `invoices_membership_coverage_no_overlap` (mig
+   * 0281) refused it against. The constraint's own predicate: same tenant and
+   * member, `blocks_coverage`, half-open `tstzrange` overlap. Null when none is
+   * found (the bill was voided since, or the draft has no coverage window).
+   *
+   * Read-only and informative: it names a bill for a person to open and
+   * decides nothing, so it takes no lock. Optional so the many `InvoiceRepo`
+   * fakes need no stub; the use case treats a missing method as "not found".
+   */
+  findCoverageBlockingBillInTx?(
+    tx: unknown,
+    input: { readonly tenantId: string; readonly invoiceId: InvoiceId },
+  ): Promise<LiveMembershipBillView | null>;
+
   /** List with cursor pagination. Drafts excluded by default. */
   list(
     tenantId: string,

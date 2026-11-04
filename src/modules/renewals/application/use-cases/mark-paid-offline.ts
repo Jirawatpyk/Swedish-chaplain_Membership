@@ -145,7 +145,14 @@ export type MarkPaidOfflinePermanentReason =
   | 'plan_not_found'
   | 'settings_missing'
   | 'member_archived'
-  | 'member_not_found';
+  | 'member_not_found'
+  /**
+   * #730 — the DB coverage EXCLUDE refused the issue: another committed bill
+   * already covers the period. Not `membership_bill_already_exists`: that bill
+   * is usually another plan year and may be paid, so "record the payment
+   * there" would be wrong. Carries the bill's id when F4 could name it.
+   */
+  | 'membership_coverage_overlap';
 
 export type MarkPaidOfflineError =
   | { readonly kind: 'invalid_input'; readonly message: string }
@@ -185,6 +192,8 @@ export type MarkPaidOfflineError =
   | {
       readonly kind: 'f4_permanent_failure';
       readonly reason: MarkPaidOfflinePermanentReason;
+      /** #730 — on `membership_coverage_overlap`, the covering bill to link. */
+      readonly blockingInvoiceId?: string;
     }
   | { readonly kind: 'f4_failure'; readonly stage: string; readonly reason: string }
   // K1-C7: explicit server_error variant — Application throws are
@@ -216,6 +225,7 @@ const PERMANENT_F4_REASONS: ReadonlySet<string> = new Set([
   'settings_missing',
   'member_archived',
   'member_not_found',
+  'membership_coverage_overlap',
 ]);
 
 function isPermanentF4Reason(
@@ -936,6 +946,20 @@ export async function markPaidOffline(
         // permanent reject (plan-year not in the catalogue, member archived,
         // settings unconfigured, member missing) will NEVER succeed until the
         // data is fixed — telling the admin to retry sends them in circles.
+        // #730 — the DB coverage EXCLUDE refused the issue: another committed
+        // bill already covers this period, so a retry never passes. Its own
+        // permanent code, with the covering bill's id when F4 named it.
+        if (
+          bridgeResult.error.kind === 'issue_invoice_failed' &&
+          bridgeResult.error.reason === 'membership_coverage_overlap'
+        ) {
+          const blocking = bridgeResult.error.blocking;
+          return err({
+            kind: 'f4_permanent_failure' as const,
+            reason: 'membership_coverage_overlap' as const,
+            ...(blocking ? { blockingInvoiceId: blocking.invoiceId } : {}),
+          });
+        }
         if (isPermanentF4Reason(bridgeResult.error.reason)) {
           return err({
             kind: 'f4_permanent_failure' as const,

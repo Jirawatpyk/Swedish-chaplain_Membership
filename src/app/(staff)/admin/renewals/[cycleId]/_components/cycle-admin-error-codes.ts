@@ -84,6 +84,8 @@ export const MARK_PAID_OFFLINE_ERROR_CODES = [
   'settings_missing',
   'member_archived',
   'member_not_found',
+  // #730 — another committed bill covers this period (DB coverage EXCLUDE).
+  'membership_coverage_overlap',
   'invalid_body',
   'no_session',
   'forbidden',
@@ -132,7 +134,11 @@ export function resolveExistingBillHref(err: {
   readonly code: string;
   readonly existing_invoice_id?: string;
 }): string | null {
-  if (err.code === 'membership_bill_already_exists' && err.existing_invoice_id) {
+  // #730 — a coverage overlap links the bill that already covers the period.
+  if (
+    (err.code === 'membership_bill_already_exists' || err.code === 'membership_coverage_overlap') &&
+    err.existing_invoice_id
+  ) {
     return `/admin/invoices/${encodeURIComponent(err.existing_invoice_id)}`;
   }
   return null;

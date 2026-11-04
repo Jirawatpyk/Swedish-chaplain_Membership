@@ -119,7 +119,7 @@ on the 320px portal list — FR-009 / SC-011).
 | `invoice_not_found` | 404 | |
 | `member_not_found` | 404 | |
 | `invoice_already_issued` | 409 | idempotent re-issue guard |
-| `membership_coverage_overlap` | 409 | another committed membership bill already covers this period (mig-0281 DB EXCLUDE backstop); the draft stays a draft, no number consumed |
+| `membership_coverage_overlap` | 409 | another committed membership bill already covers this period (mig-0281 DB EXCLUDE backstop); the draft stays a draft, no number consumed. #730: when the covering bill is found after the rollback, the body adds `blocking_invoice_id` and, if it is numbered, `blocking_document_number` |
 | `member_archived` | 409 | |
 | `settings_missing` | 409 | |
 | `event_no_tin_requires_paid_issue` | 422 | route override (`route.ts:82-84`) |

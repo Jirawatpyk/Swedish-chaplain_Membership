@@ -254,13 +254,18 @@ export async function POST(
           const permanentStatus =
             result.error.reason === 'member_not_found'
               ? 404
-              : result.error.reason === 'member_archived'
+              : result.error.reason === 'member_archived' ||
+                  result.error.reason === 'membership_coverage_overlap'
                 ? 409
                 : 422;
           return errorResponse({
             status: permanentStatus,
             code: result.error.reason,
             correlationId: ctx.correlationId,
+            // #730 — the covering bill of a coverage overlap, for the link.
+            ...(result.error.blockingInvoiceId
+              ? { details: { existing_invoice_id: result.error.blockingInvoiceId } }
+              : {}),
           });
         }
         case 'f4_failure':

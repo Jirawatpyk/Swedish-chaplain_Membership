@@ -96,11 +96,16 @@ export function routeIssueAutoDraftError(
   // #62 — the designed auto-draft race: a same-period bill was minted while
   // this draft was in flight, so the DB EXCLUDE refused the issue. That is the
   // same fact as the pre-flight `duplicate_live_bill`, and a retry can never
-  // pass — name it instead of the generic "could not issue". (No conflicting
-  // id: the EXCLUDE does not report which bill it collided with.) Every other
-  // F4 detail stays withheld behind the generic copy.
+  // pass — name it instead of the generic "could not issue". The EXCLUDE does
+  // not report which bill it collided with; since #730 F4 reads it after the
+  // rollback, and the route forwards its id when found, so link it. Every
+  // other F4 detail stays withheld behind the generic copy.
   if (code === 'issue_failed' && body?.error_code === 'membership_coverage_overlap') {
-    return { kind: 'refusal_reason', reasonKey: 'duplicateLiveBill' };
+    return {
+      kind: 'refusal_reason',
+      reasonKey: 'duplicateLiveBill',
+      ...(body.conflicting_invoice_id ? { conflictingInvoiceId: body.conflicting_invoice_id } : {}),
+    };
   }
   if (code === 'issue_failed') {
     return { kind: 'generic', messageKey: 'issueFailed' };
