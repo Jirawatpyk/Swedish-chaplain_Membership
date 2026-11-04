@@ -56,7 +56,6 @@ import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { StandingRefusalFailureReason } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { readMemberSendStanding, type MemberSendStandingDeps, type StandingRefusal } from './_member-send-standing';
 import { classifyResendDraftAnswer } from './_classify-resend-draft-answer';
-import { isHandedStatus } from './_probe-refused-send';
 
 /** The standing reads a dispatch leg makes. */
 export interface DispatchStandingDeps extends MemberSendStandingDeps {
@@ -348,23 +347,24 @@ export async function deleteDraftBeforeStandingRefusal(
     logger.warn({ ...logIds, observedResendStatus: null, errClass: 'threw', err: errKind(e) }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
     return { kind: 'undeleted', errClass: 'threw' };
   }
-  const probed = probe.kind === 'present' ? probe.status : probe.kind;
-  // Only a `present` answer carries a handed status (`isHandedStatus`).
-  if (probe.kind === 'present' && isHandedStatus(probe.status)) {
-    logger.warn({ ...logIds, observedResendStatus: probe.status }, 'broadcasts.dispatch.refused_draft_handed_by_sibling');
-    return { kind: 'handed', resendStatus: probe.status, sentAt: probe.sentAt ?? null };
+  // Spec 140 s2d (#735) — the table is `classifyResendDraftAnswer`'s; only this
+  // policy's `handed` answer carries the GET's `sentAt`.
+  const answer = classifyResendDraftAnswer('standing_refusal', 'forbidden', probe);
+  if (answer.kind === 'handed') {
+    logger.warn({ ...logIds, observedResendStatus: answer.status }, 'broadcasts.dispatch.refused_draft_handed_by_sibling');
+    return { kind: 'handed', resendStatus: answer.status, sentAt: answer.sentAt };
   }
   // Review round 2 (code-review #6) — a `cancelled` reading is an unsendable
   // copy: cleared, as `deleteDraftBeforeRefusal` clears a 403 on an id its
   // probe already called cancelled. Review round 3 (code-review #4) — so is
   // `failed` (MEASURED 2026-10-29: only a draft can be sent): cleared, and
   // recorded as `failed` (`resendDraftOutcome`), not as an undeleted draft.
-  if (probed === 'cancelled' || probed === 'failed') {
-    logger.info({ ...logIds, observedResendStatus: probed }, 'broadcasts.dispatch.refused_draft_cancelled_unsendable');
-    return { kind: 'cleared', draftOutcome: probed };
+  if (answer.kind === 'unsendable') {
+    logger.info({ ...logIds, observedResendStatus: answer.status }, 'broadcasts.dispatch.refused_draft_cancelled_unsendable');
+    return { kind: 'cleared', draftOutcome: answer.status };
   }
-  const errClass = PROBE_ERR_CLASS[probed] ?? 'probe_other';
-  logger.warn({ ...logIds, observedResendStatus: probed, errClass }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
+  const errClass = PROBE_ERR_CLASS[answer.probed] ?? 'probe_other';
+  logger.warn({ ...logIds, observedResendStatus: answer.probed, errClass }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
   return { kind: 'undeleted', errClass };
 }
 
