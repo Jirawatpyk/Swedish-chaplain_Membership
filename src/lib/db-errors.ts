@@ -134,7 +134,8 @@ export function errorChainMessage(error: unknown): string {
  * `undefined`. For LOGGING: pair with `errKind(e)` so a failure is
  * diagnosable without its message — a Drizzle `Failed query:` message quotes
  * the statement's parameters, which can carry member ids. Review round 2: at
- * most 10 hops, and only a SQLSTATE-shaped code (`/^[0-9A-Z]{5}$/`) is read.
+ * most 10 hops, and only a SQLSTATE-shaped code is read; review round 3: one
+ * that holds a digit (`/^(?=.*\d)[0-9A-Z]{5}$/`), so `EPIPE` is not.
  */
 export function pgErrorCode(error: unknown): string | undefined {
   return firstSqlStateError(error)?.code;
@@ -146,8 +147,13 @@ export function pgErrorCode(error: unknown): string | undefined {
  * would otherwise loop forever inside the log call that reached it.
  */
 const MAX_CAUSE_HOPS = 10;
-/** A SQLSTATE: five digits or upper-case letters. `card_declined`, `ECONNRESET` and `repo.unexpected` are not. */
-const SQLSTATE = /^[0-9A-Z]{5}$/;
+/**
+ * A SQLSTATE: five digits or upper-case letters, at least one a digit (every
+ * SQLSTATE class is two characters, and no class is two letters).
+ * `card_declined`, `ECONNRESET`, `repo.unexpected` and, since review round 3
+ * (code-review #2), the Node codes `EPIPE` / `EPERM` are not.
+ */
+const SQLSTATE = /^(?=.*\d)[0-9A-Z]{5}$/;
 
 /**
  * The first link of the `.cause` chain that is a Postgres error with a

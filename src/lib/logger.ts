@@ -706,17 +706,24 @@ export function redactPanValues(input: unknown, depth = 0): unknown {
 const ERROR_KEYS = ['err', 'error', 'cause'] as const;
 
 /**
- * What {@link reduceLoggedError} writes for an error: closed tokens and stack
- * frames, nothing else (spec 140 s2d review round 2).
+ * What {@link reduceLoggedError} writes for an error: token-shaped values
+ * (shape-checked) and stack frames, nothing else (spec 140 s2d review rounds 2
+ * and 3). Frozen.
  */
 export interface ReducedLoggedError {
-  /** The error's class (`errKind`), or a token-shaped `name` of a plain object, else `'unknown'`. */
+  /**
+   * The error's class: `errKind` for an Error; for a plain object its `name`
+   * when that is an error class name (`/^[A-Z]\w*(Error|Exception)$/`), else
+   * `'unknown'`. `'unreducible'` when reading the value threw.
+   */
   readonly type: string;
+  /** A plain object's token-shaped `type` discriminant (`server_error`): a Result error's variant. */
+  readonly errType?: string;
   /** The SQLSTATE of the first Postgres error in the cause chain (`pgErrorCode`). */
   readonly code?: string;
   /** A Result error's own code (`RESULT_CODE`-validated by `errLogFields`), on the value or a wrapped RepoError. */
   readonly repoCode?: string;
-  /** A string `.code` that is a token and not the SQLSTATE: Node `ECONNRESET`, Stripe `card_declined`. */
+  /** An Error's own token-shaped `.code` that is not the SQLSTATE (`errLogFields`): Node `ECONNRESET`, Stripe `card_declined`. */
   readonly errCode?: string;
   /** An integer `.statusCode` (an HTTP client error). */
   readonly statusCode?: number;
@@ -724,40 +731,45 @@ export interface ReducedLoggedError {
   readonly declineCode?: string;
   /** A token-shaped `.kind`: a Result error's own discriminant (`not_found`, `conflict`). */
   readonly kind?: string;
-  /** The `at …` lines of `.stack`, at most {@link MAX_FRAMES}; never its first line(s), which hold the message. */
+  /** The frame lines of `.stack` (`at …:line:col`), at most {@link MAX_FRAMES}; never a header line. */
   readonly frames?: ReadonlyArray<string>;
 }
 
-/** A code-authored token: an error class, a Node or Stripe code. No spaces, so no sentence and no SQL. */
-const ERR_TOKEN = /^[A-Za-z0-9_.:-]{1,64}$/;
-/** A V8 / Node stack frame line. */
-const STACK_FRAME = /^\s+at /;
+/** A lowercase discriminant token: `server_error`, `not_found`, `insufficient_funds`. */
+const LOWER_TOKEN = /^[a-z][a-z0-9_]{0,47}$/;
+/** An error class name: `DrizzleQueryError`, `NeonDbError`, `TimeoutException`. */
+const ERROR_CLASS_NAME = /^[A-Z]\w*(Error|Exception)$/;
+/** A V8 / Node stack frame line: `at fn (file.ts:1:2)` or `at file.ts:1:2`. */
+const STACK_FRAME = /^\s+at .*:\d+:\d+\)?$/;
 const MAX_FRAMES = 8;
 const MAX_FRAME_LENGTH = 300;
 /** The values this module built, so a second pass (pino's serializer after the hook) keeps them. */
 const reducedValues = new WeakSet<object>();
+/** What a value becomes when reading it threw (a throwing getter); frozen and marked once. */
+const UNREDUCIBLE: ReducedLoggedError = Object.freeze({ type: 'unreducible' });
+reducedValues.add(UNREDUCIBLE);
 
-function tokenField(value: object, field: string): string | undefined {
+function lowerToken(value: object, field: string): string | undefined {
   const v = (value as Record<string, unknown>)[field];
-  return typeof v === 'string' && ERR_TOKEN.test(v) ? v : undefined;
+  return typeof v === 'string' && LOWER_TOKEN.test(v) ? v : undefined;
 }
 
 /**
- * The `at …` lines of a stack. The message is cut out first, so a multi-line
- * message (a Drizzle `Failed query:` with its `params:` line) cannot pass a
- * line off as a frame; then only lines shaped like a frame are kept.
+ * The frame lines of a stack, cut by structure (review round 3, code-review
+ * #4, security #2): the header is every line before the first frame, and only
+ * a line shaped like a frame is kept. The message is never searched for, so a
+ * one-letter message cannot cut the frames, and a message changed after the
+ * stack was read cannot leave its first text behind.
  */
 function stackFrames(value: object): ReadonlyArray<string> | undefined {
   const stack = (value as { stack?: unknown }).stack;
   if (typeof stack !== 'string') return undefined;
-  const message = (value as { message?: unknown }).message;
-  const body = typeof message === 'string' && message !== '' ? stack.split(message).join('') : stack;
-  const frames = body
+  const frames = stack
     .split(/\r?\n/)
     .filter((line) => STACK_FRAME.test(line))
     .slice(0, MAX_FRAMES)
     .map((line) => line.trim().slice(0, MAX_FRAME_LENGTH));
-  return frames.length > 0 ? frames : undefined;
+  return frames.length > 0 ? Object.freeze(frames) : undefined;
 }
 
 /**
@@ -766,31 +778,50 @@ function stackFrames(value: object): ReadonlyArray<string> | undefined {
  * `params` / `detail`, to its class and SQLSTATE. Review round 2 (code-review
  * #1, #2; pdpa H-2; security M1; the maintainer's decision of 4 Nov 2026) —
  * ANY non-string value, an Error or a plain object with any field, becomes
- * {@link ReducedLoggedError}: closed tokens plus stack frames, in every
+ * {@link ReducedLoggedError}: token-shaped values plus stack frames, in every
  * module. `message`, `stack`, `detail`, `params` and `query` are never
  * written: drizzle-orm's `DrizzleQueryError` has enumerable `query` and
  * `params` and a message that quotes them, postgres-js fills `detail` with the
  * row's values, and the events audit port logs `{ name, message, stack }` as a
  * plain object. A string is kept (call sites log `err: errKind(e)`; error text
- * in string form is #740's scope). A plain object's other fields are dropped
- * too; a token-shaped `kind` (a Result error's discriminant) is kept.
+ * in string form is #740's scope).
+ *
+ * Review round 3 (code-review #1, reliability MED, security #1, #3, #4) —
+ * every kept value is shape-checked: `kind`, `declineCode` and a plain
+ * object's `type` discriminant (written as `errType`) are lowercase tokens; a
+ * plain object's `name` is kept only as an error class name; `errCode` only
+ * for an Error. A throwing getter makes the value `{ type: 'unreducible' }`,
+ * never a throw out of the log call, and the output is frozen.
  */
 export function reduceLoggedError(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return value;
   if (reducedValues.has(value)) return value;
+  let out: ReducedLoggedError;
+  try {
+    out = reduce(value);
+  } catch {
+    return UNREDUCIBLE;
+  }
+  const frozen = Object.freeze(out);
+  reducedValues.add(frozen);
+  return frozen;
+}
+
+function reduce(value: object): ReducedLoggedError {
+  const isError = value instanceof Error;
   const fields = errLogFields(value);
   const code = fields.code ?? pgErrorCode(value);
   const repoCode = fields.repoCode !== undefined && fields.repoCode !== code ? fields.repoCode : undefined;
-  const ownCode = tokenField(value, 'code');
-  const errCode = ownCode !== undefined && ownCode !== code && ownCode !== repoCode ? ownCode : undefined;
+  const errCode = isError && fields.errCode !== repoCode ? fields.errCode : undefined;
   const statusCode = (value as { statusCode?: unknown }).statusCode;
-  const declineCode = tokenField(value, 'declineCode') ?? tokenField(value, 'decline_code');
-  // Review round 2 follow-up — a Result error logged whole keeps its closed
-  // discriminant; a `kind` that is not token-shaped is dropped with the rest.
-  const kind = tokenField(value, 'kind');
+  const declineCode = lowerToken(value, 'declineCode') ?? lowerToken(value, 'decline_code');
+  const kind = lowerToken(value, 'kind');
+  const errType = isError ? undefined : lowerToken(value, 'type');
+  const name = isError ? undefined : (value as { name?: unknown }).name;
   const frames = stackFrames(value);
-  const out: ReducedLoggedError = {
-    type: value instanceof Error ? errKind(value) : (tokenField(value, 'name') ?? 'unknown'),
+  return {
+    type: isError ? errKind(value) : typeof name === 'string' && ERROR_CLASS_NAME.test(name) ? name : 'unknown',
+    ...(errType !== undefined ? { errType } : {}),
     ...(code !== undefined ? { code } : {}),
     ...(repoCode !== undefined ? { repoCode } : {}),
     ...(errCode !== undefined ? { errCode } : {}),
@@ -799,8 +830,6 @@ export function reduceLoggedError(value: unknown): unknown {
     ...(kind !== undefined ? { kind } : {}),
     ...(frames !== undefined ? { frames } : {}),
   };
-  reducedValues.add(out);
-  return out;
 }
 
 /** The fields object with its `err` / `error` / `cause` reduced; the input is never mutated. */
