@@ -101,6 +101,8 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *                        += 'broadcast_retention_swept' (0310, F7 retention sweep)
  *                        += 'broadcast_unsubscribe_unattributed' (0312, F7 opt-out)
  *                        += 'webhook_unresolved_event_adopted' (0320, 132 adopt-on-replay)
+ *                        += 'credit_note_issue_replayed' (0324, 066 key replay)
+ *                        += 'credit_note_attempt_abandoned' (0326, 068 Start over)
  *   - `notification_type` += the two F114 rows (0301), the five F119 eblast_* rows (0308)
  *   - `broadcast_status`  += the five F119 approval-round statuses (0308)
  */
@@ -191,6 +193,11 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     // unresolved processor_events row; a non-persisting ADD VALUE would lose
     // the only durable record of the adoption.
     'webhook_unresolved_event_adopted',
+    // 066 (0324) / 068 (0326) — an admin credit-note replay and "Start over"
+    // INSERT these on the §86/10 path; a missing value 500s both, and the
+    // abandon row is the only record that a key was closed.
+    'credit_note_issue_replayed',
+    'credit_note_attempt_abandoned',
   ],
   // F114 (0301) — the two outbox row types the same use cases INSERT.
   notification_type: [

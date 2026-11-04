@@ -311,6 +311,8 @@ function makeDeps(
       // `sourceRefundId`-carrying call proceeds to insert (the F5-real-refund
       // derivation path). Refund-race / idempotency tests override this.
       findBySourceRefundId: vi.fn(async () => null),
+      // Task 68 — no attempt was abandoned with "Start over".
+      findAbandonedAttempt: vi.fn(async () => null),
       // Return the just-inserted CN for the AS4 annotation re-render.
       findByOriginalInvoiceInTx: vi.fn(async () => [
         makeCreditNote(
@@ -2009,6 +2011,20 @@ describe('issueCreditNote — #66 idempotency key (admin notes)', () => {
     expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
     const insert = (deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
     expect(insert).toMatchObject({ reason: 'duplicate charge' });
+  });
+
+  // Task 68 — "Start over" tombstoned the key: a late request with it (the
+  // original still running, or another tab) issues nothing.
+  it('a key abandoned with Start over is refused as attempt_abandoned, before any number is allocated', async () => {
+    const { deps } = depsWithKeyHit(null);
+    const findAbandoned = vi.fn(async () => ({ invoiceId: INVOICE_ID }));
+    (deps.creditNoteRepo as unknown as { findAbandonedAttempt: unknown }).findAbandonedAttempt = findAbandoned;
+    const r = await issueCreditNote(deps, { ...baseInput, idempotencyKey: KEY });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('attempt_abandoned');
+    expect(findAbandoned).toHaveBeenCalledWith(expect.anything(), 'test-swecham', KEY);
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
   });
 
   it('a first attempt with a key issues normally, stores the key on the row and is not a replay', async () => {

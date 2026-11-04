@@ -103,3 +103,24 @@ Any unlisted `IssueCreditNoteError` code falls through to **422** (`?? 422`).
 
 - `credit_note_issued` (10y; F3 member timeline). For a non-member event buyer, emitted via
   `emitNonMemberInvoiceEvent` (`event_registration_id`, no `member_id`).
+
+## Task 68 — `POST /api/credit-notes/attempts/abandon` ("Start over")
+
+Closes a locked admin issue attempt on the server. Same gate (`credit_notes.write`) and rate-limit bucket
+(`f4:credit-note:{tenant}:{actor}`) as issuing a note.
+
+- **Body:** `{ invoiceId: uuid, idempotencyKey: uuid }`. Malformed → `400 invalid_body`; unparsable → `400 invalid_json`.
+- **Decision**, under the invoice `FOR UPDATE` lock every issue attempt takes:
+  - a note already issued under the key → `200 { outcome: 'issued', ...serialised note }` (nothing is closed);
+  - otherwise a tombstone in `credit_note_abandoned_attempts` (mig 0326) closes the key for good, one
+    `credit_note_attempt_abandoned` audit row is written (10 y, ids only) → `200 { outcome: 'abandoned' }`;
+  - a second call → `200 { outcome: 'abandoned' }`, no second row.
+- **Refusals:** `404 invoice_not_found`; `409 concurrent_state_change` (the key answers another invoice).
+- **Effect on issuing:** `POST /api/credit-notes` with a closed key → `409 attempt_abandoned`, before any §87 number is
+  allocated. The lock makes this exact: an attempt holding the lock when Start over arrives commits first and is
+  returned as `issued`; one that reaches the lock later finds the tombstone.
+
+- **Scope of the guarantee:** per invoice. The lock serialises Start over against issues **on the same invoice**, which
+  is every request the form can send (a stored attempt binds its key to its invoice). A crafted request that reuses a
+  closed key on a different invoice is not serialised against the abandon, and is out of scope: it needs
+  `credit_notes.write` and the unguessable key, and `keyHitMatches` never returns one invoice's note for another.

@@ -263,6 +263,10 @@ const PERMANENT_CN_DECLINE: Readonly<Record<IssueCreditNoteError['code'], boolea
   // guard is gated on `sourceRefundId === undefined`. Transient (conservative
   // default) purely to keep the Record exhaustive.
   online_payment_refundable: false,
+  // Task 68 — UNREACHABLE on the refund path: only an admin attempt carries an
+  // idempotency key that "Start over" can close; a refund-origin CN never
+  // sends one. Transient (conservative default) to keep the Record exhaustive.
+  attempt_abandoned: false,
 };
 
 function isPermanentCreditNoteDecline(code: string): boolean {

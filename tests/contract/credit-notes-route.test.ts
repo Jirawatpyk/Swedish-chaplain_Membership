@@ -485,6 +485,17 @@ describe('POST /api/credit-notes — contract', () => {
   });
   // #66 — an admin issue attempt carries one uuid; a repeat answers with the
   // note already issued (201, `replayed: true`, no membership_end re-run).
+  // Task 68 — a key closed with "Start over" is a definite refusal.
+  it('409 attempt_abandoned → HTTP 409 with the code', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+    issueCreditNoteMock.mockResolvedValueOnce(err({ code: 'attempt_abandoned' }));
+    const POST = await loadHandler();
+    const res = await POST(makeReq());
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe('attempt_abandoned');
+  });
+
   describe('#66 idempotency key', () => {
     const KEY = '11111111-2222-4333-8444-555555555555';
 

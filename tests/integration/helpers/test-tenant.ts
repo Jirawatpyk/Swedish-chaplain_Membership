@@ -61,7 +61,7 @@ import {
 } from '@/modules/members/infrastructure/db/schema-change-requests';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
-import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
+import { creditNoteAbandonedAttempts, creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
 import {
@@ -220,6 +220,12 @@ export async function createTestTenant(
       .delete(tenantPaymentSettings)
       .where(eq(tenantPaymentSettings.tenantId, slug));
     await db.delete(creditNotes).where(eq(creditNotes.tenantId, slug));
+    // Task 68 "Start over" tombstones: CASCADE-deleted with their invoice,
+    // kept explicit for the reason `invoice_lines` is (owner role: the app
+    // role has no DELETE on this append-only table).
+    await db
+      .delete(creditNoteAbandonedAttempts)
+      .where(eq(creditNoteAbandonedAttempts.tenantId, slug));
     await db.delete(invoiceLines).where(eq(invoiceLines.tenantId, slug));
     await db.delete(invoices).where(eq(invoices.tenantId, slug));
     await db.delete(tenantDocumentSequences).where(eq(tenantDocumentSequences.tenantId, slug));

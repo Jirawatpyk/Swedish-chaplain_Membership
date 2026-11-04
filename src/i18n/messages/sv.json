@@ -2514,7 +2514,16 @@
         "successWithNumber": "Kreditnota {number} utfärdad.",
         "successAlreadyIssued": "Kreditnota {number} var redan utfärdad — ingen ny kreditnota utfärdades.",
         "successAlreadyIssuedNoNumber": "Kreditnotan var redan utfärdad — ingen ny kreditnota utfärdades.",
-        "submitLockedHint": "Slutför kreditnotan med ”Försök igen” i meddelandet ovan, eller öppna fakturan.",
+        "startOver": {
+          "action": "Börja om",
+          "title": "Börja om utan den här kreditnotan?",
+          "body": "Vi kontrollerar om den har utfärdats. Om den har utfärdats öppnar vi den. Om inte kan den aldrig utfärdas, och du kan ange en ny kreditnota.",
+          "confirm": "Börja om",
+          "cancel": "Gå tillbaka",
+          "done": "Den här kreditnotan kommer inte att utfärdas. Du kan ange en ny.",
+          "failed": "Vi kunde inte börja om. Kreditnotan förblir låst — välj Börja om igen, eller öppna fakturan och kontrollera."
+        },
+        "submitLockedHint": "Slutför kreditnotan med ”Försök igen” i meddelandet ovan, öppna fakturan eller välj ”Börja om”.",
         "emailSkippedNoRecipient": "Köparen har ingen e-post registrerad — skicka kreditnotan manuellt.",
         "membershipEnd": {
           "ended": "Medlemskapet har avslutats — medlemmens åtkomst upphör nu.",
@@ -2536,6 +2545,7 @@
         "errors": {
           "concurrent": "Denna faktura har redan krediterats eller annullerats. Öppna den för att se dess senaste status.",
           "unconfirmed": "Vi kunde inte bekräfta om kreditnotan på {amount} utfärdades. Försök igen — om den redan har utfärdats, utfärdas ingen ny. Du kan också öppna fakturan och kontrollera.",
+          "attemptAbandoned": "Den här kreditnotan stängdes med ”Börja om” — ingen kreditnota utfärdades.",
           "retryRefused": "Det här försöket nekades: {reason}",
           "retryAction": "Försök igen",
           "openInvoiceAction": "Öppna fakturan",
@@ -8013,6 +8023,7 @@
       "invoice_overdue_detected": "Faktura förfallen",
       "credit_note_issued": "Kreditnota utfärdad",
       "credit_note_issue_replayed": "Begäran om kreditnota upprepad — befintlig kreditnota returnerad",
+      "credit_note_attempt_abandoned": "Försök till kreditnota stängt med ”Börja om” — ingen kreditnota utfärdades",
       "invoice_pdf_resent": "Faktura-PDF skickad igen",
       "receipt_pdf_resent": "Kvitto-PDF skickat igen",
       "credit_note_pdf_resent": "Kreditnota-PDF skickad igen",

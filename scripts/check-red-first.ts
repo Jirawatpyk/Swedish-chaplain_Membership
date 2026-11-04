@@ -27,6 +27,10 @@ const ALLOW: ReadonlyArray<{ readonly sha: string; readonly why: string }> = [
     sha: 'c5bc2f9c6',
     why: '138 — the commit whose shared RED/GREEN prompted this gate (retro 2026-10-29); disclosed in the PR',
   },
+  {
+    sha: '23e51d667',
+    why: '068 — its only payments line is a `false` entry that keeps PERMANENT_CN_DECLINE exhaustive for the new attempt_abandoned code, unreachable on the refund path (no key is sent); the invoicing RED is 000f845e7',
+  },
 ];
 
 function git(args: string[]): string {
