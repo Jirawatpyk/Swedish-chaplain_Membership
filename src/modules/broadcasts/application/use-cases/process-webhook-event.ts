@@ -32,7 +32,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errLogFields } from '@/lib/log-id';
+import { errLogFields, errStep } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { sha256Hex } from '@/lib/crypto';
 import { unsafeIanaTimezone, type TenantContext } from '@/modules/tenants';
@@ -794,6 +794,8 @@ export async function enqueueDeliverySummaryEmail(args: {
     logger.error(
       {
         ...errLogFields(e),
+        // Spec 140 s2d review round 1 (reliability M-1) — which members read failed.
+        step: errStep(e),
         tenantId: args.tenant.slug,
         broadcastId: args.broadcastId,
         memberId: args.memberId,
@@ -834,6 +836,7 @@ export async function enqueueDeliverySummaryEmail(args: {
     logger.warn(
       {
         ...errLogFields(e),
+        step: errStep(e),
         tenantId: args.tenant.slug,
         broadcastId: args.broadcastId,
         memberId: args.memberId,

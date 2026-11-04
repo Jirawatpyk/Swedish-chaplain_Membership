@@ -25,7 +25,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { errKind, errLogFields } from '@/lib/log-id';
+import { errKind, errLogFields, rootCause } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   drizzleMemberRepo,
@@ -58,6 +58,17 @@ import type {
   SegmentResolveParams,
 } from '../application/ports/members-bridge-port';
 import type { EmailLower } from '../domain/value-objects/email-lower';
+
+/**
+ * Spec 140 s2d review round 1 (reliability M-1, code-review #4) — a failed
+ * members read as a code-authored step (`<read>:<repoCode>`, what `errStep`
+ * keeps for a log line's `step`) with the driver error as its `cause`, so
+ * `pgErrorCode` reaches the SQLSTATE. The repo code is a closed RepoError
+ * token; the cause is never written to a log line (`err: errKind(e)`).
+ */
+function failedRead(read: string, error: { readonly code: string }): Error {
+  return new Error(`${read}:${error.code}`, { cause: rootCause(error) });
+}
 
 /**
  * 108 PR-C — F3 keyset page size for the 1:N audience (contract
@@ -248,7 +259,7 @@ export const membersBridge: MembersBridgePort = {
     // — an append-only audit row asserting a fact nobody observed.
     if (!result.ok) {
       if (result.error.code === 'repo.not_found') return null;
-      throw new Error(`members-bridge.getMemberPrimaryContact: ${result.error.code}`);
+      throw failedRead('members_bridge_get_member_primary_contact', result.error);
     }
     if (result.value === null) return null;
     return unsafeBrandEmailLower(result.value.toLowerCase().trim());
@@ -286,7 +297,7 @@ export const membersBridge: MembersBridgePort = {
     // catch arm (the only log on that path) can actually fire; a miss is null.
     if (!result.ok) {
       if (result.error.code === 'repo.not_found') return null;
-      throw new Error(`members-bridge.lookupContactEmailInTenant: ${result.error.code}`);
+      throw failedRead('members_bridge_lookup_contact_email', result.error);
     }
     if (result.value === null) return null;
     return {
@@ -329,7 +340,7 @@ export const membersBridge: MembersBridgePort = {
     // the use-case maps it to `submit.server_error` and the admin queue
     // page renders an error state instead of a clean banner.
     if (!result.ok) {
-      throw new Error(`members-bridge.getMembersHaltedInTenant: ${result.error.code}`);
+      throw failedRead('members_bridge_get_members_halted', result.error);
     }
     return result.value.map((row) => ({
       memberId: row.memberId,
@@ -354,7 +365,7 @@ export const membersBridge: MembersBridgePort = {
     const result = await drizzleMemberRepo.findErasedAtById(tenantCtx, asMemberId(memberId));
     if (!result.ok) {
       if (result.error.code === 'repo.not_found') return null;
-      throw new Error(`members-bridge.getMemberErasedAt: ${result.error.code}`);
+      throw failedRead('members_bridge_get_member_erased_at', result.error);
     }
     return { erasedAt: result.value.erasedAt };
   },
@@ -374,7 +385,7 @@ export const membersBridge: MembersBridgePort = {
       drizzleMemberRepo.findErasedIdsInTx(tx, tenantCtx.slug, memberIds.map(asMemberId)),
     );
     if (!result.ok) {
-      throw new Error(`members-bridge.filterErasedMemberIds: ${result.error.code}`);
+      throw failedRead('members_bridge_filter_erased', result.error);
     }
     const erased = new Set<string>(result.value);
     return memberIds.filter((id) => erased.has(id));

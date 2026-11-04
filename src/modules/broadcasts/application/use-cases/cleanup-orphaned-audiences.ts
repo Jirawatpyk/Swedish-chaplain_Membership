@@ -38,15 +38,20 @@
  *     requesters of the unsettled in-grace rows (at most
  *     `ORPHAN_ERASED_REQUESTER_CAP`; a full read is logged), asks the members
  *     bridge which are erased (one call, ids in, ids out), and reads those
- *     requesters' unsettled rows of any age FIRST, attempts then age, at most
- *     `ORPHAN_DRAIN_ERASED_SHARE`; the past-grace list fills the rest. So an
+ *     requesters' unsettled rows of any age FIRST, in-grace rows then
+ *     attempts then age, at most `ORPHAN_DRAIN_ERASED_SHARE` (review round 1:
+ *     read as share + 1, so a full share shows as `erasedShareFull`); the
+ *     past-grace list fills the rest. So an
  *     erased requester's row written at any time after the erasure (a refusal
  *     tick, `failTerminally`, a reconcile re-drive) is settled on the next run,
  *     however many newer in-grace rows other members have, unless the share is
  *     full, Resend's answer stays undecided, or the read failed: a failed
  *     requester list, bridge read or row read is logged once
- *     (`broadcasts.orphan_drain.erased_read_failed`), sets `erasedReadFailed`,
- *     NOT `listFailed`, and the young rows wait the grace;
+ *     (`broadcasts.orphan_drain.erased_read_failed`, with the `step` that
+ *     failed), sets `erasedReadFailed`, NOT `listFailed`, and the young rows
+ *     wait the grace;
+ *   - review round 1 (code-review #5): the erased reads and the past-grace
+ *     list run side by side (`Promise.all`), each caught on its own;
  *   - no chunk starts once `ORPHAN_DRAIN_STOP_MS` has passed since the run
  *     began; the rest go next run. Review round 3 (code-review #10): a
  *     broadcast row's worst case is a DELETE, `REPROBE_PAUSE_MS`, then a GET
@@ -55,7 +60,7 @@
  *     `maxDuration` (`CLEANUP_MAX_DURATION_MS`, 300 s);
  *   - undecided rows stay unsettled for the next run.
  * A failed orphan list is logged and does not fail the audience pass; the
- * erased requesters' rows are read before it and still drain.
+ * erased requesters' rows are read beside it and still drain.
  *
  * Tenant-tx approach: `broadcastsRepo.withTx` is the Application-layer seam
  * for opening a tenant-bound Drizzle transaction without importing the
@@ -173,7 +178,12 @@ export interface CleanupOrphanedAudiencesInput {
   readonly limit: number;
 }
 
-/** Spec 140 s2c — what the orphan drain did this run. */
+/**
+ * Spec 140 s2c — what the orphan drain did this run. Review round 1 (pdpa
+ * L-d): `waiting` and `deferred` count OF THE ROWS SEEN THIS RUN (the two
+ * reads), not every unsettled row; `erasedShareFull` says the erased read
+ * left rows unread.
+ */
 export interface OrphanDrainOutput {
   /**
    * Rows the two reads returned, one per orphan id: the erased requesters'
@@ -200,6 +210,12 @@ export interface OrphanDrainOutput {
    * erased requester's young rows wait the grace this run.
    */
   readonly erasedReadFailed: boolean;
+  /**
+   * Review round 1 (the maintainer's /verify finding, reliability L-2) — the
+   * erased requesters had more unsettled rows than `ORPHAN_DRAIN_ERASED_SHARE`:
+   * the rest wait for the next run, unseen by `deferred`.
+   */
+  readonly erasedShareFull: boolean;
 }
 
 export interface CleanupOrphanedAudiencesOutput {
@@ -215,8 +231,11 @@ export interface CleanupOrphanedAudiencesOutput {
 
 export type CleanupOrphanedAudiencesError = {
   readonly kind: 'cleanup.server_error';
-  /** The error CLASS (`errKind`), never the driver's message. */
-  readonly message: string;
+  /**
+   * The error CLASS (`errKind`), never the driver's message. Review round 1
+   * (code-review #7) — named for what it holds (was `message`).
+   */
+  readonly errClass: string;
   /**
    * Review round 1 (code-review #4) — the audience list failed, but the
    * orphan drain still ran: its counts.
@@ -252,7 +271,7 @@ export async function cleanupOrphanedAudiences(
     // can carry bound parameters. Review round 1 (code-review #4) — the orphan
     // drain does not depend on that list, so it still runs.
     const orphans = await drainOrphans(deps, startedAtMs, graceCutoff);
-    return err({ kind: 'cleanup.server_error', message: errKind(e), orphans });
+    return err({ kind: 'cleanup.server_error', errClass: errKind(e), orphans });
   }
 
   let deleted = 0;
@@ -324,41 +343,52 @@ async function drainOrphans(
   // orphan (plan.md § Slice 2d — plan review): the requesters of the in-grace
   // rows, which of them the members bridge answers as erased (ids in, ids
   // out), then their unsettled rows of any age, at most
-  // ORPHAN_DRAIN_ERASED_SHARE. A failure anywhere on this path does not set
-  // listFailed: the past-grace drain still runs and the young rows wait the
-  // grace, as a live requester's do.
-  let erasedRows: ReadonlyArray<OrphanedResendIdRef> = [];
-  let erasedRequesters: ReadonlySet<string> = new Set();
-  let erasedReadFailed = false;
-  try {
-    const requesterIds = await deps.orphans.listInGraceRequesterIds(graceCutoff, ORPHAN_ERASED_REQUESTER_CAP);
-    // Spec 140 s2d (#736a) — the repo's LIMIT bounds the list, so a full
-    // list means more requesters may exist: theirs wait the grace.
-    if (requesterIds.length >= ORPHAN_ERASED_REQUESTER_CAP) {
-      logger.warn({ tenantId, cap: ORPHAN_ERASED_REQUESTER_CAP }, 'broadcasts.orphan_drain.erased_requesters_capped');
-    }
-    if (requesterIds.length > 0) {
-      const erased = await deps.membersBridge.filterErasedMemberIds(deps.tenant, requesterIds);
-      erasedRequesters = new Set(erased);
-      if (erased.length > 0) {
-        erasedRows = await deps.orphans.listUnsettledOrphansForRequesters(erased, ORPHAN_DRAIN_ERASED_SHARE, graceCutoff);
+  // ORPHAN_DRAIN_ERASED_SHARE (read as share + 1: one more row means the
+  // share is full). A failure anywhere on this path does not set listFailed:
+  // the past-grace drain still runs and the young rows wait the grace, as a
+  // live requester's do. Review round 1 — the line names the read that failed.
+  const readErased = async (): Promise<ErasedRead> => {
+    let step: ErasedReadStep = 'requesters';
+    try {
+      const requesterIds = await deps.orphans.listInGraceRequesterIds(graceCutoff, ORPHAN_ERASED_REQUESTER_CAP);
+      // Spec 140 s2d (#736a) — the repo's LIMIT bounds the list, so a full
+      // list means more requesters may exist: theirs wait the grace.
+      if (requesterIds.length >= ORPHAN_ERASED_REQUESTER_CAP) {
+        logger.warn({ tenantId, cap: ORPHAN_ERASED_REQUESTER_CAP }, 'broadcasts.orphan_drain.erased_requesters_capped');
       }
+      if (requesterIds.length === 0) return NO_ERASED_READ;
+      step = 'bridge';
+      const erased = await deps.membersBridge.filterErasedMemberIds(deps.tenant, requesterIds);
+      if (erased.length === 0) return NO_ERASED_READ;
+      step = 'rows';
+      const read = await deps.orphans.listUnsettledOrphansForRequesters(erased, ORPHAN_DRAIN_ERASED_SHARE + 1, graceCutoff);
+      return {
+        rows: read.slice(0, ORPHAN_DRAIN_ERASED_SHARE),
+        requesters: new Set(erased),
+        shareFull: read.length > ORPHAN_DRAIN_ERASED_SHARE,
+        failed: false,
+      };
+    } catch (e) {
+      logger.warn({ tenantId, step, err: errKind(e), code: pgErrorCode(e) }, 'broadcasts.orphan_drain.erased_read_failed');
+      return { ...NO_ERASED_READ, failed: true };
     }
-  } catch (e) {
-    erasedReadFailed = true;
-    erasedRows = [];
-    erasedRequesters = new Set();
-    logger.warn({ tenantId, err: errKind(e), code: pgErrorCode(e) }, 'broadcasts.orphan_drain.erased_read_failed');
-  }
+  };
 
-  let pastFirst: ReadonlyArray<OrphanedResendIdRef> = [];
-  let listFailed = false;
-  try {
-    pastFirst = await deps.orphans.listDrainableOrphans(ORPHAN_DRAIN_LIMIT, graceCutoff);
-  } catch (e) {
-    listFailed = true;
-    logger.error({ tenantId, err: errKind(e) }, 'broadcasts.orphan_drain.list_failed');
-  }
+  const readPastGrace = async (): Promise<{ readonly rows: ReadonlyArray<OrphanedResendIdRef>; readonly failed: boolean }> => {
+    try {
+      return { rows: await deps.orphans.listDrainableOrphans(ORPHAN_DRAIN_LIMIT, graceCutoff), failed: false };
+    } catch (e) {
+      logger.error({ tenantId, err: errKind(e) }, 'broadcasts.orphan_drain.list_failed');
+      return { rows: [], failed: true };
+    }
+  };
+
+  // Review round 1 (code-review #5) — side by side, each caught on its own,
+  // so neither read's latency adds to the other's inside the 240 s budget.
+  const [erasedRead, pastRead] = await Promise.all([readErased(), readPastGrace()]);
+  const erasedRows = erasedRead.rows;
+  const erasedRequesters = erasedRead.requesters;
+  const pastFirst = pastRead.rows;
 
   // One row per orphanId across both reads: the erased requesters' rows
   // first, then the past-grace list.
@@ -420,5 +450,26 @@ async function drainOrphans(
     await Promise.allSettled(due.slice(i, i + ORPHAN_DRAIN_CONCURRENCY).map(settleOne));
   }
 
-  return { listed: listed.length, settled, undecided, waiting, deferred, listFailed, erasedReadFailed };
+  return {
+    listed: listed.length,
+    settled,
+    undecided,
+    waiting,
+    deferred,
+    listFailed: pastRead.failed,
+    erasedReadFailed: erasedRead.failed,
+    erasedShareFull: erasedRead.shareFull,
+  };
 }
+
+/** Review round 1 (reliability M-1) — the read of the erased path a failure is logged with. */
+type ErasedReadStep = 'requesters' | 'bridge' | 'rows';
+
+interface ErasedRead {
+  readonly rows: ReadonlyArray<OrphanedResendIdRef>;
+  readonly requesters: ReadonlySet<string>;
+  readonly shareFull: boolean;
+  readonly failed: boolean;
+}
+
+const NO_ERASED_READ: ErasedRead = { rows: [], requesters: new Set(), shareFull: false, failed: false };
