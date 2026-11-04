@@ -39,6 +39,13 @@
  * never a cast (`(e as any).reason`, `e!.reason`). Each block's taint is
  * computed once and reused for every logger call in it.
  *
+ * Review round 4 (code-review #1–#3; security L2): a reassignment's taint
+ * survives the declaration of its binding in an outer block, and compound
+ * assignment (`+=`, `||=`, `??=`, `&&=`), destructuring assignment
+ * (`({ message: m } = e)`, `[x] = e.errors`) and a `for (x of e.y)` over a
+ * binding declared earlier taint too. `await` is looked through, at the log
+ * line and in an initializer.
+ *
  * A TRIPWIRE, not proof of completeness: it reads each `logger.<level>(…)`
  * call's arguments syntactically. A value laundered through two locals, or
  * through a helper in the safe set, passes. The sweep that preceded it was
@@ -118,7 +125,9 @@ function unwrap(node: ts.Expression): ts.Expression {
     ts.isAsExpression(cur) ||
     ts.isNonNullExpression(cur) ||
     ts.isSatisfiesExpression(cur) ||
-    ts.isTypeAssertionExpression(cur)
+    ts.isTypeAssertionExpression(cur) ||
+    // Review round 4 (code-review #3) — `await e.response.text()` yields what the call yields.
+    ts.isAwaitExpression(cur)
   ) {
     cur = cur.expression;
   }
@@ -309,23 +318,87 @@ type StatementList = ts.Block | ts.SourceFile | ts.CaseClause | ts.DefaultClause
 /** Review round 3 (code-review #10) — each block's statements are judged once, whatever the number of logger calls in it. */
 const blockTaints = new WeakMap<StatementList, ReadonlyArray<StatementTaint>>();
 
+/** Review round 4 (code-review #2) — the assignment operators whose result can be the right-hand value. */
+const ASSIGNING_OPERATORS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.EqualsToken,
+  ts.SyntaxKind.PlusEqualsToken,
+  ts.SyntaxKind.BarBarEqualsToken,
+  ts.SyntaxKind.QuestionQuestionEqualsToken,
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+]);
+
+/** Every identifier an assignment target binds (`x`, `{ a, b: c, ...d }`, `[e, f = 1]`); a property target binds none. */
+function assignedNames(target: ts.Expression, out: string[] = []): string[] {
+  const t = unwrap(target);
+  if (ts.isIdentifier(t)) out.push(t.text);
+  else if (ts.isBinaryExpression(t) && t.operatorToken.kind === ts.SyntaxKind.EqualsToken) assignedNames(t.left, out);
+  else if (ts.isSpreadElement(t)) assignedNames(t.expression, out);
+  else if (ts.isArrayLiteralExpression(t)) for (const el of t.elements) assignedNames(el, out);
+  else if (ts.isObjectLiteralExpression(t)) {
+    for (const prop of t.properties) {
+      if (ts.isShorthandPropertyAssignment(prop)) out.push(prop.name.text);
+      else if (ts.isPropertyAssignment(prop)) assignedNames(prop.initializer, out);
+      else if (ts.isSpreadAssignment(prop)) assignedNames(prop.expression, out);
+    }
+  }
+  return out;
+}
+
+/**
+ * Review round 4 (code-review #1) — the names a destructuring assignment
+ * (`({ message: m } = e)`, `[x] = e.errors`) takes off an error or its text,
+ * the way {@link taintedByDeclaration} judges `const { message: m } = e`: a
+ * token field (`code` / `kind` / `name`) stays clean.
+ */
+function destructuredFromError(target: ts.ObjectLiteralExpression | ts.ArrayLiteralExpression, value: ts.Expression, scope: Scope): string[] {
+  const base = shapeOf(value, scope);
+  if (base === null || base === 'token') return [];
+  if (base === 'text' || ts.isArrayLiteralExpression(target)) return assignedNames(target);
+  const out: string[] = [];
+  for (const prop of target.properties) {
+    const key = ts.isShorthandPropertyAssignment(prop) || ts.isPropertyAssignment(prop) ? prop.name : undefined;
+    const field = key !== undefined && (ts.isIdentifier(key) || ts.isStringLiteral(key)) ? key.text : null;
+    if (field !== null && TOKEN_FIELDS.has(field)) continue;
+    if (ts.isShorthandPropertyAssignment(prop)) out.push(prop.name.text);
+    else if (ts.isPropertyAssignment(prop)) assignedNames(prop.initializer, out);
+    else if (ts.isSpreadAssignment(prop)) assignedNames(prop.expression, out);
+  }
+  return out;
+}
+
+/**
+ * The names `node` assigns from a refused value: an assignment (`=`, `+=`,
+ * `||=`, `??=`, `&&=`) to an identifier, a destructuring assignment, or a
+ * `for (x of …)` / `for (x in …)` over a binding declared earlier. Empty for
+ * anything else.
+ */
+function assignedHere(sf: ts.SourceFile, node: ts.Node): string[] {
+  const scope: Scope = { errors: caughtNames(node), tokens: TOKEN_FIELDS };
+  if (ts.isBinaryExpression(node) && ASSIGNING_OPERATORS.has(node.operatorToken.kind)) {
+    const left = unwrap(node.left);
+    if (ts.isIdentifier(left)) return refusal(sf, node.right, scope) !== null ? [left.text] : [];
+    if (node.operatorToken.kind === ts.SyntaxKind.EqualsToken && (ts.isObjectLiteralExpression(left) || ts.isArrayLiteralExpression(left))) {
+      return destructuredFromError(left, node.right, scope);
+    }
+    return [];
+  }
+  if ((ts.isForOfStatement(node) || ts.isForInStatement(node)) && !ts.isVariableDeclarationList(node.initializer)) {
+    return refusal(sf, node.expression, scope) !== null ? assignedNames(node.initializer) : [];
+  }
+  return [];
+}
+
 /**
  * Review round 3 (code-review #9) — the names a statement assigns from a value
  * the rule would refuse (`x = e.message`), anywhere inside it but not inside a
- * nested function. A later safe assignment does not clear the taint.
+ * nested function. A later safe assignment does not clear the taint. Review
+ * round 4 — every form {@link assignedHere} reads.
  */
 function assignedFromRefused(sf: ts.SourceFile, stmt: ts.Statement): string[] {
   const out: string[] = [];
   const visit = (node: ts.Node): void => {
     if (ts.isFunctionLike(node)) return;
-    if (
-      ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-      ts.isIdentifier(node.left) &&
-      refusal(sf, node.right, { errors: caughtNames(node), tokens: TOKEN_FIELDS }) !== null
-    ) {
-      out.push(node.left.text);
-    }
+    out.push(...assignedHere(sf, node));
     ts.forEachChild(node, visit);
   };
   visit(stmt);
@@ -365,13 +438,24 @@ function statementTaints(sf: ts.SourceFile, block: StatementList): ReadonlyArray
  * before the call ({@link assignedFromRefused}), and the binding of an
  * enclosing `for (… of …)` / `for (… in …)` over a refused value. Each block
  * is judged once ({@link blockTaints}).
+ *
+ * Review round 4 (code-review #1) — an assignment's taint is kept apart from a
+ * declaration's: the outer block that declares the binding (`let m = ''`) runs
+ * after the inner block that assigned it (`m = e.message`) in this walk, and
+ * must not clear it. An enclosing `for (x of e.y)` over an earlier binding
+ * taints `x` the same way.
  */
 function taintedNames(sf: ts.SourceFile, call: ts.Node): ReadonlySet<string> {
   const tainted = new Set<string>();
+  const assignedTaint = new Set<string>();
   const decided = new Set<string>();
   for (let cur: ts.Node | undefined = call.parent; cur !== undefined; cur = cur.parent) {
     if (ts.isFunctionLike(cur)) {
       for (const p of cur.parameters) for (const n of boundNames(p.name)) decided.add(n);
+    }
+    if ((ts.isForOfStatement(cur) || ts.isForInStatement(cur)) && !ts.isVariableDeclarationList(cur.initializer)) {
+      for (const n of assignedHere(sf, cur)) if (!decided.has(n)) assignedTaint.add(n);
+      continue;
     }
     if ((ts.isForOfStatement(cur) || ts.isForInStatement(cur)) && ts.isVariableDeclarationList(cur.initializer)) {
       const bad = refusal(sf, cur.expression, { errors: caughtNames(cur), tokens: TOKEN_FIELDS }) !== null;
@@ -396,10 +480,11 @@ function taintedNames(sf: ts.SourceFile, call: ts.Node): ReadonlySet<string> {
         if (stmt.bad.has(n)) tainted.add(n);
         else tainted.delete(n);
       }
-      for (const n of stmt.assigned) if (!decided.has(n)) tainted.add(n);
+      for (const n of stmt.assigned) if (!decided.has(n)) assignedTaint.add(n);
     }
     for (const n of level) decided.add(n);
   }
+  for (const n of assignedTaint) tainted.add(n);
   return tainted;
 }
 
