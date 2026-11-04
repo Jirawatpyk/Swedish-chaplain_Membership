@@ -771,6 +771,21 @@ describe('eraseMember — requested audit + atomic scrub', () => {
   // and the DPO runbook owns the residual. Unlike the F1/F6/F7/F8 cascades, a
   // subprocessor failure NEVER flips allCascadesClean. This defensive branch is
   // hard to force in the live-Neon suite; pin it at the unit level.
+  // Spec 140 s2d (#736b) — the detach derivation is judged at one app-clock
+  // instant, captured just before the scrub tx, so the detach cap ranks stuck
+  // audience orphans on the same clock as the erasure's audience pass. A fixed
+  // fixture clock cannot tell that instant from the pre-flight one; the
+  // broadcasts repo integration test pins the boundary behaviour.
+  it('passes the app-clock instant to the detach derivation (#736b)', async () => {
+    const deps = buildEraseDeps();
+    const derive = vi.fn(async () => [] as Array<{ audienceId: string; email: string }>);
+    deps.broadcastsAudienceDerivation.listMemberAudienceContactsInTx = derive as never;
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    expect(derive).toHaveBeenCalledTimes(1);
+    expect((derive.mock.calls[0] as unknown[])[3]).toEqual(new Date('2026-06-16T00:00:00.000Z'));
+  });
+
   it('a subprocessor audit-emit failure is NON-BLOCKING — member_erased still emitted (US3-C)', async () => {
     const deps = buildEraseDeps();
     // Member received an audience-bearing broadcast → one pair to propagate, so
