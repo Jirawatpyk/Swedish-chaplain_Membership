@@ -1,4 +1,4 @@
-import { pgErrorCode } from './db-errors';
+import { pgErrorCode, walkCauses } from './db-errors';
 
 /**
  * Privacy-preserving ID hash for log output.
@@ -94,7 +94,13 @@ export function errStep(e: unknown): string | undefined {
  */
 const LOWER_WORDS = '[a-z][a-z0-9]*(?:[_-][a-z][a-z0-9]*)*';
 const UPPER_WORDS = '[A-Z][A-Z0-9]*(?:_[A-Z][A-Z0-9]*)*';
-const CODE_SHAPE = '^(?=.{1,64}$)(?!(?:.*\\d){5})';
+/**
+ * Review round 4 (code-review #5, #8; security L1) — the one token shape every
+ * code-like log value shares, as a regex prefix: a letter first, at most 64
+ * characters, at most 4 digits. `RESULT_CODE`, `ERROR_CODE` and the logger's
+ * `LOWER_TOKEN` append their own word rules to it.
+ */
+export const CODE_SHAPE = '^(?=[A-Za-z])(?=.{1,64}$)(?!(?:.*\\d){5})';
 
 /** A Result error's own `code` (`repo.unexpected`, `last-admin-protection`); anything else is `'unrecognised'`. */
 const RESULT_CODE = new RegExp(`${CODE_SHAPE}${LOWER_WORDS}(?:[.:]${LOWER_WORDS})*$`);
@@ -113,7 +119,10 @@ const ERROR_CODE = new RegExp(
  * - A thrown value: `err` is its class (`errKind`), `code` its SQLSTATE
  *   (`pgErrorCode`) when there is one. Review round 3 (code-review #3): its
  *   own `.code`, when token-shaped and not that SQLSTATE, is `errCode` (Node
- *   `ECONNRESET` / `EPIPE`, Stripe `card_declined`).
+ *   `ECONNRESET` / `EPIPE`, Stripe `card_declined`). Review round 4
+ *   (reliability LOW-2): the first such `.code` along the bounded cause walk
+ *   (`walkCauses`), so a `DrizzleQueryError` over a socket reset keeps
+ *   `ECONNRESET`.
  * - A Result error (`{ code, cause? }`, a RepoError and kin): `err` is the
  *   class of its `cause`, `repoCode` its own code, `code` the cause's SQLSTATE.
  * - Review round 1 (code-review #8) — a thrown Error that wraps a Result error
@@ -146,7 +155,7 @@ export function errLogFields(failure: unknown): {
   const wrapped = failure instanceof Error ? wrappedResultError(failure) : undefined;
   if (wrapped !== undefined) {
     const sqlState = pgErrorCode(rootCause(wrapped.error));
-    const errCode = ownErrorCode(failure, sqlState);
+    const errCode = ownErrorCode(failure, sqlState, wrapped.error);
     return {
       err: errKind(failure),
       repoCode: RESULT_CODE.test(wrapped.code) ? wrapped.code : 'unrecognised',
@@ -163,11 +172,19 @@ export function errLogFields(failure: unknown): {
   };
 }
 
-/** A thrown Error's own token-shaped `.code` that is not the SQLSTATE already logged as `code`, else `undefined`. */
-function ownErrorCode(e: unknown, sqlState: string | undefined): string | undefined {
+/**
+ * The first token-shaped `.code` that is not the SQLSTATE already logged as
+ * `code`, on a thrown Error or a link of its cause chain (at most
+ * `MAX_CAUSE_HOPS` down), else `undefined`. The wrapped Result error is passed
+ * over: its code is `repoCode` already.
+ */
+function ownErrorCode(e: unknown, sqlState: string | undefined, skip?: unknown): string | undefined {
   if (!(e instanceof Error)) return undefined;
-  const own = (e as { code?: unknown }).code;
-  return typeof own === 'string' && own !== sqlState && ERROR_CODE.test(own) ? own : undefined;
+  return walkCauses(e, (link) => {
+    if (link === skip || typeof link !== 'object') return undefined;
+    const own = (link as { code?: unknown }).code;
+    return typeof own === 'string' && own !== sqlState && ERROR_CODE.test(own) ? own : undefined;
+  });
 }
 
 /** A Result error (`{ code: string }`, not itself an Error) at a thrown Error's `.cause`, else its `.error`. */

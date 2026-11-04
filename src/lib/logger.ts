@@ -2,7 +2,7 @@ import { isMainThread } from 'worker_threads';
 import pino, { type LoggerOptions } from 'pino';
 import { env } from './env';
 import { pgErrorCode } from './db-errors';
-import { errKind, errLogFields } from './log-id';
+import { CODE_SHAPE, errKind, errLogFields } from './log-id';
 
 /**
  * Structured JSON logger (T018, docs/observability.md § 3).
@@ -713,7 +713,7 @@ const ERROR_KEYS = ['err', 'error', 'cause'] as const;
 export interface ReducedLoggedError {
   /**
    * The error's class: `errKind` for an Error; for a plain object its `name`
-   * when that is an error class name (`/^[A-Z]\w*(Error|Exception)$/`), else
+   * when that is an error class name ({@link ERROR_CLASS_NAME}), else
    * `'unknown'`. `'unreducible'` when reading the value threw.
    */
   readonly type: string;
@@ -731,19 +731,33 @@ export interface ReducedLoggedError {
   readonly declineCode?: string;
   /** A token-shaped `.kind`: a Result error's own discriminant (`not_found`, `conflict`). */
   readonly kind?: string;
-  /** The frame lines of `.stack` (`at …:line:col`), at most {@link MAX_FRAMES}; never a header line. */
+  /** The frame lines of `.stack` ({@link STACK_FRAME}), at most {@link MAX_FRAMES}; never a header line. */
   readonly frames?: ReadonlyArray<string>;
 }
 
-/** A lowercase discriminant token: `server_error`, `not_found`, `insufficient_funds`. */
-// Review round 3 follow-up — up to four lowercase words joined by `.` or `:`
-// (this repo's discriminants are dotted: `process_webhook.server_error`), at
-// most 64 characters.
-const LOWER_TOKEN = /^(?=.{1,64}$)[a-z][a-z0-9_]*(?:[.:][a-z][a-z0-9_]*){0,3}$/;
-/** An error class name: `DrizzleQueryError`, `NeonDbError`, `TimeoutException`. */
-const ERROR_CLASS_NAME = /^[A-Z]\w*(Error|Exception)$/;
-/** A V8 / Node stack frame line: `at fn (file.ts:1:2)` or `at file.ts:1:2`. */
-const STACK_FRAME = /^\s+at .*:\d+:\d+\)?$/;
+/** A lowercase discriminant token: `server_error`, `not_found`, `last-admin-protection`, `gateway_5xx`. */
+// Review round 3 follow-up — up to four lowercase segments joined by `.` or
+// `:` (this repo's discriminants are dotted: `process_webhook.server_error`).
+// Review round 4 (code-review #5, #8; security L1) — built on the shared
+// `CODE_SHAPE` (a letter first, at most 64 characters, at most 4 digits), so a
+// hex digest or `a_123456789` is refused; `-` joins words too.
+const LOWER_TOKEN = new RegExp(`${CODE_SHAPE}[a-z][a-z0-9_-]*(?:[.:][a-z][a-z0-9_-]*){0,3}$`);
+/**
+ * An error class name: `Error`, `DrizzleQueryError`, `NeonDbError`,
+ * `TimeoutException`. Review round 4 (code-review #6, reliability LOW-1): a
+ * bare `Error` is one, and a name is at most 64 characters.
+ */
+const ERROR_CLASS_NAME = /^(?=.{1,64}$)(?:[A-Z]\w*)?(?:Error|Exception)$/;
+/**
+ * A V8 / Node stack frame line: `at fn (/app/x.ts:1:2)`, `at async file:///x.mjs:1:2`,
+ * `at #p (C:\x.cjs:1:2)`, `at Fn [as alias] (node:internal/x:1:2)`. Review round
+ * 4 (code-review #4): the location must start like a path (a drive, `/`,
+ * `file:`, `node:`, `webpack…`, `<anonymous>`) and hold no space, so a message
+ * line such as `at <email> <phone>:1:2` is not a frame. A frame whose path holds
+ * a space (a local checkout under `Swedish chaplain_membership`) is dropped too;
+ * Vercel's `/var/task` and an ESM `file://` URL (`%20`) have none.
+ */
+const STACK_FRAME = /^\s+at (?:[\w$#.<>[\] ]+ \()?(?:async )?(?:[A-Za-z]:\\|\/|file:|node:|webpack|<anonymous>)\S*:\d+:\d+\)?$/;
 const MAX_FRAMES = 8;
 const MAX_FRAME_LENGTH = 300;
 /** The values this module built, so a second pass (pino's serializer after the hook) keeps them. */
@@ -810,6 +824,10 @@ export function reduceLoggedError(value: unknown): unknown {
   return frozen;
 }
 
+/**
+ * Review round 4 — `errCode` is the first token-shaped, non-SQLSTATE `.code`
+ * along the bounded cause walk (`errLogFields`), still for an Error only.
+ */
 function reduce(value: object): ReducedLoggedError {
   const isError = value instanceof Error;
   const fields = errLogFields(value);

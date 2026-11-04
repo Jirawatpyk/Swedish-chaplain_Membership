@@ -31,9 +31,10 @@ const MAX_CAUSE_HOPS = 10;
  * The one `.cause` walk in this file: `visit` sees the value, then each
  * `.cause` below it, at most {@link MAX_CAUSE_HOPS} hops down, and stops at
  * `null` / `undefined`. The first non-`undefined` answer of `visit` ends the
- * walk and is returned; `undefined` when no link answered.
+ * walk and is returned; `undefined` when no link answered. Exported for
+ * `log-id.ts`'s `errCode` (review round 4, reliability LOW-2).
  */
-function walkCauses<T>(error: unknown, visit: (link: unknown) => T | undefined): T | undefined {
+export function walkCauses<T>(error: unknown, visit: (link: unknown) => T | undefined): T | undefined {
   let cur: unknown = error;
   for (let hop = 0; hop <= MAX_CAUSE_HOPS && cur !== null && cur !== undefined; hop += 1) {
     const answer = visit(cur);
@@ -159,8 +160,9 @@ export function pgErrorCode(error: unknown): string | undefined {
 }
 
 /**
- * A SQLSTATE: five digits or upper-case letters, at least one a digit (every
- * SQLSTATE class is two characters, and no class is two letters).
+ * A SQLSTATE: five digits or upper-case letters, at least one a digit. Every
+ * SQLSTATE holds one: a class is two characters, and even the all-letter
+ * classes have a digit in every subclass (`HV000`, `XX000`).
  * `card_declined`, `ECONNRESET`, `repo.unexpected` and, since review round 3
  * (code-review #2), the Node codes `EPIPE` / `EPERM` are not.
  */
