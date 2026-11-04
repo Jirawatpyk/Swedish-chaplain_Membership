@@ -107,3 +107,27 @@ describe('errLogFields() — a thrown Error wrapping a RepoError', () => {
     expect(errLogFields(repoError.cause)).toEqual({ err: 'DrizzleQueryError', code: '23505' });
   });
 });
+
+/**
+ * Spec 140 s2d review round 3 (code-review #2, #3) — a Node `.code` on a
+ * thrown Error is a token but not a SQLSTATE: it is returned as `errCode`, so
+ * the explicit `...errLogFields(e)` sites keep `ECONNRESET` / `EPIPE`.
+ */
+describe('errLogFields() — a Node code is errCode, never a SQLSTATE (review round 3)', () => {
+  it('EPIPE gives no code and gives errCode', () => {
+    expect(errLogFields(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))).toEqual({ err: 'Error', errCode: 'EPIPE' });
+  });
+
+  it('ECONNRESET reaches errLogFields', () => {
+    expect(errLogFields(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))).toEqual({
+      err: 'Error',
+      errCode: 'ECONNRESET',
+    });
+  });
+
+  it('a code that is not token-shaped (a uuid) is not errCode; a Result code that is a uuid is "unrecognised"', () => {
+    const uuid = '550e8400-e29b-41d4-a716-446655440000';
+    expect(errLogFields(Object.assign(new Error('x'), { code: uuid }))).toEqual({ err: 'Error' });
+    expect(errLogFields({ code: uuid })).toEqual({ err: 'unknown', repoCode: 'unrecognised' });
+  });
+});

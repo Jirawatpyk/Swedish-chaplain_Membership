@@ -243,3 +243,12 @@ describe('pgErrorCode / pgErrorMeta — bounded walk, SQLSTATE-shaped codes only
     expect(pgErrorMeta(Object.assign(new Error('x'), { code: 'card_declined', constraint_name: 'nope' }))).toBeUndefined();
   });
 });
+
+describe('pgErrorCode — a SQLSTATE holds a digit (review round 3)', () => {
+  it('EPIPE and EPERM are not read as a SQLSTATE; 23505 and P0001 are', () => {
+    expect(pgErrorCode(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))).toBeUndefined();
+    expect(pgErrorCode(pgError('EPERM', 'operation not permitted'))).toBeUndefined();
+    expect(pgErrorCode(pgError('23505', 'duplicate key'))).toBe('23505');
+    expect(pgErrorCode(pgError('P0001', 'raise'))).toBe('P0001');
+  });
+});

@@ -19,7 +19,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import pino from 'pino';
 import { DrizzleQueryError } from 'drizzle-orm';
-import { logger } from '@/lib/logger';
+import { logger, reduceLoggedError } from '@/lib/logger';
 
 const EMAIL = 'a@x.io';
 
@@ -61,7 +61,7 @@ function expectNoErrorText(): void {
 }
 
 /** The only keys the reducer writes (review round 2). */
-const REDUCED_KEYS = ['type', 'code', 'repoCode', 'errCode', 'statusCode', 'declineCode', 'kind', 'frames'];
+const REDUCED_KEYS = ['type', 'errType', 'code', 'repoCode', 'errCode', 'statusCode', 'declineCode', 'kind', 'frames'];
 
 /** The reduced value under `key` of a parsed line, with no key outside the closed set. */
 function reduced(line: Record<string, unknown>, key = 'err'): Record<string, unknown> {
@@ -204,5 +204,83 @@ describe('the root reducer writes tokens and frames, never text (review round 2)
     const line = written();
     expect(JSON.stringify(line)).not.toMatch(/"message"|"stack"|"detail"|Bad Code/);
     expect(line.cause).toEqual({ type: 'unknown' });
+  });
+});
+
+describe('the reducer keeps a Result type and only token-shaped values (review round 3)', () => {
+  it('a plain object `type` discriminant is written as errType; the output type still means the class', () => {
+    logger.warn({ err: { type: 'server_error', message: EMAIL } }, 'op.failed');
+    expectNoErrorText();
+    expect(reduced(written())).toEqual({ type: 'unknown', errType: 'server_error' });
+  });
+
+  it.each([
+    ['a uuid', '550e8400-e29b-41d4-a716-446655440000'],
+    ['a base64url value', 'dGhpcy1pcy1zZWNyZXQ_eA'],
+    ['digits', '0812345678'],
+  ])('%s under code / kind / name / declineCode / type is not written', (_label, value) => {
+    logger.warn({ err: { code: value, kind: value, name: value, declineCode: value, type: value } }, 'op.failed');
+    logger.warn({ err: Object.assign(new Error('x'), { code: value, kind: value, declineCode: value }) }, 'op.failed');
+    expect(lines).toHaveLength(2);
+    expect(lines.join('')).not.toContain(value);
+  });
+
+  it('a plain object name becomes type only when it is an error class name', () => {
+    logger.warn({ err: { name: 'lowercase_name' }, error: { name: 'NeonDbError' }, cause: { name: 'Bob' } }, 'op.failed');
+    const line = written();
+    expect(reduced(line)).toEqual({ type: 'unknown' });
+    expect(reduced(line, 'error')).toEqual({ type: 'NeonDbError' });
+    expect(reduced(line, 'cause')).toEqual({ type: 'unknown' });
+  });
+
+  it('errCode is written only for an Error instance, never for a plain object', () => {
+    logger.warn({ err: { code: 'ECONNRESET' }, error: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) }, 'op.failed');
+    const line = written();
+    expect(reduced(line).errCode).toBeUndefined();
+    expect(tokens(reduced(line, 'error'))).toEqual({ type: 'Error', errCode: 'ECONNRESET' });
+  });
+
+  it('a throwing stack getter yields { type: "unreducible" } and the log call does not throw', () => {
+    const e = new Error('x');
+    Object.defineProperty(e, 'stack', {
+      get() {
+        throw new Error(EMAIL);
+      },
+    });
+    expect(() => logger.error({ err: e }, 'op.failed')).not.toThrow();
+    expectNoErrorText();
+    expect(reduced(written())).toEqual({ type: 'unreducible' });
+  });
+
+  it('the reduced value is frozen', () => {
+    expect(Object.isFrozen(reduceLoggedError(new Error('x')))).toBe(true);
+    expect(Object.isFrozen(reduceLoggedError({ kind: 'timeout' }))).toBe(true);
+  });
+});
+
+describe('frames are cut by structure, not by message text (review round 3)', () => {
+  it('a one-letter message keeps its frames intact', () => {
+    const e = new Error('a');
+    const original = (e.stack ?? '').split(/\r?\n/).map((l) => l.trim());
+    logger.error({ err: e });
+    const frames = (reduced(written()).frames ?? []) as string[];
+    expect(frames.length).toBeGreaterThan(0);
+    for (const f of frames) expect(original).toContain(f);
+  });
+
+  it('a stack read before the message was mutated yields no message line', () => {
+    const e = new Error(`boom\n    at ${EMAIL}`);
+    void e.stack;
+    e.message = 'other';
+    logger.error({ err: e });
+    expectNoErrorText();
+    for (const f of reduced(written()).frames as string[]) expect(f).toMatch(/:\d+:\d+\)?$/);
+  });
+});
+
+describe('SQLSTATE must hold a digit; Node codes stay visible (review round 3)', () => {
+  it('an Error with code EPIPE writes no code and writes errCode', () => {
+    logger.error({ err: Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }) });
+    expect(tokens(reduced(written()))).toEqual({ type: 'Error', errCode: 'EPIPE' });
   });
 });
