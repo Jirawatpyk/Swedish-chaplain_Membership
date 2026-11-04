@@ -96,9 +96,12 @@ export async function acknowledgeChangeRequest(
       return err(e.error);
     }
     const code = e instanceof UseCaseAbort && isRepoError(e.error) ? e.error.code : e instanceof Error ? e.name : String(e);
-    const cause = e instanceof UseCaseAbort && isRepoError(e.error) ? errKind('cause' in e.error ? e.error.cause : undefined) : undefined;
+    const causeKind = e instanceof UseCaseAbort && isRepoError(e.error) ? errKind('cause' in e.error ? e.error.cause : undefined) : undefined;
+    // Spec 140 s2d (#736c) — `code` falls back to `String(e)` for a non-Error throw;
+    // the log line takes the class instead (the Result's message is a follow-up).
+    const logCode = e instanceof UseCaseAbort && isRepoError(e.error) ? e.error.code : errKind(e);
     logger.error(
-      { tenantId: deps.tenant.slug, changeRequestId: input.changeRequestId, requestId: input.requestId, err: code, cause },
+      { tenantId: deps.tenant.slug, changeRequestId: input.changeRequestId, requestId: input.requestId, err: logCode, cause: causeKind },
       'change-request.acknowledge.failed',
     );
     return err({ type: 'server_error', message: `acknowledge: ${code}` });

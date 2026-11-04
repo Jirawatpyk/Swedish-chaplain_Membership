@@ -48,6 +48,7 @@
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { ContactId } from '../../domain/contact';
 import type { AuditPort } from '../ports/audit-port';
@@ -215,7 +216,8 @@ export async function resendBouncedInvite(
           contactId: input.contactId,
           userId,
           invitationId,
-          cause: finalised.error,
+          // Spec 140 s2d (#736c) — the class and codes, never the error object.
+          ...errLogFields(finalised.error),
           requestId: input.requestId,
         },
         'resend-bounced-invite.finalise_failed: invitation re-sent but bounce-flag clear / audit did not commit',
@@ -231,7 +233,7 @@ export async function resendBouncedInvite(
         contactId: input.contactId,
         userId,
         invitationId,
-        errMessage: e instanceof Error ? e.message : String(e),
+        ...errLogFields(e),
         requestId: input.requestId,
       },
       'resend-bounced-invite.finalise_threw: invitation re-sent but bounce-flag clear / audit threw',

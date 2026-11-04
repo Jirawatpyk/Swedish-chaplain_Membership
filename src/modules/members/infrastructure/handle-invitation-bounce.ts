@@ -121,7 +121,7 @@ export async function handleInvitationBounce(
       } else {
         failed += 1;
         logger.error(
-          { tenantId: t.tenantId, contactId: t.contactId, requestId, reason: result.error.message },
+          { tenantId: t.tenantId, contactId: t.contactId, requestId, err: result.error.type },
           'invitation_bounce.mark_failed',
         );
       }

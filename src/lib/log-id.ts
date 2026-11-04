@@ -1,3 +1,5 @@
+import { pgErrorCode } from './db-errors';
+
 /**
  * Privacy-preserving ID hash for log output.
  *
@@ -65,4 +67,57 @@ export function errKind(e: unknown): string {
  */
 export function rootCause(error: unknown): unknown {
   return (error as { cause?: unknown } | null | undefined)?.cause;
+}
+
+/** A code-authored step thrown as an Error message: `audit_failed`, `lookup_failed:repo.unexpected`. */
+const CODE_AUTHORED_STEP = /^[a-z_]+(?::[a-z0-9_.]+)?$/;
+
+/**
+ * Spec 140 s2d (#736c) — the message of a thrown Error ONLY when code wrote it
+ * as a step token (`throw new Error(\`lookup_failed:${repoError.code}\`)`),
+ * else `undefined`. A driver's or a Drizzle wrapper's message never matches:
+ * it has spaces, and a `Failed query:` message quotes the bound parameters. For
+ * a log line's `step` field beside `err: errKind(e)` (the `eraseStep` rule in
+ * `erase-member.ts`, shared).
+ */
+export function errStep(e: unknown): string | undefined {
+  return e instanceof Error && CODE_AUTHORED_STEP.test(e.message) ? e.message : undefined;
+}
+
+/** A Result error's own `code` is a closed token; anything else is not logged as one. */
+const RESULT_CODE = /^[a-z0-9_.:-]{1,64}$/;
+
+/**
+ * Spec 140 s2d (#736c) — the log fields for a failure, never its object or its
+ * text. drizzle-orm's `DrizzleQueryError` has enumerable `query` and `params`,
+ * so a raw error (or a RepoError's `cause`) on a pino line writes the bound
+ * parameters; its `.message` quotes them too.
+ *
+ * - A thrown value: `err` is its class (`errKind`), `code` its SQLSTATE
+ *   (`pgErrorCode`) when there is one.
+ * - A Result error (`{ code, cause? }`, a RepoError and kin): `err` is the
+ *   class of its `cause`, `repoCode` its own code, `code` the cause's SQLSTATE.
+ *
+ * Spread it: `logger.error({ ...errLogFields(e), requestId }, 'op.failed')`.
+ */
+export function errLogFields(failure: unknown): {
+  readonly err: string;
+  readonly repoCode?: string;
+  readonly code?: string;
+} {
+  const resultCode =
+    !(failure instanceof Error) && typeof failure === 'object' && failure !== null
+      ? (failure as { code?: unknown }).code
+      : undefined;
+  if (typeof resultCode === 'string') {
+    const cause = rootCause(failure);
+    const sqlState = pgErrorCode(cause);
+    return {
+      err: errKind(cause),
+      repoCode: RESULT_CODE.test(resultCode) ? resultCode : 'unrecognised',
+      ...(sqlState !== undefined ? { code: sqlState } : {}),
+    };
+  }
+  const sqlState = pgErrorCode(failure);
+  return { err: errKind(failure), ...(sqlState !== undefined ? { code: sqlState } : {}) };
 }

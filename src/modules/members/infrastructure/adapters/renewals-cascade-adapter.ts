@@ -15,6 +15,7 @@ import {
 } from '@/modules/renewals';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { renewalsMetrics } from '@/lib/metrics';
 import { randomUUID } from 'node:crypto';
 import { drizzleMemberRepo } from '../db/drizzle-member-repo';
@@ -95,7 +96,8 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
         // propagate `errName` from the use-case Result for triage.
         logger.error(
           {
-            err: result.error.message,
+            // Spec 140 s2d (#736c) — the closed kind and the class, never the message.
+            err: result.error.kind,
             errName: result.error.errName,
             tenantId: tenant.slug,
             memberId: memberId as string,
@@ -164,7 +166,8 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
       // Treat as cascade_failed so F3 archival continues.
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          // Spec 140 s2d (#736c) — the class and SQLSTATE, never the message.
+          ...errLogFields(e),
           errName: e instanceof Error ? e.name : undefined,
           tenantId: tenant.slug,
           memberId: memberId as string,
@@ -240,10 +243,6 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
               result.error.kind === 'restore.server_error'
                 ? result.error.errName
                 : undefined,
-            errMessage:
-              result.error.kind === 'restore.server_error'
-                ? result.error.message
-                : undefined,
             planId:
               result.error.kind === 'restore.plan_not_resolvable'
                 ? result.error.planId
@@ -266,7 +265,7 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
       // best-effort failure so the undelete still succeeds.
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          ...errLogFields(e),
           errName: e instanceof Error ? e.name : undefined,
           tenantId: tenant.slug,
           memberId: memberId as string,

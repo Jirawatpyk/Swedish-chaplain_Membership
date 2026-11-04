@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { hasDangerousUrlScheme } from '@/lib/safe-url';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { renewalsMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -748,15 +749,12 @@ export async function createMember(
         } catch (e) {
           // uuid/slug identifiers ONLY — never the member entity / name /
           // email / company (PII forbidden in logs; Task 1.8 redaction).
-          // INVARIANT: `err` below is a bare STRING — pino's REDACT_PATHS
-          // redact by object KEY, not by scanning string VALUES, so any
-          // future throwable added to the listener chain MUST keep its
-          // message PII-free (the cycle table + audit payload carry zero
-          // PII columns today, so PG error details cannot surface PII —
-          // keep it that way).
+          // Spec 140 s2d (#736c) — the class and SQLSTATE, never the message:
+          // pino's REDACT_PATHS redact by KEY, not by string content, and a
+          // Drizzle message quotes the statement's bound parameters.
           logger.error(
             {
-              err: e instanceof Error ? e.message : String(e),
+              ...errLogFields(e),
               tenantId: deps.tenant.slug,
               memberId: created.member.memberId,
             },

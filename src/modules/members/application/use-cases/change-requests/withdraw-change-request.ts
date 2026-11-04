@@ -100,7 +100,8 @@ export async function withdrawChangeRequest(
       {
         tenantId: deps.tenant.slug,
         requestId: input.requestId,
-        err: code,
+        // Spec 140 s2d (#736c) — `code` falls back to `String(e)`; the line takes the class.
+        err: repoError?.code ?? errKind(e),
         cause: repoError === null ? undefined : errKind(repoErrorCause(repoError)),
       },
       'change-request.withdraw.failed',
