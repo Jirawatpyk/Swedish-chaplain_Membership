@@ -29,6 +29,7 @@ export function InvoiceCreateSwitcher({
   events,
   initialMemberId,
   initialEventId,
+  eventSearchBefore,
   initialRegistrationId,
   taxAtPayment,
   vatRateBps,
@@ -39,6 +40,8 @@ export function InvoiceCreateSwitcher({
   readonly initialMemberId?: string | undefined;
   readonly initialEventId?: string | undefined;
   readonly initialRegistrationId?: string | undefined;
+  /** #732 — see `EventFeeForm`'s `eventSearchBefore`. */
+  readonly eventSearchBefore: string | null;
   /**
    * 088 (FR-014/SC-005) — when the bill→payment flow is ON, an
    * event-with-TIN `bill_first` document is a non-tax ใบแจ้งหนี้ (the §86/4
@@ -84,6 +87,7 @@ export function InvoiceCreateSwitcher({
       ) : (
         <EventFeeForm
           events={events}
+          eventSearchBefore={eventSearchBefore}
           taxAtPayment={taxAtPayment}
           vatRateBps={vatRateBps}
           {...(initialEventId ? { initialEventId } : {})}

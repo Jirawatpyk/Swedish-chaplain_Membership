@@ -3117,7 +3117,9 @@
           "empty": "Inga evenemang matchar.",
           "noEvents": "Inga evenemang tillgängliga",
           "fromLink": "Från din länk (finns inte i listan över senaste)",
-          "fromLinkArchived": "Från din länk (arkiverat evenemang)"
+          "fromLinkArchived": "Från din länk (arkiverat evenemang)",
+          "searching": "Söker evenemang…",
+          "searchFailed": "Evenemangssökningen misslyckades. Försök igen."
         },
         "attendeePicker": {
           "label": "Deltagare",
