@@ -78,6 +78,8 @@ describe('<RecipientCountLine> (108 PR-C T089)', () => {
     renderLine({ status: 'unavailable' }, 'en', onRetry);
     expect(screen.getByRole('status').textContent).toMatch(/unavailable/i);
     const retry = screen.getByRole('button', { name: /try again/i });
+    // An AURA ghost Button, 44px on touch.
+    expect(retry).toHaveClass('aura-btn', 'aura-btn--ghost', 'aura-btn--sm', 'aura-btn--touch');
     fireEvent.click(retry);
     expect(onRetry).toHaveBeenCalledTimes(1);
   });

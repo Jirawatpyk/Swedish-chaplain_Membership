@@ -66,23 +66,33 @@ vi.mock('@/modules/invoicing', async (importOriginal) => {
   };
 });
 
-// Download buttons → sentinels that echo which variant the card chose.
+// Download buttons → sentinels that echo which variant the card chose. The
+// icon-only form is an AURA IconButton in the real component, so the echo
+// carries its root class when the card asks for `iconOnly`.
 vi.mock(
   '@/app/(member)/portal/invoices/_components/portal-pdf-download-button',
   () => ({
     PortalInvoiceDownloadButton: (props: {
       documentNumber: string;
+      iconOnly?: boolean;
       className?: string;
     }) => (
-      <span data-testid="invoice-download" className={props.className}>
+      <span
+        data-testid="invoice-download"
+        className={[props.iconOnly ? 'aura-icon-btn' : '', props.className ?? ''].join(' ').trim()}
+      >
         INVOICE_DOWNLOAD:{props.documentNumber}
       </span>
     ),
     PortalReceiptDownloadButton: (props: {
       documentNumber: string;
+      iconOnly?: boolean;
       className?: string;
     }) => (
-      <span data-testid="receipt-download" className={props.className}>
+      <span
+        data-testid="receipt-download"
+        className={[props.iconOnly ? 'aura-icon-btn' : '', props.className ?? ''].join(' ').trim()}
+      >
         RECEIPT_DOWNLOAD:{props.documentNumber}
       </span>
     ),

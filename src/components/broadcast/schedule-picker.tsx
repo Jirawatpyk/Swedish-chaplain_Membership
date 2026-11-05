@@ -51,23 +51,24 @@ export function SchedulePicker({
 
   return (
     <div className="flex flex-col gap-2" data-compose-feature="schedule-picker">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
+        touchHeight
         aria-expanded={open}
         aria-controls={panelId}
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className="-ms-1 inline-flex min-h-11 items-center gap-1.5 self-start rounded-[var(--aura-radius-sm)] ps-1 pe-2 text-start text-sm font-medium text-[var(--aura-fg-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] disabled:opacity-[var(--aura-disabled-opacity)] sm:[@media(pointer:fine)]:min-h-9"
+        icon={
+          <ChevronRight className={cn('motion-safe:transition-transform', open && 'rotate-90')} />
+        }
+        className="-ms-1 self-start text-start"
       >
-        <ChevronRight
-          aria-hidden="true"
-          className={cn('size-4 shrink-0 motion-safe:transition-transform', open && 'rotate-90')}
-        />
         <span>{t('fields.sendOptions')}</span>{' '}
         <span className="font-normal text-[var(--aura-fg-secondary)]">
           · {scheduled === '' ? t('confirm.sendingNow') : t('confirm.sendingAt', { when: scheduled })}
         </span>
-      </button>
+      </Button>
       <div id={panelId} hidden={!open} className="flex max-w-sm flex-col items-start gap-2 ps-6">
         <TextField
           label={t('fields.schedulePicker')}

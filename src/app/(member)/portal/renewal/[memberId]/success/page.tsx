@@ -44,6 +44,9 @@ import {
 import { resolveMainPdfKind } from '@/app/(member)/portal/invoices/_utils/invoice-row-view-model';
 import { formatDatePreset } from '@/lib/format-date-localised';
 
+/** The hero actions fill a phone's width and sit at their own width from 640px. */
+const ACTION_WIDTH = 'w-full sm:w-auto';
+
 export default async function RenewalSuccessPage({
   params,
   searchParams,
@@ -166,7 +169,7 @@ export async function renderRenewalSuccessView({
   const processing = activeCycle?.status !== 'completed';
   // Buttons stack at full width on a phone and sit side by side from 640px.
   const actionClass = (variant: 'primary' | 'secondary') =>
-    `${buttonClass({ variant, touchHeight: true })} w-full sm:w-auto`;
+    `${buttonClass({ variant, touchHeight: true })} ${ACTION_WIDTH}`;
 
   return (
     <DetailContainer>
@@ -272,7 +275,8 @@ export async function renderRenewalSuccessView({
                     number: documentNumber,
                   })}
                   data-testid="receipt-download-link"
-                  className={actionClass('primary')}
+                  appearance={{ variant: 'primary', touchHeight: true }}
+                  className={ACTION_WIDTH}
                 />
               );
             }
@@ -293,7 +297,8 @@ export async function renderRenewalSuccessView({
                       { number: docNum },
                     )}
                     data-testid="invoice-download-link"
-                    className={actionClass('secondary')}
+                    appearance={{ variant: 'secondary', touchHeight: true }}
+                    className={ACTION_WIDTH}
                   />
                   {/* A server-rendered placeholder that never updates: busy,
                       not a live region (a busy live region never announces —
@@ -323,7 +328,8 @@ export async function renderRenewalSuccessView({
                     { number: docNum },
                   )}
                   data-testid="invoice-download-link"
-                  className={actionClass('secondary')}
+                  appearance={{ variant: 'secondary', touchHeight: true }}
+                  className={ACTION_WIDTH}
                 />
               );
             }

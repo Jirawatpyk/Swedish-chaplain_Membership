@@ -23,6 +23,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { TriangleAlert, Users } from 'lucide-react';
+import { Button } from '@jirawatpyk/aura-react';
 
 export type RecipientCountState =
   | { readonly status: 'idle' }
@@ -268,16 +269,12 @@ export function RecipientCountLine({
           </>
         ) : null}
       </p>
-      {/* T1270 — 44 px tall on a phone or a coarse pointer (it was the
-          text's own height), AURA's focus ring. */}
+      {/* T1270 — 44 px tall on a phone or a coarse pointer (AURA
+          `touchHeight`), AURA's focus ring. */}
       {retry ? (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="ms-1 inline-flex min-h-11 shrink-0 items-start rounded-[var(--aura-radius-sm)] px-1 underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] sm:[@media(pointer:fine)]:min-h-0"
-        >
+        <Button variant="ghost" size="sm" touchHeight onClick={onRetry} className="ms-1 shrink-0">
           {t('retry')}
-        </button>
+        </Button>
       ) : null}
     </div>
   );

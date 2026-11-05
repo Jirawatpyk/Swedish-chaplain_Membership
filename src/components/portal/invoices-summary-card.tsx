@@ -276,7 +276,6 @@ export function InvoicesSummaryView({
                             number: displayNo ?? r.invoiceId,
                           },
                         )}
-                        className="aura-icon-btn"
                       />
                     ) : null}
                     {/* 090 Bug 3 — §86/4 RC receipt download, once the row is
@@ -289,7 +288,6 @@ export function InvoicesSummaryView({
                         iconOnly
                         label={t('actions.downloadReceipt')}
                         ariaLabel={t('actions.downloadReceiptAria', { number: receiptRef })}
-                        className="aura-icon-btn"
                       />
                     ) : null}
                   </div>

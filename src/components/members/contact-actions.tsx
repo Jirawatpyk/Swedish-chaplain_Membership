@@ -20,8 +20,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { PencilIcon, StarIcon } from 'lucide-react';
-import { DropdownMenu, IconButton, buttonClass } from '@jirawatpyk/aura-react';
+import { StarIcon } from 'lucide-react';
+import { Button, DropdownMenu, IconButton } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import {
@@ -103,26 +103,26 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
         // read-only while letting a linked SECONDARY email be edited.
         contact={{ ...contact, isPrimary }}
         trigger={
-          <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
-            <PencilIcon className="size-4" aria-hidden="true" />
+          <Button variant="secondary" size="sm" touchHeight icon="pencil">
             {t('edit')}
             {/* Several contacts each have an Edit: the name tells them apart. */}
             <span className="sr-only">{`, ${contactName}`}</span>
-          </button>
+          </Button>
         }
       />
 
       {!isPrimary && (
         <>
-          <button
-            type="button"
-            className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
+          <Button
+            variant="secondary"
+            size="sm"
+            touchHeight
+            icon={<StarIcon />}
             onClick={() => setPromoteOpen(true)}
           >
-            <StarIcon className="size-4" aria-hidden="true" />
             {t('promote')}
             <span className="sr-only">{`, ${contactName}`}</span>
-          </button>
+          </Button>
           {/* On a phone the ⋯ sits at the contact row's top right, beside the
               name (board `Admin-member-detail-mobile`); the row is `relative`. */}
           <span className="max-sm:absolute max-sm:end-0 max-sm:top-0">

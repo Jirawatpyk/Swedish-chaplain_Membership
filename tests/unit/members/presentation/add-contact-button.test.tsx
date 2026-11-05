@@ -29,5 +29,8 @@ describe('AddContactButton (122 US5b-1)', () => {
     expect(button).toHaveClass('aura-btn--secondary');
     expect(button.className).not.toContain('border-transparent');
     expect(button.querySelector('.max-sm\\:sr-only')).toBeNull();
+    // An AURA Button: its leading icon comes through AURA's `icon` prop.
+    expect(button).toHaveClass('aura-btn', 'aura-btn--sm', 'aura-btn--touch');
+    expect(button.querySelector('svg.aura-icon')).not.toBeNull();
   });
 });

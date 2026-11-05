@@ -115,17 +115,17 @@ describe('T093 — the dialog shows the complete email at both recipient widths'
     renderDialog();
     await user.click(trigger());
 
-    const desktop = screen.getByRole('button', { name: /desktop/i });
-    const phone = screen.getByRole('button', { name: /phone/i });
-    expect(desktop).toHaveAttribute('aria-pressed', 'true');
-    expect(phone).toHaveAttribute('aria-pressed', 'false');
+    const desktop = screen.getByRole('radio', { name: /desktop/i });
+    const phone = screen.getByRole('radio', { name: /phone/i });
+    expect(desktop).toHaveAttribute('aria-checked', 'true');
+    expect(phone).toHaveAttribute('aria-checked', 'false');
     expect(frame().style.width).toBe('600px');
     const before = frame().getAttribute('srcdoc');
 
     await user.click(phone);
 
-    expect(phone).toHaveAttribute('aria-pressed', 'true');
-    expect(desktop).toHaveAttribute('aria-pressed', 'false');
+    expect(phone).toHaveAttribute('aria-checked', 'true');
+    expect(desktop).toHaveAttribute('aria-checked', 'false');
     expect(frame().style.width).toBe('375px');
     expect(frame().getAttribute('srcdoc')).toBe(before);
 
@@ -133,12 +133,13 @@ describe('T093 — the dialog shows the complete email at both recipient widths'
     expect(frame().style.width).toBe('600px');
   });
 
-  it('the width control is a labelled group, not two unrelated buttons', async () => {
+  it('the width control is a labelled AURA SegmentedControl, not two unrelated buttons', async () => {
     const user = userEvent.setup();
     renderDialog();
     await user.click(trigger());
-    const group = screen.getByRole('group', { name: /preview width/i });
-    expect(within(group).getAllByRole('button')).toHaveLength(2);
+    const group = screen.getByRole('radiogroup', { name: /preview width/i });
+    expect(group).toHaveClass('aura-segmented', 'aura-segmented--sm', 'is-touch');
+    expect(within(group).getAllByRole('radio')).toHaveLength(2);
   });
 });
 

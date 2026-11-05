@@ -222,6 +222,16 @@ describe('<PendingReviewList> — B3 aging chip + sortable "Pending since"', () 
     expect(header).toHaveAttribute('aria-sort', 'ascending');
   });
 
+  it('the sort is AURA Th\'s own sortable header: its button, named for the next order, flips aria-sort', () => {
+    renderList([NEWER, OLDER]);
+    const button = screen.getByRole('button', { name: 'Sort by pending since, newest first' });
+    expect(button).toHaveClass('aura-table__sort', 'is-active');
+    const header = button.closest('th');
+    fireEvent.click(button);
+    expect(header).toHaveAttribute('aria-sort', 'descending');
+    expect(screen.getByRole('button', { name: 'Sort by pending since, oldest first' })).toBe(button);
+  });
+
   it('renders the amber "Aged {n}d" chip only on an aged row', () => {
     renderList([OLDER, NEWER]);
     expect(screen.getByText('Aged 9d')).toBeInTheDocument();

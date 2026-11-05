@@ -17,9 +17,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
-import { Icon, IconButton } from '@jirawatpyk/aura-react';
-import { buttonClass } from '@jirawatpyk/aura-react/server';
-import { cn } from '@/lib/utils';
+import { Button, IconButton } from '@jirawatpyk/aura-react';
 
 export interface ResendInvoiceButtonProps {
   readonly invoiceId: string;
@@ -133,15 +131,13 @@ export function ResendInvoiceButton({
   const disabled = isPending || recentlySent;
 
   const label = t('actions.emailCopyAria', { number: documentNumber });
-  // AURA dims only `:disabled` buttons (and `a[aria-disabled]`), so the
-  // aria-disabled state gets the same look here.
-  const dimmed = cn('aria-disabled:cursor-not-allowed aria-disabled:opacity-[var(--aura-disabled-opacity)]', className);
   // Spec 122 US4 — the compact form is an AURA IconButton (its label is the
   // accessible name and the tooltip); the full form an AURA Button whose
   // `loading` shows the spinner. `outline` (list rows) maps to AURA's
   // secondary, `ghost` stays ghost. Both are `aria-disabled` while busy or
   // cooling down, never `disabled`: a real `disabled` drops keyboard focus to
-  // <body> the instant Enter lands (UX review M4, SC 2.4.3).
+  // <body> the instant Enter lands (UX review M4, SC 2.4.3). AURA keeps a
+  // passed `aria-disabled` (5.70, #186), dims it, and swallows the click.
   if (layout === 'compact') {
     return (
       <IconButton
@@ -152,30 +148,25 @@ export function ResendInvoiceButton({
         onClick={handleClick}
         aria-disabled={disabled || undefined}
         aria-busy={isPending || undefined}
-        className={dimmed}
+        {...(className !== undefined ? { className } : {})}
       />
     );
   }
-  // A plain button in AURA's button classes, not `<Button>`: AURA's Button
-  // writes its own `aria-disabled` (from `loading`) over the caller's, which
-  // erased the 5-minute cooldown state (whole-branch review M2).
   return (
-    <button
+    <Button
       type="button"
+      variant={variant === 'outline' ? 'secondary' : 'ghost'}
+      size="sm"
+      touchHeight
+      icon="mail"
+      loading={isPending}
       onClick={handleClick}
       aria-disabled={disabled || undefined}
       aria-busy={isPending || undefined}
       aria-label={label}
-      className={buttonClass({
-        variant: variant === 'outline' ? 'secondary' : 'ghost',
-        size: 'sm',
-        touchHeight: true,
-        loading: isPending,
-        className: dimmed,
-      })}
+      {...(className !== undefined ? { className } : {})}
     >
-      <Icon name={isPending ? 'loader-circle' : 'mail'} {...(isPending ? { className: 'aura-spin' } : {})} />
       {t('actions.emailCopy')}
-    </button>
+    </Button>
   );
 }

@@ -152,3 +152,41 @@ describe('PortalInvoiceDownloadButton — invoice/bill kind (SC/INV)', () => {
     );
   });
 });
+
+describe('PortalPdfDownloadButton — AURA Button / IconButton (spec 122)', () => {
+  it('draws the labelled form as an AURA Button that shows loading, and the icon-only form as an AURA IconButton', () => {
+    const { unmount } = render(
+      <PortalReceiptDownloadButton
+        invoiceId={INVOICE_ID}
+        documentNumber="RC-2026-000123"
+        label="Receipt"
+        ariaLabel="Download tax receipt PDF for invoice RC-2026-000123"
+        appearance={{ variant: 'ghost', size: 'sm', touchHeight: true }}
+      />,
+    );
+    const btn = screen.getByRole('button', {
+      name: 'Download tax receipt PDF for invoice RC-2026-000123',
+    });
+    expect(btn).toHaveClass('aura-btn', 'aura-btn--ghost', 'aura-btn--sm', 'aura-btn--touch');
+    fireEvent.click(btn);
+    expect(btn).toHaveClass('is-loading');
+    expect(btn).toHaveAttribute('aria-busy', 'true');
+    unmount();
+
+    render(
+      <PortalInvoiceDownloadButton
+        invoiceId={INVOICE_ID}
+        documentNumber="SC-2026-000045"
+        label="Invoice"
+        ariaLabel="Download tax invoice PDF for invoice SC-2026-000045"
+        iconOnly
+      />,
+    );
+    const icon = screen.getByRole('button', {
+      name: 'Download tax invoice PDF for invoice SC-2026-000045',
+    });
+    expect(icon).toHaveClass('aura-icon-btn');
+    expect(icon).toHaveAttribute('title', 'Invoice');
+    expect(icon).not.toHaveTextContent('Invoice');
+  });
+});

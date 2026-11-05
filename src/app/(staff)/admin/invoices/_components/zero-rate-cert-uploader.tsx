@@ -24,7 +24,7 @@
 import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { PaperclipIcon } from 'lucide-react';
-import { Button } from '@jirawatpyk/aura-react';
+import { Button, Progress } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 
 /** Mirrors the use-case cap (5 MB) + accepted MIME allowlist. */
@@ -170,7 +170,7 @@ export function ZeroRateCertUploader({
         {uploading ? t('uploadingLabel') : t('uploadButton')}
       </Button>
       {uploading && (
-        <progress aria-label={t('uploadingAria')} className="w-full" />
+        <Progress aria-label={t('uploadingAria')} />
       )}
       {error && (
         <div role="alert" className="text-xs text-[var(--aura-fg-danger)]">

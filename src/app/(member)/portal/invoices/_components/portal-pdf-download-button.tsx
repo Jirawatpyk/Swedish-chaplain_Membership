@@ -15,8 +15,8 @@
  *     window has continuous SR + visual feedback (R4-C2).
  *   - `try/finally` cleanup guards spinner state from sticking if the
  *     helper throws unexpectedly (R4-code-B1).
- *   - `motion-safe:animate-spin` so reduced-motion users don't see a
- *     continuously spinning icon.
+ *   - AURA's Button / IconButton draw it (spec 122): the Button's
+ *     `loading` spinner, slowed by AURA under reduced motion.
  *   - Optional `toastSuccess` fires on fast-cache hits where the
  *     loading toast dismisses before the user sees it (R5-UX-M1).
  */
@@ -24,9 +24,9 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Download, Loader2 } from 'lucide-react';
+import { IconLoaderCircle } from '@jirawatpyk/aura-react/icons';
+import { Button, IconButton, type ButtonSize, type ButtonVariant } from '@jirawatpyk/aura-react';
 import { downloadPdf, type PdfDownloadToasts } from '@/lib/download-pdf-client';
-import { cn } from '@/lib/utils';
 
 export type Variant = 'invoice' | 'receipt';
 
@@ -42,6 +42,12 @@ interface BaseProps {
    * text needs the document number for orientation.
    */
   readonly ariaLabel?: string;
+  /**
+   * The labelled form's AURA Button look. Defaults to a small secondary
+   * button, 44px on touch. Ignored by the icon-only form (an AURA IconButton).
+   */
+  readonly appearance?: PortalPdfButtonAppearance;
+  /** Extra layout classes (width, flex) on top of AURA's own. */
   readonly className?: string;
   /**
    * Spec 122 US3 — the dashboard's recent-invoices rows draw the download as
@@ -51,6 +57,18 @@ interface BaseProps {
   readonly iconOnly?: boolean;
   readonly 'data-testid'?: string;
 }
+
+export interface PortalPdfButtonAppearance {
+  readonly variant: Extract<ButtonVariant, 'primary' | 'secondary' | 'ghost'>;
+  readonly size?: ButtonSize;
+  readonly touchHeight?: boolean;
+}
+
+const DEFAULT_APPEARANCE: PortalPdfButtonAppearance = {
+  variant: 'secondary',
+  size: 'sm',
+  touchHeight: true,
+};
 
 interface PortalPdfDownloadButtonProps extends BaseProps {
   readonly variant: Variant;
@@ -137,35 +155,50 @@ function PortalPdfDownloadButton({
   variant,
   label,
   ariaLabel,
+  appearance = DEFAULT_APPEARANCE,
   className,
   iconOnly = false,
   'data-testid': testId,
 }: PortalPdfDownloadButtonProps) {
   const { loading, download } = usePortalPdfDownload({ invoiceId, documentNumber, variant });
+  const name = ariaLabel ?? label;
+  const shared = {
+    onClick: download,
+    // A real `disabled` while the PDF is fetched, as before the AURA swap.
+    disabled: loading,
+    ...(className !== undefined && { className }),
+    ...(testId !== undefined && { 'data-testid': testId }),
+  };
 
+  // Spec 122 US3 — the icon-only form (dashboard rows) is an AURA IconButton:
+  // the name is the full "Download … for {number}", the short label its
+  // native tooltip. The spinner replaces the download icon while fetching,
+  // balancing the icon-only resend button in the same action row.
+  if (iconOnly) {
+    return (
+      <IconButton
+        {...shared}
+        icon={loading ? <IconLoaderCircle className="aura-spin" /> : 'download'}
+        label={name}
+        title={label}
+        // 44px on a phone or a coarse pointer, like every tapped IconButton.
+        touchHeight
+        aria-busy={loading || undefined}
+      />
+    );
+  }
   return (
-    <button
-      type="button"
-      onClick={download}
-      disabled={loading}
-      aria-label={ariaLabel ?? label}
-      {...(iconOnly ? { title: label } : {})}
-      className={cn('inline-flex items-center justify-center gap-1', className)}
-      {...(testId !== undefined && { 'data-testid': testId })}
+    <Button
+      {...shared}
+      variant={appearance.variant}
+      {...(appearance.size !== undefined && { size: appearance.size })}
+      {...(appearance.touchHeight !== undefined && { touchHeight: appearance.touchHeight })}
+      icon="download"
+      loading={loading}
+      aria-label={name}
     >
-      {/* Download affordance: a static download icon when idle, swapped for a
-          spinner while the PDF is being fetched. Signals the action + balances
-          the icon-only resend button in the same action row. */}
-      {loading ? (
-        <Loader2
-          className="size-4 motion-safe:animate-spin"
-          aria-hidden="true"
-        />
-      ) : (
-        <Download className="size-4" aria-hidden="true" />
-      )}
-      {iconOnly ? null : label}
-    </button>
+      {label}
+    </Button>
   );
 }
 

@@ -74,7 +74,6 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { BackLink } from '@/components/portal/back-link';
-import { cn } from '@/lib/utils';
 import {
   formatDate,
   formatLineQuantity,
@@ -501,23 +500,21 @@ export async function renderPortalInvoiceDetailView({
                                     number: mainDownloadNumber,
                                   })
                             }`}
-                            className={cn(
-                              // 090 finding #5 — on a PAID separate-mode invoice the
-                              // §86/4 receipt is the document the member needs, so it
-                              // ranks as the filled `default` CTA and the (secondary)
-                              // bill/tax-invoice PDF is demoted to `outline`. Unpaid /
-                              // void keep the bill as the primary `default` CTA (no
-                              // receipt yet). `showReceiptPdf` is true only when the
-                              // receipt download actually renders alongside. Spec
-                              // 122 US4: when Pay now is on the page it is the one
-                              // primary action, so the bill download is secondary.
-                              buttonClass({
-                                variant: showReceiptPdf || payBar ? 'secondary' : 'primary',
-                                size: 'sm',
-                                touchHeight: true,
-                              }),
-                              'max-sm:w-full',
-                            )}
+                            // 090 finding #5 — on a PAID separate-mode invoice the
+                            // §86/4 receipt is the document the member needs, so it
+                            // ranks as the filled `default` CTA and the (secondary)
+                            // bill/tax-invoice PDF is demoted to `outline`. Unpaid /
+                            // void keep the bill as the primary `default` CTA (no
+                            // receipt yet). `showReceiptPdf` is true only when the
+                            // receipt download actually renders alongside. Spec
+                            // 122 US4: when Pay now is on the page it is the one
+                            // primary action, so the bill download is secondary.
+                            appearance={{
+                              variant: showReceiptPdf || payBar ? 'secondary' : 'primary',
+                              size: 'sm',
+                              touchHeight: true,
+                            }}
+                            className="max-sm:w-full"
                             data-testid="portal-download-invoice"
                           />
                         )}
@@ -529,15 +526,13 @@ export async function renderPortalInvoiceDetailView({
                             ariaLabel={tList('actions.downloadReceiptAria', {
                               number: invoice.receiptDocumentNumberRaw ?? documentNumber,
                             })}
-                            className={cn(
-                              // 090 finding #5 — the receipt is the post-payment
-                              // PRIMARY document (this branch only renders for a PAID
-                              // invoice), so it is always the
-                              // filled `default` CTA, ranking above the demoted bill
-                              // PDF above.
-                              buttonClass({ variant: 'primary', size: 'sm', touchHeight: true }),
-                              'max-sm:w-full',
-                            )}
+                            // 090 finding #5 — the receipt is the post-payment
+                            // PRIMARY document (this branch only renders for a PAID
+                            // invoice), so it is always the
+                            // filled `default` CTA, ranking above the demoted bill
+                            // PDF above.
+                            appearance={{ variant: 'primary', size: 'sm', touchHeight: true }}
+                            className="max-sm:w-full"
                             data-testid="portal-download-receipt"
                           />
                         )}

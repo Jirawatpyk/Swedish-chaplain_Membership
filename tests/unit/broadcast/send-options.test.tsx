@@ -56,7 +56,11 @@ describe('Send options (T1266)', () => {
     renderPicker(null);
     fireEvent.click(disclosure());
     expect(disclosure()).toHaveAttribute('aria-expanded', 'true');
+    // An AURA ghost Button that controls the panel holding the field.
+    expect(disclosure()).toHaveClass('aura-btn', 'aura-btn--ghost', 'aura-btn--touch');
+    const panel = document.getElementById(disclosure().getAttribute('aria-controls') ?? '');
     const input = screen.getByLabelText(new RegExp(f.schedulePicker));
+    expect(panel).toContainElement(input);
     expect(input).toHaveAttribute('type', 'datetime-local');
     expect(input).toHaveAccessibleDescription(new RegExp(f.scheduleHelp));
   });

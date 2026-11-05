@@ -27,16 +27,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import {
-  CheckCircle2Icon,
-  DownloadIcon,
-  Loader2,
-  PauseIcon,
-  PlayIcon,
-} from 'lucide-react';
+import { CheckCircle2Icon, PauseIcon, PlayIcon } from 'lucide-react';
 
-import { buttonClass } from '@jirawatpyk/aura-react/server';
-import { cn } from '@/lib/utils';
+import { Button } from '@jirawatpyk/aura-react';
 import { downloadPdf } from '@/lib/download-pdf-client';
 import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
 
@@ -233,44 +226,37 @@ export function ConfirmationPanel({
       {/* 090 finding #2/#8 — a `<button>` running the fetch+blob `downloadPdf`
           (NOT `<a target="_blank">`), so a 425 "receipt still generating" surfaces
           as a toast instead of leaking raw JSON into a new tab. */}
-      <button
-        type="button"
+      <Button
+        variant="primary"
+        fullWidth
+        icon="download"
+        loading={downloading}
         disabled={downloading}
         onClick={handleDownloadReceipt}
-        className={cn(
-          buttonClass({ variant: 'primary', fullWidth: true }),
-          // WCAG 2.5.5 / SC 2.5.8 — AURA's md button is the 44px tap target
-          // (G-Review Finding #5).
-          // T164 — accountant print convenience: hide download CTA when
-          // printing (button is non-functional on paper). The F4 receipt
-          // PDF remains the authoritative Thai-tax-compliant document
-          // (FR-004); the print view here is informal confirmation only.
-          'print:hidden',
-        )}
+        // WCAG 2.5.5 / SC 2.5.8 — AURA's md button is the 44px tap target
+        // (G-Review Finding #5).
+        // T164 — accountant print convenience: hide download CTA when
+        // printing (button is non-functional on paper). The F4 receipt
+        // PDF remains the authoritative Thai-tax-compliant document
+        // (FR-004); the print view here is informal confirmation only.
+        className="print:hidden"
         data-testid="pay-sheet-download-receipt"
       >
-        {downloading ? (
-          <Loader2
-            aria-hidden="true"
-            className="size-4 motion-safe:animate-spin"
-          />
-        ) : (
-          <DownloadIcon aria-hidden="true" className="size-4" />
-        )}
         {t('downloadReceipt')}
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant="secondary"
+        fullWidth
         onClick={() => {
           interruptAutoClose();
           onClose();
         }}
         // T164: hide on print — close button has no meaning on paper.
-        className={cn(buttonClass({ variant: 'secondary', fullWidth: true }), 'print:hidden')}
+        className="print:hidden"
         data-testid="pay-sheet-confirmation-close"
       >
         {t('close')}
-      </button>
+      </Button>
       {/*
        * Countdown + Pause control (R3: WCAG 2.2.1).
        * --------------------------------------------
@@ -283,26 +269,23 @@ export function ConfirmationPanel({
        * state and the timer is frozen by `interruptAutoClose`.
        */}
       <div className="flex items-center gap-3 print:hidden">
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
+          touchHeight
+          icon={paused ? <PlayIcon /> : <PauseIcon />}
           onClick={paused ? handleResume : handlePause}
           // Visual stays compact (soft affordance beside the countdown text)
           // but a `::before` overlay extends the tap target to ~44px tall to
           // match the codebase 44px convention (WCAG 2.5.5) without adding
           // vertical space; primary keyboard targets remain Download / Close.
-          className={cn(
-            buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true }),
-            "relative min-h-9 gap-1 px-3 before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']",
-          )}
+          // AURA's `touchHeight` makes it 44px itself on a phone or a coarse
+          // pointer.
+          className="relative min-h-9 px-3 before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']"
           data-testid={paused ? 'pay-sheet-confirmation-resume' : 'pay-sheet-confirmation-pause'}
         >
-          {paused ? (
-            <PlayIcon aria-hidden="true" className="size-3" />
-          ) : (
-            <PauseIcon aria-hidden="true" className="size-3" />
-          )}
           {paused ? t('resumeAutoClose') : t('pauseAutoClose')}
-        </button>
+        </Button>
         <p
           className="text-caption text-[var(--aura-fg-secondary)]"
           aria-hidden="true"
