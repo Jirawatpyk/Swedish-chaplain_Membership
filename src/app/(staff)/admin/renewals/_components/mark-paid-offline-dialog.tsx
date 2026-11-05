@@ -290,7 +290,10 @@ export function MarkPaidOfflineDialog({
             // failed. The admin must resume from the F4 invoice list —
             // surface the deep-link in the toast so they can act without a
             // support ticket. Dialog stays OPEN (nothing to refresh away).
-            toast.error(t('markPaidOffline.error.f4_orphan_invoice'), {
+            // #73 — a short title plus a description, so the copy does not
+            // wrap into a narrow column beside the action button.
+            toast.error(t('markPaidOffline.error.f4_orphan_invoiceTitle'), {
+              description: t('markPaidOffline.error.f4_orphan_invoiceDetail'),
               action: {
                 label: t('markPaidOffline.viewOrphanInvoice'),
                 onClick: () => {
@@ -312,13 +315,19 @@ export function MarkPaidOfflineDialog({
             // #730 — a coverage overlap links its covering bill too, with its
             // own copy: that bill may be another plan year or already paid, so
             // "record the payment there" would be wrong for it.
+            const isOverlap = err.code === 'membership_coverage_overlap';
             toast.error(
               t(
-                err.code === 'membership_coverage_overlap'
-                  ? 'markPaidOffline.error.membership_coverage_overlap'
-                  : 'markPaidOffline.error.membership_bill_already_exists',
+                isOverlap
+                  ? 'markPaidOffline.error.membership_coverage_overlapTitle'
+                  : 'markPaidOffline.error.membership_bill_already_existsTitle',
               ),
               {
+                description: t(
+                  isOverlap
+                    ? 'markPaidOffline.error.membership_coverage_overlapDetail'
+                    : 'markPaidOffline.error.membership_bill_already_existsDetail',
+                ),
                 action: {
                   label: t('markPaidOffline.viewExistingInvoice'),
                   onClick: () => {
