@@ -109,6 +109,32 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     `);
   });
 
+  // Spec 140 s3 review round 1 (R1-A) — Resend matches a segment contact by its
+  // exact case (MEASURED 5 Nov 2026), and the erasure detach sends the address
+  // lowercase. So both push paths send `toLowerCase()` of each address: the one
+  // the detach will send.
+  it('addContactsToAudience sends a mixed-case address lowercased', async () => {
+    const calls = stubWire(() => json(201, { object: 'contact', id: 'c_1' }));
+    await resendBroadcastsGateway.addContactsToAudience('aud_1', [{ emailLower: 'Mixed.Case@Example.com' }]);
+    expect(calls.map((c) => (c.body as { email?: string }).email)).toEqual(['mixed.case@example.com']);
+  });
+
+  it('createContactImport puts each address in the CSV lowercased', async () => {
+    const csvs: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const file = (init?.body as FormData).get('file') as Blob;
+        csvs.push(await file.text());
+        return json(200, { object: 'contact_import', id: 'imp_1' });
+      }),
+    );
+    await expect(
+      resendBroadcastsGateway.createContactImport(AUD, ['a@example.com', 'Mixed.Case@Example.com']),
+    ).resolves.toEqual({ importId: 'imp_1' });
+    expect(csvs).toEqual(['email\na@example.com\nmixed.case@example.com\n']);
+  });
+
   it('createBroadcast', async () => {
     const calls = stubWire(() => json(201, { id: 'bc_1' }));
     await expect(
@@ -242,9 +268,12 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
 
   // Spec 140 DT4 (research.md slice 3 step 0.1, MEASURED 5 Nov 2026): the SDK
   // puts the email in the path unencoded and as given; Resend reads the `+`
-  // literally and matches case-insensitively, answering 200 `{deleted:true}`
-  // while the contact itself survives. So the gateway neither encodes nor
-  // lowercases it. An SDK bump that starts encoding turns this red.
+  // literally and matches the address case-SENSITIVELY, answering 200
+  // `{deleted:true}` whether or not that exact address was in the segment, while
+  // the contact itself survives. So the gateway neither encodes nor re-cases it:
+  // the address it is given is lowercase because the erasure capture is
+  // lowercase and every push lowercases. An SDK bump that starts encoding turns
+  // this red.
   it.each([
     ['a + address', 'delivered+x@resend.dev'],
     ['an uppercase address', 'DELIVERED.UP@resend.dev'],
@@ -596,24 +625,33 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       ['a path segment', `${AUD}/contacts`],
     ])('removeContactFromAudience refuses %s as invalid_identifier, with no request', async (_name, audienceId) => {
       const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
-      await expect(resendBroadcastsGateway.removeContactFromAudience(audienceId, 'a@example.com')).rejects.toMatchObject({
-        name: 'GatewayThrowable',
-        kind: 'permanent',
-        code: 'invalid_identifier',
-      });
+      const thrown = await resendBroadcastsGateway.removeContactFromAudience(audienceId, 'a@example.com').then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(thrown).toMatchObject({ name: 'GatewayThrowable', kind: 'permanent', code: 'invalid_identifier' });
+      // Spec 140 s3 review round 1 — the message reaches log lines: no id in it.
+      expect((thrown as Error).message).not.toContain(audienceId.trim());
       expect(calls).toHaveLength(0);
     });
 
-    // Spec 140 s3 Verify finding — Resend matches a segment contact by its exact
-    // case (MEASURED 5 Nov 2026), and the erasure detach sends the lowercased
-    // address. So the import must only ever push lowercase, or an erased
-    // member's mixed-case address stays in a live segment while the detach
-    // answers 200. Refused before any request.
-    it('createContactImport refuses a mixed-case address as non_lowercase_email, with no request', async () => {
-      const calls = stubWire(() => json(200, { object: 'contact_import', id: 'imp_1' }));
-      await expect(
-        resendBroadcastsGateway.createContactImport(AUD, ['a@example.com', 'Mixed.Case@example.com']),
-      ).rejects.toMatchObject({ name: 'GatewayThrowable', kind: 'permanent', code: 'non_lowercase_email' });
+    // Spec 140 s3 review round 1 (R1-K) — the SDK puts the email in the URL path
+    // unencoded, so a character that ends or re-routes the path is refused
+    // before any request, with a message that never carries the address.
+    it.each([
+      ['a slash', 'a/b@example.com'],
+      ['a question mark', 'a?b@example.com'],
+      ['a hash', 'a#b@example.com'],
+      ['a percent sign', 'a%2fb@example.com'],
+      ['a backslash', 'a\\b@example.com'],
+    ])('removeContactFromAudience refuses an email with %s as invalid_identifier, with no request', async (_name, email) => {
+      const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
+      const thrown = await resendBroadcastsGateway.removeContactFromAudience(AUD, email).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(thrown).toMatchObject({ name: 'GatewayThrowable', kind: 'permanent', code: 'invalid_identifier' });
+      expect((thrown as Error).message).not.toContain(email);
       expect(calls).toHaveLength(0);
     });
 
@@ -646,7 +684,14 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
 
     it('71 code points → permanent broadcast_name_too_long, nothing sent', async () => {
       const calls = stubWire(() => json(201, { id: 'bc_1' }));
-      await expect(create('ก'.repeat(71))).rejects.toMatchObject({ kind: 'permanent', code: 'broadcast_name_too_long' });
+      const name = 'ก'.repeat(71);
+      const thrown = await create(name).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(thrown).toMatchObject({ kind: 'permanent', code: 'broadcast_name_too_long' });
+      // Spec 140 s3 review round 1 — the message reaches log lines: no name in it.
+      expect((thrown as Error).message).not.toContain(name);
       expect(calls).toHaveLength(0);
     });
 
