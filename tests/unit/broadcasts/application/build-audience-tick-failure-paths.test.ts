@@ -3988,6 +3988,63 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
     expect(rec.importsSubmitted).toEqual([]);
   });
 
+  /**
+   * Spec 140 s4 (plan review, row 7) — a row the deleted legacy leg left behind
+   * at deploy: `approved`, good standing, carrying that leg's
+   * `resend_audience_id` (its own audience, filled by the per-contact push) and
+   * possibly its pre-send `resend_broadcast_id`, but no import columns. The
+   * import tick must not reuse that audience, whose contacts may be stale: it
+   * finishes the teardown and the next tick runs a fresh tick 1. This describes
+   * behaviour that already exists (the stale-audience path), so it passed the
+   * first time it ran; it is the characterisation the deletion relies on.
+   */
+  describe('a row the legacy leg left behind at deploy (spec 140 s4)', () => {
+    it('audience id only → audience_restarted: the audience is deleted (no broadcast to probe or delete), the column released, nothing imported', async () => {
+      const { deps, rec } = makeDeps({ resendAudienceId: 'aud-legacy', audienceImportId: null, audienceImportSubmittedAt: null });
+
+      const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+      expect(res).toEqual({ ok: true, value: { kind: 'audience_restarted' } });
+      expect(rec.gatewayCalls).toEqual(['deleteAudience']);
+      expect(rec.audiencesDeleted).toEqual(['aud-legacy']);
+      expect(rec.broadcastsDeleted).toEqual([]);
+      expect(rec.releases).toEqual([
+        { method: 'releaseResendAudience', expected: { resendAudienceId: 'aud-legacy', resendBroadcastId: null }, afterGatewayCalls: 1 },
+      ]);
+      expect(rec.importsSubmitted).toEqual([]);
+      expect(rec.sends).toEqual([]);
+      expect(rec.transitions).toEqual([]);
+    });
+
+    it('audience id + a draft broadcast id → audience_restarted: probed draft, the draft deleted, then the audience, then both columns released', async () => {
+      const { deps, rec } = makeDeps({
+        resendAudienceId: 'aud-legacy',
+        resendBroadcastId: 'rb-legacy',
+        audienceImportId: null,
+        audienceImportSubmittedAt: null,
+        probe: { kind: 'present', status: 'draft' },
+      });
+
+      const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+      expect(res).toEqual({ ok: true, value: { kind: 'audience_restarted' } });
+      expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcast', 'deleteAudience']);
+      expect(rec.broadcastsDeleted).toEqual(['rb-legacy']);
+      expect(rec.audiencesDeleted).toEqual(['aud-legacy']);
+      // No import columns, so no claim: straight to the deletes, then ONE release.
+      expect(rec.releases).toEqual([
+        {
+          method: 'releaseResendAudience',
+          expected: { resendAudienceId: 'aud-legacy', resendBroadcastId: 'rb-legacy' },
+          afterGatewayCalls: 3,
+        },
+      ]);
+      expect(rec.importsSubmitted).toEqual([]);
+      expect(rec.sends).toEqual([]);
+      expect(rec.transitions).toEqual([]);
+    });
+  });
+
   it('that teardown with a NOT-FOUND broadcast id (re-probed) whose delete is REFUSED → it stops: contradictory evidence, both kept', async () => {
     const { deps, rec } = makeDeps({
       resendAudienceId: 'aud-1',
