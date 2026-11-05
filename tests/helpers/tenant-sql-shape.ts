@@ -232,7 +232,7 @@ export const ADVISORY_LOCK_ONLY = 'SELECT pg_advisory_xact_lock(hashtextextended
  * A transaction-local statement timeout (spec 140 s3 round 4): it names no table
  * and reads no row, so like the advisory lock it is skipped, by its exact shape.
  */
-export const STATEMENT_TIMEOUT_ONLY = /^SET LOCAL statement_timeout = '\d+(?:ms|s)'$/;
+export const STATEMENT_TIMEOUT_ONLY = /^SET LOCAL statement_timeout = (?:\d+|'\d+(?:ms|s)')$/;
 
 /**
  * A gate's verdict over recorded statements: pure inserts and the exact

@@ -838,7 +838,9 @@ export async function eraseMember(
   let priorPropagationRecorded = false;
   const readFits =
     meta.deadlineAt === undefined ||
-    meta.deadlineAt.getTime() - deps.clock.now().getTime() >= PRIOR_PROPAGATION_READ_BUDGET_MS;
+    // Round 5 (code-review #9): the read's budget and one more for the audit
+    // write that must follow it.
+    meta.deadlineAt.getTime() - deps.clock.now().getTime() >= 2 * PRIOR_PROPAGATION_READ_BUDGET_MS;
   // Round 4 (code-review #2): a skip and a timeout each log a `reason`, so a
   // `not_attempted` row they cause can be told from a real "no earlier row".
   if (addressesAlreadyScrubbed && !readFits) {
@@ -853,7 +855,12 @@ export async function eraseMember(
     try {
       priorPropagationRecorded = await Promise.race([
         runInTenant(deps.tenant, (tx) =>
-          deps.memberRepo.hasSubprocessorPropagationInTx(tx, deps.tenant.slug, memberId),
+          deps.memberRepo.hasSubprocessorPropagationInTx(
+            tx,
+            deps.tenant.slug,
+            memberId,
+            PRIOR_PROPAGATION_READ_BUDGET_MS,
+          ),
         ),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
@@ -870,7 +877,8 @@ export async function eraseMember(
           memberId,
           requestId: meta.requestId,
           cascade: 'subprocessor_erasure',
-          reason: timedOut ? 'timeout' : 'error',
+          // Round 5 (code-review #5): the database's own cancel is a timeout too.
+          reason: timedOut || pgErrorCode(readErr) === '57014' ? 'timeout' : 'error',
         },
         'erase-member: prior subprocessor propagation read failed',
       );

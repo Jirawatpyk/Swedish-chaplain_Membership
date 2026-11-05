@@ -800,7 +800,7 @@ export const drizzleMemberRepo: MemberRepo = {
     return Number(rows[0]?.stuck ?? 0);
   },
 
-  async hasSubprocessorPropagationInTx(tx, tenantSlug, memberId) {
+  async hasSubprocessorPropagationInTx(tx, tenantSlug, memberId, statementTimeoutMs) {
     // Spec 140 s3 review round 2 (R2-A2) — the port docblock. The DT6
     // rotation subquery's predicate: the tenant filter is load-bearing
     // (audit_log's RLS is PERMISSIVE), and `payload ? 'member_id'` lets the
@@ -809,10 +809,15 @@ export const drizzleMemberRepo: MemberRepo = {
     // race stops only its wait, and the pooler drops a startup
     // `statement_timeout` (measured: 0 on the pooled connection), so a hung
     // query would keep its pooled connection. `SET LOCAL` survives a
-    // transaction pooler and ends with this read's own transaction. 3 s =
-    // `PRIOR_PROPAGATION_READ_BUDGET_MS` in erase-member.ts.
+    // transaction pooler and ends with this read's own transaction. Round 5
+    // (code-review #2/#3): the caller passes its budget, so the one constant
+    // drives both bounds. `SET` takes no bind parameter, so the value is a
+    // validated integer rendered raw.
     assertTxTenant(tx, tenantSlug);
-    await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
+    if (!Number.isInteger(statementTimeoutMs) || statementTimeoutMs <= 0) {
+      throw new RangeError('statementTimeoutMs must be a positive integer');
+    }
+    await tx.execute(sql`SET LOCAL statement_timeout = ${sql.raw(String(statementTimeoutMs))}`);
     const rows = (await tx.execute(sql`
       SELECT EXISTS (
         SELECT 1

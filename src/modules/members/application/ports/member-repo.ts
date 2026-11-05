@@ -990,11 +990,16 @@ export interface MemberRepo {
    * The `audit_log` tenant filter is load-bearing (PERMISSIVE RLS, as in
    * `findStuckErasuresInTx`). Throws on a read failure; the caller treats a
    * throw as "no row". Threads the runInTenant `tx`.
+   *
+   * Spec 140 s3 round 5: first runs `SET LOCAL statement_timeout` to
+   * `statementTimeoutMs`, which holds for the REST of the caller's tx, so call
+   * it only in its own short runInTenant, never inside the scrub tx.
    */
   hasSubprocessorPropagationInTx(
     tx: TenantTx,
     tenantSlug: string,
     memberId: MemberId,
+    statementTimeoutMs: number,
   ): Promise<boolean>;
 }
 

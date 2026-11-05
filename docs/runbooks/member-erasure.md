@@ -959,10 +959,10 @@ When the alert fires:
        pass's outcome: act on it by its own value (a `partial` or `failed` still
        needs this procedure); the `not_attempted` row needs no action;
      - an `ok`, `partial` or `failed` row followed later by a `not_attempted`
-       row whose read was skipped or timed out (logged `erase-member: prior
-       subprocessor propagation read skipped`, or `… read failed` with
-       `reason: timeout`) is an echo whose check did not run. Act on the
-       earlier row by its own value; the `not_attempted` row needs no action.
+       row is an echo whose check of the earlier row did not complete (it was
+       skipped, timed out or failed; the log names which, while it lasts). The
+       earlier row proves the first pass ran, so no log is needed: act on it by
+       its own value; the `not_attempted` row needs no action.
    - **`resend_outcome: 'already_propagated'`** (R2-A2) — an echo of an earlier
      row for the same member: no action for this row. Act on the earliest row
      (§ Security cond-3).
