@@ -56,6 +56,7 @@ function inputWith(
     audienceContacts,
     tenantSlug: 'test-tenant',
     requestId: 'req-99',
+    addressesAlreadyScrubbed: false,
   };
 }
 
@@ -69,6 +70,25 @@ describe('subprocessorErasureAdapter', () => {
 
     expect(result).toEqual({
       resendOutcome: 'ok',
+      resendContactsRemoved: 0,
+      resendContactsAlreadyAbsent: 0,
+      resendContactsFailed: 0,
+      stripeOutcome: 'ok',
+    });
+    expect(removeContactFromAudience).not.toHaveBeenCalled();
+  });
+
+  // Spec 140 s3 review round 2 (R2-A) — no pairs because the scrub already ran
+  // (a re-drive) is not "nothing to detach": the first pass's detach may never
+  // have run, so the row says `not_attempted`, which pages like `failed`.
+  it('no pairs because the addresses were already scrubbed → not_attempted/0/0/0, gateway NOT called', async () => {
+    const result = await subprocessorErasureAdapter.propagate({
+      ...inputWith([]),
+      addressesAlreadyScrubbed: true,
+    });
+
+    expect(result).toEqual({
+      resendOutcome: 'not_attempted',
       resendContactsRemoved: 0,
       resendContactsAlreadyAbsent: 0,
       resendContactsFailed: 0,

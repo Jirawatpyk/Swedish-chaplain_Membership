@@ -806,6 +806,34 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect((derive.mock.calls[0] as unknown[])[2]).toEqual(['live@x.io']);
   });
 
+  // Spec 140 s3 review round 2 (R2-A) — after R1-D a re-drive whose addresses
+  // are all sentinels captures no pair, which read as `ok` 0/0/0, the same row
+  // as "the member was in no audience". If the first pass crashed after the
+  // scrub commit and before its propagation, that `ok` was the only row while
+  // the real address could still be in a segment. The use case tells the
+  // adapter the addresses were already scrubbed, so it records `not_attempted`.
+  it('tells the propagation the addresses were already scrubbed when every one is a sentinel (R2-A)', async () => {
+    const deps = buildEraseDeps();
+    deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [
+      'erased+11111111-1111-4111-8111-111111111111@erased.invalid',
+    ]);
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+      expect.objectContaining({ audienceContacts: [], addressesAlreadyScrubbed: true }),
+    );
+  });
+
+  it('a first pass with real addresses and no audience is not "already scrubbed" (R2-A)', async () => {
+    const deps = buildEraseDeps();
+    deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => ['live@x.io']);
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+      expect.objectContaining({ audienceContacts: [], addressesAlreadyScrubbed: false }),
+    );
+  });
+
   it('a subprocessor audit-emit failure is NON-BLOCKING — member_erased still emitted (US3-C)', async () => {
     const deps = buildEraseDeps();
     // Member received an audience-bearing broadcast → one pair to propagate, so

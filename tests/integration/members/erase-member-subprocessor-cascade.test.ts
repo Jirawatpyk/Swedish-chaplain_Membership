@@ -22,9 +22,10 @@
  *
  *   3. RE-DRIVE — force the first-pass gateway spy to reject →
  *      resend_outcome:'failed' audit, member_erased emitted (non-blocking). Then
- *      RE-RUN `eraseMember` for the SAME member (the US2d reconciler shape) and
- *      the detach is RETRIED: a second `subprocessor_erasure_propagated` audit
- *      with resend_outcome:'ok' and removed_count:**1**.
+ *      RE-RUN `eraseMember` for the SAME member (the US2d reconciler shape): its
+ *      addresses are scrub sentinels, so no detach is sent (spec 140 s3 R1-D)
+ *      and the second audit says resend_outcome:'not_attempted' 0/0/0 (R2-A).
+ *      The B-1 note below is history: it was inverted by R1-D.
  *
  *      **Round 4 B-1 — this scenario used to be the opposite, and the change is
  *      the point.** It documented a best-effort-ONCE residual: the re-drive read
@@ -679,7 +680,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     });
   }, 120_000);
 
-  it('3 — RE-DRIVE: first pass fails → failed audit + member_erased; the re-drive sends NO detach (its addresses are sentinels) → second audit removed_count:0, member_erased re-emitted', async () => {
+  it('3 — RE-DRIVE: first pass fails → failed audit + member_erased; the re-drive sends NO detach (its addresses are sentinels) → second audit not_attempted 0/0/0, member_erased re-emitted', async () => {
     const { memberId, contactEmail } = await seedMember(tenant);
     const audienceId = `aud-cap-redrive-${randomUUID().slice(0, 8)}`;
     await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceId);
@@ -740,10 +741,13 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
 
     const auditsAfterSecond = await rawSelectSubprocessorAudits(tenant.ctx.slug, memberId);
     expect(auditsAfterSecond).toHaveLength(2);
+    // Spec 140 s3 review round 2 (R2-A) — not `ok`: an empty capture because
+    // the scrub already ran says nothing about the real address, and if the
+    // first pass had crashed before its own row this would be the only row.
     const secondAudit = auditsAfterSecond.find(
-      (a) => (a.payload as { resend_outcome?: string }).resend_outcome === 'ok',
+      (a) => (a.payload as { resend_outcome?: string }).resend_outcome === 'not_attempted',
     );
-    expect(secondAudit, 'the re-drive records a second ok audit').toBeDefined();
+    expect(secondAudit, 'the re-drive records a not_attempted audit').toBeDefined();
     expect(secondAudit!.payload).toMatchObject({
       resend_contacts_removed_count: 0,
       resend_contacts_already_absent_count: 0,
