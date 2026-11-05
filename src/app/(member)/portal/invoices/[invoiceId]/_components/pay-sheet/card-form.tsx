@@ -52,7 +52,7 @@ import {
   useStripe,
 } from '@stripe/react-stripe-js';
 
-import { Button } from '@jirawatpyk/aura-react';
+import { Alert, Button } from '@jirawatpyk/aura-react';
 import { useMinDelay } from '@/hooks/use-min-delay';
 // shared Stripe.js cache (used by `<PaySheetInternal>`'s
 // 3DS poll too). See `stripe-cache.ts` header for rationale.
@@ -431,12 +431,12 @@ export function CardForm({
 
   if (loadError) {
     return (
-      <div
+      // PR O — AURA's Alert in the danger tone, the retry as its action.
+      <Alert
+        tone="danger"
         role="alert"
         data-testid="pay-sheet-card-load-error"
-        className="space-y-4 rounded-[var(--aura-radius-md)] border border-[var(--aura-alert-danger-border)] bg-[var(--aura-alert-danger-bg)] p-4"
-      >
-        <p className="text-body text-[var(--aura-fg-primary)]">{loadError}</p>
+        action={
         <Button
           type="button"
           variant="primary"
@@ -449,7 +449,10 @@ export function CardForm({
         >
           {t('retry.cta')}
         </Button>
-      </div>
+        }
+      >
+        {loadError}
+      </Alert>
     );
   }
 

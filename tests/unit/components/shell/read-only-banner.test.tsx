@@ -20,6 +20,8 @@ describe('ReadOnlyBanner', () => {
     expect(note).not.toHaveAttribute('aria-label');
     expect(note).not.toHaveAttribute('aria-labelledby');
     expect(note).toHaveTextContent('Read-only — you cannot change these.');
+    // PR O — AURA's Alert, info tone, as a note (not a live region).
+    expect(note).toHaveClass('aura-alert', 'aura-alert--info');
   });
 
   it('the icon is decorative (never announced alongside the sentence)', () => {

@@ -17,10 +17,10 @@ const src = (path: string): string => readFileSync(path, 'utf8').replace(/\r\n/g
 const RAW_TEXT_PX = /\btext-\[\d+px\]/;
 
 describe('US1 shell', () => {
-  it('LoadErrorCard is an AURA Card, not its classes by hand', () => {
+  it('LoadErrorCard is an AURA EmptyState (PR O; was a Card), not its classes by hand', () => {
     const { container } = render(<LoadErrorCard message="Could not load" />);
-    expect(container.querySelector('.aura-card > .aura-card__body [role="alert"]')).not.toBeNull();
-    expect(src('src/components/shell/load-error-card.tsx')).not.toMatch(/aura-card/);
+    expect(container.querySelector('.aura-empty.is-bordered[role="alert"]')).not.toBeNull();
+    expect(src('src/components/shell/load-error-card.tsx')).not.toMatch(/aura-(card|empty)/);
   });
 
   it.each([
@@ -39,8 +39,10 @@ describe('US1 shell', () => {
     expect(src('src/components/layout/breadcrumb-nav.tsx')).toContain('aura-text-label');
   });
 
-  it('the staff nav count badge is AURA’s 11px pill label', () => {
-    expect(src('src/components/layout/staff-nav.tsx')).toContain('aura-text-pill-label');
+  it('the staff nav count badge is AURA’s Badge (PR O; was a hand-built pill)', () => {
+    const file = src('src/components/layout/staff-nav.tsx');
+    expect(file).toMatch(/<Badge tone="neutral"/);
+    expect(file).not.toContain('rounded-full bg-[var(--aura-status-progress-bg)]');
   });
 
   describe('globals.css leaves the shell’s sizes to AURA', () => {

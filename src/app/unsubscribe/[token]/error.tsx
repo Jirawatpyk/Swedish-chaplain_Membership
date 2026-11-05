@@ -23,6 +23,7 @@
 
 import { useEffect } from 'react';
 import { useUnsubscribeContact, type UnsubscribeLocale } from './unsubscribe-contact-context';
+import { Button, Card, linkClass } from '@jirawatpyk/aura-react';
 
 interface ErrorProps {
   readonly error: Error & { digest?: string };
@@ -98,16 +99,17 @@ export default function UnsubscribeErrorBoundary({
       lang={locale}
       className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center p-6 text-center"
     >
-      <article className="w-full rounded-lg border border-border bg-card p-8 shadow-sm">
-        <h1 className="mb-4 text-2xl font-semibold">{copy.heading}</h1>
-        <p className="mb-3 text-base text-foreground">{copy.body}</p>
-        <p className="mb-4 text-sm text-foreground">
+      {/* PR O — AURA's Card and Button (this is a client boundary). */}
+      <Card className="w-full">
+        <h1 className="mb-4 aura-text-h2">{copy.heading}</h1>
+        <p className="mb-3 text-base">{copy.body}</p>
+        <p className="mb-4 text-sm">
           {email ? (
             <>
               {copy.contactWith[0]}
               <a
                 href={`mailto:${email}`}
-                className="inline-block py-1 font-medium underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                className={linkClass({ className: 'font-medium [overflow-wrap:anywhere]' })}
               >
                 {email}
               </a>
@@ -117,14 +119,10 @@ export default function UnsubscribeErrorBoundary({
             copy.contactWithout
           )}
         </p>
-        <button
-          type="button"
-          onClick={reset}
-          className="inline-block rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-        >
+        <Button type="button" variant="secondary" touchHeight onClick={reset}>
           {copy.tryAgain}
-        </button>
-      </article>
+        </Button>
+      </Card>
     </main>
   );
 }

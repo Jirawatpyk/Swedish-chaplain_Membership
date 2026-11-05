@@ -484,6 +484,9 @@ export const MIGRATED_PATHS = [
   'src/app/(staff)/admin/broadcasts/templates/**',
   'src/components/broadcast/admin/template-library.tsx',
   'src/components/broadcast/admin/template-form.tsx',
+  // PR O — the starter-edit banner and the public unsubscribe pages.
+  'src/components/broadcast/admin/template-edit-confirm-starter.tsx',
+  'src/app/unsubscribe/**',
   'src/components/broadcast/admin-image-allowlist-editor.tsx',
   'src/components/broadcast/brand/brand-settings-form.tsx',
   'src/app/(staff)/admin/marketing/**',
