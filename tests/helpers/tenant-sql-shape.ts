@@ -229,6 +229,12 @@ export function unfencedRawSql(source: string, tenantTables: readonly string[]):
 export const ADVISORY_LOCK_ONLY = 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))';
 
 /**
+ * A transaction-local statement timeout (spec 140 s3 round 4): it names no table
+ * and reads no row, so like the advisory lock it is skipped, by its exact shape.
+ */
+export const STATEMENT_TIMEOUT_ONLY = /^SET LOCAL statement_timeout = '\d+(?:ms|s)'$/;
+
+/**
  * A gate's verdict over recorded statements: pure inserts and the exact
  * advisory lock skipped; a positive control (every read/update names a
  * tenant table the parse can see) asserted; the per-reference violations
@@ -238,7 +244,9 @@ export function gateViolations(statements: readonly RecordedStatement[], tenantT
   blind: string[];
   violations: string[];
 } {
-  const checked = statements.filter((s) => !isPureInsert(s.sql) && s.sql.trim() !== ADVISORY_LOCK_ONLY);
+  const checked = statements.filter(
+    (s) => !isPureInsert(s.sql) && s.sql.trim() !== ADVISORY_LOCK_ONLY && !STATEMENT_TIMEOUT_ONLY.test(s.sql.trim()),
+  );
   // An `insert … on conflict … where` writes its tenant in VALUES and names no table.
   const reads = checked.filter((s) => !s.sql.trimStart().toLowerCase().startsWith('insert'));
   return {

@@ -805,7 +805,14 @@ export const drizzleMemberRepo: MemberRepo = {
     // rotation subquery's predicate: the tenant filter is load-bearing
     // (audit_log's RLS is PERMISSIVE), and `payload ? 'member_id'` lets the
     // planner use the partial `member_id` indexes. A throw reaches the caller.
+    // Round 4 (code-review #1): the database bounds the read too. The caller's
+    // race stops only its wait, and the pooler drops a startup
+    // `statement_timeout` (measured: 0 on the pooled connection), so a hung
+    // query would keep its pooled connection. `SET LOCAL` survives a
+    // transaction pooler and ends with this read's own transaction. 3 s =
+    // `PRIOR_PROPAGATION_READ_BUDGET_MS` in erase-member.ts.
     assertTxTenant(tx, tenantSlug);
+    await tx.execute(sql`SET LOCAL statement_timeout = '3s'`);
     const rows = (await tx.execute(sql`
       SELECT EXISTS (
         SELECT 1
