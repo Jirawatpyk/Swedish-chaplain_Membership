@@ -2053,6 +2053,67 @@ async function submitImport(
   });
 }
 
+/**
+ * PR #756 review round 1 (code-review #1) — the `broadcast_resend_drift_check_unverifiable`
+ * row for an audience count that FAILED. The deleted legacy leg wrote it on its
+ * own count failure; this is the only leg since spec 140 s4. Same payload keys as
+ * the legacy row plus the import id; ids, a count and a bounded error class, no
+ * address and no provider text (the row is append-only and shown on the audit
+ * viewer).
+ *
+ * The send-started pattern: its own tenant-bound `withTx` (a null tx would take
+ * a pool connection with no `app.current_tenant`, where RLS writes nothing) and a
+ * RAW emit, so a failure is known. It runs BEFORE the send, and a lost row must
+ * neither block nor double that send, so a storage failure is logged and
+ * counted, never rethrown. An `AuditPortInvariantError` (a wiring bug) still
+ * throws: the row stays `approved`, nothing was sent, and the bug surfaces.
+ */
+async function recordUnverifiableCount(
+  deps: LeasedTickDeps,
+  input: BuildAudienceTickInput,
+  fields: {
+    readonly resendAudienceId: string;
+    readonly importId: string;
+    readonly resendBroadcastId: string | null;
+    readonly expectedRecipientCount: number;
+    readonly errorReason: string;
+  },
+): Promise<void> {
+  const broadcastId = input.broadcastId as unknown as string;
+  try {
+    await deps.broadcastsRepo.withTx(async (tx) => {
+      await deps.audit.emit(tx, {
+        eventType: 'broadcast_resend_drift_check_unverifiable',
+        tenantId: deps.tenant.slug,
+        actorUserId: 'system:cron',
+        summary: `Broadcast ${broadcastId} audience count unverifiable before send`,
+        payload: {
+          broadcastId,
+          resendBroadcastId: fields.resendBroadcastId,
+          resendAudienceId: fields.resendAudienceId,
+          expectedRecipientCount: fields.expectedRecipientCount,
+          errorReason: fields.errorReason,
+          importId: fields.importId,
+        },
+        requestId: null,
+      });
+    });
+    broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_resend_drift_check_unverifiable');
+  } catch (auditErr) {
+    if (auditErr instanceof AuditPortInvariantError) throw auditErr;
+    logger.error(
+      {
+        err: errKind(auditErr),
+        tenantId: deps.tenant.slug,
+        broadcastId,
+        importId: fields.importId,
+      },
+      'broadcasts.audience_import.unverifiable_audit_emit_failed',
+    );
+    broadcastsMetrics.auditEmitFailed('broadcast_resend_drift_check_unverifiable', deps.tenant.slug);
+  }
+}
+
 /** Tick 2+ — poll, apply the completion rule, and only then send. */
 async function confirmImport(
   deps: LeasedTickDeps,
@@ -2318,6 +2379,23 @@ async function confirmImport(
     // blind here — and this is the branch a Resend blip lands in, on the only
     // dispatch leg since spec 140 s4.
     broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
+    // PR #756 review round 1 (code-review #1) — and the durable record the legacy
+    // leg wrote beside that metric, on the same half: a count call that FAILED.
+    // A page Resend could not finish reading is not a failure, so (as there) it
+    // gets the metric and the warn but no append-only row.
+    if (!audienceCount.ok) {
+      await recordUnverifiableCount(deps, input, {
+        resendAudienceId: audienceId,
+        importId,
+        resendBroadcastId: inherited.resendBroadcastId === '' ? null : inherited.resendBroadcastId,
+        expectedRecipientCount: resolvedCount,
+        // A bounded class (the transport sub-kind or the classifier's kind),
+        // never `message`: that is provider free text.
+        errorReason: audienceCount.error.retryable
+          ? (audienceCount.error.subKind ?? 'retryable')
+          : audienceCount.error.kind,
+      });
+    }
   }
 
   // S8 — the double-send window, closed the way the legacy leg closed it (F4).

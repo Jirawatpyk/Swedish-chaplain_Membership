@@ -44,9 +44,11 @@ const ROOTS_TO_GREP = [
  *
  * R6 staff-review W-S2/W-S3 — verified emission sites for previously
  * suspected gaps:
- *   - `broadcast_resend_audience_drift` and
- *     `broadcast_resend_drift_check_unverifiable` → emitted by the legacy
- *     dispatch leg until spec 140 s4 deleted it; now `RETIRED`, below.
+ *   - `broadcast_resend_audience_drift` → emitted by the legacy dispatch
+ *     leg until spec 140 s4 deleted it; now `RETIRED`, below.
+ *   - `broadcast_resend_drift_check_unverifiable` → emitted by the legacy
+ *     leg, and since PR #756 review round 1 by the import tick's
+ *     unverifiable-count arm (`build-audience-tick.ts`).
  *   - `broadcast_cross_tenant_probe` → emitted at
  *     `enforce-tenant-context.ts:65,81`.
  *
@@ -93,7 +95,6 @@ const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [
  */
 const RETIRED: ReadonlyArray<string> = [
   'broadcast_resend_audience_drift',
-  'broadcast_resend_drift_check_unverifiable',
   'broadcast_dispatch_idempotency_conflict_pre_send',
 ];
 
