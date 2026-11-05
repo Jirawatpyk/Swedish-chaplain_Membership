@@ -3890,7 +3890,7 @@
           "counts_incoherent": "The contact import's counts did not add up, so the send was stopped.",
           "count_mismatch": "The imported recipient count did not match the audience resolved at send time.",
           "provider_failed": "Resend reported the contact import as failed.",
-          "provider_cancelled": "This E-Blast's broadcast was cancelled at Resend, outside Chamber-OS (for example in the Resend dashboard), before it was sent. A cancelled broadcast cannot be sent, so nothing went out. The member can submit a new E-Blast, once their membership is active if it is suspended. If no one on your team cancelled it, check who has access to the Resend account.",
+          "provider_cancelled": "This E-Blast's broadcast was cancelled at Resend, outside Chamber-OS (for example in the Resend dashboard), before it was sent. A cancelled broadcast cannot be sent, so nothing went out. The member can submit a new E-Blast; if their membership is suspended, they can do so once it is active again. If no one on your team cancelled it, check who has access to the Resend account.",
           "gateway_permanent": "Resend refused the request (a permanent error). Check the Resend account and its plan limits.",
           "gateway_unknown": "An unexpected error occurred while preparing the send. See the Lifecycle timeline below; if the cause is still unclear, contact your system administrator with this E-Blast's ID.",
           "malformed_segment": "The saved audience for this E-Blast is incomplete (a category audience with no categories selected).",

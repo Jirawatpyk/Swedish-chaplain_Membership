@@ -521,7 +521,7 @@
           "contactsDetached": "Borttagningsbegäranden som Resend godtog",
           "contactsAlreadyAbsent": "Redan borta från målgrupp",
           "contactsFailed": "Misslyckade kontakter",
-          "countsNote": "Varje kontakt räknas en gång. Resend godtar en borttagningsbegäran oavsett om adressen fanns i målgruppen, så den första siffran kan omfatta adresser som redan var borta. Ange den som borttagningsbegäranden som Resend godtog; addera inte antalet redan borta till det.",
+          "countsNote": "Varje kontakt räknas en gång. Resend godtar en borttagningsbegäran oavsett om adressen fanns i målgruppen, så den första siffran kan omfatta adresser som redan var borta. Ange den som det antal borttagningsbegäranden Resend godtog; addera inte antalet redan borta till den.",
           "notAttemptedNote": "Inte försökt: medlemmens adresser hade redan rensats i en tidigare körning, så den här körningen kunde inte skicka någon borttagningsbegäran, och den första körningens borttagning kan ha uteblivit. Sök efter medlemmens adress från DSR-ärendet i Resends instrumentpanel och ta bort den manuellt."
         },
         "documentKind": {
@@ -3890,7 +3890,7 @@
           "counts_incoherent": "Kontaktimportens antal gick inte ihop, så utskicket stoppades.",
           "count_mismatch": "Antalet importerade mottagare stämde inte med målgruppen vid utskickstillfället.",
           "provider_failed": "Resend rapporterade att kontaktimporten misslyckades.",
-          "provider_cancelled": "Resend-utskicket för detta utskick avbröts i Resend, utanför Chamber-OS (till exempel i Resends instrumentpanel), innan det skickades. Ett avbrutet utskick kan inte skickas, så inget gick iväg. Medlemmen kan skicka in ett nytt utskick, när medlemskapet är aktivt om det är pausat. Om ingen i ert team avbröt det, kontrollera vem som har åtkomst till Resend-kontot.",
+          "provider_cancelled": "Resend-utskicket för detta utskick avbröts utanför Chamber-OS (till exempel i Resends instrumentpanel) innan det skickades. Ett avbrutet utskick kan inte skickas, så inget gick iväg. Medlemmen kan skicka in ett nytt utskick; om medlemskapet är pausat kan medlemmen göra det när det är aktivt igen. Om ingen i ert team avbröt det, kontrollera vem som har åtkomst till Resend-kontot.",
           "gateway_permanent": "Resend avvisade begäran (ett permanent fel). Kontrollera Resend-kontot och planens gränser.",
           "gateway_unknown": "Ett oväntat fel uppstod när utskicket förbereddes. Se Livscykelstidslinje nedan; om orsaken fortfarande är oklar, kontakta systemadministratören och ange detta utskicks ID.",
           "malformed_segment": "Den sparade målgruppen för detta utskick är ofullständig (en målgrupp per medlemskategori utan valda kategorier).",

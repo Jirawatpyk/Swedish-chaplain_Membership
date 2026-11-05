@@ -200,9 +200,12 @@ export function EvidenceCard({
                   that incremented for every detach the processor acknowledged,
                   404s included. A DPO citing this card in a DSR answer was
                   asserting removals that had not happened (Art. 12(3)). The
-                  counter now counts only real detaches, and the label says
-                  "detached", which is what the call does — the contact record
-                  itself survives at the processor (residual 8a).
+                  counter now leaves out the 404s, but Resend also answers 200 to
+                  a detach of an address that was not in the segment (MEASURED
+                  5 Nov 2026), so the figure is the detach requests Resend
+                  accepted, which may include absent addresses (spec 140 s3
+                  R1-I; the countsNote below says so). The contact record itself
+                  survives at the processor (residual 8a).
                 */}
                 <Field label={t('fields.contactsDetached')}>
                   {row.subprocessorOutcome.contactsRemoved}
