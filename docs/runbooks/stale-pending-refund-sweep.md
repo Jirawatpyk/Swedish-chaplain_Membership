@@ -291,6 +291,14 @@ Then match to the escalation reason from the structured warn log:
   30-day retention. Emitting a success counter is a code change and is deliberately
   **not** done here; see `docs/observability.md` § 21.1a.
 
+## Exercising the orphan close on dev (#731)
+
+The `swecham` cron sweep only reaches swecham rows, and the dev branch's orphan refunds belong to integration-test tenants. To watch the orphan close (`processor_refund_id` NULL → listed at Stripe → none → `failed`, `cause: 'no_processor_refund'`) on dev:
+
+1. `pnpm seed:f5-e2e:refundable` — dev only. It refuses a blocklisted DB host, a non-`sk_test_` key, and the fixture Connect account. It needs `STRIPE_ACCOUNT_ID_SWECHAM` set to a real test account before `pnpm seed:f5-e2e`. It confirms a test-mode PaymentIntent with `pm_card_visa` on a paid swecham invoice, then writes a `succeeded` payment and an orphan `pending` refund initiated 25 h ago. A re-run resets the orphan.
+2. Call the sweep once with the cron bearer (`GET /api/cron/sweep-stale-pending-refunds`, see the cron section above).
+3. Check the row: `pnpm db:query "SELECT status, failure_reason_code FROM refunds WHERE id = 'rfnd_e2e_f5_stab_pndng_xxxxxxxxxxx'"` → `failed`. A new refund on that payment is now allowed.
+
 ## Related runbooks
 
 - `docs/runbooks/out-of-band-refund.md` — for Stripe-dashboard-initiated refunds (separate scenario, FR-011a)

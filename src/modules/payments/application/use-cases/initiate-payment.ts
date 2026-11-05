@@ -211,7 +211,11 @@ export type InitiatePaymentError =
         // Cross-method-skip: Stripe cancel returned a transient error;
         // we abort without DB write to avoid the DB-canceled vs
         // Stripe-pending drift the sweep cron is not designed to detect.
-        | 'cross_method_cancel_retryable';
+        | 'cross_method_cancel_retryable'
+        // #731 — Stripe refused the cancel for any other reason (e.g. a
+        // `processing` / `requires_capture` PI). The PI may still charge,
+        // so the switch aborts with no DB write (fail closed).
+        | 'cross_method_cancel_refused';
     };
 
 export interface InitiatePaymentDeps {
@@ -610,15 +614,28 @@ async function initiatePaymentBody(
           reason: 'cross_method_cancel_retryable',
         });
       }
-      // Cancel outcome is now safe to mark on the DB row. Either
-      // (a) Stripe confirmed the cancel, or (b) Stripe returned a
-      // permanent non-succeeded error (already-canceled / not-found
-      // / etc.) — both leave Stripe in a terminal-non-succeeded
-      // state from our perspective, so the local row CAN be
-      // marked canceled. The audit `cancel_outcome` discriminator
-      // distinguishes the two paths for forensics.
-      const cancelOutcome: 'stripe_confirmed' | 'stripe_error_bypassed' =
-        cancelResult.ok ? 'stripe_confirmed' : 'stripe_error_bypassed';
+      // #731 (task 52) — fail closed. Only two outcomes prove the old PI can
+      // never charge: (a) Stripe confirmed the cancel, or (b) Stripe says the
+      // PI does not exist (`resource_missing`). Any other permanent error —
+      // a `processing` / `requires_capture` PI (`payment_intent_not_
+      // cancelable`), an auth or config error, … — may leave a PI that
+      // still charges the member, and a late `payment_intent.succeeded` on a
+      // `canceled` row is a silent no-op in confirm-payment. So abort with no
+      // DB write; the stale-pending sweep still owns the pending row.
+      const piMissing =
+        !cancelResult.ok &&
+        cancelResult.error.kind === 'permanent' &&
+        cancelResult.error.code === 'resource_missing';
+      if (!cancelResult.ok && !piMissing) {
+        return err<InitiatePaymentError>({
+          code: 'processor_unavailable',
+          kind: 'permanent',
+          reason: 'cross_method_cancel_refused',
+        });
+      }
+      const cancelOutcome: 'stripe_confirmed' | 'stripe_pi_missing' = piMissing
+        ? 'stripe_pi_missing'
+        : 'stripe_confirmed';
 
       await deps.paymentsRepo.updateStatus(tx, {
         paymentId: pending.id,

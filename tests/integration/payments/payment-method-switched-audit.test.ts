@@ -102,7 +102,7 @@ describe('f5AuditAdapter — payment_method_switched persistence', () => {
     expect(payload!.cancel_outcome).toBe('stripe_confirmed');
   });
 
-  it('payload accepts the alternative cancel_outcome=`stripe_error_bypassed` discriminator', async () => {
+  it('payload accepts the alternative cancel_outcome=`stripe_pi_missing` discriminator (#731)', async () => {
     const requestId = `test-req-bypass-${Date.now()}`;
 
     await runInTenant(tenant.ctx, async (tx) => {
@@ -119,7 +119,7 @@ describe('f5AuditAdapter — payment_method_switched persistence', () => {
           new_method: 'card',
           processor_payment_intent_id: 'pi_test_already_canceled',
           attempt_seq: 2,
-          cancel_outcome: 'stripe_error_bypassed',
+          cancel_outcome: 'stripe_pi_missing',
         },
         retentionYears: retentionFor('payment_method_switched'),
       });
@@ -141,7 +141,7 @@ describe('f5AuditAdapter — payment_method_switched persistence', () => {
     const payload = rows[0]!.payload as {
       readonly cancel_outcome?: string;
     } | null;
-    expect(payload?.cancel_outcome).toBe('stripe_error_bypassed');
+    expect(payload?.cancel_outcome).toBe('stripe_pi_missing');
   });
 
   it('retention map returns 5 years for payment_method_switched (F5R1-IMP7 corrected baseline)', () => {

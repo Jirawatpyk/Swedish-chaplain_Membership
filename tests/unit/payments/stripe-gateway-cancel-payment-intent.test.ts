@@ -46,6 +46,7 @@ describe('stripeGateway.cancelPaymentIntent — unexpected_state', () => {
       expect(r.ok).toBe(false);
       if (r.ok) return;
       expect(r.error.kind).toBe('permanent');
+      if (r.error.kind !== 'permanent') return;
       expect(r.error.code).toBe('payment_intent_not_cancelable');
     },
   );
@@ -62,7 +63,7 @@ describe('stripeGateway.cancelPaymentIntent — unexpected_state', () => {
     retrieveMock.mockResolvedValueOnce({ id: 'pi_1', status: 'succeeded' });
     const r = await stripeGateway.cancelPaymentIntent('pi_1', ACCOUNT);
     expect(r.ok).toBe(false);
-    if (r.ok) return;
+    if (r.ok || r.error.kind !== 'permanent') throw new Error('expected a permanent error');
     expect(r.error.code).toBe('payment_intent_already_succeeded');
   });
 });
