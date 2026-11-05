@@ -67,6 +67,7 @@ describe('subprocessorErasureAdapter.propagate — bounded by the gateway (R3)',
         audienceContacts: pairs,
         tenantSlug: 'test-tenant',
         requestId: 'req-r3',
+        addressesAlreadyScrubbed: false,
       }),
       sentinel,
     ]);

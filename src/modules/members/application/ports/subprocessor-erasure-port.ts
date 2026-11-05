@@ -27,7 +27,15 @@
 
 import type { SubprocessorAudienceContact } from './broadcasts-audience-derivation-port';
 
-export type SubprocessorResendOutcome = 'ok' | 'partial' | 'failed';
+/**
+ * `not_attempted` (spec 140 s3 review round 2, R2-A): the capture was empty
+ * because every address the member held was already a scrub sentinel, so the
+ * scrub ran in an earlier pass and this pass could not know the real address.
+ * It says nothing about whether the first pass's detach ran, so it pages like
+ * `failed` (runbook `member-erasure.md`). Never `ok`: an `ok` 0/0/0 row means
+ * the member was in no audience.
+ */
+export type SubprocessorResendOutcome = 'ok' | 'partial' | 'failed' | 'not_attempted';
 
 /**
  * Stripe is a pure no-op TODAY (no member↔customer model). Typed as a literal
@@ -38,9 +46,9 @@ export type SubprocessorResendOutcome = 'ok' | 'partial' | 'failed';
  * for the `subprocessor_erasure_propagated` audit payload + the metric, so a union
  * would force a needless switch with no field-presence safety gained. The
  * coherence invariant (`'ok'⇔failed===0`, `'failed'⇔removed===0 && failed>0`,
- * `'partial'⇔both>0`) is enforced at the SINGLE producer — the adapter derives all
- * three fields together from the loop counts; the shape is never hand-assembled
- * elsewhere.
+ * `'partial'⇔both>0`, `'not_attempted'⇔no pair && addressesAlreadyScrubbed`, all
+ * counts 0) is enforced at the SINGLE producer — the adapter derives all fields
+ * together from the loop counts; the shape is never hand-assembled elsewhere.
  */
 export interface SubprocessorErasureResult {
   readonly resendOutcome: SubprocessorResendOutcome;
@@ -84,6 +92,14 @@ export interface SubprocessorErasureInput {
   readonly audienceContacts: ReadonlyArray<SubprocessorAudienceContact>;
   readonly tenantSlug: string;
   readonly requestId: string;
+  /**
+   * Spec 140 s3 review round 2 (R2-A) — true when the member held addresses and
+   * every one was already a scrub sentinel (`@erased.invalid`), i.e. an earlier
+   * pass committed the scrub and this pass cannot know the real address. With
+   * no pair the adapter then records `not_attempted`, not `ok`. Decided by the
+   * use case (it alone sees the addresses); required so a new caller must say.
+   */
+  readonly addressesAlreadyScrubbed: boolean;
   /**
    * Spec 140 s2a review round 1 (pdpa H-1) — the erasure cascade's deadline
    * (`erasureCascadeDeadline`, set by the erase route and `reconcile-erasures`

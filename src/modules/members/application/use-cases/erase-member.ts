@@ -385,6 +385,10 @@ export async function eraseMember(
     readonly audienceId: string;
     readonly email: string;
   }> = [];
+  // Spec 140 s3 review round 2 (R2-A) — the member held addresses and every one
+  // was already a scrub sentinel: an earlier pass committed the scrub, so an
+  // empty capture here is `not_attempted`, never `ok`.
+  let addressesAlreadyScrubbed = false;
   // Spec 140 s2d (#736b) — the DETACH instant: read just before the scrub tx
   // starts (not the pre-flight `now` above), and handed to broadcasts as the
   // `asOf` its leaked-audience cap judges the stuck rule at. Broadcasts' pass
@@ -560,6 +564,7 @@ export async function eraseMember(
       // the port already reads an empty set as no pairs, so the repo stays a
       // generic address match.
       const detachEmails = tombstoneEmails.filter((e) => !isErasedSentinelEmail(e));
+      addressesAlreadyScrubbed = tombstoneEmails.length > 0 && detachEmails.length === 0;
       capturedSubprocessorPairs =
         await deps.broadcastsAudienceDerivation.listMemberAudienceContactsInTx(
           tx,
@@ -816,14 +821,15 @@ export async function eraseMember(
       memberId,
       reason,
       audienceContacts: capturedSubprocessorPairs,
+      addressesAlreadyScrubbed,
       tenantSlug: deps.tenant.slug,
       requestId: meta.requestId,
       // Spec 140 s2a review round 1 (pdpa H-1): the same cascade deadline, so
       // the propagation's audit row is written inside the route's maxDuration.
       ...(meta.deadlineAt !== undefined ? { deadlineAt: meta.deadlineAt } : {}),
     });
-    // Emit the metric for EVERY outcome (ok/partial/failed) so a partial/failed
-    // is never silently lost (it pages the DPO runbook).
+    // Emit the metric for EVERY outcome (ok/partial/failed/not_attempted) so a
+    // partial/failed/not_attempted is never silently lost (it pages the DPO runbook).
     erasureMetrics.subprocessorErasure(sub.resendOutcome, deps.tenant.slug);
     await runInTenant(deps.tenant, async (tx) => {
       const done = await deps.audit.recordInTx(tx, deps.tenant, {

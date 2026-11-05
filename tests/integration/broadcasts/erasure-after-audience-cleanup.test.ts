@@ -234,6 +234,7 @@ describe('erasure-after-audience-cleanup (COMP-1 US3-C × PR-2 cleanup, live Neo
       audienceContacts,
       tenantSlug: tenant.ctx.slug,
       requestId: randomUUID(),
+      addressesAlreadyScrubbed: false,
     });
 
     // 4) Assertions — the cascade RESOLVED cleanly (no throw), and D4 still

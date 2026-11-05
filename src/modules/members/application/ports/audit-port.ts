@@ -100,8 +100,9 @@ export type F3AuditEventType =
   | 'member_erasure_requested'
   | 'member_erased'
   // COMP-1 US3-C (migration 0228) — best-effort sub-processor erasure
-  // propagation. Payload: { member_id, reason, resend_outcome,
-  // resend_contacts_removed_count, resend_contacts_failed_count,
+  // propagation. Payload: { member_id, reason, resend_outcome (ok / partial /
+  // failed / not_attempted), resend_contacts_removed_count,
+  // resend_contacts_already_absent_count, resend_contacts_failed_count,
   // stripe_outcome } — ids + outcomes ONLY, never erased PII. 5y retention.
   | 'subprocessor_erasure_propagated'
   // 107-auto-invoice Task 15 (migration 0263) — an admin stamped

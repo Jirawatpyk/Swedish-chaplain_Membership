@@ -109,10 +109,22 @@ export const subprocessorErasureAdapter: SubprocessorErasurePort = {
     // throw, 404s included, and that number reached the DPO's evidence card under
     // the label "Contacts removed". The gateway now discriminates, so the Art. 30
     // record can say what actually happened: N detached, M were already absent.
+    const pairs = input.audienceContacts;
+    // Spec 140 s3 review round 2 (R2-A) — nothing to try because an earlier
+    // pass already scrubbed every address: not `ok` (that reads as "in no
+    // audience"); the first pass's detach may never have run.
+    if (pairs.length === 0 && input.addressesAlreadyScrubbed) {
+      return {
+        resendOutcome: 'not_attempted',
+        resendContactsRemoved: 0,
+        resendContactsAlreadyAbsent: 0,
+        resendContactsFailed: 0,
+        stripeOutcome,
+      };
+    }
     let removed = 0;
     let alreadyAbsent = 0;
     let failed = 0;
-    const pairs = input.audienceContacts;
     for (let i = 0; i < pairs.length; i += 1) {
       // Spec 140 s2a review round 1 (pdpa H-1): the caller's deadline. One
       // request can take up to RESEND_CALL_TIMEOUT_MS, so a pair is started
