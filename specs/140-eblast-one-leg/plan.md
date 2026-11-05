@@ -2539,7 +2539,7 @@ No reviewer raised a BLOCKER. Each finding is folded into the build rows below. 
 The numbers go into D-042 and the PR. The 139 s2 gate after the merge is docs-only (sec I-8); the PR names the maintainer as its owner.
 
 **Rollback (arch M3, rel M3), replacing the line above.** A revert re-adds the flag check with the flag absent, so the legacy leg is live again, and s2's skip stops it double-sending an import row. Three effects remain:
-- (a) Rows holding import columns stay `approved` under the skip until staff cancel them. Query: `approved AND audience_import_id IS NOT NULL`.
+- (a) Rows holding import columns stay `approved` under the skip. Staff cannot cancel them: `cancel-broadcast.ts` refuses an `approved` row with `audience_import_id` as `sending_started` (found by the slice 4 docs pass). They need (c) or a roll-forward. Query: `approved AND audience_import_id IS NOT NULL`.
 - (b) The 500 clamp returns. An `approved` row with 501–900 recipients fails at dispatch, as `audience_too_large`, and the member is emailed. Query: `approved AND estimated_recipient_count > 500`.
 - (c) The cleaner alternative is a revert plus `FEATURE_F7_IMPORT_AUDIENCE=true`, which restores the import leg. Its ceiling then becomes 5,000 (50,000 with 1:N), past the Free cap.
 

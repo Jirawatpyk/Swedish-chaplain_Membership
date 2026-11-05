@@ -576,34 +576,27 @@ flows (there is no metric — this is a manual sanity check should a spike appea
 ## F7 — broadcasts/dispatch-scheduled (NEW — F7 ship)
 
 Dispatches scheduled E-Blast broadcasts whose `scheduled_for <= NOW()`
-and `status='approved'`. Expected recipient cap per tick: ≤ 5,000
-recipients per broadcast (FR-016a) × N broadcasts due in the window.
+and `status='approved'`. Expected recipient cap: ≤ `BROADCAST_AUDIENCE_CEILING`
+recipients per broadcast (default 900, FR-016a) × N broadcasts due in the window.
 
-> **108 PR-C (2026-09-07)**: the per-tick audience is built by ONE resolver
-> (compose count = submit = dispatch, SC-004) walking F3's 5,000-row keyset
-> pages; the ceiling is 5,000 unless BOTH F7.1a batching AND
-> `FEATURE_CONTACT_MARKETING_RECIPIENTS` are ON (then 50,000, and the split
-> cron takes over above 10,000) — prod has batching ON and the 1:N flag OFF.
-> **Superseded 2026-09-08 — THREE times in one day. This is the last one.**
-> First a clamp held the enforced ceiling at `min(configured, 500)` everywhere;
-> then batching made 500 a batch size and split above it; then the
-> Contacts-Import build landed and the whole batch path was deleted
-> (`ca51f59a1`). Every earlier sentence in this note about split routing or a
-> 10,000 threshold describes files that no longer exist.
+> **Current behaviour (spec 140 s4, D-042).** `dispatch-scheduled` is the ONLY
+> claimant of `approved` rows, and `buildAudienceTick` is its only leg; no flag
+> chooses a leg. ONE resolver (compose count = submit = dispatch, SC-004) builds
+> the audience by walking F3's 5,000-row keyset pages. Tick 1 hands the whole
+> audience to Resend in one Contacts-Import call (~412 ms regardless of size);
+> a later tick confirms it before sending. Each row is worked under a dispatch
+> lease, and no row starts later than `ROW_START_CUTOFF_MS` into an invocation
+> (`broadcast-audience-build.md` § C step 1). The ceiling is
+> `BROADCAST_AUDIENCE_CEILING` (default 900, bound 1–50,000), refused at submit
+> and re-checked at every tick; no flag changes it. The
+> `cron.broadcasts.dispatch.tick_complete` line logs `audienceCeiling` once per
+> tick. A tick that cannot build the audience REJECTS and the next tick retries
+> — never a partial push. Kill switches: `FEATURE_F7_BROADCASTS` and the
+> read-only guard. Triage: `docs/runbooks/broadcast-audience-build.md`.
 >
-> **Current behaviour.** `dispatch-scheduled` is the ONLY claimant of `approved`
-> rows — there is no sibling cron to partition against, so its query carries no
-> count predicate. With `FEATURE_F7_IMPORT_AUDIENCE` ON it hands the whole
-> audience to Resend in one Contacts-Import call (~412 ms regardless of size)
-> and confirms it on a later tick before sending; the accepted ceiling is 5,000,
-> or 50,000 with the 1:N flag as well. With the import OFF it runs the legacy
-> serial per-contact loop, and `currentAudienceCeiling()` clamps to
-> `DELIVERABLE_RECIPIENTS_PER_TICK = 500`, because that loop manages ~2.08 req/s
-> and cannot finish more than ~623 inside `maxDuration = 300`.
->
-> The measurement is the one durable thing across all three answers.
-> A tick that cannot build the audience REJECTS and the
-> next tick retries — never a partial push. Triage: `docs/runbooks/broadcast-audience-build.md`.
+> *History:* before spec 140 s4 a legacy per-contact leg ran while
+> `FEATURE_F7_IMPORT_AUDIENCE` was off, with the ceiling clamped to 500. The
+> F7.1a batch and split crons were deleted earlier (`ca51f59a1`).
 
 ### Setup steps (one-time, reproducible)
 

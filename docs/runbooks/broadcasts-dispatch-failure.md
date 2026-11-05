@@ -92,7 +92,7 @@ After fix is deployed:
 
 ## Prevention
 
-- Retry policy with exponential backoff (1/2/4 s, CHK020) inside one 10 s budget per call (spec 140 s2a) — a transient Resend 5xx on a GET, DELETE or `/send` is retried in the same call; a create (audience, broadcast, contact import) makes one attempt, a 429 retried, so the row stays `approved` and the next tick tries again — except on the legacy (flag-OFF) leg, whose `createBroadcast` retries a 5xx or a network failure inside the 10 s (`legacyResendBroadcastsGateway`, until slice 4). A contact import has its own 30 s budget. Neither surfaces as `failed_to_dispatch` until the FR-021 hour runs out.
+- Retry policy with exponential backoff (1/2/4 s, CHK020) inside one 10 s budget per call (spec 140 s2a) — a transient Resend 5xx on a GET, DELETE or `/send` is retried in the same call; a create (audience, broadcast, contact import) makes one attempt, a 429 retried, so the row stays `approved` and the next tick tries again. Every create retries a 429 only (spec 140 s4 deleted the legacy leg's `createBroadcast` retry of a 5xx or a network failure). A contact import has its own 30 s budget. Neither surfaces as `failed_to_dispatch` until the FR-021 hour runs out.
 - Monthly Resend quota monitoring; alert at 80% to give admin lead time to upgrade.
 - Pre-deploy verification: `pnpm test:integration tests/integration/broadcasts/` GREEN required.
 
@@ -105,8 +105,9 @@ cron tick fires:
 
 - [ ] `broadcasts.dispatch_failure_rate > 10% / 1h` → page on-call
 - [ ] `broadcasts.failed_to_dispatch.count > 0 / 5min` → alarm
-- [ ] `broadcasts.audience_drift_detected.count > 0 / 24h` → page (R5-IMP5)
-- [ ] `broadcasts.drift_check_unverifiable.count > 1 / 1h` → alarm (R5-S1)
+- [ ] `broadcasts.drift_check_unverifiable.count > 1 / 1h` → alarm (R5-S1; since spec 140 s4 the import leg's audience count read failed, `broadcasts.audience_import.membership_unverifiable`)
+- [ ] `broadcasts.audience_import_submit_ms` p99 > 15 s → alarm (half the 30 s `IMPORT_CALL_TIMEOUT_MS`)
+- *(Retired in spec 140 s4: `broadcasts.audience_drift_detected.count > 0 / 24h` (R5-IMP5). Its only emitter was the legacy leg; do not wire it.)*
 - [ ] `broadcasts.complaint_rate_per_broadcast_breach > 0 / 24h` → page
 - [ ] `broadcasts.webhook_signature_rejected > 5 / 1h` → page (signature-spoof attempt)
 

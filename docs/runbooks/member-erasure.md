@@ -82,7 +82,7 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    carries a `resend_broadcast_id`: under the row lock it deletes the Resend
    draft once, probes it once after a 404 (3 s later) or a 403, and cancels the
    row only when Resend's answers prove nothing can be sent (D-040); the
-   send-time gate refuses an erased member on both dispatch legs. Do **not** delete anything at
+   send-time gate refuses an erased member at dispatch. Do **not** delete anything at
    Resend by hand. The one case it cannot undo is an E-Blast Resend had
    **already accepted for sending** (residual **8c**). Find it from the
    evidence, not from memory:
@@ -394,13 +394,19 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    block closure of the controller-copy erasure.
 
    **(c) is new to this list and it is the one a DSR answer is most likely to get
-   wrong** (round 2 R2-2). The cascade calls
-   `DELETE /audiences/{id}/contacts/{email}`, which **DETACHES** the contact from
-   that audience — measured 2026-09-09: the call answers `{"deleted": true}`, the
-   audience-scoped read then 404s, and an audience-less `GET /contacts/{email}`
-   **still returns the contact at 200**. So the address remains in Resend's
-   contact store. The capability to delete it for real exists
-   (`deleteContactGlobally`) and is deliberately not called, because one Resend
+   wrong** (round 2 R2-2). Since spec 140 s4 the cascade calls
+   `DELETE /contacts/{email}/segments/{id}` (SDK `contacts.segments.remove`),
+   which **DETACHES** the contact from that segment (the old audience) — measured
+   2026-11-05: it answers `200 {"deleted": true}` only when the membership
+   existed, and `404` for a random segment, the wrong case or a non-member (the
+   cascade records that as `already_absent`). The earlier wire,
+   `DELETE /audiences/{id}/contacts/{email}`, was measured 2026-09-09 to detach
+   the same way: an audience-less `GET /contacts/{email}` **still returns the
+   contact at 200**. So the address remains in Resend's contact store. A global
+   delete (`DELETE /contacts/{email}`) was measured 2026-09-09 to delete the
+   contact for real; the gateway method that could make it was removed in spec
+   140 s4, and the DR4 contract guard fails any `DELETE /contacts/{email}`. It is
+   deliberately not made, because one Resend
    account is shared across tenants — see `processing-records.md` residual 8a for
    the owner, the review date and the revisit condition. **A DSR answer must say
    the address may remain in the processor's contact store.**
@@ -932,6 +938,12 @@ When the alert fires:
      Either way, nothing reached Resend: search the Resend dashboard for the
      member's address from the DSR intake record and remove it from every
      audience it is still in.
+   - **`gatewayCode: detach_unconfirmed`** (`gatewayKind: permanent`; spec 140
+     slice 4) — Resend answered 200 to the detach without `deleted: true`. That
+     shape has never been measured (every measured 200 carried it, 2026-11-05),
+     so the pair is counted failed rather than removed. Check the member's address
+     in the Resend dashboard (Contacts, then its segments) and remove it from the
+     logged segment by hand.
    - **`gatewayKind: retryable`** (retries exhausted) — Resend answered a transient error
      on every attempt inside the call's 10 s budget (spec 140 s2a: up to four
      attempts; `subKind: timeout` = Resend did not answer within 10 s). A non-JSON answer (an edge's or proxy's HTML page,

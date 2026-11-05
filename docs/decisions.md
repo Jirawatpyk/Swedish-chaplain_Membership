@@ -234,9 +234,35 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
   - Claude does not present a plan without them (`feature-flow` § 3); `spec-compliance-auditor` reports a missing one as a Medium finding.
 - *Consequence*: `docs/workflow.md` step 1, `feature-flow`, the plan template, the auditor and the broadcasts rule carry the rule. The legacy-leg retirement decision planned for spec 140 takes the next number (D-042).
 
+**D-042 — E-Blast keeps one dispatch leg, the Contacts-Import leg; the legacy leg and `FEATURE_F7_IMPORT_AUDIENCE` are deleted** (decided 2026-10-30; written 2026-11-05, spec 140 slice 4)
+- *Context*: E-Blast had two dispatch legs, chosen per cron tick by `FEATURE_F7_IMPORT_AUDIENCE`:
+  - the legacy leg (`dispatch-scheduled-broadcast.ts`, a per-contact push, live while the flag was OFF);
+  - the Contacts-Import leg (`build-audience-tick.ts`, dark).
+
+  Every fix in specs 138 and 139 was made twice, once per leg. The legacy leg held no lease. Prod held 0 `broadcasts` rows on 2026-10-30 (D-041).
+- *Decision* (the maintainer, 30 Oct 2026; the slice order on 31 Oct 2026):
+  - Keep only the import leg, after it gained a lease and fencing token (spec 140 s2), erasure reach to its drafts (s1, s2c) and correct Resend reads (s3).
+  - Spec 140 s4 deletes the legacy use case, its deps maker, the legacy gateway instance, `addContactsToAudience`, `deleteContactGlobally` and the flag. The import leg is live for every tenant at deploy; `FEATURE_F7_BROADCASTS` and the cron's read-only guard remain the kill switches.
+  - **The audience ceiling.** `BROADCAST_AUDIENCE_CEILING` sets it: default 900, bound 1–50,000, refused at submit. Without it the ceiling would have jumped to 5,000.
+    - The bound stays at 50,000 (the maintainer, 5 Nov 2026), not 1,000. An over-cap value fails that E-Blast terminally, with a reason and a member notice.
+    - A tighter bound would only refuse earlier, and an env value above it would refuse boot for the whole app.
+    - A value above about 1,000 needs a Resend plan upgrade, and a new measurement of the import timing and the resolve budget (`_dispatch-lease.ts`).
+  - **The Resend SDK calls use the Segments names.** The port method names and the `resend_audience_id` columns stay. The erasure detach moves to `DELETE /contacts/{email}/segments/{id}`, measured 2026-11-05.
+  - **The contract suite fails any `DELETE /contacts/{email}` (DR4).**
+- *Rejected*: retiring the legacy leg first (it would have flipped the import leg live without a lease, which D-038 forbids); keeping both legs behind the flag (every fix twice); renaming the port to Segments (churn with no Done-when line behind it).
+- *Prod count before merge* (D-034, a read-only probe the maintainer orders): pending. It is written here and in the PR before the merge. The merge waits while any `approved` row is due within 15 minutes.
+- *Rollback*: a revert re-adds the flag check with the flag absent, so the legacy leg is live again. s2's skip stops it touching an import row. Three effects remain:
+  - rows holding import columns stay `approved` under the skip, and staff cannot cancel them (`cancel-broadcast.ts` refuses an `approved` row with `audience_import_id` as `sending_started`); they need (c) or a roll-forward;
+  - the 500 clamp returns, so an `approved` row with 501–900 recipients fails at dispatch and the member is emailed;
+  - a revert plus `FEATURE_F7_IMPORT_AUDIENCE=true` restores the import leg instead, but with a ceiling of 5,000, past the Free cap.
+
+  Runbook `broadcast-audience-build` has the queries.
+- *Consequence*:
+  - The real Resend bound is the Free plan's 1,000 contacts, team-wide and cumulative. Every distinct address ever imported stays, and no code path deletes it. The ceiling bounds one E-Blast only. go-live § 6.10 reads the contact count before the first prod E-Blast.
+  - 139 slice 2 (the Art. 30 audit events) merges before the first prod E-Blast through the import leg. The gate is dated in `operational-state.md`.
+
 **D-043 — A finding can be carried to the slice that owns it; review rounds are targeted from round 3 and capped by size; docs-only changes get no code review** (2026-10-31)
 
-*D-042 is reserved for spec 140's legacy-leg retirement decision (D-041, Consequence). It is written in slice 4, so D-043 comes first in this file.*
 
 - *Context*:
   - Spec 140 slice 1 took seven `/code-review high` rounds. They returned 10, 9, 10, 10, 9, 9, then 0 items. The design had been agreed, and the first live Verify passed.

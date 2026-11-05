@@ -195,8 +195,8 @@ free (`quota_year_consumed` stays NULL). The member submits a new E-Blast if the
 
 ## Dispatch standing refusal
 
-F119 PR-A — unflagged, so it applies to every F7 send, flag on or off. Just before any Resend
-call, both dispatch legs re-read the rules submit applies (`decideDispatchStanding` →
+F119 PR-A — unflagged, so it applies to every F7 send. Just before any Resend
+call, the dispatch leg re-reads the rules submit applies (`decideDispatchStanding` →
 `readMemberSendStanding`): the F7 halt flag and F8 membership access. The approval edges read
 them too, but an E-Blast can sit `approved` for days, and a refund or full credit note ends
 coverage at once (`0306`).
@@ -219,7 +219,7 @@ The answer is one of three (the maintainer's decision, R1):
 | Audit | **none** (a row every 5 min would bury the log) | `broadcast_failed_to_dispatch` **and** `broadcast_member_halted_pending_review` / `broadcast_membership_suspended_blocked` with `surface: 'dispatch'`, actor `system:cron`, `actor_role: null` (one tx). The membership row also carries `access` — always `terminated` here (a suspended member is held); at submit / approve / schedule confirm it is `suspended` or `terminated` | none |
 | Member | nothing | the FR-021 "did not go out" email: a factual reason, "contact the chamber", and that they can submit the content as a new E-Blast once the chamber has resolved it | nothing |
 | Quota | unchanged (still reserved) | the slot is released (design D1) | unchanged (still reserved) |
-| Logs / metrics | `broadcasts.dispatch.standing_held` (info; `broadcastId`, `leg`) + `broadcasts_dispatch_standing_held_total` (+1 per tick); the cron summary's `held` bucket | `broadcasts_failed_to_dispatch_count{failure_reason="member_ineligible"}` — never `app_error` | `broadcasts_dispatch_resolve_failed_total{phase="standing"}` + a `cron.broadcasts.dispatch.server_error` warn with `errClass` |
+| Logs / metrics | `broadcasts.dispatch.standing_held` (info; `broadcastId`, `leg` — always `import` since spec 140 s4) + `broadcasts_dispatch_standing_held_total` (+1 per tick); the cron summary's `held` bucket | `broadcasts_failed_to_dispatch_count{failure_reason="member_ineligible"}` — never `app_error` | `broadcasts_dispatch_resolve_failed_total{phase="standing"}` + a `cron.broadcasts.dispatch.server_error` warn with `errClass` |
 
 **How a held row resumes.** Nothing to do by hand. The moment the member pays and the cycle
 completes, F8 answers `full` and the next tick sends — after `scheduled_for`, by however long the
@@ -236,7 +236,7 @@ handed over and cancel / re-time answer `sending_started` — wait one tick (5 m
 - `broadcasts_approved_overdue_count` counts a held row after an hour and its alarm (≥ 1 for 30
   min) stays on for the whole hold. `broadcasts_dispatch_standing_held_total` climbing for the
   same tenant means "waiting for payment", not "stuck".
-- **Import leg only** (`FEATURE_F7_IMPORT_AUDIENCE` on): a hold **abandons the audience build**,
+- **The audience build:** a hold **abandons the audience build**,
   in an order that makes the row the mutex (2026-10-29 — the dispatch cron then held no lease; since
   spec 140 s2b one import tick holds the row's dispatch lease, but a holder whose lease expired can
   still be mid-send, and
@@ -254,7 +254,7 @@ handed over and cancel / re-time answer `sending_started` — wait one tick (5 m
   (info) + `broadcasts_audience_import_abandoned_on_hold_total` (+1 once per hold). A row whose
   send was already handed to Resend (the probe answers `queued` / `sending` / `sent`) is never
   held at all: the tick catches it up to `sending` instead.
-- **Import leg only — abandon stopped.** `broadcasts.audience_import.hold_abandon_failed` (warn,
+- **Abandon stopped.** `broadcasts.audience_import.hold_abandon_failed` (warn,
   `step` = `release_import`, `delete_broadcast`, `delete_audience` or `release_audience`, `err` =
   class only, `errorKind` = the gateway class): a step failed and the hold stopped there. Nothing
   is ever left where no row points at it — the broadcast (which holds the body and the member's
@@ -268,12 +268,12 @@ handed over and cancel / re-time answer `sending_started` — wait one tick (5 m
   `release_audience`): another writer moved the row first (a sending tick's fenced write, a cancel,
   a transition) — after a lost claim the hold deletes NOTHING; nothing to do. See
   `broadcast-audience-build.md` § C.4.
-- **Both legs:** a hold does not spend the FR-021 retry budget. Since migration `0311` (F119
+- **The retry budget:** a hold does not spend the FR-021 retry budget. Since migration `0311` (F119
   PR-E) the hour counts from the FIRST retryable Resend failure of the dispatch attempt
   (`broadcasts.dispatch_first_failed_at`), not from `scheduled_for`, so a row resuming days late
   gets its full hour. The column is reset on every status change, on a re-time, on every held tick
   (a hold's only other write is abandoning a pending import — no audit row, no email; a failed reset logs
-  `broadcasts.{dispatch,audience_import}.retry_clock_clear_failed` and the tick is still held)
+  `broadcasts.audience_import.retry_clock_clear_failed` and the tick is still held)
   and right after a successful `sendBroadcast`. So a failure → a two-day hold → payment → one blip
   is a fresh hour, not `retry_budget_exhausted`.
 - **Residual — a read-only freeze does NOT reset the clock.** A paused cron cannot write, so a row
@@ -290,13 +290,13 @@ handed over and cancel / re-time answer `sending_started` — wait one tick (5 m
   `round_zero`) and a row a tick already handed to Resend (`resend_broadcast_id` or
   `audience_import_id` set → `sending_started`). A re-time clears the clock only on a round ≥ 1
   row with neither id (`cron-jobs.md` § Read-only mode).
-- **A retryable failure of the inherited-id probe is never budgeted** (both legs; review M1 — the
-  import leg since S8). The probe runs only when an earlier tick minted the Resend broadcast, and
+- **A retryable failure of the inherited-id probe is never budgeted** (review M1; the import leg
+  since S8). The probe runs only when an earlier tick minted the Resend broadcast, and
   an unanswered probe cannot say whether that mail already went out — so it retries every tick
-  (`broadcasts.{dispatch,audience_import}.inherited_probe_retryable`, warn) instead of going
+  (`broadcasts.audience_import.inherited_probe_retryable`, warn) instead of going
   terminal and telling the member a delivered E-Blast failed. The operator signal for a probe that
-  never answers is `broadcasts_approved_overdue_count`, as for the `inherited_status` refusal (on
-  the import leg it also counts `broadcasts_dispatch_resolve_failed_total{phase="gateway"}`).
+  never answers is `broadcasts_approved_overdue_count`, as for the `inherited_status` refusal (it
+  also counts `broadcasts_dispatch_resolve_failed_total{phase="gateway"}`).
 - **Rolling PR-E back:** `vercel promote` leaves the `dispatch_first_failed_at` column in place and
   the old code never clears it, so a row stamped by the new code and then re-approved under the
   old code keeps a stale stamp after the redeploy — after such a rollback-and-redeploy, run
@@ -308,10 +308,10 @@ handed over and cancel / re-time answer `sending_started` — wait one tick (5 m
 A refusal is **permanent by the maintainer's rule, halted members included**: there is no edge out
 of `failed_to_dispatch`, and clearing a halt does not revive the row. A halt is re-read UNCACHED
 before it refuses (the cron memoises the halt list per tick), so a halt cleared mid-tick is not made
-permanent by the memo. Mail a prior tick already handed to Resend is never refused: both legs
-persist the minted `resend_broadcast_id` BEFORE the send and probe it on re-entry (the import leg
-since S8, 2026-10-29), so an id the probe finds `queued` / `sending` / `sent` skips the gate. That
-includes a legacy-leg row carried across a flag flip — the import leg probes it like its own.
+permanent by the memo. Mail a prior tick already handed to Resend is never refused: the dispatch
+leg persists the minted `resend_broadcast_id` BEFORE the send and probes it on re-entry (since S8,
+2026-10-29), so an id the probe finds `queued` / `sending` / `sent` skips the gate. That includes
+a row the legacy leg left before spec 140 s4 — the import leg probes it like its own.
 
 **What staff do**
 
