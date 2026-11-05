@@ -2301,6 +2301,12 @@ DT1 + DT2 (with the reason copy) → DT3 + the status readers → DT4 → DT5 �
 - DT4: `assertSegmentId` (case-insensitive UUID, no trim) runs after `assertNonEmpty` in `removeContactFromAudience` only; a refused id is a failed pair in the adapter, so the erasure reads failed/partial and is re-driven. The runbook now tells a DSR answer to cite `resend_contacts_removed_count` as detach requests Resend accepted (pdpa checks the wording); the 2026-09-10 "structurally 0" box holds only if Resend answers 404 for an address it never held, which is unmeasured.
 - DT5: `RECLAIM_DEADLINE_MARGIN_MS` = 30 s lives in the use case (Next rejects unknown route exports); `deadlineAt` = start + 300 s − 30 s. Reclaim is the only `listAudiences` caller. New counter `broadcasts_audience_reclaim_truncated_total{tenant, stage}` with a § 22.3 alarm and cron-jobs runbook rows. A run deletes less, never more.
 
+#### Build notes, Rotation / DT6 (5 Nov 2026)
+- Markers come from the real `eraseMember` (F6 stubbed `failed` keeps the member stuck; a second call is the re-drive). The precondition held: every re-drive wrote a marker.
+- **Plan correction, index.** EXPLAIN on dev uses `audit_log_member_id_idx` (same `payload ? 'member_id'` predicate) BitmapAnd `audit_log_tenant_event_ts_idx`, not `audit_log_member_timeline_idx`. A partial index is still used.
+- **Plan correction, the tenant filter's reason.** Under `runInTenant` the audit_log policy (`tenant_id IS NULL OR tenant_id = current_setting(...)`, FORCE) already hides tenant B; a mutation removing `al.tenant_id = ${slug}` stayed green. The filter stays, and is required to exclude NULL-tenant rows, not because the policy is PERMISSIVE. The cross-tenant test proves the two layers together.
+- Runbook: `member-erasure.md` names the rotation and its two residual holes (pdpa M-3).
+
 #### Housekeeping
 - Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
 - For slice 4, not slice 3: `deleteContactGlobally` (`gateway:772`) has no caller but still sends `DELETE /contacts/{email}`; s4 removes it.
