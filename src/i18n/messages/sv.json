@@ -8441,6 +8441,7 @@
       },
       "reassurance": "Utskicket har inte dragits från din årliga kvot – platsen har frigjorts. Det kan inte skickas på nytt; skicka in ett nytt utskick om du vill skicka innehållet.",
       "reassuranceStanding": "Utskicket har inte dragits från din årliga kvot – platsen har frigjorts. När handelskammaren har löst detta med dig kan du skicka in innehållet igen som ett nytt utskick.",
+      "reassuranceHeld": "Utskicket har inte dragits från din årliga kvot – platsen har frigjorts. Ditt medlemskap är för närvarande pausat; när det är aktivt igen kan du skicka in innehållet som ett nytt utskick.",
       "ctaRescheduleLabel": "Öppna utskicksdetaljer",
       "footerSignOff": "Om du behöver hjälp, vänligen kontakta din kammaradministratör."
     },

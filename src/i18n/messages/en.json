@@ -8441,6 +8441,7 @@
       },
       "reassurance": "This E-Blast did not count against your annual allowance — the slot has been released. It cannot be sent again as it is; to send this content, please submit a new E-Blast.",
       "reassuranceStanding": "This E-Blast did not count against your annual allowance — the slot has been released. Once the chamber has resolved this with you, you can submit the content again as a new E-Blast.",
+      "reassuranceHeld": "This E-Blast did not count against your annual allowance — the slot has been released. Your membership is currently suspended; once it is active again, you can submit the content again as a new E-Blast.",
       "ctaRescheduleLabel": "Open broadcast detail",
       "footerSignOff": "If you need help, please contact your chamber administrator."
     },

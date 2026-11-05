@@ -409,6 +409,8 @@ async function buildPayload(
         scheduledFor,
         reason,
         locale,
+        // Spec 140 s3 review round 1 (R1-E) — a positive literal only.
+        ...(ctx.memberStanding === 'held' ? { memberStanding: 'held' as const } : {}),
       });
     }
     case 'member_change_request_submitted_staff': {

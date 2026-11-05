@@ -1079,9 +1079,14 @@ async function applySendStanding(
         observed: null,
         expected: null,
       },
-      broadcast.resendBroadcastId === null
-        ? {}
-        : { knownProbedStatus: { resendBroadcastId: broadcast.resendBroadcastId, status: 'cancelled' } },
+      {
+        ...(broadcast.resendBroadcastId === null
+          ? {}
+          : { knownProbedStatus: { resendBroadcastId: broadcast.resendBroadcastId, status: 'cancelled' } }),
+        // Review round 1 (R1-E) — a suspended member cannot submit a new
+        // E-Blast now, so the email's quota line says when they can.
+        ...(standing.kind === 'hold' ? { notifyMemberStanding: 'held' } : {}),
+      },
     );
   }
   if (standing.kind === 'send') return null;
@@ -3049,6 +3054,12 @@ async function failTerminally(
      * cleared without a second GET. Honoured only for the same id.
      */
     readonly knownProbedStatus?: KnownProbedStatus;
+    /**
+     * Spec 140 s3 review round 1 (R1-E) — the member's standing when it is not
+     * `send`: DT2's hold arm passes `'held'`, so the email's quota line says a
+     * new E-Blast can be submitted once the membership is active again.
+     */
+    readonly notifyMemberStanding?: 'held';
   } = {},
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   // Spec 140 s2c, item 4 (pdpa M-1) — THE CHOKE POINT: no terminal row on this
@@ -3260,7 +3271,13 @@ async function failTerminally(
   // cannot act on is worse than silence — the same judgement the cleanup-failed
   // branch above already makes.
   if (notifyMember) {
-    await enqueueDispatchFailureNotification({ deps, broadcast, reason, now });
+    await enqueueDispatchFailureNotification({
+      deps,
+      broadcast,
+      reason,
+      now,
+      ...(opts.notifyMemberStanding !== undefined ? { memberStanding: opts.notifyMemberStanding } : {}),
+    });
   }
 
   // Round 4 F5 — the recorded state is the same either way; only the kind the
