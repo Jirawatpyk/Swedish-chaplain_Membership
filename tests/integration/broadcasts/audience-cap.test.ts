@@ -1,5 +1,10 @@
 /**
- * T049 — Integration test for FR-016a / Q7 — 5,000 recipient hard cap.
+ * T049 — Integration test for FR-016a / Q7 — the recipient hard cap.
+ *
+ * Spec 140 s4 (DR3): the numbers are the 900 default of
+ * `BROADCAST_AUDIENCE_CEILING`. The ceiling is INJECTED into the resolver here,
+ * so this file pins the resolver's comparison, not the env wiring; that half is
+ * `tests/unit/broadcasts/infrastructure/broadcasts-deps-audience.test.ts`.
  *
  * Verifies the cap at BOTH submission boundary AND resolver boundary
  * (defence-in-depth per FR-016a) by exercising `resolveSegmentRecipients`
@@ -106,10 +111,10 @@ function makeBridges(members: ReadonlyArray<MemberRecipient>): {
 const SEG_ALL = { kind: 'all_members' as const };
 
 describe('audience-cap integration (T049)', () => {
-  it('5,001 members on all_members → broadcast_audience_too_large', async () => {
-    const bridges = makeBridges(makeMembers(5001));
+  it('901 members on all_members → broadcast_audience_too_large', async () => {
+    const bridges = makeBridges(makeMembers(901));
     const r = await resolveSegmentRecipients(
-      { tenant, audienceMode: 'primary_only' as const, audienceCeiling: 5000, ...bridges },
+      { tenant, audienceMode: 'primary_only' as const, audienceCeiling: 900, ...bridges },
       {
         segment: SEG_ALL,
         phase: 'dispatch',
@@ -121,16 +126,16 @@ describe('audience-cap integration (T049)', () => {
     if (!r.ok) {
       expect(r.error.kind).toBe('broadcast_audience_too_large');
       if (r.error.kind === 'broadcast_audience_too_large') {
-        expect(r.error.cap).toBe(5000);
-        expect(r.error.count).toBe(5001);
+        expect(r.error.cap).toBe(900);
+        expect(r.error.count).toBe(901);
       }
     }
   });
 
-  it('5,000 members exactly → succeeds (boundary)', async () => {
-    const bridges = makeBridges(makeMembers(5000));
+  it('900 members exactly → succeeds (boundary)', async () => {
+    const bridges = makeBridges(makeMembers(900));
     const r = await resolveSegmentRecipients(
-      { tenant, audienceMode: 'primary_only' as const, audienceCeiling: 5000, ...bridges },
+      { tenant, audienceMode: 'primary_only' as const, audienceCeiling: 900, ...bridges },
       {
         segment: SEG_ALL,
         phase: 'dispatch',
@@ -139,13 +144,13 @@ describe('audience-cap integration (T049)', () => {
       },
     );
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.recipients.length).toBe(5000);
+    if (r.ok) expect(r.value.recipients.length).toBe(900);
   });
 
-  it('4,999 members → succeeds', async () => {
-    const bridges = makeBridges(makeMembers(4999));
+  it('899 members → succeeds', async () => {
+    const bridges = makeBridges(makeMembers(899));
     const r = await resolveSegmentRecipients(
-      { tenant, audienceMode: 'primary_only' as const, audienceCeiling: 5000, ...bridges },
+      { tenant, audienceMode: 'primary_only' as const, audienceCeiling: 900, ...bridges },
       {
         segment: SEG_ALL,
         phase: 'dispatch',
@@ -154,18 +159,18 @@ describe('audience-cap integration (T049)', () => {
       },
     );
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.recipients.length).toBe(4999);
+    if (r.ok) expect(r.value.recipients.length).toBe(899);
   });
 
   it('cap applies AFTER suppression filter (counts post-suppression)', async () => {
-    // 5005 candidates; suppress 6 → 4999 final → succeed
-    const allMembers = makeMembers(5005);
+    // 905 candidates; suppress 6 → 899 final → succeed
+    const allMembers = makeMembers(905);
     const suppressedSet = new Set(allMembers.slice(0, 6).map((m) => m.primaryContactEmail as string));
     const r = await resolveSegmentRecipients(
       {
         tenant,
         audienceMode: 'primary_only' as const,
-        audienceCeiling: 5000,
+        audienceCeiling: 900,
         membersBridge: makeBridges(allMembers).membersBridge,
         eventAttendees: makeBridges(allMembers).eventAttendees,
         marketingUnsubscribes: {
@@ -195,14 +200,14 @@ describe('audience-cap integration (T049)', () => {
       },
     );
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.recipients.length).toBe(4999);
+    if (r.ok) expect(r.value.recipients.length).toBe(899);
   });
 
   it('cap applies AFTER self-exclusion (Q16)', async () => {
-    // 5001 candidates with self → 5000 after exclusion → succeed
-    const all = makeMembers(5001);
+    // 901 candidates with self → 900 after exclusion → succeed
+    const all = makeMembers(901);
     const r = await resolveSegmentRecipients(
-      { tenant, audienceMode: 'primary_only' as const, audienceCeiling: 5000, ...makeBridges(all) },
+      { tenant, audienceMode: 'primary_only' as const, audienceCeiling: 900, ...makeBridges(all) },
       {
         segment: SEG_ALL,
         phase: 'dispatch',
@@ -211,7 +216,7 @@ describe('audience-cap integration (T049)', () => {
       },
     );
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.recipients.length).toBe(5000);
+    if (r.ok) expect(r.value.recipients.length).toBe(900);
   });
 
   // ---- DB CHECK constraint defence-in-depth -------------------------
