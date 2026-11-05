@@ -5,11 +5,17 @@
  * dev branch all belong to throw-away `test-*` tenants, and the cron sweeps
  * swecham only, so without this seed the live close never runs.
  *
- * What it seeds (idempotent — a re-run reuses every row and the Stripe PI):
+ * What it seeds. A re-run reuses the current GENERATION's rows and Stripe PI
+ * and resets its orphan. Once a real refund has run on a generation's payment
+ * (its payment is no longer `succeeded`, its invoice is no longer `paid`, or a
+ * refund row other than its orphan exists), that fixture is spent — its credit note is
+ * immutable, so it is never deleted — and the next run starts generation N+1
+ * on another eligible invoice, with new ids. Old generations stay as they are.
  *   1. A real Stripe TEST-MODE PaymentIntent on swecham's connected account,
  *      confirmed with `pm_card_visa` for the invoice total (so it is
  *      `succeeded` and genuinely refundable at Stripe). A re-run retrieves the
- *      PI already on the payment row instead of creating another one.
+ *      PI already on the payment row instead of creating another one; the
+ *      Stripe idempotency key is per payment id.
  *   2. A `payments` row (`succeeded`, that PI + its charge id) on a PAID
  *      swecham membership invoice that has no active payment yet (the
  *      `payments_one_active_per_invoice` index allows one). Pass
@@ -56,9 +62,44 @@ const TENANT_SLUG = process.env.TENANT_SLUG ?? 'swecham';
 const SEED_ACTOR_EMAIL = 'e2e-admin@swecham.test';
 const FIXTURE_ACCOUNT_PLACEHOLDER = 'acct_test_e2e_fixture';
 
-// Deterministic ids (`RE_ULID_LIKE`-safe: no i / l / o / u).
-const PAYMENT_ID = 'pmt_e2e_f5_rfndabe_card_xxxxxxxxxx';
-const ORPHAN_REFUND_ID = 'rfnd_e2e_f5_stab_pndng_xxxxxxxxxxx';
+// Deterministic ids per generation (`RE_ULID_LIKE`-safe: no i / l / o / u).
+// Generation 1 keeps the original ids; later ones end in `g` + digits.
+const PAYMENT_ID_PREFIX = 'pmt_e2e_f5_rfndabe_card_';
+const ORPHAN_REFUND_ID_PREFIX = 'rfnd_e2e_f5_stab_pndng_';
+
+interface Generation {
+  readonly n: number;
+  readonly paymentId: string;
+  readonly orphanRefundId: string;
+}
+
+const GEN1_PAYMENT_SUFFIX = 'xxxxxxxxxx';
+const GEN1_ORPHAN_SUFFIX = 'xxxxxxxxxxx';
+
+/** Later generations keep generation 1's id length: `g` + zero-padded n. */
+function generation(n: number): Generation {
+  if (n === 1) {
+    return {
+      n,
+      paymentId: `${PAYMENT_ID_PREFIX}${GEN1_PAYMENT_SUFFIX}`,
+      orphanRefundId: `${ORPHAN_REFUND_ID_PREFIX}${GEN1_ORPHAN_SUFFIX}`,
+    };
+  }
+  return {
+    n,
+    paymentId: `${PAYMENT_ID_PREFIX}g${String(n).padStart(GEN1_PAYMENT_SUFFIX.length - 1, '0')}`,
+    orphanRefundId: `${ORPHAN_REFUND_ID_PREFIX}g${String(n).padStart(GEN1_ORPHAN_SUFFIX.length - 1, '0')}`,
+  };
+}
+
+/** The generation number of one of our payment ids, or null for any other id. */
+function generationOf(paymentId: string): number | null {
+  if (!paymentId.startsWith(PAYMENT_ID_PREFIX)) return null;
+  const suffix = paymentId.slice(PAYMENT_ID_PREFIX.length);
+  if (suffix === GEN1_PAYMENT_SUFFIX) return 1;
+  const m = /^g(\d+)$/.exec(suffix);
+  return m ? Number(m[1]) : null;
+}
 const ORPHAN_AMOUNT_SATANG = 10_000n; // 100 THB
 const ORPHAN_AGE_MS = 25 * 60 * 60 * 1000;
 
@@ -106,27 +147,67 @@ async function seedActorUserId(): Promise<string> {
 }
 
 interface Target {
+  readonly gen: Generation;
+  /** Why the previous generation can no longer be reused, when it can't. */
+  readonly spentBecause: string | null;
   /** The PI already on the seeded payment row, when a previous run made it. */
   readonly existingIntentId: string | null;
-  readonly existingStatus: string | null;
   readonly invoiceId: string;
   readonly memberId: string;
   readonly docNumber: string;
   readonly totalSatang: bigint;
 }
 
-/** A paid membership invoice the payment row can sit on (or already sits on). */
+/**
+ * The generation to (re)seed, and the paid membership invoice its payment
+ * sits on (or will sit on).
+ */
 async function findTarget(ctx: TenantContext): Promise<Target> {
   return runInTenant(ctx, async (tx) => {
-    const existing = await tx
+    const seeded = await tx
       .select({
+        id: payments.id,
         invoiceId: payments.invoiceId,
         intentId: payments.processorPaymentIntentId,
         status: payments.status,
+        invoiceStatus: invoices.status,
       })
       .from(payments)
-      .where(and(eq(payments.tenantId, ctx.slug), eq(payments.id, PAYMENT_ID)))
-      .limit(1);
+      .innerJoin(
+        invoices,
+        and(eq(invoices.tenantId, payments.tenantId), eq(invoices.invoiceId, payments.invoiceId)),
+      )
+      .where(
+        and(eq(payments.tenantId, ctx.slug), sql`starts_with(${payments.id}, ${PAYMENT_ID_PREFIX})`),
+      );
+    let latest: ((typeof seeded)[number] & { n: number }) | undefined;
+    for (const row of seeded) {
+      const n = generationOf(row.id);
+      if (n !== null && (latest === undefined || n > latest.n)) latest = { ...row, n };
+    }
+    // A generation is reusable only while nothing real has touched it: its
+    // payment is `succeeded`, its invoice still `paid` (no credit note), and
+    // it has no refund row besides its own orphan. Otherwise a reset orphan
+    // could exceed what is left to refund, or sit beside a real refund.
+    let spentBecause: string | null = null;
+    if (latest !== undefined) {
+      const otherRefunds = await tx
+        .select({ id: refunds.id })
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.tenantId, ctx.slug),
+            eq(refunds.paymentId, latest.id),
+            sql`${refunds.id} <> ${generation(latest.n).orphanRefundId}`,
+          ),
+        )
+        .limit(1);
+      if (latest.status !== 'succeeded') spentBecause = `its payment is ${latest.status}`;
+      else if (latest.invoiceStatus !== 'paid') spentBecause = `its invoice is ${latest.invoiceStatus}`;
+      else if (otherRefunds.length > 0) spentBecause = 'a real refund exists on its payment';
+    }
+    const gen = generation(latest === undefined ? 1 : spentBecause ? latest.n + 1 : latest.n);
+    const reuse = latest !== undefined && spentBecause === null ? latest : undefined;
     const wantedDoc = process.env.F5_REFUNDABLE_INVOICE_DOC;
     const candidates = await tx
       .select({
@@ -143,8 +224,8 @@ async function findTarget(ctx: TenantContext): Promise<Target> {
           eq(invoices.status, 'paid'),
           // A membership invoice (event-fee bills carry no member).
           sql`${invoices.memberId} IS NOT NULL`,
-          existing[0]
-            ? eq(invoices.invoiceId, existing[0].invoiceId)
+          reuse
+            ? eq(invoices.invoiceId, reuse.invoiceId)
             : and(
                 wantedDoc
                   ? sql`(${invoices.documentNumber} = ${wantedDoc} OR ${invoices.billDocumentNumberRaw} = ${wantedDoc})`
@@ -169,8 +250,9 @@ async function findTarget(ctx: TenantContext): Promise<Target> {
       );
     }
     return {
-      existingIntentId: existing[0]?.intentId ?? null,
-      existingStatus: existing[0]?.status ?? null,
+      gen,
+      spentBecause,
+      existingIntentId: reuse?.intentId ?? null,
       invoiceId: row.invoiceId,
       memberId: row.memberId,
       docNumber: row.documentNumber ?? row.billDocumentNumberRaw ?? row.invoiceId,
@@ -196,12 +278,22 @@ async function confirmedTestIntent(
       payment_method: 'pm_card_visa',
       payment_method_types: ['card'],
       confirm: true,
-      metadata: { tenantId: 'swecham', invoiceId: target.invoiceId, paymentId: PAYMENT_ID, seed: 'f5-e2e-refundable' },
+      metadata: { tenantId: 'swecham', invoiceId: target.invoiceId, paymentId: target.gen.paymentId, seed: 'f5-e2e-refundable' },
     },
-    { idempotencyKey: `seed-f5-refundable-${target.invoiceId}`, ...onBehalf },
+    // Per payment id AND invoice: a generation number recomputed after its
+    // rows were deleted never replays an older intent onto another invoice.
+    { idempotencyKey: `seed-f5-refundable-${target.gen.paymentId}-${target.invoiceId}`, ...onBehalf },
   );
   if (pi.status !== 'succeeded' || typeof pi.latest_charge !== 'string') {
     throw new Error(`seed-f5-e2e-refundable: test PaymentIntent ${pi.id} is ${pi.status}, expected succeeded.`);
+  }
+  // A replayed intent can be `succeeded` with its charge already refunded:
+  // never seed a "refundable" payment on money that was returned.
+  const charge = await stripe.charges.retrieve(pi.latest_charge, undefined, onBehalf);
+  if (charge.amount_refunded > 0) {
+    throw new Error(
+      `seed-f5-e2e-refundable: test PaymentIntent ${pi.id} has refunds at Stripe already. Its rows were likely deleted on dev; set F5_REFUNDABLE_INVOICE_DOC to another paid invoice.`,
+    );
   }
   return { id: pi.id, chargeId: pi.latest_charge };
 }
@@ -211,10 +303,9 @@ async function main(): Promise<void> {
   const account = await connectedAccount(ctx);
   const actorUserId = await seedActorUserId();
   const target = await findTarget(ctx);
-  if (target.existingStatus !== null && target.existingStatus !== 'succeeded') {
-    throw new Error(
-      `seed-f5-e2e-refundable: the seeded payment is now ${target.existingStatus} (a real refund ran on it), so a reset orphan could exceed what is left to refund. Delete ${PAYMENT_ID} on dev to start over.`,
-    );
+  const { gen } = target;
+  if (target.spentBecause !== null) {
+    console.log(`starting generation ${gen.n} (generation ${gen.n - 1} is spent: ${target.spentBecause})`);
   }
   const pi = await confirmedTestIntent(account, target);
   const now = Date.now();
@@ -223,7 +314,7 @@ async function main(): Promise<void> {
     await tx
       .insert(payments)
       .values({
-        id: PAYMENT_ID,
+        id: gen.paymentId,
         tenantId: ctx.slug,
         invoiceId: target.invoiceId,
         memberId: target.memberId,
@@ -243,7 +334,7 @@ async function main(): Promise<void> {
         initiatedAt: new Date(now - 2 * ORPHAN_AGE_MS),
         completedAt: new Date(now - 2 * ORPHAN_AGE_MS),
         actorUserId,
-        correlationId: `seed-f5-refundable-${target.invoiceId}`,
+        correlationId: `seed-f5-refundable-${gen.paymentId}`,
       })
       .onConflictDoNothing({ target: payments.id });
 
@@ -251,11 +342,11 @@ async function main(): Promise<void> {
     // re-exercise the close after a sweep flipped it `failed`.
     await tx
       .delete(refunds)
-      .where(and(eq(refunds.tenantId, ctx.slug), inArray(refunds.id, [ORPHAN_REFUND_ID])));
+      .where(and(eq(refunds.tenantId, ctx.slug), inArray(refunds.id, [gen.orphanRefundId])));
     await tx.insert(refunds).values({
-      id: ORPHAN_REFUND_ID,
+      id: gen.orphanRefundId,
       tenantId: ctx.slug,
-      paymentId: PAYMENT_ID,
+      paymentId: gen.paymentId,
       invoiceId: target.invoiceId,
       amountSatang: ORPHAN_AMOUNT_SATANG,
       reason: 'Seeded orphan for the stale-pending sweep (#731)',
@@ -263,15 +354,15 @@ async function main(): Promise<void> {
       processorRefundId: null,
       initiatedAt: new Date(now - ORPHAN_AGE_MS),
       initiatorUserId: actorUserId,
-      correlationId: 'seed-f5-refundable-orphan',
+      correlationId: `seed-f5-refundable-${gen.orphanRefundId}`,
     });
   });
 
   console.log('\n----------------------------------------');
-  console.log('F5 refundable fixture seeded (swecham, Stripe test mode):');
+  console.log(`F5 refundable fixture seeded (swecham, Stripe test mode), generation ${gen.n}:`);
   console.log(`  invoice        ${target.docNumber} (${target.invoiceId})`);
-  console.log(`  payment        ${PAYMENT_ID} → ${pi.id}`);
-  console.log(`  orphan refund  ${ORPHAN_REFUND_ID} (pending, no processor id, initiated 25 h ago)`);
+  console.log(`  payment        ${gen.paymentId} → ${pi.id}`);
+  console.log(`  orphan refund  ${gen.orphanRefundId} (pending, no processor id, initiated 25 h ago)`);
   console.log('----------------------------------------');
 }
 
