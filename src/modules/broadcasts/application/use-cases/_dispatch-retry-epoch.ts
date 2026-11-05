@@ -85,7 +85,7 @@ export async function dispatchRetryEpoch(
   broadcastId: BroadcastId,
   broadcast: Broadcast,
   now: Date,
-  /** The leg's own log event, so an operator can tell the two apart. */
+  /** The caller's own log event (the import tick's, the only caller since spec 140 s4). */
   stampFailedEvent: string,
   lease: LeaseToken,
 ): Promise<Date | null> {
@@ -123,7 +123,7 @@ export async function dispatchRetryEpoch(
 export async function resetDispatchRetryClock(
   deps: RetryClockDeps,
   broadcastId: BroadcastId,
-  /** The leg's own log event, so an operator can tell the two apart. */
+  /** The caller's own log event (the import tick's, the only caller since spec 140 s4). */
   clearFailedEvent: string,
   /** Spec 140 s2b — the import tick's token (the only caller since spec 140 s4). */
   lease: LeaseToken,

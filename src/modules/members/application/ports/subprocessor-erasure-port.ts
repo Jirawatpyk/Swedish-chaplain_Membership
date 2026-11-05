@@ -101,8 +101,9 @@ export interface SubprocessorErasurePropagatedAudit {
    * counts. `'segments'` (`DELETE /contacts/{email}/segments/{id}`, spec 140 s4)
    * answers 200 only for a membership that existed and 404 otherwise, so its
    * "already absent" is Resend's own answer. A row WITHOUT the key predates s4:
-   * the old `/audiences` wire answered 200 to anything, and the evidence card
-   * explains those counts differently. Every row written now carries it.
+   * the old `/audiences` wire answered 200 for an address no longer in the
+   * audience (an address Resend never held is not measured), and the evidence
+   * card explains those counts differently. Every row written now carries it.
    */
   readonly resend_detach_wire: 'segments';
 }

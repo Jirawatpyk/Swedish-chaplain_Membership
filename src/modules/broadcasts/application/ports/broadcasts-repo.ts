@@ -510,8 +510,10 @@ export interface BroadcastsRepo {
    * `lease` (spec 140 s2b, REQUIRED): with a token the write also requires
    * `dispatch_lease_token = $t`, and a lost token throws
    * `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'`
-   * (A3). `null` = a non-holder (the legacy leg's, until spec 140 s4; the
-   * import tick, the only caller now, always passes its token).
+   * (A3). `null` = a non-holder: the legacy leg's, until spec 140 s4. The
+   * import tick is the ONLY `src` caller now and always passes its token; the
+   * type keeps `| null` for the tests that drive the unfenced CAS directly
+   * (PR #756 review round 2, code-review #2, accepted Low).
    */
   attachResendIds(
     tx: unknown,
@@ -551,8 +553,10 @@ export interface BroadcastsRepo {
    * `lease` (spec 140 s2b, REQUIRED): with a token the write also requires
    * `dispatch_lease_token = $t`, and a lost token throws
    * `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'`
-   * (A3). `null` = a non-holder (the legacy leg's, until spec 140 s4; the
-   * import tick, the only caller now, always passes its token).
+   * (A3). `null` = a non-holder: the legacy leg's, until spec 140 s4. The
+   * import tick is the ONLY `src` caller now and always passes its token; the
+   * type keeps `| null` for the tests that drive the unfenced CAS directly
+   * (PR #756 review round 2, code-review #2, accepted Low).
    */
   attachAudienceId(
     tx: unknown,
@@ -586,8 +590,14 @@ export interface BroadcastsRepo {
    * longer `approved`, `BroadcastNotFoundError` if the row is gone. An EMPTY
    * id on the row (`''`) counts as none — it is not an id.
    *
-   * `fence` — the import tick passes it on EVERY call (optional only because
-   * the legacy leg, deleted in spec 140 s4, passed none):
+   * `fence` — optional. Exactly which calls pass it (PR #756 review round 2,
+   * code-review #2): the import tick's PRE-SEND persist
+   * (`persistBroadcastIdBeforeSend`, from `confirmImport`) always passes
+   * `expectedAudienceImportId`, plus `replacesResendBroadcastId` when it
+   * replaces a dead id. The POST-SEND write on the handed path (a row with no
+   * audience id, `advanceToSending`) passes NONE: the mail is already out and
+   * this write records the id the webhooks resolve by. Both go under the
+   * tick's lease.
    *   - `expectedAudienceImportId`: the write also requires
    *     `audience_import_id = $expected`, so a hold that claimed the row since
    *     the caller read it (`releaseAudienceImport`) makes this lose and
@@ -600,8 +610,10 @@ export interface BroadcastsRepo {
    * `lease` (spec 140 s2b, REQUIRED): with a token the write also requires
    * `dispatch_lease_token = $t`, and a lost token throws
    * `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'`
-   * (A3). `null` = a non-holder (the legacy leg's, until spec 140 s4; the
-   * import tick, the only caller now, always passes its token).
+   * (A3). `null` = a non-holder: the legacy leg's, until spec 140 s4. The
+   * import tick is the ONLY `src` caller now and always passes its token; the
+   * type keeps `| null` for the tests that drive the unfenced CAS directly
+   * (PR #756 review round 2, code-review #2, accepted Low).
    */
   attachBroadcastId(
     tx: unknown,
@@ -642,8 +654,10 @@ export interface BroadcastsRepo {
    * `lease` (spec 140 s2b, REQUIRED): with a token the write also requires
    * `dispatch_lease_token = $t`, and a lost token throws
    * `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'`
-   * (A3). `null` = a non-holder (the legacy leg's, until spec 140 s4; the
-   * import tick, the only caller now, always passes its token).
+   * (A3). `null` = a non-holder: the legacy leg's, until spec 140 s4. The
+   * import tick is the ONLY `src` caller now and always passes its token; the
+   * type keeps `| null` for the tests that drive the unfenced CAS directly
+   * (PR #756 review round 2, code-review #2, accepted Low).
    */
   attachAudienceImport(
     tx: unknown,

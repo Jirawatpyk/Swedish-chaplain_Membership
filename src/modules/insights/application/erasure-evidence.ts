@@ -103,8 +103,10 @@ export interface SubprocessorOutcomeEvidence {
    * PR #756 review round 1 (pdpa M-1) — the Resend detach wire that wrote these
    * counts, from the row's `resend_detach_wire`. `'segments'` (spec 140 s4 on):
    * Resend answered 200 only for a membership that existed, so "already absent"
-   * is its own answer. `null` for a row without the key (the old `/audiences`
-   * wire, which answered 200 to anything) or any other value: the card then
+   * is its own answer. `null` for a row without the key (written on the old
+   * `/audiences` wire, which answered 200 for an address no longer in the
+   * audience; an address Resend never held is not measured) or any other value:
+   * the card then
    * shows the older records' explanation, never the newer one by guess.
    */
   readonly detachWire: 'segments' | null;
