@@ -88,7 +88,7 @@ Also: the new ceiling env, the Segments names, `docs/decisions.md` D-042, go-liv
 | 2b | Lease + fencing token + pre-call check + row-start cutoff; migration 0322 (lease columns + trigger list); the live-lease legacy skip | DL1–DL4, DL9, cell 23, carry R4 | drizzle-migration, security, reliability, spec-compliance | `140-eblast-one-leg-s2b` | #723 · done |
 | 2c | Orphan-id table (migration 0325) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; an audience whose reclaim was undecided (`audience_leaked`, s2b round 2) gets an orphan row and is drained; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | #734 · done |
 | 2d | Close #735 + #736 by fixing them: one Resend draft-answer classifier (behaviour kept); erased requesters drained directly through the members bridge; one stuck predicate (detach cap on the app clock); log hygiene across members + broadcasts (raw Error / RepoError objects and `e.message`) with a gate; a cascade-port contract test. No migration | #735, #736 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2d` | #741 · done |
-| 3 | Error classes + import-leg table fixes; `listAudiences` per-invocation time budget; erasure queue rotation | DT1–DT6 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | #750 · done |
+| 3 | Error classes + import-leg table fixes; `listAudiences` per-invocation time budget; erasure queue rotation | DT1–DT6 | security, pdpa, reliability, i18n, enterprise-ux, spec-compliance | `140-eblast-one-leg-s3` | #750 · done |
 | 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | — · open |
 
 ## Test plan
@@ -2359,6 +2359,12 @@ Not fixed, with the reason:
 - **code-review #8 (rotation drops oldest-first and the index-ordered LIMIT):** every stuck erasure is attempted within ceil(stuck / 50) ticks, and the stuck set is about 0 to 2 a year (plan review), so neither the Art. 12 ordering nor the scan cost binds; recorded.
 - **DT1 at the Verify surface:** the import leg creates its Resend draft in the tick that sends it, so driving DT1 means a /send, which the probe rules forbid. DT1 rests on the tick cell (name at most 70 code points), the gateway cell and the measurement above.
 
+Round 2 build notes (5 Nov 2026): `b2ae2ed54`..`1097f2f0b`, plus `fix(i18n)` for the copy.
+- **R2-A2, an echo does not page.** A stuck member is re-driven every tick, so `not_attempted` alone would page the DPO every 30 minutes after a first pass that did record its outcome. The re-drive now reads whether a `subprocessor_erasure_propagated` row already exists for that tenant and member (`MemberRepo.hasSubprocessorPropagationInTx`, the DT6 predicate, in its own short `runInTenant` after the scrub commit: a failed statement inside the scrub tx would roll the erasure back). An earlier row gives `already_propagated` (no page, still written for DT6 rotation); none, or a failed read, gives `not_attempted` (pages). Mutation-proved: the cross-tenant cell goes red only when the tenant filter is removed AND the read moves to the BYPASSRLS owner; the tenant SQL-shape gate covers the method.
+- **The copy rule held.** The i18n round 2 text said "once it is active again"; the R1-F cell "provider_cancelled never says it would be sent again" refused it in EN and SV, so the staff copy says "once it is reactivated" / "när det har återaktiverats". Lesson: grep `tests/` for the key, not the old wording.
+- `docs/observability.md` § 14.8.1 gains the `member_subprocessor_erasure_total` row (it had none).
+- Corrections to earlier sections: the § Verify fix line names `non_lowercase_email`, which R1-A replaced by lowercasing; R1-D, R2-A and R2-A2 supersede the DT4 build-notes line on the re-drive's "structurally 0".
+
 #### Slice 3 — test plan rows (R2-G; every mechanism a reviewer asked for, pointing at the test that went red)
 
 | Mechanism | Test (RED commit) |
@@ -2378,8 +2384,8 @@ Not fixed, with the reason:
 | R1-H one deadline rule | `oneCallFitsBefore` cells (`b1b62528c`) |
 | R1-J exhaustive sub-kinds | `classify-thrown.test.ts` (`965df2287`) |
 | R1-K path-unsafe email refused | contract R1-K cells (`2bf4d4840`) |
-| R2-A `not_attempted` on an empty re-drive capture | added in round 2 |
-| R2-E non-`held` standing ignored | added in round 2 |
+| R2-A / R2-A2 `not_attempted` vs `already_propagated` on an empty re-drive capture | erase-member unit, adapter it.each, cascade cells 3 / 3b / 2b (`b2ae2ed54`, `979d185c0`) |
+| R2-E non-`held` standing ignored | `failed-to-dispatch-member-standing.test.ts` (`e195ef580`, mutation-proved) |
 
 #### Housekeeping
 - Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
