@@ -520,6 +520,7 @@
           "invitationsRevoked": "Invitations revoked",
           "resendOutcome": "Outcome",
           "contactsDetached": "Detach requests accepted by Resend",
+          "contactsDetachedSegments": "Memberships removed at Resend",
           "contactsAlreadyAbsent": "Already absent from audience",
           "contactsFailed": "Contacts failed",
           "countsNote": "For records written before the Segments detach: Each contact is counted once. Resend accepts a detach request whether or not the address was in the audience, so the first figure may include addresses that were already absent. Cite it as detach requests Resend accepted; do not add the already-absent figure to it.",

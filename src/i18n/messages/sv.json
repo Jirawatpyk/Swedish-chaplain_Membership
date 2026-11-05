@@ -520,6 +520,7 @@
           "invitationsRevoked": "Återkallade inbjudningar",
           "resendOutcome": "Resultat",
           "contactsDetached": "Borttagningsbegäranden som Resend godtog",
+          "contactsDetachedSegments": "Medlemskap borttagna hos Resend",
           "contactsAlreadyAbsent": "Redan borta från målgrupp",
           "contactsFailed": "Misslyckade kontakter",
           "countsNote": "För poster skrivna före borttagningen via Segments: Varje kontakt räknas en gång. Resend godtar en borttagningsbegäran oavsett om adressen fanns i målgruppen, så den första siffran kan omfatta adresser som redan var borta. Ange den som det antal borttagningsbegäranden Resend godtog; addera inte antalet redan borta till den.",

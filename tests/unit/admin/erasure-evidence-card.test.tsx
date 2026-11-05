@@ -105,6 +105,22 @@ describe('EvidenceCard', () => {
     expect(screen.queryByText(/may include addresses that were already absent/i)).toBeNull();
   });
 
+  // The figure's LABEL follows the wire too: on a segment-wire record it is a
+  // count of removed memberships, not of accepted requests.
+  it('a segment-wire record labels the first figure as memberships removed; an older record keeps the requests label', () => {
+    renderCard(
+      baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: 'segments' } }),
+    );
+    expect(screen.getByText('Memberships removed at Resend')).toBeInTheDocument();
+    expect(screen.queryByText('Detach requests accepted by Resend')).toBeNull();
+    cleanup();
+    renderCard(
+      baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: null } }),
+    );
+    expect(screen.getByText('Detach requests accepted by Resend')).toBeInTheDocument();
+    expect(screen.queryByText('Memberships removed at Resend')).toBeNull();
+  });
+
   it('a record without the wire marker shows the note for older records, marked as such', () => {
     renderCard(
       baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: null } }),

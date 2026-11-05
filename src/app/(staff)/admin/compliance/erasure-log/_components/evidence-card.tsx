@@ -214,14 +214,23 @@ export function EvidenceCard({
                   that incremented for every detach the processor acknowledged,
                   404s included. A DPO citing this card in a DSR answer was
                   asserting removals that had not happened (Art. 12(3)). The
-                  counter now leaves out the 404s, but Resend also answers 200 to
-                  a detach of an address that was not in the segment (MEASURED
-                  5 Nov 2026), so the figure is the detach requests Resend
-                  accepted, which may include absent addresses (spec 140 s3
-                  R1-I; the countsNote below says so). The contact record itself
-                  survives at the processor (residual 8a).
+                  counter now leaves out the 404s. On the old `/audiences` wire
+                  Resend also answered 200 to a detach of an address that was not
+                  there, so an older record's figure is the detach requests Resend
+                  accepted (spec 140 s3 R1-I; `contactsDetached` and `countsNote`).
+                  The segment wire (spec 140 s4) answers 200 only for a membership
+                  that existed (MEASURED 5 Nov 2026), so a `detachWire: 'segments'`
+                  record's figure is memberships removed (`contactsDetachedSegments`,
+                  PR #756 review round 1). The contact record itself survives at
+                  the processor (residual 8a).
                 */}
-                <Field label={t('fields.contactsDetached')}>
+                <Field
+                  label={
+                    row.subprocessorOutcome.detachWire === 'segments'
+                      ? t('fields.contactsDetachedSegments')
+                      : t('fields.contactsDetached')
+                  }
+                >
                   {row.subprocessorOutcome.contactsRemoved}
                 </Field>
                 {/*
