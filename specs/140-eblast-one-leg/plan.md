@@ -2365,6 +2365,21 @@ Round 2 build notes (5 Nov 2026): `b2ae2ed54`..`1097f2f0b`, plus `fix(i18n)` for
 - `docs/observability.md` § 14.8.1 gains the `member_subprocessor_erasure_total` row (it had none).
 - Corrections to earlier sections: the § Verify fix line names `non_lowercase_email`, which R1-A replaced by lowercasing; R1-D, R2-A and R2-A2 supersede the DT4 build-notes line on the re-drive's "structurally 0".
 
+### Slice 3 — review round 3, targeted (`/code-review high 9229dca8c..b80a8fb4a`: 3 in scope + 5 on the merged #752; pdpa APPROVE WITH CONDITIONS: 2 MEDIUM, 2 LOW; reliability MERGEABLE: 1 LOW, 3 NIT; 5 Nov 2026)
+
+Fixed:
+- **R3-A, the earlier-propagation read cannot starve the propagation (code-review #2).** It is skipped when the deadline leaves less than `PRIOR_PROPAGATION_READ_BUDGET_MS` (3 s) and abandoned past it (the pooler can drop `statement_timeout`); either way it counts as no earlier row, so the pass records `not_attempted`. RED `378e756dc`, GREEN `796ea77be`.
+- **R3-B, the `earliest()` comment (code-review #7)** names what a re-drive now writes.
+- **R3-C, the Thai `notAttemptedNote` (code-review #8)** takes the address from the DSR intake record to the Resend dashboard, as EN.
+- **R3-D, no alert backend pages yet (pdpa M-2):** the observability row, the port docblock, the runbook § Alert and step 6 say the alert is designated and the erasure-log evidence card is the operative control (`docs/observability.md` § 21).
+- **R3-E, the `not_attempted` remediation (pdpa L-1, reliability LOW-1):** the Resend dashboard search is the primary step (Vercel keeps logs one day, no drain); a `not_attempted` row followed within seconds by an `ok` / `partial` row is a re-drive that overlapped the first pass and needs no action.
+
+Out of scope: code-review findings 1, 3, 4, 5 and 6 are on #752 (the event picker), merged into this branch from main; they are not this PR's.
+
+Open: pdpa M-1 — prod rows written before this PR by a re-drive read `ok` 0/0/0 for a sentinel-only pass; if a first pass ever crashed between its scrub commit and its propagation, the earliest row is such an `ok`. A read-only prod probe for erased members with no `subprocessor_erasure_propagated` row, or whose first row is more than 300 s after `erased_at`, needs the maintainer's order.
+
+Not fixed: reliability N1 (`as const` on the quota list), N2 (the warn-log assertion), N3 (the port throws, like its neighbours); pdpa L-2 (echo rows accumulate, already in the runbook).
+
 #### Slice 3 — test plan rows (R2-G; every mechanism a reviewer asked for, pointing at the test that went red)
 
 | Mechanism | Test (RED commit) |
@@ -2386,6 +2401,7 @@ Round 2 build notes (5 Nov 2026): `b2ae2ed54`..`1097f2f0b`, plus `fix(i18n)` for
 | R1-K path-unsafe email refused | contract R1-K cells (`2bf4d4840`) |
 | R2-A / R2-A2 `not_attempted` vs `already_propagated` on an empty re-drive capture | erase-member unit, adapter it.each, cascade cells 3 / 3b / 2b (`b2ae2ed54`, `979d185c0`) |
 | R2-E non-`held` standing ignored | `failed-to-dispatch-member-standing.test.ts` (`e195ef580`, mutation-proved) |
+| R3-A the earlier-propagation read is bounded | erase-member unit "skipped when the deadline leaves no room" / "abandoned when it outlasts its budget" (`378e756dc`) |
 
 #### Housekeeping
 - Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
