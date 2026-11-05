@@ -312,65 +312,37 @@ export function MarkPaidOfflineDialog({
             return true;
           }
           const existingBillHref = resolveExistingBillHref(err);
-          if (existingBillHref) {
-            // A live membership bill for this plan year already exists and
-            // NOTHING was minted. Point the operator at that invoice — the
-            // F4 record-payment dialog there runs the same on-paid
-            // callbacks, so it completes this cycle and opens the next
-            // one. Then close + refresh so the stale action is not
-            // re-clicked.
-            // #730 — a coverage overlap links its covering bill too, with its
-            // own copy: that bill may be another plan year or already paid, so
-            // "record the payment there" would be wrong for it.
-            const isOverlap = err.code === 'membership_coverage_overlap';
-            toast.error(
-              t(
-                isOverlap
-                  ? 'markPaidOffline.error.membership_coverage_overlapTitle'
-                  : 'markPaidOffline.error.membership_bill_already_existsTitle',
-              ),
-              {
-                id: `mark-paid-existing-bill-${cycleId}`,
-                description: t(
-                  isOverlap
-                    ? 'markPaidOffline.error.membership_coverage_overlapDetail'
-                    : 'markPaidOffline.error.membership_bill_already_existsDetail',
-                ),
-                action: {
-                  label: t('markPaidOffline.viewExistingInvoice'),
-                  onClick: () => {
-                    router.push(existingBillHref);
-                  },
-                },
-              },
-            );
-            closeStale();
-            return true;
-          }
-          // #74 — a coverage overlap whose covering bill could not be looked
-          // up (or a bill-exists with no id) has nothing to link. Its copy
-          // points at the member's invoices instead, and the stale dialog
-          // closes: the refusal is permanent, so a retry can never pass.
           if (
-            err.code === 'membership_coverage_overlap' ||
-            err.code === 'membership_bill_already_exists'
+            err.code === 'membership_bill_already_exists' ||
+            err.code === 'membership_coverage_overlap'
           ) {
+            // NOTHING was minted. With a link, point the operator at the
+            // invoice — the F4 record-payment dialog there runs the same
+            // on-paid callbacks, so it completes this cycle. Then close +
+            // refresh so the stale action is not re-clicked.
+            // #730 — a coverage overlap links its covering bill, with its own
+            // copy: that bill may be another plan year or already paid.
+            // #74 — with no id (the covering-bill lookup failed), the copy
+            // points at the member's invoices and the dialog still closes:
+            // the refusal is permanent, so a retry can never pass.
             const isOverlap = err.code === 'membership_coverage_overlap';
-            toast.error(
-              t(
-                isOverlap
-                  ? 'markPaidOffline.error.membership_coverage_overlapTitle'
-                  : 'markPaidOffline.error.membership_bill_already_existsTitle',
-              ),
-              {
-                id: `mark-paid-existing-bill-${cycleId}`,
-                description: t(
-                  isOverlap
-                    ? 'markPaidOffline.error.membership_coverage_overlap'
-                    : 'markPaidOffline.error.membership_bill_already_exists',
-                ),
-              },
-            );
+            const base = isOverlap
+              ? 'markPaidOffline.error.membership_coverage_overlap'
+              : 'markPaidOffline.error.membership_bill_already_exists';
+            toast.error(t(`${base}Title`), {
+              id: `mark-paid-existing-bill-${cycleId}`,
+              description: t(existingBillHref ? `${base}Detail` : base),
+              ...(existingBillHref
+                ? {
+                    action: {
+                      label: t('markPaidOffline.viewExistingInvoice'),
+                      onClick: () => {
+                        router.push(existingBillHref);
+                      },
+                    },
+                  }
+                : {}),
+            });
             closeStale();
             return true;
           }
