@@ -834,6 +834,46 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     );
   });
 
+  // Spec 140 s3 review round 2 (R2-A2) — a re-drive whose first pass already
+  // wrote a propagation row is an echo (`already_propagated`, no page); one
+  // with no earlier row is `not_attempted` (pages). The use case reads it only
+  // when the addresses were already scrubbed, and a failed read counts as "no
+  // earlier row", toward paging.
+  describe('the earlier-propagation read (R2-A2)', () => {
+    const SENTINEL = 'erased+11111111-1111-4111-8111-111111111111@erased.invalid';
+
+    it.each([
+      ['an earlier row exists', async () => true, true],
+      ['no earlier row', async () => false, false],
+      ['the read fails', async () => { throw new Error('read failed'); }, false],
+    ] as const)('%s → passes the matching priorPropagationRecorded', async (_label, read, expected) => {
+      const deps = buildEraseDeps();
+      deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
+      deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(read);
+      const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      expect(res.ok).toBe(true);
+      expect(deps.memberRepo.hasSubprocessorPropagationInTx).toHaveBeenCalledWith(
+        expect.anything(),
+        't-1',
+        'm-1',
+      );
+      expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+        expect.objectContaining({ addressesAlreadyScrubbed: true, priorPropagationRecorded: expected }),
+      );
+    });
+
+    it('is not read on a first pass with real addresses', async () => {
+      const deps = buildEraseDeps();
+      deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => ['live@x.io']);
+      const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      expect(res.ok).toBe(true);
+      expect(deps.memberRepo.hasSubprocessorPropagationInTx).not.toHaveBeenCalled();
+      expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+        expect.objectContaining({ addressesAlreadyScrubbed: false, priorPropagationRecorded: false }),
+      );
+    });
+  });
+
   it('a subprocessor audit-emit failure is NON-BLOCKING — member_erased still emitted (US3-C)', async () => {
     const deps = buildEraseDeps();
     // Member received an audience-bearing broadcast → one pair to propagate, so

@@ -63,6 +63,7 @@ function inputWith(
     tenantSlug: 'test-tenant',
     requestId: 'req-99',
     addressesAlreadyScrubbed: false,
+    priorPropagationRecorded: false,
   };
 }
 
@@ -84,24 +85,34 @@ describe('subprocessorErasureAdapter', () => {
     expect(removeContactFromAudience).not.toHaveBeenCalled();
   });
 
-  // Spec 140 s3 review round 2 (R2-A) — no pairs because the scrub already ran
-  // (a re-drive) is not "nothing to detach": the first pass's detach may never
-  // have run, so the row says `not_attempted`, which pages like `failed`.
-  it('no pairs because the addresses were already scrubbed → not_attempted/0/0/0, gateway NOT called', async () => {
-    const result = await subprocessorErasureAdapter.propagate({
-      ...inputWith([]),
-      addressesAlreadyScrubbed: true,
-    });
+  // Spec 140 s3 review rounds 2 (R2-A, R2-A2) — no pairs because the scrub
+  // already ran (a re-drive) is not "nothing to detach". With no earlier
+  // propagation row the first pass's detach may never have run: `not_attempted`,
+  // which pages like `failed`. With one, this row is an echo of it:
+  // `already_propagated`, which does not page.
+  it.each([
+    [false, false, 'ok'],
+    [true, false, 'not_attempted'],
+    [true, true, 'already_propagated'],
+  ] as const)(
+    'no pairs, addressesAlreadyScrubbed %s, priorPropagationRecorded %s → %s/0/0/0, gateway NOT called',
+    async (addressesAlreadyScrubbed, priorPropagationRecorded, resendOutcome) => {
+      const result = await subprocessorErasureAdapter.propagate({
+        ...inputWith([]),
+        addressesAlreadyScrubbed,
+        priorPropagationRecorded,
+      });
 
-    expect(result).toEqual({
-      resendOutcome: 'not_attempted',
-      resendContactsRemoved: 0,
-      resendContactsAlreadyAbsent: 0,
-      resendContactsFailed: 0,
-      stripeOutcome: 'ok',
-    });
-    expect(removeContactFromAudience).not.toHaveBeenCalled();
-  });
+      expect(result).toEqual({
+        resendOutcome,
+        resendContactsRemoved: 0,
+        resendContactsAlreadyAbsent: 0,
+        resendContactsFailed: 0,
+        stripeOutcome: 'ok',
+      });
+      expect(removeContactFromAudience).not.toHaveBeenCalled();
+    },
+  );
 
   /**
    * Round 2 R2-25 — this case was named **"404 counts as removed — gateway
