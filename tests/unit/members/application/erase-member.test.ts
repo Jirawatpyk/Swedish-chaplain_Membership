@@ -14,6 +14,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   eraseMember,
+  PRIOR_PROPAGATION_READ_BUDGET_MS,
   type EraseMemberInput,
 } from '@/modules/members/application/use-cases/erase-member';
 import { asMemberId } from '@/modules/members';
@@ -860,6 +861,42 @@ describe('eraseMember — requested audit + atomic scrub', () => {
       expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
         expect.objectContaining({ addressesAlreadyScrubbed: true, priorPropagationRecorded: expected }),
       );
+    });
+
+    // Spec 140 s3 review round 3 (code-review #2) — the read sits in front of
+    // the propagation, the one step a re-drive cannot repeat, so it must never
+    // spend the time that step needs: it is skipped when the deadline leaves no
+    // room for it, and abandoned when it outlasts its own budget. Either way it
+    // counts as "no earlier row", toward paging.
+    it('is skipped when the deadline leaves no room for it', async () => {
+      const deps = buildEraseDeps();
+      deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
+      deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(async () => true);
+      const deadlineAt = new Date(deps.clock.now().getTime() + PRIOR_PROPAGATION_READ_BUDGET_MS - 1);
+      const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, { ...META, deadlineAt }, deps);
+      expect(res.ok).toBe(true);
+      expect(deps.memberRepo.hasSubprocessorPropagationInTx).not.toHaveBeenCalled();
+      expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+        expect.objectContaining({ addressesAlreadyScrubbed: true, priorPropagationRecorded: false }),
+      );
+    });
+
+    it('is abandoned when it outlasts its budget', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const deps = buildEraseDeps();
+        deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
+        deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(() => new Promise<boolean>(() => {}));
+        const pending = eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+        await vi.advanceTimersByTimeAsync(PRIOR_PROPAGATION_READ_BUDGET_MS + 1);
+        const res = await pending;
+        expect(res.ok).toBe(true);
+        expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+          expect.objectContaining({ addressesAlreadyScrubbed: true, priorPropagationRecorded: false }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('is not read on a first pass with real addresses', async () => {
