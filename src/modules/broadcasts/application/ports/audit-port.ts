@@ -1,7 +1,7 @@
 /**
  * T028 — `AuditPort` Application port (F7 MVP) + T031 F7.1a extension.
  *
- * 71 live audit event types (55 before F119) as a const tuple + discriminated union for
+ * 69 live audit event types (55 before F119) as a const tuple + discriminated union for
  * compile-time safety on emit sites. Mirror of F4 audit-port pattern,
  * but ALL F7 events default to **5-year retention** (no tax-document
  * overlap; F7 is operational + marketing-objection + privacy events).
@@ -49,9 +49,10 @@
  *     (one counts-only row per tenant per daily run).
  *   - F7 unattributed opt-out (migration 0312): 1 event —
  *     `broadcast_unsubscribe_unattributed`.
- *   = 77 declared, minus the 6 RETIRED batch events kept only in
- *   `RETIRED_F7_AUDIT_EVENT_TYPES` = **71 live** (this tuple). Static-assert
- *   below (`extends 71`) is the source of truth; the header summary is
+ *   = 77 declared, minus the 8 RETIRED events kept only in
+ *   `RETIRED_F7_AUDIT_EVENT_TYPES` (the 6 batch events, and the 2 the legacy
+ *   dispatch leg alone emitted until spec 140 s4) = **69 live** (this tuple).
+ *   Static-assert below (`extends 69`) is the source of truth; the header summary is
  *   informational only and should be re-derived when the assert changes. R4.3 M-8 fixed
  *   the "10" → "11" double-count drift that R3.5 M-8 missed.
  *
@@ -91,8 +92,9 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_quota_consumed',          // US4-deferred (consumed at sending→sent webhook)
   'broadcast_failed_to_dispatch',
   'broadcast_resend_resource_missing', // R2-NEW-3 — emitted by dispatch worker
-  'broadcast_resend_audience_drift',   // F7.1-IMP5 — audience count mismatch on idempotency replay
-  'broadcast_resend_drift_check_unverifiable', // R5-S1 — count fetch failed on non-404
+  // `broadcast_resend_audience_drift` (F7.1-IMP5) is RETIRED: its only emitter
+  // was the legacy leg spec 140 s4 deleted (see `RETIRED_F7_AUDIT_EVENT_TYPES`).
+  'broadcast_resend_drift_check_unverifiable', // R5-S1 — count fetch failed; the import tick's unverifiable arm
   'broadcast_concurrent_action_blocked',
 
   // --- Cross-tenant probes (Constitution Principle I) — 2 events ----
@@ -126,9 +128,8 @@ export const F7_AUDIT_EVENT_TYPES = [
   'member_acknowledged_broadcasts_terms',          // Q15 terms acknowledgement (not recipient consent) — emitted (round-4 CRIT-B)
 
   // --- Phase 8 verify-fix R3 — 2 events ------------------------------
-  // (Errors-C1) — distinguishes pre-`createBroadcast` race (two workers
-  // dueled through `createAudience`) from post-send Resend conflict.
-  'broadcast_dispatch_idempotency_conflict_pre_send',
+  // (Errors-C1) `broadcast_dispatch_idempotency_conflict_pre_send` is RETIRED
+  // with the legacy leg that alone emitted it (spec 140 s4).
   // (Errors-H3) — AS2 contract requires member transactional email on
   // dispatch failure, but member's primary contact email may be NULL
   // (F3 archive cascade / contact deletion). Audit records the missed
@@ -237,13 +238,14 @@ export const F7_AUDIT_EVENT_TYPES = [
 ] as const;
 
 /**
- * Static assertion: the tuple length is 71. The authoritative per-category
- * breakdown is the file-header taxonomy above (it nets to 71 live); this
+ * Static assertion: the tuple length is 69. The authoritative per-category
+ * breakdown is the file-header taxonomy above (it nets to 69 live); this
  * assert is the enforced source of truth. If a spec amendment adds/removes
  * an event, update the tuple, this literal, and the header taxonomy —
- * TypeScript errors here ("Type '71' is not assignable to type '70'") if
+ * TypeScript errors here ("Type '69' is not assignable to type '70'") if
  * the count drifts. (F119 T022: 55 → 59; T050: 59 → 69; the 0310 retention
- * sweep: 69 → 70; 0312 unattributed opt-out: 70 → 71.)
+ * sweep: 69 → 70; 0312 unattributed opt-out: 70 → 71; PR #756 review round 1,
+ * the legacy leg's two orphans retired: 71 → 69.)
  *
  * (The previous inline arithmetic here was dropped — it double-counted
  * `broadcast_image_unsafe`, which is already inside the "11 F7.1a
@@ -253,7 +255,9 @@ export const F7_AUDIT_EVENT_TYPES = [
 /**
  * Event types that WERE emitted, are still in the DB enum, and can never be
  * emitted again. 61 → 55: the batch dispatch path was deleted in 108 Phase 9
- * (`ca51f59a1`) and took these six with it.
+ * (`ca51f59a1`) and took the first six with it. 71 → 69: spec 140 s4 deleted
+ * the legacy dispatch leg, the only emitter of the last two (moved here in
+ * PR #756 review round 1).
  *
  * They are deliberately ABSENT from `F7_AUDIT_EVENT_TYPES` above and present
  * here instead, because two guards make contradictory demands and this const
@@ -286,12 +290,14 @@ export const RETIRED_F7_AUDIT_EVENT_TYPES = [
   'broadcast_retry_completed',
   'broadcast_partial_delivery_accepted',
   'broadcast_partially_sent',
+  'broadcast_resend_audience_drift',
+  'broadcast_dispatch_idempotency_conflict_pre_send',
 ] as const satisfies ReadonlyArray<string>;
 
 export type RetiredF7AuditEventType =
   (typeof RETIRED_F7_AUDIT_EVENT_TYPES)[number];
 
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 71
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 69
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
