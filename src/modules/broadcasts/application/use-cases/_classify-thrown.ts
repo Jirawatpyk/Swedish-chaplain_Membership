@@ -79,7 +79,17 @@ export function isRetryableThrow(kind: string): boolean {
 export type RetryableSubKind = GatewayRetryableSubKind | 'unclassified';
 
 export function retryableSubKind(sub: string | undefined): RetryableSubKind {
-  return sub === 'network' || sub === 'timeout' || sub === 'server_5xx' || sub === 'api'
+  return sub === 'network' || sub === 'timeout' || sub === 'server_5xx' || sub === 'api' || sub === 'locked'
     ? sub
     : 'unclassified';
+}
+
+/**
+ * Spec 140 slice 3 (DT3) — a `permanent` throw whose code is Resend's sending
+ * quota (a 429 `daily_quota_exceeded` / `monthly_quota_exceeded`; the adapter
+ * keeps the name as the code). Both legs count it `resend_429`: without this
+ * it reached the `app_error` bucket the dispatch alert reads.
+ */
+export function isQuotaExceededCode(code: string | undefined): boolean {
+  return code === 'daily_quota_exceeded' || code === 'monthly_quota_exceeded';
 }

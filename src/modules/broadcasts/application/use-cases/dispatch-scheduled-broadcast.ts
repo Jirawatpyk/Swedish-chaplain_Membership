@@ -73,7 +73,7 @@ import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
-import { classifyThrown, retryableSubKind, type RetryableSubKind } from './_classify-thrown';
+import { classifyThrown, isQuotaExceededCode, retryableSubKind, type RetryableSubKind } from './_classify-thrown';
 import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
 import {
@@ -2140,7 +2140,9 @@ async function settleGatewayThrow(
         code: shape.code,
         failedAt: now.toISOString(),
       },
-      'permanent_failure',
+      // Spec 140 slice 3 (DT3) — a quota 429 is permanent now; its phase carries
+      // the status so `phaseToFailureReason` counts it `resend_429`.
+      isQuotaExceededCode(shape.code) ? 'permanent_failure_429' : 'permanent_failure',
       // The token comes from `shape.KIND`, not `shape.reason`.
       //
       // A first draft of this line used `shape.reason ?? 'gateway_unknown'`

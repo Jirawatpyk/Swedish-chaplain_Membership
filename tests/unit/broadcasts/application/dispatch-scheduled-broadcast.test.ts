@@ -6001,6 +6001,26 @@ describe('dispatch-scheduled-broadcast — FR-021 budget anchors on the first fa
     expect(repo.transitions).toEqual([]);
     expect(budgetSpy).not.toHaveBeenCalled();
   });
+
+  // The other direction: a quota 429 on the probe GET is permanent now, so the
+  // probe REFUSES fail closed (it used to be retryable). Nothing sent, nobody told.
+  it('DT3 — the inherited probe meets a quota 429 (permanent) → refused fail closed, nothing sent', async () => {
+    const row: Broadcast = { ...lateRow(null), resendAudienceId: 'aud-existing', resendBroadcastId: 'rb-from-previous-tick' };
+    const { deps, repo, email } = retryDeps(row);
+    const gw = makeGateway({
+      throwOnRetrieveBroadcast: { kind: 'permanent', reason: 'daily quota reached', code: 'daily_quota_exceeded' },
+    });
+
+    const result = await dispatchScheduledBroadcast({ ...deps, broadcastsGateway: gw.port }, baseInput);
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'dispatch.server_error', message: 'inherited_probe_failed', errClass: 'permanent', phase: 'inherited_status' },
+    });
+    expect(gw.sendCalls).toEqual([]);
+    expect(repo.transitions).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
+  });
 });
 
 /**

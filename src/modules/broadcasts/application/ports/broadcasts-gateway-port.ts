@@ -28,7 +28,13 @@
  */
 import type { BrandSettings } from '../../domain/brand/brand-settings';
 
-export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'api';
+/**
+ * Spec 140 slice 3 (DT3) — `locked` is Resend's 409 `resource_locked` ("another
+ * request is already updating this resource"; DOCUMENTED, never observed on the
+ * sink, research.md step 0.3): nothing was refused, so it is retried, under its
+ * own label so a stuck lock does not page as `api` or `unclassified`.
+ */
+export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'api' | 'locked';
 
 /**
  * Spec 140 s2a (DL8) — the budget of one gateway REQUEST, retries and their

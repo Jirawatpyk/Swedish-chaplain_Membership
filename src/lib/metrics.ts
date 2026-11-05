@@ -2209,7 +2209,8 @@ export const broadcastsMetrics = {
    * audit; this metric is the alert-pipeline trigger.
    *
    * `sub_kind` carries the Resend gateway failure subKind that
-   * exhausted the budget — `network`, `timeout`, `server_5xx`, `api`, plus
+   * exhausted the budget — `network`, `timeout`, `server_5xx`, `api`,
+   * `locked` (a 409 `resource_locked`, spec 140 slice 3), plus
    * **`unclassified`** — so dashboards can distinguish Resend outages from
    * network blips.
    *
@@ -2225,7 +2226,7 @@ export const broadcastsMetrics = {
    */
   dispatchBudgetExhausted(
     tenantId: string,
-    subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'unclassified',
+    subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'locked' | 'unclassified',
   ): void {
     safeMetric(() => {
       counter(

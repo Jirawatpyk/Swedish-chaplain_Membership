@@ -368,6 +368,8 @@ describe('spec 140 s2c — the import leg records its orphans at the caller', ()
 
   it.each([
     ['a 429 (api)', { kind: 'retryable', subKind: 'api', reason: '429' }],
+    // Spec 140 slice 3 (DT3) — a locked create made nothing: `isCreateUnconfirmed` excludes it.
+    ['a 409 resource_locked (locked)', { kind: 'retryable', subKind: 'locked', reason: '409' }],
     ['a permanent 4xx', { kind: 'permanent', code: 'validation_error', reason: '422' }],
   ] as const)('DL5b — createBroadcast refused with %s → no row (nothing was created)', async (_label, thrown) => {
     const h = harness({ row: TICK2_ROW, createBroadcastThrows: thrown });

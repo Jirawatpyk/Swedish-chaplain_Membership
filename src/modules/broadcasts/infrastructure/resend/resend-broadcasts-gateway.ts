@@ -207,6 +207,13 @@ function classifyResendError(
       reason,
     });
   }
+  if (status === 429 && (err?.name === 'daily_quota_exceeded' || err?.name === 'monthly_quota_exceeded')) {
+    // Spec 140 slice 3 (DT3) — the account's sending QUOTA, not its rate: a
+    // DOCUMENTED 429 that does not clear inside a call, nor inside FR-021's
+    // hour (a daily quota may reset inside it; the spec chose permanent). The
+    // name is kept as the code, which the failure metric maps to `resend_429`.
+    return new GatewayThrowable({ kind: 'permanent', reason, code });
+  }
   if (status === 429) {
     // Resend's account rate limit — measured at 10 req/s, not the 2 this
     // said before T095 (2026-09-08). The request is fine —
@@ -219,6 +226,13 @@ function classifyResendError(
       subKind: 'api',
       reason,
     });
+  }
+  if (status === 409 && err?.name === 'resource_locked') {
+    // Spec 140 slice 3 (DT3) — another request is updating the resource; this
+    // one was not refused, so it is retried (inside one call's budget; a create
+    // retries a 429 only, `isRateLimited`). Every other 409 keeps the
+    // idempotency reading below.
+    return new GatewayThrowable({ kind: 'retryable', subKind: 'locked', reason });
   }
   if (status === 409) {
     return new GatewayThrowable({

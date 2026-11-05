@@ -54,7 +54,7 @@ import type { BrandChromePort } from '../ports/brand-chrome-port';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { classifyThrown, isRetryableThrow, retryableSubKind } from './_classify-thrown';
+import { classifyThrown, isQuotaExceededCode, isRetryableThrow, retryableSubKind, type RetryableSubKind } from './_classify-thrown';
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
 import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
@@ -73,7 +73,7 @@ import {
   REQUESTER_NOT_FOUND,
   type DispatchStandingDeps,
 } from './_dispatch-standing-gate';
-import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
+import type { BroadcastsGatewayPort, GatewayRetryableSubKind } from '../ports/broadcasts-gateway-port';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
 import { recordOrphanBestEffort } from './_record-orphaned-resend-id';
 import type { BroadcastOrphansRepo, RecordOrphanInput } from '../ports/broadcast-orphans-repo';
@@ -1491,7 +1491,7 @@ type GatewayFailure =
        * FR-021 budget can report the class actually observed instead of a
        * plausible one — the same reason the non-retryable arm carries `kind`.
        */
-      readonly subKind?: 'network' | 'timeout' | 'server_5xx' | 'api' | undefined;
+      readonly subKind?: GatewayRetryableSubKind | undefined;
     }
   | {
       readonly retryable: false;
@@ -1626,12 +1626,12 @@ async function viaRepoConcurrency<T>(
  * ternaries, and the sibling helper below carries a comment saying a previous
  * 4-level chain was replaced for exactly that reason.
  *
- * `network`, `api` and `unclassified` deliberately stay `app_error`. The union
+ * `network`, `api`, `locked` and `unclassified` deliberately stay `app_error`. The union
  * has no member for them, and inventing an HTTP bucket nobody observed is the
  * defect being fixed one dimension over — see the sibling's docblock.
  */
 function budgetSubKindToFailureMetric(
-  subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'unclassified',
+  subKind: RetryableSubKind,
 ): FailureMetricLabel {
   if (subKind === 'server_5xx') return 'resend_5xx';
   if (subKind === 'timeout') return 'timeout';
@@ -1662,7 +1662,7 @@ function importReasonToFailureMetric(
   if (reason === 'audience_import_stuck') return 'timeout';
   if (reason === 'provider_cancelled') return 'provider_cancelled';
   if (code === 'http_403') return 'resend_403';
-  if (code === 'http_429') return 'resend_429';
+  if (code === 'http_429' || isQuotaExceededCode(code)) return 'resend_429';
   return 'app_error';
 }
 
@@ -1715,7 +1715,7 @@ async function onRetryable(
    * same shape the live leg has always had, so the parameter had one possible
    * value and the ternary it fed had one reachable arm.
    */
-  subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'unclassified',
+  subKind: RetryableSubKind,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const now = deps.clock.now();
   const epoch = await dispatchRetryEpoch(
