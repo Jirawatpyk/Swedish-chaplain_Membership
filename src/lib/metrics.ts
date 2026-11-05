@@ -3238,19 +3238,21 @@ export const broadcastsMetrics = {
 
   /**
    * `broadcasts_audience_reclaim_truncated_total{tenant,stage}` — spec 140
-   * slice 3 (DT5): a `reclaim-orphan-audiences` run cut by its time budget
-   * (`deadlineAt` = start + `maxDuration` − `RECLAIM_DEADLINE_MARGIN_MS`).
-   * `stage="listing"`: `listAudiences` came back `truncated` (the deadline, the
-   * page bound or a broken cursor), so audiences past the cut were not seen;
-   * `stage="deletes"`: orphans were left as `deferredDeletes`. Either way the run
-   * deleted less, never more, and the next daily run resumes. Alarm when it
-   * increases on 2 consecutive daily runs.
+   * slice 3 (DT5): a `reclaim-orphan-audiences` run that stopped short.
+   * `stage="listing"`: `listAudiences` came back `truncated` — by the time
+   * budget (`deadlineAt` = start + `maxDuration` − `RECLAIM_DEADLINE_MARGIN_MS`),
+   * the 50-page bound, a `has_more` page with no rows, or a repeated cursor
+   * (`truncatedBy` on `resend.broadcasts.audiences_list_truncated`) — so
+   * audiences past the cut were not seen; `stage="deletes"`: the time budget left
+   * orphans as `deferredDeletes`. Either way the run deleted less, never more.
+   * Nothing resumes: the next daily run lists again from page one, and finds the
+   * deferred orphans then. Alarm when it increases on 2 consecutive daily runs.
    */
   audienceReclaimTruncated(tenantId: string, stage: 'listing' | 'deletes'): void {
     safeMetric(() => {
       counter(
         'broadcasts_audience_reclaim_truncated_total',
-        'reclaim-orphan-audiences runs cut by their time budget, by stage (listing or deletes)',
+        'reclaim-orphan-audiences runs cut short, by stage: listing (time budget, page bound, empty has_more page or repeated cursor) or deletes (time budget)',
       ).add(1, { tenant: tenantId, stage });
     });
   },

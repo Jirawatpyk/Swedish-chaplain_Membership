@@ -33,9 +33,11 @@
  *     `maxDuration`) covers the listing and the delete chunks. The gateway
  *     stops paging inside it; a chunk starts only while one bounded call
  *     (`RESEND_CALL_TIMEOUT_MS`; a chunk's deletes run in parallel, each with
- *     its 403 probe on the same signal) still fits, and the orphans not reached
- *     are `deferredDeletes`, left for the next daily run. A cut run is counted
- *     on `broadcasts_audience_reclaim_truncated_total{stage}`.
+ *     its 403 probe on the same signal) still fits — both judged by
+ *     `oneCallFitsBefore` (review round 1, R1-H) — and the orphans not reached
+ *     are `deferredDeletes`. Nothing is resumed: the next daily run lists again
+ *     from page one, and the deferred orphans are found and deleted then. A cut
+ *     run is counted on `broadcasts_audience_reclaim_truncated_total{stage}`.
  *   - Per-item try/catch: a single delete failure does NOT abort the batch.
  *     "Cannot delete last audience" (Resend 403 validation) is treated as a
  *     benign skip rather than a failure — the audience cannot be removed while
@@ -67,7 +69,7 @@ import type { TenantContext } from '@/modules/tenants';
 import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
 import { broadcastsMetrics } from '@/lib/metrics';
-import { RESEND_CALL_TIMEOUT_MS, type BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
+import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore, type BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import { classifyThrown, isRetryableThrow } from './_classify-thrown';
@@ -380,8 +382,9 @@ export async function reclaimOrphanedAudiences(
 
   let deferredDeletes = 0;
   for (let i = 0; i < orphans.length; i += RECLAIM_CONCURRENCY) {
-    // Spec 140 DT5 — start a chunk only while one bounded call still fits.
-    if (input.deadlineAt.getTime() - deps.clock.now().getTime() < RESEND_CALL_TIMEOUT_MS) {
+    // Spec 140 DT5 — start a chunk only while one bounded call still fits (the
+    // gateway's listing pages judge with the same rule, review round 1 R1-H).
+    if (!oneCallFitsBefore(input.deadlineAt, deps.clock.now().getTime(), RESEND_CALL_TIMEOUT_MS)) {
       deferredDeletes = orphans.length - i;
       broadcastsMetrics.audienceReclaimTruncated(deps.tenant.slug, 'deletes');
       logger.warn(

@@ -52,6 +52,21 @@ export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'ap
 export const RESEND_CALL_TIMEOUT_MS = 10_000;
 
 /**
+ * Spec 140 s3 review round 1 (R1-H) — the ONE deadline rule of the orphan
+ * reclaim: a call starts only while one whole bounded call (`callBudgetMs`, the
+ * gateway's per-call budget) still fits before `deadlineAt`. The use case's
+ * delete chunks and the gateway's `listAudiences` pages both judge with it. The
+ * use case passes `RESEND_CALL_TIMEOUT_MS` and its `ClockPort`; the gateway its
+ * `callTimeoutMs` (default `RESEND_CALL_TIMEOUT_MS`) and `Date.now()`. In
+ * production the two are the same value and the same clock (`systemClock` is
+ * `new Date()`); only a test that builds the gateway with a shorter budget, or
+ * injects a fixed clock, sees them differ.
+ */
+export function oneCallFitsBefore(deadlineAt: Date, nowMs: number, callBudgetMs: number): boolean {
+  return deadlineAt.getTime() - nowMs >= callBudgetMs;
+}
+
+/**
  * Spec 140 s2a review round 2 (CR#3) — `createContactImport`'s budget: it
  * uploads the whole audience as one CSV (up to the 5,000 / 50,000 ceiling), so
  * 10 s is unsized for it. 30 s is the pre-s2a `importFetch` value and is

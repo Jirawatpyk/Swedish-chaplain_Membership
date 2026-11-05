@@ -30,8 +30,9 @@
  * Spec 140 slice 3 (DT5): a function budget of `maxDuration` = 300 s, and one
  * deadline inside it (start + maxDuration − `RECLAIM_DEADLINE_MARGIN_MS`) that
  * covers the Resend listing and the delete chunks. A run cut by it answers 200
- * with `truncated` / `deferredDeletes` and the next daily run resumes. The
- * deadline is the route's own; no request field can move it.
+ * with `truncated` / `deferredDeletes`. Nothing resumes: the next daily run
+ * lists again from page one, and the deferred orphans are found and deleted
+ * then. The deadline is the route's own; no request field can move it.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 

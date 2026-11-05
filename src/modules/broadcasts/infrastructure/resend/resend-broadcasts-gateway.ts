@@ -33,6 +33,7 @@ import type { RemoveContactOutcome } from '@/modules/broadcasts/application/port
 import {
   IMPORT_CALL_TIMEOUT_MS,
   RESEND_CALL_TIMEOUT_MS,
+  oneCallFitsBefore,
 } from '../../application/ports/broadcasts-gateway-port';
 import type {
   AudienceContact,
@@ -916,8 +917,9 @@ export function createResendBroadcastsGateway({
         }
         // Spec 140 DT5 — the caller's per-invocation budget: a page starts only
         // while one bounded call still fits before `deadlineAt`, so the listing
-        // ends inside it (the page bound above stays as the runaway stop).
-        if (deadlineAt.getTime() - Date.now() < callTimeoutMs) {
+        // ends inside it (the page bound above stays as the runaway stop). The
+        // use case's delete chunks judge with the same rule (R1-H).
+        if (!oneCallFitsBefore(deadlineAt, Date.now(), callTimeoutMs)) {
           truncatedBy = 'deadline';
           break;
         }
