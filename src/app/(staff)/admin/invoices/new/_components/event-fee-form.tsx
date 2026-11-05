@@ -521,28 +521,34 @@ export function EventFeeForm({
   // survives when the results change.
   const eventSearch = useEventSearch();
   const [pickedEvent, setPickedEvent] = useState<EventOption | null>(null);
-  const eventOptions: ComboboxOption[] = useMemo(() => {
-    const { typed, results } = eventSearch;
+  const { eventOptions, localMatchCount } = useMemo(() => {
+    const { typed, results, loading } = eventSearch;
     let rows: readonly EventOption[];
+    let localCount = 0;
     if (typed === '') {
       rows = events;
     } else {
-      // Loaded events still match by label (their date too); the server adds
-      // older ones by name.
-      const needle = typed.toLocaleLowerCase();
-      const local = events.filter((e) => e.label.toLocaleLowerCase().includes(needle));
-      rows = [...local, ...results.filter((r) => !local.some((e) => e.eventId === r.eventId))];
+      // Loaded events still match by label (their date too), at once; the
+      // server adds older ones by name once its search has finished, so an
+      // earlier query's results never mix with this one's.
+      const fold = (v: string) => v.normalize('NFC').toLocaleLowerCase('th');
+      const needle = fold(typed);
+      const local = events.filter((e) => fold(e.label).includes(needle));
+      localCount = local.length;
+      const server = loading ? [] : results.filter((r) => !local.some((e) => e.eventId === r.eventId));
+      rows = [...local, ...server];
     }
     const selected =
       eventId === '' || rows.some((e) => e.eventId === eventId)
         ? null
         : (events.find((e) => e.eventId === eventId) ??
           (pickedEvent?.eventId === eventId ? pickedEvent : null));
-    return (selected ? [selected, ...rows] : rows).map((e) => ({
+    const options: ComboboxOption[] = (selected ? [selected, ...rows] : rows).map((e) => ({
       value: e.eventId,
       label: e.label,
       ...(e.description ? { description: e.description } : {}),
     }));
+    return { eventOptions: options, localMatchCount: localCount };
   }, [events, eventSearch, eventId, pickedEvent]);
 
   function eventPickerEmptyText(): string {
@@ -554,6 +560,8 @@ export function EventFeeForm({
     const option =
       events.find((e) => e.eventId === next) ?? eventSearch.results.find((e) => e.eventId === next) ?? null;
     setPickedEvent(option);
+    // AURA clears its own text on a pick without calling onSearch('').
+    eventSearch.reset();
     handleEventChange(next);
   }
 
@@ -993,7 +1001,9 @@ export function EventFeeForm({
         noValidate
         className="flex flex-col gap-[var(--aura-space-6)]"
       >
-        {/* 1. Event picker */}
+        {/* 1. Event picker — #732: a focus starts with no typed text, as
+            AURA's own field does after a blur or close. */}
+        <div onFocusCapture={() => eventSearch.reset()}>
         <Combobox
           id="eventId"
           label={t('eventPicker.label')}
@@ -1008,12 +1018,18 @@ export function EventFeeForm({
           // #732 — with `onSearch` AURA stops filtering and shows the
           // options as given (the memo above filters and adds results).
           onSearch={eventSearch.onSearch}
-          loading={eventSearch.loading}
+          // AURA hides every option while loading, so only while nothing
+          // loaded matches yet.
+          loading={eventSearch.loading && localMatchCount === 0}
           loadingText={t('eventPicker.searching')}
           placeholder={noEvents ? t('eventPicker.noEvents') : t('eventPicker.placeholder')}
           emptyText={eventPickerEmptyText()}
+          {...(eventSearch.failed && eventOptions.length > 0
+            ? { hint: t('eventPicker.searchFailed') }
+            : {})}
           disabled={noEvents}
         />
+        </div>
 
         {/* 2. Attendee picker */}
         {eventId !== '' && (

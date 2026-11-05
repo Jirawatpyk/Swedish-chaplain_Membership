@@ -330,6 +330,17 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     expect(screen.getByRole('option', { name: /Annual Gala/ })).toBeInTheDocument();
   });
 
+  it('UX L2 — after a failed search, typing the same text again searches again', async () => {
+    let calls = 0;
+    const fn = stubFetch(() => (++calls === 1 ? new Response('{}', { status: 500 }) : listOf([oldEvent])));
+    renderForm();
+    typeInPicker('Old');
+    expect(await screen.findByText(picker.searchFailed ?? '')).toBeInTheDocument();
+    typeInPicker('Old ');
+    expect(await screen.findByRole('option', { name: /Old Breakfast/ })).toBeInTheDocument();
+    expect(searchCalls(fn).map((u) => u.searchParams.get('q'))).toEqual(['Old', 'Old']);
+  });
+
   it('UX L3 — text over 100 characters is searched as its first 100, not refused', async () => {
     const fn = stubFetch(() => listOf([]));
     renderForm();

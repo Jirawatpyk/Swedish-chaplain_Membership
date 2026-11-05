@@ -16,6 +16,8 @@ import { toEventOption } from '../_lib/event-options';
 import type { EventOption } from './event-fee-form';
 
 const DEBOUNCE_MS = 200;
+/** The list route's `q` limit; longer text is searched as its first 100. */
+export const EVENT_SEARCH_MAX_CHARS = 100;
 /** Enough to pick from without paging; the newest first, as the list route orders. */
 export const EVENT_SEARCH_PAGE_SIZE = 25;
 
@@ -26,7 +28,9 @@ const SearchResponseSchema = z.object({
 export interface EventSearch {
   /** Hand to the Combobox's `onSearch`. */
   readonly onSearch: (text: string) => void;
-  /** The trimmed text as typed (not debounced). */
+  /** Forget the typed text — AURA clears its own on a pick, blur or close and does not call `onSearch('')`. */
+  readonly reset: () => void;
+  /** The trimmed text as typed (not debounced, capped). */
   readonly typed: string;
   /** Results for the last finished search; empty while nothing is typed. */
   readonly results: readonly EventOption[];
@@ -37,7 +41,12 @@ export interface EventSearch {
 
 export function useEventSearch(): EventSearch {
   const [rawText, setRawText] = useState('');
-  const query = useDebouncedValue(rawText.trim(), DEBOUNCE_MS);
+  // A retry after a failure re-sends the same text, so the attempt is part of
+  // what is debounced (otherwise the effect never runs again).
+  const [attempt, setAttempt] = useState(0);
+  const typed = rawText.trim().slice(0, EVENT_SEARCH_MAX_CHARS);
+  const debounced = useDebouncedValue(`${attempt}\u0000${typed}`, DEBOUNCE_MS);
+  const query = debounced.slice(debounced.indexOf('\u0000') + 1);
   const [results, setResults] = useState<readonly EventOption[]>([]);
   const [searching, setSearching] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -83,11 +92,14 @@ export function useEventSearch(): EventSearch {
       cancelled = true;
       controller.abort();
     };
-  }, [query]);
+  }, [query, debounced]);
 
-  const typed = rawText.trim();
   return {
-    onSearch: setRawText,
+    onSearch: (text: string) => {
+      if (failed) setAttempt((a) => a + 1);
+      setRawText(text);
+    },
+    reset: () => setRawText(''),
     typed,
     results: query === '' ? [] : results,
     loading: typed !== '' && (searching || typed !== query),
