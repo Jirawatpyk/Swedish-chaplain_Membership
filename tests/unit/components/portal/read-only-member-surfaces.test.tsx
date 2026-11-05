@@ -117,7 +117,7 @@ const SURFACES: readonly Surface[] = [
   {
     name: 'resend invoice button',
     ui: () => <ResendInvoiceButton invoiceId="inv-1" documentNumber="INV-1" />,
-    act: () => fireEvent.click(byName(/email a fresh copy/i)),
+    act: () => fireEvent.click(byName(/email me a copy/i)),
   },
   {
     name: 'renewal reminders toggle',
