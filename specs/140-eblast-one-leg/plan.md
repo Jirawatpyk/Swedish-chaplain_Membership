@@ -2219,7 +2219,8 @@ This section supersedes the build table above wherever the two disagree. The bui
   - `countStuckErasuresInTx` is unchanged (a count needs no order).
   - `pnpm db:query "EXPLAIN …"` on dev is recorded in § Evidence before GREEN.
 - **Residual holes, recorded, not closed:** (1) the emit is best-effort, so a lost emit does not move the member back; (2) a head that fails **before** the scrub tx commits, or a re-drive that exits early, writes no marker and does not rotate. The per-tick hash would close (2) but cannot be tested deterministically; rejected for that.
-- **Tests (RED first, `test(members)`):** integration "20 stuck heads with recent attempts do not starve a 21st"; a cross-tenant case where tenant B's audit rows do not change tenant A's order.
+- **Checked against source (5 Nov 2026):** the emit's payload key is literally `member_id` (`erase-member.ts:786–831`); the index predicate is `WHERE "payload" ? 'member_id'` on `((payload->>'member_id'), "timestamp" DESC)` (`0189:158–160`); the route passes `MAX_PER_TICK = 50` (`reconcile-erasures/route.ts:60`) as the limit.
+- **Tests (RED first, `test(members)`):** integration at the repo with `limit = N`: N stuck heads whose latest attempt is recent do not starve an (N+1)th with an older attempt or none. The markers come from the real emit path (the `erase-member` re-drive or its emit helper), never hand-inserted audit rows, so a wrong payload key cannot pass. A cross-tenant case: tenant B's audit rows do not change tenant A's order.
 - **Runbook (pdpa M-3):** the erasure-reconcile runbook says the queue rotates by last attempt and names the two residual holes.
 - Commit scope `members`; only the members infra repo changes, no cross-module import.
 
@@ -2253,9 +2254,9 @@ This section supersedes the build table above wherever the two disagree. The bui
 - Residual (Evidence): non-`resource_locked` 409s still reach the legacy replay arm, which is unreachable in practice because Resend ignores the Idempotency-Key on broadcasts.
 
 #### DT4 — contact detach (architect M4, pdpa M-1, reliability L1)
-- The guard exists: `assertNonEmpty({ audienceId, email })` (`gateway:726`, spec 141). Slice 3 **pins** it with a contract case and tightens it to a UUID shape. The only caller is `subprocessor-erasure-adapter.ts:146`.
+- The guard exists: `assertNonEmpty({ audienceId, email })` (`gateway:726`, spec 141). Slice 3 **pins** it with a contract case and does **not** tighten it to a UUID shape: the only caller (`subprocessor-erasure-adapter.ts:146`) runs on every erasure on both legs, dev holds 1 stored audience id (UUID-shaped), and prod cannot be read (D-034). A stricter refusal on a GDPR path waits for a follow-up issue carrying the prod query the maintainer would run.
 - No encoding or lowercasing (step 0.1: the unencoded `+` is read literally, matching is case-insensitive). An MSW contract case pins the exact URL sent, so an SDK upgrade that starts encoding is caught.
-- The DT4 test asserts `detached`, never `already_absent` (step 0 item 2, reworded per reliability M7).
+- The DT4 test asserts `detached`, never `already_absent` (step 0 item 2, reworded per reliability M7). The over-report is stated in `docs/runbooks/member-erasure.md`; the rotation note goes in the same runbook.
 
 #### DT5 — the reclaim time budget (architect H5/M1–M3, reliability H3/M1)
 - Add `export const maxDuration = 300` to `src/app/api/cron/broadcasts/reclaim-orphan-audiences/route.ts`, pinned by a test. `deadlineAt` = request start + `maxDuration` − a margin, in the existing shape of `subprocessor-erasure-adapter.ts:121–123` (`deadlineAt: Date`, stop when `remaining < RESEND_CALL_TIMEOUT_MS`).
@@ -2278,6 +2279,10 @@ This section supersedes the build table above wherever the two disagree. The bui
 
 #### Build order (unchanged in shape)
 DT1 + DT2 (with the reason copy) → DT3 + the status readers → DT4 → DT5 → Rotation. Each builder brief points at its subsection here.
+- **No migration, checked:** `broadcasts.failure_reason` is `text` with no CHECK on its values (dev `pg_constraint`, 5 Nov 2026), so `provider_cancelled` needs none.
+- DT2's EN key lands in the same GREEN as the reason, so `check:i18n` never sees a missing key.
+- Exhaustive switches extended here use `void _exhaustive; return <safe>`.
+- **Reviews** add `i18n-translation-reviewer` and `enterprise-ux-designer` for the new member email copy.
 
 #### Housekeeping
 - Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
