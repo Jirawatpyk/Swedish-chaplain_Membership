@@ -58,6 +58,31 @@ describe('<ResendInvoiceButton layout="compact">', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  // PR #757 review — the pending icon spins, as the PDF button's does.
+  it('spins its loader icon while sending', async () => {
+    let answer: (res: Response) => void = () => {};
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    renderCompact();
+    const button = screen.getByRole('button', { name: /SC-2026-000123/ });
+    try {
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(button).toHaveAttribute('aria-busy', 'true');
+      expect(button.querySelector('svg')).toHaveClass('aura-spin');
+    } finally {
+      await act(async () => {
+        answer(new Response(null, { status: 202 }));
+      });
+    }
+  });
+
   it.each([
     ['en', en],
     ['th', th],

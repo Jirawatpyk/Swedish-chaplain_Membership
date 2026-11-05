@@ -18,6 +18,7 @@ import { toast } from '@/lib/toast';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { Button, IconButton } from '@jirawatpyk/aura-react';
+import { IconLoaderCircle } from '@jirawatpyk/aura-react/icons';
 
 export interface ResendInvoiceButtonProps {
   readonly invoiceId: string;
@@ -142,7 +143,8 @@ export function ResendInvoiceButton({
     return (
       <IconButton
         type="button"
-        icon={isPending ? 'loader-circle' : 'mail'}
+        // The spinning loader while sending, as the PDF button's (PR #757 review).
+        icon={isPending ? <IconLoaderCircle className="aura-spin" /> : 'mail'}
         touchHeight
         label={label}
         onClick={handleClick}

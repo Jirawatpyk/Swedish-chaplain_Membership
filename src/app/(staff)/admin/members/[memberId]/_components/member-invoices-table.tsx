@@ -99,7 +99,8 @@ export function MemberInvoicesTable({
         </span>
       ),
     },
-    // Card-only (hideBelow is not applied to stacked cards).
+    // Card-only (hideBelow is not applied to stacked cards): stand-in until
+    // AURA #198 (a column that shows only in stacked cards).
     { key: 'cardNumber', label: labels.number, mono: true, card: 'title', hideBelow: 100_000, render: (row) => row.number },
     {
       key: 'status',

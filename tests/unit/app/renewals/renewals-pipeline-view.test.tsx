@@ -46,28 +46,32 @@ describe('renderRenewalsPipelineView — the work-queue card', () => {
   });
 });
 
+const lensBase = {
+  rows: [],
+  summary: {
+    totalInWindow: 60,
+    byUrgency: { overdue: 0, due_soon: 0, upcoming: 60, suspended: 0 } as never,
+    lapsedCount: 0,
+    suspendedOutsideWindowCount: 0,
+    suspendedInWindowGlobalCount: 0,
+  } as never,
+  urgency: 'upcoming' as never,
+  tier: undefined,
+  monthLensActive: false,
+  monthKind: undefined,
+  monthLabel: undefined,
+  sort: 'expires' as never,
+  sortHrefs: { expires: '/admin/renewals?sort=expires', tier: '/admin/renewals?sort=tier' },
+  showEmptyState: false,
+  canMutate: true,
+  canManageSchedules: true,
+} as const;
+
 describe('renderPipelineLens — the keyset footer', () => {
   it('is AURA cursor Pagination with the same Next href and the "Showing first 50" status', async () => {
     const lens = (await renderPipelineLens({
-      rows: [],
-      summary: {
-        totalInWindow: 60,
-        byUrgency: { overdue: 0, due_soon: 0, upcoming: 60, suspended: 0 } as never,
-        lapsedCount: 0,
-        suspendedOutsideWindowCount: 0,
-        suspendedInWindowGlobalCount: 0,
-      } as never,
-      urgency: 'upcoming' as never,
-      tier: undefined,
-      monthLensActive: false,
-      monthKind: undefined,
-      monthLabel: undefined,
-      sort: 'expires' as never,
-      sortHrefs: { expires: '/admin/renewals?sort=expires', tier: '/admin/renewals?sort=tier' },
+      ...lensBase,
       nextHref: '/admin/renewals?urgency=upcoming&cursor=c2',
-      showEmptyState: false,
-      canMutate: true,
-      canManageSchedules: true,
     })) as ReactElement;
     render(lens);
     // PR P review L6 — the nav is named for its list, not AURA's generic default.
@@ -78,5 +82,29 @@ describe('renderPipelineLens — the keyset footer', () => {
       'href',
       '/admin/renewals?urgency=upcoming&cursor=c2',
     );
+  });
+
+  // PR #757 review — page 2+ of a forward-only keyset had no way back.
+  it('on page 2+ links First page to the cursor-less view, filters kept', async () => {
+    render(
+      (await renderPipelineLens({
+        ...lensBase,
+        tier: 'corporate' as never,
+        nextHref: '/admin/renewals?tier=corporate&urgency=upcoming&cursor=c3',
+        firstHref: '/admin/renewals?tier=corporate&urgency=upcoming',
+      })) as ReactElement,
+    );
+    expect(screen.getByRole('link', { name: 'First page' })).toHaveAttribute('href', '/admin/renewals?tier=corporate&urgency=upcoming');
+    expect(screen.getByRole('link', { name: 'Next page' })).toHaveAttribute('href', '/admin/renewals?tier=corporate&urgency=upcoming&cursor=c3');
+  });
+
+  it('keeps First page on the last page reached by a cursor; disables it on the first page', async () => {
+    const { unmount } = render((await renderPipelineLens({ ...lensBase, nextHref: null, firstHref: '/admin/renewals?urgency=upcoming' })) as ReactElement);
+    expect(screen.getByRole('link', { name: 'First page' })).toHaveAttribute('href', '/admin/renewals?urgency=upcoming');
+    unmount();
+    render((await renderPipelineLens({ ...lensBase, nextHref: '/admin/renewals?urgency=upcoming&cursor=c2', firstHref: null })) as ReactElement);
+    const first = screen.getByRole('link', { name: 'First page' });
+    expect(first).toHaveAttribute('aria-disabled', 'true');
+    expect(first).not.toHaveAttribute('href');
   });
 });

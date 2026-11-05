@@ -49,6 +49,28 @@ describe('renderTasksQueueView', () => {
     expect(next).toHaveAttribute('href', '/admin/renewals/tasks?cursor=abc');
   });
 
+  // PR #757 review — page 2+ of a forward-only keyset had no way back.
+  it('on page 2+ links First page to the cursor-less view, filters kept', async () => {
+    await renderView({
+      sectionTabs: null,
+      queue: <p>QUEUE</p>,
+      nextHref: '/admin/renewals/tasks?status=done&cursor=c3',
+      firstHref: '/admin/renewals/tasks?status=done',
+    });
+    expect(screen.getByRole('link', { name: 'First page' })).toHaveAttribute('href', '/admin/renewals/tasks?status=done');
+    expect(screen.getByRole('link', { name: 'Next page' })).toHaveAttribute('href', '/admin/renewals/tasks?status=done&cursor=c3');
+  });
+
+  it('keeps First page on the last page reached by a cursor; disables it on the first page', async () => {
+    const { unmount } = await renderView({ sectionTabs: null, queue: <p>QUEUE</p>, nextHref: null, firstHref: '/admin/renewals/tasks' });
+    expect(screen.getByRole('link', { name: 'First page' })).toHaveAttribute('href', '/admin/renewals/tasks');
+    unmount();
+    await renderView({ sectionTabs: null, queue: <p>QUEUE</p>, nextHref: '/admin/renewals/tasks?cursor=abc', firstHref: null });
+    const first = screen.getByRole('link', { name: 'First page' });
+    expect(first).toHaveAttribute('aria-disabled', 'true');
+    expect(first).not.toHaveAttribute('href');
+  });
+
   it('has no footer on the last page', async () => {
     await renderView({ sectionTabs: null, queue: <p>QUEUE</p>, nextHref: null });
     expect(screen.queryByRole('navigation')).toBeNull();

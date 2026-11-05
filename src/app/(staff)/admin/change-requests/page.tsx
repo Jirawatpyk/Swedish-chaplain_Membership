@@ -210,11 +210,19 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
     params.set('cursor', page.nextCursor);
     return `/admin/change-requests?${params.toString()}`;
   })();
+  // PR #757 review — "First page" on page 2+: the same filters, no cursor.
+  // Null on the first page, where it shows disabled.
+  const firstHref = (() => {
+    if (!q.cursor) return null;
+    const query = filterParams().toString();
+    return query === '' ? '/admin/change-requests' : `/admin/change-requests?${query}`;
+  })();
 
   return renderChangeRequestQueueView({
     items: page.items,
     hasMore: page.nextCursor !== null,
     nextHref,
+    firstHref,
     // the tenant's pending fact belongs to the DEFAULT view — on a filtered
     // page it reads as a count of what is shown (UX I8)
     pendingSummary:
@@ -240,6 +248,7 @@ export async function renderChangeRequestQueueView({
   items,
   hasMore,
   nextHref,
+  firstHref = null,
   pendingSummary,
   deepLinkNotice,
   filtered,
@@ -249,6 +258,8 @@ export async function renderChangeRequestQueueView({
   readonly items: readonly ChangeRequestQueueItem[];
   readonly hasMore: boolean;
   readonly nextHref: string | null;
+  /** "First page": the cursor-less view, or null on the first page. */
+  readonly firstHref?: string | null | undefined;
   readonly pendingSummary: { readonly count: number; readonly oldestDays: number } | null;
   readonly deepLinkNotice: string | null;
   readonly filtered: boolean;
@@ -294,9 +305,19 @@ export async function renderChangeRequestQueueView({
           ) : (
             <ChangeRequestQueueTable items={items} />
           )}
-          {/* Spec 122: AURA cursor Pagination — a forward-only keyset, so no
-              First link; the same Next href as before. */}
-          {nextHref ? <CursorPagination label={t('paginationLabel')} showFirst={false} nextHref={nextHref} /> : null}
+          {/* Spec 122: AURA cursor Pagination — a forward-only keyset, so
+              Previous stays disabled; First (PR #757 review) is the way back
+              from page 2+, disabled on the first page. The same Next href
+              as before. */}
+          {nextHref || firstHref ? (
+            <CursorPagination
+              label={t('paginationLabel')}
+              showFirst
+              firstHref={firstHref ?? undefined}
+              hasFirst={firstHref !== null}
+              nextHref={nextHref ?? undefined}
+            />
+          ) : null}
         </div>
       </Card>
     </TableContainer>

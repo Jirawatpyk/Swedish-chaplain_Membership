@@ -9,7 +9,7 @@ import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { LayoutTemplate } from 'lucide-react';
 import { QueueTable } from '@/components/broadcast/admin/queue-table';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
-import { renderQueuePagination } from '@/components/broadcast/admin/queue-pagination';
+import { QueuePagination } from '@/components/broadcast/admin/queue-pagination';
 import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banner';
 import { OverdueBanner } from '@/components/broadcast/admin/overdue-banner';
 import { isDefaultBroadcastView } from './_lib/is-default-view';
@@ -428,12 +428,20 @@ export default async function AdminBroadcastsPage({
             // T086a V10 — rendered by the queue between the list and the bulk
             // toolbar: the toolbar is fixed to the bottom of the viewport, so it is
             // visually last and must come last in Tab order too (it came first).
-            pagination={await renderQueuePagination({
-              firstPageHref,
-              nextPageHref,
-              shown: rows.length,
-              viewTotal,
-            })}
+            pagination={
+              <QueuePagination
+                label={t('pagination.label')}
+                // On the first page only: keyset pages have no offset, so on
+                // page 2 "Showing 50 of 132" would read as the same first 50.
+                status={
+                  viewTotal !== null && firstPageHref === null
+                    ? t('pagination.summary', { shown: rows.length, total: viewTotal })
+                    : null
+                }
+                firstPageHref={firstPageHref}
+                nextPageHref={nextPageHref}
+              />
+            }
           />
         </div>
       </Card>

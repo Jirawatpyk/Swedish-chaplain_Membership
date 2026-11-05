@@ -93,6 +93,8 @@ export interface PipelineLensProps {
   readonly sortHrefs: Record<'expires' | 'tier', string>;
   /** "Next 50" when the read was capped; null on the last page. */
   readonly nextHref: string | null;
+  /** "First page": the cursor-less view, or null on the first page. */
+  readonly firstHref?: string | null | undefined;
   /** `shouldShowRenewalsEmptyState` — no filter active and nothing due. */
   readonly showEmptyState: boolean;
   /** `renewals.write`: row selection, the bulk bar and the row mutations. */
@@ -113,6 +115,7 @@ export async function renderPipelineLens({
   sort,
   sortHrefs,
   nextHref,
+  firstHref = null,
   showEmptyState,
   canMutate,
   canManageSchedules,
@@ -188,17 +191,21 @@ export async function renderPipelineLens({
           {...(monthLabel !== undefined ? { monthLabel } : {})}
         />
       )}
-      {nextHref ? (
-        // Keyset cursor pagination: the read was capped at 50 rows. AURA
-        // cursor Pagination (same as /admin/audit): a Next link + the visible
-        // "Showing first 50" status so everyone knows the list is truncated.
-        // Forward-only, so no First link. UrgencyBucketTabs drops the cursor
-        // on a tab switch.
+      {nextHref || firstHref ? (
+        // Keyset cursor pagination: the read was capped at 50 rows, or this
+        // page was reached by a cursor. AURA cursor Pagination (same as
+        // /admin/audit): a Next link + the visible "Showing first 50" status
+        // (only while capped) so everyone knows the list is truncated.
+        // Forward-only, so Previous stays disabled; First (PR #757 review) is
+        // the way back from page 2+, disabled on the first page.
+        // UrgencyBucketTabs drops the cursor on a tab switch.
         <CursorPagination
           label={t('table.pagination.label')}
-          showFirst={false}
-          status={t('table.pagination.showingFirst')}
-          nextHref={nextHref}
+          showFirst
+          firstHref={firstHref ?? undefined}
+          hasFirst={firstHref !== null}
+          status={nextHref ? t('table.pagination.showingFirst') : null}
+          nextHref={nextHref ?? undefined}
         />
       ) : null}
     </div>

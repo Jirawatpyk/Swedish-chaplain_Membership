@@ -140,6 +140,28 @@ describe('renderChangeRequestQueueView', () => {
     );
   });
 
+  // PR #757 review — page 2+ of a forward-only keyset had no way back.
+  it('on page 2+ links First page to the cursor-less view, filters kept', async () => {
+    await renderView({
+      ...base,
+      hasMore: true,
+      nextHref: '/admin/change-requests?state=pending&cursor=c3',
+      firstHref: '/admin/change-requests?state=pending',
+    });
+    expect(screen.getByRole('link', { name: 'First page' })).toHaveAttribute('href', '/admin/change-requests?state=pending');
+    expect(screen.getByRole('link', { name: 'Next page' })).toHaveAttribute('href', '/admin/change-requests?state=pending&cursor=c3');
+  });
+
+  it('keeps First page on the last page reached by a cursor; disables it on the first page', async () => {
+    const { unmount } = await renderView({ ...base, firstHref: '/admin/change-requests?state=decided' });
+    expect(screen.getByRole('link', { name: 'First page' })).toHaveAttribute('href', '/admin/change-requests?state=decided');
+    unmount();
+    await renderView({ ...base, hasMore: true, nextHref: '/admin/change-requests?cursor=c2', firstHref: null });
+    const first = screen.getByRole('link', { name: 'First page' });
+    expect(first).toHaveAttribute('aria-disabled', 'true');
+    expect(first).not.toHaveAttribute('href');
+  });
+
   it('the empty state sits in the same card, without a second border', async () => {
     await renderView(base);
     const card = screen.getByTestId('queue-filters').closest('.aura-card');

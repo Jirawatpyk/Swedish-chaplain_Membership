@@ -21,11 +21,13 @@ export interface TasksQueueViewProps {
   readonly queue: ReactNode;
   /** The keyset "Next 50" link, or null on the last page. */
   readonly nextHref: string | null;
+  /** "First page": the cursor-less view, or null on the first page. */
+  readonly firstHref?: string | null | undefined;
   /** The queue read failed: say so rather than show an empty queue. */
   readonly loadFailed?: boolean;
 }
 
-export async function renderTasksQueueView({ sectionTabs, queue, nextHref, loadFailed = false }: TasksQueueViewProps) {
+export async function renderTasksQueueView({ sectionTabs, queue, nextHref, firstHref = null, loadFailed = false }: TasksQueueViewProps) {
   const t = await getTranslations('admin.renewals.tasks');
   return (
     // One card on a desktop; on a phone the rows are cards of their own, so it
@@ -44,16 +46,20 @@ export async function renderTasksQueueView({ sectionTabs, queue, nextHref, loadF
         ) : (
           <>
             {queue}
-            {/* UX-audit PR-A #1 — the keyset footer, only when the page is
-                capped at 50: AURA cursor Pagination, forward-only (no First).
-                A real link (works without JavaScript); the status is
-                page-position-neutral, so it holds on page 2 too. */}
-            {nextHref ? (
+            {/* UX-audit PR-A #1 — the keyset footer, while the page is
+                capped at 50 or was reached by a cursor: AURA cursor
+                Pagination. Forward-only, so Previous stays disabled; First
+                (PR #757 review) is the way back from page 2+, disabled on
+                the first page. Real links (work without JavaScript); the
+                status is page-position-neutral, so it holds on page 2 too. */}
+            {nextHref || firstHref ? (
               <CursorPagination
                 label={t('pagination.label')}
-                showFirst={false}
+                showFirst
+                firstHref={firstHref ?? undefined}
+                hasFirst={firstHref !== null}
                 status={t('pagination.showingFirst')}
-                nextHref={nextHref}
+                nextHref={nextHref ?? undefined}
               />
             ) : null}
           </>

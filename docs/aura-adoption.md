@@ -216,6 +216,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | #197 | Cursor `Pagination` always draws Previous (disabled with no `previousHref`); only First can be left out (`showFirst`). Ask: `showPrevious={false}` for forward-only keyset lists (handoff addendum 98, found in PR P's UX review) | None: the E-Blast queue, change requests, renewals pipeline and tasks keep the disabled step (not focusable, no click) |
+| #198 | DataTable has `card: 'hide'` (grid only) but no card-only column. Ask: `card: 'only'` (handoff addendum 99, found in PR P's code review) | `member-invoices-table.tsx` fakes the phone card's title and pill columns with `hideBelow: 100_000`; with `card: 'only'` they drop the sentinel |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

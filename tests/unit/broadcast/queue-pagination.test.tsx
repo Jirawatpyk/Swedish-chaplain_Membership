@@ -1,30 +1,24 @@
 /**
  * The /admin/broadcasts queue's keyset footer (spec 122): AURA cursor
- * `Pagination` with the page's own First and Next hrefs and, on the first
- * page, the "Showing N of M" summary as its status line.
+ * `Pagination` with the page's own First and Next hrefs and the status line
+ * the page passes (the "Showing N of M" summary on the first page).
  */
-import type { ReactElement } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { createTranslator } from 'next-intl';
 import en from '@/i18n/messages/en.json';
-import { renderQueuePagination } from '@/components/broadcast/admin/queue-pagination';
-
-vi.mock('next-intl/server', () => ({
-  getTranslations: async (namespace: string) => createTranslator({ locale: 'en', messages: en, namespace: namespace as never }),
-}));
+import { QueuePagination } from '@/components/broadcast/admin/queue-pagination';
 
 const P = en.admin.broadcasts.queue.pagination;
 
-describe('renderQueuePagination', () => {
-  it('is AURA cursor Pagination with the same First and Next hrefs', async () => {
+describe('QueuePagination', () => {
+  it('is AURA cursor Pagination with the same First and Next hrefs', () => {
     render(
-      (await renderQueuePagination({
-        firstPageHref: '/admin/broadcasts?status=submitted',
-        nextPageHref: '/admin/broadcasts?status=submitted&cursor=c2',
-        shown: 50,
-        viewTotal: 132,
-      })) as ReactElement,
+      <QueuePagination
+        label={P.label}
+        status={null}
+        firstPageHref="/admin/broadcasts?status=submitted"
+        nextPageHref="/admin/broadcasts?status=submitted&cursor=c2"
+      />,
     );
     const nav = screen.getByRole('navigation', { name: P.label });
     expect(nav).toHaveClass('aura-pagination', 'aura-pagination--cursor');
@@ -33,5 +27,15 @@ describe('renderQueuePagination', () => {
       'href',
       '/admin/broadcasts?status=submitted&cursor=c2',
     );
+  });
+
+  it('shows the status line it is given, and nothing when there is one page only', () => {
+    const { unmount } = render(
+      <QueuePagination label={P.label} status="Showing 50 of 132" firstPageHref={null} nextPageHref="/admin/broadcasts?cursor=c2" />,
+    );
+    expect(screen.getByRole('navigation', { name: P.label })).toHaveTextContent('Showing 50 of 132');
+    unmount();
+    const { container } = render(<QueuePagination label={P.label} status={null} firstPageHref={null} nextPageHref={null} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });
