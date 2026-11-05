@@ -2551,3 +2551,35 @@ describe('eraseMember — subprocessor audit returns { ok: false } (not a throw)
     }
   });
 });
+
+// PR #756 review round 1 (pdpa M-1) — the evidence card reads the detach wire
+// from the record itself: every propagation row written since spec 140 s4 says
+// `resend_detach_wire: 'segments'`, on every outcome, so the card can tell a
+// segment-wire "already absent" (Resend confirmed no membership) from the old
+// `/audiences` wire's (it answered 200 for anything). The re-drive writes
+// through this same emit (`reconcile-erasures` calls `eraseMember`).
+describe('subprocessor_erasure_propagated carries the detach wire', () => {
+  it.each(['ok', 'partial', 'failed', 'not_attempted', 'already_propagated'] as const)(
+    'the %s row says resend_detach_wire: segments',
+    async (resendOutcome) => {
+      const deps = buildEraseDeps();
+      deps.subprocessorErasure.propagate = vi.fn(async () => ({
+        resendOutcome,
+        resendContactsRemoved: 0,
+        resendContactsAlreadyAbsent: 0,
+        resendContactsFailed: 0,
+        stripeOutcome: 'ok' as const,
+      }));
+      const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      expect(res.ok).toBe(true);
+      const row = deps.audit.recordInTx.mock.calls.find(
+        (c) => (c[2] as { type: string }).type === 'subprocessor_erasure_propagated',
+      );
+      expect(row, 'subprocessor_erasure_propagated was not emitted').toBeDefined();
+      expect((row?.[2] as { payload: Record<string, unknown> }).payload).toMatchObject({
+        resend_outcome: resendOutcome,
+        resend_detach_wire: 'segments',
+      });
+    },
+  );
+});
