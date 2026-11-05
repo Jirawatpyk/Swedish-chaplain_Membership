@@ -50,8 +50,13 @@ describe('EvidenceCard', () => {
         baseRow({ subprocessorOutcome: { resendOutcome, contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
       );
       const summary = container.querySelector('details[data-evidence] > summary')!;
-      expect(summary.textContent).toContain('Resend action needed');
+      expect(summary.textContent).toContain('Action needed in Resend');
       expect(container.querySelector('details[data-evidence]')!.hasAttribute('open')).toBe(true);
+      // The status reads first, then the flag (DOM order = reading order).
+      expect(summary.textContent!.indexOf('Complete')).toBeLessThan(summary.textContent!.indexOf('Action needed in Resend'));
+      if (resendOutcome !== 'not_attempted') {
+        expect(container.textContent).toContain('The detach did not finish for every audience');
+      }
     },
   );
 
@@ -59,7 +64,7 @@ describe('EvidenceCard', () => {
     const { container } = renderCard(
       baseRow({ subprocessorOutcome: { resendOutcome, contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
     );
-    expect(container.querySelector('details[data-evidence] > summary')!.textContent).not.toContain('Resend action needed');
+    expect(container.querySelector('details[data-evidence] > summary')!.textContent).not.toContain('Action needed in Resend');
     expect(container.querySelector('details[data-evidence]')!.hasAttribute('open')).toBe(false);
   });
 

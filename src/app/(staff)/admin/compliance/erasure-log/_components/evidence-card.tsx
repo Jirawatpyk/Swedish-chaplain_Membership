@@ -84,7 +84,7 @@ export function EvidenceCard({
   return (
     <Card className={cn('overflow-hidden p-0', row.isOverdue && 'border-[var(--aura-border-danger)]')}>
       <details data-evidence open={!isComplete || resendNeedsAction} className="group">
-        <summary className="flex cursor-pointer list-none items-start justify-between gap-[var(--aura-space-3)] px-[var(--aura-space-5)] py-[var(--aura-space-4)] group-open:border-b group-open:border-[var(--aura-border-default)] [&::-webkit-details-marker]:hidden [&::marker]:content-['']">
+        <summary className="flex flex-wrap cursor-pointer list-none items-start justify-between gap-[var(--aura-space-3)] px-[var(--aura-space-5)] py-[var(--aura-space-4)] group-open:border-b group-open:border-[var(--aura-border-default)] [&::-webkit-details-marker]:hidden [&::marker]:content-['']">
           <div className="flex min-w-0 items-start gap-[var(--aura-space-3)]">
             <ChevronDownIcon
               aria-hidden
@@ -97,15 +97,16 @@ export function EvidenceCard({
               <p className="text-sm text-[var(--aura-fg-secondary)]">{t('erasedAt', { at: fmtDate(row.erasedAt) })}</p>
             </div>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-[var(--aura-space-2)]">
+          {/* The pill comes first in the DOM so a screen reader hears the status, then the flag. */}
+          <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-[var(--aura-space-2)]">
+            <StatusPill tone={statusTone} data-tone={statusTone} className="shrink-0">
+              {statusLabel}
+            </StatusPill>
             {resendNeedsAction ? (
               <Badge tone="warning" data-testid="erasure-resend-action">
                 {t('status.resendActionNeeded')}
               </Badge>
             ) : null}
-            <StatusPill tone={statusTone} data-tone={statusTone} className="shrink-0">
-              {statusLabel}
-            </StatusPill>
           </div>
         </summary>
 
@@ -266,6 +267,11 @@ export function EvidenceCard({
               {row.subprocessorOutcome.resendOutcome === 'not_attempted' ? (
                 <p className="text-xs text-[var(--aura-fg-secondary)]">
                   {t('fields.notAttemptedNote')}
+                </p>
+              ) : row.subprocessorOutcome.resendOutcome === 'partial' ||
+                row.subprocessorOutcome.resendOutcome === 'failed' ? (
+                <p className="text-xs text-[var(--aura-fg-secondary)]">
+                  {t('fields.detachFailedNote')}
                 </p>
               ) : null}
               </>

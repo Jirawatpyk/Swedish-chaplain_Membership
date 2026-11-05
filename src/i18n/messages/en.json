@@ -493,7 +493,7 @@
           "complete": "Complete",
           "halfRun": "In progress",
           "overdue": "Overdue",
-          "resendActionNeeded": "Resend action needed",
+          "resendActionNeeded": "Action needed in Resend",
           "elapsedDays": "{count, plural, one {# day} other {# days}}",
           "elapsedHours": "{count, plural, one {# hour} other {# hours}}",
           "elapsedMinutes": "{count, plural, one {# minute} other {# minutes}}"
@@ -523,7 +523,8 @@
           "contactsAlreadyAbsent": "Already absent from audience",
           "contactsFailed": "Contacts failed",
           "countsNote": "Each contact is counted once. Resend accepts a detach request whether or not the address was in the audience, so the first figure may include addresses that were already absent. Cite it as detach requests Resend accepted; do not add the already-absent figure to it.",
-          "notAttemptedNote": "Not attempted: the member's addresses were already scrubbed by an earlier pass, so this pass could send no detach request, and the first pass's detach may never have run. Search the Resend dashboard for the member's address from the DSR intake record and detach it by hand."
+          "notAttemptedNote": "Not attempted: the member's addresses were already scrubbed by an earlier pass, so this pass could send no detach request, and the first pass's detach may never have run. Search the Resend dashboard for the member's address from the DSR intake record and detach it by hand.",
+          "detachFailedNote": "The detach did not finish for every audience: the address may still be in a Resend audience. Search the Resend dashboard for the member's address from the DSR intake record and detach it by hand."
         },
         "documentKind": {
           "invoice": "Invoice",
