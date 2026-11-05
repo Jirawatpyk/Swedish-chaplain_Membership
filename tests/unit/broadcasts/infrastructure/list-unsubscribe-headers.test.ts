@@ -23,7 +23,7 @@
  * answers the one-click POST.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { createResendContractFake } from '../../../support/broadcasts/resend-contract-fake';
+import { createResendContractFake, fakeSegmentId } from '../../../support/broadcasts/resend-contract-fake';
 
 const fake = createResendContractFake();
 vi.mock('@/modules/broadcasts/infrastructure/resend/resend-broadcasts-client', () => ({
@@ -54,7 +54,7 @@ describe('E-Blast List-Unsubscribe', () => {
   it('broadcasts.create carries no custom headers (the API has none) — unsubscribe rides Resend’s merge tag', async () => {
     const createSpy = vi.spyOn(fake.client.broadcasts, 'create');
     await resendBroadcastsGateway.createBroadcast({
-      audienceId: 'aud_fake_1',
+      audienceId: fakeSegmentId(1),
       subject: 'Hi',
       htmlBody: '<p>hi</p>',
       fromName: 'SweCham',

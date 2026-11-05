@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { BrandHexColor } from '@/modules/broadcasts/domain/brand/brand-settings';
-import { createResendContractFake } from '../../../support/broadcasts/resend-contract-fake';
+import { createResendContractFake, fakeSegmentId } from '../../../support/broadcasts/resend-contract-fake';
 
 const fake = createResendContractFake();
 vi.mock('@/modules/broadcasts/infrastructure/resend/resend-broadcasts-client', () => ({
@@ -13,7 +13,7 @@ import { stripAngleBrackets } from '@/modules/broadcasts/infrastructure/resend/b
 // Minimal valid createBroadcast input; individual tests override `name`/`fromName`.
 function input(over: Partial<Parameters<typeof resendBroadcastsGateway.createBroadcast>[0]>) {
   return {
-    audienceId: 'aud_fake_1',
+    audienceId: fakeSegmentId(1),
     subject: 'Hi',
     htmlBody: '<p>hi</p>',
     fromName: 'SweCham',
@@ -128,11 +128,12 @@ describe('resendBroadcastsGateway.listAudiences — Resend contract', () => {
     // so the fake's audience counter is still 0 here.
     const r1 = await fake.client.segments.create({ name: 'Audience Alpha' });
     const r2 = await fake.client.segments.create({ name: 'Audience Beta' });
-    expect(r1.data?.id).toBe('aud_fake_1');
-    expect(r2.data?.id).toBe('aud_fake_2');
+    expect(r1.data?.id).toBe(fakeSegmentId(1));
+    expect(r2.data?.id).toBe(fakeSegmentId(2));
+    expect(r1.data?.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 
     // Remove the first one.
-    await fake.client.segments.remove('aud_fake_1');
+    await fake.client.segments.remove(fakeSegmentId(1));
 
     // Drive the REAL gateway method — this is the point of this test.
     // If the gateway mis-reads result.data instead of result.data.data, or
@@ -143,7 +144,7 @@ describe('resendBroadcastsGateway.listAudiences — Resend contract', () => {
     expect(truncated).toBe(false);
 
     expect(audiences).toHaveLength(1);
-    expect(audiences[0]).toMatchObject({ id: 'aud_fake_2', name: 'Audience Beta' });
+    expect(audiences[0]).toMatchObject({ id: fakeSegmentId(2), name: 'Audience Beta' });
     // Proves the gateway maps snake_case created_at → camelCase createdAt (as Date).
     expect(audiences[0]?.createdAt).toBeInstanceOf(Date);
   });

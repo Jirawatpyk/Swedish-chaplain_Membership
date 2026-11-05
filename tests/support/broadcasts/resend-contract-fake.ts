@@ -13,6 +13,16 @@ import { onTestFinished } from 'vitest';
 
 const MAX_NAME_CP = 70;
 
+/**
+ * PR #756 review round 1 (code-review #5) — the id `segments.create` mints for its
+ * `n`th segment (1-based). UUID-shaped, as Resend's segment ids are, so a gateway
+ * path that asserts a segment id (`assertSegmentId`) accepts it as it would a real
+ * one; the old `aud_fake_N` form could only reach paths that do not.
+ */
+export function fakeSegmentId(n: number): string {
+  return `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+}
+
 /** A call the gateway must never make (spec 140 DR4), as the fake received it. */
 export interface ForbiddenCall {
   readonly method: 'contacts.remove';
@@ -139,7 +149,7 @@ export function createResendContractFake(opts: {
           return { data: null, error: { statusCode: 401, message: `Your plan includes ${limitLabel} segments. Upgrade to add more.`, name: 'restricted' } };
         }
         audienceCount += 1;
-        const id = `aud_fake_${audienceCount}`;
+        const id = fakeSegmentId(audienceCount);
         createdAudienceIds.add(id);
         createdAudienceIdsInOrder.push(id);
         audienceNames.set(id, args.name);
