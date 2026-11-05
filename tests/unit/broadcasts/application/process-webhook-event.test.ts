@@ -34,6 +34,8 @@ import type { EmailTransactionalPort } from '@/modules/broadcasts/application/po
 import type { VerifiedBroadcastEvent } from '@/modules/broadcasts/application/ports/webhook-verifier-port';
 import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import { ok } from '@/lib/result';
+import { logger } from '@/lib/logger';
+import { DrizzleQueryError } from 'drizzle-orm';
 
 const FROZEN_NOW = new Date('2026-06-15T05:00:00Z');
 const tenant = asTenantContext('test-tenant');
@@ -290,6 +292,7 @@ function makeMembersBridge(): { port: MembersBridgePort; haltCalls: Array<{ memb
     },
     // Spec 139 — read first by the send-standing gate; a live member.
     async getMemberErasedAt() { return { erasedAt: null }; },
+    async filterErasedMemberIds() { return []; },
     async getMembersHaltedInTenant() {
       return [];
     },
@@ -1057,6 +1060,7 @@ describe('process-webhook-event — outbox best-effort + observability fallback 
       async lookupMemberPrimaryContactEmailInTenant() { return null; },
       // Spec 139 — read first by the send-standing gate; a live member.
       async getMemberErasedAt() { return { erasedAt: null }; },
+      async filterErasedMemberIds() { return []; },
       async getMembersHaltedInTenant() { return []; },
       async setMemberHalt() { return ok(undefined); },
       async markBroadcastsAcknowledged() { return ok({ previouslyNull: true }); },
@@ -1135,6 +1139,64 @@ describe('process-webhook-event — outbox best-effort + observability fallback 
   });
 });
 
+/**
+ * Spec 140 s2d review round 1 (reliability M-1) — a failed members read on
+ * the delivered-summary path logs WHICH read failed (`step`, the bridge's
+ * code-authored token) beside its class and SQLSTATE.
+ */
+describe('process-webhook-event — delivered_email failure lines name their step', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([
+    ['getMemberPrimaryContact', 'error', 'broadcasts.delivered_email.member_lookup_failed', 'members_bridge_get_member_primary_contact:repo.unexpected'],
+    ['getMemberPreferredLocale', 'warn', 'broadcasts.delivered_email.locale_resolve_failed', 'members_bridge_get_member_preferred_locale:repo.unexpected'],
+  ] as const)('%s throws → the %s line carries step and code', async (failing, level, msg, step) => {
+    const spy = vi.spyOn(logger, level).mockImplementation(() => undefined as never);
+    const pg = Object.assign(new Error('terminating connection'), { code: '57P01' });
+    const boom = () => Promise.reject(new Error(step, { cause: pg }));
+    const broadcasts = makeBroadcastsRepo({ currentBroadcast: baseBroadcast({ estimatedRecipientCount: 1 }) });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: { broadcastId, sent: 0, delivered: 1, bounced: 0, softBounced: 0, complained: 0 },
+    });
+    const members: MembersBridgePort = {
+      async getMembersBySegment() { return []; },
+      getMemberPrimaryContact: failing === 'getMemberPrimaryContact' ? boom : async () => unsafeBrandEmailLower('alice@example.com'),
+      async memberExistsInTenant() { return true; },
+      async lookupContactEmailInTenant() { return null; },
+      async lookupMemberPrimaryContactEmailInTenant() { return null; },
+      async getMemberErasedAt() { return { erasedAt: null }; },
+      async filterErasedMemberIds() { return []; },
+      async getMembersHaltedInTenant() { return []; },
+      async setMemberHalt() { return ok(undefined); },
+      async markBroadcastsAcknowledged() { return ok({ previouslyNull: true }); },
+      async filterMarketingOptedOut() { return new Set(); },
+      async getContactsBySegment() { return []; },
+      async countOptedOutContactsBySegment() { return 0; },
+      getMemberPreferredLocale: failing === 'getMemberPreferredLocale' ? boom : async () => null,
+    };
+    const transport: EmailTransactionalPort = {
+      async sendAdminNotification() {},
+      async sendMemberEmail() {},
+    };
+    await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: makeUnsubscribesRepo().port,
+        membersBridge: members,
+        audit: makeAudit().port,
+        clock: { now: () => FROZEN_NOW },
+        emailTransactional: transport,
+      },
+      { broadcastId, event: buildEvent('delivered'), requestId: null },
+    );
+    const line = spy.mock.calls.find((c) => c[1] === msg);
+    expect(line?.[0]).toMatchObject({ step, err: 'Error', code: '57P01' });
+  });
+});
+
 describe('process-webhook-event — delivered-summary locale (email-locale audit 2026-07-16)', () => {
   it('renders the delivered-summary email in the member preferred locale, not hardcoded en', async () => {
     const broadcasts = makeBroadcastsRepo({
@@ -1163,6 +1225,7 @@ describe('process-webhook-event — delivered-summary locale (email-locale audit
       async lookupMemberPrimaryContactEmailInTenant() { return null; },
       // Spec 139 — read first by the send-standing gate; a live member.
       async getMemberErasedAt() { return { erasedAt: null }; },
+      async filterErasedMemberIds() { return []; },
       async getMembersHaltedInTenant() { return []; },
       async setMemberHalt() { return ok(undefined); },
       async markBroadcastsAcknowledged() { return ok({ previouslyNull: true }); },
@@ -1453,5 +1516,70 @@ describe('helpers: shape conformance', () => {
   });
   it('unsafeBrandEmailLower preserves shape', () => {
     expect(unsafeBrandEmailLower('a@b.com')).toBe('a@b.com');
+  });
+});
+
+/**
+ * Spec 140 s2d review round 3 (pdpa H-1, code-review #5) — the `server_error`
+ * Result carries the error's class and a code-authored step, never its
+ * message: a Drizzle `Failed query:` message quotes the recipient's email.
+ */
+describe('process-webhook-event — server_error carries no error text (review round 3)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('a DrizzleQueryError thrown during processing is { errClass }, with no message and no email', async () => {
+    vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const pg = Object.assign(new Error('duplicate key value violates unique constraint "d"'), { code: '23505' });
+    const broadcasts = makeBroadcastsRepo({ currentBroadcast: baseBroadcast() });
+    broadcasts.port.withTx = () =>
+      Promise.reject(new DrizzleQueryError('insert into deliveries (email) values ($1)', ['alice@example.com'], pg));
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: { broadcastId, sent: 0, delivered: 0, bounced: 0, softBounced: 0, complained: 0 },
+    });
+    const result = await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: makeUnsubscribesRepo().port,
+        membersBridge: makeMembersBridge().port,
+        audit: makeAudit().port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      { broadcastId, event: buildEvent('delivered'), requestId: null },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({ kind: 'process_webhook.server_error', errClass: 'DrizzleQueryError' });
+    expect(JSON.stringify(result.error)).not.toMatch(/alice@example\.com|Failed query/);
+  });
+
+  it('a code-authored step thrown during processing is carried as step', async () => {
+    const broadcasts = makeBroadcastsRepo({ currentBroadcast: baseBroadcast() });
+    broadcasts.port.withTx = () => Promise.reject(new Error('lookup_failed:repo.unexpected'));
+    vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const result = await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: makeDeliveriesRepo({
+          upsertInsertedSequence: [true],
+          aggregate: { broadcastId, sent: 0, delivered: 0, bounced: 0, softBounced: 0, complained: 0 },
+        }).port,
+        marketingUnsubscribes: makeUnsubscribesRepo().port,
+        membersBridge: makeMembersBridge().port,
+        audit: makeAudit().port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      { broadcastId, event: buildEvent('delivered'), requestId: null },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({
+      kind: 'process_webhook.server_error',
+      errClass: 'Error',
+      step: 'lookup_failed:repo.unexpected',
+    });
   });
 });

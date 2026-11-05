@@ -10,6 +10,7 @@
 import {
   cancelInFlightBroadcastsForMember,
   makeCancelInFlightBroadcastsForMemberDeps,
+  type CancelInFlightForMemberError,
 } from '@/modules/broadcasts';
 import { logger } from '@/lib/logger';
 import type { BroadcastsCascadePort } from '../../application/ports/broadcasts-cascade-port';
@@ -58,11 +59,14 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
       // distinguishes this from the no-in-flight case (which returns
       // `outcome: 'ok'` with zeros). Ops can re-run cascade manually
       // via the audit-driven cleanup runbook.
+      // The F7 use case carries the error CLASS here (`errKind`), never a
+      // message (spec 140 s1 review round 4; spec 140 s2d (#736c) names it `errClass`).
+      // Review round 2 — annotated with its type, the check:log-error-objects
+      // allowlist (TOKEN_FIELDS_BY_TYPE).
+      const errClass: CancelInFlightForMemberError['errClass'] = result.error.errClass;
       logger.error(
         {
-          // The F7 use case carries the error CLASS here (`errKind`), never a
-          // message (spec 140 s1 review round 4).
-          err: result.error.message,
+          err: errClass,
           tenantId: tenant.slug,
           memberId: memberId as string,
           cascade: 'f7_in_flight_broadcast_cancel',

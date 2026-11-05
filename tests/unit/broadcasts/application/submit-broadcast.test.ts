@@ -133,7 +133,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
       }));
     },
     async getMemberPrimaryContact() {
-      if (opts.primaryContactThrows) throw new Error('members-bridge.getMemberPrimaryContact: repo.unexpected');
+      if (opts.primaryContactThrows) throw new Error('members_bridge_get_member_primary_contact:repo.unexpected');
       return opts.primaryContact !== null && opts.primaryContact !== undefined
         ? unsafeBrandEmailLower(opts.primaryContact)
         : null;
@@ -146,11 +146,12 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
     },
     // Spec 139 — read first by the send-standing gate.
     async getMemberErasedAt() {
-      if (opts.erased === 'throws') throw new Error('members-bridge.getMemberErasedAt: repo.unexpected');
+      if (opts.erased === 'throws') throw new Error('members_bridge_get_member_erased_at:repo.unexpected');
       return { erasedAt: opts.erased === 'erased' ? FROZEN_NOW : null };
     },
+    async filterErasedMemberIds() { return []; },
     async getMembersHaltedInTenant() {
-      if (opts.haltReadThrows) throw new Error('members-bridge.getMembersHaltedInTenant: repo.unexpected');
+      if (opts.haltReadThrows) throw new Error('members_bridge_get_members_halted:repo.unexpected');
       return halted;
     },
     async setMemberHalt() {

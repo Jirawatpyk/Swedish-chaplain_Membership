@@ -35,7 +35,7 @@
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { hashId } from '@/lib/log-id';
+import { errLogFields, hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { type MemberId } from '../../domain/member';
 import type { ContactId, PreferredLanguage } from '../../domain/contact';
@@ -356,14 +356,15 @@ export async function inviteUserForMember(
       email: emailResult.value,
     });
   } catch (e) {
-    const cause = e instanceof UseCaseAbort ? e.error : e;
+    const failure = e instanceof UseCaseAbort ? e.error : e;
     logger.error(
       {
         contactId: newContactId,
         // PII hygiene: hash F1 user id to keep cross-request
         // correlation possible without writing the raw id.
         userIdHash: hashId(created.value.user.id),
-        cause,
+        // Spec 140 s2d (#736c) — the class and codes, never the error object.
+        ...errLogFields(failure),
         requestId: input.requestId,
         mode: decision.mode,
       },

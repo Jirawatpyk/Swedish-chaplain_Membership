@@ -107,7 +107,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       {
         tenantId: tenant.slug,
         // The error CLASS (the use case answers `errKind`), never a driver message.
-        err: result.error.message,
+        err: result.error.errClass,
         // Review round 1 (code-review #4) — the orphan drain still ran.
         orphans: result.error.orphans,
       },

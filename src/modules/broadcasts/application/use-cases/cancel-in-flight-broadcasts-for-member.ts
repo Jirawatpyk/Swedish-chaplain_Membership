@@ -221,17 +221,18 @@ import type { TerminalBroadcastDraftRef } from '../ports/broadcasts-repo';
 import type { BroadcastOrphansRepo, OrphanedResendIdRef } from '../ports/broadcast-orphans-repo';
 import {
   AUDIENCE_CLEANUP_GRACE_MS,
-  ORPHAN_STUCK_ATTEMPTS,
-  ORPHAN_STUCK_MIN_AGE_MS,
+  isOrphanStuck,
+  orphanStuckCutoff,
   type OrphanOutcome,
 } from '../../domain/value-objects/orphaned-resend-id';
 import { asBroadcastId } from '../../domain/broadcast';
-import { isHandedStatus } from './_probe-refused-send';
+import { classifyResendDraftAnswer } from './_classify-resend-draft-answer';
+import { probedStatusOf } from './_probe-refused-send';
 import { settleOrphanAtResend } from './_settle-orphan-at-resend';
 import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
 export type CancelInFlightForMemberError =
-  | { readonly kind: 'cascade.server_error'; readonly message: string };
+  | { readonly kind: 'cascade.server_error'; readonly errClass: string };
 
 /**
  * Round 3 type-design fix — the bounded enum lives in this module's Domain
@@ -473,44 +474,65 @@ export async function cancelInFlightBroadcastsForMember(
       const startedAt = Date.now();
       const deleted = await deps.broadcastsGateway.deleteBroadcastOnce(resendId);
       const deleteMs = Date.now() - startedAt;
-      if (deleted.kind === 'deleted') {
+      // Spec 140 s2d (#735) — the table is `classifyResendDraftAnswer`'s `in_flight` policy.
+      const first = classifyResendDraftAnswer('in_flight', deleted.kind, null);
+      if (first.kind === 'deleted') {
         logger.info(
           { ...logBase, broadcastId: broadcast.broadcastId as string, resendBroadcastId: resendId, outcome: deleted.kind, deleteMs },
           'broadcasts.cascade.dispatch_begun_delete',
         );
         return { kind: 'cancel', resendOutcome: 'deleted' };
       }
-      if (deleted.kind !== 'absent' && deleted.kind !== 'forbidden') {
-        throw new ResendUnsettledError(deleted.kind);
-      }
+      if (first.kind === 'undecided') throw new ResendUnsettledError(first.deleted);
       // Review round 2 (code-review #1) — two not-founds need time between
       // them, or the GET can repeat a stale 404 for a send Resend accepted:
       // the same pause the import leg takes before it re-mints. Not after a
-      // 403, which is not a not-found.
-      if (deleted.kind === 'absent') {
+      // 403, which is not a not-found (`pause` is set only after a 404).
+      if (first.pause) {
         await (deps.pauseBeforeReprobe ?? sleepBeforeReprobe)(REPROBE_PAUSE_MS);
       }
-      const probe = await deps.broadcastsGateway.retrieveBroadcastOnce(resendId);
-      const probed = probe.kind === 'present' ? probe.status : probe.kind;
+      let probe: Awaited<ReturnType<typeof deps.broadcastsGateway.retrieveBroadcastOnce>>;
+      try {
+        probe = await deps.broadcastsGateway.retrieveBroadcastOnce(resendId);
+      } catch (e) {
+        // Spec 140 s2d (#736c, L1) — the line is written on a throwing GET too, so
+        // `resendMs` / `deleteMs` (the time the row lock was held for Resend) are
+        // not lost. The throw itself is unchanged: it propagates, and the lock tx
+        // rolls back.
+        logger.info(
+          {
+            ...logBase,
+            broadcastId: broadcast.broadcastId as string,
+            resendBroadcastId: resendId,
+            outcome: first.deleted,
+            probe: 'threw',
+            resendMs: Date.now() - startedAt,
+            deleteMs,
+          },
+          'broadcasts.cascade.dispatch_begun_delete',
+        );
+        throw e;
+      }
       logger.info(
         {
           ...logBase,
           broadcastId: broadcast.broadcastId as string,
           resendBroadcastId: resendId,
-          outcome: deleted.kind,
-          probe: probed,
+          outcome: first.deleted,
+          probe: probedStatusOf(probe),
           // Both calls (and the pause after a 404): the time the row lock was held for Resend.
           resendMs: Date.now() - startedAt,
           deleteMs,
         },
         'broadcasts.cascade.dispatch_begun_delete',
       );
-      if (isHandedStatus(probed)) return { kind: 'already_sent', resendStatus: probed };
-      if (deleted.kind === 'absent' && probed === 'not_found') return { kind: 'cancel', resendOutcome: 'absent' };
+      const answer = classifyResendDraftAnswer('in_flight', first.deleted, probe);
+      if (answer.kind === 'handed') return { kind: 'already_sent', resendStatus: answer.status };
+      if (answer.kind === 'absent') return { kind: 'cancel', resendOutcome: 'absent' };
       // A 403 to a DELETE of a cancelled broadcast (MEASURED): only a draft
       // can be sent, so nothing of it can go out — the gate's arm, too.
-      if (deleted.kind === 'forbidden' && probed === 'cancelled') return { kind: 'cancel', resendOutcome: 'cancelled_at_resend' };
-      throw new ResendUnsettledError(`${deleted.kind}_probe_${probed}`);
+      if (answer.kind === 'unsendable') return { kind: 'cancel', resendOutcome: 'cancelled_at_resend' };
+      throw new ResendUnsettledError(`${answer.deleted}_probe_${answer.probed}`);
     };
 
     /**
@@ -527,22 +549,24 @@ export async function cancelInFlightBroadcastsForMember(
       const resendId = row.resendBroadcastId;
       const deleted = await deps.broadcastsGateway.deleteBroadcastOnce(resendId);
       const ids = { ...logBase, broadcastId: row.broadcastId as string, status: row.status, resendBroadcastId: resendId };
-      if (deleted.kind === 'deleted' || deleted.kind === 'absent') {
+      // Spec 140 s2d (#735) — the table is `classifyResendDraftAnswer`'s `terminal_draft` policy.
+      const first = classifyResendDraftAnswer('terminal_draft', deleted.kind, null);
+      if (first.kind === 'deleted' || first.kind === 'absent') {
         logger.info({ ...ids, outcome: deleted.kind }, 'broadcasts.cascade.terminal_draft');
         return { kind: 'cleared' };
       }
-      if (deleted.kind !== 'forbidden') throw new ResendUnsettledError(deleted.kind);
+      if (first.kind === 'undecided') throw new ResendUnsettledError(first.deleted);
       const probe = await deps.broadcastsGateway.retrieveBroadcastOnce(resendId);
-      const probed = probe.kind === 'present' ? probe.status : probe.kind;
-      logger.info({ ...ids, outcome: deleted.kind, probe: probed }, 'broadcasts.cascade.terminal_draft');
+      logger.info({ ...ids, outcome: first.deleted, probe: probedStatusOf(probe) }, 'broadcasts.cascade.terminal_draft');
       // POSITIVE: a status that proves the copy can never be sent again
       // (cancelled, failed), or that it was already handed (queued, sending,
       // sent — a disclosure, residual 8c). `draft` after a 403 is a restricted
       // key, `unknown` is unmeasured, and a not-found after a 403 is
       // inconsistent — all fail closed.
-      if (isHandedStatus(probed)) return { kind: 'handed', resendStatus: probed };
-      if (probed === 'cancelled' || probed === 'failed') return { kind: 'retained' };
-      throw new ResendUnsettledError(`${deleted.kind}_probe_${probed}`);
+      const answer = classifyResendDraftAnswer('terminal_draft', first.deleted, probe);
+      if (answer.kind === 'handed') return { kind: 'handed', resendStatus: answer.status };
+      if (answer.kind === 'unsendable') return { kind: 'retained' };
+      throw new ResendUnsettledError(`${answer.deleted}_probe_${answer.probed}`);
     };
 
     /**
@@ -958,9 +982,9 @@ export async function cancelInFlightBroadcastsForMember(
       // Review round 4 (code-review #3, reliability LOW-A) — judged at an
       // explicit instant: the over-limit exit passes the list time (the SQL
       // stuck cutoff's instant); the undecided and deadline exits pass now.
-      const isStuckAt = (orphan: OrphanedResendIdRef, atMs: number) =>
-        orphan.attempts >= ORPHAN_STUCK_ATTEMPTS && atMs - orphan.createdAt.getTime() >= ORPHAN_STUCK_MIN_AGE_MS;
-      const isStuck = (orphan: OrphanedResendIdRef) => isStuckAt(orphan, deps.clock.now().getTime());
+      // Spec 140 s2d (#736b) — the rule is the Domain's isOrphanStuck, the
+      // same one both repos' SQL applies (orphanStuckSql).
+      const isStuck = (orphan: OrphanedResendIdRef) => isOrphanStuck(orphan, deps.clock.now().getTime());
       const reportStuck = (orphan: OrphanedResendIdRef, exit: 'undecided' | 'deadline' | 'over_limit', extra: Record<string, unknown> = {}) => {
         audienceOrphansStuckCount += 1;
         logger.warn(
@@ -970,7 +994,7 @@ export async function cancelInFlightBroadcastsForMember(
       };
       // Pass (b)'s non-settling exits: a stuck row is reported, any other deferred.
       const deferOrReport = (orphan: OrphanedResendIdRef, exit: 'deadline' | 'over_limit', atMs = deps.clock.now().getTime()) => {
-        if (isStuckAt(orphan, atMs)) reportStuck(orphan, exit);
+        if (isOrphanStuck(orphan, atMs)) reportStuck(orphan, exit);
         else deferOrphan(orphan);
       };
       /**
@@ -1062,7 +1086,7 @@ export async function cancelInFlightBroadcastsForMember(
         audienceOrphans = await deps.orphans.listUnsettledAudienceOrphans(
           ERASURE_AUDIENCE_ORPHAN_LIMIT + 1,
           new Date(listedAtMs - AUDIENCE_CLEANUP_GRACE_MS),
-          new Date(listedAtMs - ORPHAN_STUCK_MIN_AGE_MS),
+          orphanStuckCutoff(new Date(listedAtMs)),
         );
       } catch (e) {
         orphanUnexpected(e, null, 'broadcasts.cascade.audience_orphan_list_failed');
@@ -1160,7 +1184,8 @@ export async function cancelInFlightBroadcastsForMember(
       kind: 'cascade.server_error',
       // Review round 4 (code-review #8) — the error CLASS only: a message can
       // embed SQL parameter values, and the members adapter logs this field.
-      message: errKind(e),
+      // Spec 140 s2d (#736c) — named `errClass`, so no log line reads `.message`.
+      errClass: errKind(e),
     });
   }
 }

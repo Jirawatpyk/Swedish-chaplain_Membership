@@ -27,6 +27,8 @@ import { asTenantContext } from '@/modules/tenants';
 import { asMemberId } from '@/modules/members';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import type { MembersBridgePort } from '@/modules/broadcasts/application/ports/members-bridge-port';
+import { logger } from '@/lib/logger';
+import { hashId } from '@/lib/log-id';
 
 const tenant = asTenantContext('test-tenant');
 const memberId = asMemberId('00000000-0000-0000-0000-00000000bbbb');
@@ -52,6 +54,7 @@ function partialBridge(
     lookupMemberPrimaryContactEmailInTenant:
       notUsed as unknown as MembersBridgePort['lookupMemberPrimaryContactEmailInTenant'],
     getMemberErasedAt: notUsed as unknown as MembersBridgePort['getMemberErasedAt'],
+    filterErasedMemberIds: notUsed as unknown as MembersBridgePort['filterErasedMemberIds'],
     getMembersHaltedInTenant: notUsed as unknown as MembersBridgePort['getMembersHaltedInTenant'],
     setMemberHalt: notUsed as unknown as MembersBridgePort['setMemberHalt'],
     markBroadcastsAcknowledged,
@@ -173,6 +176,9 @@ describe('acknowledgeBroadcastsTerms', () => {
         cause: new Error('Neon: connection terminated'),
       }),
     );
+    // Spec 140 s2d review round 2 (code-review #9) — the line carries the
+    // hashed user id, never the raw one (rules.md § Secrets).
+    const logError = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
 
     const r = await acknowledgeBroadcastsTerms(
       {
@@ -194,6 +200,10 @@ describe('acknowledgeBroadcastsTerms', () => {
     // Audit MUST NOT fire on a repo failure — the F3 column was never
     // written, so emitting an audit row would corrupt the consent trail.
     expect(audit.emit).not.toHaveBeenCalled();
+    const line = logError.mock.calls.find((c) => c[1] === 'broadcasts.acknowledge.repo_error');
+    expect(line?.[0]).toMatchObject({ userIdHash: hashId(actorUserId) });
+    expect(JSON.stringify(line?.[0])).not.toContain(`"${actorUserId}"`);
+    logError.mockRestore();
   });
 
   it('Q19 per-tenant scope — acknowledging tenant A does not invoke bridge for tenant B (Round 4 H1)', async () => {

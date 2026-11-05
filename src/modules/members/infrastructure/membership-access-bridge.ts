@@ -42,6 +42,7 @@
  * unexpected error.
  */
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { err, ok } from '@/lib/result';
 import { systemClock } from '@/modules/invoicing/application/ports/clock-port';
 import type { TenantContext } from '@/modules/tenants';
@@ -68,7 +69,8 @@ export const membershipAccessBridge: MembershipAccessPort = {
       // (`src/modules/broadcasts/infrastructure/membership-access-bridge.ts`).
       logger.warn(
         {
-          err: e instanceof Error ? e.message : String(e),
+          // Spec 140 s2d (#736c) — the class and SQLSTATE, never the message.
+          ...errLogFields(e),
           tenantSlug: tenant.slug,
           memberId,
         },
@@ -113,7 +115,7 @@ export const membershipAccessBridge: MembershipAccessPort = {
     } catch (e) {
       logger.warn(
         {
-          err: e instanceof Error ? e.message : String(e),
+          ...errLogFields(e),
           tenantSlug: tenant.slug,
           memberCount: memberIds.length,
         },

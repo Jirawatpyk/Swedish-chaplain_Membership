@@ -29,7 +29,7 @@
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { hashId } from '@/lib/log-id';
+import { errLogFields, hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { ContactId } from '../../domain/contact';
 import type { ContactRepo } from '../ports/contact-repo';
@@ -151,7 +151,8 @@ export async function invitePortal(
         // PII: hash the user id in logs (CLAUDE.md § Secrets) — requestId already
         // provides cross-request correlation.
         userIdHash: hashId(created.value.user.id),
-        cause: linked.error,
+        // Spec 140 s2d (#736c) — the class and codes, never the RepoError's cause object.
+        ...errLogFields(linked.error),
         requestId: input.requestId,
       },
       'invite-portal.link_user_failed: rolling back orphaned invite (SAGA compensation)',

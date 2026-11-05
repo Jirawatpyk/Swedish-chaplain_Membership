@@ -48,7 +48,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { errKind } from '@/lib/log-id';
+import { errKind, errStep } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { RecipientSegment } from '../../domain/recipient-segment';
 import type { AudienceMode } from '../../domain/audience-mode';
@@ -99,12 +99,18 @@ export type ResolveSegmentError =
    */
   | {
       readonly kind: 'resolve.server_error';
+      /**
+       * Spec 140 s2d review round 3 (code-review #5) — a token, never the
+       * thrown text: the bridge's step token (`members_bridge_<read>:<code>`,
+       * `errStep`), else the error class (`errKind`).
+       */
       readonly message: string;
       /**
        * Round 4 L3 — the bounded half of `message`, for logs.
        *
-       * `message` is free text and can carry a Neon error's bound parameters,
-       * which on this module are member addresses. `REDACT_PATHS` covers
+       * Before spec 140 s2d review round 3, `message` was free text and could
+       * carry a Neon error's bound parameters, which on this module are member
+       * addresses. `REDACT_PATHS` covers
        * `reason`/`*.reason` for exactly that, so the cron's warn lines printed
        * `reason:"[REDACTED]"` and an operator debugging the leg that runs in
        * production had nothing at all. Renaming the key would un-redact free
@@ -306,9 +312,12 @@ export async function resolveSegmentRecipients(
     } catch (e) {
       // The bridge already logged the class of failure; the caller decides
       // whether this is a retry (dispatch) or a 500 (submit).
+      // Spec 140 s2d review round 3 (code-review #5) — the bridge's step token
+      // (`members_bridge_<read>:<code>`), else the error class; never the
+      // thrown text, which for a Drizzle wrapper quotes the bound parameters.
       return err({
         kind: 'resolve.server_error',
-        message: e instanceof Error ? e.message : 'unknown error',
+        message: errStep(e) ?? errKind(e),
         errClass: errKind(e),
       });
     }

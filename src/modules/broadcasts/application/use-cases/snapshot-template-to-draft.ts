@@ -44,6 +44,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { substituteChamberName } from '../../domain/value-objects/template-snapshot';
 import { parseBroadcastId } from '../../domain/broadcast';
 import type { BroadcastTemplatesPort } from '../ports/broadcast-templates-port';
@@ -305,12 +306,12 @@ export async function snapshotTemplateToDraft(
       // R4.3 M-7): when Sentry is added in F7.1b, wrap with
       // `Sentry.captureException(e)` BEFORE `throw e` so the
       // exception lands in Sentry with full stack + correlationId
-      // (currently in scope as `input.requestId`). The structured
-      // `err: e.message` log loses the stack — Sentry would preserve
-      // it.
+      // (currently in scope as `input.requestId`). The structured log
+      // carries the class only — Sentry would preserve the stack.
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          // Spec 140 s2d (#736c) — the class and SQLSTATE, never the message.
+          ...errLogFields(e),
           tenantId: input.tenantId,
           draftId: input.draftId,
           templateId: input.templateId,

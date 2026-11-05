@@ -22,9 +22,10 @@
  * (architectural deviation documented in plan.md § Complexity Tracking).
  */
 import { ok, err, type Result } from '@/lib/result';
+import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields, rootCause } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   drizzleMemberRepo,
@@ -57,6 +58,19 @@ import type {
   SegmentResolveParams,
 } from '../application/ports/members-bridge-port';
 import type { EmailLower } from '../domain/value-objects/email-lower';
+
+/**
+ * Spec 140 s2d review round 1 (reliability M-1, code-review #4) — a failed
+ * members read as a code-authored step (`<read>:<repoCode>`, what `errStep`
+ * keeps for a log line's `step`) with the driver error as its `cause`, so
+ * `pgErrorCode` reaches the SQLSTATE. The repo code is a closed RepoError
+ * token; the cause is never written to a log line (`err: errKind(e)`).
+ * Review round 2 (spec L1, code-review #5) — every bridge read failure throws
+ * through here; none builds its own message.
+ */
+function failedRead(read: string, error: { readonly code: string }): Error {
+  return new Error(`${read}:${error.code}`, { cause: rootCause(error) });
+}
 
 /**
  * 108 PR-C — F3 keyset page size for the 1:N audience (contract
@@ -121,9 +135,8 @@ export const membersBridge: MembersBridgePort = {
         },
         'broadcasts.members_bridge.segment_read_failed',
       );
-      throw new Error(
-        `members-bridge.getMembersBySegment: ${result.error.code} — refusing to resolve an empty audience`,
-      );
+      // Review round 2 (spec L1) — refuse to resolve an empty audience: throw the step.
+      throw failedRead('members_bridge_get_members_by_segment', result.error);
     }
     return result.value.map(brandRecipient);
   },
@@ -171,9 +184,8 @@ export const membersBridge: MembersBridgePort = {
           },
           'broadcasts.members_bridge.contacts_page_failed',
         );
-        throw new Error(
-          `members-bridge.getContactsBySegment: ${page.error.code} — refusing to resolve a partial audience`,
-        );
+        // Review round 2 (spec L1) — refuse to resolve a partial audience: throw the step.
+        throw failedRead('members_bridge_get_contacts_by_segment', page.error);
       }
       for (const r of page.value) {
         out.push({
@@ -226,9 +238,8 @@ export const membersBridge: MembersBridgePort = {
         },
         'broadcasts.members_bridge.opted_out_count_failed',
       );
-      throw new Error(
-        `members-bridge.countOptedOutContactsBySegment: ${result.error.code} — refusing to guess the preference count`,
-      );
+      // Review round 2 (spec L1) — refuse to guess the preference count: throw the step.
+      throw failedRead('members_bridge_count_opted_out_contacts', result.error);
     }
     return result.value;
   },
@@ -247,7 +258,7 @@ export const membersBridge: MembersBridgePort = {
     // — an append-only audit row asserting a fact nobody observed.
     if (!result.ok) {
       if (result.error.code === 'repo.not_found') return null;
-      throw new Error(`members-bridge.getMemberPrimaryContact: ${result.error.code}`);
+      throw failedRead('members_bridge_get_member_primary_contact', result.error);
     }
     if (result.value === null) return null;
     return unsafeBrandEmailLower(result.value.toLowerCase().trim());
@@ -268,9 +279,7 @@ export const membersBridge: MembersBridgePort = {
     );
     if (result.ok) return true;
     if (result.error.code === 'repo.not_found') return false;
-    throw new Error(
-      `members-bridge.memberExistsInTenant: ${result.error.code}`,
-    );
+    throw failedRead('members_bridge_member_exists', result.error);
   },
 
   async lookupContactEmailInTenant(
@@ -285,7 +294,7 @@ export const membersBridge: MembersBridgePort = {
     // catch arm (the only log on that path) can actually fire; a miss is null.
     if (!result.ok) {
       if (result.error.code === 'repo.not_found') return null;
-      throw new Error(`members-bridge.lookupContactEmailInTenant: ${result.error.code}`);
+      throw failedRead('members_bridge_lookup_contact_email', result.error);
     }
     if (result.value === null) return null;
     return {
@@ -307,9 +316,7 @@ export const membersBridge: MembersBridgePort = {
     );
     if (!result.ok) {
       if (result.error.code === 'repo.not_found') return null;
-      throw new Error(
-        `members-bridge.lookupMemberPrimaryContactEmailInTenant: ${result.error.code}`,
-      );
+      throw failedRead('members_bridge_lookup_member_primary_contact_email', result.error);
     }
     if (result.value === null) return null;
     return brandRecipient(result.value);
@@ -328,7 +335,7 @@ export const membersBridge: MembersBridgePort = {
     // the use-case maps it to `submit.server_error` and the admin queue
     // page renders an error state instead of a clean banner.
     if (!result.ok) {
-      throw new Error(`members-bridge.getMembersHaltedInTenant: ${result.error.code}`);
+      throw failedRead('members_bridge_get_members_halted', result.error);
     }
     return result.value.map((row) => ({
       memberId: row.memberId,
@@ -353,9 +360,30 @@ export const membersBridge: MembersBridgePort = {
     const result = await drizzleMemberRepo.findErasedAtById(tenantCtx, asMemberId(memberId));
     if (!result.ok) {
       if (result.error.code === 'repo.not_found') return null;
-      throw new Error(`members-bridge.getMemberErasedAt: ${result.error.code}`);
+      throw failedRead('members_bridge_get_member_erased_at', result.error);
     }
     return { erasedAt: result.value.erasedAt };
+  },
+
+  /**
+   * Spec 140 s2d (#736a) — the port docblock has the contract. The members
+   * barrel's batched `findErasedIdsInTx` (explicit tenant predicate, RLS
+   * behind it) inside this read's own `runInTenant`. The answer keeps the
+   * caller's order.
+   */
+  async filterErasedMemberIds(
+    tenantCtx: TenantContext,
+    memberIds: ReadonlyArray<string>,
+  ): Promise<ReadonlyArray<string>> {
+    if (memberIds.length === 0) return [];
+    const result = await runInTenant(tenantCtx, (tx) =>
+      drizzleMemberRepo.findErasedIdsInTx(tx, tenantCtx.slug, memberIds.map(asMemberId)),
+    );
+    if (!result.ok) {
+      throw failedRead('members_bridge_filter_erased', result.error);
+    }
+    const erased = new Set<string>(result.value);
+    return memberIds.filter((id) => erased.has(id));
   },
 
   async setMemberHalt(
@@ -387,7 +415,7 @@ export const membersBridge: MembersBridgePort = {
     // reason. Same doctrine as the lookups above: throw, let the caller map
     // it (`clear_halt.server_error` → 500; the webhook tx rolls back and
     // Resend retries).
-    throw new Error(`members-bridge.setMemberHalt: ${String(result.error.code)}`);
+    throw failedRead('members_bridge_set_member_halt', result.error);
   },
 
   async markBroadcastsAcknowledged(
@@ -452,7 +480,8 @@ export const membersBridge: MembersBridgePort = {
     if (!result.ok) {
       logger.warn(
         {
-          err: result.error,
+          // Spec 140 s2d (#736c) — the class and codes, never the RepoError's cause object.
+          ...errLogFields(result.error),
           tenantId: tenantCtx.slug,
           memberId,
         },
@@ -494,9 +523,8 @@ export const membersBridge: MembersBridgePort = {
         },
         'broadcasts.members_bridge.marketing_opt_out_lookup_failed',
       );
-      throw new Error(
-        `marketing opt-out lookup failed (${result.error.code}) — refusing to resolve fail-open`,
-      );
+      // Review round 2 (spec L1) — refuse to resolve fail-open: throw the step.
+      throw failedRead('members_bridge_filter_marketing_opted_out', result.error);
     }
     const out = new Set<EmailLower>();
     for (const e of result.value) {

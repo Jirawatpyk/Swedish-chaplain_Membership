@@ -226,6 +226,19 @@ export interface MembersBridgePort {
   ): Promise<{ readonly erasedAt: Date | null } | null>;
 
   /**
+   * Spec 140 s2d (#736a) — which of `memberIds` are erased members of THIS
+   * tenant (`erased_at IS NOT NULL`): ids in, ids out, nothing else about the
+   * member (L-2). One query, fenced on the tenant; another tenant's id and an
+   * unknown id are simply not returned. Empty `memberIds` → `[]` with no
+   * read. NOT best-effort: a failed read THROWS, so the orphan drain can say
+   * it did not know (`erasedReadFailed`) instead of reading "not erased".
+   */
+  filterErasedMemberIds(
+    tenantCtx: TenantContext,
+    memberIds: ReadonlyArray<string>,
+  ): Promise<ReadonlyArray<string>>;
+
+  /**
    * Q14 — admin clear-halt action. Emits
    * `broadcast_member_dispatch_resumed` audit at the use-case site.
    * Manager role denied.

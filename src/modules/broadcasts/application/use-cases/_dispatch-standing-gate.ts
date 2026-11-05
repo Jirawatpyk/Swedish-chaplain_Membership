@@ -55,7 +55,7 @@ import type { BroadcastsGatewayPort, DeleteBroadcastOnceOutcome } from '../ports
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { StandingRefusalFailureReason } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { readMemberSendStanding, type MemberSendStandingDeps, type StandingRefusal } from './_member-send-standing';
-import { isHandedStatus } from './_probe-refused-send';
+import { classifyResendDraftAnswer } from './_classify-resend-draft-answer';
 
 /** The standing reads a dispatch leg makes. */
 export interface DispatchStandingDeps extends MemberSendStandingDeps {
@@ -220,17 +220,24 @@ export async function deleteDraftBeforeRefusal(
     // Review round 5 — no line here: the caller logs its final outcome once.
     return { ...undecided, errClass: 'threw', err: errKind(e) };
   }
-  if (outcome === 'deleted' || outcome === 'absent') {
+  // Spec 140 s2d (#735) — the table is `classifyResendDraftAnswer`'s. The
+  // erased refusal never probes; a standing / terminal one's 403 is `probe`,
+  // which its wrapper (`deleteDraftBeforeStandingRefusal`) runs.
+  const answer =
+    ids.refusal === 'erased'
+      ? classifyResendDraftAnswer('erased_refusal', outcome, null, draft.probedStatus)
+      : classifyResendDraftAnswer('standing_refusal', outcome, null, draft.probedStatus);
+  if (answer.kind === 'deleted' || answer.kind === 'absent') {
     logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_deleted');
-    return { kind: 'cleared', draftOutcome: outcome };
+    return { kind: 'cleared', draftOutcome: answer.kind };
   }
-  if (outcome === 'forbidden' && draft.probedStatus === 'cancelled') {
+  if (answer.kind === 'unsendable') {
     logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_cancelled_unsendable');
-    return { kind: 'cleared', draftOutcome: 'cancelled' };
+    return { kind: 'cleared', draftOutcome: answer.status };
   }
   // Review rounds 4–5 (code-review #9) — no line here: the caller decides the
   // final outcome (a standing refusal probes a 403 first) and logs it once.
-  return { ...undecided, errClass: outcome, err: null };
+  return { ...undecided, errClass: answer.deleted, err: null };
 }
 
 /**
@@ -340,23 +347,25 @@ export async function deleteDraftBeforeStandingRefusal(
     logger.warn({ ...logIds, observedResendStatus: null, errClass: 'threw', err: errKind(e) }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
     return { kind: 'undeleted', errClass: 'threw' };
   }
-  const probed = probe.kind === 'present' ? probe.status : probe.kind;
-  // Only a `present` answer carries a handed status (`isHandedStatus`).
-  if (probe.kind === 'present' && isHandedStatus(probe.status)) {
-    logger.warn({ ...logIds, observedResendStatus: probe.status }, 'broadcasts.dispatch.refused_draft_handed_by_sibling');
-    return { kind: 'handed', resendStatus: probe.status, sentAt: probe.sentAt ?? null };
+  // Spec 140 s2d (#735) — the table is `classifyResendDraftAnswer`'s; only this
+  // policy's `handed` answer carries the GET's `sentAt`.
+  const answer = classifyResendDraftAnswer('standing_refusal', 'forbidden', probe);
+  if (answer.kind === 'handed') {
+    logger.warn({ ...logIds, observedResendStatus: answer.status }, 'broadcasts.dispatch.refused_draft_handed_by_sibling');
+    return { kind: 'handed', resendStatus: answer.status, sentAt: answer.sentAt };
   }
   // Review round 2 (code-review #6) — a `cancelled` reading is an unsendable
   // copy: cleared, as `deleteDraftBeforeRefusal` clears a 403 on an id its
   // probe already called cancelled. Review round 3 (code-review #4) — so is
   // `failed` (MEASURED 2026-10-29: only a draft can be sent): cleared, and
   // recorded as `failed` (`resendDraftOutcome`), not as an undeleted draft.
-  if (probed === 'cancelled' || probed === 'failed') {
-    logger.info({ ...logIds, observedResendStatus: probed }, 'broadcasts.dispatch.refused_draft_cancelled_unsendable');
-    return { kind: 'cleared', draftOutcome: probed };
+  if (answer.kind === 'unsendable') {
+    logger.info({ ...logIds, observedResendStatus: answer.status }, 'broadcasts.dispatch.refused_draft_cancelled_unsendable');
+    return { kind: 'cleared', draftOutcome: answer.status };
   }
-  const errClass = PROBE_ERR_CLASS[probed] ?? 'probe_other';
-  logger.warn({ ...logIds, observedResendStatus: probed, errClass }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
+  const errClass = PROBE_ERR_CLASS[answer.probed] ?? 'probe_other';
+  // Spec 140 s2d (#736c, L2) — the same shape as the throw arms: `err` is null when nothing threw.
+  logger.warn({ ...logIds, observedResendStatus: answer.probed, errClass, err: null }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
   return { kind: 'undeleted', errClass };
 }
 

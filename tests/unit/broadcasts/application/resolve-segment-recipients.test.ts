@@ -185,6 +185,7 @@ function makeMembersBridge({
     },
     // Spec 139 — read first by the send-standing gate; a live member.
     async getMemberErasedAt() { return { erasedAt: null }; },
+    async filterErasedMemberIds() { return []; },
     async getMembersHaltedInTenant() {
       return [];
     },
@@ -1436,7 +1437,7 @@ describe('resolve-segment-recipients — orphan reasons + the SQL-excluded opt-o
   });
 
 
-  it('a bridge that throws a non-Error value is still resolve.server_error with a placeholder message', async () => {
+  it('a bridge that throws a non-Error value is still resolve.server_error, its message the class token', async () => {
     const deps = makeDeps({ audienceMode: 'all_contacts', contacts: [contact('m1', 'c-p1', 'p1@example.com')] });
     deps.membersBridge.getContactsBySegment = async () => {
       throw 'not an Error';
@@ -1451,7 +1452,7 @@ describe('resolve-segment-recipients — orphan reasons + the SQL-excluded opt-o
     // `'unknown'` here is `errKind`'s honest answer for a thrown non-Error.
     expect(result.error).toEqual({
       kind: 'resolve.server_error',
-      message: 'unknown error',
+      message: 'unknown',
       errClass: 'unknown',
     });
   });
@@ -1471,10 +1472,38 @@ describe('resolve-segment-recipients — orphan reasons + the SQL-excluded opt-o
     // The class is the bounded discriminator the cron logs — a DB blip, our own
     // TypeError, or the network are three different on-call responses.
     expect(result.error.errClass).toBe('NeonDbError');
-    // The message is still carried for callers that persist it; it is the LOG
-    // that must not print it. Pinned so a future change cannot quietly promote
-    // the free text into the bounded field.
+    // Pinned so a future change cannot quietly promote the free text into the
+    // bounded field. Since spec 140 s2d review round 3 the message is not
+    // carried either (the next case).
     expect(result.error.errClass).not.toContain('alice@example.com');
+  });
+
+  // Spec 140 s2d review round 3 (code-review #5) — `message` holds the
+  // bridge's step token or the error class, never the thrown text.
+  it('a thrown Failed-query message is not carried: message is the error class', async () => {
+    const deps = makeDeps({ audienceMode: 'all_contacts', contacts: [contact('m1', 'c-p1', 'p1@example.com')] });
+    class DrizzleQueryError extends Error {}
+    deps.membersBridge.getContactsBySegment = async () => {
+      throw new DrizzleQueryError('Failed query: select * from contacts where email = $1\nparams: alice@example.com');
+    };
+    const result = await resolveSegmentRecipients(deps, input());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({ kind: 'resolve.server_error', message: 'DrizzleQueryError', errClass: 'DrizzleQueryError' });
+  });
+
+  it("a bridge read's step token is carried as the message", async () => {
+    const deps = makeDeps({ audienceMode: 'all_contacts', contacts: [contact('m1', 'c-p1', 'p1@example.com')] });
+    deps.membersBridge.getContactsBySegment = async () => {
+      throw new Error('members_bridge_get_contacts_by_segment:repo.unexpected');
+    };
+    const result = await resolveSegmentRecipients(deps, input());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatchObject({
+      kind: 'resolve.server_error',
+      message: 'members_bridge_get_contacts_by_segment:repo.unexpected',
+    });
   });
 
 });

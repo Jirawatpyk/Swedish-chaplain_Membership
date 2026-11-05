@@ -22,6 +22,7 @@
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errLogFields, hashId } from '@/lib/log-id';
 import { renewalsMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -200,9 +201,10 @@ export async function verifyContactEmail(
         // need observability to detect the desync before it grows.
         logger.error(
           {
-            err: e instanceof Error ? e.message : String(e),
-            stack: e instanceof Error ? e.stack : undefined,
-            userId: outcome.userId,
+            // Spec 140 s2d (#736c) — the class and SQLSTATE, never the message or stack.
+            ...errLogFields(e),
+            // Spec 140 s2d review round 2 (code-review #9) — hashed, never the raw id.
+            userIdHash: hashId(outcome.userId),
             contactId: outcome.contactId,
             requestId: input.requestId,
           },

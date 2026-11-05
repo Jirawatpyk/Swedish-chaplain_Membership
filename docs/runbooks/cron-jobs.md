@@ -105,7 +105,7 @@ should look but harness MUST NOT retry":
 | 200 + `gateway_error > 0` in body | Resend outage. Per-row reconcile already done idempotently. Next 15-min tick is the natural retry. | Check Resend status page; alert pipeline pages on the dedicated `cron.broadcasts.reconcile.gateway_outage` log channel |
 | 200 + `unresolved_provider_status > 0` in body (reconcile-stuck-sending, since 2026-09-10) | A stuck row's Resend resource is present but NOT `sent` (`draft` / `queued` / `sending` / `cancelled` / unrecognised). The use case decided nothing — no quota, no transition — and will report it again next tick. | Harness MUST NOT retry (nothing of ours failed). Operator follows `broadcasts-stuck-sending.md` § Triage step 2b; the alarm is `broadcasts.reconcile_unresolved_status.total{observed_status}`. |
 | 500 + `uncaught_error > 0` | Programmer bug or transient DB blip | Harness MAY retry; investigate next morning if persistent |
-| 500 + `server_error > 0` | Use-case Result.err (transition guard, RLS probe, etc.) | Harness MAY retry; investigate stack trace in logs |
+| 500 + `server_error > 0` | Use-case Result.err (transition guard, RLS probe, etc.) | Harness MAY retry; read the error line in logs (`err` class, `code` SQLSTATE, `step`; no stack or message since spec 140 s2d). Runtime logs are kept 1 day |
 | 401 | Bearer token mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org headers |
 | 200 + `{ skipped: true, reason: 'feature_disabled' }` | `FEATURE_F7_BROADCASTS=false` (kill-switch) | Expected during dark-launch; do nothing. The route deliberately returns 200 + skips (NOT 503) so cron-job.org does not retry-storm. |
 | 200 + `{ ok: true, skipped: true, reason: 'read_only_mode' }` | `READ_ONLY_MODE=true` (emergency write freeze) — every guarded cron, see § Read-only mode | Expected during a freeze; do nothing. If it keeps appearing after the freeze should have ended, `READ_ONLY_MODE` was left on. |
@@ -928,12 +928,19 @@ Per tenant, inside `cleanupOrphanedAudiences`:
    (20) rows of `broadcast_orphaned_resend_ids`, `ORPHAN_DRAIN_CONCURRENCY` (5)
    at a time, settled at Resend (`deleteBroadcastOnce` and, after a 403, one
    `retrieveBroadcastOnce`; `deleteAudience` for an audience row) and stamped by
-   a settle CAS. The same 1-hour grace applies to a row's `created_at`, except
+   a settle CAS. The same `AUDIENCE_CLEANUP_GRACE_MS` (1 hour) grace applies to a row's `created_at`, except
    for an erased requester's row. No chunk starts after `ORPHAN_DRAIN_STOP_MS`
    (240 s): the route's **`maxDuration = 300`** (`CLEANUP_MAX_DURATION_MS`,
    pinned by `cleanup-orphaned-audiences-drain.test.ts`) leaves the last chunk's
    two bounded calls room to finish. The response carries `orphans`
-   (`listed`, `settled`, `undecided`, `waiting`, `deferred`, `listFailed`).
+   (`listed`, `settled`, `undecided`, `waiting`, `deferred`, `listFailed`,
+   `erasedReadFailed`, `erasedShareFull`). `waiting` and `deferred` count of
+   the rows seen this run. `erasedReadFailed: true` — the erased-requester
+   read failed (`broadcasts.orphan_drain.erased_read_failed`, its `step` says
+   which read); an erased requester's young rows wait the grace, then join
+   the past-grace queue. `erasedShareFull: true` — the erased requesters had
+   more rows than `ORPHAN_DRAIN_ERASED_SHARE` (10); the rest go on the next
+   runs, and no other counter shows them.
    What each outcome means and what to do with a stuck row:
    `broadcast-audience-build.md` § E.
 

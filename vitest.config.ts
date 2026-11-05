@@ -906,6 +906,15 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // Spec 140 s2d (#735) — the one Resend draft-answer table the erasure
+        // cascade, both refusals and the orphan drain map from. On the erasure
+        // path: 100% branch.
+        'src/modules/broadcasts/application/use-cases/_classify-resend-draft-answer.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // F119 T166 — the working-copy save (sanitise + optimistic-concurrency
         // token + image allowlist). Measured 100/100/100/100 under the unit +
         // contract broadcasts suites.

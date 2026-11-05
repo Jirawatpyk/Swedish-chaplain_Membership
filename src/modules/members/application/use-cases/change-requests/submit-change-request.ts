@@ -608,7 +608,8 @@ export async function submitChangeRequest(
             deps.changeRequestRepo.findPendingBySubmitterInTx(tx, input.actorUserId),
           ).catch((e: unknown) => {
             logger.warn(
-              { tenantId, memberId: input.memberId, requestId: input.requestId, err: e instanceof Error ? e.name : String(e) },
+              // Spec 140 s2d (#736c) — the class, never `String(e)` of a non-Error throw.
+              { tenantId, memberId: input.memberId, requestId: input.requestId, err: errKind(e) },
               'change-request.submit.conflict_reread_failed',
             );
             return null;
@@ -637,7 +638,7 @@ export async function submitChangeRequest(
         return err({ type: 'server_error', message: `submit: ${re.code}` });
       }
       logger.error(
-        { tenantId, memberId: input.memberId, requestId: input.requestId, err: e instanceof Error ? e.name : String(e) },
+        { tenantId, memberId: input.memberId, requestId: input.requestId, err: errKind(e) },
         'change-request.submit.unexpected',
       );
       return err({ type: 'server_error', message: 'submit: unexpected' });

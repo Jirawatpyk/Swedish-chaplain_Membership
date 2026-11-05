@@ -29,6 +29,7 @@ import { drizzleAuditAdapter } from './audit/audit-adapter';
 import {
   markInvitationBounced,
   type MarkInvitationBouncedDeps,
+  type MarkInvitationBouncedError,
 } from '../application/use-cases/mark-invitation-bounced';
 import type { ContactId } from '../domain/contact';
 import type { MemberId } from '../domain/member';
@@ -120,8 +121,10 @@ export async function handleInvitationBounce(
         if (result.value.marked) marked += 1;
       } else {
         failed += 1;
+        // Review round 2 — annotated with its type (TOKEN_FIELDS_BY_TYPE): the literal 'server_error'.
+        const errType: MarkInvitationBouncedError['type'] = result.error.type;
         logger.error(
-          { tenantId: t.tenantId, contactId: t.contactId, requestId, reason: result.error.message },
+          { tenantId: t.tenantId, contactId: t.contactId, requestId, err: errType },
           'invitation_bounce.mark_failed',
         );
       }

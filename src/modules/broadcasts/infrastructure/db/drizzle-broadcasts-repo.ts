@@ -57,9 +57,9 @@ import {
 import { CASCADE_CANCELLATION_REASONS } from '../../domain/value-objects/cascade-cancellation-reason';
 import {
   ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT,
-  ORPHAN_STUCK_ATTEMPTS,
-  ORPHAN_STUCK_MIN_AGE_MS,
+  orphanStuckCutoff,
 } from '../../domain/value-objects/orphaned-resend-id';
+import { orphanStuckSql } from './_orphan-stuck-sql';
 import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
@@ -2701,8 +2701,15 @@ export function makeDrizzleBroadcastsRepo(
      * Review round 4 (code-review #2) — STUCK orphans first (the stuck rule of
      * `ORPHAN_STUCK_ATTEMPTS`: tries AND `ORPHAN_STUCK_MIN_AGE_MS`), then most
      * attempts, then the oldest. Pass (b) releases a stuck audience rather
-     * than deleting it, so the stuck ones get the detach first. `now()` is the
-     * scrub transaction's clock; it only orders the rows.
+     * than deleting it, so the stuck ones get the detach first.
+     *
+     * Spec 140 s2d (#736b) — the stuck rule is `orphanStuckSql`, the one the
+     * erasure audience sort uses, judged at the caller's `asOf` (members
+     * captures it just before the scrub transaction starts) through
+     * `orphanStuckCutoff(asOf)`. The database clock no longer takes part. Pass
+     * (b) still judges later, at its own instant: a row that turns stuck in
+     * between (its age, or attempts a concurrent drain adds) can miss the
+     * detach past the cap (RoPA 8d residual 6).
      *
      * Review round 3 (security INFO-2) — this SELECT runs INSIDE the members
      * scrub transaction (`broadcasts-audience-derivation-adapter.ts`), so a
@@ -2710,7 +2717,7 @@ export function makeDrizzleBroadcastsRepo(
      * scrub, not just this arm; `verify-schema` pins its RLS + FORCE and
      * the `chamber_app` DELETE / UPDATE grants (the 0325 check).
      */
-    async listMemberResendAudienceContactsInTx(txUnknown, tenantIdArg, emails) {
+    async listMemberResendAudienceContactsInTx(txUnknown, tenantIdArg, emails, asOf) {
       const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
       if (lowered.length === 0) return [];
       const tx = txUnknown as TenantTx;
@@ -2723,6 +2730,9 @@ export function makeDrizzleBroadcastsRepo(
         lowered.map((e) => sql`${e}`),
         sql`, `,
       )}]::text[]`;
+      // Spec 140 s2d (#736b) — built here, not inline: the tenant-sql-shape
+      // scan stops a raw block at its first nested template.
+      const cappedStuck = orphanStuckSql(sql`capped.attempts`, sql`capped.created_at`, orphanStuckCutoff(asOf));
       const rows = (await tx.execute(sql`
         SELECT DISTINCT b.resend_audience_id AS audience_id,
                         d.recipient_email_lower AS email
@@ -2806,9 +2816,13 @@ export function makeDrizzleBroadcastsRepo(
         -- Review round 4 (code-review #2) — STUCK rows rank first (tries at
         -- ORPHAN_STUCK_ATTEMPTS or more AND older than ORPHAN_STUCK_MIN_AGE_MS):
         -- pass (b) releases a stuck audience rather than deleting it, so it
-        -- gets the detach first. now() is the scrub tx clock and pass (b)
-        -- judges stuck later on the app clock (round 4 follow-up, code-review
-        -- #3): a row that turns stuck between the two can miss the detach past
+        -- gets the detach first.
+        -- Spec 140 s2d (#736b) — the rule is orphanStuckSql (cappedStuck),
+        -- the one the erasure audience sort uses, from the cutoff of the
+        -- caller's asOf (members captures it just before the scrub tx), so
+        -- the database clock no longer takes part. Pass (b) judges stuck
+        -- later, at its own instant: a row that turns stuck in between (its
+        -- age, or attempts a concurrent drain adds) can miss the detach past
         -- the cap and then be released by pass (b). RoPA 8d residual 6 names
         -- it; the address is still removed when the drain deletes the audience.
         SELECT DISTINCT o.resource_id AS audience_id,
@@ -2820,8 +2834,7 @@ export function makeDrizzleBroadcastsRepo(
             AND capped.resource_type = 'audience'
             AND capped.settled_at IS NULL
             AND capped.resource_id IS NOT NULL
-          ORDER BY (capped.attempts >= ${ORPHAN_STUCK_ATTEMPTS}::int
-                    AND capped.created_at <= now() - (${ORPHAN_STUCK_MIN_AGE_MS}::bigint * interval '1 millisecond')) DESC,
+          ORDER BY ${cappedStuck} DESC,
                    capped.attempts DESC, capped.created_at ASC, capped.orphan_id ASC
           LIMIT ${ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT}
         ) o

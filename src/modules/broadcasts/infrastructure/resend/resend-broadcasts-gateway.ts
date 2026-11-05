@@ -306,6 +306,8 @@ async function boundedCall<T>(
       ) {
         break;
       }
+      // Review round 2 — annotated with its class (check:log-error-objects TOKEN_FIELDS_BY_TYPE).
+      const subKind: GatewayThrowable['subKind'] | undefined = e instanceof GatewayThrowable ? e.subKind : undefined;
       logger.warn(
         {
           method: ctx.method,
@@ -319,7 +321,7 @@ async function boundedCall<T>(
           // neither `err` nor `message`.
           err: e instanceof Error ? e.constructor.name : 'unknown',
           errorKind: e instanceof GatewayThrowable ? e.kind : undefined,
-          subKind: e instanceof GatewayThrowable ? e.subKind : undefined,
+          subKind,
         },
         'resend.broadcasts.retry',
       );

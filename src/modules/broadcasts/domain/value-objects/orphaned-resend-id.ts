@@ -111,6 +111,26 @@ export const ORPHAN_STUCK_ATTEMPTS = 8;
 export const ORPHAN_STUCK_MIN_AGE_MS = 2 * 60 * 60 * 1000;
 
 /**
+ * Spec 140 s2d (#736b) — the latest `created_at` a stuck row can have when
+ * judged at `asOf`. The one cutoff of the stuck rule: pass (b), the erasure
+ * audience sort and the detach cap all derive it from an instant the caller
+ * passes in, so no SQL `now()` takes part.
+ */
+export function orphanStuckCutoff(asOf: Date): Date {
+  return new Date(asOf.getTime() - ORPHAN_STUCK_MIN_AGE_MS);
+}
+
+/**
+ * Spec 140 s2d (#736b) — the stuck rule (`ORPHAN_STUCK_ATTEMPTS` docblock),
+ * judged at `atMs`: tries AND age. Structural, so the Domain imports no port
+ * type. `createdAt` is a `Date` (millisecond precision), which is why the SQL
+ * form (`orphanStuckSql`) truncates `created_at` to milliseconds.
+ */
+export function isOrphanStuck(o: { readonly attempts: number; readonly createdAt: Date }, atMs: number): boolean {
+  return o.attempts >= ORPHAN_STUCK_ATTEMPTS && o.createdAt.getTime() <= orphanStuckCutoff(new Date(atMs)).getTime();
+}
+
+/**
  * The audience loop's grace (1 h): a terminal row's audience is deleted only
  * once its `updated_at` is this old, so a just-terminal broadcast does not race
  * Resend's own post-send processing. The cleanup route passes it as `graceMs`;

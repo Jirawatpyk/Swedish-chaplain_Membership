@@ -1237,11 +1237,16 @@ export interface BroadcastsRepo {
    *
    * `tx` is `unknown` at the port boundary (the Drizzle adapter casts to its
    * internal TenantTx); the caller passes the live `runInTenant` tx.
+   *
+   * Spec 140 s2d (#736b) — `asOf` is the instant the leaked-audience arm's
+   * cap judges the stuck rule at (`orphanStuckCutoff(asOf)`), in place of the
+   * database `now()`. Members passes the instant just before its scrub tx.
    */
   listMemberResendAudienceContactsInTx(
     tx: unknown,
     tenantSlug: TenantSlug,
     emails: readonly string[],
+    asOf: Date,
   ): Promise<ReadonlyArray<{ readonly audienceId: string; readonly email: string }>>;
 
   /**

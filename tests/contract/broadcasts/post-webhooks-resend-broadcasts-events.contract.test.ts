@@ -327,13 +327,38 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
   it('use-case error → 500 dispatch_failed (Resend retries)', async () => {
     constructEventMock.mockReturnValue(buildVerifiedEvent('delivered'));
     processWebhookEventMock.mockResolvedValue(
-      err({ kind: 'process_webhook.server_error', message: 'db down' }),
+      err({ kind: 'process_webhook.server_error', errClass: 'Error' }),
     );
     const route = await importRoute();
     const res = await route.POST(makeRequest({ body: '{}' }));
 
     expect(res.status).toBe(500);
     expect((await res.json()).error.code).toBe('dispatch_failed');
+  });
+
+  // Spec 140 s2d review round 3 (pdpa H-1) — a DrizzleQueryError thrown during
+  // processing reaches the route as a server_error Result. The route logs its
+  // class and step, never a message field, even one a stale producer set; the
+  // HTTP answer is unchanged.
+  it('server_error from a DrizzleQueryError → the dispatch_failed line writes no email; still 500', async () => {
+    const { logger } = await import('@/lib/logger');
+    vi.mocked(logger.error).mockClear();
+    constructEventMock.mockReturnValue(buildVerifiedEvent('delivered'));
+    processWebhookEventMock.mockResolvedValue(
+      err({
+        kind: 'process_webhook.server_error',
+        errClass: 'DrizzleQueryError',
+        message: 'Failed query: insert into deliveries values ($1)\nparams: alice@example.com',
+      } as never),
+    );
+    const route = await importRoute();
+    const res = await route.POST(makeRequest({ body: '{}' }));
+
+    expect(res.status).toBe(500);
+    expect((await res.json()).error.code).toBe('dispatch_failed');
+    const line = vi.mocked(logger.error).mock.calls.find((c) => c[1] === 'broadcasts.webhook.dispatch_failed');
+    expect(line?.[0]).toMatchObject({ err: 'process_webhook.server_error', errClass: 'DrizzleQueryError' });
+    expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toMatch(/alice@example\.com|Failed query/);
   });
 
   it('response carries X-Correlation-Id + Cache-Control: no-store', async () => {

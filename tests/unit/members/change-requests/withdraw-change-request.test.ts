@@ -207,13 +207,15 @@ describe('withdrawChangeRequest', () => {
 });
 
 describe('withdrawChangeRequest — a throw that is not an Error (T105 coverage)', () => {
-  it('the driver rejecting with a string is logged in its string form', async () => {
+  it('the driver rejecting with a string is logged as `unknown`, never its string form', async () => {
     const { deps, repo } = makeDeps();
     repo.findPendingBySubmitterInTx = async () => {
       throw 'connection reset';
     };
     const r = await withdrawChangeRequest(deps, input);
     expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'withdraw: connection reset' } });
-    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'connection reset', cause: undefined }), expect.any(String));
+    // Spec 140 s2d (#736c) — the log line takes the class (`unknown` for a non-Error);
+    // the Result keeps the string form until follow-up (1).
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'unknown', cause: undefined }), expect.any(String));
   });
 });

@@ -30,7 +30,7 @@
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { AuditPortInvariantError } from '../ports/audit-port';
-import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
+import type { BroadcastsGatewayPort, RetrieveBroadcastOnceOutcome } from '../ports/broadcasts-gateway-port';
 
 export type RefusedSendVerdict =
   | { readonly kind: 'accepted'; readonly status: 'queued' | 'sending' | 'sent' }
@@ -44,6 +44,19 @@ export type RefusedSendVerdict =
  */
 export function isHandedStatus(status: string): status is 'queued' | 'sending' | 'sent' {
   return status === 'queued' || status === 'sending' || status === 'sent';
+}
+
+/** What one bounded GET read: a `present` resource's status, or the answer's own kind. */
+export type ProbedStatus =
+  | Extract<RetrieveBroadcastOnceOutcome, { kind: 'present' }>['status']
+  | Exclude<RetrieveBroadcastOnceOutcome['kind'], 'present'>;
+
+/**
+ * Spec 140 s2d (#735) — the reading a caller logs and classifies for one
+ * `retrieveBroadcastOnce` answer. Never the `sentAt`.
+ */
+export function probedStatusOf(probe: RetrieveBroadcastOnceOutcome): ProbedStatus {
+  return probe.kind === 'present' ? probe.status : probe.kind;
 }
 
 export async function probeRefusedSend(

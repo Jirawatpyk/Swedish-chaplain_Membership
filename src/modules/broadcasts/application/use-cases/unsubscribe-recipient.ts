@@ -38,7 +38,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { sha256Hex } from '@/lib/crypto';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext, TenantSlug } from '@/modules/tenants';
@@ -288,7 +288,8 @@ export async function unsubscribeRecipient(
         // counted as missing because either or both may have failed
         // (the catch wraps the pair).
         logger.error(
-          { err: (cause as Error).message, broadcastId: sourceBroadcastId },
+          // Spec 140 s2d (#736c) — the class and SQLSTATE, never the message.
+          { ...errLogFields(cause), broadcastId: sourceBroadcastId },
           'unsubscribe_audit_emit_failed_post_upsert',
         );
         broadcastsMetrics.auditEmitFailed(

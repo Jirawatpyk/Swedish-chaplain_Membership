@@ -10,6 +10,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { asHostname } from '../../domain/value-objects/image-source-allowlist';
 import { emitCrossTenantProbe } from './_emit-cross-tenant-probe';
 import type {
@@ -58,7 +59,8 @@ async function seedPlatformDefaults(
     // (idempotent via ON CONFLICT DO NOTHING at the storage layer).
     logger.warn(
       {
-        err: e instanceof Error ? e.message : String(e),
+        // Spec 140 s2d (#736c) — the class and SQLSTATE, never the message.
+        ...errLogFields(e),
         tenantId,
       },
       'broadcasts.manageImageAllowlist.platform_default_seed_failed',

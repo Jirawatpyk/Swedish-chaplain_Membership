@@ -57,12 +57,6 @@ export interface RecordOrphanInput {
   readonly reason: OrphanReason;
 }
 
-/** Review round 3 (code-review #2) — the drain's second list. */
-export interface ListDrainableOrphansOptions {
-  /** Only rows created at or after the grace cutoff, oldest first. */
-  readonly inGraceOnly?: boolean;
-}
-
 export interface BroadcastOrphansRepo {
   /**
    * Insert one row in its OWN transaction, so it commits whatever the
@@ -83,9 +77,10 @@ export interface BroadcastOrphansRepo {
    * is draft-only. Terminal = `TERMINAL_BROADCAST_STATUSES`.
    *
    * The grace period on the ORPHAN is applied by the caller, not here [P H-2]:
-   * a row inside the grace is drained at once when its requester is erased,
-   * and the members bridge (`getMemberErasedAt`) is the only crossing into
-   * members this module has.
+   * a row inside the grace is drained at once when its requester is erased.
+   * Spec 140 s2d (#736a) — the caller finds those rows through
+   * `listInGraceRequesterIds` + the members bridge (`filterErasedMemberIds`)
+   * + `listUnsettledOrphansForRequesters`, not through this list.
    *
    * Review round 1 (code-review #3): for an AUDIENCE orphan, a TERMINAL holder
    * whose `updated_at` is at or after `audienceGraceCutoff` also counts as
@@ -98,15 +93,31 @@ export interface BroadcastOrphansRepo {
    * Review round 2 (code-review #3): rows past the grace come first
    * (`ORDER BY created_at >= audienceGraceCutoff, attempts, created_at`), so
    * rows the caller would hold back cannot fill the `limit`.
-   * Review round 3 (code-review #2) — `{ inGraceOnly: true }` lists only the
-   * rows created at or after `audienceGraceCutoff`, oldest first, so the
-   * caller can reach an erased requester's young row that 20 failing
-   * past-grace rows would keep out of the default list.
    */
-  listDrainableOrphans(
+  listDrainableOrphans(limit: number, audienceGraceCutoff: Date): Promise<ReadonlyArray<OrphanedResendIdRef>>;
+
+  /**
+   * Spec 140 s2d (#736a) — the DISTINCT `requested_by_member_id` of the
+   * unsettled rows with a known id created at or after `graceCutoff`, at most
+   * `cap`. The drain asks the members bridge which of them are erased. No
+   * holder rule here: the row read below applies it. Review round 1: ordered
+   * by each requester's newest row first (`max(created_at) DESC`), so a capped
+   * list holds the requester whose orphan was written last.
+   */
+  listInGraceRequesterIds(graceCutoff: Date, cap: number): Promise<ReadonlyArray<string>>;
+
+  /**
+   * Spec 140 s2d (#736a) — the unsettled rows with a known id of the given
+   * requesters, of ANY age and type, under the SAME holder rule as
+   * `listDrainableOrphans` (the audience grace included, B2), `ORDER BY
+   * (created_at >= audienceGraceCutoff) DESC, attempts, created_at,
+   * orphan_id` (review round 1: in-grace rows first, which only this read
+   * reaches), at most `limit`. Empty ids → `[]` with no query.
+   */
+  listUnsettledOrphansForRequesters(
+    requestedByMemberIds: ReadonlyArray<string>,
     limit: number,
     audienceGraceCutoff: Date,
-    options?: ListDrainableOrphansOptions,
   ): Promise<ReadonlyArray<OrphanedResendIdRef>>;
 
   /**
