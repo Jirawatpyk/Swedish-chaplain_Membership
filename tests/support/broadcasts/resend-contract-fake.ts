@@ -9,7 +9,15 @@
 // Spec 140 s4 — it models the Segments surface the gateway calls (`segments.*`,
 // `broadcasts.create({ segmentId })`, `contacts.segments.remove`); the
 // deprecated `audiences` alias and `audienceId` are not modelled.
+import { onTestFinished } from 'vitest';
+
 const MAX_NAME_CP = 70;
+
+/** A call the gateway must never make (spec 140 DR4), as the fake received it. */
+export interface ForbiddenCall {
+  readonly method: 'contacts.remove';
+  readonly args: readonly unknown[];
+}
 
 type ResendResult<T> = { data: T | null; error: { statusCode: number; message: string; name: string } | null };
 
@@ -25,7 +33,7 @@ export interface ResendBroadcastsClientLike {
     list(): Promise<ResendResult<{ object: 'list'; data: Array<{ id: string; name: string; created_at: string }> }>>;
   };
   readonly contacts: {
-    /** Spec 140 DR4 — throws: nothing in `src` may call the account-wide delete. */
+    /** Spec 140 DR4 — records, fails the test and throws: nothing in `src` may call the account-wide delete. */
     remove(args: unknown): Promise<never>;
     list(args: unknown): Promise<ResendResult<{ data: unknown[] }>>;
     readonly segments: {
@@ -46,6 +54,14 @@ export function createResendContractFake(opts: {
    * only the erasure-after-cleanup integration test opts in.
    */
   detach404OnUnknownSegment?: boolean;
+  /**
+   * PR #756 review round 1 (security L2) — default `true`: a forbidden call
+   * fails the test it happened in, from `onTestFinished`, even when the code
+   * under test swallowed the throw (the gateway's `boundedCall` turns a throw
+   * that is not a `GatewayThrowable` into a retryable). `false` only for the
+   * fake's own pin test, which asserts `forbiddenCalls` instead.
+   */
+  forbiddenCallsFailTest?: boolean;
 } = {}): {
   client: ResendBroadcastsClientLike;
   createdAudienceCount: () => number;
@@ -59,9 +75,13 @@ export function createResendContractFake(opts: {
   createdAudienceIdsInOrder: () => readonly string[];
   /** F119 T031 — the `html` of the LAST `broadcasts.create` call (null before any). */
   lastCreatedBroadcastHtml: () => string | null;
+  /** Every forbidden call this fake received, in order (spec 140 DR4). */
+  forbiddenCalls: readonly ForbiddenCall[];
 } {
   const audienceLimit = opts.audienceLimit ?? Number.POSITIVE_INFINITY;
   const detach404OnUnknownSegment = opts.detach404OnUnknownSegment ?? false;
+  const forbiddenCallsFailTest = opts.forbiddenCallsFailTest ?? true;
+  const forbiddenCalls: ForbiddenCall[] = [];
   let audienceCount = 0;
   const createdAudienceIds = new Set<string>();
   // Append-only creation log (never mutated on remove) — distinct from the
@@ -149,11 +169,23 @@ export function createResendContractFake(opts: {
     // Spec 140 s4 — no `contacts.create`: its only caller, the legacy
     // per-contact push, was deleted with the legacy dispatch leg.
     contacts: {
-      async remove() {
+      async remove(...args: unknown[]) {
         // Spec 140 DR4 — without a segment this is `DELETE /contacts/{email}`,
         // the ACCOUNT-WIDE delete shared by every tenant. The gateway detaches
-        // through `contacts.segments.remove`; a call here is a defect, so it
-        // throws rather than answering a plausible success.
+        // through `contacts.segments.remove`; a call here is a defect, so it is
+        // recorded, fails the test (see `forbiddenCallsFailTest`), and throws
+        // rather than answering a plausible success.
+        forbiddenCalls.push({ method: 'contacts.remove', args });
+        if (forbiddenCallsFailTest) {
+          try {
+            onTestFinished(() => {
+              throw new Error('resend-contract-fake: the test called contacts.remove, the account-wide delete (spec 140 DR4)');
+            });
+          } catch {
+            // Outside a running test (a module-scope call): the throw below and
+            // `forbiddenCalls` still carry it.
+          }
+        }
         throw new Error('resend-contract-fake: contacts.remove is the account-wide contact delete (spec 140 DR4)');
       },
       async list() { return { data: { data: [] }, error: null }; },
@@ -178,5 +210,6 @@ export function createResendContractFake(opts: {
     createdAudienceCount: () => audienceCount,
     createdAudienceIdsInOrder: () => [...createdAudienceIdsInOrder],
     lastCreatedBroadcastHtml: () => lastCreatedBroadcastHtml,
+    forbiddenCalls,
   };
 }
