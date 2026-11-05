@@ -604,6 +604,19 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       expect(calls).toHaveLength(0);
     });
 
+    // Spec 140 s3 Verify finding — Resend matches a segment contact by its exact
+    // case (MEASURED 5 Nov 2026), and the erasure detach sends the lowercased
+    // address. So the import must only ever push lowercase, or an erased
+    // member's mixed-case address stays in a live segment while the detach
+    // answers 200. Refused before any request.
+    it('createContactImport refuses a mixed-case address as non_lowercase_email, with no request', async () => {
+      const calls = stubWire(() => json(200, { object: 'contact_import', id: 'imp_1' }));
+      await expect(
+        resendBroadcastsGateway.createContactImport(AUD, ['a@example.com', 'Mixed.Case@example.com']),
+      ).rejects.toMatchObject({ name: 'GatewayThrowable', kind: 'permanent', code: 'non_lowercase_email' });
+      expect(calls).toHaveLength(0);
+    });
+
     it.each([
       ['retrieveBroadcastOnce', () => resendBroadcastsGateway.retrieveBroadcastOnce('')],
       ['deleteBroadcastOnce', () => resendBroadcastsGateway.deleteBroadcastOnce('')],
