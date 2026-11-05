@@ -440,12 +440,17 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     removeContactFromAudienceSpy.mockClear();
     removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
 
-    const { memberId, contactEmail } = await seedMember(tenant);
+    // PR #756 review round 1 (pdpa L-5) — a MIXED-CASE contact address, so the
+    // `toLowerCase()` half of the detach assertion below can fail: with an
+    // all-lowercase seed, sending the address as stored would pass it too. The
+    // delivery row stores it lowercase, as production writes it.
+    const { memberId, contactEmail } = await seedMember(tenant, `Erik.Cap-${randomUUID().slice(0, 8)}@Example.COM`);
+    expect(contactEmail).not.toBe(contactEmail.toLowerCase());
     const audienceA = `aud-cap-a-${randomUUID().slice(0, 8)}`;
     const audienceB = `aud-cap-b-${randomUUID().slice(0, 8)}`;
     // Two DISTINCT audience-bearing broadcasts the member received → two pairs.
-    await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceA);
-    await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceB);
+    await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail.toLowerCase(), audienceA);
+    await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail.toLowerCase(), audienceB);
 
     const requestId = `rq-erase-sub-cap-ok-${Date.now()}`;
     const deps = buildEraseMemberDeps(tenant.ctx);
@@ -501,6 +506,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     expect(payload.stripe_outcome).toBe('ok');
     // No PII in the audit row (ids + outcomes only).
     expect(JSON.stringify(subAudits[0])).not.toContain(contactEmail);
+    expect(JSON.stringify(subAudits[0]).toLowerCase()).not.toContain(contactEmail.toLowerCase());
 
     // member_erased emitted (completion proof — cascadesComplete held).
     const erased = await rawSelectMemberErasedAudits(tenant.ctx.slug, memberId);
