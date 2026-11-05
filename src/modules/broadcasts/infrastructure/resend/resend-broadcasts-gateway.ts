@@ -883,7 +883,20 @@ export function createResendBroadcastsGateway({
 
     async deleteAudience(audienceId: string): Promise<void> {
       assertNonEmpty({ audienceId });
-      assertSegmentId({ audienceId });
+      // PR #756 review round 2 (code-review #3) — an id that is not UUID-shaped
+      // names no segment Resend could hold (every id it returns is a UUID), so
+      // the delete's goal is already met: resolve as gone with NO request, rather
+      // than a permanent `invalid_identifier` the cleanup cron would re-fail every
+      // tick (dev litter such as `aud_fake_N`). The warn names the id's class,
+      // never the id. The detach and the count still refuse such an id
+      // (`assertSegmentId`): an id-less call there is account-wide.
+      if (!RESEND_SEGMENT_ID_PATTERN.test(audienceId)) {
+        logger.warn(
+          { idClass: audienceId.startsWith('aud_') ? 'aud_prefixed' : 'not_a_segment_id' },
+          'resend.broadcasts.audience_id_not_a_segment',
+        );
+        return;
+      }
       await boundedCall(
         async (signal) => {
           const sdk = client();
