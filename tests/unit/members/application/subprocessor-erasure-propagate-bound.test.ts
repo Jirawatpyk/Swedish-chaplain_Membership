@@ -51,9 +51,9 @@ beforeEach(() => {
 describe('subprocessorErasureAdapter.propagate — bounded by the gateway (R3)', () => {
   it('propagate with a hung gateway returns within pairs × C + 1 s', async () => {
     const pairs = [
-      { audienceId: 'aud_1', email: 'a@example.com' },
-      { audienceId: 'aud_2', email: 'a@example.com' },
-      { audienceId: 'aud_3', email: 'a@example.com' },
+      { audienceId: '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a11', email: 'a@example.com' },
+      { audienceId: '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a12', email: 'a@example.com' },
+      { audienceId: '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a13', email: 'a@example.com' },
     ];
     const bound = pairs.length * C + 1_000;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -72,6 +72,9 @@ describe('subprocessorErasureAdapter.propagate — bounded by the gateway (R3)',
     ]);
     clearTimeout(timer);
 
+    // Spec 140 DT4 — each pair reached the wire (the ids are UUID-shaped, so the remove
+    // guard let them through): the bound is measured, not a refusal before any call.
+    expect(fetch).toHaveBeenCalledTimes(pairs.length);
     // Every pair timed out: nothing detached, nothing confirmed absent.
     expect(result).toEqual({
       resendOutcome: 'failed',

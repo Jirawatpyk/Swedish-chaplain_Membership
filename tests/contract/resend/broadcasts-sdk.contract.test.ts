@@ -25,6 +25,11 @@ import type { CreateBroadcastInput } from '@/modules/broadcasts/application/port
 import { logger } from '@/lib/logger';
 import { json, stubWire, type WireCall } from './_wire';
 
+// Spec 140 DT4 — `removeContactFromAudience` refuses an audience id that is not
+// UUID-shaped, so its cases use a real-shaped id (every segment id Resend has
+// returned is one, research.md slice 3 step 0).
+const AUD = '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19';
+
 const compact = (calls: readonly WireCall[]) =>
   calls.map((c) => {
     const body = c.body as Record<string, unknown> | null;
@@ -210,7 +215,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
 
   it('removeContactFromAudience', async () => {
     const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
-    await expect(resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@example.com')).resolves.toMatchInlineSnapshot(`
+    await expect(resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')).resolves.toMatchInlineSnapshot(`
       {
         "kind": "detached",
       }
@@ -223,10 +228,34 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
           "contentType": "application/json",
           "idempotencyKey": null,
           "method": "DELETE",
-          "url": "https://api.resend.com/audiences/aud_1/contacts/a@example.com",
+          "url": "https://api.resend.com/audiences/0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19/contacts/a@example.com",
         },
       ]
     `);
+  });
+
+  // Spec 140 DT4 (research.md slice 3 step 0.1, MEASURED 5 Nov 2026): the SDK
+  // puts the email in the path unencoded and as given; Resend reads the `+`
+  // literally and matches case-insensitively, answering 200 `{deleted:true}`
+  // while the contact itself survives. So the gateway neither encodes nor
+  // lowercases it. An SDK bump that starts encoding turns this red.
+  it.each([
+    ['a + address', 'delivered+x@resend.dev'],
+    ['an uppercase address', 'DELIVERED.UP@resend.dev'],
+  ])('removeContactFromAudience sends %s literally and reads 200 as detached', async (_label, email) => {
+    const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
+    await expect(resendBroadcastsGateway.removeContactFromAudience(AUD, email)).resolves.toEqual({ kind: 'detached' });
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `DELETE https://api.resend.com/audiences/${AUD}/contacts/${email}`,
+    ]);
+  });
+
+  it('removeContactFromAudience accepts an uppercase-hex UUID (matched case-insensitively)', async () => {
+    const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
+    await expect(resendBroadcastsGateway.removeContactFromAudience(AUD.toUpperCase(), 'a@example.com')).resolves.toEqual({
+      kind: 'detached',
+    });
+    expect(calls).toHaveLength(1);
   });
 
   it('listAudiences', async () => {
@@ -465,7 +494,12 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
   describe('an empty id never reaches the SDK', () => {
     it.each([
       ['removeContactFromAudience, empty audience', () => resendBroadcastsGateway.removeContactFromAudience('', 'a@example.com')],
-      ['removeContactFromAudience, empty email', () => resendBroadcastsGateway.removeContactFromAudience('aud_1', '')],
+      ['removeContactFromAudience, whitespace audience', () => resendBroadcastsGateway.removeContactFromAudience('  ', 'a@example.com')],
+      ['removeContactFromAudience, null audience', () =>
+        resendBroadcastsGateway.removeContactFromAudience(null as unknown as string, 'a@example.com')],
+      ['removeContactFromAudience, undefined audience', () =>
+        resendBroadcastsGateway.removeContactFromAudience(undefined as unknown as string, 'a@example.com')],
+      ['removeContactFromAudience, empty email', () => resendBroadcastsGateway.removeContactFromAudience(AUD, '')],
       ['addContactsToAudience', () => resendBroadcastsGateway.addContactsToAudience('', [{ emailLower: 'a@example.com' }])],
       ['getAudienceContactCount', () => resendBroadcastsGateway.getAudienceContactCount('')],
       ['deleteAudience', () => resendBroadcastsGateway.deleteAudience('')],
@@ -488,10 +522,28 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       ['createContactImport', () => resendBroadcastsGateway.createContactImport('', ['a@example.com'])],
       ['getContactImport', () => resendBroadcastsGateway.getContactImport('')],
       ['a null email from a nullable column', () =>
-        resendBroadcastsGateway.removeContactFromAudience('aud_1', null as unknown as string)],
+        resendBroadcastsGateway.removeContactFromAudience(AUD, null as unknown as string)],
     ])('%s', async (_name, run) => {
       const calls = stubWire(() => json(200, { object: 'list', has_more: false, data: [] }));
       await expect(run()).rejects.toMatchObject({ kind: 'permanent', code: 'empty_identifier' });
+      expect(calls).toHaveLength(0);
+    });
+
+    // Spec 140 DT4 — a non-blank audience id that is not UUID-shaped is refused
+    // too, with its own code: no request, so never `DELETE /contacts/{email}`.
+    it.each([
+      ['a legacy-looking id', 'aud_1'],
+      ['a UUID with surrounding spaces', ` ${AUD} `],
+      ['a UUID missing a group', '0f8e7d6c-5b4a-4392-6e5d4c3b2a19'],
+      ['a UUID with a non-hex digit', '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a1g'],
+      ['a path segment', `${AUD}/contacts`],
+    ])('removeContactFromAudience refuses %s as invalid_identifier, with no request', async (_name, audienceId) => {
+      const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
+      await expect(resendBroadcastsGateway.removeContactFromAudience(audienceId, 'a@example.com')).rejects.toMatchObject({
+        name: 'GatewayThrowable',
+        kind: 'permanent',
+        code: 'invalid_identifier',
+      });
       expect(calls).toHaveLength(0);
     });
 
@@ -586,7 +638,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       ['deleteAudience, HTML 404', 404, () => resendBroadcastsGateway.deleteAudience('aud_1'), 4],
       ['deleteBroadcast, HTML 410', 410, () => resendBroadcastsGateway.deleteBroadcast('bc_1'), 4],
       ['removeContactFromAudience, HTML 404 (the erasure path)', 404, () =>
-        resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@example.com'), 4],
+        resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com'), 4],
       ['addContactsToAudience, HTML 404', 404, () =>
         resendBroadcastsGateway.addContactsToAudience('aud_1', [{ emailLower: 'a@example.com' }]), 4],
       ['sendBroadcast, HTML 409', 409, () => resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'), 4],
@@ -648,7 +700,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
 
     it('removeContactFromAudience, a real JSON 404 is still already absent', async () => {
       stubWire(() => json(404, { statusCode: 404, name: 'not_found', message: 'Contact not found' }));
-      await expect(resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@example.com')).resolves.toEqual({
+      await expect(resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')).resolves.toEqual({
         kind: 'already_absent',
       });
     });
@@ -698,7 +750,7 @@ describe('Broadcasts gateway bounded calls on the wire (spec 140 s2a)', () => {
     ['sendBroadcast', () => resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1')],
     ['getAudienceContactCount', () => resendBroadcastsGateway.getAudienceContactCount('aud_1')],
     ['retrieveBroadcast', () => resendBroadcastsGateway.retrieveBroadcast('bc_1')],
-    ['removeContactFromAudience', () => resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@example.com')],
+    ['removeContactFromAudience', () => resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')],
     ['listAudiences', () => resendBroadcastsGateway.listAudiences()],
     ['deleteAudience', () => resendBroadcastsGateway.deleteAudience('aud_1')],
     ['deleteBroadcast', () => resendBroadcastsGateway.deleteBroadcast('bc_1')],
