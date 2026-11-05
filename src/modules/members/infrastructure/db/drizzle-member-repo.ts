@@ -735,6 +735,17 @@ export const drizzleMemberRepo: MemberRepo = {
     // would silently 0-match and strand erasures, which the live integration
     // test guards against.
     //
+    // Spec 140 DT6 — the queue rotates. The sort key is the member's LATEST
+    // `subprocessor_erasure_propagated` audit (written on every committed scrub
+    // tx, re-drives included), falling back to `erased_at` when there is none,
+    // then `member_id`. A head attempted on this tick moves behind one whose
+    // attempt is older or absent, so a full batch of failing heads cannot
+    // starve the rest past `limit`. Its tenant filter is load-bearing like the
+    // other two audit_log subqueries; `payload ? 'member_id'` lets the planner
+    // prove the partial `member_id` indexes. Not covered: a lost best-effort
+    // emit, or a head that fails before its scrub commits, writes no marker and
+    // does not rotate (spec 140 plan, slice 3 § Rotation).
+    //
     // FOR UPDATE OF m SKIP LOCKED locks ONLY the `members` row (audit subqueries
     // aren't lockable) so concurrent reconciler ticks don't double-drive a row.
     // Threads the runInTenant `tx` (RLS gotcha — never the global db).
@@ -753,7 +764,16 @@ export const drizzleMemberRepo: MemberRepo = {
       FROM members m
       WHERE m.tenant_id = ${tenantSlug}
         AND ${stuckErasurePredicate(tenantSlug)}
-      ORDER BY m.erased_at ASC
+      ORDER BY COALESCE(
+                 (SELECT max(al3."timestamp")
+                  FROM audit_log al3
+                  WHERE al3.tenant_id = ${tenantSlug}
+                    AND al3.event_type = 'subprocessor_erasure_propagated'
+                    AND al3.payload ? 'member_id'
+                    AND al3.payload->>'member_id' = m.member_id::text),
+                 m.erased_at
+               ) ASC,
+               m.member_id ASC
       LIMIT ${limit}
       FOR UPDATE OF m SKIP LOCKED
     `)) as unknown as Array<{ member_id: string; reason: string }>;
