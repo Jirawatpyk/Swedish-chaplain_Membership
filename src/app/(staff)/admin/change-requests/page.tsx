@@ -21,7 +21,6 @@
  * boundary — never an empty state that says "no requests are waiting".
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
@@ -42,9 +41,10 @@ import {
   listChangeRequestQueue,
   type ChangeRequestQueueItem,
 } from '@/modules/members';
-import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, Card } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
 import { TableContainer } from '@/components/layout';
+import { CursorPagination } from '@/components/layout/cursor-pagination';
 import { PageHeader } from '@/components/layout/page-header';
 import { ChangeRequestQueueFilters } from './_components/queue-filters';
 import { ChangeRequestQueueTable } from './_components/queue-table';
@@ -294,13 +294,9 @@ export async function renderChangeRequestQueueView({
           ) : (
             <ChangeRequestQueueTable items={items} />
           )}
-          {nextHref ? (
-            <div className="flex justify-center">
-              <Link href={nextHref} className={buttonClass({ variant: 'secondary' })} data-testid="queue-next">
-                {t('nextPage')}
-              </Link>
-            </div>
-          ) : null}
+          {/* Spec 122: AURA cursor Pagination — a forward-only keyset, so no
+              First link; the same Next href as before. */}
+          {nextHref ? <CursorPagination showFirst={false} nextHref={nextHref} /> : null}
         </div>
       </Card>
     </TableContainer>

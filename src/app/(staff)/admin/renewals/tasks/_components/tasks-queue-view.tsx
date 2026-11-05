@@ -10,7 +10,8 @@
  */
 import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
-import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, Card } from '@jirawatpyk/aura-react/server';
+import { CursorPagination } from '@/components/layout/cursor-pagination';
 import { RenewalsErrorRetry } from '../../_components/renewals-error-retry';
 
 export interface TasksQueueViewProps {
@@ -44,15 +45,11 @@ export async function renderTasksQueueView({ sectionTabs, queue, nextHref, loadF
           <>
             {queue}
             {/* UX-audit PR-A #1 — the keyset footer, only when the page is
-                capped at 50. A plain link (works without JavaScript); the copy
-                is page-position-neutral, so it holds on page 2 too. */}
+                capped at 50: AURA cursor Pagination, forward-only (no First).
+                A real link (works without JavaScript); the status is
+                page-position-neutral, so it holds on page 2 too. */}
             {nextHref ? (
-              <div className="flex flex-wrap items-center justify-between gap-[var(--aura-space-3)]">
-                <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">{t('pagination.showingFirst')}</p>
-                <a href={nextHref} className={buttonClass({ variant: 'secondary' })}>
-                  {t('pagination.next')}
-                </a>
-              </div>
+              <CursorPagination showFirst={false} status={t('pagination.showingFirst')} nextHref={nextHref} />
             ) : null}
           </>
         )}

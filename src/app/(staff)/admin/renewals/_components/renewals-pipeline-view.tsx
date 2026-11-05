@@ -11,8 +11,9 @@
  */
 import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
-import { Card, EmptyState, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, EmptyState } from '@jirawatpyk/aura-react/server';
 import { ErrorCardActions } from '@/components/shell/error-card-actions';
+import { CursorPagination } from '@/components/layout/cursor-pagination';
 import type { PipelineSort, PipelineSummary, TierBucket, UrgencyBucket } from '@/modules/renewals';
 import type { PipelineRow } from '@/modules/renewals/client';
 import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
@@ -188,18 +189,12 @@ export async function renderPipelineLens({
         />
       )}
       {nextHref ? (
-        // Keyset cursor pagination: the read was capped at 50 rows. A
-        // "Next 50" link (same pattern as /admin/audit) + a visible
-        // "Showing first 50" hint so everyone knows the list is truncated.
-        // UrgencyBucketTabs drops the cursor on a tab switch.
-        <div className="flex items-center justify-between gap-4 pt-1">
-          <p className="text-xs text-[var(--aura-fg-secondary)]">
-            {t('table.pagination.showingFirst')}
-          </p>
-          <a href={nextHref} className={buttonClass({ variant: 'secondary' })}>
-            {t('table.pagination.next')}
-          </a>
-        </div>
+        // Keyset cursor pagination: the read was capped at 50 rows. AURA
+        // cursor Pagination (same as /admin/audit): a Next link + the visible
+        // "Showing first 50" status so everyone knows the list is truncated.
+        // Forward-only, so no First link. UrgencyBucketTabs drops the cursor
+        // on a tab switch.
+        <CursorPagination showFirst={false} status={t('table.pagination.showingFirst')} nextHref={nextHref} />
       ) : null}
     </div>
   );

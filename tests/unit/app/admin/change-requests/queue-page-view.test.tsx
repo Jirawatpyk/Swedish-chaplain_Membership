@@ -129,6 +129,16 @@ describe('renderChangeRequestQueueView', () => {
     }
   });
 
+  it('pages forward with AURA cursor Pagination, the same Next href', async () => {
+    await renderView({ ...base, hasMore: true, nextHref: '/admin/change-requests?state=pending&cursor=c2' });
+    const nav = screen.getByRole('navigation', { name: 'Pagination' });
+    expect(nav).toHaveClass('aura-pagination', 'aura-pagination--cursor');
+    expect(screen.getByRole('link', { name: Q.nextPage })).toHaveAttribute(
+      'href',
+      '/admin/change-requests?state=pending&cursor=c2',
+    );
+  });
+
   it('the empty state sits in the same card, without a second border', async () => {
     await renderView(base);
     const card = screen.getByTestId('queue-filters').closest('.aura-card');

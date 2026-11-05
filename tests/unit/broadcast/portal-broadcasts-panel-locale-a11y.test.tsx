@@ -346,3 +346,22 @@ describe('U31 — the history table has an accessible name', () => {
     expect(within(table).getByText('Spring mixer')).toBeInTheDocument();
   });
 });
+
+describe('the history pagination (spec 122)', () => {
+  it('is AURA Pagination with the same ?tab=broadcasts&page=N links', async () => {
+    setHistory();
+    const first = await listMemberBroadcasts();
+    listMemberBroadcasts.mockResolvedValue({ ...first, page: 2, totalPages: 3, total: 25 });
+    await renderPanel('en');
+    const nav = screen.getByRole('navigation', { name: enMessages.portal.broadcasts.list.pagination.ariaLabel });
+    expect(nav).toHaveClass('aura-pagination');
+    expect(within(nav).getByRole('link', { name: 'Previous page' })).toHaveAttribute(
+      'href',
+      '/portal/benefits?tab=broadcasts&page=1',
+    );
+    expect(within(nav).getByRole('link', { name: 'Next page' })).toHaveAttribute(
+      'href',
+      '/portal/benefits?tab=broadcasts&page=3',
+    );
+  });
+});
