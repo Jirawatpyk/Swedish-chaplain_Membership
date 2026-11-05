@@ -792,10 +792,39 @@ describe('initiatePayment (T055)', () => {
   // when the PI is found, or when the check itself is inconclusive.
   it.each([
     {
-      name: 'the retrieve finds the PI',
+      // Still cancelable — the 404 was read lag; a retry's cancel will land.
+      name: 'the retrieve finds it requires_payment_method',
       retrieved: ok({
         id: 'pi_existing_lagged',
         status: 'requires_payment_method',
+        clientSecret: 'pi_existing_lagged_secret',
+        latestChargeId: null,
+        livemode: false,
+        lastPaymentErrorCode: null,
+        card: null,
+      }),
+      kind: 'retryable',
+      reason: 'cross_method_cancel_retryable',
+    },
+    {
+      name: 'the retrieve finds it succeeded',
+      retrieved: ok({
+        id: 'pi_existing_lagged',
+        status: 'succeeded',
+        clientSecret: null,
+        latestChargeId: 'ch_lagged',
+        livemode: false,
+        lastPaymentErrorCode: null,
+        card: null,
+      }),
+      kind: 'permanent',
+      reason: 'cross_method_pi_already_succeeded',
+    },
+    {
+      name: 'the retrieve finds it processing',
+      retrieved: ok({
+        id: 'pi_existing_lagged',
+        status: 'processing',
         clientSecret: 'pi_existing_lagged_secret',
         latestChargeId: null,
         livemode: false,
@@ -853,6 +882,66 @@ describe('initiatePayment (T055)', () => {
     expect(result.error.reason).toBe(c.reason);
     expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
     expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+  });
+
+  it('cross-method skip — cancel resource_missing, retrieve finds it canceled → marks canceled, cancel_outcome=stripe_confirmed (#731)', async () => {
+    const existingCard: Payment = {
+      id: asPaymentId('pmt_existing_card_lagged_canceled'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'card',
+      status: 'pending',
+      amountSatang: asSatang(5_350_000n),
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_existing_lagged_canceled',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_prev',
+    };
+    const deps = makeDeps();
+    (deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      existingCard,
+    );
+    (deps.processorGateway.cancelPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ kind: 'permanent', code: 'resource_missing', reason: 'No such payment_intent' }),
+    );
+    (deps.processorGateway.retrievePaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'pi_existing_lagged_canceled',
+        status: 'canceled',
+        clientSecret: null,
+        latestChargeId: null,
+        livemode: false,
+        lastPaymentErrorCode: null,
+        card: null,
+      }),
+    );
+    (deps.paymentsRepo.nextAttemptSeq as ReturnType<typeof vi.fn>).mockResolvedValueOnce(2);
+    (deps.processorGateway.createPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'pi_promptpay_new',
+        clientSecret: 'pi_promptpay_new_secret',
+        status: 'requires_action',
+        livemode: false,
+        promptpayQrSvgUrl: 'https://qr.stripe.com/v1/x.svg',
+      }),
+    );
+
+    const result = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(result.ok).toBe(true);
+    expect(deps.paymentsRepo.updateStatus).toHaveBeenCalled();
+    const switchEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[1]?.eventType === 'payment_method_switched',
+    );
+    expect(switchEmit?.[1]?.payload).toMatchObject({ cancel_outcome: 'stripe_confirmed' });
   });
 
   // #731 (task 52) — fail closed. Only a confirmed cancel or a PI that does
