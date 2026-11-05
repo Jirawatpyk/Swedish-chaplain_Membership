@@ -710,3 +710,144 @@ describe('Broadcasts gateway bounded calls on the wire (spec 140 s2a)', () => {
     expect(inits.every((i) => i?.signal instanceof AbortSignal)).toBe(true);
   });
 });
+
+/**
+ * Spec 140 slice 3, DT3 — the Resend error classes, keyed on the HTTP status
+ * and then on Resend's `name` (both DOCUMENTED; 409 `resource_locked` was not
+ * reproducible on the sink, research.md step 0.3):
+ *   - 409 `resource_locked` → retryable / `locked` (another request is updating
+ *     the resource; nothing was refused); any other 409 keeps
+ *     `idempotency_conflict`;
+ *   - 429 `daily_quota_exceeded` / `monthly_quota_exceeded` → permanent (it does
+ *     not clear inside a call, nor inside FR-021's hour), the code kept;
+ *   - 429 `rate_limit_exceeded`, or a 429 with no name → retryable / `api`.
+ * The raw once readers keep 409 → `other` (undecided), outside DT3.
+ */
+describe('DT3 — Resend error classes (spec 140 slice 3)', () => {
+  const locked = () =>
+    json(409, { statusCode: 409, name: 'resource_locked', message: 'Another request is already updating this resource' });
+  const refused422 = () =>
+    json(422, { statusCode: 422, name: 'validation_error', message: 'Only draft broadcasts can be sent or scheduled' });
+  const settle = (p: Promise<unknown>) =>
+    p.then(
+      () => ({ outcome: 'resolved', subKind: null, code: null }),
+      (e: { kind?: string; subKind?: string; code?: string }) => ({
+        outcome: e.kind ?? 'threw',
+        subKind: e.subKind ?? null,
+        code: e.code ?? null,
+      }),
+    );
+  const createInput = {
+    audienceId: 'aud_1',
+    subject: 'Hello',
+    htmlBody: '<p>hi</p>',
+    fromName: 'SweCham',
+    fromEmail: 'noreply@example.com',
+    replyToEmail: 'office@example.com',
+    broadcastNameForResendDashboard: 'SweCham — Hello',
+    tenantDisplayName: 'SweCham',
+    locale: 'en',
+  } satisfies CreateBroadcastInput;
+
+  it('sendBroadcast: a 409 resource_locked is retried, and a retry that lands resolves', async () => {
+    vi.useFakeTimers();
+    const calls = stubWire((n) => (n === 1 ? locked() : json(200, { id: 'bc_1' })));
+    const done = settle(resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'));
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'resolved', subKind: null, code: null, attempts: 2 });
+  });
+
+  // The send arm's "409 then 422": the 422 is permanent and leaves the bounded
+  // call at once; the caller probes it (`probeRefusedSend`) before believing it.
+  it('sendBroadcast: 409 resource_locked, then 422 → the 422 is thrown permanent out of the bounded call', async () => {
+    vi.useFakeTimers();
+    const calls = stubWire((n) => (n === 1 ? locked() : refused422()));
+    const done = settle(resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'));
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ ...(await done), attempts: calls.length }).toEqual({
+      outcome: 'permanent',
+      subKind: null,
+      code: 'validation_error',
+      attempts: 2,
+    });
+  });
+
+  it.each([
+    ['retrieveBroadcast', () => resendBroadcastsGateway.retrieveBroadcast('bc_1')],
+    ['deleteBroadcast', () => resendBroadcastsGateway.deleteBroadcast('bc_1')],
+    ['sendBroadcast', () => resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1')],
+  ])('%s: a 409 resource_locked that never clears is retryable / locked, inside the call budget', async (_name, run) => {
+    vi.useFakeTimers();
+    const calls = stubWire(locked);
+    const done = settle(run() as Promise<unknown>);
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'retryable', subKind: 'locked', code: null, attempts: 4 });
+  });
+
+  it('createBroadcast: a 409 resource_locked is retryable / locked, one request (a create retries a 429 only)', async () => {
+    vi.useFakeTimers();
+    const calls = stubWire(locked);
+    const done = settle(resendBroadcastsGateway.createBroadcast(createInput));
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'retryable', subKind: 'locked', code: null, attempts: 1 });
+  });
+
+  it.each(['daily_quota_exceeded', 'monthly_quota_exceeded'])(
+    'sendBroadcast: a 429 %s is permanent with its code, one request',
+    async (name) => {
+      vi.useFakeTimers();
+      const calls = stubWire(() => json(429, { statusCode: 429, name, message: 'quota reached' }));
+      const done = settle(resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'));
+      await vi.advanceTimersByTimeAsync(40_000);
+      expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'permanent', subKind: null, code: name, attempts: 1 });
+    },
+  );
+
+  // `throwImportError` goes through `classifyResendError`, so the import calls inherit DT3.
+  it.each(['daily_quota_exceeded', 'monthly_quota_exceeded'])(
+    'createContactImport: a 429 %s is permanent with its code, one request',
+    async (name) => {
+      vi.useFakeTimers();
+      const calls = stubWire(() => json(429, { statusCode: 429, name, message: 'quota reached' }));
+      const done = settle(resendBroadcastsGateway.createContactImport('aud_1', ['a@example.com']));
+      await vi.advanceTimersByTimeAsync(40_000);
+      expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'permanent', subKind: null, code: name, attempts: 1 });
+    },
+  );
+
+  it.each([
+    ['rate_limit_exceeded', { statusCode: 429, name: 'rate_limit_exceeded', message: 'Too many requests' }],
+    ['with no name', { statusCode: 429, message: 'Too many requests' }],
+  ])('retrieveBroadcast: a 429 %s stays retryable / api', async (_label, body) => {
+    vi.useFakeTimers();
+    const calls = stubWire(() => json(429, body));
+    const done = settle(resendBroadcastsGateway.retrieveBroadcast('bc_1'));
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'retryable', subKind: 'api', code: null, attempts: 4 });
+  });
+
+  it('sendBroadcast: any other 409 keeps idempotency_conflict, one request', async () => {
+    vi.useFakeTimers();
+    const calls = stubWire(() =>
+      json(409, { statusCode: 409, name: 'invalid_idempotent_request', message: 'Same key, different payload' }),
+    );
+    const done = settle(resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'));
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ ...(await done), attempts: calls.length }).toEqual({
+      outcome: 'idempotency_conflict',
+      subKind: null,
+      code: null,
+      attempts: 1,
+    });
+  });
+
+  // Deliberately outside DT3: under the erasure cascade's row lock a 409 decides
+  // nothing, so the raw readers keep it `other` (undecided). Do not "fix" it.
+  it.each([
+    ['deleteBroadcastOnce', () => resendBroadcastsGateway.deleteBroadcastOnce('bc_1')],
+    ['retrieveBroadcastOnce', () => resendBroadcastsGateway.retrieveBroadcastOnce('bc_1')],
+  ])('%s: a JSON 409 resource_locked stays other', async (_name, run) => {
+    stubWire(locked);
+    await expect(run()).resolves.toEqual({ kind: 'other' });
+  });
+});

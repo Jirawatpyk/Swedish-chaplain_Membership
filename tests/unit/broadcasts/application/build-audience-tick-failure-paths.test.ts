@@ -1280,6 +1280,25 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  // Spec 140 slice 3, DT3 — a 409 `resource_locked` is its own transport class.
+  // Without it in the shared narrowing it would page as `unclassified`.
+  it('DT3 — an hour of 409 resource_locked reports sub_kind locked on the page-on-call series', async () => {
+    const budgetSpy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable', subKind: 'locked' },
+      dispatchFirstFailedAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted');
+    expect(budgetSpy.mock.calls[0]?.[1]).toBe('locked');
+    // No HTTP bucket is invented for it (the sibling cell's rule).
+    expect(failedSpy.mock.calls[0]?.[1]).toBe('app_error');
+  });
+
   it('a GATEWAY failure past the budget still reports the provider, with the class observed', async () => {
     const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
     const { deps, rec } = makeDeps({
@@ -3563,6 +3582,27 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     expect(deps.sendStanding.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
   });
 
+  // Spec 140 slice 3, DT3 — the inherited probe's GET meets resource_locked: the
+  // ordinary retryable arm, logged under its own class.
+  it('DT3 — re-entry, the probe THROWS retryable locked → retryable, logged subKind locked', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      throwOn: { method: 'retrieveBroadcast', kind: 'retryable', subKind: 'locked' },
+      dispatchFirstFailedAt: minutesAgo(120),
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: false, error: { kind: 'dispatch.server_error', message: 'retryable', phase: 'gateway' } });
+    expect(rec.retryStamps).toEqual([]);
+    expect(rec.transitions).toEqual([]);
+    const line = warnSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.inherited_probe_retryable');
+    expect(line?.[0]).toMatchObject({ subKind: 'locked' });
+  });
+
   it('re-entry, the probe THROWS retryable → retryable, never budgeted or stamped, even with a spent clock', async () => {
     const { deps, rec } = makeDeps({
       ...TICK2,
@@ -4051,6 +4091,25 @@ describe('buildAudienceTick — a refused /send is probed before it is believed'
 
     expect(errorSpy.mock.calls.some((c) => c[1] === 'broadcasts.audience_import.sent_but_transition_lost')).toBe(false);
     expect(rec.memberEmails).toEqual([]);
+  });
+
+  // Spec 140 slice 3, DT3 — a 429 `daily_quota_exceeded` / `monthly_quota_exceeded`
+  // is permanent with its name as the code; probed (draft = refused), it ends
+  // the row in one tick and is counted `resend_429`, never `app_error`.
+  it.each(['daily_quota_exceeded', 'monthly_quota_exceeded'])('DT3 — a quota 429 (%s) on the send + the probe answers draft → terminal, counted resend_429', async (code) => {
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      throwOn: { method: 'sendBroadcast', kind: 'permanent', code },
+      probe: { kind: 'present', status: 'draft' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? null : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'gateway_permanent' });
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.memberEmails).toHaveLength(1);
+    expect(failedSpy.mock.calls[0]?.[1]).toBe('resend_429');
   });
 
   // `cancelled` is a scheduled send Resend cancelled: never sent, the same reading
