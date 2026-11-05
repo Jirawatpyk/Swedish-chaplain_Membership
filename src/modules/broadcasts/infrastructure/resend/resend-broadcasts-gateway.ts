@@ -1137,6 +1137,21 @@ export function createResendBroadcastsGateway({
               message: `${unsafe.length} recipient address(es) contain CSV control characters`,
             });
           }
+          // Spec 140 s3 Verify finding — Resend matches a segment contact by its
+          // exact case (MEASURED 5 Nov 2026: `DELIVERED.x@` and `delivered.x@`
+          // are two contacts, and a DELETE with the other case answers 200
+          // `deleted: true` while removing nothing). The erasure detach sends the
+          // lowercased address, so a mixed-case push would leave an erased
+          // member in a live segment while the Art. 30 record says detached.
+          // `EmailLower` is a brand, not a check (see above), so re-check here.
+          const mixedCase = emails.filter((e) => e !== e.toLowerCase());
+          if (mixedCase.length > 0) {
+            throw classifyResendError({
+              statusCode: 422,
+              name: 'non_lowercase_email',
+              message: `${mixedCase.length} recipient address(es) are not lowercase`,
+            });
+          }
           const csv = ['email', ...emails].join('\n') + '\n';
           const form = new FormData();
           form.append('file', new Blob([csv], { type: 'text/csv' }), 'audience.csv');
