@@ -35,7 +35,7 @@ import { asBroadcastId, type BroadcastId } from '@/modules/broadcasts/domain/bro
 import type { BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
-import { RESEND_CALL_TIMEOUT_MS } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { broadcastsMetrics } from '@/lib/metrics';
 
 // ---------------------------------------------------------------------------
@@ -786,5 +786,20 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(counted).not.toHaveBeenCalled();
+  });
+});
+
+// Spec 140 s3 review round 1 (R1-H) - the use case's chunk check and the
+// gateway's page check judge the deadline with this one rule: start a call only
+// while one whole bounded call still fits before the deadline.
+describe('oneCallFitsBefore', () => {
+  const deadline = new Date(100_000);
+  it.each([
+    ['exactly one budget left', 100_000 - RESEND_CALL_TIMEOUT_MS, true],
+    ['more than one budget left', 0, true],
+    ['one millisecond short of a budget', 100_000 - RESEND_CALL_TIMEOUT_MS + 1, false],
+    ['past the deadline', 100_001, false],
+  ])('%s -> %s', (_label, nowMs, fits) => {
+    expect(oneCallFitsBefore(deadline, nowMs, RESEND_CALL_TIMEOUT_MS)).toBe(fits);
   });
 });
