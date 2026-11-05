@@ -2326,6 +2326,12 @@ Fixed in this PR:
 - **R1-J, `retryableSubKind` is exhaustive (reliability L2):** a new `GatewayRetryableSubKind` member is a compile error, not a silent `unclassified`.
 - **R1-K, the detach email half (security L2):** `removeContactFromAudience` refuses an address containing `/ ? # % \` before any request (`invalid_identifier`), and the new throws' messages are asserted to carry no address or id (security test gap).
 
+Round 1 build notes (5 Nov 2026): 17 commits `2bf4d4840`..`6185f39e9`.
+- R1-D lands in members (`isErasedSentinelEmail`, `erase-member.ts`): only the list handed to `listMemberAudienceContactsInTx` drops sentinels; the tombstone and the custom-recipient redaction keep the full set. Integration cell 3 of `erase-member-subprocessor-cascade.test.ts` had pinned the sentinel detach as "the re-drive retries the detach"; it is inverted.
+- R1-E: `failTerminally({ notifyMemberStanding: 'held' })` on the DT2 hold arm only, carried in the outbox `context_data`; the route accepts only the exact value `'held'`. The legacy leg never sets it.
+- R1-H: one helper `oneCallFitsBefore` (port); the use case passes `RESEND_CALL_TIMEOUT_MS` with its ClockPort, the gateway its `callTimeoutMs` with `Date.now()` (the same value and clock in production).
+- R1-K: a one-off read-only prod count the maintainer ordered on 5 Nov 2026 found 0 of 150 contact emails holding any of `/ ? # % \`, so the guard keeps all five.
+
 Not fixed, with the reason:
 - code-review #5 (dead `isDeadProbe` / `bidIsDead` / `cancelled` self-heal plumbing): left for slice 4, which removes the legacy leg and this plumbing together; recorded in the DT1+DT2 build notes.
 - code-review #9 (a quota 429 ends every E-Blast in that tick): the spec's DT3 decision; recorded under DT3.
