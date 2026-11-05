@@ -162,6 +162,12 @@ export const IMPORT_FAILURE_REASONS = [
   'count_mismatch',
   /** The provider itself reported the job failed — do not wait out the 30 min. */
   'provider_failed',
+  /**
+   * Spec 140 DT2 — the row's inherited broadcast is `cancelled` at Resend: it
+   * can never be sent (only a draft can), and the cancel was decided outside
+   * this tick, so it is refused for good rather than re-minted and sent.
+   */
+  'provider_cancelled',
   /** A 4xx from Resend. The measured instance is the Free plan's contact cap. */
   'gateway_permanent',
   /** A throw carrying no `kind`: not a gateway error, a programming fault. */
@@ -897,10 +903,12 @@ type InheritedProbe =
  * - draft → never handed: proceed as normal; `confirmImport` reuses the id (no
  *   second `createBroadcast`) and sends it with the same idempotency key.
  *   Logged, because the fall-through is a decision.
- * - cancelled / not_found → never handed, and the id is DEAD: only a draft can
- *   be sent (a non-draft `/send` answers 422, MEASURED 2026-10-29), so
- *   `confirmImport` mints a fresh resource and replaces the dead id by fenced
- *   CAS — a dead id is never sent to.
+ * - cancelled → never handed, and the id is DEAD: only a draft can be sent (a
+ *   non-draft `/send` answers 422, MEASURED 2026-10-29). Spec 140 DT2: refused
+ *   terminally (`provider_cancelled`) once the standing gate answers send or
+ *   hold (`applySendStanding`), never re-minted.
+ * - not_found → never handed, the id is gone: `confirmImport` mints a fresh
+ *   resource and replaces the dead id by fenced CAS — a dead id is never sent to.
  * - unknown (and any status a later adapter adds without this function
  *   learning it) → REFUSE, fail closed: the row stays `approved`, phase
  *   `inherited_status`, no FR-021 clock (a clock would turn "unknown whether
@@ -1042,6 +1050,25 @@ async function applySendStanding(
     deps.tenant,
     broadcast.requestedByMemberId,
   );
+  // Spec 140 DT2 — a `cancelled` inherited id can never be sent, and the cancel
+  // was decided outside this tick: refused terminally on the two arms that would
+  // otherwise go on, never re-minted. The send arm would mint a fresh resource;
+  // the hold arm's restart would release the id, so the tick after the unhold
+  // would mint and send. The two refusal arms below keep their own end (already
+  // terminal, never a mint; the erased one emails nobody); a failed read
+  // decides nothing. `failTerminally`'s choke point meets the 403 on the DELETE
+  // and reads `cancelled` (retained); the id stays on the terminal row, where
+  // the erasure terminal pass and `cleanup-audiences` reach it, so no orphan
+  // row is written.
+  if ((standing.kind === 'send' || standing.kind === 'hold') && probe !== null && !probe.handed && probe.status === 'cancelled') {
+    return failTerminally(deps, input, broadcast, {
+      kind: 'audience_import_failed',
+      reason: 'provider_cancelled',
+      importId: broadcast.audienceImportId,
+      observed: null,
+      expected: null,
+    });
+  }
   if (standing.kind === 'send') return null;
   if (standing.kind === 'hold') {
     // Best-effort: a failed restart leaves the hold the decided answer. A lease
@@ -1614,7 +1641,15 @@ function budgetSubKindToFailureMetric(
  * `member_ineligible` (F119 PR-A) is a decision about the member, not a fault,
  * so it is counted apart from `app_error`, which the dispatch alert reads.
  */
-type FailureMetricLabel = 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' | 'member_ineligible';
+type FailureMetricLabel =
+  | 'resend_5xx'
+  | 'resend_429'
+  | 'resend_403'
+  | 'app_error'
+  | 'timeout'
+  | 'member_ineligible'
+  /** Spec 140 DT2 — cancelled at Resend: neither a fault of ours nor a provider outage. */
+  | 'provider_cancelled';
 
 function importReasonToFailureMetric(
   reason: ImportFailureReason | 'audience_import_stuck',
@@ -1622,6 +1657,7 @@ function importReasonToFailureMetric(
 ): FailureMetricLabel {
   if (reason === 'member_halted' || reason === 'member_not_in_good_standing') return 'member_ineligible';
   if (reason === 'audience_import_stuck') return 'timeout';
+  if (reason === 'provider_cancelled') return 'provider_cancelled';
   if (code === 'http_403') return 'resend_403';
   if (code === 'http_429') return 'resend_429';
   return 'app_error';
@@ -1978,9 +2014,10 @@ async function confirmImport(
    * S8 — what Step 1a learned about a broadcast id an earlier tick persisted.
    * `resendBroadcastId` is `''` when the row carries none (a fresh mint). A
    * non-empty one was probed NOT handed to `/send`: `draft` is reused (never
-   * minted twice), re-asserted through the sender's fence; `cancelled` and
-   * `observedResendStatus: null` (`not_found`, already re-probed once in Step 1a) are DEAD,
-   * so a fresh resource replaces them.
+   * minted twice), re-asserted through the sender's fence;
+   * `observedResendStatus: null` (`not_found`, already re-probed once in Step 1a) is DEAD,
+   * so a fresh resource replaces it. `cancelled` is refused terminally before
+   * this point (spec 140 DT2, `applySendStanding`), so it is never minted over.
    */
   inherited: {
     readonly resendBroadcastId: string;
@@ -2241,7 +2278,7 @@ async function confirmImport(
   // resource and sent to everyone again — a different resource, where no key
   // can dedupe. Now the minted id is persisted BEFORE the send, in its own tx
   // (`persistBroadcastIdBeforeSend`), and a re-entered tick probes it at Step
-  // 1a: handed → caught up without a send; `draft` / `cancelled` → reused here.
+  // 1a: handed → caught up without a send; `draft` → reused here.
   //
   // THE SENDER'S FENCE (2026-10-29): every persist on this leg is fenced on
   // the import this tick confirmed, so a hold on an overlapping tick that
@@ -2250,13 +2287,14 @@ async function confirmImport(
   // and `/send`: on a fresh mint the persist IS the fence; an inherited id is
   // re-asserted through it.
   //
-  // A DEAD inherited id is never sent to: `not_found` could only 404, and
-  // `cancelled` only 422 (only a draft can be sent, MEASURED 2026-10-29). A
-  // fresh one is minted and replaces exactly that dead id
-  // (`replacesResendBroadcastId`), still fenced.
+  // A DEAD inherited id is never sent to: `not_found` could only 404. A fresh
+  // one is minted and replaces exactly that dead id
+  // (`replacesResendBroadcastId`), still fenced. Spec 140 DT2: a `cancelled` id
+  // is NOT re-mintable (it was refused terminally before this point); should
+  // one ever arrive here it is reused, and its send's 422 is probed below and
+  // ends terminally, never a second resource.
   const inheritedId = inherited.resendBroadcastId;
-  const inheritedDead =
-    inheritedId !== '' && (inherited.observedResendStatus === null || inherited.observedResendStatus === 'cancelled');
+  const inheritedDead = inheritedId !== '' && inherited.observedResendStatus === null;
   const minted = inheritedId === '' || inheritedDead;
   let mintedId: string | null = null;
   if (minted) {
@@ -2324,22 +2362,14 @@ async function confirmImport(
   });
   if (persistRefused !== null) return err(persistRefused);
   if (inheritedDead) {
-    // The dead resource stays at Resend if it was `cancelled` (it cannot be
-    // deleted); its id leaves the row here, so this line is its only record.
+    // Only a `not_found` id is replaced (spec 140 DT2): Resend holds nothing
+    // for it, so no orphan row. The s2c `dead_broadcast_replaced` writer was
+    // for a replaced `cancelled` id, which no longer happens; the reason stays
+    // in `orphaned-resend-id.ts` because 0325 rows may hold it.
     logger.warn(
-      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, replacedResendBroadcastId: inheritedId, resendBroadcastId, observedResendStatus: inherited.observedResendStatus ?? 'not_found' },
+      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, replacedResendBroadcastId: inheritedId, resendBroadcastId, observedResendStatus: 'not_found' },
       'broadcasts.audience_import.dead_broadcast_replaced',
     );
-    // Spec 140 s2c [A7] — only a `cancelled` id is still at Resend (a
-    // `not_found` one is gone): recorded, so the drain settles it.
-    if (inherited.observedResendStatus === 'cancelled') {
-      await recordOrphan(deps, input, {
-        requestedByMemberId: broadcast.requestedByMemberId,
-        resourceType: 'broadcast',
-        resourceId: inheritedId,
-        reason: 'dead_broadcast_replaced',
-      });
-    }
   }
 
   // Same idempotency key shape the single-tick path uses, and the SAME key on

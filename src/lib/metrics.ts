@@ -2357,7 +2357,14 @@ export const broadcastsMetrics = {
    */
   failedToDispatchCount(
     tenantId: string,
-    failureReason: 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' | 'member_ineligible',
+    failureReason:
+      | 'resend_5xx'
+      | 'resend_429'
+      | 'resend_403'
+      | 'app_error'
+      | 'timeout'
+      | 'member_ineligible'
+      | 'provider_cancelled',
   ): void {
     safeMetric(() => {
       counter(
