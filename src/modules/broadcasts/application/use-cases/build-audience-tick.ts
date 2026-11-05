@@ -1487,7 +1487,7 @@ type GatewayFailure =
       readonly message: string;
       /**
        * The adapter's transport class (`classifyResendError` tags every
-       * `retryable` throw with `network` / `server_5xx` / `api`). Carried so the
+       * `retryable` throw with `network` / `server_5xx` / `api` / `locked`). Carried so the
        * FR-021 budget can report the class actually observed instead of a
        * plausible one — the same reason the non-retryable arm carries `kind`.
        */

@@ -2290,6 +2290,13 @@ DT1 + DT2 (with the reason copy) → DT3 + the status readers → DT4 → DT5 �
 - New on the hold path: a suspended member whose broadcast was cancelled at Resend now gets the "did not go out" email (a hold used to tell nobody). This follows the notify decision; the reviewers check it.
 - Now unreachable from the tick: `isDeadProbe` true, `restartAudienceBuild`'s `bidIsDead: true` branch, and the `cancelled` argument to `selfHealMissingAudience`. Left in place; s4 may remove them.
 
+#### Build notes, DT3 + the status readers (5 Nov 2026)
+- **Plan correction, replay arm.** The tick's `idempotency_conflict` replay arm (~:2401) does not call `probeRefusedSend`, and is left unchanged. The 409 → 422 path reaches the permanent arm (~:2413), which does. It is pinned by the gateway cell "sendBroadcast: 409 resource_locked, then 422" (2 attempts, thrown permanent) and the existing tick cells "422 + the probe answers queued/sending/sent → already accepted" (transition `sending` only, no failure count, no member email).
+- **Plan correction, no edit needed.** Under option (a) `reconcile-stuck-sending` never sees `failed`, so `metrics.ts:2802` and the stuck-sending runbook are unchanged.
+- **Legacy-leg effects the plan did not name.** The inherited probe: a locked GET now retries and ends `gateway_retryable{locked}` (it was a fail-closed refuse); a quota 429 now refuses fail-closed (it was retryable). The import leg's own probe is pinned separately. The legacy Step 1b gate is now positive (`draft` / `cancelled` continue, anything else refuses), so `failed` can never fold to `not_found` at Step 1c; quota rows carry phase `permanent_failure_429`.
+- **Outside the dispatch legs.** Every `retry: 'retryable'` gateway method now retries `locked` and ends a quota 429 after one attempt: `removeContactFromAudience` (the live erasure adapter), `deleteAudience`, `deleteBroadcast`, `getAudienceContactCount`, `addContactsToAudience`, `listAudiences`. The erasure adapter counts any throw as failed whatever its kind (`subprocessor-erasure-adapter.ts`), so a quota 429 there still leaves the erasure for the re-drive; a lock that clears is now `detached`. pdpa reviews this.
+- Metric: `broadcasts_dispatch_budget_exhausted_total{sub_kind}` gains `locked`; quota moves from `app_error` to `resend_429`.
+
 #### Housekeeping
 - Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
 - For slice 4, not slice 3: `deleteContactGlobally` (`gateway:772`) has no caller but still sends `DELETE /contacts/{email}`; s4 removes it.
