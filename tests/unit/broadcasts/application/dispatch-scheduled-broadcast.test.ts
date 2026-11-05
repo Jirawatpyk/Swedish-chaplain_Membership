@@ -3006,6 +3006,73 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     expect(repo.transitions.map((t) => t.status)).not.toContain('sending');
   });
 
+  /**
+   * Spec 140 slice 3 (the status readers) — the gate's last arm is POSITIVE:
+   * `draft` / `cancelled` go on to the send, everything else refuses. It was a
+   * trailing `else`, so a `failed` (a real Resend status, MEASURED 2026-10-29;
+   * `normaliseStatus` folds it to `unknown` today) would have been SENT had the
+   * union ever named it. Refused before Step 1c, so the standing gate and its
+   * draft delete never see it.
+   */
+  it('a FAILED inherited resource REFUSES (fail closed), never sent, standing never read', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway();
+    vi.spyOn(gw.port, 'retrieveBroadcast').mockResolvedValue({
+      kind: 'present',
+      resource: { id: 'rb-from-previous-tick', status: 'failed', sentAt: null },
+    } as never);
+    const standing = makeFakeSendStanding();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+        sendStanding: standing,
+        brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
+      },
+      baseInput,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        kind: 'dispatch.server_error',
+        message: 'inherited_resource_unrecognised_status',
+        errClass: 'gate',
+        phase: 'inherited_status',
+      },
+    });
+    expect(gw.sendCalls).toEqual([]);
+    expect(gw.deleteBroadcastCalls).toEqual([]);
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(standing.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
+  });
+
   // ---- 2026-09-10 follow-ups (3) (4) (7): the probe moves ahead of Step 2 ----
 
   /**
