@@ -394,7 +394,7 @@ All on the shared Resend account with the app's broadcasts key, on throwaway seg
 3. **Import timing — MEASURED at 100, EXTRAPOLATED to 900** (the maintainer chose 100 on 5 Nov 2026, so the shared Free account, 1,000 contacts team-wide, is not filled).
    - A 100-address CSV `POST /contacts/imports` (segment-scoped, `on_conflict: upsert`) answered `201` in **481 ms**.
    - The import read `completed` with `{total: 100, created: 100, failed: 0}` within **1.3 s** of polling.
-   - All 100 contacts were then deleted (100/100) with the segment.
+   - All 100 contacts were then deleted one by one, by id (100/100), and then the segment (a segment DELETE deletes no contacts, item 5).
    - **EXTRAPOLATED, not measured:** at 900 rows the POST carries a CSV about 9× larger. Even at 9× the measured time (about 4.3 s) it stays well inside the 30 s `IMPORT_CALL_TIMEOUT_MS` (plan :1216). One sample on one day is not a p95.
 4. **`contacts.segments.remove` on an old-style audience id, and on a non-member — MEASURED** (pdpa plan review H-1 c/d).
    - **Old-style id.** A raw `POST /audiences` (the pre-Segments endpoint) answered `201 {"object":"audience"}`. A contact was pushed into it the legacy way (`contacts.create({ audienceId })`, i.e. `POST /audiences/{id}/contacts`). `contacts.segments.list` then listed the audience as one of the contact's segments. `contacts.segments.remove` on that id answered `200 deleted:true`, and the list then read `[]`. So ids minted before s4 (rows in flight at deploy, and `broadcast_orphaned_resend_ids`) detach on the new wire.

@@ -777,19 +777,36 @@ The cascade has two halves:
 
    | Payload key | Means |
    |---|---|
-   | `resend_contacts_removed_count` | pairs Resend answered `200 {"deleted":true}` for: each address is no longer in that audience, but it may already have been absent (below) |
-   | `resend_contacts_already_absent_count` | the processor answered 404 — a success, but **not** a removal. Absent on rows written before 2026-09-09, where the run could not tell |
+   | `resend_contacts_removed_count` | pairs Resend answered `200 {"deleted":true}` for. What that proves depends on when the row was written (below) |
+   | `resend_contacts_already_absent_count` | the processor answered 404 (or 410) — a success, but **not** a removal. Absent on rows written before 2026-09-09, where the run could not tell |
    | `resend_contacts_failed_count` | the call errored; remediate per § Sub-processor erasure propagation |
+   | `resend_detach_wire` | `'segments'` on every row written since spec 140 s4 (the detach is `DELETE /contacts/{email}/segments/{id}`). Absent on older rows, which used the `/audiences/{id}/contacts/{email}` wire |
 
-   **Resend answers 200 for a contact that was not in the audience** (MEASURED
-   5 Nov 2026, spec 140 slice 3 step 0.2, for an address that still exists as a
-   contact but was no longer in the segment; an address Resend has never held is
-   not measured). So the `detached` count can include contacts that were
-   already absent, and `already_absent` reads 0 for them: it counts only a 404.
-   The end state is what the DSR needs (the address is in none of those
-   audiences, given the address was pushed lowercase — see RoPA 8a), but the first number is not a record of what Resend held. When a
-   DSR asks, cite it as "audience detach requests Resend accepted", not as
-   memberships that existed. Do not add the second number to it.
+   **Read the first two counts by the row itself** (the detach wire changed in
+   spec 140 s4, and every row written since carries `resend_detach_wire:
+   'segments'`; the erasure evidence card reads the same key):
+   - **Before 2026-09-09:** there is no `already_absent` key; the run could not
+     tell the two apart.
+   - **From 2026-09-09, with no `resend_detach_wire` (the old
+     `/audiences/{id}/contacts/{email}` wire):** Resend answered 200 for a contact that was no longer in the
+     audience (MEASURED 5 Nov 2026, spec 140 slice 3 step 0.2; an address Resend
+     never held is not measured). So `removed` can include contacts that were
+     already absent, and `already_absent` reads about 0. Cite `removed` as
+     "audience detach requests Resend accepted", not as memberships that existed.
+   - **With `resend_detach_wire: 'segments'` (`DELETE /contacts/{email}/segments/{id}`):** Resend
+     answers `200 deleted:true` only when the membership existed, and 404 for an
+     unknown segment, the wrong case or a non-member (MEASURED 2026-11-05,
+     research.md slice 4 items 1 and 4). So `removed` counts memberships Resend
+     removed, and `already_absent` counts segments in which Resend held no
+     membership **for the lowercase address**. A contact stored in another case
+     (a push before spec 140 s3 R1-A, 2026-11-05, or a dashboard import) reads
+     `already_absent` and stays in the segment (RoPA 8a). A 5xx whose detach did
+     land and whose retry then answers 404 is counted `already_absent`: an
+     under-count, never a false removal.
+
+   In every period the end state is what the DSR needs (the address is in none of
+   those audiences, given it was pushed lowercase). Do not add the second number
+   to the first.
 
 **Why non-blocking** (security + DPO sign-off, plan-review 2026-06-20): the
 Resend-removal inputs are captured only in the first-pass atomic tx and are
@@ -815,8 +832,8 @@ runbook.
 > addresses with a stable per-`contact_id` **sentinel**. A US2d re-drive re-enters
 > the same tx and re-reads sentinels, and arm 2 paired the member's live audiences
 > with addresses that were never in them. This box used to say every such `DELETE`
-> misses and is counted `already_absent`. It was not: Resend answers 200
-> `deleted: true` to any segment-contact DELETE (MEASURED 5 Nov 2026), so each one
+> misses and is counted `already_absent`. It was not: on the old `/audiences` wire
+> (before spec 140 s4) Resend answered 200 `deleted: true` to any segment-contact DELETE (MEASURED 5 Nov 2026), so each one
 > was counted **`removed`** — the spec 140 DT4 re-verify saw a second erase record
 > `resend_contacts_removed_count: 2` for contacts already gone.
 >
