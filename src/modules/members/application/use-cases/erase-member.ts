@@ -875,7 +875,7 @@ export async function eraseMember(
         'erase-member: prior subprocessor propagation read failed',
       );
     } finally {
-      if (timer !== undefined) clearTimeout(timer);
+      clearTimeout(timer);
     }
   }
   try {
