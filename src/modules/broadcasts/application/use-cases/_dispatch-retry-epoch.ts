@@ -74,8 +74,9 @@ type RetryClockDeps = { readonly tenant: TenantContext; readonly broadcastsRepo:
  *   failure into a permanent one, and must never extend a spent budget either:
  *   a row whose snapshot carries a 61-minute-old stamp is still measured from
  *   it.
- * - `lease` (spec 140 s2b): the import tick passes its token; `null` (a
- *   non-holder) was the legacy leg's until spec 140 s4. A LOST token is the same `null` answer (no throw), so a stale
+ * - `lease` (spec 140 s2b): the import tick's token, the only caller since
+ *   spec 140 s4 deleted the legacy leg (its `null`, a non-holder, went with
+ *   it). A LOST token is the same `null` answer (no throw), so a stale
  *   holder stops without a terminal write and without a stamp-failure line:
  *   nothing failed, the row is simply no longer its to time (A3).
  */
@@ -86,7 +87,7 @@ export async function dispatchRetryEpoch(
   now: Date,
   /** The leg's own log event, so an operator can tell the two apart. */
   stampFailedEvent: string,
-  lease: LeaseToken | null,
+  lease: LeaseToken,
 ): Promise<Date | null> {
   try {
     return await deps.broadcastsRepo.withTx((tx) =>
@@ -124,8 +125,8 @@ export async function resetDispatchRetryClock(
   broadcastId: BroadcastId,
   /** The leg's own log event, so an operator can tell the two apart. */
   clearFailedEvent: string,
-  /** Spec 140 s2b — the import tick's token, or `null` (a non-holder). */
-  lease: LeaseToken | null,
+  /** Spec 140 s2b — the import tick's token (the only caller since spec 140 s4). */
+  lease: LeaseToken,
 ): Promise<void> {
   try {
     await deps.broadcastsRepo.withTx((tx) =>

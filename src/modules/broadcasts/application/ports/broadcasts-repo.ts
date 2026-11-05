@@ -41,7 +41,8 @@ export interface TerminalBroadcastDraftRef {
  * is expected — every writer below takes `lease: LeaseToken | null` as a
  * REQUIRED positional parameter (an optional one is the "forgotten at a call
  * site" class), so an old call site fails to compile instead of writing
- * unfenced. `null` is a NON-holder: the legacy leg, staff, the cascade.
+ * unfenced. `null` is a NON-holder: staff, the approval flow, the cascade (the
+ * legacy dispatch leg was one until spec 140 s4 deleted it).
  */
 export type LeaseToken = string & { readonly __brand: 'DispatchLeaseToken' };
 
@@ -75,7 +76,8 @@ export const LEASE_LOST = 'lease_lost' as const;
  *   answers it `dispatch_in_progress`, 409);
  * - {@link LEASE_HELD_BY_ANOTHER_TICK} — a dispatch tick that found another
  *   tick's live lease and skipped the row (the import claim in
- *   `buildAudienceTick`, the legacy leg's cell-23 skip); the cron counts it
+ *   `buildAudienceTick`; the legacy leg's cell-23 skip until spec 140 s4); the
+ *   cron counts it
  *   `concurrent_skip`.
  *
  * Spec 140 s2b review round 3 (code-review #2, #3) — `LEASE_HELD`: the row is
@@ -439,9 +441,10 @@ export interface BroadcastsRepo {
   ): Promise<boolean>;
 
   /**
-   * Spec 140 s2b (cell 23) — the legacy leg's read, inside its step-1 lock tx:
-   * does the row carry a lease that has not expired (`clock_timestamp()`)? A
-   * live lease is an import tick at work; the legacy leg must not touch it.
+   * Spec 140 s2b (cell 23) — does the row carry a lease that has not expired
+   * (`clock_timestamp()`)? A live lease is an import tick at work. Read by
+   * confirm-schedule, inside its lock tx, before a re-time; the legacy leg's
+   * step-1 read until spec 140 s4 deleted it.
    */
   hasLiveDispatchLease(
     tx: unknown,
@@ -476,8 +479,8 @@ export interface BroadcastsRepo {
    *     `AND dispatch_lease_token = $t`; the lease columns are left for the
    *     tick's release. A lost token throws `BroadcastConcurrentMutationError`
    *     with `observedStatus: 'lease_lost'`.
-   *   - `null` (every other writer: staff, the approval flow, the cascade, the
-   *     legacy leg) — a STATUS CHANGE also NULLs both lease columns, so a
+   *   - `null` (every other writer: staff, the approval flow, the cascade) — a
+   *     STATUS CHANGE also NULLs both lease columns, so a
    *     tick holding the row stops at its next check or fenced write. A
    *     same-status RE-TIME (`fields.scheduledFor` set) is instead REFUSED
    *     while a live lease is held (review round 2, reliability MED-1):
@@ -507,7 +510,8 @@ export interface BroadcastsRepo {
    * `lease` (spec 140 s2b, REQUIRED): with a token the write also requires
    * `dispatch_lease_token = $t`, and a lost token throws
    * `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'`
-   * (A3). `null` = a non-holder (the legacy leg).
+   * (A3). `null` = a non-holder (the legacy leg's, until spec 140 s4; the
+   * import tick, the only caller now, always passes its token).
    */
   attachResendIds(
     tx: unknown,
@@ -547,7 +551,8 @@ export interface BroadcastsRepo {
    * `lease` (spec 140 s2b, REQUIRED): with a token the write also requires
    * `dispatch_lease_token = $t`, and a lost token throws
    * `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'`
-   * (A3). `null` = a non-holder (the legacy leg).
+   * (A3). `null` = a non-holder (the legacy leg's, until spec 140 s4; the
+   * import tick, the only caller now, always passes its token).
    */
   attachAudienceId(
     tx: unknown,
@@ -579,10 +584,10 @@ export interface BroadcastsRepo {
    * Same CAS contract as `attachAudienceId`: idempotent on the SAME value,
    * `BroadcastConcurrentMutationError` on a different one or on a row no
    * longer `approved`, `BroadcastNotFoundError` if the row is gone. An EMPTY
-   * id on the row (`''`) counts as none — it is not an id (both legs).
+   * id on the row (`''`) counts as none — it is not an id.
    *
-   * `fence` — the import leg passes it on EVERY call (the legacy leg passes
-   * none; its write is unchanged):
+   * `fence` — the import tick passes it on EVERY call (optional only because
+   * the legacy leg, deleted in spec 140 s4, passed none):
    *   - `expectedAudienceImportId`: the write also requires
    *     `audience_import_id = $expected`, so a hold that claimed the row since
    *     the caller read it (`releaseAudienceImport`) makes this lose and
@@ -595,7 +600,8 @@ export interface BroadcastsRepo {
    * `lease` (spec 140 s2b, REQUIRED): with a token the write also requires
    * `dispatch_lease_token = $t`, and a lost token throws
    * `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'`
-   * (A3). `null` = a non-holder (the legacy leg).
+   * (A3). `null` = a non-holder (the legacy leg's, until spec 140 s4; the
+   * import tick, the only caller now, always passes its token).
    */
   attachBroadcastId(
     tx: unknown,
@@ -636,7 +642,8 @@ export interface BroadcastsRepo {
    * `lease` (spec 140 s2b, REQUIRED): with a token the write also requires
    * `dispatch_lease_token = $t`, and a lost token throws
    * `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'`
-   * (A3). `null` = a non-holder (the legacy leg).
+   * (A3). `null` = a non-holder (the legacy leg's, until spec 140 s4; the
+   * import tick, the only caller now, always passes its token).
    */
   attachAudienceImport(
     tx: unknown,
@@ -768,7 +775,7 @@ export interface BroadcastsRepo {
   /**
    * F119 PR-E (migration 0311) — start the FR-021 retry clock: stamp
    * `dispatch_first_failed_at = COALESCE(dispatch_first_failed_at, at)` while
-   * the row is still `approved`. Called by BOTH dispatch legs on a retryable
+   * the row is still `approved`. Called by the import tick on a retryable
    * gateway failure, in its own tx (no row lock is held by then).
    *
    * - The FIRST failure of an attempt wins: COALESCE never moves an existing
@@ -801,7 +808,7 @@ export interface BroadcastsRepo {
   /**
    * F119 PR-E (migration 0311) — reset the FR-021 retry clock
    * (`dispatch_first_failed_at = NULL`) on a row still `approved`, WITHOUT a
-   * status change. Called by both dispatch legs when the attempt's clock stops
+   * status change. Called by the import tick when the attempt's clock stops
    * meaning anything: a HOLD (a suspended member — the row may sit for days)
    * and a successful `sendBroadcast` (the provider took the mail; nothing left
    * to budget). In its own tx, outside any row lock.

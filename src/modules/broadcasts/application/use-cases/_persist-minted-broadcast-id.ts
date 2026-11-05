@@ -87,14 +87,15 @@ export async function persistBroadcastIdBeforeSend(
     readonly resendAudienceId: string;
     readonly minted: boolean;
     /**
-     * Spec 140 s2b — the import tick's lease token (`null`: a non-holder).
+     * Spec 140 s2b — the import tick's lease token (its only caller since spec
+     * 140 s4 deleted the legacy leg, which passed `null`).
      * A lost token is a `BroadcastConcurrentMutationError` (`lease_lost`), so it
      * takes the concurrent arm below: a minted id is reclaimed. That reclaim is
      * deliberately NOT lease-checked (A2): the id is on no row, so no other
      * tick can be sending it, and a check would always fail at the very moment
      * the lease is lost — leaking the draft.
      */
-    readonly lease: LeaseToken | null;
+    readonly lease: LeaseToken;
     readonly fence?: { readonly expectedAudienceImportId: string; readonly replacesResendBroadcastId?: string };
     readonly logPrefix: 'broadcasts.audience_import';
     readonly logFields?: Readonly<Record<string, unknown>>;

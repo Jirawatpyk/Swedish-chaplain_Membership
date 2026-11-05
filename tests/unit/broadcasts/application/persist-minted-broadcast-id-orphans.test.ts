@@ -20,6 +20,7 @@ import {
   BroadcastNotFoundError,
 } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { RecordOrphanInput } from '@/modules/broadcasts/application/ports/broadcast-orphans-repo';
+import { asLeaseToken } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('55555555-5555-4555-8555-555555555555');
@@ -72,7 +73,7 @@ function harness(opts: Opts) {
       resendBroadcastId: 'rb-minted',
       resendAudienceId: 'aud-1',
       minted,
-      lease: null,
+      lease: asLeaseToken('bbbbbbbb-0000-4000-8000-00000000000b'),
       requestedByMemberId: MEMBER,
       logPrefix: 'broadcasts.audience_import',
     });
