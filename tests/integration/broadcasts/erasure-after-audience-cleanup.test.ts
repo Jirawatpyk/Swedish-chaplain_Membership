@@ -190,7 +190,8 @@ describe('erasure-after-audience-cleanup (COMP-1 US3-C × PR-2 cleanup, live Neo
     const { planId, memberId } = await seedPlanAndMember(tenant, user);
     const email = `erase-${randomUUID().slice(0, 8)}@example.com`;
     // A `resend_audience_id` that was NEVER created in the fake → the fake's
-    // opt-in `contacts.remove` returns 404 for it (models a deleted audience).
+    // opt-in `contacts.segments.remove` returns 404 for it (models a deleted
+    // segment, as Resend answers it: research.md slice 4 step 0 item 1).
     // UUID-shaped, as Resend's are: the gateway refuses any other id (spec 140 DT4).
     const deletedAudienceId = randomUUID();
 
@@ -217,10 +218,11 @@ describe('erasure-after-audience-cleanup (COMP-1 US3-C × PR-2 cleanup, live Neo
       email: email.toLowerCase(),
     });
 
-    // 2) Override the Resend SDK with a contract-fake whose contacts.remove
-    //    404s for the (never-created → modelling deleted) audience.
+    // 2) Override the Resend SDK with a contract-fake whose
+    //    contacts.segments.remove 404s for the (never-created → modelling
+    //    deleted) segment.
     const fake = createResendContractFake({
-      contactsRemove404OnDeletedAudience: true,
+      detach404OnUnknownSegment: true,
     });
     _setTestOverride(fake.client as unknown as Resend);
 

@@ -37,10 +37,11 @@ import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { unsafeBrandTenantSlug } from '@/modules/tenants';
 
-// The request fields the Resend Broadcasts create endpoint accepts.
+// The request fields the Resend Broadcasts create endpoint accepts (spec 140 s4:
+// `segmentId`, the Segments name; `audienceId` is the SDK's deprecated alias).
 const BROADCASTS_CREATE_FIELDS = new Set([
   'name',
-  'audienceId',
+  'segmentId',
   'from',
   'replyTo',
   'subject',

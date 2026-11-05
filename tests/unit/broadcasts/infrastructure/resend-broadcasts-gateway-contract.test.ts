@@ -124,15 +124,15 @@ describe('resendBroadcastsGateway.listAudiences — Resend contract', () => {
     // goes through the REAL gateway impl (create→send→list mapping logic)
     // against the in-memory fake, never hitting real Resend.
     //
-    // The createBroadcast describe-block above does not call audiences.create,
+    // The createBroadcast describe-block above does not call segments.create,
     // so the fake's audience counter is still 0 here.
-    const r1 = await fake.client.audiences.create({ name: 'Audience Alpha' });
-    const r2 = await fake.client.audiences.create({ name: 'Audience Beta' });
+    const r1 = await fake.client.segments.create({ name: 'Audience Alpha' });
+    const r2 = await fake.client.segments.create({ name: 'Audience Beta' });
     expect(r1.data?.id).toBe('aud_fake_1');
     expect(r2.data?.id).toBe('aud_fake_2');
 
     // Remove the first one.
-    await fake.client.audiences.remove('aud_fake_1');
+    await fake.client.segments.remove('aud_fake_1');
 
     // Drive the REAL gateway method — this is the point of this test.
     // If the gateway mis-reads result.data instead of result.data.data, or

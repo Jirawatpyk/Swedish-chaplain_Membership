@@ -9,7 +9,7 @@ import { createResendContractFake } from '../../../support/broadcasts/resend-con
 
 /** Minimal valid args for broadcasts.create, with overrideable fields. */
 const baseCreateArgs = {
-  audienceId: 'aud_test',
+  segmentId: 'aud_test',
   subject: 'Test subject',
   html: '<p>Hello</p>',
   replyTo: 'no-reply@example.com',
@@ -89,16 +89,16 @@ describe('createResendContractFake › broadcasts.create', () => {
   });
 });
 
-describe('createResendContractFake › audiences.create with audienceLimit', () => {
+describe('createResendContractFake › segments.create with audienceLimit', () => {
   it('allows the first call and rejects the second when limit is 1', async () => {
     const { client, createdAudienceCount } = createResendContractFake({ audienceLimit: 1 });
 
-    const first = await client.audiences.create({ name: 'audience-a' });
+    const first = await client.segments.create({ name: 'audience-a' });
     expect(first.error).toBeNull();
     expect(first.data?.id).toBeDefined();
     expect(createdAudienceCount()).toBe(1);
 
-    const second = await client.audiences.create({ name: 'audience-b' });
+    const second = await client.segments.create({ name: 'audience-b' });
     expect(second.data).toBeNull();
     expect(second.error).not.toBeNull();
     expect(second.error?.message).toContain('segments');
@@ -109,19 +109,19 @@ describe('createResendContractFake › audiences.create with audienceLimit', () 
     // If audienceLimit stays at Infinity (no opts passed), the error message
     // must use the fallback label '3' rather than "Infinity".
     const { client } = createResendContractFake({ audienceLimit: 0 }); // 0 = immediately limited
-    const result = await client.audiences.create({ name: 'any' });
+    const result = await client.segments.create({ name: 'any' });
     expect(result.error?.message).not.toContain('Infinity');
     expect(result.error?.message).toContain('segments');
   });
 });
 
-describe('createResendContractFake › audiences.remove', () => {
+describe('createResendContractFake › segments.remove', () => {
   it('succeeds when removing a previously-created audience', async () => {
     const { client } = createResendContractFake();
-    const created = await client.audiences.create({ name: 'my-audience' });
+    const created = await client.segments.create({ name: 'my-audience' });
     const audienceId = created.data?.id ?? '';
 
-    const removed = await client.audiences.remove(audienceId);
+    const removed = await client.segments.remove(audienceId);
     expect(removed.error).toBeNull();
     expect(removed.data?.deleted).toBe(true);
     expect(removed.data?.id).toBe(audienceId);
@@ -129,23 +129,50 @@ describe('createResendContractFake › audiences.remove', () => {
 
   it('returns 404 when removing an unknown audience (idempotent double-delete)', async () => {
     const { client } = createResendContractFake();
-    const created = await client.audiences.create({ name: 'ephemeral' });
+    const created = await client.segments.create({ name: 'ephemeral' });
     const audienceId = created.data?.id ?? '';
 
     // First remove: succeeds
-    const first = await client.audiences.remove(audienceId);
+    const first = await client.segments.remove(audienceId);
     expect(first.error).toBeNull();
 
     // Second remove: 404 (already gone) — matches Resend API behaviour
-    const second = await client.audiences.remove(audienceId);
+    const second = await client.segments.remove(audienceId);
     expect(second.data).toBeNull();
     expect(second.error?.statusCode).toBe(404);
   });
 
   it('returns 404 for an audience that was never created', async () => {
     const { client } = createResendContractFake();
-    const result = await client.audiences.remove('aud_nonexistent');
+    const result = await client.segments.remove('aud_nonexistent');
     expect(result.data).toBeNull();
     expect(result.error?.statusCode).toBe(404);
+  });
+});
+
+// Spec 140 s4 — the detach is `contacts.segments.remove({ email, segmentId })`,
+// answered as MEASURED on 5 Nov 2026 (research.md slice 4 step 0 item 1).
+describe('createResendContractFake › contacts.segments.remove', () => {
+  it('answers 200 contact_segment deleted:true by default', async () => {
+    const { client } = createResendContractFake();
+    const result = await client.contacts.segments.remove({ email: 'a@example.com', segmentId: 'aud_unknown' });
+    expect(result).toEqual({ data: { object: 'contact_segment', deleted: true }, error: null });
+  });
+
+  it('with detach404OnUnknownSegment, answers 404 for a segment it never created or has removed', async () => {
+    const { client } = createResendContractFake({ detach404OnUnknownSegment: true });
+    const never = await client.contacts.segments.remove({ email: 'a@example.com', segmentId: 'aud_unknown' });
+    expect(never.data).toBeNull();
+    expect(never.error?.statusCode).toBe(404);
+
+    const created = await client.segments.create({ name: 'live' });
+    const segmentId = created.data?.id ?? '';
+    const live = await client.contacts.segments.remove({ email: 'a@example.com', segmentId });
+    expect(live.error).toBeNull();
+    expect(live.data?.deleted).toBe(true);
+
+    await client.segments.remove(segmentId);
+    const removed = await client.contacts.segments.remove({ email: 'a@example.com', segmentId });
+    expect(removed.error?.statusCode).toBe(404);
   });
 });
