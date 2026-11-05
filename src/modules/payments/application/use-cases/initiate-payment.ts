@@ -615,24 +615,52 @@ async function initiatePaymentBody(
         });
       }
       // #731 (task 52) — fail closed. Only two outcomes prove the old PI can
-      // never charge: (a) Stripe confirmed the cancel, or (b) Stripe says the
-      // PI does not exist (`resource_missing`). Any other permanent error —
-      // a `processing` / `requires_capture` PI (`payment_intent_not_
-      // cancelable`), an auth or config error, … — may leave a PI that
-      // still charges the member, and a late `payment_intent.succeeded` on a
-      // `canceled` row is a silent no-op in confirm-payment. So abort with no
-      // DB write; the stale-pending sweep still owns the pending row.
-      const piMissing =
-        !cancelResult.ok &&
-        cancelResult.error.kind === 'permanent' &&
-        cancelResult.error.code === 'resource_missing';
-      if (!cancelResult.ok && !piMissing) {
-        return err<InitiatePaymentError>({
-          code: 'processor_unavailable',
-          kind: 'permanent',
-          reason: 'cross_method_cancel_refused',
-        });
+      // never charge: (a) Stripe confirmed the cancel, or (b) the PI does not
+      // exist at Stripe. Any other permanent error — a `processing` /
+      // `requires_capture` PI (`payment_intent_not_cancelable`), an auth or
+      // config error, … — may leave a PI that still charges the member, and a
+      // late `payment_intent.succeeded` on a `canceled` row is a silent no-op
+      // in confirm-payment. So abort with no DB write. The pending row stays
+      // as it is: the Stripe webhook (`succeeded` / `payment_failed` /
+      // `canceled`) resolves it, and the stale-pending gauge alerts if none
+      // arrives. There is no sweep for pending rows on a payable invoice.
+      if (!cancelResult.ok) {
+        const cancel404 =
+          cancelResult.error.kind === 'permanent' &&
+          cancelResult.error.code === 'resource_missing';
+        if (!cancel404) {
+          return err<InitiatePaymentError>({
+            code: 'processor_unavailable',
+            kind: 'permanent',
+            reason: 'cross_method_cancel_refused',
+          });
+        }
+        // #731 M1 — Stripe can answer 404 for a just-created PI (read lag,
+        // fix/068), and the cancel call does not retry. Confirm with the
+        // retrieve, which does: only a second 404 proves the PI is gone.
+        const confirm = await deps.processorGateway.retrievePaymentIntent(
+          pending.processorPaymentIntentId,
+          settings.processorAccountId,
+        );
+        if (confirm.ok) {
+          return err<InitiatePaymentError>({
+            code: 'processor_unavailable',
+            kind: 'permanent',
+            reason: 'cross_method_cancel_refused',
+          });
+        }
+        const stillMissing =
+          confirm.error.kind === 'permanent' &&
+          confirm.error.code === 'resource_missing';
+        if (!stillMissing) {
+          return err<InitiatePaymentError>({
+            code: 'processor_unavailable',
+            kind: 'retryable',
+            reason: 'cross_method_cancel_retryable',
+          });
+        }
       }
+      const piMissing = !cancelResult.ok;
       const cancelOutcome: 'stripe_confirmed' | 'stripe_pi_missing' = piMissing
         ? 'stripe_pi_missing'
         : 'stripe_confirmed';

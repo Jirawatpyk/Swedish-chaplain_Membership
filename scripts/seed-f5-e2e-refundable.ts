@@ -8,13 +8,15 @@
  * What it seeds (idempotent — a re-run reuses every row and the Stripe PI):
  *   1. A real Stripe TEST-MODE PaymentIntent on swecham's connected account,
  *      confirmed with `pm_card_visa` for the invoice total (so it is
- *      `succeeded` and genuinely refundable at Stripe). Stripe idempotency
- *      key `seed-f5-refundable-<invoiceId>` keeps the PI stable across runs.
+ *      `succeeded` and genuinely refundable at Stripe). A re-run retrieves the
+ *      PI already on the payment row instead of creating another one.
  *   2. A `payments` row (`succeeded`, that PI + its charge id) on a PAID
  *      swecham membership invoice that has no active payment yet (the
  *      `payments_one_active_per_invoice` index allows one). Pass
  *      `F5_REFUNDABLE_INVOICE_DOC=<SC-…>` to pick one; otherwise the newest
- *      eligible paid invoice of the e2e members is used.
+ *      eligible paid invoice is used. The invoice was paid offline by its own
+ *      seed, so dev then shows it paid both ways (offline + this card row);
+ *      KPIs read amounts from `invoices`, so nothing double counts.
  *   3. An ORPHAN `refunds` row on it: `pending`, `processor_refund_id` NULL,
  *      `initiated_at` = now − 25 h (past the sweep's 24 h floor), for 100 THB.
  *      Nothing was ever sent to Stripe for it, so a sweep run lists the PI's
@@ -104,6 +106,9 @@ async function seedActorUserId(): Promise<string> {
 }
 
 interface Target {
+  /** The PI already on the seeded payment row, when a previous run made it. */
+  readonly existingIntentId: string | null;
+  readonly existingStatus: string | null;
   readonly invoiceId: string;
   readonly memberId: string;
   readonly docNumber: string;
@@ -114,7 +119,11 @@ interface Target {
 async function findTarget(ctx: TenantContext): Promise<Target> {
   return runInTenant(ctx, async (tx) => {
     const existing = await tx
-      .select({ invoiceId: payments.invoiceId })
+      .select({
+        invoiceId: payments.invoiceId,
+        intentId: payments.processorPaymentIntentId,
+        status: payments.status,
+      })
       .from(payments)
       .where(and(eq(payments.tenantId, ctx.slug), eq(payments.id, PAYMENT_ID)))
       .limit(1);
@@ -134,14 +143,19 @@ async function findTarget(ctx: TenantContext): Promise<Target> {
           eq(invoices.status, 'paid'),
           existing[0]
             ? eq(invoices.invoiceId, existing[0].invoiceId)
-            : wantedDoc
-              ? sql`(${invoices.documentNumber} = ${wantedDoc} OR ${invoices.billDocumentNumberRaw} = ${wantedDoc})`
-              : sql`NOT EXISTS (
+            : and(
+                wantedDoc
+                  ? sql`(${invoices.documentNumber} = ${wantedDoc} OR ${invoices.billDocumentNumberRaw} = ${wantedDoc})`
+                  : undefined,
+                // One settlement row per invoice: never seed on an invoice
+                // that already has an active payment.
+                sql`NOT EXISTS (
                   SELECT 1 FROM payments p
                   WHERE p.tenant_id = ${ctx.slug}
                     AND p.invoice_id = ${invoices.invoiceId}
                     AND p.status IN ('pending','succeeded','partially_refunded')
                 )`,
+              ),
         ),
       )
       .orderBy(desc(invoices.paidAt))
@@ -153,6 +167,8 @@ async function findTarget(ctx: TenantContext): Promise<Target> {
       );
     }
     return {
+      existingIntentId: existing[0]?.intentId ?? null,
+      existingStatus: existing[0]?.status ?? null,
       invoiceId: row.invoiceId,
       memberId: row.memberId,
       docNumber: row.documentNumber ?? row.billDocumentNumberRaw ?? row.invoiceId,
@@ -169,7 +185,9 @@ async function confirmedTestIntent(
     apiVersion: env.stripe.apiVersion as unknown as '2026-03-25.dahlia',
   });
   const onBehalf = account !== env.stripe.accountIdSwecham ? { stripeAccount: account } : {};
-  const pi = await stripe.paymentIntents.create(
+  const pi = target.existingIntentId
+    ? await stripe.paymentIntents.retrieve(target.existingIntentId, undefined, onBehalf)
+    : await stripe.paymentIntents.create(
     {
       amount: Number(target.totalSatang),
       currency: 'thb',
@@ -193,6 +211,11 @@ async function main(): Promise<void> {
   const target = await findTarget(ctx);
   const pi = await confirmedTestIntent(account, target);
   const now = Date.now();
+  if (target.existingStatus !== null && target.existingStatus !== 'succeeded') {
+    throw new Error(
+      `seed-f5-e2e-refundable: the seeded payment is now ${target.existingStatus} (a real refund ran on it), so a reset orphan could exceed what is left to refund. Delete ${PAYMENT_ID} on dev to start over.`,
+    );
+  }
 
   await runInTenant(ctx, async (tx) => {
     await tx
@@ -220,7 +243,7 @@ async function main(): Promise<void> {
         actorUserId,
         correlationId: `seed-f5-refundable-${target.invoiceId}`,
       })
-      .onConflictDoNothing();
+      .onConflictDoNothing({ target: payments.id });
 
     // Reset the orphan to its seeded state on every run, so the relay can
     // re-exercise the close after a sweep flipped it `failed`.
@@ -253,6 +276,15 @@ async function main(): Promise<void> {
 main()
   .then(() => process.exit(0))
   .catch((error) => {
-    console.error(error);
+    // Ids and codes only: a StripeError object carries raw headers and, on a
+    // card error, payment-method details (PCI review, #731).
+    const e = error as { type?: string; code?: string; requestId?: string; message?: string };
+    console.error(
+      'seed-f5-e2e-refundable failed:',
+      e.type ?? (error instanceof Error ? error.constructor.name : 'unknown'),
+      e.code ?? '',
+      e.requestId ?? '',
+      e.message ?? String(error),
+    );
     process.exit(1);
   });
