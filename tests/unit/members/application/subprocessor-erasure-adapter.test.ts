@@ -36,10 +36,16 @@ const { removeContactFromAudience } = vi.hoisted(() => ({
 }));
 // Partial mock — the adapter only reads `resendBroadcastsGateway` from the F7
 // barrel; exposing just that export avoids pulling the whole broadcasts graph.
-vi.mock('@/modules/broadcasts', () => ({
-  resendBroadcastsGateway: { removeContactFromAudience },
-  RESEND_CALL_TIMEOUT_MS: 10_000,
-}));
+vi.mock('@/modules/broadcasts', async () => {
+  const port = await vi.importActual<
+    typeof import('@/modules/broadcasts/application/ports/broadcasts-gateway-port')
+  >('@/modules/broadcasts/application/ports/broadcasts-gateway-port');
+  return {
+    resendBroadcastsGateway: { removeContactFromAudience },
+    RESEND_CALL_TIMEOUT_MS: 10_000,
+    oneCallFitsBefore: port.oneCallFitsBefore,
+  };
+});
 
 import {
   subprocessorErasureAdapter,

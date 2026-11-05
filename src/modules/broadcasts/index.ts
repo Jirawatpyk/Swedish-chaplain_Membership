@@ -550,7 +550,9 @@ export { eventAttendeesBridge } from './infrastructure/event-attendees-bridge';
 export { resendBroadcastsGateway } from './infrastructure/resend/resend-broadcasts-gateway';
 // Spec 140 s2a — one gateway request's budget; the members erasure adapter
 // stops its pair loop when less than this is left before the cascade deadline.
-export { RESEND_CALL_TIMEOUT_MS } from './application/ports/broadcasts-gateway-port';
+// Spec 140 s3 review round 2 (R2-C) — and the one deadline rule that budget is
+// judged with, so the erasure adapter and the orphan reclaim cannot drift.
+export { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore } from './application/ports/broadcasts-gateway-port';
 // Round 4, whole-branch review #9 — `noOpAdvisoryLock` re-export removed with
 // its module. It had no consumer in `src/`, `tests/` or `scripts/`; the barrel
 // was the only thing keeping it reachable, which is what made it look alive.

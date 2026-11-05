@@ -21,7 +21,14 @@ vi.mock('@/modules/broadcasts', async () => {
   const actual = await vi.importActual<
     typeof import('@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway')
   >('@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway');
-  return { resendBroadcastsGateway: actual.createResendBroadcastsGateway({ callTimeoutMs: C }) };
+  const port = await vi.importActual<
+    typeof import('@/modules/broadcasts/application/ports/broadcasts-gateway-port')
+  >('@/modules/broadcasts/application/ports/broadcasts-gateway-port');
+  return {
+    resendBroadcastsGateway: actual.createResendBroadcastsGateway({ callTimeoutMs: C }),
+    RESEND_CALL_TIMEOUT_MS: port.RESEND_CALL_TIMEOUT_MS,
+    oneCallFitsBefore: port.oneCallFitsBefore,
+  };
 });
 
 import { subprocessorErasureAdapter } from '@/modules/members/infrastructure/adapters/subprocessor-erasure-adapter';

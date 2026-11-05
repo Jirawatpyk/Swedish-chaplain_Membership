@@ -25,7 +25,7 @@
  * proof; a `partial`/`failed` outcome is re-driven by the US2d reconciler /
  * US3-E DPO runbook.
  */
-import { RESEND_CALL_TIMEOUT_MS, resendBroadcastsGateway } from '@/modules/broadcasts';
+import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore, resendBroadcastsGateway } from '@/modules/broadcasts';
 import { logger } from '@/lib/logger';
 import type {
   SubprocessorErasurePort,
@@ -130,9 +130,11 @@ export const subprocessorErasureAdapter: SubprocessorErasurePort = {
       // request can take up to RESEND_CALL_TIMEOUT_MS, so a pair is started
       // only while that much is left; every pair not tried counts as failed,
       // never as removed or absent, so the outcome is never a false `ok`.
+      // Spec 140 s3 review round 2 (R2-C): judged with broadcasts' one
+      // deadline rule, the one the orphan reclaim and the gateway use.
       if (
         input.deadlineAt !== undefined &&
-        input.deadlineAt.getTime() - Date.now() < RESEND_CALL_TIMEOUT_MS
+        !oneCallFitsBefore(input.deadlineAt, Date.now(), RESEND_CALL_TIMEOUT_MS)
       ) {
         const untriedPairs = pairs.length - i;
         failed += untriedPairs;
