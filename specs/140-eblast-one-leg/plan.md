@@ -89,7 +89,7 @@ Also: the new ceiling env, the Segments names, `docs/decisions.md` D-042, go-liv
 | 2c | Orphan-id table (migration 0325) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; an audience whose reclaim was undecided (`audience_leaked`, s2b round 2) gets an orphan row and is drained; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | #734 · done |
 | 2d | Close #735 + #736 by fixing them: one Resend draft-answer classifier (behaviour kept); erased requesters drained directly through the members bridge; one stuck predicate (detach cap on the app clock); log hygiene across members + broadcasts (raw Error / RepoError objects and `e.message`) with a gate; a cascade-port contract test. No migration | #735, #736 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2d` | #741 · done |
 | 3 | Error classes + import-leg table fixes; `listAudiences` per-invocation time budget; erasure queue rotation | DT1–DT6 | security, pdpa, reliability, i18n, enterprise-ux, spec-compliance | `140-eblast-one-leg-s3` | #750 · done |
-| 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | — · open |
+| 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | #756 · done |
 
 ## Test plan
 
