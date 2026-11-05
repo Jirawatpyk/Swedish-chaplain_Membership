@@ -49,7 +49,6 @@ import {
   makeDispatchScheduledBroadcastDeps,
   makeDrizzleBroadcastsRepo,
 } from '@/modules/broadcasts';
-import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
 import { asMemberId } from '@/modules/members';
 import { broadcasts, broadcastVersions, type NewBroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -435,7 +434,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
       deleteBroadcastOnce: { kind: 'deleted' },
     });
-    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted());
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, tickJustStarted());
 
     const r = await buildAudienceTick(
       { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
@@ -464,7 +463,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       deleteBroadcastOnce: { kind: 'forbidden' },
       retrieveBroadcastOnce: { kind: 'present', status: 'queued', sentAt: null },
     });
-    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted());
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, tickJustStarted());
 
     const r = await buildAudienceTick(
       { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
@@ -558,7 +557,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
     expect(await stuckGaugeMatches(row.broadcastId!)).toBe(true);
     const gw = allowingGateway({ deleteAudience: undefined });
-    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted());
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, tickJustStarted());
 
     const r = await buildAudienceTick(
       { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
@@ -591,7 +590,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     });
     const resumed = await buildAudienceTick(
       {
-        ...(await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted())),
+        ...(await makeBuildAudienceTickDeps(tenant.ctx.slug, tickJustStarted())),
         broadcastsGateway: resumedGw.port,
         brandChrome: NO_BRAND,
         resolveRecipients: async () =>
@@ -634,7 +633,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       deleteBroadcast: undefined,
       deleteAudience: undefined,
     });
-    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted());
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, tickJustStarted());
 
     const r = await buildAudienceTick(
       { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
@@ -664,7 +663,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     const row = approvedRow(memberId);
     await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
     const gw = recordingGateway();
-    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted());
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, tickJustStarted());
 
     const r = await buildAudienceTick(
       { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
@@ -690,7 +689,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     });
     await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
     const gw = recordingGateway();
-    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted());
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, tickJustStarted());
 
     const r = await buildAudienceTick(
       { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
@@ -811,7 +810,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     const row = approvedRow(memberId);
     await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
     const gw = recordingGateway();
-    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted());
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, tickJustStarted());
 
     const r = await buildAudienceTick(
       { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
@@ -842,7 +841,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
       deleteBroadcastOnce: { kind: 'deleted' },
     });
-    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted());
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, tickJustStarted());
 
     const r = await buildAudienceTick(
       { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
@@ -880,7 +879,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'cancelled', sentAt: null } },
       deleteBroadcastOnce: { kind: 'forbidden' },
     });
-    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted());
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, tickJustStarted());
 
     const r = await buildAudienceTick(
       { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
@@ -971,7 +970,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       },
       row.broadcastId!,
     );
-    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted());
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, tickJustStarted());
     const errorSpy = vi.spyOn(logger, 'error');
     try {
       const r = await buildAudienceTick(
@@ -1056,7 +1055,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
       deleteBroadcastOnce: { kind: 'deleted' },
     });
-    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge, tickJustStarted());
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, tickJustStarted());
     const warnSpy = vi.spyOn(logger, 'warn');
     try {
       const r = await buildAudienceTick(

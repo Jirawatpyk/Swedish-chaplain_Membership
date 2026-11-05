@@ -116,6 +116,28 @@ export const maxDuration = 300;
 // See docs/runbooks/cron-jobs.md § "Migration path: Pro plan".
 export const GET = POST;
 
+/**
+ * The legacy leg's deps (spec 140 s4 row 3 deletes the leg and this helper).
+ *
+ * R6 staff-review W-P3 fix — per-tick memoization on segment resolution.
+ * Multiple `all_members` (or shared-tier) broadcasts in the same tick share
+ * one F3 round-trip instead of re-fetching the same recipient list per
+ * broadcast. Cache scope = one call, which the route makes once per tick.
+ */
+async function makeLegacyLegDeps(tenantSlug: string) {
+  const baseDeps = await makeDispatchScheduledBroadcastDeps(tenantSlug);
+  const tickBridge = makeTickMemoizedMembersBridge(baseDeps.membersBridge);
+  return {
+    ...baseDeps,
+    membersBridge: tickBridge,
+    // F119 PR-A — the send-time standing gate reads the halt list through the
+    // SAME tick memo, so up to MAX_PER_TICK broadcasts cost one read; the
+    // re-read before a permanent refusal (`haltReadFresh`) stays raw (R2).
+    sendStanding: { ...baseDeps.sendStanding, membersBridge: tickBridge },
+    brandChrome: brandChromePort,
+  };
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Spec 140 s2b (DL9) — the invocation's start, for the row-start cutoff
   // (`ROW_START_CUTOFF_MS`): no row starts so late that its longest path could
@@ -340,39 +362,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       'cron.eligible_count': eligible.length,
     },
     async (cronSpan) => {
-    const baseDeps = await makeDispatchScheduledBroadcastDeps(tenant.slug);
-    // R6 staff-review W-P3 fix — per-tick memoization on segment
-    // resolution. Multiple `all_members` (or shared-tier) broadcasts
-    // in the same tick now share one F3 round-trip instead of
-    // re-fetching the same recipient list per broadcast. Cache scope
-    // = this cron-tick closure (fresh Map per tick).
-    const tickBridge = makeTickMemoizedMembersBridge(baseDeps.membersBridge);
-    const deps = {
-      ...baseDeps,
-      membersBridge: tickBridge,
-      // F119 PR-A — the send-time standing gate reads the halt list through
-      // the SAME tick memo, so up to MAX_PER_TICK broadcasts cost one read.
-      sendStanding: { ...baseDeps.sendStanding, membersBridge: tickBridge },
-      // F119 T031 (FR-041c) — brand chrome read live at dispatch, composed
-      // here (the seam lives in src/lib) so the delivered email carries the
-      // logo, colour and address the preview showed.
-      brandChrome: brandChromePort,
-    };
+    // Spec 140 s4 (row 2) — each leg builds its own deps, and only the leg this
+    // tick runs: both makers resolve the tenant display name, a DB read nobody
+    // should pay for on the other leg. (`importEnabled` is read once, above the
+    // due scan.) The import maker builds this tick's members-bridge memo itself
+    // (R6 W-P3), so the import leg reads nothing from the legacy maker. One value
+    // with a `kind`, so each arm below sees its own deps by narrowing.
+    //
     // T087 — with the import flag ON, the whole audience goes to Resend in ONE
     // call and is confirmed on a later tick, so this cron drives
-    // `buildAudienceTick` instead of the serial single-tick push. Built once
-    // per tick like `deps`, and only when it will be used: the maker resolves
-    // the tenant display name, which is a DB read nobody should pay for on the
-    // flag-OFF path. (`importEnabled` is read once, above the due scan.)
-    const importDeps = importEnabled
+    // `buildAudienceTick` instead of the serial single-tick push. F119 T031
+    // (FR-041c) — brand chrome is read live at dispatch and composed here (the
+    // seam lives in src/lib) so the delivered email carries the logo, colour
+    // and address the preview showed.
+    const leg = importEnabled
       ? {
-          ...(await makeBuildAudienceTickDeps(tenant.slug, deps.membersBridge, tickBudget)),
-          brandChrome: brandChromePort,
-          // Share the tick memo: several broadcasts on one segment resolve it
-          // once, exactly as the single-tick path does.
-          tenant: deps.tenant,
+          kind: 'import' as const,
+          deps: {
+            ...(await makeBuildAudienceTickDeps(tenant.slug, tickBudget)),
+            brandChrome: brandChromePort,
+          },
         }
-      : null;
+      : { kind: 'legacy' as const, deps: await makeLegacyLegDeps(tenant.slug) };
 
     for (const [rowIndex, row] of eligible.entries()) {
       // Review rounds 2–3 (CR#5, CR#8) — `processed` counts every row reached
@@ -381,8 +392,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // deferred_past_cutoff = the rows reached.
       let deferred = false;
       try {
-        if (importDeps !== null) {
-          const built = await buildAudienceTick(importDeps, {
+        if (leg.kind === 'import') {
+          const built = await buildAudienceTick(leg.deps, {
             broadcastId: asBroadcastId(row.broadcast_id),
           });
           if (built.ok) {
@@ -505,7 +516,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           continue;
         }
 
-        const result = await dispatchScheduledBroadcast(deps, {
+        const result = await dispatchScheduledBroadcast(leg.deps, {
           broadcastId: asBroadcastId(row.broadcast_id),
         });
         if (result.ok) {

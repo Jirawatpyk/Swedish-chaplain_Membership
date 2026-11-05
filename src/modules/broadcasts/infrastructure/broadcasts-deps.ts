@@ -19,6 +19,7 @@ import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-uns
 import { rfc5321EmailValidator } from './email-validator/rfc5321-email-validator';
 import { eblastNotificationOutbox, emailTransactionalBridge } from './email-transactional-bridge';
 import { membersBridge } from './members-bridge';
+import { makeTickMemoizedMembersBridge } from './tick-memoized-members-bridge';
 import { membershipAccessBridge } from './membership-access-bridge';
 import { plansBridge } from './plans-bridge';
 import { eventAttendeesBridge } from './event-attendees-bridge';
@@ -44,7 +45,6 @@ import { asBroadcastId } from '../domain/broadcast';
 import { unsubscribeRecipient } from '../application/use-cases/unsubscribe-recipient';
 import { runInTenant } from '@/lib/db';
 import { resolveSegmentRecipients } from '../application/use-cases/resolve-segment-recipients';
-import type { MembersBridgePort } from '../application/ports/members-bridge-port';
 import type { BuildAudienceTickDeps } from '../application/use-cases/build-audience-tick';
 import type { TickBudget } from '../application/use-cases/_dispatch-lease';
 import type { Broadcast } from '../domain/broadcast';
@@ -1129,14 +1129,17 @@ export function makeCountTemplateStartDeps(
  * ought to be readable in one screen. They are wired here, where every other
  * caller already wires them.
  *
- * The per-tick memo wrapper is applied by the CALLER (the cron builds one per
- * tick and shares it across broadcasts), so it is passed in rather than built
- * here — the same shape `makeDispatchScheduledBroadcastDeps` expects, and
- * `brandChrome` is left to the cron route for the same reason.
+ * Spec 140 s4 (row 2) — the per-tick memo is built HERE, from the raw module
+ * bridge: the cron calls this once per tick, so one call is one tick's cache,
+ * shared by every row the tick works. The resolver, `membersBridge` and
+ * `sendStanding.membersBridge` read the memo, so a tick reads the tenant's halt
+ * list and each segment once; `haltReadFresh` stays the RAW bridge, uncached,
+ * for the re-read before a permanent `halted` refusal (F119 PR-A, R2). Until
+ * s4 the cron built the memo from the legacy maker's bridge and passed it in.
+ * `brandChrome` is left to the cron route, which composes it in `src/lib`.
  */
 export async function makeBuildAudienceTickDeps(
   tenantId: string,
-  bridge: MembersBridgePort,
   /**
    * Spec 140 s2b (DL9; review round 1 CR#6) — REQUIRED: the cron route's own
    * entry instant and `maxDuration`. No default here, so the budget has one
@@ -1155,6 +1158,7 @@ export async function makeBuildAudienceTickDeps(
     tenantDisplayName = tenantId;
   }
 
+  const bridge = makeTickMemoizedMembersBridge(membersBridge);
   const resolverDeps = {
     tenant,
     membersBridge: bridge,
@@ -1220,8 +1224,8 @@ export async function makeBuildAudienceTickDeps(
     membersBridge: bridge,
     emailTransactional: emailTransactionalBridge,
     plansBridge,
-    // F119 PR-A — the send-time standing reads, through the caller's per-tick
-    // memo (`bridge`), so a tick reads the tenant's halt list once; the
+    // F119 PR-A — the send-time standing reads, through this tick's memo
+    // (`bridge`), so a tick reads the tenant's halt list once; the
     // re-read before a permanent `halted` refusal goes to the RAW module
     // bridge, uncached (R2).
     sendStanding: { membersBridge: bridge, haltReadFresh: membersBridge, membershipAccess: membershipAccessBridge },

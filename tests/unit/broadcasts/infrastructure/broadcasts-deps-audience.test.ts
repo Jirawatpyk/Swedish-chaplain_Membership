@@ -24,10 +24,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFakeMarketingDirectory } from '../../../helpers/eblast-approval-fakes';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
-import type {
-  MemberRecipient,
-  MembersBridgePort,
-} from '@/modules/broadcasts/application/ports/members-bridge-port';
+import type { MemberRecipient } from '@/modules/broadcasts/application/ports/members-bridge-port';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 
 // The members the stub bridge answers for a member-based segment. Hoisted so
@@ -221,12 +218,7 @@ describe('broadcasts-deps — the ceiling is BROADCAST_AUDIENCE_CEILING (spec 14
 
     // Dispatch (the import leg) closes the ceiling inside its resolver, so it
     // is read by behaviour: N + 1 members refuse with cap N, N members resolve.
-    const { membersBridge } = await import('@/modules/broadcasts/infrastructure/members-bridge');
-    const dispatch = await deps.makeBuildAudienceTickDeps(
-      'swecham',
-      membersBridge as MembersBridgePort,
-      TICK,
-    );
+    const dispatch = await deps.makeBuildAudienceTickDeps('swecham', TICK);
     bridgeState.members = makeMembers(4);
     const over = await dispatch.resolveRecipients(ALL_MEMBERS_ROW);
     expect(over.ok).toBe(false);
@@ -234,11 +226,7 @@ describe('broadcasts-deps — the ceiling is BROADCAST_AUDIENCE_CEILING (spec 14
       expect(over.error).toMatchObject({ kind: 'broadcast_audience_too_large', cap: 3, count: 4 });
     }
 
-    const atCap = await deps.makeBuildAudienceTickDeps(
-      'swecham',
-      membersBridge as MembersBridgePort,
-      TICK,
-    );
+    const atCap = await deps.makeBuildAudienceTickDeps('swecham', TICK);
     bridgeState.members = makeMembers(3);
     const fits = await atCap.resolveRecipients(ALL_MEMBERS_ROW);
     expect(fits.ok).toBe(true);
@@ -273,6 +261,37 @@ describe('broadcasts-deps — the ceiling is BROADCAST_AUDIENCE_CEILING (spec 14
   });
 });
 
+// Spec 140 s4 (row 2) — the import maker builds the tick memo itself, from the
+// raw module bridge (moved here from the cron contract test, which can no longer
+// see it: the route hands the maker no bridge).
+describe('broadcasts-deps — the import maker builds its own tick memo (spec 140 s4)', () => {
+  it('the resolver, membersBridge and sendStanding read one memo; haltReadFresh stays the raw bridge', async () => {
+    stubEnv({ contactMarketing: 'false', importAudience: 'false', ceiling: undefined });
+    const deps = await loadDeps();
+    const { membersBridge: raw } = await import('@/modules/broadcasts/infrastructure/members-bridge');
+    const tick = await deps.makeBuildAudienceTickDeps('swecham', TICK);
+
+    expect(tick.membersBridge).not.toBe(raw);
+    // The SAME memo instance the resolver reads, so one tick = one cache.
+    expect(tick.sendStanding.membersBridge).toBe(tick.membersBridge);
+    // R2 — the re-read before a permanent `halted` refusal is uncached.
+    expect(tick.sendStanding.haltReadFresh).toBe(raw);
+
+    // The resolver reads the memo too, not just the exposed field: two rows on
+    // one segment in one tick cost one F3 read.
+    bridgeState.members = makeMembers(2);
+    await tick.resolveRecipients(ALL_MEMBERS_ROW);
+    await tick.resolveRecipients(ALL_MEMBERS_ROW);
+    expect(bridgeState.getMembersBySegmentCalls).toBe(1);
+
+    // A second call is a second tick: a fresh cache.
+    const nextTick = await deps.makeBuildAudienceTickDeps('swecham', TICK);
+    expect(nextTick.membersBridge).not.toBe(tick.membersBridge);
+    await nextTick.resolveRecipients(ALL_MEMBERS_ROW);
+    expect(bridgeState.getMembersBySegmentCalls).toBe(2);
+  });
+});
+
 // Spec 140 s2a review round 2, CR#2 (maintainer decision, 1 Nov 2026): only the
 // legacy dispatch leg gets the gateway instance whose createBroadcast retries a
 // 5xx; the import leg keeps the default one-attempt instance.
@@ -283,7 +302,7 @@ describe('broadcasts-deps — the legacy gateway instance (spec 140 s2a)', () =>
     const gateway = await import('@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway');
     const dispatch = await deps.makeDispatchScheduledBroadcastDeps('swecham');
     expect(dispatch.broadcastsGateway).toBe(gateway.legacyResendBroadcastsGateway);
-    const importLeg = await deps.makeBuildAudienceTickDeps('swecham', dispatch.membersBridge, TICK);
+    const importLeg = await deps.makeBuildAudienceTickDeps('swecham', TICK);
     expect(importLeg.broadcastsGateway).toBe(gateway.resendBroadcastsGateway);
   });
 });

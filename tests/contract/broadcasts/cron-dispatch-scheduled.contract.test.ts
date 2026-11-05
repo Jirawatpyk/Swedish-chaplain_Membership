@@ -40,6 +40,8 @@ const dispatchLeaseExpiringSpy = vi.fn();
 const STUB_BRIDGE = { kind: 'members-bridge-stub' } as const;
 const STUB_ACCESS = { kind: 'membership-access-stub' } as const;
 const buildDepsArgs: unknown[][] = [];
+/** Spec 140 s4 (row 2) — the legacy maker, observed so the import leg can be shown NOT to call it. */
+const makeLegacyDepsSpy = vi.fn();
 /** Spec 140 s2a review round 3 — every `setAttribute` the route span receives. */
 const spanAttributes = new Map<string, unknown>();
 
@@ -99,12 +101,15 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
 vi.mock('@/modules/broadcasts', () => ({
   asBroadcastId: (raw: string) => raw,
   dispatchScheduledBroadcast: (...args: unknown[]) => dispatchScheduledBroadcastMock(...args),
-  makeDispatchScheduledBroadcastDeps: async () => ({
-    membersBridge: STUB_BRIDGE,
-    // F119 PR-A — the factory wires the RAW bridge; the route must swap in its
-    // memo for `membersBridge` and leave `haltReadFresh` raw (R2).
-    sendStanding: { membersBridge: STUB_BRIDGE, haltReadFresh: STUB_BRIDGE, membershipAccess: STUB_ACCESS },
-  }),
+  makeDispatchScheduledBroadcastDeps: async (...args: unknown[]) => {
+    makeLegacyDepsSpy(...args);
+    return {
+      membersBridge: STUB_BRIDGE,
+      // F119 PR-A — the factory wires the RAW bridge; the route must swap in its
+      // memo for `membersBridge` and leave `haltReadFresh` raw (R2).
+      sendStanding: { membersBridge: STUB_BRIDGE, haltReadFresh: STUB_BRIDGE, membershipAccess: STUB_ACCESS },
+    };
+  },
   // A marker wrapper, not the identity: with `(inner) => inner` nothing here
   // could tell whether the route passed the memo or the raw bridge on.
   makeTickMemoizedMembersBridge: (inner: unknown) => ({ memoOf: inner }),
@@ -121,8 +126,10 @@ vi.mock('@/modules/broadcasts', () => ({
   currentAudienceCeiling: () => 777,
   makeBuildAudienceTickDeps: async (...args: unknown[]) => {
     buildDepsArgs.push(args);
-    // Like the real maker: the tick budget (its third argument) rides the deps.
-    return { kind: 'build-deps-stub', tickBudget: args[2] };
+    // Like the real maker: the tick budget (its second argument, spec 140 s4)
+    // rides the deps. The maker builds its own members-bridge memo, so it takes
+    // no bridge; that wiring is pinned in `broadcasts-deps-audience.test.ts`.
+    return { kind: 'build-deps-stub', tickBudget: args[1] };
   },
 }));
 
@@ -149,6 +156,7 @@ beforeEach(() => {
   cronSkippedCountSpy.mockReset();
   cronUnknownErrorCountSpy.mockReset();
   buildDepsArgs.length = 0;
+  makeLegacyDepsSpy.mockReset();
   spanAttributes.clear();
 });
 
@@ -163,6 +171,18 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect((await POST(makeRequest({ auth: 'Bearer wrong-secret' }))).status).toBe(401);
     expect(runInTenantMock).not.toHaveBeenCalled();
     expect(dispatchScheduledBroadcastMock).not.toHaveBeenCalled();
+  });
+
+  // Spec 140 s4 (row 2) — the kill switch still runs before any deps are built.
+  it('the kill-switch arm builds no import deps (and no legacy deps)', async () => {
+    envMock.features.f7Broadcasts = false;
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(await res.json()).toEqual({ skipped: true, reason: 'feature_disabled' });
+    expect(buildDepsArgs).toHaveLength(0);
+    expect(makeLegacyDepsSpy).not.toHaveBeenCalled();
+    expect(buildAudienceTickMock).not.toHaveBeenCalled();
   });
 
   it('F7 master flag off → 200 + skipped, no query', async () => {
@@ -621,7 +641,7 @@ describe('cron dispatch-scheduled — member standing at dispatch (F119 PR-A)', 
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant', 'standing');
   });
 
-  it('both legs read the halt list through the tick memo, not the raw bridge', async () => {
+  it('the legacy leg reads the halt list through the tick memo, not the raw bridge', async () => {
     oneRow();
     dispatchScheduledBroadcastMock.mockResolvedValue(err({ kind: 'broadcast_failed_to_dispatch', reason: 'member_halted' }));
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
@@ -640,12 +660,32 @@ describe('cron dispatch-scheduled — member standing at dispatch (F119 PR-A)', 
     // R2 — the re-read before a permanent refusal stays the RAW bridge: the
     // route swaps the memo in for `membersBridge` only.
     expect(legacyDeps.sendStanding.haltReadFresh).toBe(STUB_BRIDGE);
+    // The import leg's memo is built inside its maker (spec 140 s4 row 2) and
+    // pinned in `broadcasts-deps-audience.test.ts`.
+  });
 
+  // Spec 140 s4 (row 2) — the import leg builds its deps without the legacy
+  // maker, and each tick builds only the leg it runs.
+  it('import flag ON → the import deps are built once, from the tick budget alone, and the legacy maker is not called', async () => {
     isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    oneRow();
     buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'import_pending', importId: 'imp-1' } });
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    // The import maker wires `sendStanding` from the bridge it is handed.
-    expect(buildDepsArgs[0]?.[1]).toEqual({ memoOf: STUB_BRIDGE });
+    expect(buildDepsArgs).toEqual([['test-tenant', { tickStartedAt: expect.any(Number) }]]);
+    expect(makeLegacyDepsSpy).not.toHaveBeenCalled();
+    const [importDeps] = buildAudienceTickMock.mock.calls[0] as [Record<string, unknown>];
+    expect(importDeps).toMatchObject({ kind: 'build-deps-stub' });
+    expect(importDeps['brandChrome']).toBeDefined();
+  });
+
+  it('import flag OFF → the legacy maker runs and no import deps are built', async () => {
+    oneRow();
+    dispatchScheduledBroadcastMock.mockResolvedValue({ ok: true, value: { kind: 'sent' } });
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(makeLegacyDepsSpy).toHaveBeenCalledTimes(1);
+    expect(buildDepsArgs).toHaveLength(0);
   });
 });
 
@@ -829,7 +869,7 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     const before = Date.now();
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    const budget = buildDepsArgs[0]?.[2] as { tickStartedAt: number } | undefined;
+    const budget = buildDepsArgs[0]?.[1] as { tickStartedAt: number } | undefined;
     expect(budget?.tickStartedAt).toBeGreaterThanOrEqual(before);
     const [importDeps] = buildAudienceTickMock.mock.calls[0] as [{ tickBudget?: unknown }];
     expect(importDeps.tickBudget).toBe(budget);
