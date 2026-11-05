@@ -93,12 +93,15 @@ describe('events repos — tenant predicate on every statement (130 s7)', () => 
       offset: 0,
       pageSize: 25,
       searchQuery: '  50%_off\\ ',
+      startedOnOrBefore: '2025-01-31T10:00:00.000Z',
     } as never);
     expect(rec.statements.length).toBe(2);
     expect(violationsOf(rec.statements)).toEqual([]);
     for (const s of rec.statements) {
       expect(s.sql).toMatch(/ilike/i);
       expect(s.params).toContain('%50\\%\\_off\\\\%');
+      expect(s.sql).toMatch(/"start_date" <= \$/);
+      expect(s.params).toContain('2025-01-31T10:00:00.000Z');
     }
   });
 

@@ -661,6 +661,24 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
     }
   });
 
+  it('#732 — startedOnOrBefore is passed through, so a search reaches past the preloaded newest events', async () => {
+    listEventsMock.mockResolvedValueOnce(EMPTY_LIST);
+    const { GET } = await loadListRoute();
+    const res = await GET(buildListRequest({ q: 'Mixer', startedOnOrBefore: '2025-01-31T10:00:00.000Z' }));
+    expect(res.status).toBe(200);
+    expect(listEventsMock).toHaveBeenCalledWith(
+      TENANT_SLUG,
+      expect.objectContaining({ searchQuery: 'Mixer', startedOnOrBefore: '2025-01-31T10:00:00.000Z' }),
+    );
+  });
+
+  it('#732 — a startedOnOrBefore that is not an ISO instant → 400', async () => {
+    const { GET } = await loadListRoute();
+    const res = await GET(buildListRequest({ startedOnOrBefore: 'last tuesday' }));
+    expect(res.status).toBe(400);
+    expect(listEventsMock).not.toHaveBeenCalled();
+  });
+
   it('#732 — a q longer than 100 characters → 400', async () => {
     const { GET } = await loadListRoute();
     const res = await GET(buildListRequest({ q: 'x'.repeat(101) }));

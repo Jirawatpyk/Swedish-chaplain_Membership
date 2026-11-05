@@ -51,6 +51,9 @@ import {
 import enMessages from '@/i18n/messages/en.json';
 import svMessages from '@/i18n/messages/sv.json';
 
+/** The oldest preloaded event's start: the page sends it when it loaded a full 200. */
+const SEARCH_BEFORE = '2026-01-15T03:00:00.000Z';
+
 const events: readonly EventOption[] = [
   { eventId: 'ev-1', label: 'Annual Gala (2026-06-01)' },
 ];
@@ -122,6 +125,7 @@ function renderForm(
     vatRateBps?: number | null;
     locale?: 'en' | 'sv';
     events?: readonly EventOption[];
+    eventSearchBefore?: string | null;
   } = {},
 ) {
   const locale = opts.locale ?? 'en';
@@ -129,6 +133,7 @@ function renderForm(
     <NextIntlClientProvider locale={locale} messages={locale === 'sv' ? svMessages : enMessages}>
       <EventFeeForm
         events={opts.events ?? events}
+        eventSearchBefore={opts.eventSearchBefore === undefined ? SEARCH_BEFORE : opts.eventSearchBefore}
         taxAtPayment={opts.taxAtPayment ?? false}
         vatRateBps={opts.vatRateBps === undefined ? 700 : opts.vatRateBps}
         {...(opts.initialEventId ? { initialEventId: opts.initialEventId } : {})}
@@ -266,6 +271,7 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.searchParams.get('q')).toBe('Old');
     expect(calls[0]?.searchParams.get('pageSize')).toBe('25');
+    expect(calls[0]?.searchParams.get('startedOnOrBefore')).toBe(SEARCH_BEFORE);
     fireEvent.click(option);
     expect(document.getElementById('eventId')).toHaveValue('Old Breakfast (2025-03-04)');
     expect(await screen.findByRole('button', { name: /Alice \(member\)/ })).toBeInTheDocument();
@@ -292,6 +298,37 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     renderForm();
     typeInPicker('Nothing');
     expect(await screen.findByText(picker.searchFailed ?? '<missing eventPicker.searchFailed>')).toBeInTheDocument();
+  });
+
+  it('fewer than a full page preloaded (every event is listed) → typing filters locally, no server search', async () => {
+    const fn = stubFetch(() => listOf([oldEvent]));
+    renderForm({ eventSearchBefore: null });
+    typeInPicker('Gala');
+    expect(await screen.findByRole('option', { name: /Annual Gala/ })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(searchCalls(fn)).toHaveLength(0);
+  });
+
+  it('code-review — a picked event that does not match the typed text is not offered as a match', async () => {
+    stubFetch(() => listOf([]));
+    renderForm({ initialEventId: 'ev-1' });
+    typeInPicker('zzz');
+    expect(await screen.findByText(picker.empty ?? '')).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Annual Gala/ })).not.toBeInTheDocument();
+  });
+
+  it('code-review — Escape clears the typed text, so reopening lists every event', async () => {
+    stubFetch(() => listOf([]));
+    const two: EventOption[] = [
+      { eventId: 'ev-1', label: 'Annual Gala (2026-06-01)' },
+      { eventId: 'ev-2', label: 'Spring Breakfast (2026-04-01)' },
+    ];
+    renderForm({ events: two });
+    const input = typeInPicker('Gala');
+    await screen.findByRole('option', { name: /Annual Gala/ });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(await screen.findByRole('option', { name: /Spring Breakfast/ })).toBeInTheDocument();
   });
 
   it('UX M1 — loaded matches stay listed while the server search is still running', async () => {
