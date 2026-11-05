@@ -2545,6 +2545,24 @@ The numbers go into D-042 and the PR. The 139 s2 gate after the merge is docs-on
 
 All three go into D-042 and the `broadcast-audience-build` runbook.
 
+### Slice 4 — Verify: the maintainer's `/verify` (5–6 Nov 2026, on `d3845bfb7`, on :3401, flag absent, Neon dev, sink addresses only): PASS
+
+Two throwaway tenants were reached with `x-tenant`. Tenant A had 3 recipients on `delivered+…@resend.dev`; tenant B had 901 on `@example.test`, which gets no Resend call at submit.
+
+| Done-when | Evidence |
+|---|---|
+| DR2 | **Tick 1**: `import_submitted: 1`; the row stays `approved` with `resend_audience_id` and `audience_import_id`, and the lease is cleared. `tick_complete` carries `audienceCeiling: 900`. **Tick 2**: `succeeded: 1`; the row reads `sending` with `resend_broadcast_id`. At Resend the broadcast went `queued` → `sent`, with `segment_id` set. **`sending → sent`** comes only from Resend's per-recipient delivery webhook, which cannot reach localhost, so three `email.delivered` events signed with the dev secret were sent to `/api/webhooks/resend-broadcasts`. Each answered 200, and the row then read `sent` with `quota_year_consumed: 2026`. Probe: a wrong or missing Bearer → 401 |
+| DR3 | The staff compose page, at 901, read "901 recipients — above the limit of 900 …" in EN, "ผู้รับ 901 ราย — เกินขีดจำกัด 900 ราย …" in TH and "901 mottagare – över gränsen på 900 …" in SV, with no MISSING_MESSAGE. Count: `{count: 901, ceiling: 900, exceeds: true}`. proxy-submit → 422 `broadcast_audience_too_large` with `{count: 901, cap: 900}`. At 900 the count read `exceeds: false` and the submit went through as `submitted`. **Probe**: with `BROADCAST_AUDIENCE_CEILING=1` all three locales read "… above the limit of 1" (`ceiling: 1`). The submit at cap 1 met `broadcast_quota_blocked` first, because the 900 submit had used the slot. **Probe**: `=0` → every request 500 `Environment validation failed … must be greater than or equal to 1` |
+| a row the legacy leg left behind | A real sink segment and an `approved` row holding only `resend_audience_id`. One tick → `audience_restarted: 1`; the row is `approved` with no ids and no lease, and the segment answers 404 at Resend |
+
+**Findings, fixed in docs:**
+- Go-live § 6.10 now says the row stays `sending` until the delivery webhooks arrive.
+- The `broadcast-audience-build` runbook and D-042 now say that a bad ceiling value fails every request that loads `env`. That is not a refusal at boot: `instrumentation.ts` does not import `env`, and whether `next build` also fails is not measured.
+
+**Teardown:**
+- Neon dev: 0 broadcasts, members, orphan or outbox rows for either tenant.
+- Resend: the DR2 segment and the 3 sink contacts are deleted by id. `General` is the only segment, and the account is back at 22 contacts. The sent broadcast object stays at Resend, because a DELETE answers 403.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.

@@ -245,7 +245,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
   - Spec 140 s4 deletes the legacy use case, its deps maker, the legacy gateway instance, `addContactsToAudience`, `deleteContactGlobally` and the flag. The import leg is live for every tenant at deploy; `FEATURE_F7_BROADCASTS` and the cron's read-only guard remain the kill switches.
   - **The audience ceiling.** `BROADCAST_AUDIENCE_CEILING` sets it: default 900, bound 1–50,000, refused at submit. Without it the ceiling would have jumped to 5,000.
     - The bound stays at 50,000 (the maintainer, 5 Nov 2026), not 1,000. An over-cap value fails that E-Blast terminally, with a reason and a member notice.
-    - A tighter bound would only refuse earlier, and an env value above it would refuse boot for the whole app.
+    - A tighter bound would only refuse earlier, and an env value above it would fail env validation, and every request that loads `env` would answer 500 for the whole app (measured on `next dev`, 2026-11-05).
     - A value above about 1,000 needs a Resend plan upgrade, and a new measurement of the import timing and the resolve budget (`_dispatch-lease.ts`).
   - **The Resend SDK calls use the Segments names.** The port method names and the `resend_audience_id` columns stay. The erasure detach moves to `DELETE /contacts/{email}/segments/{id}`, measured 2026-11-05.
   - **The contract suite fails any `DELETE /contacts/{email}` (DR4).**

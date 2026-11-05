@@ -374,7 +374,12 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
      knows whether mail left the building.
   2. **Then the logs.** A submit tick logs `broadcasts.audience_import.submitted`. The
      confirming tick logs `broadcasts.audience_import.sent` and writes a
-     `broadcast_send_started` audit row.
+     `broadcast_send_started` audit row. The row then reads `sending`, and it
+     stays `sending` until Resend's per-recipient delivery webhooks have
+     arrived for every recipient. Only the webhook moves it to `sent`, never the
+     cron (spec 140 s4 Verify, 2026-11-05). A row at `sending` while Resend
+     shows `sent` therefore means the webhooks are late or missing: check the
+     `resend-broadcasts` webhook endpoint before anything else.
   3. **Resend shows a send, but there is no audit row.** This does not cause a second
      send. The id is persisted before `/send`, an inherited id is probed before any
      re-send, and Resend refuses a second `/send` of an accepted broadcast (`422`,
