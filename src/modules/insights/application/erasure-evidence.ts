@@ -229,10 +229,10 @@ function num(payload: Record<string, unknown> | null, key: string): number | nul
  * the FIRST one is authoritative, never a later re-drive:
  *  - `subprocessor_erasure_propagated`: a re-drive after a first-pass `failed`
  *    emits a 2nd row for a pass that could send nothing (since spec 140 s3:
- *    `already_propagated`, or `not_attempted` when no earlier row exists; before
- *    it, a vacuous `ok`) — reading the latest would MASK the original `failed`
- *    on the very page built to surface it. Pick the earliest = the real
- *    first-pass outcome.
+ *    `already_propagated`; `not_attempted` only when its check of the earlier
+ *    row was skipped, timed out or failed; before s3, a vacuous `ok`) — reading
+ *    the latest would MASK the original `failed` on the very page built to
+ *    surface it. Pick the earliest = the real first-pass outcome.
  *  - `member_erasure_requested`: concurrent requests — the EARLIEST timestamp
  *    wins the Art.12(3)/PDPA 30-day clock (the conservative direction; erase-member.ts).
  *  - `member_erased`: a racing reconciler re-drive can emit a 2nd completion
