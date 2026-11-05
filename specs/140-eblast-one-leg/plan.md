@@ -88,7 +88,7 @@ Also: the new ceiling env, the Segments names, `docs/decisions.md` D-042, go-liv
 | 2b | Lease + fencing token + pre-call check + row-start cutoff; migration 0322 (lease columns + trigger list); the live-lease legacy skip | DL1–DL4, DL9, cell 23, carry R4 | drizzle-migration, security, reliability, spec-compliance | `140-eblast-one-leg-s2b` | #723 · done |
 | 2c | Orphan-id table (migration 0325) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; an audience whose reclaim was undecided (`audience_leaked`, s2b round 2) gets an orphan row and is drained; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | #734 · done |
 | 2d | Close #735 + #736 by fixing them: one Resend draft-answer classifier (behaviour kept); erased requesters drained directly through the members bridge; one stuck predicate (detach cap on the app clock); log hygiene across members + broadcasts (raw Error / RepoError objects and `e.message`) with a gate; a cascade-port contract test. No migration | #735, #736 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2d` | #741 · done |
-| 3 | Error classes + import-leg table fixes; `listAudiences` per-invocation time budget | DT1–DT5 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
+| 3 | Error classes + import-leg table fixes; `listAudiences` per-invocation time budget; erasure queue rotation | DT1–DT6 | security, pdpa, reliability, i18n, enterprise-ux, spec-compliance | `140-eblast-one-leg-s3` | #750 · done |
 | 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | — · open |
 
 ## Test plan
@@ -789,7 +789,7 @@ Flag OFF, Resend sink address only, no `/send`, no Vercel env.
 | II Test-First | Pass. RED commit per row. |
 | III Clean Architecture | Pass. members reaches broadcasts only through the cascade port and adapter. |
 | IV PCI | n/a |
-| V i18n | Slice 4 only (the ceiling message, EN/TH/SV). |
+| V i18n | Slice 3: the new member-facing `provider_cancelled` reason (EN/TH/SV, i18n review). Slice 4: the ceiling message, EN/TH/SV. |
 | VI Inclusive UX | Slice 4 only (the refusal copy). |
 | VII Perf & Observability | Pass. Every Resend call is bounded (slice 1 uses the `*Once` 10 s calls); the stuck gauge is added. |
 | VIII Reliability | Pass. Fail-closed table; slice 2's fencing. |
@@ -2135,6 +2135,320 @@ The run used :3400 against Neon dev, tenant swecham, with the import flag OFF. R
   - The `sign-in.infra-error` line carried `err: { type: 'DrizzleQueryError', errCode: 'ECONNREFUSED', frames: [8 path-like frames] }`.
   - The line had no message, so no `Failed query: select … params: probe.person@example.test`: the email appeared 0 times, and `Failed query`, `params:` and `select ` appeared 0 times.
 - **Teardown:** clean. The Resend audience was deleted, leaving only `General`. 42 orphan rows and 3 members were deleted. The probe spec was removed and :3400 was stopped.
+
+### Slice 3 — build plan (DT1–DT5; agreed 5 Nov 2026)
+
+#### Context
+s1, s2a, s2b, s2c and s2d of spec 140 have merged; the latest is s2d, #741 `70adc41a4`.
+
+Slice 3 is US3 of `specs/140-eblast-one-leg/spec.md`:125–138. It makes the import leg read Resend's answers correctly before s4 retires the legacy leg and the import leg becomes the only one. Two of the items are spec ship-blockers:
+- the unbounded broadcast name (spec :56);
+- a contact remove without a segment id, which deletes the contact account-wide (spec :57).
+
+**Size L.** Erasure touches contact detach (PII), and the error classes feed the member-quota slot refund. **No migration is planned** (see Rotation).
+
+**Lesson from s2d, applied here:**
+- The scope is US3 plus the carries named for slice 3, and nothing else. #739, #740 and the s2d "#5" erased-flag idea stay out.
+- Reviews stop once no Medium remains. Leftover Lows that no live site reaches become follow-ups.
+
+#### Step 0: measurements first (Resend sink only, delivered@resend.dev; never /send or cancel)
+These are the spec's open questions (spec :160–162; research Q4, Q7). Each answer goes into `research.md` as MEASURED with its date before any code depends on it.
+1. **The `contacts.remove` encoding.** Create a sink segment and contact, then detach:
+   - a `+` address;
+   - an UPPERCASE address.
+
+   Record what the SDK sends and whether each one is detached while the contact still exists. Also confirm what a falsy segment id does, using a read-only reasoning trace of the SDK path. The account-wide delete is NOT executed.
+2. **DELETE on a `failed` broadcast.** Record the answer if a failed broadcast can be produced on the sink without sending. If it cannot, it stays UNMEASURED and the in-flight arm keeps `failed` undecided.
+3. **409 `resource_locked`.** Try to provoke it with two concurrent PATCH or DELETE calls on one sink draft. If it never occurs, record that, and the classifier still handles the documented code.
+
+#### Build (RED before GREEN per row; plan rows in `plan.md` before GREEN, with neighbours named)
+
+| Done-when | Change | Files |
+|---|---|---|
+| **DT1:** a 75-char subject → name ≤ 70 code points | The import leg builds its name through the existing `format/resend-dashboard-name.ts` cap (fix #117) instead of the raw template at `build-audience-tick.ts:~2275`, so one capping rule serves both legs | `build-audience-tick.ts`, `format/resend-dashboard-name.ts` |
+| **DT2:** a `canceled` inherited broadcast is refused terminally, never re-minted | `isDeadProbe` / `inheritedDead` (`:1185`, `:2257`) stop treating `cancelled` as re-mintable. A cancelled inherited id ends the row terminally (`failTerminally`, an existing reason or a new `IMPORT_FAILURE_REASONS` member; TS const, no enum). `not_found` / null is unchanged. The s2c orphan row for the cancelled id stays as it is | `build-audience-tick.ts` |
+| **DT3:** error classes | `classifyResendError` (`resend-broadcasts-gateway.ts:184`) keys on HTTP status, then on `name`: <br>• 409 `resource_locked` → `retryable` (a new subKind `locked`); <br>• 429 `daily_quota_exceeded` / `monthly_quota_exceeded` → `permanent` (code kept); <br>• 429 `rate_limit_exceeded` stays retryable. <br>The send path's "409 then 422 → sent, no failure write" is pinned: the replay arm (`:2356`) plus `probeRefusedSend` must not write a failure or release the quota slot | gateway, `build-audience-tick.ts` send arm, `_probe-refused-send.ts` |
+| **The status readers (carry a)** | Both readers share one `normaliseStatus` that maps `failed` → `failed` (not `unknown`) and `canceled` → `cancelled`. The inherited probe and `probeRefusedSend` read through `probedStatusOf`. The s2d classifier's `failed` row stays as it is unless step 0.2 measures something else | gateway, `build-audience-tick.ts:940-999`, `_probe-refused-send.ts` |
+| **DT4:** a `+` / uppercase address is detached and still exists | Per the step 0.1 measurement: encode or normalise the email the way the SDK path needs. Add a guard: `removeContactFromAudience` refuses a falsy or empty segment id **before** any call, which closes the account-wide delete ship-blocker | gateway `removeContactFromAudience` and any other `contacts.remove` caller |
+| **DT5:** `listAudiences` stops at a per-invocation time budget | The port gains `listAudiences({ deadlineAt })`. The gateway stops paging when the remaining time is less than one bounded call, and returns what it has plus `truncated: true`. `reclaim-orphaned-audiences.ts:170` passes its route's deadline and logs `truncated`. The page and cursor bounds stay | port, gateway, `reclaim-orphaned-audiences.ts`, its route |
+| **Rotation (Approach item 3)** | `findStuckErasuresInTx` (`drizzle-member-repo.ts:~711`) orders oldest first, so a permanently stuck head starves the rest. **No migration:** it orders by the latest `member_erasure_*` attempt in `audit_log` (the query already reads it), oldest attempt first. The plan reviewers confirm or reject this before GREEN | members repo, reconcile route |
+
+**Tests per row:**
+- unit tests (it.each for the classifier cells);
+- a contract case for the gateway classes and the remove guard;
+- an integration test for the rotation ordering;
+- the existing `dispatch-lease-budget` and `cleanup` tests stay green.
+
+#### Process
+- **Branch and worktree.** `140-eblast-one-leg-s3`, cut from origin/main. Reuse f142 by switching it to a new branch from origin/main, with a fresh `pnpm install`.
+- **Plan review.** `chamber-os-architect`, `pdpa-gdpr-compliance-officer` (DT4, rotation) and `reliability-guardian` read the plan before the build.
+- **Build.** One builder per part, in order: step 0, then DT1+DT2, DT3 + readers, DT4, DT5, rotation. Each brief names the plan section that holds the contract.
+- **Gates.** Run by the main session, one at a time in the foreground. Tests that read pino output log at `error`. Check `gh pr view --json mergeable` after every push and merge main before each review round.
+- **Reviews.** `/code-review high` plus security, pdpa, reliability and spec-compliance. Stop once no Medium remains. The cap is ≥ 2 full + ≤ 2 targeted.
+- **Verify.** The maintainer runs `/verify` on :3400 using the sink only:
+  - DT1 name length on a draft created by the import leg;
+  - DT4 detach of a `+` / uppercase contact;
+  - DT5: the reclaim route answers 200 with `truncated` and `deferredDeletes` present (truncation itself is proved by tests, never forced through the route; plan review M2);
+  - a wrong Bearer → 401.
+- **Merge.** On the maintainer's word only.
+
+#### Verification
+- `pnpm check`, contract, unit for broadcasts and members, and the integration files for the tick, reclaim and reconcile-erasures.
+- `/verify` as above.
+- Step 0's measurements are recorded in `research.md` with dates.
+
+### Slice 3 — plan review (chamber-os-architect: 1 BLOCKER, 5 HIGH, 6 MEDIUM, 5 LOW; pdpa APPROVE WITH CONDITIONS: 3 HIGH, 3 MEDIUM, 2 LOW; reliability: 1 BLOCKER, 3 HIGH, 7 MEDIUM, 2 LOW; 5 Nov 2026)
+
+This section supersedes the build table above wherever the two disagree. The builders work from this section.
+
+**The live leg.** `FEATURE_F7_IMPORT_AUDIENCE` is OFF in production (`docs/operational-state.md`), so the **legacy leg is the one running today**. Every change in the gateway (`classifyResendError`, `normaliseStatus`) changes production behaviour the moment it merges, not only the dark import leg. Every row below names its legacy-leg effect.
+
+**Maintainer decisions (5 Nov 2026).**
+- DT2's new reason **notifies the member**: a new `provider_cancelled` reason with EN/TH/SV copy and an i18n review.
+- Rotation uses the **latest `subprocessor_erasure_propagated` attempt**, not a per-tick hash. The hash alternative is recorded in Complexity Tracking below.
+- The quota 429 being permanent is already the spec's DT3 line; no new decision.
+
+#### Rotation (B1 in both reviews; DT6 added to spec.md)
+- The planned key was wrong. `member_erasure_requested` is the only `member_erasure_*` event and is written once (`erase-member.ts:311`, `if (!alreadyErased)`), so ordering by it equals ordering by `erased_at` and never rotates. The query reads that event's first row for `reason` only.
+- **The key.** `findStuckErasuresInTx` (`drizzle-member-repo.ts:711–758`) orders by
+  `COALESCE((SELECT max(al."timestamp") FROM audit_log al WHERE al.tenant_id = ${slug} AND al.event_type = 'subprocessor_erasure_propagated' AND al.payload ? 'member_id' AND al.payload->>'member_id' = m.member_id::text), m.erased_at) ASC`, then `m.member_id` as a tiebreak.
+  - The event is written on every committed scrub tx, re-drives included (`erase-member.ts:786–831`, unconditional), which covers the real s1 stuck case: scrub done, broadcasts cascade undecided.
+  - `al.tenant_id = ${slug}` is mandatory (audit_log's policy is PERMISSIVE; Principle I).
+  - `al.payload ? 'member_id'` lets the planner prove the partial index `audit_log_member_timeline_idx` (`0189:158`).
+  - `FOR UPDATE OF m SKIP LOCKED` keeps its meaning: the sort key lives in audit_log, which is not locked. The stuck set is small (≈ 0–2 a year), so sorting it whole is fine.
+  - `countStuckErasuresInTx` is unchanged (a count needs no order).
+  - `pnpm db:query "EXPLAIN …"` on dev is recorded in § Evidence before GREEN.
+- **Residual holes, recorded, not closed:** (1) the emit is best-effort, so a lost emit does not move the member back; (2) a head that fails **before** the scrub tx commits, or a re-drive that exits early, writes no marker and does not rotate. The per-tick hash would close (2) but cannot be tested deterministically; rejected for that.
+- **Checked against source (5 Nov 2026):** the emit's payload key is literally `member_id` (`erase-member.ts:786–831`); the index predicate is `WHERE "payload" ? 'member_id'` on `((payload->>'member_id'), "timestamp" DESC)` (`0189:158–160`); the route passes `MAX_PER_TICK = 50` (`reconcile-erasures/route.ts:60`) as the limit.
+- **Tests (RED first, `test(members)`):** integration at the repo with `limit = N`: N stuck heads whose latest attempt is recent do not starve an (N+1)th with an older attempt or none. The markers come from the real emit path (the `erase-member` re-drive or its emit helper), never hand-inserted audit rows, so a wrong payload key cannot pass. A cross-tenant case: tenant B's audit rows do not change tenant A's order.
+- **Runbook (pdpa M-3):** the erasure-reconcile runbook says the queue rotates by last attempt and names the two residual holes.
+- Commit scope `members`; only the members infra repo changes, no cross-module import.
+
+#### DT2 — a cancelled inherited broadcast (architect H1/H2, reliability H2, pdpa M-2)
+- **Where (amended in build, 5 Nov 2026).** Decide terminally inside `applySendStanding`, right after `decideDispatchStanding`, on the `send` and `hold` arms only: before `restartAudienceBuild` on hold, and before `submitImport` / `confirmImport` on send. The `refuse` and `refuse_erased` arms keep today's end (already terminal, draft settled, never mint), so an erased member is never emailed, the standing audit row and copy stay, and `eblast-send-time-standing.test.ts:869` is unchanged. A failed standing read stays a retry. The first draft ("before `applySendStanding`") would have bypassed both refusal arms. Deciding at `confirmImport` alone is not enough: a suspend → `restartAudienceBuild(…, { bidIsDead: isDeadProbe(probe) })` (`:1050`) and `releaseResendAudience` (`:1371–1383`) clear `resend_broadcast_id`, and the next tick mints and sends again; the `stale_audience` path (`:1855`) clears it the same way.
+- `cancelled` is trusted from one GET (unlike 404, no re-probe).
+- **How.** `failTerminally` with the new `provider_cancelled` reason. Its choke point DELETEs (403) → GET → `unsendable/cancelled` → retained, as s1 classifies. The id stays on the terminal row, where the erasure terminal pass and `cleanup-audiences` reach it, so **the new path writes no orphan row** (this replaces "the s2c orphan row stays as it is").
+- **Do not touch** `isDeadProbe` (`:1185`; hold teardown `:1050` and self-heal `:1855` use it). Only `inheritedDead` (`:2257`) stops counting `cancelled` as re-mintable.
+- **Neighbours.** `bidIsDead`, the `=== 'cancelled'` arm of `selfHealMissingAudience` (`:2289`), and the writers `dead_broadcast_replaced` (`:2333`) and `dead_broadcast_kept` (`:1354`) are no longer reached from the tick for a cancelled id; they stay as intentionally dead writers for a `not_found` id. **Do not delete** either reason from `domain/value-objects/orphaned-resend-id.ts:31–32`: 0325 rows may hold them.
+- **Tests that go RED and are rewritten** to assert the terminal end: `build-audience-tick-failure-paths.test.ts` (:3391) and `build-audience-tick-orphans.test.ts` (:270). New: `resend_copies_retained` = 1 on the terminal row; a suspend-then-unhold case that never mints.
+- **Reason and copy.** `provider_cancelled` joins `IMPORT_FAILURE_REASONS` (a TS const, no enum), so it joins `MEMBER_FACING_FAILURE_REASONS` (`:233`) and `broadcast-failed-to-dispatch-email.test.ts` requires EN/TH/SV copy; `i18n-translation-reviewer` reviews it. Do not reuse `provider_failed` (it means "import job failed"). The status is `failed_to_dispatch`, so the quota slot is refunded; the metric maps it to its own label.
+- **Legacy leg.** Unchanged: on `cancelled` it sends, gets 422, `probeRefusedSend` reads `refused`, and ends terminally without a re-mint. DT2 makes the two legs agree. The path is shorter, so `TICK*_CALLS` and W_max are unchanged.
+
+#### The status readers (architect H3, reliability H1, pdpa H-3)
+- **Option (a):** do not widen `retrieveBroadcast`'s union (`broadcasts-gateway-port.ts:146–152` keeps `failed` deliberately unmapped because the live `reconcile-stuck-sending` reads it). Change **only how the result is read**, never the call: one pure reader that accepts either outcome shape, so the throw/outcome split, the retry policy and `TICK2_RESEND_CALLS` stay as they are.
+- Pin `isHandedStatus('failed') === false`, and keep `failed` out of every dead set.
+- **Shadow sweep.** grep every reader of `RetrievedBroadcastResource['status']` for `=== 'unknown'` and a negative `else`. Known sites:
+  - legacy `dispatch-scheduled-broadcast.ts:741–806`: its trailing `else` is a negative test. Turn it into a positive one (`draft` / `cancelled` continue; everything else refuses) and add a `failed` cell in `dispatch-scheduled-broadcast.test.ts`. On the refuse arm, `rowDraft.probedStatus` (`:850–854`) must not fold `failed` to `'not_found'` before `deleteDraftBeforeStandingRefusal`.
+  - `reconcile-stuck-sending.ts:251–287`: positive on `sent`, safe; if its metric or log label moves from `unknown` to `failed`, the runbook line saying "`unknown` goes to a human" is updated too.
+  - `src/lib/metrics.ts:2802` `reconcileUnresolvedStatus`: a literal union; the compiler will flag it.
+  - the import probe (`:981`) and `probeRefusedSend` (`:80`) are already positive tests.
+
+#### DT3 — error classes (architect H4, reliability M2–M6, pdpa L-2)
+- `classifyResendError` (`gateway:184`): 409 `resource_locked` → `retryable`, subKind `locked`; 429 `daily_quota_exceeded` / `monthly_quota_exceeded` → `permanent`; 429 `rate_limit_exceeded` and a 429 with no name stay `retryable`; any other 409 keeps today's `idempotency_conflict`.
+- **subKind sweep** (else `locked` lands in `unclassified`, which pages): `GatewayRetryableSubKind` (`broadcasts-gateway-port.ts:31`), `_classify-thrown.ts:82`, `viaGateway` / `GatewayFailure.subKind` (`build-audience-tick.ts:1463`), `budgetSubKindToFailureMetric` (`:1603`, `:1678`), `dispatchBudgetExhausted` (`metrics.ts:2228`), dispatch `:122`. `isCreateUnconfirmed` (`:1424`) stays an allowlist that excludes `locked`: a locked create made nothing.
+- **Quota metric.** `code = err.name`, so `importReasonToFailureMetric` (`:1625`) misses `http_429` and quota lands in `app_error`, the bucket the dispatch alert reads. Map both quota names to `resend_429` on both legs.
+- **W_max is unchanged.** It bounds time per call, not attempts; send / delete / retrieve use `retry: 'retryable'` (`gateway:587/956/677`), so `locked` retries inside one call (about 4 attempts) and the create's `'rate_limit'` policy does not retry it. FR-021's budget counts time.
+- **409 then 422.** 422 is permanent and leaves `boundedCall` at once (`:296`), then `probeRefusedSend` reads `accepted` and the row advances to `sending`, with no failure write and no slot release. Pinned at gateway level and at the tick. The replay arm (`:2356`) calls `probeRefusedSend`.
+- **Legacy leg.** Today any pre-send 409 (`dispatch-scheduled-broadcast.ts:1514–1560`) writes `broadcast_dispatch_idempotency_conflict_pre_send` and ends permanently with a member email. After DT3 a `resource_locked` 409 retries inside FR-021 instead; one legacy test cell pins it. A quota 429 now ends permanently in one tick instead of after the 1 h budget: the slot is refunded either way, the member email reads `gateway_permanent`, and one shared-account quota hit ends every approved row in that tick terminally. Daily quota may reset inside the hour FR-021 used to wait; the spec chose permanent.
+- `throwImportError` (`gateway:1193`) goes through `classifyResendError`, so the import calls inherit DT3. The raw `*Once` readers (`deleteOnceOutcomeFor`, `retrieveOnceOutcomeFor`) keep 409 → `other` (undecided), deliberately outside DT3.
+- Residual (Evidence): non-`resource_locked` 409s still reach the legacy replay arm, which is unreachable in practice because Resend ignores the Idempotency-Key on broadcasts.
+
+#### DT4 — contact detach (architect M4, pdpa M-1, reliability L1)
+- The guard exists: `assertNonEmpty({ audienceId, email })` (`gateway:726`, spec 141). Slice 3 **pins** it with a contract case and **tightens it to a UUID shape** (lowercase hex 8-4-4-4-12; a non-UUID id is a permanent refusal before any call). Evidence: a one-off read-only prod count the maintainer ordered on 5 Nov 2026 found 0 `broadcasts` rows (0 with an audience id, 0 non-UUID); dev holds 1, UUID-shaped; every segment id Resend returned in the step 0 probes was a UUID. The only caller is `subprocessor-erasure-adapter.ts:146`.
+- No encoding or lowercasing (step 0.1: the unencoded `+` is read literally, ~~matching is case-insensitive~~ matching is case-SENSITIVE (Verify, 5 Nov 2026)). An MSW contract case pins the exact URL sent, so an SDK upgrade that starts encoding is caught.
+- The DT4 test asserts `detached`, never `already_absent` (step 0 item 2, reworded per reliability M7). The over-report is stated in `docs/runbooks/member-erasure.md`; the rotation note goes in the same runbook.
+
+#### DT5 — the reclaim time budget (architect H5/M1–M3, reliability H3/M1)
+- Add `export const maxDuration = 300` to `src/app/api/cron/broadcasts/reclaim-orphan-audiences/route.ts`, pinned by a test. `deadlineAt` = request start + `maxDuration` − a margin, in the existing shape of `subprocessor-erasure-adapter.ts:121–123` (`deadlineAt: Date`, stop when `remaining < RESEND_CALL_TIMEOUT_MS`).
+- One deadline covers both the listing and the delete chunks (200 × C / 5 ≈ 400 s exceeds 300 s). Candidates not reached are counted as `deferredDeletes`.
+- The port returns `{ audiences, truncated }`; the gateway's internal `truncated` (`:825`) is passed up. The reclaim output and route log carry `truncated` and `deferredDeletes`, with a metric and an alert on truncated.
+- Stubs to update (≈ 15): `tests/integration/broadcasts/*`, `tests/unit/broadcasts/application/{cleanup-orphaned-audiences,dispatch-scheduled-broadcast,reclaim-orphaned-audiences}.test.ts`, the inline snapshot at `tests/contract/resend/broadcasts-sdk.contract.test.ts:236`. grep for `listAudiences` too, because `as unknown as` stubs escape the typecheck.
+- **Verify change.** No request-supplied deadline on a production cron route (that would be a new input surface). Truncation is proved by unit/contract tests (a slow MSW page or fake timers); the `/verify` line "forced with a short deadline through the route" is removed.
+
+#### DT1 (reliability L2, architect LOW)
+- `resendDashboardName(deps.tenantDisplayName, broadcast.subject)` replaces the raw template at `build-audience-tick.ts:~2275`. A 70-code-point length check at the gateway `createBroadcast` (`:503`) is added as a second layer. A cap by code point may split a Thai vowel or tone mark from its consonant; cosmetic only.
+
+#### Constitution Check, slice 3
+- **I:** the new audit_log subquery is tenant-fenced, with a cross-tenant integration case.
+- **V:** `provider_cancelled` EN/TH/SV.
+- **VII:** label changes are `locked`, `failed` (if reconcile's label moves), quota → `resend_429`, the truncated metric.
+- **VIII:** the legacy-leg behaviour changes listed under DT3 and the status readers.
+
+#### Complexity Tracking, slice 3
+- Rotation by the latest propagation marker, over a per-tick hash: the hash covers a head that fails before the scrub commits, but its order cannot be pinned by a deterministic test. Chosen by the maintainer on 5 Nov 2026.
+
+#### Build order (unchanged in shape)
+DT1 + DT2 (with the reason copy) → DT3 + the status readers → DT4 → DT5 → Rotation. Each builder brief points at its subsection here.
+- **No migration, checked:** `broadcasts.failure_reason` is `text` with no CHECK on its values (dev `pg_constraint`, 5 Nov 2026), so `provider_cancelled` needs none.
+- DT2's EN key lands in the same GREEN as the reason, so `check:i18n` never sees a missing key.
+- Exhaustive switches extended here use `void _exhaustive; return <safe>`.
+- **Reviews** add `i18n-translation-reviewer` and `enterprise-ux-designer` for the new member email copy.
+
+#### Build notes, DT1 + DT2 (5 Nov 2026)
+- DT2 is decided inside `applySendStanding` on the send and hold arms (the amended Where above); `eblast-send-time-standing.test.ts` passes on dev (25/25), :869 included.
+- The `dead_broadcast_replaced` write inside `if (inheritedDead)` was removed: it fired only for `cancelled`, which `inheritedDead` no longer admits. The reasons in `orphaned-resend-id.ts` and the `dead_broadcast_kept` writer stay.
+- New on the hold path: a suspended member whose broadcast was cancelled at Resend now gets the "did not go out" email (a hold used to tell nobody). This follows the notify decision; the reviewers check it.
+- Now unreachable from the tick: `isDeadProbe` true, `restartAudienceBuild`'s `bidIsDead: true` branch, and the `cancelled` argument to `selfHealMissingAudience`. Left in place; s4 may remove them.
+
+#### Build notes, DT3 + the status readers (5 Nov 2026)
+- **Plan correction, replay arm.** The tick's `idempotency_conflict` replay arm (~:2401) does not call `probeRefusedSend`, and is left unchanged. The 409 → 422 path reaches the permanent arm (~:2413), which does. It is pinned by the gateway cell "sendBroadcast: 409 resource_locked, then 422" (2 attempts, thrown permanent) and the existing tick cells "422 + the probe answers queued/sending/sent → already accepted" (transition `sending` only, no failure count, no member email).
+- **Plan correction, no edit needed.** Under option (a) `reconcile-stuck-sending` never sees `failed`, so `metrics.ts:2802` and the stuck-sending runbook are unchanged.
+- **Legacy-leg effects the plan did not name.** The inherited probe: a locked GET now retries and ends `gateway_retryable{locked}` (it was a fail-closed refuse); a quota 429 now refuses fail-closed (it was retryable). The import leg's own probe is pinned separately. The legacy Step 1b gate is now positive (`draft` / `cancelled` continue, anything else refuses), so `failed` can never fold to `not_found` at Step 1c; quota rows carry phase `permanent_failure_429`.
+- **Outside the dispatch legs.** Every `retry: 'retryable'` gateway method now retries `locked` and ends a quota 429 after one attempt: `removeContactFromAudience` (the live erasure adapter), `deleteAudience`, `deleteBroadcast`, `getAudienceContactCount`, `addContactsToAudience`, `listAudiences`. The erasure adapter counts any throw as failed whatever its kind (`subprocessor-erasure-adapter.ts`), so a quota 429 there still leaves the erasure for the re-drive; a lock that clears is now `detached`. pdpa reviews this.
+- Metric: `broadcasts_dispatch_budget_exhausted_total{sub_kind}` gains `locked`; quota moves from `app_error` to `resend_429`.
+
+#### Build notes, DT4 + DT5 (5 Nov 2026)
+- DT4: `assertSegmentId` (case-insensitive UUID, no trim) runs after `assertNonEmpty` in `removeContactFromAudience` only; a refused id is a failed pair in the adapter, so the propagation reads `partial` / `failed`. **Corrected by Verify:** propagation is best-effort, so `member_erased` is still written and there is no re-drive; the partial outcome stays in the `subprocessor_erasure_propagated` record and its DPO alert. Because the detach arm pairs every live tenant audience with the erased member's addresses, one stored non-UUID id makes every later erasure in that tenant read `partial` until that row is gone. The runbook now tells a DSR answer to cite `resend_contacts_removed_count` as detach requests Resend accepted (pdpa checks the wording); the 2026-09-10 "structurally 0" box holds only if Resend answers 404 for an address it never held, which is unmeasured.
+- DT5: `RECLAIM_DEADLINE_MARGIN_MS` = 30 s lives in the use case (Next rejects unknown route exports); `deadlineAt` = start + 300 s − 30 s. Reclaim is the only `listAudiences` caller. New counter `broadcasts_audience_reclaim_truncated_total{tenant, stage}` with a § 22.3 alarm and cron-jobs runbook rows. A run deletes less, never more.
+
+#### Build notes, Rotation / DT6 (5 Nov 2026)
+- Markers come from the real `eraseMember` (F6 stubbed `failed` keeps the member stuck; a second call is the re-drive). The precondition held: every re-drive wrote a marker.
+- **Plan correction, index.** EXPLAIN on dev uses `audit_log_member_id_idx` (same `payload ? 'member_id'` predicate) BitmapAnd `audit_log_tenant_event_ts_idx`, not `audit_log_member_timeline_idx`. A partial index is still used.
+- **Plan correction, the tenant filter's reason.** Under `runInTenant` the audit_log policy (`tenant_id IS NULL OR tenant_id = current_setting(...)`, FORCE) already hides tenant B; a mutation removing `al.tenant_id = ${slug}` stayed green. The filter stays, and is required to exclude NULL-tenant rows, not because the policy is PERMISSIVE. The cross-tenant test proves the two layers together.
+- Runbook: `member-erasure.md` names the rotation and its two residual holes (pdpa M-3).
+
+#### Verify (the maintainer's `/verify`, 5 Nov 2026, on `14bb642ec`): FAIL, then fixed
+- DT5 PASS (route body and tick log carry `truncated`, `deferredDeletes`, `durationMs`; wrong bearer 401). DT6 PASS at the route (a seeded stuck erasure is picked and re-driven; rotation across several stuck heads is not drivable at the route and rests on the integration test). The `invalid_identifier` probe PASS (no request). Log scan clean.
+- **DT4 FAIL, seed artefact with a real lesson.** The Verify seed created an UPPERCASE contact directly at Resend; the erasure detach sent lowercase, Resend answered 200 `deleted: true`, and the contact stayed in the segment while the record said removed 2. Measured after: Resend is case-sensitive (research step 0 item 1, corrected). The app never pushes uppercase (recipients are `EmailLower`; both push paths send `emailLower`), so production is not exposed, but nothing re-checked it at the push. Fix: `createContactImport` refuses a mixed-case address before any request (`non_lowercase_email`; RED `e18c25888`). The re-drive wording above is corrected.
+
+### Slice 3 — review round 1 (`/code-review high 750`: 9; security APPROVE WITH FIXES: 3 LOW; pdpa APPROVE WITH CONDITIONS: 6 MEDIUM, 3 LOW; reliability MERGEABLE: 1 MEDIUM, 5 LOW; i18n fix-then-ship; enterprise-ux ship with follow-ups: 1 HIGH, 2 MEDIUM; the maintainer's DT4 re-verify PASS on `de9005a89`; 5 Nov 2026)
+
+Fixed in this PR:
+- **R1-A, the push guard becomes a normalisation (code-review #2/#4, pdpa M-1, security L3, reliability M1).** Refusing a mixed-case address failed the whole E-Blast and reported "Resend refused". Both push paths (`createContactImport` and the live legacy `addContactsToAudience`) now send `toLowerCase()` of each address, which is what the detach sends. A collision after lowercasing makes Resend's count differ from the resolved count, and the existing completion rule refuses fail-closed. In practice nothing changes: every producer already lowercases. The `non_lowercase_email` refusal is removed.
+- **R1-B, the stale case-insensitive comment** at the gateway detach (`:782`) and `plan.md` DT4 subsection (all reviewers): reworded to case-sensitive.
+- **R1-C, DT2 passes the known `cancelled` into the pre-terminal reclaim (code-review #1, reliability L3)**, so a 403 on that id is cleared without a second GET, and a failing GET can no longer write a `terminal_reclaim_undecided` orphan row. A cell pins the GET-fails case.
+- **R1-D, a re-drive sends no detach for sentinel addresses (pdpa M-3; seen in the DT4 re-verify: a second erase recorded `removed_count: 2` for contacts already gone).** The erasure capture drops `@erased.invalid` sentinels before pairing, so a re-drive records 0 truthfully. The runbook's "structurally 0" passage is reworded to match.
+- **R1-E, a held member's failure email (enterprise-ux H1).** On the hold arm, `provider_cancelled` carries the standing, and the email uses a new `reassuranceHeld` paragraph (EN/TH/SV): the slot is released, the membership is suspended, and a new E-Blast can be submitted once it is active again.
+- **R1-F, the `provider_cancelled` copy (i18n 1–4, enterprise-ux M1/M2):** no "again" (nothing was ever sent); the staff copy says the cancel happened at Resend, outside Chamber-OS (Chamber-OS never cancels at Resend: staff cancel refuses an approved row that holds an id, and the gateway has no cancel call), and conditions the resubmit on an active membership. TH/SV follow the new EN.
+- **R1-G, the import leg's terminal audit names our own gateway code (reliability M1):** a closed allowlist (`unsafe_recipient_format`, `daily_quota_exceeded`, `monthly_quota_exceeded`, `broadcast_name_too_long`) adds `gatewayCode` to the `broadcast_failed_to_dispatch` payload.
+- **R1-H, DT5 accuracy (code-review #6/#7/#8):** the truncated metric's help text names every cause; the use case and the gateway judge the deadline with one budget and clock; the comments say a cut listing restarts from page one next run (only `deferredDeletes` carry over).
+- **R1-I, erasure documentation (pdpa M-4/M-5/M-6, L-1..L-3):** the runbook gains an `invalid_identifier` remediation (find and fix the non-UUID row; one row makes every later erasure in the tenant read partial); RoPA 8a names the lowercase-push control; the evidence card relabels the detach figure as detach requests Resend accepted, with the may-include-absent caveat (EN/TH/SV).
+- **R1-J, `retryableSubKind` is exhaustive (reliability L2):** a new `GatewayRetryableSubKind` member is a compile error, not a silent `unclassified`.
+- **R1-K, the detach email half (security L2):** `removeContactFromAudience` refuses an address containing `/ ? # % \` before any request (`invalid_identifier`), and the new throws' messages are asserted to carry no address or id (security test gap).
+
+Round 1 build notes (5 Nov 2026): 17 commits `2bf4d4840`..`6185f39e9`.
+- R1-D lands in members (`isErasedSentinelEmail`, `erase-member.ts`): only the list handed to `listMemberAudienceContactsInTx` drops sentinels; the tombstone and the custom-recipient redaction keep the full set. Integration cell 3 of `erase-member-subprocessor-cascade.test.ts` had pinned the sentinel detach as "the re-drive retries the detach"; it is inverted.
+- R1-E: `failTerminally({ notifyMemberStanding: 'held' })` on the DT2 hold arm only, carried in the outbox `context_data`; the route accepts only the exact value `'held'`. The legacy leg never sets it.
+- R1-H: one helper `oneCallFitsBefore` (port); the use case passes `RESEND_CALL_TIMEOUT_MS` with its ClockPort, the gateway its `callTimeoutMs` with `Date.now()` (the same value and clock in production).
+- R1-K: a one-off read-only prod count the maintainer ordered on 5 Nov 2026 found 0 of 150 contact emails holding any of `/ ? # % \`, so the guard keeps all five.
+
+Not fixed, with the reason:
+- code-review #5 (dead `isDeadProbe` / `bidIsDead` / `cancelled` self-heal plumbing): left for slice 4, which removes the legacy leg and this plumbing together; recorded in the DT1+DT2 build notes.
+- code-review #9 (a quota 429 ends every E-Blast in that tick): the spec's DT3 decision; recorded under DT3.
+- reliability L4 (an unbounded DB read between listing and deletes, pre-existing) and L5 (PG `lower()` vs JS `toLowerCase()` on non-ASCII; the validators are ASCII-only): recorded only.
+
+### Slice 3 — review round 2 (full; `/code-review high 750`: 8; security APPROVE: 1 LOW; pdpa APPROVE: 4 LOW; reliability MERGEABLE: 3 LOW, 2 NIT; i18n ship: 3 copy fixes; spec-compliance PARTIAL: 1 HIGH (DT1 Verify), 4 MEDIUM (evidence, test-plan rows, stale docs); 5 Nov 2026)
+
+Round 1's security L1 was the stale case-insensitive comment, closed by R1-B.
+
+Fixed in this PR:
+- **R2-A, a re-drive whose capture is empty only because the scrub already ran records `not_attempted`, not `ok` (code-review #1).** R1-D made a re-drive send nothing, so a first pass that crashed after the scrub but before the propagation (or its audit row) left one `subprocessor_erasure_propagated` row saying `ok` 0/0/0 while the real address could still be in a live segment. The re-drive now records `resend_outcome: 'not_attempted'`, which pages like `failed` (the DPO alert), with the runbook step (search the Resend dashboard from the DSR intake). `SubprocessorResendOutcome` widens; every reader is swept (metric label, evidence card, alert, runbook).
+- **R2-B, i18n copy (i18n round 2):** the staff `provider_cancelled` names Resend once per clause and reads the suspended condition plainly (EN/TH/SV); the SV `countsNote` pronoun is fixed; the TH `countsNote` reuses "ไม่พบในกลุ่มอยู่แล้ว"; the evidence card's R2-25 comment matches the new note.
+- **R2-C, one deadline rule everywhere (code-review #7, reliability LOW-1):** the erasure adapter calls `oneCallFitsBefore`.
+- **R2-D, one quota-name constant (code-review #6):** the gateway, `isQuotaExceededCode` and `AUDITED_GATEWAY_CODES` read one exported list.
+- **R2-E, a route test that a non-`held` `memberStanding` is ignored (security LOW).**
+- **R2-F, documentation (pdpa L-1..L-4, spec-compliance stale text, reliability LOW-2/NIT):** research.md step 0 item 1 names the lowercase push (R1-A), not the removed refusal; plan.md pointers (DT4, Verify) to R1-A/R1-D; the changelog line covers R1-A, R1-D, R1-E, R1-G, R1-K, R2-A and the evidence-card relabel; the runbook's "Security cond-3" reason; RoPA 8a gains its `rg` verification line; the broadcasts rule's SDK line names the lowercase push and the path-character refusal; the collision note says the completion-rule refusal holds on the import leg only (the legacy leg dedupes at resolve); the R1 ledger attributes R1-A correctly; the Slices row names the reviewers that ran.
+- **R2-G, the slice 3 test-plan rows** (below).
+
+Measured, not changed:
+- **code-review #4 (code points vs UTF-16):** MEASURED 5 Nov 2026 on the sink, drafts only: a 70-emoji name (70 code points, 140 UTF-16 units) is accepted; 71 emoji and 71 ASCII answer 422 `Field name has a maximum of 70 items`. Resend counts code points, as the cap does.
+
+Not fixed, with the reason:
+- **code-review #3 (the live legacy leg reads a dashboard-cancelled broadcast as `gateway_permanent`):** the legacy leg is retired in slice 4; prod holds 0 `broadcasts` rows (5 Nov 2026). Carried to slice 4.
+- **code-review #5 (dead cancelled plumbing):** slice 4, as round 1.
+- **code-review #8 (rotation drops oldest-first and the index-ordered LIMIT):** every stuck erasure is attempted within ceil(stuck / 50) ticks, and the stuck set is about 0 to 2 a year (plan review), so neither the Art. 12 ordering nor the scan cost binds; recorded.
+- **DT1 at the Verify surface:** the import leg creates its Resend draft in the tick that sends it, so driving DT1 means a /send, which the probe rules forbid. DT1 rests on the tick cell (name at most 70 code points), the gateway cell and the measurement above.
+
+Round 2 build notes (5 Nov 2026): `b2ae2ed54`..`1097f2f0b`, plus `fix(i18n)` for the copy.
+- **R2-A2, an echo does not page.** A stuck member is re-driven every tick, so `not_attempted` alone would page the DPO every 30 minutes after a first pass that did record its outcome. The re-drive now reads whether a `subprocessor_erasure_propagated` row already exists for that tenant and member (`MemberRepo.hasSubprocessorPropagationInTx`, the DT6 predicate, in its own short `runInTenant` after the scrub commit: a failed statement inside the scrub tx would roll the erasure back). An earlier row gives `already_propagated` (no page, still written for DT6 rotation); none, or a failed read, gives `not_attempted` (pages). Mutation-proved: the cross-tenant cell goes red only when the tenant filter is removed AND the read moves to the BYPASSRLS owner; the tenant SQL-shape gate covers the method.
+- **The copy rule held.** The i18n round 2 text said "once it is active again"; the R1-F cell "provider_cancelled never says it would be sent again" refused it in EN and SV, so the staff copy says "once it is reactivated" / "när det har återaktiverats". Lesson: grep `tests/` for the key, not the old wording.
+- `docs/observability.md` § 14.8.1 gains the `member_subprocessor_erasure_total` row (it had none).
+- Corrections to earlier sections: the § Verify fix line names `non_lowercase_email`, which R1-A replaced by lowercasing; R1-D, R2-A and R2-A2 supersede the DT4 build-notes line on the re-drive's "structurally 0".
+
+### Slice 3 — review round 3, targeted (`/code-review high 9229dca8c..b80a8fb4a`: 3 in scope + 5 on the merged #752; pdpa APPROVE WITH CONDITIONS: 2 MEDIUM, 2 LOW; reliability MERGEABLE: 1 LOW, 3 NIT; 5 Nov 2026)
+
+Fixed:
+- **R3-A, the earlier-propagation read cannot starve the propagation (code-review #2).** It is skipped when the deadline leaves less than `PRIOR_PROPAGATION_READ_BUDGET_MS` (3 s) and abandoned past it (the pooler can drop `statement_timeout`); either way it counts as no earlier row, so the pass records `not_attempted`. RED `378e756dc`, GREEN `796ea77be`.
+- **R3-B, the `earliest()` comment (code-review #7)** names what a re-drive now writes.
+- **R3-C, the Thai `notAttemptedNote` (code-review #8)** takes the address from the DSR intake record to the Resend dashboard, as EN.
+- **R3-D, no alert backend pages yet (pdpa M-2):** the observability row, the port docblock, the runbook § Alert and step 6 say the alert is designated and the erasure-log evidence card is the operative control (`docs/observability.md` § 21).
+- **R3-E, the `not_attempted` remediation (pdpa L-1, reliability LOW-1):** the Resend dashboard search is the primary step (Vercel keeps logs one day, no drain); a `not_attempted` row followed within seconds by an `ok` / `partial` row is a re-drive that overlapped the first pass and needs no action.
+
+Out of scope: code-review findings 1, 3, 4, 5 and 6 are on #752 (the event picker), merged into this branch from main; they are not this PR's.
+
+Open: pdpa M-1 — prod rows written before this PR by a re-drive read `ok` 0/0/0 for a sentinel-only pass; if a first pass ever crashed between its scrub commit and its propagation, the earliest row is such an `ok`. A read-only prod probe for erased members with no `subprocessor_erasure_propagated` row, or whose first row is more than 300 s after `erased_at`, needs the maintainer's order.
+
+Not fixed: reliability N1 (`as const` on the quota list), N2 (the warn-log assertion), N3 (the port throws, like its neighbours); pdpa L-2 (echo rows accumulate, already in the runbook).
+
+### Slice 3 — review round 4, targeted, the last under the cap (`/code-review high b80a8fb4a..1a1bfc514`: 9; reliability MERGEABLE: 3 LOW, 3 NIT; 5 Nov 2026) — cap reached
+
+pdpa M-1 closed by a one-off read-only prod probe the maintainer ordered (5 Nov 2026): prod holds **0 erased members**, so no earlier `ok` row of a sentinel-only re-drive exists.
+
+Fixed:
+- **R4-A, the database bounds the read (code-review #1, reliability LOW-2).** `hasSubprocessorPropagationInTx` runs `SET LOCAL statement_timeout = '3s'` first: the caller's race stops only its wait, and the pooled connection's `statement_timeout` MEASURED `0` on dev, so a hung query kept its pooled connection. The tenant SQL-shape gate skips that exact statement (`STATEMENT_TIMEOUT_ONLY`), as it skips the advisory lock. RED `b086aede4` (`expected '0' to be '3s'`), GREEN `d7982b76d`.
+- **R4-B, a skip and a timeout say so (code-review #2, reliability LOW-1, N2).** A skip logs `… read skipped` with `reason: deadline`; a failure logs `reason: timeout` or `error`. Cells pin the `>=` boundary and the timer cleanup. RED `4d976e2bb`, GREEN `d748159f9`.
+- **R4-C, the remediation names both echo orders (code-review #3, reliability LOW-3):** a `not_attempted` before an outcome row, and an outcome row before a skipped or timed-out `not_attempted`; act on the outcome row by its own value. § 21.7 is cited (code-review #9); the `earliest()` wording (reliability NIT).
+
+Not fixed, with the reason:
+- code-review #4 (3 s under the 5 s connection timeout): a slow read only records `not_attempted`, toward paging; the skip and timeout are now logged.
+- code-review #5 (`readFits` restates `oneCallFitsBefore`): the members application layer does not import the broadcasts barrel; the adapter (infrastructure) does.
+- code-review #6 (no reserve for the audit write after the read): the reconciler starts a member only with 30 s left and the cascade keeps 60 s before `maxDuration`; recorded.
+- code-review #8 (a shared `withTimeout`): seven sites across modules; a follow-up, not this slice.
+- reliability N1 (`as const` on the quota list), N3 (the port throws, like its neighbours).
+
+### Slice 3 — a look at the round-4 fixes past the cap (the maintainer's call; `/code-review high 1a1bfc514..735c962a2`: 10; reliability MERGEABLE: 2 LOW, 1 NIT; 5 Nov 2026)
+
+Fixed (RED `3c5f50f0d`, GREEN `ba086bf2a`):
+- The caller sets the read's timeout: `hasSubprocessorPropagationInTx(tx, slug, memberId, statementTimeoutMs)`, and the use case passes `PRIOR_PROPAGATION_READ_BUDGET_MS`, so one constant drives both bounds; the port names the tx-wide side effect (code-review #2/#3, reliability L1).
+- The read runs only with two budgets left, so the audit write after it keeps one (code-review #9); a 57014 cancel logs as `reason: timeout` (code-review #5).
+- The gate requires this method's fenced SELECT to be recorded, and accepts the bare-number `SET LOCAL statement_timeout = <ms>` form (code-review #6/#7); the timer-count line that proved nothing is gone (code-review #8).
+- The runbook calls any `not_attempted` after an earlier outcome row an echo, with no log needed (code-review #4).
+
+Not fixed, with the reason:
+- **code-review #1 (the pooler drops the 5 s `statement_timeout` that `src/lib/db.ts` sets at connect, so every `runInTenant` tx is unbounded; measured `0` on the pooled dev connection):** the root fix belongs in `runInTenant` (a `SET LOCAL statement_timeout` beside its other `SET LOCAL`s) and touches every path, money included; a follow-up issue, not this slice.
+- code-review #10 (the cell lives in `find-stuck-erasures.test.ts`): recorded.
+
+### Slice 3 — Verify on the final head: the maintainer's `/verify` (5 Nov 2026, on `ba086bf2a`, on :3401 because another session held :3400): PASS
+- Safety: 0 approved rows, 0 unsettled orphans, `General` only.
+- DT4: member A's contacts stored mixed-case in our DB, the sink segment holding them lowercase → erase 200; the segment lists 0, both contacts still answer 200; `subprocessor_erasure_propagated` `ok`, removed 2; two `contact_detached` lines.
+- Re-drive echo: erase A again → 200; the new row reads `already_propagated` 0/0/0; no `contact_detached` line; `erased_at` keeps the first instant.
+- Re-drive without an earlier row: a seeded stuck member S → `reconcile-erasures` `{processed:1, reconciled:1}`; S's row reads `not_attempted` 0/0/0; stuck count 1 → 0; a wrong Bearer → 401.
+- DT5: reclaim → 200 `{… truncated:false, deferredDeletes:0}`; the tick log carries both and `durationMs`; a wrong Bearer → 401.
+- Evidence card, EN/TH/SV: A and S both show "Detach requests accepted by Resend" (and TH / SV); only S shows the `not_attempted` note; no `MISSING_MESSAGE`. Observation: the card's badge reads "Complete" while the sub-processor outcome is `not_attempted` (the badge follows `member_erased`).
+- Log scan, 208 lines: no address, no `Failed query`, no `params:`. Teardown: seeds, the segment and its contacts deleted by id; `General` only.
+- DT1–DT3 are not drivable without a send; they rest on their cells and the measurements (§ review round 2).
+- **Verify finding fixed (`f5cbb5e22`, UI presentation, D-023):** a complete card whose Resend outcome is `partial`, `failed` or `not_attempted` shows a "Resend action needed" warning badge (EN/TH/SV) beside the status pill and opens; `ok` and `already_propagated` stay quiet and collapsed. The failing run before the code: `erasure-evidence-card.test.tsx` "a complete card whose Resend outcome is partial / failed / not_attempted flags the action and opens" (3 cells), `AssertionError: expected 'Member SCCM-0042Erased 19 Jun 2026, 0…' to contain 'Resend action needed'`. The second finding (the card is collapsed by default) is the intended progressive disclosure and is unchanged, except that these outcomes now open.
+- **enterprise-ux on the flag (ship with follow-ups), fixed in `c8e8a0e1c`:** EN "Action needed in Resend" ("Resend action needed" reads as the verb), TH "ต้องดำเนินการใน Resend"; the summary and the status group wrap at 320 px; the pill precedes the badge in the DOM, so a screen reader hears the status first; a `partial` / `failed` outcome gets its own remediation note `detachFailedNote` (EN/TH/SV). Open, not changed: a complete card with no sub-processor row at all shows no flag (prod holds 0 erasures; every erasure since spec 139 writes the row).
+
+#### Slice 3 — test plan rows (R2-G; every mechanism a reviewer asked for, pointing at the test that went red)
+
+| Mechanism | Test (RED commit) |
+|---|---|
+| DT1 name cap at the tick and the gateway | `build-audience-tick.test.ts` "75-character subject", `broadcasts-sdk.contract.test.ts` "71 code points" (`5092c3382`) |
+| DT2 cancelled ends terminal on send / hold, never on refuse / refuse_erased | `build-audience-tick-failure-paths.test.ts` CANCELLED cells, `build-audience-tick-orphans.test.ts` DT2 cells (`dafe1c3c3`) |
+| Status readers: one `probedStatusOf`, legacy positive gate, `failed` refuses | `probedStatusOf` cells + `dispatch-scheduled-broadcast.test.ts` FAILED cell (`1d549044a`) |
+| DT3 locked retried, quota permanent, `resend_429`, 409 then 422 | contract "DT3 — Resend error classes", legacy + tick DT3 cells (`2d837b557`) |
+| DT4 segment-id UUID guard, literal URL, `detached` | contract DT4 cells (`a7008161f`) |
+| DT5 one deadline over listing and deletes, `maxDuration` | contract deadline cells, reclaim unit, route contract (`352d48113`) |
+| DT6 rotation by latest propagation, cross-tenant | `find-stuck-erasures-rotation.test.ts` (`704c88a12`) |
+| R1-A lowercase on both push paths | contract "sends a mixed-case address lowercased" and the CSV cell (`2bf4d4840`) |
+| R1-C known cancelled at the reclaim | orphans GET-fails cell (`b0533de7f`) |
+| R1-D no detach for sentinels on a re-drive | erase-member unit + `erase-member-subprocessor-cascade` cell 3 (`90da5c7b9`) |
+| R1-E held member's email | email builder + tick hold cell (`8e729093d`) |
+| R1-G audited gateway code | tick allowlist it.each (`b0533de7f`) |
+| R1-H one deadline rule | `oneCallFitsBefore` cells (`b1b62528c`) |
+| R1-J exhaustive sub-kinds | `classify-thrown.test.ts` (`965df2287`) |
+| R1-K path-unsafe email refused | contract R1-K cells (`2bf4d4840`) |
+| R2-A / R2-A2 `not_attempted` vs `already_propagated` on an empty re-drive capture | erase-member unit, adapter it.each, cascade cells 3 / 3b / 2b (`b2ae2ed54`, `979d185c0`) |
+| R2-E non-`held` standing ignored | `failed-to-dispatch-member-standing.test.ts` (`e195ef580`, mutation-proved) |
+| R3-A the earlier-propagation read is bounded | erase-member unit "skipped when the deadline leaves no room" / "abandoned when it outlasts its budget" (`378e756dc`) |
+| R4-A the database bounds the read | `find-stuck-erasures.test.ts` "sets its own statement_timeout" (`b086aede4`) |
+| R4-B skip / timeout logged with a reason | erase-member unit warn cells (`4d976e2bb`) |
+| R5 caller-set timeout, audit-write reserve, 57014 as timeout, the gate records the SELECT | erase-member unit, `find-stuck-erasures` "1500ms", the SQL-shape gate (`3c5f50f0d`) |
+
+#### Housekeeping
+- Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
+- For slice 4, not slice 3: `deleteContactGlobally` (`gateway:772`) has no caller but still sends `DELETE /contacts/{email}`; s4 removes it.
 
 ## Rollout
 

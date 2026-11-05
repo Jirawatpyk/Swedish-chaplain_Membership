@@ -278,7 +278,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
           calls.deleted.push(resourceId);
         },
         async listAudiences() {
-          return [];
+          return { audiences: [], truncated: false };
         },
       };
       const stubMembersBridge = {

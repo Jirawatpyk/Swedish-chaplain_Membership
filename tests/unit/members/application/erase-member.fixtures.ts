@@ -23,6 +23,7 @@ export type StubbedEraseDeps = EraseMemberDeps & {
     findErasedAtById: ReturnType<typeof vi.fn>;
     findByIdInTx: ReturnType<typeof vi.fn>;
     scrubPiiInTx: ReturnType<typeof vi.fn>;
+    hasSubprocessorPropagationInTx: ReturnType<typeof vi.fn>;
   };
   contactRepo: {
     listLinkedUserIdsForMemberInTx: ReturnType<typeof vi.fn>;
@@ -115,6 +116,9 @@ export function buildEraseDeps(): StubbedEraseDeps {
       findErasedAtById: vi.fn(async () => ok({ erasedAt: null as Date | null })),
       findByIdInTx: vi.fn(async () => ok(FAKE_MEMBER)),
       scrubPiiInTx: vi.fn(async () => ok(undefined)),
+      // Spec 140 s3 review round 2 (R2-A2) — default: no earlier
+      // `subprocessor_erasure_propagated` row for the member.
+      hasSubprocessorPropagationInTx: vi.fn(async () => false),
     },
     contactRepo: {
       // FILTERED (removed_at IS NULL) — drives the in-tx session/invitation

@@ -735,6 +735,17 @@ export const drizzleMemberRepo: MemberRepo = {
     // would silently 0-match and strand erasures, which the live integration
     // test guards against.
     //
+    // Spec 140 DT6 — the queue rotates. The sort key is the member's LATEST
+    // `subprocessor_erasure_propagated` audit (written on every committed scrub
+    // tx, re-drives included), falling back to `erased_at` when there is none,
+    // then `member_id`. A head attempted on this tick moves behind one whose
+    // attempt is older or absent, so a full batch of failing heads cannot
+    // starve the rest past `limit`. Its tenant filter is load-bearing like the
+    // other two audit_log subqueries; `payload ? 'member_id'` lets the planner
+    // prove the partial `member_id` indexes. Not covered: a lost best-effort
+    // emit, or a head that fails before its scrub commits, writes no marker and
+    // does not rotate (spec 140 plan, slice 3 § Rotation).
+    //
     // FOR UPDATE OF m SKIP LOCKED locks ONLY the `members` row (audit subqueries
     // aren't lockable) so concurrent reconciler ticks don't double-drive a row.
     // Threads the runInTenant `tx` (RLS gotcha — never the global db).
@@ -753,7 +764,16 @@ export const drizzleMemberRepo: MemberRepo = {
       FROM members m
       WHERE m.tenant_id = ${tenantSlug}
         AND ${stuckErasurePredicate(tenantSlug)}
-      ORDER BY m.erased_at ASC
+      ORDER BY COALESCE(
+                 (SELECT max(al3."timestamp")
+                  FROM audit_log al3
+                  WHERE al3.tenant_id = ${tenantSlug}
+                    AND al3.event_type = 'subprocessor_erasure_propagated'
+                    AND al3.payload ? 'member_id'
+                    AND al3.payload->>'member_id' = m.member_id::text),
+                 m.erased_at
+               ) ASC,
+               m.member_id ASC
       LIMIT ${limit}
       FOR UPDATE OF m SKIP LOCKED
     `)) as unknown as Array<{ member_id: string; reason: string }>;
@@ -778,6 +798,37 @@ export const drizzleMemberRepo: MemberRepo = {
         AND ${stuckErasurePredicate(tenantSlug)}
     `)) as unknown as Array<{ stuck: number | string }>;
     return Number(rows[0]?.stuck ?? 0);
+  },
+
+  async hasSubprocessorPropagationInTx(tx, tenantSlug, memberId, statementTimeoutMs) {
+    // Spec 140 s3 review round 2 (R2-A2) — the port docblock. The DT6
+    // rotation subquery's predicate: the tenant filter is load-bearing
+    // (audit_log's RLS is PERMISSIVE), and `payload ? 'member_id'` lets the
+    // planner use the partial `member_id` indexes. A throw reaches the caller.
+    // Round 4 (code-review #1): the database bounds the read too. The caller's
+    // race stops only its wait, and the pooler drops a startup
+    // `statement_timeout` (measured: 0 on the pooled connection), so a hung
+    // query would keep its pooled connection. `SET LOCAL` survives a
+    // transaction pooler and ends with this read's own transaction. Round 5
+    // (code-review #2/#3): the caller passes its budget, so the one constant
+    // drives both bounds. `SET` takes no bind parameter, so the value is a
+    // validated integer rendered raw.
+    assertTxTenant(tx, tenantSlug);
+    if (!Number.isInteger(statementTimeoutMs) || statementTimeoutMs <= 0) {
+      throw new RangeError('statementTimeoutMs must be a positive integer');
+    }
+    await tx.execute(sql`SET LOCAL statement_timeout = ${sql.raw(String(statementTimeoutMs))}`);
+    const rows = (await tx.execute(sql`
+      SELECT EXISTS (
+        SELECT 1
+        FROM audit_log al
+        WHERE al.tenant_id = ${tenantSlug}
+          AND al.event_type = 'subprocessor_erasure_propagated'
+          AND al.payload ? 'member_id'
+          AND al.payload->>'member_id' = ${memberId}
+      ) AS found
+    `)) as unknown as Array<{ found: boolean }>;
+    return rows[0]?.found === true;
   },
 
   async findManyByIdsInTx(tx, tenantId, memberIds) {

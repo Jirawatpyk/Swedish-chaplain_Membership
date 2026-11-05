@@ -28,7 +28,13 @@
  */
 import type { BrandSettings } from '../../domain/brand/brand-settings';
 
-export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'api';
+/**
+ * Spec 140 slice 3 (DT3) — `locked` is Resend's 409 `resource_locked` ("another
+ * request is already updating this resource"; DOCUMENTED, never observed on the
+ * sink, research.md step 0.3): nothing was refused, so it is retried, under its
+ * own label so a stuck lock does not page as `api` or `unclassified`.
+ */
+export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'api' | 'locked';
 
 /**
  * Spec 140 s2a (DL8) — the budget of one gateway REQUEST, retries and their
@@ -36,13 +42,41 @@ export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'ap
  * a measured round trip of ~0.5 s. It bounds every method except
  * `createContactImport`, which has {@link IMPORT_CALL_TIMEOUT_MS} (30 s); a
  * port call that loops (`addContactsToAudience`, `listAudiences`) takes it per
- * request. Exported for the dispatch lease (slice 2b): in W_max only the one
+ * request; `listAudiences` also stops at its caller's `deadlineAt` (spec 140
+ * DT5). Exported for the dispatch lease (slice 2b): in W_max only the one
  * import-POST term takes {@link IMPORT_CALL_TIMEOUT_MS} (every other call stays
  * at this C), and the pre-call lease check before `createContactImport` must
  * demand at least IMPORT_CALL_TIMEOUT_MS + M of lease left, not C + M (plan.md,
  * review rounds 3-4).
  */
 export const RESEND_CALL_TIMEOUT_MS = 10_000;
+
+/**
+ * Spec 140 s3 review round 1 (R1-H) — the ONE deadline rule of the orphan
+ * reclaim: a call starts only while one whole bounded call (`callBudgetMs`, the
+ * gateway's per-call budget) still fits before `deadlineAt`. The use case's
+ * delete chunks and the gateway's `listAudiences` pages both judge with it. The
+ * use case passes `RESEND_CALL_TIMEOUT_MS` and its `ClockPort`; the gateway its
+ * `callTimeoutMs` (default `RESEND_CALL_TIMEOUT_MS`) and `Date.now()`. In
+ * production the two are the same value and the same clock (`systemClock` is
+ * `new Date()`); only a test that builds the gateway with a shorter budget, or
+ * injects a fixed clock, sees them differ.
+ */
+export function oneCallFitsBefore(deadlineAt: Date, nowMs: number, callBudgetMs: number): boolean {
+  return deadlineAt.getTime() - nowMs >= callBudgetMs;
+}
+
+/**
+ * Spec 140 slice 3 (DT3; review round 2, R2-D) — Resend's two sending-quota
+ * error names. A 429 with one of them is permanent, and the gateway keeps the
+ * name as the throw's `code` (an exact match against this list, so only these
+ * two fixed tokens pass, never other provider text). One list for the
+ * gateway's classifier, `isQuotaExceededCode` and the tick's audited codes.
+ */
+export const RESEND_QUOTA_EXCEEDED_CODES: ReadonlyArray<string> = [
+  'daily_quota_exceeded',
+  'monthly_quota_exceeded',
+];
 
 /**
  * Spec 140 s2a review round 2 (CR#3) — `createContactImport`'s budget: it
@@ -388,6 +422,12 @@ export interface BroadcastsGatewayPort {
    *
    * The residual is tracked as 8a in `docs/compliance/processing-records.md`.
    * Read that before changing this, not this docblock alone.
+   *
+   * Spec 140 slice 3 (DT4): a blank `audienceId` throws a permanent
+   * `empty_identifier`, and one that is not UUID-shaped a permanent
+   * `invalid_identifier`, before any request. `detached` means Resend answered
+   * 200, which it also answers for a contact that was not in the segment
+   * (MEASURED 5 Nov 2026), so it can include one already absent.
    */
   removeContactFromAudience(
     audienceId: string,
@@ -568,12 +608,29 @@ export interface BroadcastsGatewayPort {
    * that exist in Resend but have no matching `broadcasts` DB row
    * (i.e. were leaked by a failed cleanup or a crash mid-dispatch).
    *
-   * Returns a flat array of `ResendAudienceSummary` — only the fields
-   * needed to correlate with DB records. `createdAt` is a parsed `Date`
-   * (UTC) from Resend's `created_at` field; the gateway adapter owns the
-   * parse so callers work with a proper Date, not raw strings.
+   * Returns `ResendAudienceSummary` rows — only the fields needed to
+   * correlate with DB records. `createdAt` is a parsed `Date` (UTC) from
+   * Resend's `created_at` field; the gateway adapter owns the parse so
+   * callers work with a proper Date, not raw strings.
+   *
+   * Spec 140 slice 3 (DT5) — a per-invocation budget: a page starts only while
+   * one bounded call ({@link RESEND_CALL_TIMEOUT_MS} on the default gateway)
+   * still fits before `deadlineAt`. `truncated` says the list is cut (the
+   * deadline, the page bound or a broken cursor), so a caller deletes less,
+   * never more, and can say so.
    */
-  listAudiences(): Promise<ReadonlyArray<ResendAudienceSummary>>;
+  listAudiences(input: ListAudiencesInput): Promise<ListAudiencesResult>;
+}
+
+/** Spec 140 slice 3 (DT5) — `listAudiences`' input. */
+export interface ListAudiencesInput {
+  readonly deadlineAt: Date;
+}
+
+/** Spec 140 slice 3 (DT5) — `listAudiences`' answer. */
+export interface ListAudiencesResult {
+  readonly audiences: ReadonlyArray<ResendAudienceSummary>;
+  readonly truncated: boolean;
 }
 
 /**

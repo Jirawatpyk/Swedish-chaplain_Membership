@@ -20,3 +20,16 @@ export const ERASED_EMAIL_DOMAIN = 'erased.invalid' as const;
  * Single source so the contacts scrub `sql` template and any oracle agree.
  */
 export const ERASED_EMAIL_LOCAL_PREFIX = 'erased+' as const;
+
+/**
+ * Spec 140 s3 review round 1 (R1-D) — true for an address on the sentinel
+ * domain (or a subdomain of it, as `asEmail` refuses it), in any case. A real
+ * address never is: `asEmail` refuses the domain. The erasure uses it to keep
+ * a re-drive's sentinels out of the Resend detach, which would otherwise send
+ * a DELETE for an address that was never in any audience.
+ */
+export function isErasedSentinelEmail(email: string): boolean {
+  const lower = email.toLowerCase();
+  const domain = lower.slice(lower.lastIndexOf('@') + 1);
+  return domain === ERASED_EMAIL_DOMAIN || domain.endsWith(`.${ERASED_EMAIL_DOMAIN}`);
+}

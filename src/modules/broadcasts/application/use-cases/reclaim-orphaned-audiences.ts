@@ -12,8 +12,9 @@
  *     corresponding local row was subsequently deleted before the next tick.
  *
  * Design:
- *   - Calls `gateway.listAudiences()` to enumerate ALL Resend audiences for
- *     the configured Broadcasts API key.
+ *   - Calls `gateway.listAudiences({ deadlineAt })` to enumerate the Resend
+ *     audiences for the configured Broadcasts API key (all of them, unless the
+ *     listing is `truncated`).
  *   - Filters candidates by matching audience names against the naming
  *     convention `broadcast-{tenantSlug}-{uuid}` (optional `-batch-N` suffix
  *     for split dispatches). Audiences that don't match (e.g. `General`, or
@@ -28,6 +29,15 @@
  *     via `gateway.deleteAudience`, in chunks of CONCURRENCY=5 via
  *     `Promise.allSettled` (mirrors `cleanup-orphaned-audiences.ts` and
  *     `reconcile-stuck-sending.ts`).
+ *   - Spec 140 slice 3 (DT5): ONE deadline (`deadlineAt`, from the route's
+ *     `maxDuration`) covers the listing and the delete chunks. The gateway
+ *     stops paging inside it; a chunk starts only while one bounded call
+ *     (`RESEND_CALL_TIMEOUT_MS`; a chunk's deletes run in parallel, each with
+ *     its 403 probe on the same signal) still fits — both judged by
+ *     `oneCallFitsBefore` (review round 1, R1-H) — and the orphans not reached
+ *     are `deferredDeletes`. Nothing is resumed: the next daily run lists again
+ *     from page one, and the deferred orphans are found and deleted then. A cut
+ *     run is counted on `broadcasts_audience_reclaim_truncated_total{stage}`.
  *   - Per-item try/catch: a single delete failure does NOT abort the batch.
  *     "Cannot delete last audience" (Resend 403 validation) is treated as a
  *     benign skip rather than a failure — the audience cannot be removed while
@@ -58,7 +68,8 @@ import { errLogFields } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
-import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
+import { broadcastsMetrics } from '@/lib/metrics';
+import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore, type BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import { classifyThrown, isRetryableThrow } from './_classify-thrown';
@@ -90,10 +101,25 @@ export interface ReclaimOrphanedAudiencesInput {
    * Must be positive (limit > 0).
    */
   readonly limit: number;
+  /**
+   * Spec 140 slice 3 (DT5) — the run's deadline, covering the listing and the
+   * deletes: the route passes start + `maxDuration` − {@link RECLAIM_DEADLINE_MARGIN_MS}.
+   * Never read from the request.
+   */
+  readonly deadlineAt: Date;
 }
 
+/**
+ * Spec 140 slice 3 (DT5) — how far before the route's `maxDuration` the
+ * deadline sits. The last page and the last chunk each start with at least one
+ * bounded call (`RESEND_CALL_TIMEOUT_MS`, 10 s) left and end by the deadline,
+ * so this margin holds only what follows or is unbounded: the one DB read
+ * between the listing and the deletes, the log and the response.
+ */
+export const RECLAIM_DEADLINE_MARGIN_MS = 30_000;
+
 export interface ReclaimOrphanedAudiencesOutput {
-  /** Total Resend audiences returned by `listAudiences`. */
+  /** Total Resend audiences returned by `listAudiences` (a minimum when `truncated`). */
   readonly scanned: number;
   /** Candidates confirmed to have no DB row (after grace + name filter). */
   readonly orphaned: number;
@@ -105,7 +131,7 @@ export interface ReclaimOrphanedAudiencesOutput {
    * Orphans skipped because Resend refused to delete the account's last
    * audience (403 "Cannot delete last audience"). These will become eligible
    * once a new audience is created by the next broadcast dispatch.
-   * Invariant: `orphaned === deleted + failed + skippedLastAudience`.
+   * Invariant: `orphaned === deleted + failed + skippedLastAudience + deferredDeletes`.
    */
   readonly skippedLastAudience: number;
   /**
@@ -114,6 +140,16 @@ export interface ReclaimOrphanedAudiencesOutput {
    * a name matches but the audience is within the grace window.
    */
   readonly skippedNonMatching: number;
+  /**
+   * Spec 140 slice 3 (DT5) — the listing was cut (the deadline, the page bound
+   * or a broken cursor): audiences past the cut were not seen this run.
+   */
+  readonly truncated: boolean;
+  /**
+   * Spec 140 slice 3 (DT5) — orphans not reached before the deadline: neither
+   * deleted nor failed, left for the next run.
+   */
+  readonly deferredDeletes: number;
 }
 
 export type ReclaimOrphanedAudiencesError = {
@@ -165,14 +201,19 @@ export async function reclaimOrphanedAudiences(
   // -------------------------------------------------------------------------
   // Step 1: List all Resend audiences for this API key.
   // -------------------------------------------------------------------------
-  let audiences: Awaited<ReturnType<BroadcastsGatewayPort['listAudiences']>>;
+  let listing: Awaited<ReturnType<BroadcastsGatewayPort['listAudiences']>>;
   try {
-    audiences = await deps.broadcastsGateway.listAudiences();
+    listing = await deps.broadcastsGateway.listAudiences({ deadlineAt: input.deadlineAt });
   } catch (e) {
     return err({ kind: 'reclaim.server_error', message: toSafeMessage(e) });
   }
 
+  const { audiences, truncated } = listing;
   const scanned = audiences.length;
+  if (truncated) {
+    broadcastsMetrics.audienceReclaimTruncated(deps.tenant.slug, 'listing');
+    logger.warn({ tenantId: deps.tenant.slug, scanned }, 'broadcasts.audience_reclaim.listing_truncated');
+  }
 
   // -------------------------------------------------------------------------
   // Step 2: Derive grace cutoff from the injected clock (deterministic).
@@ -234,7 +275,16 @@ export async function reclaimOrphanedAudiences(
   // Step 4: Check which extracted broadcast IDs still exist in the DB.
   // -------------------------------------------------------------------------
   if (candidates.length === 0) {
-    return ok({ scanned, orphaned: 0, deleted: 0, failed: 0, skippedLastAudience: 0, skippedNonMatching });
+    return ok({
+      scanned,
+      orphaned: 0,
+      deleted: 0,
+      failed: 0,
+      skippedLastAudience: 0,
+      skippedNonMatching,
+      truncated,
+      deferredDeletes: 0,
+    });
   }
 
   const uniqueIds: ReadonlyArray<BroadcastId> = [...new Set(candidates.map((c) => c.broadcastId))];
@@ -330,10 +380,31 @@ export async function reclaimOrphanedAudiences(
     }
   }
 
+  let deferredDeletes = 0;
   for (let i = 0; i < orphans.length; i += RECLAIM_CONCURRENCY) {
+    // Spec 140 DT5 — start a chunk only while one bounded call still fits (the
+    // gateway's listing pages judge with the same rule, review round 1 R1-H).
+    if (!oneCallFitsBefore(input.deadlineAt, deps.clock.now().getTime(), RESEND_CALL_TIMEOUT_MS)) {
+      deferredDeletes = orphans.length - i;
+      broadcastsMetrics.audienceReclaimTruncated(deps.tenant.slug, 'deletes');
+      logger.warn(
+        { tenantId: deps.tenant.slug, orphaned, deferredDeletes },
+        'broadcasts.audience_reclaim.deadline_reached',
+      );
+      break;
+    }
     const chunk = orphans.slice(i, i + RECLAIM_CONCURRENCY);
     await Promise.allSettled(chunk.map(handleOne));
   }
 
-  return ok({ scanned, orphaned, deleted, failed, skippedLastAudience, skippedNonMatching });
+  return ok({
+    scanned,
+    orphaned,
+    deleted,
+    failed,
+    skippedLastAudience,
+    skippedNonMatching,
+    truncated,
+    deferredDeletes,
+  });
 }

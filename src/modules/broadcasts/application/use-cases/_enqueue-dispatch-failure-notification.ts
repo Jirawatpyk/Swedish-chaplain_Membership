@@ -62,6 +62,13 @@ export async function enqueueDispatchFailureNotification(args: {
   readonly broadcast: Broadcast;
   readonly reason: string;
   readonly now: Date;
+  /**
+   * Spec 140 s3 review round 1 (R1-E) — set only by the import leg's DT2 hold
+   * arm (`'held'`: the membership is suspended), so the email's quota line says
+   * a new E-Blast can be submitted once it is active again. Carried in
+   * `context_data`; the legacy leg never sets it.
+   */
+  readonly memberStanding?: 'held';
 }): Promise<void> {
   const { deps, broadcast, reason, now } = args;
 
@@ -163,6 +170,7 @@ export async function enqueueDispatchFailureNotification(args: {
               ? broadcast.scheduledFor.toISOString()
               : now.toISOString(),
           reason,
+          ...(args.memberStanding !== undefined ? { memberStanding: args.memberStanding } : {}),
         },
         locale: memberPreferred ?? deps.locale,
       },

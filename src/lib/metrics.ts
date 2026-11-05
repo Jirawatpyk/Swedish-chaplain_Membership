@@ -1033,10 +1033,13 @@ export const erasureMetrics = {
    * Fired once per `eraseMember` post-commit cascade. `resendOutcome` is the
    * Resend audience-contact removal aggregate (`ok` = every captured pair
    * removed / none to remove; `partial` = some removed, some failed; `failed`
-   * = every removal threw). The Stripe arm is a pure no-op (no member↔customer
-   * model) so it carries no outcome label here.
+   * = every removal threw; `not_attempted` = spec 140 s3 R2-A, a re-drive whose
+   * addresses were all already scrub sentinels, so nothing could be tried, and
+   * no earlier propagation row exists; `already_propagated` = R2-A2, the same
+   * with an earlier row, an echo of it that does NOT page). The Stripe arm is a
+   * pure no-op (no member↔customer model) so it carries no outcome label here.
    *
-   * A `failed`/`partial` value should page the DPO runbook (US3-E): the
+   * A `failed`/`partial`/`not_attempted` value should page the DPO runbook (US3-E): the
    * member's OWN-system PII is durably scrubbed, but an external sub-processor
    * may still hold the erased member's email. This is NOT auto-retryable — the
    * removal inputs (the captured audience+email pairs) are destroyed by the same
@@ -1044,10 +1047,16 @@ export const erasureMetrics = {
    * MANUAL DPO remediation within the Art.12 one-month window (see
    * docs/runbooks/member-erasure.md), NOT by re-driving the cascade.
    *
-   * Cardinality: `resend_outcome` ∈ {ok, partial, failed} (bounded enum);
+   * Cardinality: `resend_outcome` ∈ {ok, partial, failed, not_attempted,
+   * already_propagated}
+   * (bounded enum, `SubprocessorResendOutcome` in the members port; written
+   * inline because src/lib does not import a module's application layer);
    * `tenant` small-cardinality. NO member/email/audience id labels.
    */
-  subprocessorErasure(resendOutcome: 'ok' | 'partial' | 'failed', tenantId: string): void {
+  subprocessorErasure(
+    resendOutcome: 'ok' | 'partial' | 'failed' | 'not_attempted' | 'already_propagated',
+    tenantId: string,
+  ): void {
     safeMetric(() => {
       counter(
         'member_subprocessor_erasure_total',
@@ -2209,7 +2218,8 @@ export const broadcastsMetrics = {
    * audit; this metric is the alert-pipeline trigger.
    *
    * `sub_kind` carries the Resend gateway failure subKind that
-   * exhausted the budget — `network`, `timeout`, `server_5xx`, `api`, plus
+   * exhausted the budget — `network`, `timeout`, `server_5xx`, `api`,
+   * `locked` (a 409 `resource_locked`, spec 140 slice 3), plus
    * **`unclassified`** — so dashboards can distinguish Resend outages from
    * network blips.
    *
@@ -2225,7 +2235,7 @@ export const broadcastsMetrics = {
    */
   dispatchBudgetExhausted(
     tenantId: string,
-    subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'unclassified',
+    subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'locked' | 'unclassified',
   ): void {
     safeMetric(() => {
       counter(
@@ -2357,7 +2367,14 @@ export const broadcastsMetrics = {
    */
   failedToDispatchCount(
     tenantId: string,
-    failureReason: 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' | 'member_ineligible',
+    failureReason:
+      | 'resend_5xx'
+      | 'resend_429'
+      | 'resend_403'
+      | 'app_error'
+      | 'timeout'
+      | 'member_ineligible'
+      | 'provider_cancelled',
   ): void {
     safeMetric(() => {
       counter(
@@ -3225,6 +3242,27 @@ export const broadcastsMetrics = {
         'broadcasts_retention_orphan_prune_failed_total',
         'F7 retention sweep runs whose orphaned-Resend-id prune failed',
       ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts_audience_reclaim_truncated_total{tenant,stage}` — spec 140
+   * slice 3 (DT5): a `reclaim-orphan-audiences` run that stopped short.
+   * `stage="listing"`: `listAudiences` came back `truncated` — by the time
+   * budget (`deadlineAt` = start + `maxDuration` − `RECLAIM_DEADLINE_MARGIN_MS`),
+   * the 50-page bound, a `has_more` page with no rows, or a repeated cursor
+   * (`truncatedBy` on `resend.broadcasts.audiences_list_truncated`) — so
+   * audiences past the cut were not seen; `stage="deletes"`: the time budget left
+   * orphans as `deferredDeletes`. Either way the run deleted less, never more.
+   * Nothing resumes: the next daily run lists again from page one, and finds the
+   * deferred orphans then. Alarm when it increases on 2 consecutive daily runs.
+   */
+  audienceReclaimTruncated(tenantId: string, stage: 'listing' | 'deletes'): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audience_reclaim_truncated_total',
+        'reclaim-orphan-audiences runs cut short, by stage: listing (time budget, page bound, empty has_more page or repeated cursor) or deletes (time budget)',
+      ).add(1, { tenant: tenantId, stage });
     });
   },
 

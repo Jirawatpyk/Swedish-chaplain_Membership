@@ -22,9 +22,13 @@
  *
  *   3. RE-DRIVE — force the first-pass gateway spy to reject →
  *      resend_outcome:'failed' audit, member_erased emitted (non-blocking). Then
- *      RE-RUN `eraseMember` for the SAME member (the US2d reconciler shape) and
- *      the detach is RETRIED: a second `subprocessor_erasure_propagated` audit
- *      with resend_outcome:'ok' and removed_count:**1**.
+ *      RE-RUN `eraseMember` for the SAME member (the US2d reconciler shape): its
+ *      addresses are scrub sentinels, so no detach is sent (spec 140 s3 R1-D)
+ *      and, since the first pass wrote its own row, the second audit says
+ *      resend_outcome:'already_propagated' 0/0/0 (R2-A2). 3b: a scrubbed member
+ *      with NO earlier row records 'not_attempted' (R2-A); 2b: tenant B's row
+ *      for the same member_id does not count for tenant A.
+ *      The B-1 note below is history: it was inverted by R1-D.
  *
  *      **Round 4 B-1 — this scenario used to be the opposite, and the change is
  *      the point.** It documented a best-effort-ONCE residual: the re-drive read
@@ -196,8 +200,9 @@ async function seedPlan(tenant: TestTenant, userId: string) {
 async function seedMember(
   tenant: TestTenant,
   email?: string,
+  opts: { memberId?: string; erasedAt?: Date } = {},
 ): Promise<{ memberId: string; contactEmail: string }> {
-  const memberId = randomUUID();
+  const memberId = opts.memberId ?? randomUUID();
   const contactId = randomUUID();
   const contactEmail = email ?? `erik-cap-${randomUUID().slice(0, 8)}@example.com`;
   await runInTenant(tenant.ctx, async (tx) => {
@@ -212,6 +217,7 @@ async function seedMember(
       planId: PLAN_ID,
       planYear: 2026,
       status: 'active',
+      ...(opts.erasedAt !== undefined ? { erasedAt: opts.erasedAt } : {}),
     });
     await tx.insert(contacts).values({
       tenantId: tenant.ctx.slug,
@@ -679,7 +685,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     });
   }, 120_000);
 
-  it('3 — RE-DRIVE: first pass fails → failed audit + member_erased; the re-drive now RETRIES the detach (B-1) → second audit removed_count:1, member_erased re-emitted', async () => {
+  it('3 — RE-DRIVE: first pass fails → failed audit + member_erased; the re-drive sends NO detach (its addresses are sentinels) → second audit already_propagated 0/0/0, member_erased re-emitted', async () => {
     const { memberId, contactEmail } = await seedMember(tenant);
     const audienceId = `aud-cap-redrive-${randomUUID().slice(0, 8)}`;
     await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceId);
@@ -726,43 +732,34 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     if (!second.ok) return;
     expect(second.value.cascadesComplete).toBe(true);
 
-    // Round 4 B-1 — INVERTED, and this one is the change paying for itself.
-    //
-    // This asserted `not.toHaveBeenCalled()` and documented a residual:
-    // "best-effort-ONCE — the first-pass inputs are destroyed by the same
-    // erasure, so a re-drive re-captures an EMPTY set and the second ok/removed:0
-    // audit is a VACUOUS no-op, NOT proof the Resend removal succeeded."
-    //
-    // That residual existed because arm 1 matches on
-    // `broadcast_deliveries.recipient_email_lower`, which the erasure redacts —
-    // so after the first pass nothing could find the pair again — and R2-3's
-    // `NOT EXISTS` had switched arm 2 off for any broadcast with a delivery row,
-    // which is this fixture. With the clause gone, arm 2 still finds the LIVE
-    // audience, so a failed detach is RETRYABLE instead of lost.
-    //
-    // The DPO consequence is the one that matters: the second audit is now
-    // evidence of an actual detach rather than a vacuous zero.
-    expect(removeContactFromAudienceSpy).toHaveBeenCalledTimes(1);
+    // Spec 140 s3 review round 1 (R1-D) — INVERTED again. Round 4's B-1 read a
+    // call here as a retried detach. It was not: the re-drive's input is
+    // `tombstoneEmails`, which the first pass already replaced with the
+    // contacts' scrub sentinels (`erased+<contact_id>@erased.invalid`). Arm 2
+    // paired those with the member's live audience, so the "retry" detached an
+    // address that was never in it, Resend answered 200 to it (MEASURED
+    // 5 Nov 2026), and the second audit counted a removal that never happened
+    // (the DT4 re-verify saw `removed_count: 2` this way). The capture now drops
+    // sentinels, so the re-drive sends nothing and records a true 0. A failed
+    // first-pass detach is still finished by hand (best-effort-ONCE).
+    expect(removeContactFromAudienceSpy).not.toHaveBeenCalled();
 
     const auditsAfterSecond = await rawSelectSubprocessorAudits(tenant.ctx.slug, memberId);
     expect(auditsAfterSecond).toHaveLength(2);
-    // Round 4 B-1 — was `removed_count === 0`, matching the vacuous no-op this
-    // test used to document. The re-drive now performs a real detach, so the
-    // second audit records ONE removal: it is evidence, not a placeholder.
+    // Spec 140 s3 review round 2 (R2-A, R2-A2) — not `ok`: an empty capture
+    // because the scrub already ran says nothing about the real address. The
+    // first pass wrote its own row (`failed`, above), so this one is an echo of
+    // it and must not page: `already_propagated`. Cell 3b is the no-earlier-row
+    // case.
     const secondAudit = auditsAfterSecond.find(
-      (a) =>
-        (a.payload as { resend_outcome?: string; resend_contacts_removed_count?: number })
-          .resend_contacts_removed_count === 1 &&
-        (a.payload as { resend_outcome?: string }).resend_outcome === 'ok',
+      (a) => (a.payload as { resend_outcome?: string }).resend_outcome === 'already_propagated',
     );
-    expect(
-      secondAudit,
-      'the re-drive must record a second ok audit with a REAL removal (B-1)',
-    ).toBeDefined();
-    expect(
-      (secondAudit!.payload as { resend_contacts_failed_count?: number })
-        .resend_contacts_failed_count,
-    ).toBe(0);
+    expect(secondAudit, 'the re-drive records an already_propagated audit').toBeDefined();
+    expect(secondAudit!.payload).toMatchObject({
+      resend_contacts_removed_count: 0,
+      resend_contacts_already_absent_count: 0,
+      resend_contacts_failed_count: 0,
+    });
 
     // member_erased is emitted on EACH clean completing pass: the first pass was
     // non-blocking-complete (1), and the re-drive over the already-erased member
@@ -770,6 +767,36 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     // on its PRESENCE, not its count). So assert it is present (>= 1), not exact.
     const erased = await rawSelectMemberErasedAudits(tenant.ctx.slug, memberId);
     expect(erased.length).toBeGreaterThanOrEqual(1);
+  }, 120_000);
+
+  // Spec 140 s3 review round 2 (R2-A) — the first pass committed the scrub but
+  // never wrote its propagation row (a crash between the two). Seeded the way
+  // the stuck-erasure tests seed: an erased member whose contact already holds
+  // a scrub sentinel, and no audit row. The re-drive cannot know the real
+  // address and must page: `not_attempted`.
+  it('3b — RE-DRIVE with NO earlier propagation row → not_attempted 0/0/0, no detach sent', async () => {
+    const { memberId } = await seedMember(
+      tenant,
+      `erased+${randomUUID()}@erased.invalid`,
+      { erasedAt: new Date(Date.now() - 60_000) },
+    );
+    removeContactFromAudienceSpy.mockClear();
+    const res = await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId: `rq-erase-sub-cap-noprior-${Date.now()}` },
+      buildEraseMemberDeps(tenant.ctx),
+    );
+    expect(res.ok, JSON.stringify(res)).toBe(true);
+    expect(removeContactFromAudienceSpy).not.toHaveBeenCalled();
+    const audits = await rawSelectSubprocessorAudits(tenant.ctx.slug, memberId);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]!.payload).toMatchObject({
+      resend_outcome: 'not_attempted',
+      resend_contacts_removed_count: 0,
+      resend_contacts_already_absent_count: 0,
+      resend_contacts_failed_count: 0,
+    });
   }, 120_000);
 
   it('4 — THROW-PATH ROLLBACK (security cond-2): a FAIL-LOUD in-tx capture throw rolls the WHOLE erasure back — erased_at NULL, contacts un-scrubbed, no member_erased, re-drivable', async () => {
@@ -943,5 +970,40 @@ describe('eraseMember — sub-processor cascade cross-tenant isolation (COMP-1 U
     // No subprocessor audit was written under tenant B.
     const bSubAudits = await rawSelectSubprocessorAudits(tenantB.ctx.slug, b.memberId);
     expect(bSubAudits).toHaveLength(0);
+  }, 120_000);
+
+  // Spec 140 s3 review round 2 (R2-A2, Principle I) — the earlier-row read is
+  // tenant-fenced: tenant B's propagation row for the SAME member_id must not
+  // turn tenant A's re-drive into a non-paging `already_propagated`.
+  it("2b — tenant B's propagation row for the same member_id does not make tenant A's re-drive already_propagated", async () => {
+    removeContactFromAudienceSpy.mockClear();
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
+    const memberId = randomUUID();
+    // Tenant B: a live member with that id, erased for real → B's own row.
+    await seedMember(tenantB, undefined, { memberId });
+    const b = await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId: `rq-erase-sub-cap-xt2b-b-${Date.now()}` },
+      buildEraseMemberDeps(tenantB.ctx),
+    );
+    expect(b.ok, JSON.stringify(b)).toBe(true);
+    expect(await rawSelectSubprocessorAudits(tenantB.ctx.slug, memberId)).toHaveLength(1);
+
+    // Tenant A: the same id, already scrubbed, no row of its own.
+    await seedMember(tenantA, `erased+${randomUUID()}@erased.invalid`, {
+      memberId,
+      erasedAt: new Date(Date.now() - 60_000),
+    });
+    const a = await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId: `rq-erase-sub-cap-xt2b-a-${Date.now()}` },
+      buildEraseMemberDeps(tenantA.ctx),
+    );
+    expect(a.ok, JSON.stringify(a)).toBe(true);
+    const audits = await rawSelectSubprocessorAudits(tenantA.ctx.slug, memberId);
+    expect(audits).toHaveLength(1);
+    expect((audits[0]!.payload as { resend_outcome?: string }).resend_outcome).toBe('not_attempted');
   }, 120_000);
 });

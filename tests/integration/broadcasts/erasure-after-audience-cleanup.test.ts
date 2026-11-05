@@ -191,7 +191,8 @@ describe('erasure-after-audience-cleanup (COMP-1 US3-C × PR-2 cleanup, live Neo
     const email = `erase-${randomUUID().slice(0, 8)}@example.com`;
     // A `resend_audience_id` that was NEVER created in the fake → the fake's
     // opt-in `contacts.remove` returns 404 for it (models a deleted audience).
-    const deletedAudienceId = `aud_deleted_${randomUUID().slice(0, 8)}`;
+    // UUID-shaped, as Resend's are: the gateway refuses any other id (spec 140 DT4).
+    const deletedAudienceId = randomUUID();
 
     const broadcastId = await seedCleanedUpBroadcast(tenant, user, {
       memberId,
@@ -233,6 +234,8 @@ describe('erasure-after-audience-cleanup (COMP-1 US3-C × PR-2 cleanup, live Neo
       audienceContacts,
       tenantSlug: tenant.ctx.slug,
       requestId: randomUUID(),
+      addressesAlreadyScrubbed: false,
+      priorPropagationRecorded: false,
     });
 
     // 4) Assertions — the cascade RESOLVED cleanly (no throw), and D4 still

@@ -390,7 +390,7 @@ function makeRepo(opts: RepoOpts): {
 }
 
 type ThrowSpec =
-  | { kind: 'retryable' | 'permanent'; reason: string; subKind?: string }
+  | { kind: 'retryable' | 'permanent'; reason: string; subKind?: string; code?: string }
   | {
       kind: 'resource_missing';
       reason: string;
@@ -554,7 +554,7 @@ function makeGateway(opts: GatewayOpts = {}): {
           throw new Error('Resend 500 on DELETE /broadcasts');
         }
       },
-      async listAudiences() { return []; },
+      async listAudiences() { return { audiences: [], truncated: false }; },
     },
   };
 }
@@ -3004,6 +3004,73 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     if (result.ok) return;
     expect(result.error.kind).toBe('dispatch.server_error');
     expect(repo.transitions.map((t) => t.status)).not.toContain('sending');
+  });
+
+  /**
+   * Spec 140 slice 3 (the status readers) — the gate's last arm is POSITIVE:
+   * `draft` / `cancelled` go on to the send, everything else refuses. It was a
+   * trailing `else`, so a `failed` (a real Resend status, MEASURED 2026-10-29;
+   * `normaliseStatus` folds it to `unknown` today) would have been SENT had the
+   * union ever named it. Refused before Step 1c, so the standing gate and its
+   * draft delete never see it.
+   */
+  it('a FAILED inherited resource REFUSES (fail closed), never sent, standing never read', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway();
+    vi.spyOn(gw.port, 'retrieveBroadcast').mockResolvedValue({
+      kind: 'present',
+      resource: { id: 'rb-from-previous-tick', status: 'failed', sentAt: null },
+    } as never);
+    const standing = makeFakeSendStanding();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+        sendStanding: standing,
+        brandChrome: NO_BRAND_CHROME,
+        orphans: NO_ORPHANS,
+      },
+      baseInput,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        kind: 'dispatch.server_error',
+        message: 'inherited_resource_unrecognised_status',
+        errClass: 'gate',
+        phase: 'inherited_status',
+      },
+    });
+    expect(gw.sendCalls).toEqual([]);
+    expect(gw.deleteBroadcastCalls).toEqual([]);
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(standing.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
   });
 
   // ---- 2026-09-10 follow-ups (3) (4) (7): the probe moves ahead of Step 2 ----
@@ -5863,6 +5930,96 @@ describe('dispatch-scheduled-broadcast — FR-021 budget anchors on the first fa
     expect(result.ok).toBe(false);
     if (result.ok || result.error.kind !== 'gateway_retryable') throw new Error('expected gateway_retryable');
     expect(result.error.subKind).toBe('unclassified');
+  });
+
+  // ---- Spec 140 slice 3, DT3 — the legacy leg's two named behaviour changes ----
+
+  // A 409 `resource_locked` is retryable / `locked` at the gateway (DT3). Before
+  // it, every pre-send 409 wrote `broadcast_dispatch_idempotency_conflict_pre_send`
+  // and ended the row permanently with a member email; now it retries inside
+  // FR-021 like any other retryable class, under its own label.
+  it('DT3 — a 409 resource_locked before the send retries inside FR-021: gateway_retryable{locked}, nothing terminal', async () => {
+    const { deps, repo, audit, email } = retryDeps(lateRow(null));
+    const lockedDeps = {
+      ...deps,
+      broadcastsGateway: makeGateway({
+        throwOnCreateAudience: { kind: 'retryable', reason: 'resource locked', subKind: 'locked' },
+      }).port,
+    };
+
+    const result = await dispatchScheduledBroadcast(lockedDeps, baseInput);
+
+    expect(result).toEqual({ ok: false, error: { kind: 'gateway_retryable', subKind: 'locked', reason: 'resource locked' } });
+    expect(repo.retryStampCalls).toEqual([{ at: FROZEN_NOW }]);
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
+  });
+
+  // A 429 `daily_quota_exceeded` is permanent at the gateway (DT3): one tick,
+  // not the 1 h budget. The send's refusal is probed (draft = genuinely
+  // refused), the slot is refunded (`failed_to_dispatch`), the member is told,
+  // and the failure is counted `resend_429`, not `app_error`.
+  it('DT3 — a quota 429 on the send ends permanently in one tick, counted resend_429', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps, repo, email } = retryDeps(lateRow(null));
+    const quotaDeps = {
+      ...deps,
+      broadcastsGateway: makeGateway({
+        throwOnSend: { kind: 'permanent', reason: 'daily quota reached', code: 'daily_quota_exceeded' },
+        retrieveStatus: 'draft',
+      }).port,
+    };
+
+    const result = await dispatchScheduledBroadcast(quotaDeps, baseInput);
+
+    expect(result.ok ? null : result.error.kind).toBe('broadcast_failed_to_dispatch');
+    expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(email.memberCalls).toHaveLength(1);
+    expect(failedSpy).toHaveBeenCalledWith(tenant.slug, 'resend_429');
+  });
+
+  // The classifier reaches the inherited-id probe too (agreed with the
+  // maintainer's session, 5 Nov 2026): a locked GET retries, then answers the
+  // ordinary retryable probe arm — never budgeted — under its own label.
+  it('DT3 — the inherited probe meets resource_locked → gateway_retryable{locked}, never budgeted', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const budgetSpy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const row: Broadcast = { ...lateRow(minutesAgo(61)), resendAudienceId: 'aud-existing', resendBroadcastId: 'rb-from-previous-tick' };
+    const { deps, repo } = retryDeps(row);
+    const probeLocked = {
+      ...deps,
+      broadcastsGateway: makeGateway({
+        throwOnRetrieveBroadcast: { kind: 'retryable', reason: 'resource locked', subKind: 'locked' },
+      }).port,
+    };
+
+    const result = await dispatchScheduledBroadcast(probeLocked, baseInput);
+
+    expect(result).toEqual({ ok: false, error: { kind: 'gateway_retryable', subKind: 'locked', reason: 'resource locked' } });
+    expect(repo.transitions).toEqual([]);
+    expect(budgetSpy).not.toHaveBeenCalled();
+  });
+
+  // The other direction: a quota 429 on the probe GET is permanent now, so the
+  // probe REFUSES fail closed (it used to be retryable). Nothing sent, nobody told.
+  it('DT3 — the inherited probe meets a quota 429 (permanent) → refused fail closed, nothing sent', async () => {
+    const row: Broadcast = { ...lateRow(null), resendAudienceId: 'aud-existing', resendBroadcastId: 'rb-from-previous-tick' };
+    const { deps, repo, email } = retryDeps(row);
+    const gw = makeGateway({
+      throwOnRetrieveBroadcast: { kind: 'permanent', reason: 'daily quota reached', code: 'daily_quota_exceeded' },
+    });
+
+    const result = await dispatchScheduledBroadcast({ ...deps, broadcastsGateway: gw.port }, baseInput);
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'dispatch.server_error', message: 'inherited_probe_failed', errClass: 'permanent', phase: 'inherited_status' },
+    });
+    expect(gw.sendCalls).toEqual([]);
+    expect(repo.transitions).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
   });
 });
 

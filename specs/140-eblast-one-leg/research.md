@@ -355,3 +355,21 @@ The Resend MCP is connected to the same account as `RESEND_BROADCASTS_API_KEY`: 
 - **Open measurements, sink address only, slice 3:**
   - the `contacts.remove` email encoding, with a `+` address and an uppercase address;
   - whether 409 `resource_locked` occurs (Q7 above).
+
+## Addendum — slice 3 step 0 measurements (5 Nov 2026)
+
+All on the shared Resend account with the app's broadcasts key, on throwaway audiences at the sink domain (`@resend.dev`). Nothing was sent or scheduled, and every audience and contact created was deleted afterwards (`General` alone remains).
+
+1. **`contacts.remove` with a `+` address and an UPPERCASE address — MEASURED.**
+   - **What was sent.** The SDK (resend 6.35.0, `contacts.remove({ audienceId, email })`) sends `DELETE /audiences/{audienceId}/contacts/{email}` with the email **unencoded** in the path. The probe sent exactly that.
+   - **Results.** For `delivered+s3probe@resend.dev` and `DELIVERED.S3UP@resend.dev`:
+     - each DELETE answered `200 {"deleted":true}`;
+     - the audience listed 0 contacts afterwards;
+     - `GET /contacts/{email}` still answered 200 for both, so the contact itself still exists.
+   - **Conclusions.** The unencoded `+` is read literally. Resend stores the email as given (uppercase kept). ~~It matches case-insensitively: a DELETE with the lowercase, encoded form also answered 200.~~ **Corrected 5 Nov 2026 (s3 Verify, MEASURED):** Resend matches **case-sensitively**. `DELIVERED.x@` and `delivered.x@` are two separate contacts; `GET /contacts/{lower}` and `GET /audiences/{id}/contacts/{lower}` answer 404 for an uppercase-stored contact; a lowercase DELETE answers `200 {"deleted":true}` and leaves the uppercase contact in the segment; only the exact case removes it. The earlier 200 proved nothing, because Resend answers 200 for any DELETE (item 2; a random UUID also answers `deleted: true`). This is safe today only because the app pushes lowercase alone: recipients are `EmailLower`, both push paths lowercase each address (spec 140 s3 R1-A: `createContactImport` and the live legacy `addContactsToAudience`), and the erasure detach sends lowercase too.
+   - **DT4's behaviour therefore holds** for every address the app itself pushed (always lowercase). The code needs no encoding change; it needs a pinned test and the lowercase push (R1-A).
+2. **A DELETE of a contact that is not in the audience also answers `200 {"deleted":true}` — MEASURED.** This was the lowercase repeat, after the contact had already been removed. So `removeContactFromAudience`'s `already_absent` branch (it expects a 404) never fires for that case, and an absent contact is counted `detached`. The end state is the same (the address is not in the segment), but the erasure evidence's `detached` count is then not a record of what Resend held: `already_absent` reads 0 even when the contact was never there. Slice 3 states this in the runbook and the evidence wording rather than calling it safe (plan review, reliability M7). The DT4 test asserts `detached`, never `already_absent`.
+3. **A falsy segment id — DOCUMENTED from source, not executed.** With `!payload.audienceId`, the SDK sends `DELETE /contacts/{email}`, which deletes the contact account-wide (`dist/index.mjs:679`). The gateway's `assertNonEmpty({ audienceId, email })` (`isBlankId`: non-string or blank after trim) refuses this before any call, as a permanent `empty_identifier`. The ship-blocker in spec :57 is therefore already guarded at the gateway, and slice 3 pins it with a test. A grep for other `contacts.remove` callers outside the gateway finds none.
+4. **409 `resource_locked` — not observed (MEASURED).** Two concurrent PATCHes on one draft, twice, then PATCH + DELETE together: all answered 200. The draft was then gone (a later DELETE answered 404). The documented code is still classified (DT3), but it is not reproducible on this account.
+5. **DELETE on a `failed` broadcast — UNMEASURED.** A broadcast reaches `failed` only after a send or schedule, which the probe rules forbid. The in-flight arm keeps `failed` undecided, as before.
+

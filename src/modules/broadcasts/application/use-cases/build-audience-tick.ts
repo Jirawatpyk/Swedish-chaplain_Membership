@@ -49,11 +49,12 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { loadBrandChrome } from './_load-brand-chrome';
+import { resendDashboardName } from '../format/resend-dashboard-name';
 import type { BrandChromePort } from '../ports/brand-chrome-port';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { classifyThrown, isRetryableThrow, retryableSubKind } from './_classify-thrown';
+import { classifyThrown, isQuotaExceededCode, isRetryableThrow, retryableSubKind, type RetryableSubKind } from './_classify-thrown';
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
 import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
@@ -72,12 +73,16 @@ import {
   REQUESTER_NOT_FOUND,
   type DispatchStandingDeps,
 } from './_dispatch-standing-gate';
-import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
+import {
+  RESEND_QUOTA_EXCEEDED_CODES,
+  type BroadcastsGatewayPort,
+  type GatewayRetryableSubKind,
+} from '../ports/broadcasts-gateway-port';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
 import { recordOrphanBestEffort } from './_record-orphaned-resend-id';
 import type { BroadcastOrphansRepo, RecordOrphanInput } from '../ports/broadcast-orphans-repo';
 import { rereadAfterLostRace } from './_reread-after-lost-race';
-import { isHandedStatus, probeRefusedSend } from './_probe-refused-send';
+import { isHandedStatus, probeRefusedSend, probedStatusOf } from './_probe-refused-send';
 import type { BroadcastsRepo, LeaseCheck, LeaseToken, ReleaseOutcome } from '../ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
@@ -161,6 +166,12 @@ export const IMPORT_FAILURE_REASONS = [
   'count_mismatch',
   /** The provider itself reported the job failed — do not wait out the 30 min. */
   'provider_failed',
+  /**
+   * Spec 140 DT2 — the row's inherited broadcast is `cancelled` at Resend: it
+   * can never be sent (only a draft can), and the cancel was decided outside
+   * this tick, so it is refused for good rather than re-minted and sent.
+   */
+  'provider_cancelled',
   /** A 4xx from Resend. The measured instance is the Free plan's contact cap. */
   'gateway_permanent',
   /** A throw carrying no `kind`: not a gateway error, a programming fault. */
@@ -896,10 +907,12 @@ type InheritedProbe =
  * - draft → never handed: proceed as normal; `confirmImport` reuses the id (no
  *   second `createBroadcast`) and sends it with the same idempotency key.
  *   Logged, because the fall-through is a decision.
- * - cancelled / not_found → never handed, and the id is DEAD: only a draft can
- *   be sent (a non-draft `/send` answers 422, MEASURED 2026-10-29), so
- *   `confirmImport` mints a fresh resource and replaces the dead id by fenced
- *   CAS — a dead id is never sent to.
+ * - cancelled → never handed, and the id is DEAD: only a draft can be sent (a
+ *   non-draft `/send` answers 422, MEASURED 2026-10-29). Spec 140 DT2: refused
+ *   terminally (`provider_cancelled`) once the standing gate answers send or
+ *   hold (`applySendStanding`), never re-minted.
+ * - not_found → never handed, the id is gone: `confirmImport` mints a fresh
+ *   resource and replaces the dead id by fenced CAS — a dead id is never sent to.
  * - unknown (and any status a later adapter adds without this function
  *   learning it) → REFUSE, fail closed: the row stays `approved`, phase
  *   `inherited_status`, no FR-021 clock (a clock would turn "unknown whether
@@ -973,7 +986,10 @@ async function probeInheritedBroadcast(
     logger.warn({ ...ids, observedResendStatus: 'not_found' }, 'broadcasts.audience_import.inherited_broadcast_send_attempted');
     return { probe: { handed: false, status: null } };
   }
-  const { status, sentAt } = retrieved.resource;
+  // Spec 140 slice 3 — the shared reader (its type names `failed`), so the arms
+  // below stay positive tests.
+  const status = probedStatusOf(retrieved);
+  const { sentAt } = retrieved.resource;
   if (isHandedStatus(status)) {
     logger.warn({ ...ids, observedResendStatus: status }, 'broadcasts.audience_import.inherited_broadcast_already_handed_to_send');
     return { probe: { handed: true, status, sentAt } };
@@ -1041,6 +1057,42 @@ async function applySendStanding(
     deps.tenant,
     broadcast.requestedByMemberId,
   );
+  // Spec 140 DT2 — a `cancelled` inherited id can never be sent, and the cancel
+  // was decided outside this tick: refused terminally on the two arms that would
+  // otherwise go on, never re-minted. The send arm would mint a fresh resource;
+  // the hold arm's restart would release the id, so the tick after the unhold
+  // would mint and send. The two refusal arms below keep their own end (already
+  // terminal, never a mint; the erased one emails nobody); a failed read
+  // decides nothing. `failTerminally`'s choke point re-reads the row and sends
+  // ONE DELETE for its id. Resend answers 403 to a cancelled broadcast, and the
+  // choke point is handed this probe's `cancelled` for this id (review round 1,
+  // R1-C), so when the re-read id is the probed one the 403 is cleared as
+  // `resendDraftOutcome: 'cancelled'` with no second GET, and no orphan row is
+  // written: the id stays on the terminal row, where the erasure terminal pass
+  // and `cleanup-audiences` reach it. A re-read row holding another id (a
+  // sibling's persist) is decided by that id's own GET, as on every other path.
+  if ((standing.kind === 'send' || standing.kind === 'hold') && probe !== null && !probe.handed && probe.status === 'cancelled') {
+    return failTerminally(
+      deps,
+      input,
+      broadcast,
+      {
+        kind: 'audience_import_failed',
+        reason: 'provider_cancelled',
+        importId: broadcast.audienceImportId,
+        observed: null,
+        expected: null,
+      },
+      {
+        ...(broadcast.resendBroadcastId === null
+          ? {}
+          : { knownProbedStatus: { resendBroadcastId: broadcast.resendBroadcastId, status: 'cancelled' } }),
+        // Review round 1 (R1-E) — a suspended member cannot submit a new
+        // E-Blast now, so the email's quota line says when they can.
+        ...(standing.kind === 'hold' ? { notifyMemberStanding: 'held' } : {}),
+      },
+    );
+  }
   if (standing.kind === 'send') return null;
   if (standing.kind === 'hold') {
     // Best-effort: a failed restart leaves the hold the decided answer. A lease
@@ -1456,11 +1508,11 @@ type GatewayFailure =
       readonly message: string;
       /**
        * The adapter's transport class (`classifyResendError` tags every
-       * `retryable` throw with `network` / `server_5xx` / `api`). Carried so the
+       * `retryable` throw with `network` / `server_5xx` / `api` / `locked`). Carried so the
        * FR-021 budget can report the class actually observed instead of a
        * plausible one — the same reason the non-retryable arm carries `kind`.
        */
-      readonly subKind?: 'network' | 'timeout' | 'server_5xx' | 'api' | undefined;
+      readonly subKind?: GatewayRetryableSubKind | undefined;
     }
   | {
       readonly retryable: false;
@@ -1595,12 +1647,12 @@ async function viaRepoConcurrency<T>(
  * ternaries, and the sibling helper below carries a comment saying a previous
  * 4-level chain was replaced for exactly that reason.
  *
- * `network`, `api` and `unclassified` deliberately stay `app_error`. The union
+ * `network`, `api`, `locked` and `unclassified` deliberately stay `app_error`. The union
  * has no member for them, and inventing an HTTP bucket nobody observed is the
  * defect being fixed one dimension over — see the sibling's docblock.
  */
 function budgetSubKindToFailureMetric(
-  subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'unclassified',
+  subKind: RetryableSubKind,
 ): FailureMetricLabel {
   if (subKind === 'server_5xx') return 'resend_5xx';
   if (subKind === 'timeout') return 'timeout';
@@ -1613,7 +1665,15 @@ function budgetSubKindToFailureMetric(
  * `member_ineligible` (F119 PR-A) is a decision about the member, not a fault,
  * so it is counted apart from `app_error`, which the dispatch alert reads.
  */
-type FailureMetricLabel = 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' | 'member_ineligible';
+type FailureMetricLabel =
+  | 'resend_5xx'
+  | 'resend_429'
+  | 'resend_403'
+  | 'app_error'
+  | 'timeout'
+  | 'member_ineligible'
+  /** Spec 140 DT2 — cancelled at Resend: neither a fault of ours nor a provider outage. */
+  | 'provider_cancelled';
 
 function importReasonToFailureMetric(
   reason: ImportFailureReason | 'audience_import_stuck',
@@ -1621,8 +1681,9 @@ function importReasonToFailureMetric(
 ): FailureMetricLabel {
   if (reason === 'member_halted' || reason === 'member_not_in_good_standing') return 'member_ineligible';
   if (reason === 'audience_import_stuck') return 'timeout';
+  if (reason === 'provider_cancelled') return 'provider_cancelled';
   if (code === 'http_403') return 'resend_403';
-  if (code === 'http_429') return 'resend_429';
+  if (code === 'http_429' || isQuotaExceededCode(code)) return 'resend_429';
   return 'app_error';
 }
 
@@ -1675,7 +1736,7 @@ async function onRetryable(
    * same shape the live leg has always had, so the parameter had one possible
    * value and the ternary it fed had one reachable arm.
    */
-  subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'unclassified',
+  subKind: RetryableSubKind,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const now = deps.clock.now();
   const epoch = await dispatchRetryEpoch(
@@ -1778,11 +1839,12 @@ async function onGatewayFailure(
       // page-on-call series — attributing an unclassified fault to a real
       // transport class is the `?? 'admin'` shape in a metric dimension.
       //
-      // Unreachable today (`GatewayThrowable` requires `subKind` on retryable),
-      // but `viaGateway` narrows against four hardcoded literals and maps
-      // anything else to `undefined`, so a FIFTH sub-kind would land here with
-      // no compiler signal. `'unclassified'` makes that visible on the
-      // dashboard instead of hiding it inside `api`.
+      // Unreachable today (`GatewayThrowable` requires `subKind` on retryable).
+      // `viaGateway` narrows through `retryableSubKind`, whose one list is
+      // checked both ways against `GatewayRetryableSubKind` (spec 140 s3 R1-J),
+      // so a new port sub-kind fails to compile there; a thrown string outside
+      // the union maps to `undefined`, and `'unclassified'` makes that visible
+      // on the dashboard instead of hiding it inside `api`.
       failure.subKind ?? 'unclassified',
     );
   }
@@ -1832,9 +1894,31 @@ async function onGatewayFailure(
       observed: null,
       expected: null,
     },
-    { failureMetric: importReasonToFailureMetric(failure.reason, failure.code) },
+    {
+      failureMetric: importReasonToFailureMetric(failure.reason, failure.code),
+      // Review round 1 (R1-G) — only a code from a closed set
+      // (`AUDITED_GATEWAY_CODES`); any other code, which can be a provider's
+      // free `name`, stays out of an append-only payload.
+      ...(failure.code !== undefined && AUDITED_GATEWAY_CODES.has(failure.code)
+        ? { payloadExtra: { gatewayCode: failure.code } }
+        : {}),
+    },
   );
 }
+
+/**
+ * Spec 140 s3 review round 1 (R1-G) — the codes the terminal
+ * `broadcast_failed_to_dispatch` payload names as `gatewayCode`, a closed set:
+ * two the gateway mints itself (the CSV guard, the name cap, DT1) and Resend's
+ * two sending-quota names (DT3), which the gateway keeps as the code only on an
+ * exact match against `RESEND_QUOTA_EXCEEDED_CODES` (review round 2, R2-D), so
+ * they are fixed tokens, not free provider text. Anything else adds no key.
+ */
+const AUDITED_GATEWAY_CODES: ReadonlySet<string> = new Set([
+  'unsafe_recipient_format',
+  ...RESEND_QUOTA_EXCEEDED_CODES,
+  'broadcast_name_too_long',
+]);
 
 /** Tick 1 — hand the audience over. Sends nothing. */
 async function submitImport(
@@ -1977,9 +2061,10 @@ async function confirmImport(
    * S8 — what Step 1a learned about a broadcast id an earlier tick persisted.
    * `resendBroadcastId` is `''` when the row carries none (a fresh mint). A
    * non-empty one was probed NOT handed to `/send`: `draft` is reused (never
-   * minted twice), re-asserted through the sender's fence; `cancelled` and
-   * `observedResendStatus: null` (`not_found`, already re-probed once in Step 1a) are DEAD,
-   * so a fresh resource replaces them.
+   * minted twice), re-asserted through the sender's fence;
+   * `observedResendStatus: null` (`not_found`, already re-probed once in Step 1a) is DEAD,
+   * so a fresh resource replaces it. `cancelled` is refused terminally before
+   * this point (spec 140 DT2, `applySendStanding`), so it is never minted over.
    */
   inherited: {
     readonly resendBroadcastId: string;
@@ -2240,7 +2325,7 @@ async function confirmImport(
   // resource and sent to everyone again — a different resource, where no key
   // can dedupe. Now the minted id is persisted BEFORE the send, in its own tx
   // (`persistBroadcastIdBeforeSend`), and a re-entered tick probes it at Step
-  // 1a: handed → caught up without a send; `draft` / `cancelled` → reused here.
+  // 1a: handed → caught up without a send; `draft` → reused here.
   //
   // THE SENDER'S FENCE (2026-10-29): every persist on this leg is fenced on
   // the import this tick confirmed, so a hold on an overlapping tick that
@@ -2249,13 +2334,14 @@ async function confirmImport(
   // and `/send`: on a fresh mint the persist IS the fence; an inherited id is
   // re-asserted through it.
   //
-  // A DEAD inherited id is never sent to: `not_found` could only 404, and
-  // `cancelled` only 422 (only a draft can be sent, MEASURED 2026-10-29). A
-  // fresh one is minted and replaces exactly that dead id
-  // (`replacesResendBroadcastId`), still fenced.
+  // A DEAD inherited id is never sent to: `not_found` could only 404. A fresh
+  // one is minted and replaces exactly that dead id
+  // (`replacesResendBroadcastId`), still fenced. Spec 140 DT2: a `cancelled` id
+  // is NOT re-mintable (it was refused terminally before this point); should
+  // one ever arrive here it is reused, and its send's 422 is probed below and
+  // ends terminally, never a second resource.
   const inheritedId = inherited.resendBroadcastId;
-  const inheritedDead =
-    inheritedId !== '' && (inherited.observedResendStatus === null || inherited.observedResendStatus === 'cancelled');
+  const inheritedDead = inheritedId !== '' && inherited.observedResendStatus === null;
   const minted = inheritedId === '' || inheritedDead;
   let mintedId: string | null = null;
   if (minted) {
@@ -2272,7 +2358,8 @@ async function confirmImport(
         fromName: broadcast.fromName,
         fromEmail: deps.fromEmail,
         replyToEmail: broadcast.replyToEmail,
-        broadcastNameForResendDashboard: `${deps.tenantDisplayName} — ${broadcast.subject}`,
+        // Spec 140 DT1 — capped at Resend's 70 code points, as the legacy leg does.
+        broadcastNameForResendDashboard: resendDashboardName(deps.tenantDisplayName, broadcast.subject),
         tenantDisplayName: deps.tenantDisplayName,
         locale: deps.locale,
         brand,
@@ -2284,8 +2371,9 @@ async function confirmImport(
       // fine, and the release clears it) and build afresh next tick.
       if (isAudienceMissing(createdRb.error)) {
         // Only `cancelled` may carry the teardown past a refused delete — the
-        // same rule as `isDeadProbe`; `inheritedDead` (which also covers a
-        // re-probed `not_found`) answers the different question of minting.
+        // same rule as `isDeadProbe`; `inheritedDead` (a re-probed `not_found`
+        // only) answers the different question of minting. Since spec 140 DT2
+        // a `cancelled` id never reaches this point, so the flag is `false` here.
         return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId }, inherited.observedResendStatus === 'cancelled');
       }
       // Spec 140 s2c (DL5b) — a network failure, a timeout or a 5xx may have
@@ -2322,22 +2410,14 @@ async function confirmImport(
   });
   if (persistRefused !== null) return err(persistRefused);
   if (inheritedDead) {
-    // The dead resource stays at Resend if it was `cancelled` (it cannot be
-    // deleted); its id leaves the row here, so this line is its only record.
+    // Only a `not_found` id is replaced (spec 140 DT2): Resend holds nothing
+    // for it, so no orphan row. The s2c `dead_broadcast_replaced` writer was
+    // for a replaced `cancelled` id, which no longer happens; the reason stays
+    // in `orphaned-resend-id.ts` because 0325 rows may hold it.
     logger.warn(
-      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, replacedResendBroadcastId: inheritedId, resendBroadcastId, observedResendStatus: inherited.observedResendStatus ?? 'not_found' },
+      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, replacedResendBroadcastId: inheritedId, resendBroadcastId, observedResendStatus: 'not_found' },
       'broadcasts.audience_import.dead_broadcast_replaced',
     );
-    // Spec 140 s2c [A7] — only a `cancelled` id is still at Resend (a
-    // `not_found` one is gone): recorded, so the drain settles it.
-    if (inherited.observedResendStatus === 'cancelled') {
-      await recordOrphan(deps, input, {
-        requestedByMemberId: broadcast.requestedByMemberId,
-        resourceType: 'broadcast',
-        resourceId: inheritedId,
-        reason: 'dead_broadcast_replaced',
-      });
-    }
   }
 
   // Same idempotency key shape the single-tick path uses, and the SAME key on
@@ -2809,6 +2889,12 @@ async function advanceToSending(
   return ok({ kind: 'sent', resendBroadcastId, recipientCount });
 }
 
+/** Spec 140 s3 review round 1 (R1-C) — what this tick's probe read, and for which id. */
+interface KnownProbedStatus {
+  readonly resendBroadcastId: string;
+  readonly status: 'cancelled';
+}
+
 /**
  * Spec 140 s2c, item 4 — delete the Resend draft the row holds before a
  * terminal write (`failTerminally`'s choke point; plan.md § Slice 2c [A2–A4]).
@@ -2822,7 +2908,10 @@ async function advanceToSending(
  *    → `lease_lost` (row 9), expiring → `lease_expiring`, a failed check →
  *    retryable. None writes a terminal row.
  * 4. `deleteDraftBeforeStandingRefusal` (`_dispatch-standing-gate.ts`, the full
- *    outcome set) with no probed status, so a 403 is decided by its one GET:
+ *    outcome set) with no probed status — unless the caller passes the status
+ *    this tick's probe read for the same id (`knownProbedStatus`, DT2's
+ *    `cancelled`; review round 1, R1-C), which clears that 403 with no GET —
+ *    so a 403 is decided by its one GET:
  *    - `cleared` (`deleted` / `absent` / `cancelled` / `failed`) → terminal,
  *      `resendDraftOutcome` in the payload;
  *    - `handed` → the mail is out (a sibling sent it, or this tick's own
@@ -2850,6 +2939,7 @@ async function reclaimDraftBeforeTerminal(
   deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
+  knownProbedStatus: KnownProbedStatus | undefined,
 ): Promise<
   | { readonly stop: Result<BuildAudienceTickOutput, BuildAudienceTickError> }
   | { readonly payloadExtra?: Readonly<Record<string, string>> }
@@ -2869,10 +2959,14 @@ async function reclaimDraftBeforeTerminal(
   if (draftId === '') return {};
   const gated = await leaseGate(deps, input, 'terminal_reclaim');
   if (gated !== null) return { stop: gated };
+  // Review round 1 (R1-C) — a status this tick's probe read for THIS id decides
+  // the 403 without a second GET; for any other id it is not evidence.
+  const probedStatus =
+    knownProbedStatus !== undefined && knownProbedStatus.resendBroadcastId === draftId ? knownProbedStatus.status : null;
   const cleared = await deleteDraftBeforeStandingRefusal(
     deps.broadcastsGateway,
     { ...ids, leg: 'import' },
-    { resendBroadcastId: draftId, probedStatus: null },
+    { resendBroadcastId: draftId, probedStatus },
     'terminal',
   );
   if (cleared.kind === 'handed') {
@@ -2960,13 +3054,25 @@ async function failTerminally(
      * second time. Every other caller leaves it unset.
      */
     readonly draftSettled?: true;
+    /**
+     * Spec 140 s3 review round 1 (R1-C) — the status this tick's probe read for
+     * the row's id (DT2's `cancelled`), so the choke point's 403 on that id is
+     * cleared without a second GET. Honoured only for the same id.
+     */
+    readonly knownProbedStatus?: KnownProbedStatus;
+    /**
+     * Spec 140 s3 review round 1 (R1-E) — the member's standing when it is not
+     * `send`: DT2's hold arm passes `'held'`, so the email's quota line says a
+     * new E-Blast can be submitted once the membership is active again.
+     */
+    readonly notifyMemberStanding?: 'held';
   } = {},
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   // Spec 140 s2c, item 4 (pdpa M-1) — THE CHOKE POINT: no terminal row on this
   // leg keeps a Resend draft it could have deleted. Before the terminal tx.
   let payloadExtra = opts.payloadExtra;
   if (opts.draftSettled !== true) {
-    const reclaimed = await reclaimDraftBeforeTerminal(deps, input, broadcast);
+    const reclaimed = await reclaimDraftBeforeTerminal(deps, input, broadcast, opts.knownProbedStatus);
     if ('stop' in reclaimed) return reclaimed.stop;
     if (reclaimed.payloadExtra !== undefined) payloadExtra = { ...(payloadExtra ?? {}), ...reclaimed.payloadExtra };
   }
@@ -3171,7 +3277,13 @@ async function failTerminally(
   // cannot act on is worse than silence — the same judgement the cleanup-failed
   // branch above already makes.
   if (notifyMember) {
-    await enqueueDispatchFailureNotification({ deps, broadcast, reason, now });
+    await enqueueDispatchFailureNotification({
+      deps,
+      broadcast,
+      reason,
+      now,
+      ...(opts.notifyMemberStanding !== undefined ? { memberStanding: opts.notifyMemberStanding } : {}),
+    });
   }
 
   // Round 4 F5 — the recorded state is the same either way; only the kind the

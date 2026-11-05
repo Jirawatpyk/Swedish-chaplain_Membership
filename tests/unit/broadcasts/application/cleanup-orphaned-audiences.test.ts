@@ -171,7 +171,7 @@ function makeGateway(opts: {
     async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
     async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
     async deleteBroadcast() { throw new Error('not used'); },
-    async listAudiences() { return []; },
+    async listAudiences() { return { audiences: [], truncated: false }; },
   };
 
   return { port, deleteCalls };
@@ -318,7 +318,7 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
       async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
       async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
       async deleteBroadcast() { throw new Error('not used'); },
-      async listAudiences() { return []; },
+      async listAudiences() { return { audiences: [], truncated: false }; },
       async deleteAudience() {
         inFlight++;
         peakInFlight = Math.max(peakInFlight, inFlight);

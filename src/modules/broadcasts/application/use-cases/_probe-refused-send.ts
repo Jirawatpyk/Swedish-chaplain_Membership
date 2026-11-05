@@ -21,7 +21,7 @@
  *   - `refused` — `draft`, or `cancelled` (a scheduled send Resend cancelled):
  *     genuinely never sent — the reading the inherited-id probe (legacy Step
  *     1b) gives both; the caller's ordinary permanent handling stands.
- *   - `unverifiable` — anything else (`not_found`, `unknown`) or
+ *   - `unverifiable` — anything else (`not_found`, `unknown`, `failed`) or
  *     the probe itself failed: FAIL CLOSED — the caller refuses
  *     non-terminally (no terminal write, no FR-021 clock, nobody told).
  *
@@ -30,7 +30,11 @@
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { AuditPortInvariantError } from '../ports/audit-port';
-import type { BroadcastsGatewayPort, RetrieveBroadcastOnceOutcome } from '../ports/broadcasts-gateway-port';
+import type {
+  BroadcastsGatewayPort,
+  RetrieveBroadcastOnceOutcome,
+  RetrieveBroadcastOutcome,
+} from '../ports/broadcasts-gateway-port';
 
 export type RefusedSendVerdict =
   | { readonly kind: 'accepted'; readonly status: 'queued' | 'sending' | 'sent' }
@@ -46,7 +50,10 @@ export function isHandedStatus(status: string): status is 'queued' | 'sending' |
   return status === 'queued' || status === 'sending' || status === 'sent';
 }
 
-/** What one bounded GET read: a `present` resource's status, or the answer's own kind. */
+/**
+ * What one bounded GET read: a `present` resource's status, or the answer's own
+ * kind. Spelled from the once outcome, the wider of the two (it names `failed`).
+ */
 export type ProbedStatus =
   | Extract<RetrieveBroadcastOnceOutcome, { kind: 'present' }>['status']
   | Exclude<RetrieveBroadcastOnceOutcome['kind'], 'present'>;
@@ -54,9 +61,19 @@ export type ProbedStatus =
 /**
  * Spec 140 s2d (#735) — the reading a caller logs and classifies for one
  * `retrieveBroadcastOnce` answer. Never the `sentAt`.
+ *
+ * Spec 140 slice 3 (the status readers, option a) — it reads the bounded
+ * `retrieveBroadcast` outcome too, so every probe in this module (the inherited
+ * id on both legs, the refused send, the erasure cascade) reads one shape. Only
+ * the READING is shared: each caller keeps its own call, so the throw/outcome
+ * split and the retry policy are as they were. `retrieveBroadcast`'s union is
+ * not widened — `normaliseStatus` still folds `failed` to `unknown` there for
+ * the live `reconcile-stuck-sending` — but the type a caller gets back names
+ * `failed`, so a caller must test POSITIVELY for the statuses it acts on.
  */
-export function probedStatusOf(probe: RetrieveBroadcastOnceOutcome): ProbedStatus {
-  return probe.kind === 'present' ? probe.status : probe.kind;
+export function probedStatusOf(probe: RetrieveBroadcastOutcome | RetrieveBroadcastOnceOutcome): ProbedStatus {
+  if (probe.kind !== 'present') return probe.kind;
+  return 'resource' in probe ? probe.resource.status : probe.status;
 }
 
 export async function probeRefusedSend(
@@ -64,10 +81,9 @@ export async function probeRefusedSend(
   ids: { readonly tenantId: string; readonly broadcastId: string; readonly resendBroadcastId: string },
   logPrefix: 'broadcasts.dispatch' | 'broadcasts.audience_import',
 ): Promise<RefusedSendVerdict> {
-  let status: string;
+  let status: ProbedStatus;
   try {
-    const probe = await gateway.retrieveBroadcast(ids.resendBroadcastId);
-    status = probe.kind === 'present' ? probe.resource.status : 'not_found';
+    status = probedStatusOf(await gateway.retrieveBroadcast(ids.resendBroadcastId));
   } catch (e) {
     if (e instanceof AuditPortInvariantError) throw e;
     logger.error({ ...ids, err: errKind(e), severity: 'critical' }, `${logPrefix}.send_refusal_unverifiable`);

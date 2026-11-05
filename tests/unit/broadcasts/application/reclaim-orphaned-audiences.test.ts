@@ -27,7 +27,7 @@
  * + throw-path test (e) are MANDATORY; (f) tests the benign-skip path for
  * Resend's "Cannot delete last audience" 403.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { reclaimOrphanedAudiences } from '@/modules/broadcasts/application/use-cases/reclaim-orphaned-audiences';
 import { asTenantContext } from '@/modules/tenants';
@@ -35,6 +35,8 @@ import { asBroadcastId, type BroadcastId } from '@/modules/broadcasts/domain/bro
 import type { BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
+import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import { broadcastsMetrics } from '@/lib/metrics';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -50,6 +52,8 @@ const WITHIN_GRACE_DATE = new Date(FROZEN_NOW.getTime() - 30 * 60 * 1000);
 const TENANT_SLUG = 'swecham';
 const tenant = asTenantContext(TENANT_SLUG);
 const clock = { now: (): Date => FROZEN_NOW };
+/** Spec 140 DT5 — a deadline none of the legacy cases comes near. */
+const FAR_DEADLINE = new Date(FROZEN_NOW.getTime() + 60 * 60 * 1000);
 
 const UUID_A = '11111111-1111-1111-1111-111111111111';
 const UUID_B = '22222222-2222-2222-2222-222222222222';
@@ -175,11 +179,17 @@ function makeGateway(opts: {
   throws?: Record<string, Error>;
   /** If true, listAudiences() throws instead of returning the list. */
   listThrows?: boolean;
+  /** Spec 140 DT5 — the gateway says its listing was cut. */
+  listTruncated?: boolean;
+  /** Spec 140 DT5 — runs on every deleteAudience call (to move a clock). */
+  onDelete?: () => void;
 }): {
   port: BroadcastsGatewayPort;
   deleteCalls: Array<string>;
+  listInputs: Array<{ readonly deadlineAt: Date }>;
 } {
   const deleteCalls: Array<string> = [];
+  const listInputs: Array<{ readonly deadlineAt: Date }> = [];
 
   const port: BroadcastsGatewayPort = {
     async createAudience() { throw new Error('not used'); },
@@ -197,18 +207,20 @@ function makeGateway(opts: {
     async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
     async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
     async deleteBroadcast() { throw new Error('not used'); },
-    async listAudiences() {
+    async listAudiences(input) {
+      listInputs.push(input);
       if (opts.listThrows) throw new Error('Resend: list audiences 503');
-      return [...opts.audiences];
+      return { audiences: [...opts.audiences], truncated: opts.listTruncated ?? false };
     },
     async deleteAudience(audienceId) {
       deleteCalls.push(audienceId);
+      opts.onDelete?.();
       const err = opts.throws?.[audienceId];
       if (err !== undefined) throw err;
     },
   };
 
-  return { port, deleteCalls };
+  return { port, deleteCalls, listInputs };
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +238,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -238,6 +250,8 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
         failed: 0,
         skippedLastAudience: 0,
         skippedNonMatching: 0,
+        truncated: false,
+        deferredDeletes: 0,
       });
     }
     expect(gateway.deleteCalls).toContain(audienceId);
@@ -254,7 +268,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -282,7 +296,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -304,7 +318,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -325,7 +339,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -352,7 +366,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -372,7 +386,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -399,7 +413,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -438,7 +452,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -466,7 +480,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -492,7 +506,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ failed: 0, skippedLastAudience: 1 });
   });
@@ -509,7 +523,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ failed: 0, skippedLastAudience: 1 });
   });
@@ -529,7 +543,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ failed: 1, skippedLastAudience: 0 });
   });
@@ -549,7 +563,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(false);
@@ -583,7 +597,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -600,7 +614,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(false);
@@ -627,7 +641,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 50 },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -655,7 +669,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
 
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
-      { graceMs: GRACE_MS, limit: 2 },
+      { graceMs: GRACE_MS, limit: 2, deadlineAt: FAR_DEADLINE },
     );
 
     expect(result.ok).toBe(true);
@@ -666,5 +680,126 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
       expect(result.value.deleted).toBe(2);
       expect(gateway.deleteCalls).toHaveLength(2); // exact, not ≤
     }
+  });
+});
+
+/**
+ * Spec 140 DT5 — one per-invocation deadline covers the listing and the delete
+ * chunks. The gateway stops paging inside it (pinned in the contract suite) and
+ * says so with `truncated`; the use case starts a delete chunk only while one
+ * bounded call (RESEND_CALL_TIMEOUT_MS) still fits, and counts the orphans it
+ * did not reach as `deferredDeletes`. Both are counted on
+ * `broadcasts_audience_reclaim_truncated_total{stage}`.
+ */
+describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const orphanAudiences = (uuids: ReadonlyArray<string>) =>
+    uuids.map((uuid, i) => ({ id: `aud-dt5-${i}`, name: `broadcast-${TENANT_SLUG}-${uuid}`, createdAt: PAST_GRACE_DATE }));
+
+  it('hands its deadline to listAudiences', async () => {
+    const gateway = makeGateway({ audiences: [] });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
+    await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
+    );
+    expect(gateway.listInputs).toEqual([{ deadlineAt: FAR_DEADLINE }]);
+  });
+
+  it('a truncated listing is reported and counted, even with no candidate', async () => {
+    const counted = vi.spyOn(broadcastsMetrics, 'audienceReclaimTruncated');
+    const gateway = makeGateway({ audiences: [{ id: 'aud-gen', name: 'General', createdAt: PAST_GRACE_DATE }], listTruncated: true });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
+    );
+    expect(result.ok && result.value).toMatchObject({ scanned: 1, orphaned: 0, truncated: true, deferredDeletes: 0 });
+    expect(counted.mock.calls).toEqual([[TENANT_SLUG, 'listing']]);
+  });
+
+  it('a truncated listing still deletes the orphans it did see', async () => {
+    const counted = vi.spyOn(broadcastsMetrics, 'audienceReclaimTruncated');
+    const gateway = makeGateway({ audiences: orphanAudiences([UUID_A]), listTruncated: true });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
+    );
+    expect(result.ok && result.value).toMatchObject({ orphaned: 1, deleted: 1, truncated: true, deferredDeletes: 0 });
+    expect(counted.mock.calls).toEqual([[TENANT_SLUG, 'listing']]);
+  });
+
+  it('a chunk is not started once less than one call is left: its orphans are deferred, not failed', async () => {
+    const counted = vi.spyOn(broadcastsMetrics, 'audienceReclaimTruncated');
+    // Seven orphans = a chunk of five, then one of two. The first chunk's
+    // deletes move the clock to one millisecond short of a call before the
+    // deadline, so the second chunk must not start.
+    const deadlineAt = new Date(FROZEN_NOW.getTime() + 60_000);
+    let now = FROZEN_NOW;
+    const movingClock = { now: (): Date => now };
+    const gateway = makeGateway({
+      audiences: orphanAudiences([UUID_A, UUID_B, UUID_C, UUID_D, UUID_E, UUID_F, UUID_G]),
+      onDelete: () => {
+        now = new Date(deadlineAt.getTime() - RESEND_CALL_TIMEOUT_MS + 1);
+      },
+    });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock: movingClock },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt },
+    );
+    expect(result.ok && result.value).toEqual({
+      scanned: 7,
+      orphaned: 7,
+      deleted: 5,
+      failed: 0,
+      skippedLastAudience: 0,
+      skippedNonMatching: 0,
+      truncated: false,
+      deferredDeletes: 2,
+    });
+    expect(gateway.deleteCalls).toHaveLength(5);
+    expect(counted.mock.calls).toEqual([[TENANT_SLUG, 'deletes']]);
+  });
+
+  it('a deadline already inside one call defers every orphan and deletes none', async () => {
+    const gateway = makeGateway({ audiences: orphanAudiences([UUID_A, UUID_B]) });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS - 1) },
+    );
+    expect(result.ok && result.value).toMatchObject({ orphaned: 2, deleted: 0, deferredDeletes: 2 });
+    expect(gateway.deleteCalls).toHaveLength(0);
+  });
+
+  it('a run inside its budget is not counted', async () => {
+    const counted = vi.spyOn(broadcastsMetrics, 'audienceReclaimTruncated');
+    const gateway = makeGateway({ audiences: orphanAudiences([UUID_A]) });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
+    await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
+    );
+    expect(counted).not.toHaveBeenCalled();
+  });
+});
+
+// Spec 140 s3 review round 1 (R1-H) - the use case's chunk check and the
+// gateway's page check judge the deadline with this one rule: start a call only
+// while one whole bounded call still fits before the deadline.
+describe('oneCallFitsBefore', () => {
+  const deadline = new Date(100_000);
+  it.each([
+    ['exactly one budget left', 100_000 - RESEND_CALL_TIMEOUT_MS, true],
+    ['more than one budget left', 0, true],
+    ['one millisecond short of a budget', 100_000 - RESEND_CALL_TIMEOUT_MS + 1, false],
+    ['past the deadline', 100_001, false],
+  ])('%s -> %s', (_label, nowMs, fits) => {
+    expect(oneCallFitsBefore(deadline, nowMs, RESEND_CALL_TIMEOUT_MS)).toBe(fits);
   });
 });
