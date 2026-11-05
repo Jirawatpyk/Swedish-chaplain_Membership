@@ -151,6 +151,30 @@ function assertNonEmpty(values: Readonly<Record<string, string>>): void {
 }
 
 /**
+ * Spec 140 slice 3 (DT4) — the second layer on the contact detach: a segment id
+ * Resend minted is a UUID (every id it returned in the step 0 probes, research.md
+ * slice 3; prod held 0 `broadcasts` rows and dev 1, UUID-shaped, on 5 Nov 2026),
+ * so anything else is refused before any call, in `assertNonEmpty`'s shape with
+ * its own code. Case-insensitive: Resend answers lowercase, and an uppercased id
+ * names the same segment in the path. No trim: a padded id would reach the path
+ * as is. Run after `assertNonEmpty`, so a blank id still answers
+ * `empty_identifier`. Applied to `removeContactFromAudience` only.
+ */
+const RESEND_SEGMENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function assertSegmentId(values: Readonly<Record<string, string>>): void {
+  for (const [field, value] of Object.entries(values)) {
+    if (!RESEND_SEGMENT_ID_PATTERN.test(value)) {
+      throw new GatewayThrowable({
+        kind: 'permanent',
+        code: 'invalid_identifier',
+        reason: `${field} is not a Resend segment id`,
+      });
+    }
+  }
+}
+
+/**
  * The HTTP status the gateway acts on, read as resend@4.8 read it (spec 141,
  * the maintainer's option A, 30 Oct 2026).
  *
@@ -750,6 +774,10 @@ export function createResendBroadcastsGateway({
       email: string,
     ): Promise<RemoveContactOutcome> {
       assertNonEmpty({ audienceId, email });
+      assertSegmentId({ audienceId });
+      // The email goes to the SDK as given: it puts it in the path unencoded,
+      // Resend reads a `+` literally and matches case-insensitively (MEASURED
+      // 5 Nov 2026, spec 140 DT4), so neither encode nor lowercase it here.
       try {
         await boundedCall(
           async (signal) => {

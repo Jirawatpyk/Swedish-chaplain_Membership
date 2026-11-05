@@ -394,6 +394,12 @@ export interface BroadcastsGatewayPort {
    *
    * The residual is tracked as 8a in `docs/compliance/processing-records.md`.
    * Read that before changing this, not this docblock alone.
+   *
+   * Spec 140 slice 3 (DT4): a blank `audienceId` throws a permanent
+   * `empty_identifier`, and one that is not UUID-shaped a permanent
+   * `invalid_identifier`, before any request. `detached` means Resend answered
+   * 200, which it also answers for a contact that was not in the segment
+   * (MEASURED 5 Nov 2026), so it can include one already absent.
    */
   removeContactFromAudience(
     audienceId: string,

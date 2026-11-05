@@ -152,7 +152,9 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    `members_erasure_stuck_count` > 0 on `reconcile-erasures` tick after tick and
    as `broadcasts.cascade.terminal_draft_unresolved` error lines (ids and the
    Resend outcome only); fix the cause (the API key, Resend's status), and the
-   next re-drive finishes.
+   next re-drive finishes. From spec 140 slice 3, the reconciler's queue rotates
+   by each member's latest `subprocessor_erasure_propagated` attempt, oldest
+   first, so one stuck member no longer holds the others back.
 
    **A row the cascade cannot settle — manual recovery.** When Resend's
    answers decide nothing (a 403 whose probe says `draft`, `not_found`,
@@ -761,12 +763,19 @@ The cascade has two halves:
 
    | Payload key | Means |
    |---|---|
-   | `resend_contacts_removed_count` | pairs actually DETACHED |
+   | `resend_contacts_removed_count` | pairs Resend answered `200 {"deleted":true}` for: each address is no longer in that audience, but it may already have been absent (below) |
    | `resend_contacts_already_absent_count` | the processor answered 404 — a success, but **not** a removal. Absent on rows written before 2026-09-09, where the run could not tell |
    | `resend_contacts_failed_count` | the call errored; remediate per § Sub-processor erasure propagation |
 
-   Cite the FIRST number when a DSR asks how many audience memberships were
-   removed. Do not add the second to it.
+   **Resend answers 200 for a contact that was not in the audience** (MEASURED
+   5 Nov 2026, spec 140 slice 3 step 0.2, for an address that still exists as a
+   contact but was no longer in the segment; an address Resend has never held is
+   not measured). So the `detached` count can include contacts that were
+   already absent, and `already_absent` reads 0 for them: it counts only a 404.
+   The end state is what the DSR needs (the address is in none of those
+   audiences), but the first number is not a record of what Resend held. When a
+   DSR asks, cite it as "audience detach requests Resend accepted", not as
+   memberships that existed. Do not add the second number to it.
 
 **Why non-blocking** (security + DPO sign-off, plan-review 2026-06-20): the
 Resend-removal inputs are captured only in the first-pass atomic tx and are
