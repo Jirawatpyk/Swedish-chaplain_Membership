@@ -1746,7 +1746,9 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(rows[0]!.payload).toMatchObject({
       broadcastId: BROADCAST_ID,
       resendAudienceId: 'aud-1',
-      resendBroadcastId: null,
+      // Round 2 (code-review #5) — written after the send, so it names the
+      // broadcast resource that was sent.
+      resendBroadcastId: rec.sends[0],
       expectedRecipientCount: RECIPIENTS.length,
       importId: 'imp-1',
     });
@@ -1774,6 +1776,95 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(res.ok).toBe(true);
     expect(rec.sends).toHaveLength(1);
     expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_send_started');
+  });
+
+  // PR #756 review round 2 (security L2) — `errorReason` is a CLOSED code: the
+  // transport sub-kind on a retryable failure, an allowlisted classifier kind
+  // otherwise. Never the throw's text, which can carry an address.
+  it.each([
+    { label: 'a retryable failure', thrown: gatewayThrow('retryable', 'resend 503 for a@example.com', { subKind: 'server_5xx' }), expected: 'server_5xx' },
+    { label: 'a permanent failure', thrown: gatewayThrow('permanent', 'text a@example.com'), expected: 'permanent' },
+    { label: 'a kind outside the allowlist', thrown: gatewayThrow('a@example.com', 'text a@example.com'), expected: 'other' },
+  ])('$label writes errorReason $expected and no provider text', async ({ thrown, expected }) => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['getAudienceContactCount'] = async () => {
+      throw thrown;
+    };
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const row = rec.audits.find((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable');
+    expect(row?.payload['errorReason']).toBe(expected);
+    expect(JSON.stringify(row?.payload)).not.toContain('example.com');
+  });
+
+  // PR #756 review round 2 (code-review #5 / reliability L1) — the row records an
+  // attempt that SENT without the membership check. A send that failed sent
+  // nothing, so it writes no row (the next tick re-checks); one that went out
+  // writes exactly one.
+  it('a failed count followed by a retryable send failure writes NO unverifiable row', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'retryable', subKind: 'server_5xx' },
+    });
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['getAudienceContactCount'] = async () => {
+      throw gatewayThrow('retryable', 'resend 503');
+    };
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.audits.map((a) => a.eventType)).not.toContain('broadcast_resend_drift_check_unverifiable');
+  });
+
+  it('a failed count followed by a send that went out writes exactly one unverifiable row', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['getAudienceContactCount'] = async () => {
+      throw gatewayThrow('retryable', 'resend 503');
+    };
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    expect(rec.audits.filter((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable')).toHaveLength(1);
+  });
+
+  // Spec L-1 / reliability L4 — a wiring bug (`AuditPortInvariantError`) on this
+  // row arrives AFTER the send: throwing it would report a delivered broadcast as
+  // an uncaught error and leave its post-send writes to chance. It is logged
+  // critical and counted; the tick's result stands.
+  it('an AuditPortInvariantError on the unverifiable row after the send is logged critical, not thrown', async () => {
+    const { logger } = await import('@/lib/logger');
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      auditThrowsOn: 'broadcast_resend_drift_check_unverifiable',
+      auditThrowKind: 'invariant',
+    });
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['getAudienceContactCount'] = async () => {
+      throw gatewayThrow('retryable', 'resend 503');
+    };
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    expect(rec.transitions.map((t) => t.status)).toContain('sending');
+    const line = errorSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.unverifiable_audit_emit_failed');
+    expect(line?.[0]).toMatchObject({ severity: 'critical' });
+    expect(failedSpy).toHaveBeenCalledWith('broadcast_resend_drift_check_unverifiable', 'test-tenant');
   });
 
   // The legacy leg drew this line itself: a page it could not finish reading is
