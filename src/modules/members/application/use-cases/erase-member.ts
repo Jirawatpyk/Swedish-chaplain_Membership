@@ -920,6 +920,8 @@ export async function eraseMember(
           resend_contacts_already_absent_count: sub.resendContactsAlreadyAbsent,
           resend_contacts_failed_count: sub.resendContactsFailed,
           stripe_outcome: sub.stripeOutcome,
+          // pdpa M-1 — the evidence card reads the counts by the wire that wrote them.
+          resend_detach_wire: 'segments',
         } satisfies SubprocessorErasurePropagatedAudit,
       });
       if (!done.ok) throw new Error('subprocessor_audit_failed');

@@ -503,6 +503,8 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     expect(payload.resend_outcome).toBe('ok');
     expect(payload.resend_contacts_removed_count).toBe(2);
     expect(payload.resend_contacts_failed_count).toBe(0);
+    // pdpa M-1 — the evidence card reads the counts by the wire that wrote them.
+    expect((payload as { resend_detach_wire?: string }).resend_detach_wire).toBe('segments');
     expect(payload.stripe_outcome).toBe('ok');
     // No PII in the audit row (ids + outcomes only).
     expect(JSON.stringify(subAudits[0])).not.toContain(contactEmail);
@@ -746,6 +748,8 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
       resend_contacts_removed_count: 0,
       resend_contacts_already_absent_count: 0,
       resend_contacts_failed_count: 0,
+      // pdpa M-1 — the re-drive's row names the detach wire too.
+      resend_detach_wire: 'segments',
     });
 
     // member_erased is emitted on EACH clean completing pass: the first pass was
@@ -783,6 +787,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
       resend_contacts_removed_count: 0,
       resend_contacts_already_absent_count: 0,
       resend_contacts_failed_count: 0,
+      resend_detach_wire: 'segments',
     });
   }, 120_000);
 
