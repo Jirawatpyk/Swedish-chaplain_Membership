@@ -16,7 +16,8 @@
  *
  * False-positive guard: events that legitimately have no emission
  * site (placeholder slots reserved for F7.1) are listed in
- * `KNOWN_NOT_YET_EMITTED` with a justification.
+ * `KNOWN_NOT_YET_EMITTED` with a justification. Events whose emitter was
+ * deleted on purpose are `RETIRED`, and the opposite is asserted for them.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -43,10 +44,9 @@ const ROOTS_TO_GREP = [
  *
  * R6 staff-review W-S2/W-S3 — verified emission sites for previously
  * suspected gaps:
- *   - `broadcast_resend_audience_drift` → emitted in
- *     `dispatch-scheduled-broadcast.ts:800` (no longer allow-listed).
- *   - `broadcast_resend_drift_check_unverifiable` → emitted at
- *     `dispatch-scheduled-broadcast.ts:764`.
+ *   - `broadcast_resend_audience_drift` and
+ *     `broadcast_resend_drift_check_unverifiable` → emitted by the legacy
+ *     dispatch leg until spec 140 s4 deleted it; now `RETIRED`, below.
  *   - `broadcast_cross_tenant_probe` → emitted at
  *     `enforce-tenant-context.ts:65,81`.
  *
@@ -83,6 +83,20 @@ const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [
   // lifecycle's, since T130 `expire-stale-member-approvals`).
 ];
 
+/**
+ * Spec 140 s4 (row 4) — event types whose ONLY emitter was the legacy dispatch
+ * leg, deleted in that slice. They are not "not yet emitted" (that list is for
+ * events still to be built, and would misdescribe these): nothing will emit
+ * them again. The DB enum, the TS tuple and the en/th/sv labels keep them, so
+ * rows already written still render in the F9 audit viewer and the DSAR export.
+ * Asserted the other way round: each is an F7 type and has NO emission site.
+ */
+const RETIRED: ReadonlyArray<string> = [
+  'broadcast_resend_audience_drift',
+  'broadcast_resend_drift_check_unverifiable',
+  'broadcast_dispatch_idempotency_conflict_pre_send',
+];
+
 function listTsFiles(root: string): string[] {
   const out: string[] = [];
   const stack = [root];
@@ -112,21 +126,27 @@ function listTsFiles(root: string): string[] {
   return out;
 }
 
+/** Every source file under `ROOTS_TO_GREP`, the audit port itself excluded. */
+function emissionCorpus(): string {
+  const allFiles = ROOTS_TO_GREP.flatMap(listTsFiles).filter(
+    // The audit-port itself defines the literal — exclude so it
+    // doesn't count as an emission site.
+    (p) =>
+      !p.includes(join('broadcasts', 'application', 'ports', 'audit-port')),
+  );
+  return allFiles
+    .map((p) => readFileSync(p, 'utf-8'))
+    .join('\n--FILE-BREAK--\n');
+}
+
 describe('F7 audit-event emission-site parity (Round 5)', () => {
-  it('every event in F7_AUDIT_EVENT_TYPES has at least one emission site (or is in KNOWN_NOT_YET_EMITTED)', () => {
-    const allFiles = ROOTS_TO_GREP.flatMap(listTsFiles).filter(
-      // The audit-port itself defines the literal — exclude so it
-      // doesn't count as an emission site.
-      (p) =>
-        !p.includes(join('broadcasts', 'application', 'ports', 'audit-port')),
-    );
-    const corpus = allFiles
-      .map((p) => readFileSync(p, 'utf-8'))
-      .join('\n--FILE-BREAK--\n');
+  it('every event in F7_AUDIT_EVENT_TYPES has at least one emission site (or is in KNOWN_NOT_YET_EMITTED or RETIRED)', () => {
+    const corpus = emissionCorpus();
 
     const missing: string[] = [];
     for (const eventType of F7_AUDIT_EVENT_TYPES) {
       if (KNOWN_NOT_YET_EMITTED.includes(eventType)) continue;
+      if (RETIRED.includes(eventType)) continue;
       // We grep for the quoted literal — same shape every emit site
       // uses (`eventType: 'broadcast_…'`).
       if (!corpus.includes(`'${eventType}'`)) missing.push(eventType);
@@ -136,5 +156,18 @@ describe('F7 audit-event emission-site parity (Round 5)', () => {
       missing,
       `F7 audit events declared but never emitted from src: ${missing.join(', ')}`,
     ).toEqual([]);
+  });
+
+  it('every RETIRED event is an F7 audit type, is not KNOWN_NOT_YET_EMITTED, and has NO emission site', () => {
+    const corpus = emissionCorpus();
+    // Positive control: the corpus is the real tree, so an always-empty read
+    // cannot pass the negative assertion below.
+    expect(corpus).toContain(`'broadcast_failed_to_dispatch'`);
+
+    const f7Types: ReadonlyArray<string> = F7_AUDIT_EVENT_TYPES;
+    expect(RETIRED.filter((t) => !f7Types.includes(t)), 'RETIRED ⊂ F7_AUDIT_EVENT_TYPES').toEqual([]);
+    expect(RETIRED.filter((t) => KNOWN_NOT_YET_EMITTED.includes(t))).toEqual([]);
+    const emitted = RETIRED.filter((t) => corpus.includes(`'${t}'`));
+    expect(emitted, `RETIRED events that still have an emission site: ${emitted.join(', ')}`).toEqual([]);
   });
 });
