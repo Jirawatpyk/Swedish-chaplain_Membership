@@ -115,6 +115,7 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
     findErasedAtByIdInTx: vi.fn(),
     findStuckErasuresInTx: vi.fn(),
     countStuckErasuresInTx: vi.fn(),
+    hasSubprocessorPropagationInTx: vi.fn(),
     // Typed off the real port (same rationale as `FindManyArgs` above) so
     // the empty-set default cannot silently drift from the signature.
     findErasedIdsInTx: vi.fn(

@@ -981,6 +981,21 @@ export interface MemberRepo {
    * no cap.
    */
   countStuckErasuresInTx(tx: TenantTx, tenantSlug: string): Promise<number>;
+
+  /**
+   * Spec 140 s3 review round 2 (R2-A2) — whether this tenant already holds a
+   * `subprocessor_erasure_propagated` audit row for the member. Read only on a
+   * re-drive whose addresses are all scrub sentinels: with a row, that pass's
+   * empty capture is an echo (`already_propagated`); without, `not_attempted`.
+   * The `audit_log` tenant filter is load-bearing (PERMISSIVE RLS, as in
+   * `findStuckErasuresInTx`). Throws on a read failure; the caller treats a
+   * throw as "no row". Threads the runInTenant `tx`.
+   */
+  hasSubprocessorPropagationInTx(
+    tx: TenantTx,
+    tenantSlug: string,
+    memberId: MemberId,
+  ): Promise<boolean>;
 }
 
 // ---------------------------------------------------------------------------

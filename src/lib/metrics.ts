@@ -1034,9 +1034,10 @@ export const erasureMetrics = {
    * Resend audience-contact removal aggregate (`ok` = every captured pair
    * removed / none to remove; `partial` = some removed, some failed; `failed`
    * = every removal threw; `not_attempted` = spec 140 s3 R2-A, a re-drive whose
-   * addresses were all already scrub sentinels, so nothing could be tried). The
-   * Stripe arm is a pure no-op (no member↔customer model) so it carries no
-   * outcome label here.
+   * addresses were all already scrub sentinels, so nothing could be tried, and
+   * no earlier propagation row exists; `already_propagated` = R2-A2, the same
+   * with an earlier row, an echo of it that does NOT page). The Stripe arm is a
+   * pure no-op (no member↔customer model) so it carries no outcome label here.
    *
    * A `failed`/`partial`/`not_attempted` value should page the DPO runbook (US3-E): the
    * member's OWN-system PII is durably scrubbed, but an external sub-processor
@@ -1046,13 +1047,14 @@ export const erasureMetrics = {
    * MANUAL DPO remediation within the Art.12 one-month window (see
    * docs/runbooks/member-erasure.md), NOT by re-driving the cascade.
    *
-   * Cardinality: `resend_outcome` ∈ {ok, partial, failed, not_attempted}
+   * Cardinality: `resend_outcome` ∈ {ok, partial, failed, not_attempted,
+   * already_propagated}
    * (bounded enum, `SubprocessorResendOutcome` in the members port; written
    * inline because src/lib does not import a module's application layer);
    * `tenant` small-cardinality. NO member/email/audience id labels.
    */
   subprocessorErasure(
-    resendOutcome: 'ok' | 'partial' | 'failed' | 'not_attempted',
+    resendOutcome: 'ok' | 'partial' | 'failed' | 'not_attempted' | 'already_propagated',
     tenantId: string,
   ): void {
     safeMetric(() => {

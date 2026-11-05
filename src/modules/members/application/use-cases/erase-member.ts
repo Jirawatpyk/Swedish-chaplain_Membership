@@ -816,20 +816,49 @@ export async function eraseMember(
   // `member_erased`, and it is the one step a re-drive cannot repeat — so
   // the broadcasts cascade's terminal pass, bounded by the route's deadline,
   // can never leave it starved of the function's remaining time.
+  //
+  // Spec 140 s3 review round 2 (R2-A2) — on a re-drive whose addresses were
+  // all sentinels, ask whether an earlier pass already wrote its propagation
+  // row: if so this pass's empty capture is an echo (`already_propagated`, no
+  // page); if not, `not_attempted` (pages). Its own short tx after the scrub
+  // commit, not inside the scrub tx: a failed statement there aborts the whole
+  // transaction and rolls the erasure back, and this read must fail soft — a
+  // failure counts as "no earlier row", toward paging.
+  let priorPropagationRecorded = false;
+  if (addressesAlreadyScrubbed) {
+    try {
+      priorPropagationRecorded = await runInTenant(deps.tenant, (tx) =>
+        deps.memberRepo.hasSubprocessorPropagationInTx(tx, deps.tenant.slug, memberId),
+      );
+    } catch (readErr) {
+      logger.warn(
+        {
+          err: errKind(readErr),
+          code: pgErrorCode(readErr),
+          memberId,
+          requestId: meta.requestId,
+          cascade: 'subprocessor_erasure',
+        },
+        'erase-member: prior subprocessor propagation read failed',
+      );
+    }
+  }
   try {
     const sub = await deps.subprocessorErasure.propagate({
       memberId,
       reason,
       audienceContacts: capturedSubprocessorPairs,
       addressesAlreadyScrubbed,
+      priorPropagationRecorded,
       tenantSlug: deps.tenant.slug,
       requestId: meta.requestId,
       // Spec 140 s2a review round 1 (pdpa H-1): the same cascade deadline, so
       // the propagation's audit row is written inside the route's maxDuration.
       ...(meta.deadlineAt !== undefined ? { deadlineAt: meta.deadlineAt } : {}),
     });
-    // Emit the metric for EVERY outcome (ok/partial/failed/not_attempted) so a
-    // partial/failed/not_attempted is never silently lost (it pages the DPO runbook).
+    // Emit the metric for EVERY outcome (ok/partial/failed/not_attempted/
+    // already_propagated) so a partial/failed/not_attempted is never silently
+    // lost (it pages the DPO runbook; already_propagated does not).
     erasureMetrics.subprocessorErasure(sub.resendOutcome, deps.tenant.slug);
     await runInTenant(deps.tenant, async (tx) => {
       const done = await deps.audit.recordInTx(tx, deps.tenant, {

@@ -110,12 +110,14 @@ export const subprocessorErasureAdapter: SubprocessorErasurePort = {
     // the label "Contacts removed". The gateway now discriminates, so the Art. 30
     // record can say what actually happened: N detached, M were already absent.
     const pairs = input.audienceContacts;
-    // Spec 140 s3 review round 2 (R2-A) — nothing to try because an earlier
-    // pass already scrubbed every address: not `ok` (that reads as "in no
-    // audience"); the first pass's detach may never have run.
+    // Spec 140 s3 review round 2 (R2-A, R2-A2) — nothing to try because an
+    // earlier pass already scrubbed every address: not `ok` (that reads as "in
+    // no audience"). With no earlier propagation row the first pass's detach
+    // may never have run (`not_attempted`, pages); with one, this is its echo
+    // (`already_propagated`, does not page).
     if (pairs.length === 0 && input.addressesAlreadyScrubbed) {
       return {
-        resendOutcome: 'not_attempted',
+        resendOutcome: input.priorPropagationRecorded ? 'already_propagated' : 'not_attempted',
         resendContactsRemoved: 0,
         resendContactsAlreadyAbsent: 0,
         resendContactsFailed: 0,

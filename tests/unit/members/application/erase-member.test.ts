@@ -843,9 +843,9 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     const SENTINEL = 'erased+11111111-1111-4111-8111-111111111111@erased.invalid';
 
     it.each([
-      ['an earlier row exists', async () => true, true],
-      ['no earlier row', async () => false, false],
-      ['the read fails', async () => { throw new Error('read failed'); }, false],
+      ['an earlier row exists', async (): Promise<boolean> => true, true],
+      ['no earlier row', async (): Promise<boolean> => false, false],
+      ['the read fails', async (): Promise<boolean> => { throw new Error('read failed'); }, false],
     ] as const)('%s → passes the matching priorPropagationRecorded', async (_label, read, expected) => {
       const deps = buildEraseDeps();
       deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);

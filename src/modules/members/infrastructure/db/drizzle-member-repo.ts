@@ -800,6 +800,25 @@ export const drizzleMemberRepo: MemberRepo = {
     return Number(rows[0]?.stuck ?? 0);
   },
 
+  async hasSubprocessorPropagationInTx(tx, tenantSlug, memberId) {
+    // Spec 140 s3 review round 2 (R2-A2) — the port docblock. The DT6
+    // rotation subquery's predicate: the tenant filter is load-bearing
+    // (audit_log's RLS is PERMISSIVE), and `payload ? 'member_id'` lets the
+    // planner use the partial `member_id` indexes. A throw reaches the caller.
+    assertTxTenant(tx, tenantSlug);
+    const rows = (await tx.execute(sql`
+      SELECT EXISTS (
+        SELECT 1
+        FROM audit_log al
+        WHERE al.tenant_id = ${tenantSlug}
+          AND al.event_type = 'subprocessor_erasure_propagated'
+          AND al.payload ? 'member_id'
+          AND al.payload->>'member_id' = ${memberId}
+      ) AS found
+    `)) as unknown as Array<{ found: boolean }>;
+    return rows[0]?.found === true;
+  },
+
   async findManyByIdsInTx(tx, tenantId, memberIds) {
     try {
       assertTxTenant(tx, tenantId);

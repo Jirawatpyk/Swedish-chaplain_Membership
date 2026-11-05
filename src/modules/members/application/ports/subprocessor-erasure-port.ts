@@ -28,14 +28,24 @@
 import type { SubprocessorAudienceContact } from './broadcasts-audience-derivation-port';
 
 /**
- * `not_attempted` (spec 140 s3 review round 2, R2-A): the capture was empty
- * because every address the member held was already a scrub sentinel, so the
- * scrub ran in an earlier pass and this pass could not know the real address.
- * It says nothing about whether the first pass's detach ran, so it pages like
- * `failed` (runbook `member-erasure.md`). Never `ok`: an `ok` 0/0/0 row means
+ * Two outcomes for a capture that was empty because every address the member
+ * held was already a scrub sentinel (the scrub ran in an earlier pass, so this
+ * pass could not know the real address). Never `ok`: an `ok` 0/0/0 row means
  * the member was in no audience.
+ *   - `not_attempted` (spec 140 s3 review round 2, R2-A): no earlier
+ *     `subprocessor_erasure_propagated` row for the member in this tenant. The
+ *     first pass's detach may never have run, so it pages like `failed`
+ *     (runbook `member-erasure.md`).
+ *   - `already_propagated` (R2-A2): an earlier row exists, and that row is the
+ *     outcome; this one is a re-drive's echo of it and does not page. The row
+ *     is still written (DT6's rotation keys on its timestamp).
  */
-export type SubprocessorResendOutcome = 'ok' | 'partial' | 'failed' | 'not_attempted';
+export type SubprocessorResendOutcome =
+  | 'ok'
+  | 'partial'
+  | 'failed'
+  | 'not_attempted'
+  | 'already_propagated';
 
 /**
  * Stripe is a pure no-op TODAY (no member↔customer model). Typed as a literal
@@ -46,9 +56,12 @@ export type SubprocessorResendOutcome = 'ok' | 'partial' | 'failed' | 'not_attem
  * for the `subprocessor_erasure_propagated` audit payload + the metric, so a union
  * would force a needless switch with no field-presence safety gained. The
  * coherence invariant (`'ok'⇔failed===0`, `'failed'⇔removed===0 && failed>0`,
- * `'partial'⇔both>0`, `'not_attempted'⇔no pair && addressesAlreadyScrubbed`, all
- * counts 0) is enforced at the SINGLE producer — the adapter derives all fields
- * together from the loop counts; the shape is never hand-assembled elsewhere.
+ * `'partial'⇔both>0`, `'not_attempted'⇔no pair && addressesAlreadyScrubbed &&
+ * !priorPropagationRecorded`, `'already_propagated'⇔no pair &&
+ * addressesAlreadyScrubbed && priorPropagationRecorded`, both with all counts 0)
+ * is enforced at the SINGLE producer — the adapter derives all fields together
+ * from the loop counts and these two flags; the shape is never hand-assembled
+ * elsewhere.
  */
 export interface SubprocessorErasureResult {
   readonly resendOutcome: SubprocessorResendOutcome;
@@ -100,6 +113,14 @@ export interface SubprocessorErasureInput {
    * use case (it alone sees the addresses); required so a new caller must say.
    */
   readonly addressesAlreadyScrubbed: boolean;
+  /**
+   * Spec 140 s3 review round 2 (R2-A2) — true when this tenant already holds a
+   * `subprocessor_erasure_propagated` row for the member (read by the use case
+   * only when `addressesAlreadyScrubbed`; false otherwise, and false when the
+   * read failed, so a doubt pages). With no pair and the addresses already
+   * scrubbed it turns `not_attempted` into `already_propagated`.
+   */
+  readonly priorPropagationRecorded: boolean;
   /**
    * Spec 140 s2a review round 1 (pdpa H-1) — the erasure cascade's deadline
    * (`erasureCascadeDeadline`, set by the erase route and `reconcile-erasures`
