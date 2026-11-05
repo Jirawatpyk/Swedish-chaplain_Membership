@@ -51,6 +51,7 @@ import { RESEND_API_BASE_URL } from '@/lib/resend-api-base-url';
 import { getResendBroadcastsClient } from './resend-broadcasts-client';
 import { renderBroadcastHtml } from './email-template';
 import { extractBareEmail, stripAngleBrackets } from './bare-email';
+import { MAX_RESEND_BROADCAST_NAME_CP } from '@/modules/broadcasts/application/format/resend-dashboard-name';
 
 const RETRY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
 
@@ -473,6 +474,17 @@ export function createResendBroadcastsGateway({
       input: CreateBroadcastInput,
     ): Promise<{ readonly broadcastId: string }> {
       assertNonEmpty({ audienceId: input.audienceId });
+      // Spec 140 DT1 — the second layer: Resend refuses a `name` over 70 code
+      // points, and that refusal ends the E-Blast. The callers cap it
+      // (`resendDashboardName`); a caller that does not is refused here,
+      // before any request, in the same permanent shape as `assertNonEmpty`.
+      if ([...input.broadcastNameForResendDashboard].length > MAX_RESEND_BROADCAST_NAME_CP) {
+        throw new GatewayThrowable({
+          kind: 'permanent',
+          code: 'broadcast_name_too_long',
+          reason: `broadcast name exceeds ${MAX_RESEND_BROADCAST_NAME_CP} code points`,
+        });
+      }
       return boundedCall(
         async (signal) => {
           const sdk = client();

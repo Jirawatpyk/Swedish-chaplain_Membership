@@ -49,6 +49,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { loadBrandChrome } from './_load-brand-chrome';
+import { resendDashboardName } from '../format/resend-dashboard-name';
 import type { BrandChromePort } from '../ports/brand-chrome-port';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
@@ -2272,7 +2273,8 @@ async function confirmImport(
         fromName: broadcast.fromName,
         fromEmail: deps.fromEmail,
         replyToEmail: broadcast.replyToEmail,
-        broadcastNameForResendDashboard: `${deps.tenantDisplayName} — ${broadcast.subject}`,
+        // Spec 140 DT1 — capped at Resend's 70 code points, as the legacy leg does.
+        broadcastNameForResendDashboard: resendDashboardName(deps.tenantDisplayName, broadcast.subject),
         tenantDisplayName: deps.tenantDisplayName,
         locale: deps.locale,
         brand,
