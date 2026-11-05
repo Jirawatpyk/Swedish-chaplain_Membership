@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { ActionBar, Button, Textarea } from '@jirawatpyk/aura-react';
+import { ActionBar, Alert, Button, Textarea } from '@jirawatpyk/aura-react';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/shell/reason-confirmation-dialog';
 import type { ChangeRequestReviewFieldView, StaffChangeRequestView } from '@/lib/change-request-staff-view';
@@ -218,13 +218,13 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
       >
         <div className="space-y-4">
           <div ref={dialogErrorRef} role="alert" aria-atomic="true" data-testid="decision-error-region">
+            {/* PR O — AURA's Alert in the danger tone. `role="none"`: the
+                wrapper above is the live region, mounted before the error so
+                it is announced once. */}
             {dialogError ? (
-              <p
-                className="rounded-[var(--aura-radius-md)] border border-[var(--aura-alert-danger-border)] bg-[var(--aura-alert-danger-bg)] px-3 py-2 text-sm text-[var(--aura-alert-danger-fg)]"
-                data-testid="decision-error"
-              >
+              <Alert tone="danger" role="none" data-testid="decision-error">
                 {dialogError}
-              </p>
+              </Alert>
             ) : null}
           </div>
           <div className="space-y-1">

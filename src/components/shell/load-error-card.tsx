@@ -28,9 +28,14 @@
  * non-interrupting "couldn't load" notice instead of a page-level alarm.
  */
 import type { ReactNode } from 'react';
-import { AlertTriangle } from 'lucide-react';
-import { Card } from '@jirawatpyk/aura-react/server';
+import { EmptyState } from '@jirawatpyk/aura-react/server';
 
+/*
+ * PR O — AURA's EmptyState (from `/server`, so either tree): the danger tone
+ * for `destructive`, the neutral one for `muted`; `bordered` is the `card`
+ * flag (the old Card frame); the message is a paragraph, not a heading, so a
+ * page's outline doesn't change; `children` (retry / go back) are its action.
+ */
 export function LoadErrorCard({
   message,
   children,
@@ -43,44 +48,16 @@ export function LoadErrorCard({
   readonly tone?: 'destructive' | 'muted';
 }) {
   const isMuted = tone === 'muted';
-  const content = (
-    <>
-      <AlertTriangle
-        aria-hidden="true"
-        className={isMuted ? 'h-10 w-10 text-muted-foreground' : 'h-10 w-10 text-destructive'}
-      />
-      <div
-        className={
-          isMuted
-            ? 'text-base font-medium text-muted-foreground'
-            : 'text-base font-medium text-destructive'
-        }
-      >
-        {message}
-      </div>
-      {children}
-    </>
-  );
-  const role = isMuted ? 'status' : 'alert';
-  const ariaLive = isMuted ? 'polite' : 'assertive';
-  if (!card) {
-    return (
-      <div
-        role={role}
-        aria-live={ariaLive}
-        className="flex flex-col items-center gap-4 py-6 text-center"
-      >
-        {content}
-      </div>
-    );
-  }
-  // Spec 122 — AURA's Card from `/server` (stateless, so it renders in server
-  // and client trees alike; handoff #68).
   return (
-    <Card as="div">
-      <div role={role} aria-live={ariaLive} className="flex flex-col items-center gap-4 py-12 text-center">
-        {content}
-      </div>
-    </Card>
+    <EmptyState
+      tone={isMuted ? 'neutral' : 'danger'}
+      bordered={card}
+      icon="triangle-alert"
+      headingLevel={false}
+      role={isMuted ? 'status' : 'alert'}
+      aria-live={isMuted ? 'polite' : 'assertive'}
+      title={message}
+      {...(children ? { action: children } : {})}
+    />
   );
 }

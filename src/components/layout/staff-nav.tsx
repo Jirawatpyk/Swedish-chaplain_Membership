@@ -62,11 +62,12 @@ function badgeNode(item: RenderedNavItem, t: Translate): ReactNode {
   const count = item.badgeCount;
   if (item.badge === undefined || typeof count !== 'number' || count <= 0) return undefined;
   return (
-    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--aura-status-progress-bg)] px-1.5 aura-text-pill-label font-semibold tabular-nums text-[var(--aura-status-progress-fg)]">
+    // PR O — AURA's Badge (accent), not a hand-built bubble.
+    <Badge tone="accent" className="tabular-nums">
       {' '}
       {count}
       <span className="sr-only"> {t(item.badge.labelKey, { count })}</span>
-    </span>
+    </Badge>
   );
 }
 

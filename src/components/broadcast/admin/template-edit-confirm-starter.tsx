@@ -35,7 +35,7 @@
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { X } from 'lucide-react';
+import { Alert, IconButton } from '@jirawatpyk/aura-react';
 
 interface Props {
   readonly templateId: string;
@@ -84,49 +84,30 @@ export function AdminTemplateEditConfirmStarter({
     return null;
   }
 
+  // PR O — AURA's Alert in the warning tone, a polite status named by its
+  // title (it should not interrupt). The section keeps the banner a landmark
+  // (R3.5 M-14). The dismiss stays our own IconButton because its label
+  // names the template, which AURA's `onDismiss` button ("Dismiss") cannot
+  // (handoff addendum 97, #196).
   return (
-    <section
-      role="region"
-      aria-labelledby="starter-edit-banner-title"
-      className="mb-4 rounded-md border border-warning/30 bg-warning-surface p-4 text-sm"
-    >
-      {/* R3.5 M-14 — outer <section role="region" aria-labelledby>
-          makes the static-mount banner reachable via F6/landmark
-          navigation. role="status" + aria-live="polite" on the inner
-          dismissal-state container so SR users get a separate
-          announcement when content changes (dismissed=true → hidden).
-          Pre-R3.5 the banner was only announced via role="status" on
-          mount, which NVDA + VoiceOver drop for static content. */}
-      {/* R4.3 M-2 — explicit block wrapper instead of
-          `className="contents"`. See sibling stale-draft-banner.tsx
-          for the WebKit < 17.4 rationale. */}
-      <div role="status" aria-live="polite">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1">
-          {/* R3.1 C-1 — explicit text-foreground on title overrides
-              inherited text-warning-foreground (calibrated for filled
-              bg-warning, not bg-warning-surface). Body uses muted-fg
-              which sits on bg-warning-surface at AA contrast. */}
-          <p
-            id="starter-edit-banner-title"
-            className="font-medium text-foreground"
-          >
-            {t('starterEditBannerTitle')}
-          </p>
-          <p className="mt-1 text-muted-foreground">
-            {t('starterEditBannerBody')}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={dismiss}
-          className="shrink-0 rounded-md p-1 text-foreground hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={t('starterEditBannerDismiss', { name: templateName })}
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
-      </div>
+    <section aria-labelledby="starter-edit-banner-title" className="mb-4">
+      <Alert
+        tone="warning"
+        role="status"
+        titleId="starter-edit-banner-title"
+        title={t('starterEditBannerTitle')}
+        action={
+          <IconButton
+            icon="x"
+            variant="ghost"
+            touchHeight
+            label={t('starterEditBannerDismiss', { name: templateName })}
+            onClick={dismiss}
+          />
+        }
+      >
+        {t('starterEditBannerBody')}
+      </Alert>
     </section>
   );
 }

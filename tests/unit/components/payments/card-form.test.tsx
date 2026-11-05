@@ -203,6 +203,11 @@ describe('<CardForm>', () => {
     });
     expect(screen.getByTestId('pay-sheet-card-load-error')).toBeTruthy();
     expect(screen.getByTestId('pay-sheet-card-load-retry')).toBeTruthy();
+    // PR O — AURA's Alert in the danger tone, the retry as its action.
+    const alert = screen.getByTestId('pay-sheet-card-load-error');
+    expect(alert).toHaveAttribute('role', 'alert');
+    expect(alert).toHaveClass('aura-alert', 'aura-alert--danger');
+    expect(alert.querySelector('.aura-alert__action [data-testid="pay-sheet-card-load-retry"]')).not.toBeNull();
   });
 
   it('submit with requires_action result calls onRequiresAction', async () => {

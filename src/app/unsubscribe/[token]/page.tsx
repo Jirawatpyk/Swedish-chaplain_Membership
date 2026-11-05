@@ -29,6 +29,7 @@ import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
 import { getTranslations } from 'next-intl/server';
 import { AlertCircle, CheckCircle2, Clock, Info, XCircle } from 'lucide-react';
+import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 
 import { peekTokenLang } from '@/modules/broadcasts';
 import { resolveTenantDisplayName } from '@/lib/broadcasts-route-helpers';
@@ -169,7 +170,7 @@ export default async function UnsubscribePage({
   const mailtoLink = (): React.ReactNode => (
     <a
       href={`mailto:${supportEmail}`}
-      className="inline-block py-1 font-medium text-foreground underline underline-offset-4 hover:text-primary focus:text-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      className="inline-block py-1 font-medium underline underline-offset-4 [overflow-wrap:anywhere]"
     >
       {supportEmail}
     </a>
@@ -184,15 +185,15 @@ export default async function UnsubscribePage({
   > = {
     success: {
       Icon: CheckCircle2,
-      className: 'text-green-600 dark:text-green-400',
+      className: 'text-[var(--aura-fg-positive)]',
     },
-    already: { Icon: Info, className: 'text-muted-foreground' },
+    already: { Icon: Info, className: 'text-[var(--aura-fg-secondary)]' },
     error: {
       Icon: AlertCircle,
-      className: 'text-yellow-600 dark:text-yellow-400',
+      className: 'text-[var(--aura-fg-warning)]',
     },
-    invalid: { Icon: XCircle, className: 'text-muted-foreground' },
-    rate_limited: { Icon: Clock, className: 'text-muted-foreground' },
+    invalid: { Icon: XCircle, className: 'text-[var(--aura-fg-secondary)]' },
+    rate_limited: { Icon: Clock, className: 'text-[var(--aura-fg-secondary)]' },
   };
   const { Icon: StateIcon, className: stateIconColor } =
     STATE_ICON[outcome.state];
@@ -208,83 +209,84 @@ export default async function UnsubscribePage({
       lang={locale}
       className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center p-6 text-center"
     >
-      <article className="w-full rounded-lg border border-border bg-card p-8 shadow-sm">
+      {/* PR O — AURA's Card (from /server), as the sibling test-copy page. */}
+      <Card className="w-full">
         <StateIcon
           className={`mx-auto mb-4 h-12 w-12 ${stateIconColor}`}
           aria-hidden="true"
         />
         {outcome.state === 'success' ? (
           <>
-            <h1 className="mb-4 text-2xl font-semibold">
+            <h1 className="mb-4 aura-text-h2 leading-snug">
               {t('success.heading')}
             </h1>
-            <p className="mb-3 text-base text-foreground">
+            <p className="mb-3 text-base">
               {t('success.body', {
                 tenantDisplayName: outcome.tenantDisplayName,
               })}
             </p>
-            <p className="mb-3 text-base text-foreground">
+            <p className="mb-3 text-base">
               {t('success.transactional')}
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-[var(--aura-fg-secondary)]">
               {t.rich('success.contact', { email: mailtoLink })}
             </p>
           </>
         ) : outcome.state === 'already' ? (
           <>
-            <h1 className="mb-4 text-2xl font-semibold">
+            <h1 className="mb-4 aura-text-h2 leading-snug">
               {t('already.heading')}
             </h1>
-            <p className="mb-3 text-base text-foreground">
+            <p className="mb-3 text-base">
               {t('already.body', {
                 tenantDisplayName: outcome.tenantDisplayName,
               })}
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-[var(--aura-fg-secondary)]">
               {t.rich('already.contact', { email: mailtoLink })}
             </p>
           </>
         ) : outcome.state === 'error' ? (
           <>
-            <h1 className="mb-4 text-2xl font-semibold">
+            <h1 className="mb-4 aura-text-h2 leading-snug">
               {t('error.heading')}
             </h1>
-            <p className="mb-3 text-base text-foreground">
+            <p className="mb-3 text-base">
               {t('error.body')}
             </p>
             <p className="mb-3">
               <a
                 href={retryHref}
-                className="inline-flex min-h-11 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className={buttonClass({ variant: 'primary', touchHeight: true })}
               >
                 {t('error.tryAgain')}
               </a>
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-[var(--aura-fg-secondary)]">
               {t.rich('error.contact', { email: mailtoLink, tenantDisplayName })}
             </p>
           </>
         ) : outcome.state === 'rate_limited' ? (
           <>
-            <h1 className="mb-4 text-2xl font-semibold">
+            <h1 className="mb-4 aura-text-h2 leading-snug">
               {t('rateLimited.heading')}
             </h1>
-            <p className="mb-3 text-base text-foreground">
+            <p className="mb-3 text-base">
               {t('rateLimited.body')}
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-[var(--aura-fg-secondary)]">
               {t.rich('rateLimited.contact', { email: mailtoLink, tenantDisplayName })}
             </p>
           </>
         ) : (
           <>
-            <h1 className="mb-4 text-2xl font-semibold">
+            <h1 className="mb-4 aura-text-h2 leading-snug">
               {t('invalid.heading')}
             </h1>
-            <p className="mb-3 text-base text-foreground">
+            <p className="mb-3 text-base">
               {t('invalid.body')}
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-[var(--aura-fg-secondary)]">
               {t.rich('invalid.contact', { email: mailtoLink, tenantDisplayName })}
             </p>
           </>
@@ -292,7 +294,7 @@ export default async function UnsubscribePage({
         {/* Privacy notice (GDPR Art. 13/14 transparency) — every state,
             when the tenant has published one. */}
         {privacyPolicyUrl ? (
-          <p className="mt-6 text-sm text-muted-foreground">
+          <p className="mt-6 text-sm text-[var(--aura-fg-secondary)]">
             {t.rich('privacyLine', {
               tenantDisplayName,
               link: (chunks) => (
@@ -324,10 +326,10 @@ export default async function UnsubscribePage({
             </a>
           </p>
         ) : null}
-      </article>
+      </Card>
     </main>
   );
 }
 
 const EXTERNAL_LINK_CLASS =
-  'underline underline-offset-2 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 inline-block py-1';
+  'inline-block py-1 underline underline-offset-2 text-[var(--aura-fg-secondary)]';

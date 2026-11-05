@@ -54,6 +54,8 @@ describe('<YearInCyclePill> (F8 T220 / Phase 8 R5 I-11)', () => {
     });
     expect(screen.getByText('Year 2 of 3')).toBeInTheDocument();
     expect(screen.getByText('Quarterly review')).toBeInTheDocument();
+    // PR O — the year chip is AURA's neutral Badge.
+    expect(screen.getByText('Year 2 of 3')).toHaveClass('aura-badge');
   });
 
   it('full variant renders pill + task type + company name', () => {
@@ -67,6 +69,8 @@ describe('<YearInCyclePill> (F8 T220 / Phase 8 R5 I-11)', () => {
     expect(screen.getByText('Year 2 of 3')).toBeInTheDocument();
     expect(screen.getByText('Quarterly review')).toBeInTheDocument();
     expect(screen.getByText('Fogmaker AB')).toBeInTheDocument();
+    // PR O — AURA's neutral Badge, not a hand-built pill.
+    expect(screen.getByText('Quarterly review').closest('.aura-badge')).not.toBeNull();
   });
 
   it('full variant exposes the canonical aria-label', () => {

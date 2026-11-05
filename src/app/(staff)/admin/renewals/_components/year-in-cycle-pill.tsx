@@ -26,6 +26,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { Badge } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 
 export interface YearInCyclePillProps {
@@ -72,8 +73,10 @@ export function YearInCyclePill({
 
   if (variant === 'full' && memberCompanyName !== undefined) {
     return (
-      <span
-        className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground"
+      // PR O — AURA's neutral Badge, not a hand-built pill.
+      <Badge
+        tone="neutral"
+        className="gap-1.5"
         aria-label={t('aria_label', {
           year: yearInCycle,
           total: totalYears,
@@ -89,10 +92,10 @@ export function YearInCyclePill({
         )}
         <span>{taskTypeLabel}</span>
         <span aria-hidden>·</span>
-        <span className="font-normal text-muted-foreground">
+        <span className="font-normal text-[var(--aura-fg-secondary)]">
           {memberCompanyName}
         </span>
-      </span>
+      </Badge>
     );
   }
 
@@ -128,14 +131,14 @@ export function YearInCyclePill({
       aria-label={compactAriaLabel}
     >
       {label !== null && (
-        <span aria-hidden className="rounded bg-muted px-1.5 py-0.5 font-medium text-muted-foreground">
+        <Badge tone="neutral" aria-hidden>
           {label}
-        </span>
+        </Badge>
       )}
       <span
         aria-hidden
         title={taskTypeLabel}
-        className={cn('text-foreground', labelClassName)}
+        className={cn('text-[var(--aura-fg-primary)]', labelClassName)}
       >
         {taskTypeLabel}
       </span>

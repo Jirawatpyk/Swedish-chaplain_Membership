@@ -60,10 +60,10 @@ describe('StaffNav (spec 122 US1)', () => {
 
   it('keeps a badge count inside the link\'s accessible name, and renders none at 0', () => {
     const { unmount } = renderNav({ navBadgeCounts: { '/admin/change-requests': 3 } });
-    expect(screen.getByRole('link', { name: 'Change requests 3 pending' })).toHaveAttribute(
-      'href',
-      '/admin/change-requests',
-    );
+    const link = screen.getByRole('link', { name: 'Change requests 3 pending' });
+    expect(link).toHaveAttribute('href', '/admin/change-requests');
+    // PR O — the count is AURA's Badge, not a hand-built bubble.
+    expect(link.querySelector('.aura-badge')).toHaveTextContent('3');
     unmount();
     renderNav({ navBadgeCounts: { '/admin/change-requests': 0 } });
     expect(screen.getByRole('link', { name: 'Change requests' })).toBeInTheDocument();

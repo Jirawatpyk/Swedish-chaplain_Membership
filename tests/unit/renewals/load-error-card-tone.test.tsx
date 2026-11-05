@@ -22,9 +22,10 @@ describe('<LoadErrorCard> tone', () => {
     const { container } = render(<LoadErrorCard message="Couldn't load" />);
     const alert = screen.getByRole('alert');
     expect(alert).toHaveAttribute('aria-live', 'assertive');
-    expect(screen.getByText("Couldn't load")).toHaveClass('text-destructive');
-    const icon = container.querySelector('svg[aria-hidden="true"]');
-    expect(icon).toHaveClass('text-destructive');
+    // PR O — AURA's EmptyState in the danger tone, framed (the old Card).
+    expect(alert).toHaveClass('aura-empty', 'is-danger', 'is-bordered');
+    expect(alert).toHaveTextContent("Couldn't load");
+    expect(container.querySelector('.aura-empty__icon')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('tone="muted" renders a polite status notice instead of an assertive alert', () => {
@@ -34,12 +35,10 @@ describe('<LoadErrorCard> tone', () => {
     expect(screen.queryByRole('alert')).toBeNull();
     const status = screen.getByRole('status');
     expect(status).toHaveAttribute('aria-live', 'polite');
-    expect(
-      screen.getByText("Couldn't load these figures right now."),
-    ).toHaveClass('text-muted-foreground');
-    const icon = container.querySelector('svg[aria-hidden="true"]');
-    expect(icon).toHaveClass('text-muted-foreground');
-    expect(icon).not.toHaveClass('text-destructive');
+    expect(status).toHaveClass('aura-empty');
+    expect(status).not.toHaveClass('is-danger');
+    expect(status).toHaveTextContent("Couldn't load these figures right now.");
+    expect(container.querySelector('.aura-empty__icon')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('tone="muted" composes with card={false} (bare inline variant)', () => {
@@ -49,5 +48,7 @@ describe('<LoadErrorCard> tone', () => {
     const status = screen.getByRole('status');
     expect(status).toHaveAttribute('aria-live', 'polite');
     expect(status.tagName).toBe('DIV');
+    expect(status).toHaveClass('aura-empty');
+    expect(status).not.toHaveClass('is-bordered');
   });
 });

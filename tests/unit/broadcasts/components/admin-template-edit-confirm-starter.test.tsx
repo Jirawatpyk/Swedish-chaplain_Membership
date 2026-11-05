@@ -50,6 +50,11 @@ describe('<AdminTemplateEditConfirmStarter> — R2.1 H-test-5', () => {
     expect(
       screen.getByText(/starter template/i),
     ).toBeInTheDocument();
+    // PR O — AURA's Alert in the warning tone, a polite status named by its
+    // title (no interrupting alert role).
+    const banner = screen.getByRole('status');
+    expect(banner).toHaveClass('aura-alert', 'aura-alert--warning');
+    expect(banner).toHaveAccessibleName(enMessages.admin.broadcasts.templates.starterEditBannerTitle);
   });
 
   it('dismissal of template A does NOT hide banner for template B (per-templateId scoping)', () => {
