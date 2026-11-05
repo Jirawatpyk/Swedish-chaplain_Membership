@@ -521,7 +521,8 @@
           "contactsDetached": "Detach requests accepted by Resend",
           "contactsAlreadyAbsent": "Already absent from audience",
           "contactsFailed": "Contacts failed",
-          "countsNote": "Each contact is counted once. Resend accepts a detach request whether or not the address was in the audience, so the first figure may include addresses that were already absent. Cite it as detach requests Resend accepted; do not add the already-absent figure to it."
+          "countsNote": "Each contact is counted once. Resend accepts a detach request whether or not the address was in the audience, so the first figure may include addresses that were already absent. Cite it as detach requests Resend accepted; do not add the already-absent figure to it.",
+          "notAttemptedNote": "Not attempted: the member's addresses were already scrubbed by an earlier pass, so this pass could send no detach request, and the first pass's detach may never have run. Search the Resend dashboard for the member's address from the DSR intake record and detach it by hand."
         },
         "documentKind": {
           "invoice": "Invoice",

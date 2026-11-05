@@ -521,7 +521,8 @@
           "contactsDetached": "Borttagningsbegäranden som Resend godtog",
           "contactsAlreadyAbsent": "Redan borta från målgrupp",
           "contactsFailed": "Misslyckade kontakter",
-          "countsNote": "Varje kontakt räknas en gång. Resend godtar en borttagningsbegäran oavsett om adressen fanns i målgruppen, så den första siffran kan omfatta adresser som redan var borta. Ange den som borttagningsbegäranden som Resend godtog; addera inte antalet redan borta till det."
+          "countsNote": "Varje kontakt räknas en gång. Resend godtar en borttagningsbegäran oavsett om adressen fanns i målgruppen, så den första siffran kan omfatta adresser som redan var borta. Ange den som borttagningsbegäranden som Resend godtog; addera inte antalet redan borta till det.",
+          "notAttemptedNote": "Inte försökt: medlemmens adresser hade redan rensats i en tidigare körning, så den här körningen kunde inte skicka någon borttagningsbegäran, och den första körningens borttagning kan ha uteblivit. Sök efter medlemmens adress från DSR-ärendet i Resends instrumentpanel och ta bort den manuellt."
         },
         "documentKind": {
           "invoice": "Faktura",

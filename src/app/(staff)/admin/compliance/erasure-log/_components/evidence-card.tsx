@@ -241,6 +241,17 @@ export function EvidenceCard({
               <p className="text-xs text-[var(--aura-fg-secondary)]">
                 {t('fields.countsNote')}
               </p>
+              {/*
+                Spec 140 s3 review round 2 (R2-A) — `not_attempted` is a re-drive
+                that met only scrub sentinels: its zeros are not "nothing to
+                detach". The raw token stays in the field above (the DPO matches
+                it to the audit row); this says what to do about it.
+              */}
+              {row.subprocessorOutcome.resendOutcome === 'not_attempted' ? (
+                <p className="text-xs text-[var(--aura-fg-secondary)]">
+                  {t('fields.notAttemptedNote')}
+                </p>
+              ) : null}
               </>
             ) : (
               <p className="text-sm text-[var(--aura-fg-secondary)]">{t('subprocessorNone')}</p>
