@@ -2396,6 +2396,28 @@ Not fixed, with the reason:
 - code-review #8 (a shared `withTimeout`): seven sites across modules; a follow-up, not this slice.
 - reliability N1 (`as const` on the quota list), N3 (the port throws, like its neighbours).
 
+### Slice 3 — a look at the round-4 fixes past the cap (the maintainer's call; `/code-review high 1a1bfc514..735c962a2`: 10; reliability MERGEABLE: 2 LOW, 1 NIT; 5 Nov 2026)
+
+Fixed (RED `3c5f50f0d`, GREEN `ba086bf2a`):
+- The caller sets the read's timeout: `hasSubprocessorPropagationInTx(tx, slug, memberId, statementTimeoutMs)`, and the use case passes `PRIOR_PROPAGATION_READ_BUDGET_MS`, so one constant drives both bounds; the port names the tx-wide side effect (code-review #2/#3, reliability L1).
+- The read runs only with two budgets left, so the audit write after it keeps one (code-review #9); a 57014 cancel logs as `reason: timeout` (code-review #5).
+- The gate requires this method's fenced SELECT to be recorded, and accepts the bare-number `SET LOCAL statement_timeout = <ms>` form (code-review #6/#7); the timer-count line that proved nothing is gone (code-review #8).
+- The runbook calls any `not_attempted` after an earlier outcome row an echo, with no log needed (code-review #4).
+
+Not fixed, with the reason:
+- **code-review #1 (the pooler drops the 5 s `statement_timeout` that `src/lib/db.ts` sets at connect, so every `runInTenant` tx is unbounded; measured `0` on the pooled dev connection):** the root fix belongs in `runInTenant` (a `SET LOCAL statement_timeout` beside its other `SET LOCAL`s) and touches every path, money included; a follow-up issue, not this slice.
+- code-review #10 (the cell lives in `find-stuck-erasures.test.ts`): recorded.
+
+### Slice 3 — Verify on the final head: the maintainer's `/verify` (5 Nov 2026, on `ba086bf2a`, on :3401 because another session held :3400): PASS
+- Safety: 0 approved rows, 0 unsettled orphans, `General` only.
+- DT4: member A's contacts stored mixed-case in our DB, the sink segment holding them lowercase → erase 200; the segment lists 0, both contacts still answer 200; `subprocessor_erasure_propagated` `ok`, removed 2; two `contact_detached` lines.
+- Re-drive echo: erase A again → 200; the new row reads `already_propagated` 0/0/0; no `contact_detached` line; `erased_at` keeps the first instant.
+- Re-drive without an earlier row: a seeded stuck member S → `reconcile-erasures` `{processed:1, reconciled:1}`; S's row reads `not_attempted` 0/0/0; stuck count 1 → 0; a wrong Bearer → 401.
+- DT5: reclaim → 200 `{… truncated:false, deferredDeletes:0}`; the tick log carries both and `durationMs`; a wrong Bearer → 401.
+- Evidence card, EN/TH/SV: A and S both show "Detach requests accepted by Resend" (and TH / SV); only S shows the `not_attempted` note; no `MISSING_MESSAGE`. Observation: the card's badge reads "Complete" while the sub-processor outcome is `not_attempted` (the badge follows `member_erased`).
+- Log scan, 208 lines: no address, no `Failed query`, no `params:`. Teardown: seeds, the segment and its contacts deleted by id; `General` only.
+- DT1–DT3 are not drivable without a send; they rest on their cells and the measurements (§ review round 2).
+
 #### Slice 3 — test plan rows (R2-G; every mechanism a reviewer asked for, pointing at the test that went red)
 
 | Mechanism | Test (RED commit) |
@@ -2420,6 +2442,7 @@ Not fixed, with the reason:
 | R3-A the earlier-propagation read is bounded | erase-member unit "skipped when the deadline leaves no room" / "abandoned when it outlasts its budget" (`378e756dc`) |
 | R4-A the database bounds the read | `find-stuck-erasures.test.ts` "sets its own statement_timeout" (`b086aede4`) |
 | R4-B skip / timeout logged with a reason | erase-member unit warn cells (`4d976e2bb`) |
+| R5 caller-set timeout, audit-write reserve, 57014 as timeout, the gate records the SELECT | erase-member unit, `find-stuck-erasures` "1500ms", the SQL-shape gate (`3c5f50f0d`) |
 
 #### Housekeeping
 - Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
