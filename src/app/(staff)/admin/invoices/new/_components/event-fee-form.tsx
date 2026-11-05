@@ -69,6 +69,7 @@ import {
   TextField,
   Textarea,
   buttonClass,
+  comboboxFilter,
   type ComboboxOption,
 } from '@jirawatpyk/aura-react';
 import {
@@ -92,6 +93,7 @@ import {
 import { AS_PAID_ERROR_CODES } from './as-paid-error-codes';
 import { isReadOnlyRefusal, readProblemCode } from '@/lib/http/read-only-refusal';
 import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from '../../_components/unknown-outcome';
+import { useEventSearch } from './use-event-search';
 // Wave-4 S14 — shared client-safe Asia/Bangkok "today" helper.
 import { bangkokTodayIso } from '@/lib/bangkok-today';
 import { formatSatangAmount } from '@/lib/format-thb';
@@ -440,12 +442,19 @@ function AsPaidPaymentFields({
 
 export function EventFeeForm({
   events,
+  eventSearchBefore,
   initialEventId,
   initialRegistrationId,
   taxAtPayment,
   vatRateBps,
 }: {
   readonly events: readonly EventOption[];
+  /**
+   * #732 — the oldest preloaded event's start (ISO) when the page preloaded a
+   * full page, so typed text searches the server for older events; `null`
+   * when every event is preloaded (no server search).
+   */
+  readonly eventSearchBefore: string | null;
   /** Pre-selected event from a `?eventRegistrationId=` deep-link. */
   readonly initialEventId?: string | undefined;
   /** Pre-selected attendee from the same deep-link. */
@@ -515,15 +524,50 @@ export function EventFeeForm({
     setTodayBkk(today);
   }, []);
 
-  const eventOptions: ComboboxOption[] = useMemo(
-    () =>
-      events.map((e) => ({
-        value: e.eventId,
-        label: e.label,
-        ...(e.description ? { description: e.description } : {}),
-      })),
-    [events],
-  );
+  // #732 — typed text searches the server, so an event older than the
+  // preloaded 200 can be found. The picked event is remembered so its label
+  // survives when the results change.
+  const eventSearch = useEventSearch(eventSearchBefore);
+  const { typed: eventTyped, results: eventResults, loading: eventSearching } = eventSearch;
+  const [pickedEvent, setPickedEvent] = useState<EventOption | null>(null);
+  const { eventOptions, localMatchCount } = useMemo(() => {
+    const toOption = (e: EventOption): ComboboxOption => ({
+      value: e.eventId,
+      label: e.label,
+      ...(e.description ? { description: e.description } : {}),
+    });
+    if (eventTyped === '') {
+      // AURA shows the value's label from the options, so a picked event
+      // from an earlier search stays listed while nothing is typed.
+      const selected =
+        eventId === '' || events.some((e) => e.eventId === eventId) || pickedEvent?.eventId !== eventId
+          ? null
+          : pickedEvent;
+      return {
+        eventOptions: (selected ? [selected, ...events] : events).map(toOption),
+        localMatchCount: 0,
+      };
+    }
+    // Loaded events match at once, with AURA's own filter (label and
+    // description, Thai-aware); the server's older ones follow.
+    const local = events.map(toOption).filter((o) => comboboxFilter(o, eventTyped));
+    const server = eventResults.filter((r) => !local.some((o) => o.value === r.eventId)).map(toOption);
+    return { eventOptions: [...local, ...server], localMatchCount: local.length };
+  }, [events, eventTyped, eventResults, eventId, pickedEvent]);
+
+  function eventPickerEmptyText(): string {
+    if (eventSearch.failed) return t('eventPicker.searchFailed');
+    return t('eventPicker.empty');
+  }
+
+  function pickEvent(next: string) {
+    const option =
+      events.find((e) => e.eventId === next) ?? eventSearch.results.find((e) => e.eventId === next) ?? null;
+    setPickedEvent(option);
+    // AURA clears its own text on a pick without calling onSearch('').
+    eventSearch.reset();
+    handleEventChange(next);
+  }
 
   function handleEventChange(next: string) {
     setEventId(next);
@@ -961,7 +1005,18 @@ export function EventFeeForm({
         noValidate
         className="flex flex-col gap-[var(--aura-space-6)]"
       >
-        {/* 1. Event picker */}
+        {/* 1. Event picker — #732: a focus starts with no typed text, as
+            AURA's own field does after a blur or close. */}
+        <div
+          onFocusCapture={() => eventSearch.reset()}
+          onKeyDownCapture={(e) => {
+            if (e.key === 'Escape') eventSearch.reset();
+          }}
+          onPointerDownCapture={(e) => {
+            // The chevron and clear buttons: AURA drops its query on both.
+            if (e.target instanceof Element && e.target.closest('button')) eventSearch.reset();
+          }}
+        >
         <Combobox
           id="eventId"
           label={t('eventPicker.label')}
@@ -972,11 +1027,22 @@ export function EventFeeForm({
           limit={Math.max(200, eventOptions.length)}
           touchHeight
           value={eventId || null}
-          onChange={(v) => handleEventChange(v ?? '')}
+          onChange={(v) => pickEvent(v ?? '')}
+          // #732 — with `onSearch` AURA stops filtering and shows the
+          // options as given (the memo above filters and adds results).
+          onSearch={eventSearch.onSearch}
+          // AURA hides every option while loading, so only while nothing
+          // loaded matches yet.
+          loading={eventSearching && localMatchCount === 0}
+          loadingText={t('eventPicker.searching')}
           placeholder={noEvents ? t('eventPicker.noEvents') : t('eventPicker.placeholder')}
-          emptyText={t('eventPicker.empty')}
+          emptyText={eventPickerEmptyText()}
+          {...(eventSearch.failed && eventOptions.length > 0
+            ? { hint: t('eventPicker.searchFailed') }
+            : {})}
           disabled={noEvents}
         />
+        </div>
 
         {/* 2. Attendee picker */}
         {eventId !== '' && (

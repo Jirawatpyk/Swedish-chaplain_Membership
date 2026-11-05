@@ -17,7 +17,7 @@
  * repository accepts a `TenantTx` executor — never the root `db` — to
  * prevent accidental RLS-bypass.
  */
-import { and, asc, desc, eq, ilike, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, isNotNull, lte, sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
 import {
@@ -258,8 +258,14 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
             // filters the remaining candidate set in-memory. Upgrade
             // to a pg_trgm GIN on `events.name` (mirroring F3 members)
             // if p95 ever exceeds 500ms — F6.2 backlog.
-            conditions.push(ilike(events.name, `%${trimmed}%`));
+            // #732 — `\`, `%` and `_` in the typed text match
+            // literally (Postgres' default LIKE escape is `\`), as in
+            // the members and directory repos.
+            conditions.push(ilike(events.name, `%${trimmed.replace(/[\\%_]/g, '\\$&')}%`));
           }
+        }
+        if (input.startedOnOrBefore !== undefined) {
+          conditions.push(lte(events.startDate, new Date(input.startedOnOrBefore)));
         }
         const whereClause = and(...conditions);
 

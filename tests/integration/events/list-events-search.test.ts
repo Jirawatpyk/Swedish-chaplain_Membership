@@ -80,6 +80,23 @@ describe('F6.1 listEvents searchQuery (live Neon)', () => {
     expect(r.value.pagination.totalCount).toBe(1);
   });
 
+  it('#732 — `%` and `_` in the search text match literally, not every row', async () => {
+    for (const q of ['%', '_']) {
+      const r = await runListEvents(tenant.ctx.slug, {
+        page: 1,
+        pageSize: 25,
+        includeArchived: false,
+        partnerBenefitOnly: false,
+        culturalEventOnly: false,
+        categoryFilter: null,
+        searchQuery: q,
+      });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.value.items).toHaveLength(0);
+    }
+  });
+
   it('search is case-insensitive', async () => {
     const r = await runListEvents(tenant.ctx.slug, {
       page: 1,

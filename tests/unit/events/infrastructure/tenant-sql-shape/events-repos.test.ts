@@ -38,6 +38,9 @@ const { makeDrizzleCsvImportRecordsRepository } = await import(
 const { drizzleEventAttendeesQueryStrict } = await import(
   '@/modules/events/infrastructure/drizzle-event-attendees-by-member'
 );
+const { makeDrizzleEventsRepository } = await import(
+  '@/modules/events/infrastructure/drizzle-events-repository'
+);
 
 const TABLES = tenantScopedTables();
 const DAY = new Date('2026-01-01T00:00:00.000Z');
@@ -76,6 +79,30 @@ describe('events repos — tenant predicate on every statement (130 s7)', () => 
     );
     expect(rec.statements.length).toBe(1);
     expect(violationsOf(rec.statements)).toEqual([]);
+  });
+
+  // #732 — the invoice event picker searches by name through `list`.
+  it('events list with a name search: fenced, and LIKE wildcards in the text are literal', async () => {
+    rec.statements.length = 0;
+    await makeDrizzleEventsRepository(rec.db as never).list({
+      tenantId: T,
+      includeArchived: false,
+      partnerBenefitOnly: false,
+      culturalEventOnly: false,
+      categoryFilter: null,
+      offset: 0,
+      pageSize: 25,
+      searchQuery: '  50%_off\\ ',
+      startedOnOrBefore: '2025-01-31T10:00:00.000Z',
+    } as never);
+    expect(rec.statements.length).toBe(2);
+    expect(violationsOf(rec.statements)).toEqual([]);
+    for (const s of rec.statements) {
+      expect(s.sql).toMatch(/ilike/i);
+      expect(s.params).toContain('%50\\%\\_off\\\\%');
+      expect(s.sql).toMatch(/"start_date" <= \$/);
+      expect(s.params).toContain('2025-01-31T10:00:00.000Z');
+    }
   });
 
   it('every .where( names tenant_id, bar the admin repo cross-tenant reads', () => {

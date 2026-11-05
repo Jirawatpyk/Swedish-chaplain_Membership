@@ -51,6 +51,9 @@ import {
 import enMessages from '@/i18n/messages/en.json';
 import svMessages from '@/i18n/messages/sv.json';
 
+/** The oldest preloaded event's start: the page sends it when it loaded a full 200. */
+const SEARCH_BEFORE = '2026-01-15T03:00:00.000Z';
+
 const events: readonly EventOption[] = [
   { eventId: 'ev-1', label: 'Annual Gala (2026-06-01)' },
 ];
@@ -122,6 +125,7 @@ function renderForm(
     vatRateBps?: number | null;
     locale?: 'en' | 'sv';
     events?: readonly EventOption[];
+    eventSearchBefore?: string | null;
   } = {},
 ) {
   const locale = opts.locale ?? 'en';
@@ -129,6 +133,7 @@ function renderForm(
     <NextIntlClientProvider locale={locale} messages={locale === 'sv' ? svMessages : enMessages}>
       <EventFeeForm
         events={opts.events ?? events}
+        eventSearchBefore={opts.eventSearchBefore === undefined ? SEARCH_BEFORE : opts.eventSearchBefore}
         taxAtPayment={opts.taxAtPayment ?? false}
         vatRateBps={opts.vatRateBps === undefined ? 700 : opts.vatRateBps}
         {...(opts.initialEventId ? { initialEventId: opts.initialEventId } : {})}
@@ -216,6 +221,176 @@ describe('EventFeeForm — a deep-linked event outside the newest 200 (#54)', ()
     );
     expect(option).toBeDefined();
     expect(option).toHaveTextContent('From your link (not in the recent list)');
+  });
+});
+
+describe('EventFeeForm — the event picker searches the server (#732)', () => {
+  // useTransition + fetch need real timers (this file's default is fake).
+  beforeEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useFakeTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const picker = enMessages.admin.invoices.eventFeeForm.eventPicker as Record<string, string>;
+  const oldEvent = { eventId: 'ev-old', name: 'Old Breakfast', startDate: '2025-03-04T02:00:00.000Z' };
+
+  /** The list search answers `search`; the attendee route answers `rows`. */
+  function stubFetch(search: (url: URL) => Response) {
+    const fn = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = new URL(String(input), 'https://app.test');
+      if (url.pathname === '/api/admin/events') return search(url);
+      if (url.pathname.startsWith('/api/admin/events/')) {
+        return new Response(JSON.stringify({ registrations: [matchedRegistration] }), { status: 200 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fn);
+    return fn;
+  }
+  const listOf = (items: unknown[]) =>
+    new Response(JSON.stringify({ items, pagination: { page: 1, pageSize: 25, totalCount: items.length } }), {
+      status: 200,
+    });
+  const searchCalls = (fn: ReturnType<typeof stubFetch>) =>
+    fn.mock.calls.map((c) => new URL(String(c[0]), 'https://app.test')).filter((u) => u.pathname === '/api/admin/events');
+
+  function typeInPicker(text: string): HTMLInputElement {
+    const input = document.getElementById('eventId') as HTMLInputElement;
+    fireEvent.click(input);
+    fireEvent.change(input, { target: { value: text } });
+    return input;
+  }
+
+  it('typing searches once after the debounce, and an event outside the loaded list can be picked', async () => {
+    const fn = stubFetch(() => listOf([oldEvent]));
+    renderForm();
+    typeInPicker('Old');
+    const option = await screen.findByRole('option', { name: /Old Breakfast \(2025-03-04\)/ });
+    const calls = searchCalls(fn);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.searchParams.get('q')).toBe('Old');
+    expect(calls[0]?.searchParams.get('pageSize')).toBe('25');
+    expect(calls[0]?.searchParams.get('startedOnOrBefore')).toBe(SEARCH_BEFORE);
+    fireEvent.click(option);
+    expect(document.getElementById('eventId')).toHaveValue('Old Breakfast (2025-03-04)');
+    expect(await screen.findByRole('button', { name: /Alice \(member\)/ })).toBeInTheDocument();
+    expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/admin/events/ev-old'))).toBe(true);
+  });
+
+  it('shows the searching text while the request runs', async () => {
+    let release: (r: Response) => void = () => {};
+    stubFetch(() => new Promise<Response>((r) => (release = r)) as unknown as Response);
+    renderForm();
+    typeInPicker('Old');
+    expect(await screen.findByText(picker.searching ?? '<missing eventPicker.searching>')).toBeInTheDocument();
+    release(listOf([]));
+  });
+
+  it('no match shows the empty text; a failed search shows the failed text', async () => {
+    stubFetch(() => listOf([]));
+    const { unmount } = renderForm();
+    typeInPicker('Nothing');
+    expect(await screen.findByText(picker.empty ?? '')).toBeInTheDocument();
+    unmount();
+    vi.unstubAllGlobals();
+    stubFetch(() => new Response('{}', { status: 500 }));
+    renderForm();
+    typeInPicker('Nothing');
+    expect(await screen.findByText(picker.searchFailed ?? '<missing eventPicker.searchFailed>')).toBeInTheDocument();
+  });
+
+  it('fewer than a full page preloaded (every event is listed) → typing filters locally, no server search', async () => {
+    const fn = stubFetch(() => listOf([oldEvent]));
+    renderForm({ eventSearchBefore: null });
+    typeInPicker('Gala');
+    expect(await screen.findByRole('option', { name: /Annual Gala/ })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(searchCalls(fn)).toHaveLength(0);
+  });
+
+  it('code-review — a picked event that does not match the typed text is not offered as a match', async () => {
+    stubFetch(() => listOf([]));
+    renderForm({ initialEventId: 'ev-1' });
+    typeInPicker('zzz');
+    expect(await screen.findByText(picker.empty ?? '')).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Annual Gala/ })).not.toBeInTheDocument();
+  });
+
+  it('code-review — Escape clears the typed text, so reopening lists every event', async () => {
+    stubFetch(() => listOf([]));
+    const two: EventOption[] = [
+      { eventId: 'ev-1', label: 'Annual Gala (2026-06-01)' },
+      { eventId: 'ev-2', label: 'Spring Breakfast (2026-04-01)' },
+    ];
+    renderForm({ events: two });
+    const input = typeInPicker('Gala');
+    await screen.findByRole('option', { name: /Annual Gala/ });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(await screen.findByRole('option', { name: /Spring Breakfast/ })).toBeInTheDocument();
+  });
+
+  it('UX M1 — loaded matches stay listed while the server search is still running', async () => {
+    stubFetch(() => new Promise<Response>(() => {}) as unknown as Response);
+    renderForm();
+    typeInPicker('Gala');
+    // Past the debounce: the search request is in flight (it never answers).
+    await new Promise((r) => setTimeout(r, 400));
+    expect(screen.getByRole('option', { name: /Annual Gala \(2026-06-01\)/ })).toBeInTheDocument();
+    expect(screen.queryByText(picker.searching ?? '')).not.toBeInTheDocument();
+  });
+
+  it('UX M2 — after a pick, reopening the picker lists every loaded event again', async () => {
+    stubFetch(() => listOf([oldEvent]));
+    const two: EventOption[] = [
+      { eventId: 'ev-1', label: 'Annual Gala (2026-06-01)' },
+      { eventId: 'ev-2', label: 'Spring Breakfast (2026-04-01)' },
+    ];
+    renderForm({ events: two });
+    typeInPicker('Old');
+    fireEvent.click(await screen.findByRole('option', { name: /Old Breakfast/ }));
+    const input = document.getElementById('eventId') as HTMLInputElement;
+    fireEvent.blur(input);
+    fireEvent.focus(input);
+    fireEvent.click(input);
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(await screen.findByRole('option', { name: /Spring Breakfast/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Annual Gala/ })).toBeInTheDocument();
+  });
+
+  it('UX L1 — a failed search says so even when loaded events match', async () => {
+    stubFetch(() => new Response('{}', { status: 500 }));
+    renderForm();
+    typeInPicker('Gala');
+    expect(await screen.findByText(picker.searchFailed ?? '')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Annual Gala/ })).toBeInTheDocument();
+  });
+
+  it('UX L2 — after a failed search, typing the same text again searches again', async () => {
+    let calls = 0;
+    const fn = stubFetch(() => (++calls === 1 ? new Response('{}', { status: 500 }) : listOf([oldEvent])));
+    renderForm();
+    typeInPicker('Old');
+    expect(await screen.findByText(picker.searchFailed ?? '')).toBeInTheDocument();
+    typeInPicker('Old ');
+    expect(await screen.findByRole('option', { name: /Old Breakfast/ })).toBeInTheDocument();
+    expect(searchCalls(fn).map((u) => u.searchParams.get('q'))).toEqual(['Old', 'Old']);
+  });
+
+  it('UX L3 — text over 100 characters is searched as its first 100, not refused', async () => {
+    const fn = stubFetch(() => listOf([]));
+    renderForm();
+    typeInPicker('x'.repeat(130));
+    expect(await screen.findByText(picker.empty ?? '')).toBeInTheDocument();
+    expect(searchCalls(fn)[0]?.searchParams.get('q')).toHaveLength(100);
+  });
+
+  it('a loaded event still matches by its date while the server finds nothing', async () => {
+    stubFetch(() => listOf([]));
+    renderForm();
+    typeInPicker('2026-06');
+    expect(await screen.findByRole('option', { name: /Annual Gala \(2026-06-01\)/ })).toBeInTheDocument();
   });
 });
 
