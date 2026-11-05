@@ -778,7 +778,7 @@ The cascade has two halves:
    not measured). So the `detached` count can include contacts that were
    already absent, and `already_absent` reads 0 for them: it counts only a 404.
    The end state is what the DSR needs (the address is in none of those
-   audiences), but the first number is not a record of what Resend held. When a
+   audiences, given the address was pushed lowercase — see RoPA 8a), but the first number is not a record of what Resend held. When a
    DSR asks, cite it as "audience detach requests Resend accepted", not as
    memberships that existed. Do not add the second number to it.
 
@@ -885,6 +885,30 @@ When the alert fires:
      back. Search the Resend dashboard (Audiences / Segments, then Contacts)
      for the member's email from the DSR intake record, and remove it from
      every audience it is still in.
+   - **`gatewayCode: invalid_identifier`** (`gatewayKind: permanent`; spec 140
+     slice 3) — the gateway refused before any request. If the logged
+     `audienceId` is not UUID-shaped, it IS the bad stored value: find the row
+     (as `neondb_owner`)
+
+     ```sql
+     SELECT tenant_id, broadcast_id FROM broadcasts
+     WHERE resend_audience_id IS NOT NULL
+       AND resend_audience_id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+     SELECT tenant_id, broadcast_id, resource_id FROM broadcast_orphaned_resend_ids
+     WHERE resource_type = 'audience' AND resource_id IS NOT NULL
+       AND resource_id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+     ```
+
+     and correct the value to the real Resend segment id or clear it. Until
+     then, **every later erasure that pairs with that id reads `partial`** on
+     it — for an unsettled orphan-table row that is every erasure in the tenant,
+     since each one is asked to detach from the tenant's open audience orphans
+     (residual 8d). If the logged `audienceId` IS
+     UUID-shaped, the member's address held a character unsafe in a URL path
+     (`/ ? # %` or a backslash; only `%` passes the members email validator).
+     Either way, nothing reached Resend: search the Resend dashboard for the
+     member's address from the DSR intake record and remove it from every
+     audience it is still in.
    - **`gatewayKind: retryable`** (retries exhausted) — Resend answered a transient error
      on every attempt inside the call's 10 s budget (spec 140 s2a: up to four
      attempts; `subKind: timeout` = Resend did not answer within 10 s). A non-JSON answer (an edge's or proxy's HTML page,
