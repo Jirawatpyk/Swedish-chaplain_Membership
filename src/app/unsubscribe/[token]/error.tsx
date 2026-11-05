@@ -101,7 +101,7 @@ export default function UnsubscribeErrorBoundary({
     >
       {/* PR O — AURA's Card and Button (this is a client boundary). */}
       <Card className="w-full">
-        <h1 className="mb-4 aura-text-h2 leading-snug">{copy.heading}</h1>
+        <h1 className="mb-4 aura-text-h2">{copy.heading}</h1>
         <p className="mb-3 text-base">{copy.body}</p>
         <p className="mb-4 text-sm">
           {email ? (
@@ -109,7 +109,7 @@ export default function UnsubscribeErrorBoundary({
               {copy.contactWith[0]}
               <a
                 href={`mailto:${email}`}
-                className="inline-block py-1 font-medium underline underline-offset-4 [overflow-wrap:anywhere]"
+                className="inline-block py-1 font-medium underline underline-offset-4 [overflow-wrap:anywhere] hover:text-[var(--aura-fg-primary)]"
               >
                 {email}
               </a>

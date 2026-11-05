@@ -64,6 +64,9 @@ describe('StaffNav (spec 122 US1)', () => {
     expect(link).toHaveAttribute('href', '/admin/change-requests');
     // PR O — the count is AURA's Badge, not a hand-built bubble.
     expect(link.querySelector('.aura-badge')).toHaveTextContent('3');
+    // UX review M1 — neutral, so it stays visible on the active row (the
+    // accent tint is the selected row's own colour).
+    expect(link.querySelector('.aura-badge')).toHaveClass('aura-badge--neutral');
     unmount();
     renderNav({ navBadgeCounts: { '/admin/change-requests': 0 } });
     expect(screen.getByRole('link', { name: 'Change requests' })).toBeInTheDocument();

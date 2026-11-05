@@ -62,8 +62,9 @@ function badgeNode(item: RenderedNavItem, t: Translate): ReactNode {
   const count = item.badgeCount;
   if (item.badge === undefined || typeof count !== 'number' || count <= 0) return undefined;
   return (
-    // PR O — AURA's Badge (accent), not a hand-built bubble.
-    <Badge tone="accent" className="tabular-nums">
+    // PR O — AURA's Badge, not a hand-built bubble. Neutral: the accent
+    // tint is the selected row's own colour, so it would vanish there.
+    <Badge tone="neutral" className="tabular-nums">
       {' '}
       {count}
       <span className="sr-only"> {t(item.badge.labelKey, { count })}</span>

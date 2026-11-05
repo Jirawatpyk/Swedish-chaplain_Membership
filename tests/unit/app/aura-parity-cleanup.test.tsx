@@ -41,7 +41,7 @@ describe('US1 shell', () => {
 
   it('the staff nav count badge is AURA’s Badge (PR O; was a hand-built pill)', () => {
     const file = src('src/components/layout/staff-nav.tsx');
-    expect(file).toMatch(/<Badge tone="accent"/);
+    expect(file).toMatch(/<Badge tone="neutral"/);
     expect(file).not.toContain('rounded-full bg-[var(--aura-status-progress-bg)]');
   });
 

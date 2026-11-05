@@ -13,21 +13,15 @@
  * the banner. localStorage key encodes the templateId so dismissing one
  * starter does not silence the warning for others.
  *
- * a11y (post-R3.5 + R4.1):
- *   - Outer `<section role="region" aria-labelledby="...">` keeps the
- *     banner reachable via F6 / landmark-navigation in screen readers
- *     even before any state change.
- *   - Inner `<div role="status" aria-live="polite">` announces the
- *     dismiss-state transition (banner removal) without interrupting
- *     focus. Static role="status" on the outer element is silently
- *     dropped by NVDA + VoiceOver, hence the wrapper split.
- *   - Title text uses explicit `text-foreground` to override inherited
- *     `text-warning-foreground` (calibrated for filled `bg-warning`,
- *     not the lighter `bg-warning-surface` used here).
- *   - Dismiss button uses `text-foreground` + `ring-ring` (R4.1 C-2)
- *     for ≥4.5:1 contrast on `bg-warning-surface` — `text-warning`
- *     on that surface measured ~2.6:1 (fails WCAG SC 1.4.3).
- *   - Dismiss button carries `aria-label` (close + template name).
+ * a11y (PR O, on AURA):
+ *   - A `<section aria-labelledby>` keeps the banner a landmark (F6 /
+ *     landmark navigation, R3.5).
+ *   - The banner is AURA's warning Alert as a `note`, named by its title:
+ *     it is on the page from mount, so it is not a live region (a status
+ *     mounted with its text is not announced anyway, review L1).
+ *   - The dismiss is our own IconButton, labelled with the template's name,
+ *     placed top right beside the Alert (AURA's `onDismiss` button is
+ *     always "Dismiss": stand-in until AURA #196).
  *   - On dismiss the component `return null`s (NOT hidden with the
  *     HTML `hidden` attribute); re-render after localStorage reset
  *     restores the banner because `useState` reads localStorage on
@@ -84,30 +78,29 @@ export function AdminTemplateEditConfirmStarter({
     return null;
   }
 
-  // PR O — AURA's Alert in the warning tone, a polite status named by its
-  // title (it should not interrupt). The section keeps the banner a landmark
-  // (R3.5 M-14). The dismiss stays our own IconButton because its label
-  // names the template, which AURA's `onDismiss` button ("Dismiss") cannot
-  // (handoff addendum 97, #196).
+  // PR O — AURA's Alert in the warning tone. The dismiss follows it in the
+  // reading order (title, body, dismiss) and sits top right, where AURA's
+  // own close button would be.
   return (
-    <section aria-labelledby="starter-edit-banner-title" className="mb-4">
+    <section aria-labelledby="starter-edit-banner-title" className="relative mb-4">
       <Alert
         tone="warning"
-        role="status"
+        role="note"
         titleId="starter-edit-banner-title"
         title={t('starterEditBannerTitle')}
-        action={
-          <IconButton
-            icon="x"
-            variant="ghost"
-            touchHeight
-            label={t('starterEditBannerDismiss', { name: templateName })}
-            onClick={dismiss}
-          />
-        }
+        className="pe-12"
       >
         {t('starterEditBannerBody')}
       </Alert>
+      {/* stand-in until AURA #196: AURA's `onDismiss` can't take this label. */}
+      <IconButton
+        icon="x"
+        variant="ghost"
+        touchHeight
+        className="absolute end-1 top-1"
+        label={t('starterEditBannerDismiss', { name: templateName })}
+        onClick={dismiss}
+      />
     </section>
   );
 }

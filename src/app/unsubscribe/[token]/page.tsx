@@ -170,7 +170,7 @@ export default async function UnsubscribePage({
   const mailtoLink = (): React.ReactNode => (
     <a
       href={`mailto:${supportEmail}`}
-      className="inline-block py-1 font-medium underline underline-offset-4 [overflow-wrap:anywhere]"
+      className="inline-block py-1 font-medium underline underline-offset-4 [overflow-wrap:anywhere] hover:text-[var(--aura-fg-primary)]"
     >
       {supportEmail}
     </a>
@@ -217,7 +217,7 @@ export default async function UnsubscribePage({
         />
         {outcome.state === 'success' ? (
           <>
-            <h1 className="mb-4 aura-text-h2 leading-snug">
+            <h1 className="mb-4 aura-text-h2">
               {t('success.heading')}
             </h1>
             <p className="mb-3 text-base">
@@ -234,7 +234,7 @@ export default async function UnsubscribePage({
           </>
         ) : outcome.state === 'already' ? (
           <>
-            <h1 className="mb-4 aura-text-h2 leading-snug">
+            <h1 className="mb-4 aura-text-h2">
               {t('already.heading')}
             </h1>
             <p className="mb-3 text-base">
@@ -248,7 +248,7 @@ export default async function UnsubscribePage({
           </>
         ) : outcome.state === 'error' ? (
           <>
-            <h1 className="mb-4 aura-text-h2 leading-snug">
+            <h1 className="mb-4 aura-text-h2">
               {t('error.heading')}
             </h1>
             <p className="mb-3 text-base">
@@ -268,7 +268,7 @@ export default async function UnsubscribePage({
           </>
         ) : outcome.state === 'rate_limited' ? (
           <>
-            <h1 className="mb-4 aura-text-h2 leading-snug">
+            <h1 className="mb-4 aura-text-h2">
               {t('rateLimited.heading')}
             </h1>
             <p className="mb-3 text-base">
@@ -280,7 +280,7 @@ export default async function UnsubscribePage({
           </>
         ) : (
           <>
-            <h1 className="mb-4 aura-text-h2 leading-snug">
+            <h1 className="mb-4 aura-text-h2">
               {t('invalid.heading')}
             </h1>
             <p className="mb-3 text-base">
@@ -332,4 +332,4 @@ export default async function UnsubscribePage({
 }
 
 const EXTERNAL_LINK_CLASS =
-  'inline-block py-1 underline underline-offset-2 text-[var(--aura-fg-secondary)]';
+  'inline-block py-1 underline underline-offset-2 text-[var(--aura-fg-secondary)] hover:text-[var(--aura-fg-primary)]';

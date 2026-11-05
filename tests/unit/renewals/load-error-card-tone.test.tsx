@@ -41,6 +41,19 @@ describe('<LoadErrorCard> tone', () => {
     expect(container.querySelector('.aura-empty__icon')).toHaveAttribute('aria-hidden', 'true');
   });
 
+  it('UX review M2/M4 — actions stack in a column; muted stays a solid Card, not a dashed empty state', () => {
+    const { container } = render(
+      <LoadErrorCard tone="muted" message="Couldn't load.">
+        <button type="button">Retry</button>
+        <code>ref-1</code>
+      </LoadErrorCard>,
+    );
+    const status = screen.getByRole('status');
+    expect(status).not.toHaveClass('is-bordered');
+    expect(container.querySelector('.aura-card')).toContainElement(status);
+    expect(container.querySelector('.aura-empty__action > .flex-col')).toContainElement(screen.getByText('ref-1'));
+  });
+
   it('tone="muted" composes with card={false} (bare inline variant)', () => {
     render(
       <LoadErrorCard tone="muted" card={false} message="Couldn't load." />,

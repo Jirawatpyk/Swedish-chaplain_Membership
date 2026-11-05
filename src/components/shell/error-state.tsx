@@ -8,7 +8,7 @@
  * users have an obvious recovery path.
  *
  * PR O — AURA's EmptyState in the danger tone (5.13), framed, announced as
- * a polite alert as before.
+ * an alert (the old `aria-live="polite"` contradicted the role; review L8).
  */
 import { useTranslations } from 'next-intl';
 import { Button, EmptyState } from '@jirawatpyk/aura-react';
@@ -29,7 +29,6 @@ export function ErrorState({ title, description, onRetry, className }: ErrorStat
       icon="triangle-alert"
       headingLevel={false}
       role="alert"
-      aria-live="polite"
       title={title ?? t('errors.generic')}
       {...(description ? { description } : {})}
       {...(onRetry

@@ -27,6 +27,13 @@ const messages = {
   },
 };
 
+/** The pill's screen-reader text; every visible part is hidden from AT. */
+function srText(container: HTMLElement): string | null | undefined {
+  const sr = container.querySelectorAll('.sr-only');
+  expect(sr).toHaveLength(1);
+  return sr[0]?.textContent;
+}
+
 function renderPill(props: React.ComponentProps<typeof YearInCyclePill>) {
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
@@ -43,7 +50,7 @@ describe('<YearInCyclePill> (F8 T220 / Phase 8 R5 I-11)', () => {
       taskTypeLabel: 'Phone call',
     });
     expect(screen.queryByText(/year 1 of 1/i)).toBeNull();
-    expect(screen.getByText('Phone call')).toBeInTheDocument();
+    expect(screen.getByTitle('Phone call')).toBeInTheDocument();
   });
 
   it('multi-year (2/3) renders "Year 2 of 3" prefix in compact', () => {
@@ -81,9 +88,11 @@ describe('<YearInCyclePill> (F8 T220 / Phase 8 R5 I-11)', () => {
       memberCompanyName: 'Fogmaker AB',
       variant: 'full',
     });
-    expect(
-      screen.getByLabelText('Year 2 of 3 · Quarterly review · Fogmaker AB'),
-    ).toBeInTheDocument();
+    // PR O review (a11y M1) — the name is screen-reader text, not an
+    // aria-label on a role-less span (ARIA forbids naming a generic).
+    const { container } = { container: document.body };
+    expect(srText(container)).toBe('Year 2 of 3 · Quarterly review · Fogmaker AB');
+    expect(container.querySelector('[aria-label]')).toBeNull();
   });
 
   it('full variant without company name falls through to compact', () => {
@@ -105,10 +114,9 @@ describe('<YearInCyclePill> (F8 T220 / Phase 8 R5 I-11)', () => {
       totalYears: 3,
       taskTypeLabel: 'Phone call',
     });
-    const labelled = container.querySelector('[aria-label]');
-    expect(labelled).not.toBeNull();
-    expect(labelled?.getAttribute('aria-label')).toContain('Year 2 of 3');
-    expect(labelled?.getAttribute('aria-label')).toContain('Phone call');
+    expect(container.querySelector('[aria-label]')).toBeNull();
+    expect(srText(container)).toContain('Year 2 of 3');
+    expect(srText(container)).toContain('Phone call');
   });
 
   it('compact single-year aria-label is the task-type label only', () => {
@@ -117,8 +125,7 @@ describe('<YearInCyclePill> (F8 T220 / Phase 8 R5 I-11)', () => {
       totalYears: 1,
       taskTypeLabel: 'Phone call',
     });
-    const labelled = container.querySelector('[aria-label]');
-    expect(labelled?.getAttribute('aria-label')).toBe('Phone call');
+    expect(srText(container)).toBe('Phone call');
   });
 
   // R6 close — defensive against invalid totalYears claimed by the
@@ -131,7 +138,7 @@ describe('<YearInCyclePill> (F8 T220 / Phase 8 R5 I-11)', () => {
       taskTypeLabel: 'Phone call',
     });
     expect(screen.queryByText(/year 1 of 0/i)).toBeNull();
-    expect(screen.getByText('Phone call')).toBeInTheDocument();
+    expect(screen.getByTitle('Phone call')).toBeInTheDocument();
   });
 
   it('totalYears=NaN treated as single-year', () => {
@@ -141,7 +148,7 @@ describe('<YearInCyclePill> (F8 T220 / Phase 8 R5 I-11)', () => {
       taskTypeLabel: 'Phone call',
     });
     expect(screen.queryByText(/year/i)).toBeNull();
-    expect(screen.getByText('Phone call')).toBeInTheDocument();
+    expect(screen.getByTitle('Phone call')).toBeInTheDocument();
   });
 
   it('totalYears=-1 (negative) treated as single-year', () => {
@@ -151,7 +158,7 @@ describe('<YearInCyclePill> (F8 T220 / Phase 8 R5 I-11)', () => {
       taskTypeLabel: 'Phone call',
     });
     expect(screen.queryByText(/year/i)).toBeNull();
-    expect(screen.getByText('Phone call')).toBeInTheDocument();
+    expect(screen.getByTitle('Phone call')).toBeInTheDocument();
   });
 
   // R6 UX-I-3 close — when memberCompanyName is undefined and we have
@@ -164,9 +171,6 @@ describe('<YearInCyclePill> (F8 T220 / Phase 8 R5 I-11)', () => {
       taskTypeLabel: 'Quarterly review',
       variant: 'full',
     });
-    const labelled = container.querySelector('[aria-label]');
-    expect(labelled?.getAttribute('aria-label')).toBe(
-      'Year 2 of 3 · Quarterly review',
-    );
+    expect(srText(container)).toBe('Year 2 of 3 · Quarterly review');
   });
 });

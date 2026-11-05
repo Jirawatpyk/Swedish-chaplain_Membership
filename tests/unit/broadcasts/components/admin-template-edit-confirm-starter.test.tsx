@@ -46,14 +46,16 @@ describe('<AdminTemplateEditConfirmStarter> — R2.1 H-test-5', () => {
 
   it('renders the starter-edit warning banner on first mount', () => {
     renderBanner(TEMPLATE_A);
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.getByRole('note')).toBeInTheDocument();
     expect(
       screen.getByText(/starter template/i),
     ).toBeInTheDocument();
-    // PR O — AURA's Alert in the warning tone, a polite status named by its
-    // title (no interrupting alert role).
-    const banner = screen.getByRole('status');
+    // PR O — AURA's Alert in the warning tone, a note named by its title
+    // (shown from mount, so not a live region); the dismiss sits outside its
+    // body, top right (UX review M3).
+    const banner = screen.getByRole('note');
     expect(banner).toHaveClass('aura-alert', 'aura-alert--warning');
+    expect(banner).not.toContainElement(screen.getByRole('button', { name: /dismiss starter warning/i }));
     expect(banner).toHaveAccessibleName(enMessages.admin.broadcasts.templates.starterEditBannerTitle);
   });
 
@@ -63,12 +65,12 @@ describe('<AdminTemplateEditConfirmStarter> — R2.1 H-test-5', () => {
     fireEvent.click(
       screen.getByRole('button', { name: /dismiss starter warning/i }),
     );
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
     unmount();
 
     // Mount banner for template B — must still be visible.
     renderBanner(TEMPLATE_B);
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.getByRole('note')).toBeInTheDocument();
   });
 
   it('lazy initializer reads previously-dismissed flag from localStorage', () => {
@@ -79,7 +81,7 @@ describe('<AdminTemplateEditConfirmStarter> — R2.1 H-test-5', () => {
     );
     renderBanner(TEMPLATE_A);
     // Banner hidden from first paint (no flash).
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
   });
 
   it('localStorage write failure closes banner for session without crashing', () => {
@@ -101,7 +103,7 @@ describe('<AdminTemplateEditConfirmStarter> — R2.1 H-test-5', () => {
       });
     try {
       renderBanner(TEMPLATE_A);
-      expect(screen.getByRole('status')).toBeInTheDocument();
+      expect(screen.getByRole('note')).toBeInTheDocument();
       // Dismiss — should not throw.
       expect(() =>
         fireEvent.click(
@@ -109,7 +111,7 @@ describe('<AdminTemplateEditConfirmStarter> — R2.1 H-test-5', () => {
         ),
       ).not.toThrow();
       // Banner is hidden for THIS session even though persist failed.
-      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(screen.queryByRole('note')).not.toBeInTheDocument();
     } finally {
       spy.mockRestore();
     }
