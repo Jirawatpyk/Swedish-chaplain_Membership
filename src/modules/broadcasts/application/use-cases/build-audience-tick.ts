@@ -2324,8 +2324,9 @@ async function confirmImport(
       // fine, and the release clears it) and build afresh next tick.
       if (isAudienceMissing(createdRb.error)) {
         // Only `cancelled` may carry the teardown past a refused delete — the
-        // same rule as `isDeadProbe`; `inheritedDead` (which also covers a
-        // re-probed `not_found`) answers the different question of minting.
+        // same rule as `isDeadProbe`; `inheritedDead` (a re-probed `not_found`
+        // only) answers the different question of minting. Since spec 140 DT2
+        // a `cancelled` id never reaches this point, so the flag is `false` here.
         return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId }, inherited.observedResendStatus === 'cancelled');
       }
       // Spec 140 s2c (DL5b) — a network failure, a timeout or a 5xx may have
