@@ -2380,6 +2380,22 @@ Open: pdpa M-1 — prod rows written before this PR by a re-drive read `ok` 0/0/
 
 Not fixed: reliability N1 (`as const` on the quota list), N2 (the warn-log assertion), N3 (the port throws, like its neighbours); pdpa L-2 (echo rows accumulate, already in the runbook).
 
+### Slice 3 — review round 4, targeted, the last under the cap (`/code-review high b80a8fb4a..1a1bfc514`: 9; reliability MERGEABLE: 3 LOW, 3 NIT; 5 Nov 2026) — cap reached
+
+pdpa M-1 closed by a one-off read-only prod probe the maintainer ordered (5 Nov 2026): prod holds **0 erased members**, so no earlier `ok` row of a sentinel-only re-drive exists.
+
+Fixed:
+- **R4-A, the database bounds the read (code-review #1, reliability LOW-2).** `hasSubprocessorPropagationInTx` runs `SET LOCAL statement_timeout = '3s'` first: the caller's race stops only its wait, and the pooled connection's `statement_timeout` MEASURED `0` on dev, so a hung query kept its pooled connection. The tenant SQL-shape gate skips that exact statement (`STATEMENT_TIMEOUT_ONLY`), as it skips the advisory lock. RED `b086aede4` (`expected '0' to be '3s'`), GREEN `d7982b76d`.
+- **R4-B, a skip and a timeout say so (code-review #2, reliability LOW-1, N2).** A skip logs `… read skipped` with `reason: deadline`; a failure logs `reason: timeout` or `error`. Cells pin the `>=` boundary and the timer cleanup. RED `4d976e2bb`, GREEN `d748159f9`.
+- **R4-C, the remediation names both echo orders (code-review #3, reliability LOW-3):** a `not_attempted` before an outcome row, and an outcome row before a skipped or timed-out `not_attempted`; act on the outcome row by its own value. § 21.7 is cited (code-review #9); the `earliest()` wording (reliability NIT).
+
+Not fixed, with the reason:
+- code-review #4 (3 s under the 5 s connection timeout): a slow read only records `not_attempted`, toward paging; the skip and timeout are now logged.
+- code-review #5 (`readFits` restates `oneCallFitsBefore`): the members application layer does not import the broadcasts barrel; the adapter (infrastructure) does.
+- code-review #6 (no reserve for the audit write after the read): the reconciler starts a member only with 30 s left and the cascade keeps 60 s before `maxDuration`; recorded.
+- code-review #8 (a shared `withTimeout`): seven sites across modules; a follow-up, not this slice.
+- reliability N1 (`as const` on the quota list), N3 (the port throws, like its neighbours).
+
 #### Slice 3 — test plan rows (R2-G; every mechanism a reviewer asked for, pointing at the test that went red)
 
 | Mechanism | Test (RED commit) |
@@ -2402,6 +2418,8 @@ Not fixed: reliability N1 (`as const` on the quota list), N2 (the warn-log asser
 | R2-A / R2-A2 `not_attempted` vs `already_propagated` on an empty re-drive capture | erase-member unit, adapter it.each, cascade cells 3 / 3b / 2b (`b2ae2ed54`, `979d185c0`) |
 | R2-E non-`held` standing ignored | `failed-to-dispatch-member-standing.test.ts` (`e195ef580`, mutation-proved) |
 | R3-A the earlier-propagation read is bounded | erase-member unit "skipped when the deadline leaves no room" / "abandoned when it outlasts its budget" (`378e756dc`) |
+| R4-A the database bounds the read | `find-stuck-erasures.test.ts` "sets its own statement_timeout" (`b086aede4`) |
+| R4-B skip / timeout logged with a reason | erase-member unit warn cells (`4d976e2bb`) |
 
 #### Housekeeping
 - Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
