@@ -28,9 +28,11 @@
  *
  * Cross-tenant (Principle I): tenant B holds a member whose `member_id`
  * equals X's (the members PK is `(tenant_id, member_id)`), erased after A's
- * re-drives, so B's marker is the newest row for that id. The integration
- * role has BYPASSRLS and `audit_log`'s policy is permissive, so only the
- * subquery's explicit tenant filter keeps B's row out of A's sort.
+ * re-drives, so B's marker is the newest row for that id. Two layers keep B's
+ * row out of A's sort: the subquery's explicit tenant filter and `audit_log`'s
+ * RLS policy under `runInTenant`. Dropping the explicit filter alone leaves
+ * this green (checked 5 Nov 2026), because the policy still hides B's rows;
+ * the filter is what fences out NULL-tenant rows, which the policy admits.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
