@@ -27,6 +27,7 @@ import en from '@/i18n/messages/en.json';
 import { expect, test } from '../fixtures';
 import { signInAsAdmin } from '../helpers/admin-session';
 import { signInAsManager } from '../helpers/manager-session';
+import { invoiceDashboardIsOff } from '../helpers/invoice-dashboard-gate';
 import { clearE2ERateLimits } from '../helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -38,7 +39,7 @@ const D = en.admin.invoiceDashboard;
 /** Opens the page; skips the test when the flag is off on this server. */
 async function openDashboard(page: Page, query = ''): Promise<void> {
   const response = await page.goto(`${PAGE}${query}`, { waitUntil: 'domcontentloaded' });
-  test.skip(response?.status() === 404, 'FEATURE_INVOICE_DASHBOARD is off on this server');
+  test.skip(await invoiceDashboardIsOff(page, response), 'FEATURE_INVOICE_DASHBOARD is off on this server');
   await expect(page.getByRole('heading', { level: 1, name: D.title })).toBeVisible();
 }
 
@@ -134,7 +135,7 @@ test.describe('124 — Invoice dashboard @a11y @i18n', () => {
       await signInAsAdmin(page);
       await context.addCookies([{ name: 'NEXT_LOCALE', value: locale, url: baseURL ?? 'http://localhost:3100' }]);
       const response = await page.goto(PAGE, { waitUntil: 'networkidle' });
-      test.skip(response?.status() === 404, 'FEATURE_INVOICE_DASHBOARD is off on this server');
+      test.skip(await invoiceDashboardIsOff(page, response), 'FEATURE_INVOICE_DASHBOARD is off on this server');
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
       const text = await page.locator('#main-content').innerText();
       expect(text).not.toContain('MISSING_MESSAGE');

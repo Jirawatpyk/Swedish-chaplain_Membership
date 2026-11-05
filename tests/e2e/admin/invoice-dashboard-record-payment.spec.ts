@@ -26,6 +26,7 @@ import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoi
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { expect, test } from '../fixtures';
 import { signInAsAdmin } from '../helpers/admin-session';
+import { invoiceDashboardIsOff } from '../helpers/invoice-dashboard-gate';
 import { clearE2ERateLimits } from '../helpers/rate-limit';
 import { createThrowawayTenant, type ThrowawayTenant } from '../helpers/throwaway-tenant';
 
@@ -119,7 +120,7 @@ async function seedOverdueBills(): Promise<{ tenant: ThrowawayTenant; oldest: st
 /** Opens the dashboard; skips when the flag is off on this server. */
 async function openDashboard(page: Page): Promise<void> {
   const response = await page.goto('/admin/finance', { waitUntil: 'domcontentloaded' });
-  test.skip(response?.status() === 404, 'FEATURE_INVOICE_DASHBOARD is off on this server');
+  test.skip(await invoiceDashboardIsOff(page, response), 'FEATURE_INVOICE_DASHBOARD is off on this server');
   await expect(page.getByRole('heading', { level: 1, name: D.title })).toBeVisible();
 }
 
