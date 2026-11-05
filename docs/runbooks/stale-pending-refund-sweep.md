@@ -299,7 +299,7 @@ The `swecham` cron sweep only reaches swecham rows, and the dev branch's orphan 
 2. Call the sweep once with the cron bearer (`GET /api/cron/sweep-stale-pending-refunds`, see the cron section above).
 3. Check the row, using the refund id the seed printed: `pnpm db:query "SELECT status, failure_reason_code FROM refunds WHERE id = '<printed rfnd_ id>'"` → `failed`, `no_processor_refund`. A new refund on that payment is now allowed.
 
-Each fixture **generation** is single-use once a real refund runs on it (its credit note is immutable, so nothing is deleted). The next `pnpm seed:f5-e2e:refundable` then starts generation N+1 on another eligible paid invoice, with new ids (`pmt_e2e_f5_rfndabe_card_g…`, `rfnd_e2e_f5_stab_pndng_g…`), and prints it.
+Each fixture **generation** is single-use once a real refund runs on it (its credit note is immutable, so nothing is deleted). The next `pnpm seed:f5-e2e:refundable` then starts generation N+1 on another eligible paid invoice, with new ids (`pmt_e2e_f5_rfndabe_card_g…`, `rfnd_e2e_f5_stab_pndng_g…`), and prints it. A generation is also spent when its invoice is credited directly or a real refund is still pending on it. Each spent generation uses up one paid e2e invoice for good (it becomes `partially_credited` / `credited`); when none is left the seed says so, and `F5_REFUNDABLE_INVOICE_DOC` picks one by number.
 
 ## Related runbooks
 
