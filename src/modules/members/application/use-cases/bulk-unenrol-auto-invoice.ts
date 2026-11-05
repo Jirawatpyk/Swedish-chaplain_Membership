@@ -66,6 +66,7 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errLogFields, errStep } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { asMemberId } from '../../domain/member';
@@ -177,7 +178,8 @@ export async function bulkUnenrolAutoInvoice(
       );
       if (!lookupResult.ok) {
         logger.error(
-          { err: lookupResult.error, requestId: meta.requestId },
+          // Spec 140 s2d (#736c) — the class and codes, never the RepoError's cause object.
+          { ...errLogFields(lookupResult.error), requestId: meta.requestId },
           'bulk-unenrol-auto-invoice: findManyByIdsInTx unexpected error',
         );
         throw new Error(`lookup_failed:${lookupResult.error.code}`);
@@ -272,7 +274,11 @@ export async function bulkUnenrolAutoInvoice(
     // deadlock collapses to a generic message with no forensic trace.
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        // Spec 140 s2d (#736c) — the class, the SQLSTATE and the code-authored step
+        // (`lookup_failed:repo.unexpected`, `audit_failed`), never the message: a
+        // Drizzle message quotes the statement's bound parameters.
+        ...errLogFields(e),
+        step: errStep(e),
         requestId: meta.requestId,
         action: 'unenrol_auto_invoice',
       },

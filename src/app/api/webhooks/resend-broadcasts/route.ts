@@ -594,8 +594,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           tenantId,
           correlationId,
           requestId,
+          // Spec 140 s2d review round 3 (pdpa H-1) — the class and the
+          // code-authored step of the failure, never its text.
           ...(result.error.kind === 'process_webhook.server_error' && {
-            detail: result.error.message,
+            errClass: result.error.errClass,
+            ...(result.error.step !== undefined ? { step: result.error.step } : {}),
           }),
           ...(result.error.kind === 'process_webhook.invalid_payload' && {
             detail: result.error.reason,

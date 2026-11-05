@@ -209,7 +209,7 @@ describe('erasure-after-audience-cleanup (COMP-1 US3-C × PR-2 cleanup, live Neo
     //    scrub at the sub-processor.
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
     const audienceContacts = await runInTenant(tenant.ctx, (tx) =>
-      repo.listMemberResendAudienceContactsInTx(tx, tenant.ctx.slug, [email]),
+      repo.listMemberResendAudienceContactsInTx(tx, tenant.ctx.slug, [email], new Date()),
     );
     expect(audienceContacts).toContainEqual({
       audienceId: deletedAudienceId,

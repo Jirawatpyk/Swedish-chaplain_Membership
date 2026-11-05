@@ -21,6 +21,8 @@ import { asBroadcastId } from '@/modules/broadcasts';
 import type { BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
+import { logger } from '@/lib/logger';
+import { hashId } from '@/lib/log-id';
 
 const tenant = asTenantContext('test-tenant');
 const memberId = asMemberId('00000000-0000-0000-0000-00000000aaaa');
@@ -268,5 +270,22 @@ describe('getMemberBroadcast', () => {
         total: 130,
       });
     }
+  });
+});
+
+// Spec 140 s2d review round 3 (security #7) — the enumeration-probe line
+// hashes the actor's user id, like the audit-failure line (rules.md § Secrets).
+describe('getMemberBroadcast — the not_found probe line (review round 3)', () => {
+  it('logs actorUserIdHash, never the raw actorUserId', async () => {
+    const spy = vi.spyOn(logger, 'info').mockImplementation(() => undefined as never);
+    const { audit } = makeAuditEmitMock();
+    const broadcastsRepo = makeRepoMocks({
+      findOwned: async () => ({ broadcast: null, probeKind: 'not_found' }),
+    });
+    await getMemberBroadcast({ tenant, broadcastsRepo, audit }, { memberId, broadcastId, actorUserId, requestId });
+    const line = spy.mock.calls.find((c) => c[1] === 'broadcasts.enumeration_probe.not_found');
+    expect(line?.[0]).toMatchObject({ actorUserIdHash: hashId(actorUserId) });
+    expect(line?.[0]).not.toHaveProperty('actorUserId');
+    spy.mockRestore();
   });
 });

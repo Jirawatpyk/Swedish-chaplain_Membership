@@ -19,7 +19,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runInTenant } from '@/lib/db';
 import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
-import { ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT } from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
+import {
+  ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT,
+  ORPHAN_STUCK_ATTEMPTS,
+  isOrphanStuck,
+  orphanStuckCutoff,
+} from '@/modules/broadcasts/domain/value-objects/orphaned-resend-id';
 import {
   broadcastOrphanedResendIds,
   broadcasts,
@@ -262,58 +267,139 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
   });
 
   /**
-   * Spec 140 s2c review round 3 (code-review #2) — the in-grace-only list
-   * (`{ inGraceOnly: true }`): rows created at or after the cutoff, so 20
-   * failing past-grace rows cannot hide an erased requester's young row from
-   * the drain. Review round 4 (code-review #1) — newest first: the erased
-   * requester's post-pass orphan is the newest row.
+   * Spec 140 s2d (#736a) — the drain's erased-requester path, anchored on the
+   * orphan: `listInGraceRequesterIds` reads the distinct requesters of the
+   * unsettled in-grace rows; `listUnsettledOrphansForRequesters` reads those
+   * requesters' unsettled rows of any age, under the same holder rule as the
+   * drain (B2), `attempts` then age. Both are fenced on the tenant (B1).
    */
-  it('[code-review #2] the in-grace-only list holds only the rows inside the grace, newest first', async () => {
+  async function insertOrphan(
+    tenant: TestTenant,
+    row: { requester: string; resourceId: string | null; ageMs: number; attempts?: number; settled?: boolean; resourceType?: 'broadcast' | 'audience' },
+  ): Promise<void> {
+    const reason = row.resourceId === null ? 'create_unconfirmed' : row.resourceType === 'audience' ? 'audience_leaked' : 'attach_lost';
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.execute(sql`
+        INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at, attempts, settled_at, outcome)
+        VALUES (${tenant.ctx.slug}, ${randomUUID()}::uuid, ${row.requester}::uuid, ${row.resourceType ?? 'broadcast'}, ${row.resourceId}, ${reason},
+                ${new Date(Date.now() - row.ageMs).toISOString()}::timestamptz, ${row.attempts ?? 0},
+                ${row.settled === true ? sql`now()` : sql`NULL`}, ${row.settled === true ? 'deleted' : null})`),
+    );
+  }
+
+  it('[#736a] listInGraceRequesterIds: distinct requesters of unsettled in-grace rows with a known id, at most cap', async () => {
     const solo = await createTestTenant('test-swecham');
     try {
       const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
-      const ids = { old: `rb-old-${randomUUID()}`, mid: `rb-mid-${randomUUID()}`, fresh: `rb-fresh-${randomUUID()}` };
-      for (const [id, ageMs] of [[ids.old, 3 * HOUR], [ids.fresh, 10 * 60 * 1000], [ids.mid, HOUR / 2]] as const) {
-        await runInTenant(solo.ctx, (tx) =>
-          tx.execute(sql`
-            INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at)
-            VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'broadcast', ${id}, 'attach_lost', ${new Date(Date.now() - ageMs).toISOString()}::timestamptz)`),
-        );
-      }
-      const young = await repo.listDrainableOrphans(20, GRACE_CUTOFF(), { inGraceOnly: true });
-      expect(young.map((o) => o.resourceId)).toEqual([ids.fresh, ids.mid]);
-      // The default list is unchanged: past-grace first.
-      expect((await repo.listDrainableOrphans(20, GRACE_CUTOFF()))[0]?.resourceId).toBe(ids.old);
+      const [twice, pastGrace, settled, unconfirmed, other] = Array.from({ length: 5 }, () => randomUUID());
+      await insertOrphan(solo, { requester: twice!, resourceId: `rb-${randomUUID()}`, ageMs: 10 * 60 * 1000 });
+      await insertOrphan(solo, { requester: twice!, resourceId: `rb-${randomUUID()}`, ageMs: 20 * 60 * 1000 });
+      await insertOrphan(solo, { requester: pastGrace!, resourceId: `rb-${randomUUID()}`, ageMs: 2 * HOUR });
+      await insertOrphan(solo, { requester: settled!, resourceId: `rb-${randomUUID()}`, ageMs: 10 * 60 * 1000, settled: true });
+      await insertOrphan(solo, { requester: unconfirmed!, resourceId: null, ageMs: 10 * 60 * 1000 });
+      await insertOrphan(solo, { requester: other!, resourceId: `aud-${randomUUID()}`, ageMs: 5 * 60 * 1000, resourceType: 'audience' });
+
+      expect([...(await repo.listInGraceRequesterIds(GRACE_CUTOFF(), 50))].sort()).toEqual([twice!, other!].sort());
+      expect(await repo.listInGraceRequesterIds(GRACE_CUTOFF(), 1)).toHaveLength(1);
     } finally {
       await solo.cleanup().catch(() => {});
     }
   });
 
-  /**
-   * Spec 140 s2c review round 4 (code-review #1, reliability LOW-B, pdpa L-1)
-   * — a backlog of older in-grace rows does not push the newest row (an
-   * erased requester's post-pass orphan) out of the in-grace-only list.
-   */
-  it('[code-review #1] 21 in-grace rows: the newest is listed', async () => {
+  it('[#736a] listUnsettledOrphansForRequesters: those requesters only, unsettled, in-grace first then attempts then age, the drain holder rule; empty ids → []', async () => {
     const solo = await createTestTenant('test-swecham');
     try {
       const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
-      const ids = Array.from({ length: 21 }, (_, i) => `rb-ig-${i}-${randomUUID()}`);
-      // ids[i] is (21 - i) minutes old: ids[20] is the newest.
-      for (const [i, id] of ids.entries()) {
-        await runInTenant(solo.ctx, (tx) =>
-          tx.execute(sql`
-            INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at)
-            VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'broadcast', ${id}, 'attach_lost', ${new Date(Date.now() - (21 - i) * 60 * 1000).toISOString()}::timestamptz)`),
-        );
-      }
-      const young = (await repo.listDrainableOrphans(20, GRACE_CUTOFF(), { inGraceOnly: true })).map((o) => o.resourceId);
-      expect(young).toHaveLength(20);
-      expect(young).toContain(ids[20]);
-      expect(young).not.toContain(ids[0]);
+      const erased = randomUUID();
+      const other = randomUUID();
+      const ids = {
+        oldTried: `rb-old-tried-${randomUUID()}`,
+        young: `rb-young-${randomUUID()}`,
+        old: `rb-old-${randomUUID()}`,
+        settled: `rb-settled-${randomUUID()}`,
+        liveHeld: `rb-live-held-${randomUUID()}`,
+        justTerminalAudience: `aud-just-terminal-${randomUUID()}`,
+        otherRequester: `rb-other-${randomUUID()}`,
+      };
+      await insertOrphan(solo, { requester: erased, resourceId: ids.oldTried, ageMs: 3 * HOUR, attempts: 2 });
+      await insertOrphan(solo, { requester: erased, resourceId: ids.young, ageMs: 10 * 60 * 1000 });
+      await insertOrphan(solo, { requester: erased, resourceId: ids.old, ageMs: 2 * HOUR });
+      await insertOrphan(solo, { requester: erased, resourceId: ids.settled, ageMs: 2 * HOUR, settled: true });
+      await insertOrphan(solo, { requester: erased, resourceId: null, ageMs: 2 * HOUR });
+      await insertOrphan(solo, { requester: erased, resourceId: ids.liveHeld, ageMs: 2 * HOUR });
+      await insertOrphan(solo, { requester: erased, resourceId: ids.justTerminalAudience, ageMs: 2 * HOUR, resourceType: 'audience' });
+      await insertOrphan(solo, { requester: other, resourceId: ids.otherRequester, ageMs: 2 * HOUR });
+      await seedRow(solo, { status: 'approved', resendBroadcastId: ids.liveHeld });
+      // (B2) a row that just went terminal still holds its audience for the grace.
+      await seedRow(solo, { status: 'failed_to_dispatch', resendAudienceId: ids.justTerminalAudience, updatedAt: new Date() });
+
+      // Review round 1 (reliability L-1) — the in-grace row first: only this
+      // path reaches it, while the past-grace list also reaches the others.
+      const listed = await repo.listUnsettledOrphansForRequesters([erased], 20, GRACE_CUTOFF());
+      expect(listed.map((o) => o.resourceId)).toEqual([ids.young, ids.old, ids.oldTried]);
+      for (const o of listed) expect(o.requestedByMemberId).toBe(erased);
+      expect((await repo.listUnsettledOrphansForRequesters([erased], 2, GRACE_CUTOFF())).map((o) => o.resourceId)).toEqual([ids.young, ids.old]);
+      expect((await repo.listUnsettledOrphansForRequesters([erased, other], 20, GRACE_CUTOFF())).map((o) => o.resourceId)).toContain(ids.otherRequester);
+      expect(await repo.listUnsettledOrphansForRequesters([], 20, GRACE_CUTOFF())).toEqual([]);
     } finally {
       await solo.cleanup().catch(() => {});
     }
+  });
+
+  // Review round 1 (code-review #3, security L4, reliability L-3) — a
+  // post-erasure orphan is the newest row; the capped list must reach it.
+  it('[review round 1] 51 requesters: the newest requester is listed', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      // Sorts after every random v4 uuid, so an ORDER BY requester id leaves it out.
+      const newest = 'ffffffff-ffff-4fff-bfff-ffffffffffff';
+      for (let i = 0; i < 50; i += 1) {
+        await insertOrphan(solo, { requester: randomUUID(), resourceId: `rb-${randomUUID()}`, ageMs: (10 + i) * 60 * 1000 });
+      }
+      await insertOrphan(solo, { requester: newest, resourceId: `rb-${randomUUID()}`, ageMs: 60 * 1000 });
+
+      const listed = await repo.listInGraceRequesterIds(GRACE_CUTOFF(), 50);
+      expect(listed).toHaveLength(50);
+      expect(listed[0]).toBe(newest);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
+
+  // Review round 1 (reliability L-1) — the erased share goes first to rows
+  // only this path reaches.
+  it("[review round 1] an erased requester's 10 past-grace rows do not crowd out a young one", async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const repo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      const erased = randomUUID();
+      for (let i = 0; i < 10; i += 1) {
+        await insertOrphan(solo, { requester: erased, resourceId: `rb-past-${randomUUID()}`, ageMs: (2 + i) * HOUR });
+      }
+      const young = `rb-young-${randomUUID()}`;
+      await insertOrphan(solo, { requester: erased, resourceId: young, ageMs: 5 * 60 * 1000 });
+
+      const listed = await repo.listUnsettledOrphansForRequesters([erased], 10, GRACE_CUTOFF());
+      expect(listed).toHaveLength(10);
+      expect(listed[0]?.resourceId).toBe(young);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
+
+  it("[#736a] cross-tenant: tenant B's orphan with the SAME requester id is never returned for tenant A", async () => {
+    const repoA = makeDrizzleBroadcastOrphansRepo(tenantA.ctx.slug);
+    const requester = randomUUID();
+    const id = `rb-b-only-${randomUUID()}`;
+    await insertOrphan(tenantB, { requester, resourceId: id, ageMs: 5 * 60 * 1000 });
+
+    expect(await repoA.listInGraceRequesterIds(GRACE_CUTOFF(), 10_000)).not.toContain(requester);
+    expect(await repoA.listUnsettledOrphansForRequesters([requester], 20, GRACE_CUTOFF())).toEqual([]);
+    // The control: tenant B reads its own row.
+    const repoB = makeDrizzleBroadcastOrphansRepo(tenantB.ctx.slug);
+    expect(await repoB.listInGraceRequesterIds(GRACE_CUTOFF(), 10_000)).toContain(requester);
+    expect((await repoB.listUnsettledOrphansForRequesters([requester], 20, GRACE_CUTOFF())).map((o) => o.resourceId)).toEqual([id]);
   });
 
   it('[spec N4] the erasure audience list orders by attempts, then age', async () => {
@@ -361,7 +447,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
 
   // Review round 4 follow-up (code-review #4) — the driver gives the app
   // created_at in milliseconds, so a row 0.4 ms past the stuck cutoff is stuck
-  // to `isStuckAt`. The SQL sort must agree: it sorts the row as stuck (last).
+  // to `isOrphanStuck`. The SQL sort must agree: it sorts the row as stuck (last).
   it('[code-review #4] a row 0.4 ms past the stuck cutoff sorts as stuck, as the app judges it', async () => {
     const solo = await createTestTenant('test-swecham');
     try {
@@ -407,7 +493,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
     expect(await orphansA.settleOrphan(settledRow!.orphanId, 'deleted')).toBe(true);
 
     const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
-    const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, tenantA.ctx.slug, [email.toUpperCase()]));
+    const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, tenantA.ctx.slug, [email.toUpperCase()], new Date()));
     const ids = pairs.map((p) => p.audienceId);
     expect(pairs).toContainEqual({ audienceId: stuck, email });
     expect(ids).not.toContain(settled);
@@ -441,7 +527,7 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
           VALUES (${tenantB.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${otherTenant}, 'audience_leaked', 99)`),
       );
       const repo = makeDrizzleBroadcastsRepo(solo.ctx.slug);
-      const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email]));
+      const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email], new Date()));
       const audiences = [...new Set(pairs.map((p) => p.audienceId))].sort();
       // attempts 0 and 1 are past the cap.
       expect(ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT).toBe(10);
@@ -475,10 +561,57 @@ describe('spec 140 s2c — the orphan repo (live Neon, chamber_app)', () => {
         }
       }
       const repo = makeDrizzleBroadcastsRepo(solo.ctx.slug);
-      const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email]));
+      const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email], new Date()));
       const audiences = new Set(pairs.map((p) => p.audienceId));
       expect(audiences.size).toBe(ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT);
       for (const id of stuck) expect(audiences).toContain(id);
+    } finally {
+      await solo.cleanup().catch(() => {});
+    }
+  });
+
+  /**
+   * Spec 140 s2d (#736b) — the detach cap, the erasure audience sort and pass
+   * (b) apply ONE stuck rule from ONE caller-passed instant. `asOf` is an hour
+   * in the future, so a database `now()` would call the boundary row an hour
+   * old (not stuck); and the row is 0.4 ms past the cutoff, so a comparison
+   * without the millisecond truncation would call it young too.
+   */
+  it('[#736b] the detach cap and the erasure audience sort agree on a row at the boundary', async () => {
+    const solo = await createTestTenant('test-swecham');
+    try {
+      const base = new Date(Date.now() - HOUR);
+      const asOf = new Date(base.getTime() + 2 * HOUR);
+      const cutoff = orphanStuckCutoff(asOf);
+      expect(cutoff.getTime()).toBe(base.getTime());
+      const email = `edge-${randomUUID()}@example.com`;
+      const boundary = `aud-edge-${randomUUID()}`;
+      const young = Array.from({ length: ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT }, (_, i) => `aud-young-${i}-${randomUUID()}`);
+      await runInTenant(solo.ctx, (tx) =>
+        tx.execute(sql`
+          INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at, attempts)
+          VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${boundary}, 'audience_leaked', ${cutoff.toISOString()}::timestamptz + interval '400 microseconds', ${ORPHAN_STUCK_ATTEMPTS})`),
+      );
+      // Tried more often but young at asOf: they win the cap unless the
+      // boundary row is judged stuck.
+      for (const id of young) {
+        await runInTenant(solo.ctx, (tx) =>
+          tx.execute(sql`
+            INSERT INTO broadcast_orphaned_resend_ids (tenant_id, broadcast_id, requested_by_member_id, resource_type, resource_id, reason, created_at, attempts)
+            VALUES (${solo.ctx.slug}, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'audience', ${id}, 'audience_leaked', ${new Date(Date.now() - HOUR / 2).toISOString()}::timestamptz, ${ORPHAN_STUCK_ATTEMPTS + 1})`),
+        );
+      }
+
+      const repo = makeDrizzleBroadcastsRepo(solo.ctx.slug);
+      const pairs = await repo.withTx((tx) => repo.listMemberResendAudienceContactsInTx(tx, solo.ctx.slug, [email], asOf));
+      expect(pairs).toContainEqual({ audienceId: boundary, email });
+
+      const orphansRepo = makeDrizzleBroadcastOrphansRepo(solo.ctx.slug);
+      const listed = await orphansRepo.listUnsettledAudienceOrphans(ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT + 1, GRACE_CUTOFF(), cutoff);
+      expect(listed).toHaveLength(ERASURE_DETACH_ORPHAN_AUDIENCE_LIMIT + 1);
+      const last = listed[listed.length - 1]!;
+      expect(last.resourceId).toBe(boundary);
+      expect(isOrphanStuck(last, asOf.getTime())).toBe(true);
     } finally {
       await solo.cleanup().catch(() => {});
     }

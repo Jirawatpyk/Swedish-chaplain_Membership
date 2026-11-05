@@ -1,6 +1,8 @@
 import { isMainThread } from 'worker_threads';
 import pino, { type LoggerOptions } from 'pino';
 import { env } from './env';
+import { pgErrorCode } from './db-errors';
+import { CODE_SHAPE, errKind, errLogFields } from './log-id';
 
 /**
  * Structured JSON logger (T018, docs/observability.md § 3).
@@ -700,6 +702,171 @@ export function redactPanValues(input: unknown, depth = 0): unknown {
   return input;
 }
 
+/** The keys a log line names an error under. */
+const ERROR_KEYS = ['err', 'error', 'cause'] as const;
+
+/**
+ * What {@link reduceLoggedError} writes for an error: token-shaped values
+ * (shape-checked) and stack frames, nothing else (spec 140 s2d review rounds 2
+ * and 3). Frozen.
+ */
+export interface ReducedLoggedError {
+  /**
+   * The error's class: `errKind` for an Error; for a plain object its `name`
+   * when that is an error class name ({@link ERROR_CLASS_NAME}), else
+   * `'unknown'`. `'unreducible'` when reading the value threw.
+   */
+  readonly type: string;
+  /** A plain object's token-shaped `type` discriminant (`server_error`): a Result error's variant. */
+  readonly errType?: string;
+  /** The SQLSTATE of the first Postgres error in the cause chain (`pgErrorCode`). */
+  readonly code?: string;
+  /** A Result error's own code (`RESULT_CODE`-validated by `errLogFields`), on the value or a wrapped RepoError. */
+  readonly repoCode?: string;
+  /** An Error's own token-shaped `.code` that is not the SQLSTATE (`errLogFields`): Node `ECONNRESET`, Stripe `card_declined`. */
+  readonly errCode?: string;
+  /** An integer `.statusCode` (an HTTP client error). */
+  readonly statusCode?: number;
+  /** A token-shaped `.declineCode` / `.decline_code` (Stripe). */
+  readonly declineCode?: string;
+  /** A token-shaped `.kind`: a Result error's own discriminant (`not_found`, `conflict`). */
+  readonly kind?: string;
+  /** The frame lines of `.stack` ({@link STACK_FRAME}), at most {@link MAX_FRAMES}; never a header line. */
+  readonly frames?: ReadonlyArray<string>;
+}
+
+/** A lowercase discriminant token: `server_error`, `not_found`, `last-admin-protection`, `gateway_5xx`. */
+// Review round 3 follow-up — up to four lowercase segments joined by `.` or
+// `:` (this repo's discriminants are dotted: `process_webhook.server_error`).
+// Review round 4 (code-review #5, #8; security L1) — built on the shared
+// `CODE_SHAPE` (a letter first, at most 64 characters, at most 4 digits), so a
+// hex digest or `a_123456789` is refused; `-` joins words too.
+const LOWER_TOKEN = new RegExp(`${CODE_SHAPE}[a-z][a-z0-9_-]*(?:[.:][a-z][a-z0-9_-]*){0,3}$`);
+/**
+ * An error class name: `Error`, `DrizzleQueryError`, `NeonDbError`,
+ * `TimeoutException`. Review round 4 (code-review #6, reliability LOW-1): a
+ * bare `Error` is one, and a name is at most 64 characters.
+ */
+const ERROR_CLASS_NAME = /^(?=.{1,64}$)(?:[A-Z]\w*)?(?:Error|Exception)$/;
+/**
+ * A V8 / Node stack frame line: `at fn (/app/x.ts:1:2)`, `at async file:///x.mjs:1:2`,
+ * `at #p (C:\x.cjs:1:2)`, `at Fn [as alias] (node:internal/x:1:2)`. Review round
+ * 4 (code-review #4): the location must start like a path (a drive, `/`,
+ * `file:`, `node:`, `webpack…`, `<anonymous>`) and hold no space, so a message
+ * line such as `at <email> <phone>:1:2` is not a frame. A frame whose path holds
+ * a space (a local checkout under `Swedish chaplain_membership`) is dropped too;
+ * Vercel's `/var/task` and an ESM `file://` URL (`%20`) have none.
+ */
+const STACK_FRAME = /^\s+at (?:[\w$#.<>[\] ]+ \()?(?:async )?(?:[A-Za-z]:\\|\/|file:|node:|webpack|<anonymous>)\S*:\d+:\d+\)?$/;
+const MAX_FRAMES = 8;
+const MAX_FRAME_LENGTH = 300;
+/** The values this module built, so a second pass (pino's serializer after the hook) keeps them. */
+const reducedValues = new WeakSet<object>();
+/** What a value becomes when reading it threw (a throwing getter); frozen and marked once. */
+const UNREDUCIBLE: ReducedLoggedError = Object.freeze({ type: 'unreducible' });
+reducedValues.add(UNREDUCIBLE);
+
+function lowerToken(value: object, field: string): string | undefined {
+  const v = (value as Record<string, unknown>)[field];
+  return typeof v === 'string' && LOWER_TOKEN.test(v) ? v : undefined;
+}
+
+/**
+ * The frame lines of a stack, cut by structure (review round 3, code-review
+ * #4, security #2): the header is every line before the first frame, and only
+ * a line shaped like a frame is kept. The message is never searched for, so a
+ * one-letter message cannot cut the frames, and a message changed after the
+ * stack was read cannot leave its first text behind.
+ */
+function stackFrames(value: object): ReadonlyArray<string> | undefined {
+  const stack = (value as { stack?: unknown }).stack;
+  if (typeof stack !== 'string') return undefined;
+  const frames = stack
+    .split(/\r?\n/)
+    .filter((line) => STACK_FRAME.test(line))
+    .slice(0, MAX_FRAMES)
+    .map((line) => line.trim().slice(0, MAX_FRAME_LENGTH));
+  return frames.length > 0 ? Object.freeze(frames) : undefined;
+}
+
+/**
+ * Spec 140 s2d — an error value as a log line may carry it. Review round 1
+ * (code-review #2) reduced an Error, or an object carrying `cause` / `query` /
+ * `params` / `detail`, to its class and SQLSTATE. Review round 2 (code-review
+ * #1, #2; pdpa H-2; security M1; the maintainer's decision of 4 Nov 2026) —
+ * ANY non-string value, an Error or a plain object with any field, becomes
+ * {@link ReducedLoggedError}: token-shaped values plus stack frames, in every
+ * module. `message`, `stack`, `detail`, `params` and `query` are never
+ * written: drizzle-orm's `DrizzleQueryError` has enumerable `query` and
+ * `params` and a message that quotes them, postgres-js fills `detail` with the
+ * row's values, and the events audit port logs `{ name, message, stack }` as a
+ * plain object. A string is kept (call sites log `err: errKind(e)`; error text
+ * in string form is #740's scope).
+ *
+ * Review round 3 (code-review #1, reliability MED, security #1, #3, #4) —
+ * every kept value is shape-checked: `kind`, `declineCode` and a plain
+ * object's `type` discriminant (written as `errType`) are lowercase tokens; a
+ * plain object's `name` is kept only as an error class name; `errCode` only
+ * for an Error. A throwing getter makes the value `{ type: 'unreducible' }`,
+ * never a throw out of the log call, and the output is frozen.
+ */
+export function reduceLoggedError(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) return value;
+  if (reducedValues.has(value)) return value;
+  let out: ReducedLoggedError;
+  try {
+    out = reduce(value);
+  } catch {
+    return UNREDUCIBLE;
+  }
+  const frozen = Object.freeze(out);
+  reducedValues.add(frozen);
+  return frozen;
+}
+
+/**
+ * Review round 4 — `errCode` is the first token-shaped, non-SQLSTATE `.code`
+ * along the bounded cause walk (`errLogFields`), still for an Error only.
+ */
+function reduce(value: object): ReducedLoggedError {
+  const isError = value instanceof Error;
+  const fields = errLogFields(value);
+  const code = fields.code ?? pgErrorCode(value);
+  const repoCode = fields.repoCode !== undefined && fields.repoCode !== code ? fields.repoCode : undefined;
+  const errCode = isError && fields.errCode !== repoCode ? fields.errCode : undefined;
+  const statusCode = (value as { statusCode?: unknown }).statusCode;
+  const declineCode = lowerToken(value, 'declineCode') ?? lowerToken(value, 'decline_code');
+  const kind = lowerToken(value, 'kind');
+  const errType = isError ? undefined : lowerToken(value, 'type');
+  const name = isError ? undefined : (value as { name?: unknown }).name;
+  const frames = stackFrames(value);
+  return {
+    type: isError ? errKind(value) : typeof name === 'string' && ERROR_CLASS_NAME.test(name) ? name : 'unknown',
+    ...(errType !== undefined ? { errType } : {}),
+    ...(code !== undefined ? { code } : {}),
+    ...(repoCode !== undefined ? { repoCode } : {}),
+    ...(errCode !== undefined ? { errCode } : {}),
+    ...(typeof statusCode === 'number' && Number.isInteger(statusCode) ? { statusCode } : {}),
+    ...(declineCode !== undefined ? { declineCode } : {}),
+    ...(kind !== undefined ? { kind } : {}),
+    ...(frames !== undefined ? { frames } : {}),
+  };
+}
+
+/** The fields object with its `err` / `error` / `cause` reduced; the input is never mutated. */
+function reduceErrorFields(fields: object): object {
+  let out: Record<string, unknown> | null = null;
+  for (const key of ERROR_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
+    const original = (fields as Record<string, unknown>)[key];
+    const reduced = reduceLoggedError(original);
+    if (reduced === original) continue;
+    out ??= { ...(fields as Record<string, unknown>) };
+    out[key] = reduced;
+  }
+  return out ?? fields;
+}
+
 const baseOptions: LoggerOptions = {
   level: env.log.level,
   base: {
@@ -713,6 +880,32 @@ const baseOptions: LoggerOptions = {
     censor: '[REDACTED]',
     remove: false,
   },
+  // Spec 140 s2d review round 1 (code-review #2) — the error reduction runs
+  // BEFORE pino's write: pino copies `err.message` into `msg` when no message
+  // is given, and `formatters.log` below clones an Error into a plain object
+  // (its class and message lost) before any serializer sees it. A bare Error
+  // argument becomes `{ err: … }` here too. Redaction is unaffected: it is by
+  // key, and these keys are not redacted ones.
+  hooks: {
+    logMethod(inputArgs, method) {
+      const [first, ...rest] = inputArgs;
+      if (first instanceof Error) {
+        return method.apply(this, [{ err: reduceLoggedError(first) }, ...rest] as Parameters<typeof method>);
+      }
+      if (typeof first === 'object' && first !== null) {
+        return method.apply(this, [reduceErrorFields(first), ...rest] as Parameters<typeof method>);
+      }
+      return method.apply(this, inputArgs);
+    },
+  },
+  // The same reduction for the values the hook never sees: a child logger's
+  // bindings (`logger.child({ err })`). Replaces pino's default `err`
+  // serializer, which writes `message`, `stack` and every enumerable field.
+  serializers: {
+    err: reduceLoggedError,
+    error: reduceLoggedError,
+    cause: reduceLoggedError,
+  },
   formatters: {
     level(label) {
       return { level: label };
@@ -722,8 +915,21 @@ const baseOptions: LoggerOptions = {
     // free-form `message` string or an unexpected field name). Runs
     // after pino's own redaction step, so `[REDACTED]` bindings are
     // already in place; this only reaches real string values.
+    //
+    // Spec 140 s2d review round 2 — pino runs the `serializers` on THIS
+    // function's output, so a value the hook already reduced comes back as a
+    // clone; its mark is carried over, else the second pass would read the
+    // reduced shape as a plain object and keep only `type`.
     log(object) {
-      return redactPanValues(object) as Record<string, unknown>;
+      const out = redactPanValues(object) as Record<string, unknown>;
+      for (const key of ERROR_KEYS) {
+        const before = object[key];
+        const after = out[key];
+        if (typeof before === 'object' && before !== null && reducedValues.has(before) && typeof after === 'object' && after !== null) {
+          reducedValues.add(after);
+        }
+      }
+      return out;
     },
   },
 };

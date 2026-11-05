@@ -31,6 +31,7 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errLogFields, hashId } from '@/lib/log-id';
 import { safeAuditEmit } from './_safe-audit-emit';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '@/modules/members';
@@ -101,13 +102,12 @@ export async function acknowledgeBroadcastsTerms(
       // MUST see an error toast and retry.
       logger.error(
         {
-          err:
-            result.error.cause instanceof Error
-              ? result.error.cause.message
-              : String(result.error.cause),
+          // Spec 140 s2d (#736c) — the cause's class and SQLSTATE, never its message.
+          ...errLogFields(result.error.cause),
           tenantId: deps.tenant.slug,
           memberId: input.memberId,
-          userId: input.actorUserId,
+          // Review round 2 (code-review #9) — hashed, never the raw id (rules.md § Secrets).
+          userIdHash: hashId(input.actorUserId),
           requestId: input.requestId,
         },
         'broadcasts.acknowledge.repo_error',

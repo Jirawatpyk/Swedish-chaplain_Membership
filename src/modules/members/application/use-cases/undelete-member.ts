@@ -47,6 +47,7 @@
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { primaryContactTriggerViolation } from '@/lib/db-errors';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { ContactId } from '../../domain/contact';
@@ -344,7 +345,9 @@ export async function undeleteMember(
       });
     }
     logger.error(
-      { err: e, memberId, requestId: meta.requestId },
+      // Spec 140 s2d (#736c) — the class and SQLSTATE, never the error object
+      // (a DrizzleQueryError's enumerable `params` carry the bound values).
+      { ...errLogFields(e), memberId, requestId: meta.requestId },
       'undelete-member: unhandled',
     );
     return err({ type: 'server_error', message: 'undelete failed' });

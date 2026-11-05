@@ -226,7 +226,7 @@ describe('broadcasts repo — listMemberResendAudienceContactsInTx (COMP-1 US3-C
 
     const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
     const pairs = await runInTenant(tenantA.ctx, (tx) =>
-      repo.listMemberResendAudienceContactsInTx(tx, tenantA.ctx.slug, [email]),
+      repo.listMemberResendAudienceContactsInTx(tx, tenantA.ctx.slug, [email], new Date()),
     );
 
     expect(pairs.length).toBeGreaterThanOrEqual(1);
@@ -261,7 +261,7 @@ describe('broadcasts repo — listMemberResendAudienceContactsInTx (COMP-1 US3-C
     const pairs = await runInTenant(tenantA.ctx, (tx) =>
       repo.listMemberResendAudienceContactsInTx(tx, tenantA.ctx.slug, [
         upperCaseContact,
-      ]),
+      ], new Date()),
     );
 
     expect(pairs).toContainEqual({
@@ -285,7 +285,7 @@ describe('broadcasts repo — listMemberResendAudienceContactsInTx (COMP-1 US3-C
 
     const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
     const pairs = await runInTenant(tenantA.ctx, (tx) =>
-      repo.listMemberResendAudienceContactsInTx(tx, tenantA.ctx.slug, [email]),
+      repo.listMemberResendAudienceContactsInTx(tx, tenantA.ctx.slug, [email], new Date()),
     );
 
     expect(pairs.find((p) => p.email === email.toLowerCase())).toBeUndefined();
@@ -297,7 +297,7 @@ describe('broadcasts repo — listMemberResendAudienceContactsInTx (COMP-1 US3-C
     const pairs = await runInTenant(tenantA.ctx, (tx) =>
       repo.listMemberResendAudienceContactsInTx(tx, tenantA.ctx.slug, [
         absentEmail,
-      ]),
+      ], new Date()),
     );
     expect(pairs).toEqual([]);
   });
@@ -336,7 +336,7 @@ describe('broadcasts repo — listMemberResendAudienceContactsInTx (COMP-1 US3-C
     const pairsA = await runInTenant(tenantA.ctx, (tx) =>
       repoA.listMemberResendAudienceContactsInTx(tx, tenantA.ctx.slug, [
         sharedEmail,
-      ]),
+      ], new Date()),
     );
 
     // Tenant A sees only its own audience for the shared email.

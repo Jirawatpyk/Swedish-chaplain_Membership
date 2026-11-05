@@ -25,8 +25,8 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { errKind, rootCause } from '@/lib/log-id';
-import { pgErrorCode } from '@/lib/db-errors';
+import { errKind, errStep, rootCause } from '@/lib/log-id';
+import { pgErrorCode, pgErrorMeta } from '@/lib/db-errors';
 import { erasureMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -231,16 +231,6 @@ export type EraseMemberMeta = {
   deadlineAt?: Date;
 };
 
-// Spec 140 s2c review round 4 follow-up (code-review #1) — the step of a
-// failed wrapper Error, so the log tells a benign race from a DB fault. Only a
-// code-authored message passes (`lookup_failed:repo.unexpected`,
-// `change_request_race:1`): lowercase words with an optional `:code`, no
-// spaces, so driver text can never reach the log through it.
-const STEP_MESSAGE = /^[a-z_]+(?::[a-z0-9_.]+)?$/;
-function eraseStep(e: unknown): string | undefined {
-  return e instanceof Error && STEP_MESSAGE.test(e.message) ? e.message : undefined;
-}
-
 class EraseNotFoundError extends Error {
   constructor() {
     super('not_found');
@@ -352,7 +342,7 @@ export async function eraseMember(
       logger.error(
         // Review round 4 (code-review #7) — the class and the SQLSTATE code,
         // never the Error: a driver message can carry the subject's address.
-        { err: errKind(e), step: eraseStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
+        { err: errKind(e), step: errStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
         'erase-member: requested-audit failed',
       );
       return err({ type: 'server_error', message: 'erase request audit failed' });
@@ -394,6 +384,11 @@ export async function eraseMember(
     readonly audienceId: string;
     readonly email: string;
   }> = [];
+  // Spec 140 s2d (#736b) — the DETACH instant: read just before the scrub tx
+  // starts (not the pre-flight `now` above), and handed to broadcasts as the
+  // `asOf` its leaked-audience cap judges the stuck rule at. Broadcasts' pass
+  // (b) judges again later, after commit; RoPA 8d residual 6 names that gap.
+  const detachAsOf = deps.clock.now();
   try {
     await runInTenant(deps.tenant, async (tx) => {
       // F114 (FR-030, T078) — the member's change requests, in the SAME tx
@@ -557,6 +552,7 @@ export async function eraseMember(
           tx,
           deps.tenant.slug,
           tombstoneEmails,
+          detachAsOf,
         );
 
       // COMP-1 FIX-9 — element-wise redact the erased member's email out of
@@ -772,7 +768,16 @@ export async function eraseMember(
     logger.error(
       // Review round 4 (code-review #7) — the class and the SQLSTATE code,
       // never the Error: a driver message can carry the subject's address.
-      { err: errKind(e), step: eraseStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
+      // Spec 140 s2d review round 2 (code-review #7) — and the constraint /
+      // table / column names (`pgErrorMeta`), never the driver's `detail`.
+      {
+        err: errKind(e),
+        step: errStep(e),
+        code: pgErrorCode(e),
+        pg: pgErrorMeta(e),
+        memberId,
+        requestId: meta.requestId,
+      },
       'erase-member: scrub tx failed',
     );
     return err({ type: 'server_error', message: 'erase scrub failed' });
@@ -1351,7 +1356,7 @@ export async function eraseMember(
       logger.error(
         // Review round 4 (code-review #7) — the class and the SQLSTATE code,
         // never the Error: a driver message can carry the subject's address.
-        { err: errKind(e), step: eraseStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
+        { err: errKind(e), step: errStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
         'erase-member: member_erased audit failed',
       );
     }

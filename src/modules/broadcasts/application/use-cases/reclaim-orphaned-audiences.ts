@@ -54,6 +54,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
@@ -319,7 +320,10 @@ export async function reclaimOrphanedAudiences(
         {
           audienceId: orphan.audienceId,
           broadcastId: orphan.broadcastId,
-          cause: e instanceof Error ? e.message : 'unknown error',
+          // Spec 140 s2d (#736c) — the class and the gateway's closed kind, never
+          // the message (a Resend error carries provider text).
+          ...errLogFields(e),
+          gatewayKind: classifyThrown(e).kind,
         },
         'broadcasts.audience_reclaim.delete_failed',
       );

@@ -33,8 +33,8 @@
 import type { OrphanOutcome } from '../../domain/value-objects/orphaned-resend-id';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { OrphanedResendIdRef } from '../ports/broadcast-orphans-repo';
+import { classifyResendDraftAnswer } from './_classify-resend-draft-answer';
 import { classifyThrown } from './_classify-thrown';
-import { isHandedStatus } from './_probe-refused-send';
 import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
 export type OrphanSettlement =
@@ -53,19 +53,18 @@ export async function settleOrphanAtResend(
     }
     if (orphan.heldBySentRow) return { kind: 'settled', outcome: 'superseded' };
     const deleted = await gateway.deleteBroadcastOnce(orphan.resourceId);
-    if (deleted.kind === 'deleted') return { kind: 'settled', outcome: 'deleted' };
-    if (deleted.kind === 'absent') {
-      await pauseBeforeReprobe(REPROBE_PAUSE_MS);
-      const confirm = await gateway.retrieveBroadcastOnce(orphan.resourceId);
-      if (confirm.kind === 'not_found') return { kind: 'settled', outcome: 'absent' };
-      return { kind: 'undecided', answer: `absent_probe_${confirm.kind === 'present' ? confirm.status : confirm.kind}` };
-    }
-    if (deleted.kind !== 'forbidden') return { kind: 'undecided', answer: deleted.kind };
+    // Spec 140 s2d (#735) — the table is `classifyResendDraftAnswer`'s `orphan` policy.
+    const first = classifyResendDraftAnswer('orphan', deleted.kind, null);
+    if (first.kind === 'deleted') return { kind: 'settled', outcome: 'deleted' };
+    if (first.kind === 'undecided') return { kind: 'undecided', answer: first.deleted };
+    // A 404 is confirmed by a GET `REPROBE_PAUSE_MS` later; a 403 is probed at once.
+    if (first.pause) await pauseBeforeReprobe(REPROBE_PAUSE_MS);
     const probe = await gateway.retrieveBroadcastOnce(orphan.resourceId);
-    const probed = probe.kind === 'present' ? probe.status : probe.kind;
-    if (isHandedStatus(probed)) return { kind: 'settled', outcome: 'handed' };
-    if (probed === 'cancelled' || probed === 'failed') return { kind: 'settled', outcome: 'retained' };
-    return { kind: 'undecided', answer: `forbidden_probe_${probed}` };
+    const answer = classifyResendDraftAnswer('orphan', first.deleted, probe);
+    if (answer.kind === 'undecided') return { kind: 'undecided', answer: `${answer.deleted}_probe_${answer.probed}` };
+    if (answer.kind === 'absent') return { kind: 'settled', outcome: 'absent' };
+    if (answer.kind === 'handed') return { kind: 'settled', outcome: 'handed' };
+    return { kind: 'settled', outcome: 'retained' };
   } catch (e) {
     return { kind: 'undecided', answer: `threw_${classifyThrown(e).kind}` };
   }

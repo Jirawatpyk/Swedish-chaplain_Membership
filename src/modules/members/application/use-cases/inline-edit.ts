@@ -17,6 +17,7 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -132,7 +133,8 @@ export async function inlineEdit(
         // observability server-side.
         logger.error(
           {
-            err: currentResult.error,
+            // Spec 140 s2d (#736c) — the class and codes, never the RepoError's cause object.
+            ...errLogFields(currentResult.error),
             memberId,
             requestId: meta.requestId,
             field,

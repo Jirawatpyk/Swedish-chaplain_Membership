@@ -2971,9 +2971,15 @@ async function failTerminally(
     if (reclaimed.payloadExtra !== undefined) payloadExtra = { ...(payloadExtra ?? {}), ...reclaimed.payloadExtra };
   }
   const auditEventType = opts.auditEventType ?? 'broadcast_failed_to_dispatch';
+  // Review round 1 (check:log-error-objects) — the import id, read off the Result error once for the log lines.
+  // Review round 2 — annotated with its type, the rule's TOKEN_FIELDS_BY_TYPE allowlist.
+  const importId: Extract<
+    BuildAudienceTickError,
+    { kind: 'audience_import_failed' } | { kind: 'audience_import_stuck' }
+  >['importId'] = error.importId;
   const notifyMember = opts.notifyMember ?? true;
   const now = deps.clock.now();
-  const reason =
+  const reason: Extract<BuildAudienceTickError, { kind: 'audience_import_failed' }>['reason'] | 'audience_import_stuck' =
     error.kind === 'audience_import_failed' ? error.reason : 'audience_import_stuck';
   // `ageMs` is Infinity for the impossible `(import_id set, submitted_at NULL)`
   // row. JSON.stringify turns Infinity into `null`, so normalise here rather
@@ -3054,18 +3060,22 @@ async function failTerminally(
     // broadcast failed when it was cancelled is worse than silence.
     // Review round 2 (reliability NIT) — what was being recorded, and where
     // the row was when the CAS refused it (`null` for a non-CAS fault).
-    const lostCas = cleanupErr instanceof BroadcastConcurrentMutationError ? cleanupErr : null;
+    // Review round 2 — each field annotated with its class (check:log-error-objects TOKEN_FIELDS_BY_TYPE).
+    const observedStatus: BroadcastConcurrentMutationError['observedStatus'] | null =
+      cleanupErr instanceof BroadcastConcurrentMutationError ? cleanupErr.observedStatus : null;
+    const rowStatus: BroadcastConcurrentMutationError['rowStatus'] =
+      cleanupErr instanceof BroadcastConcurrentMutationError ? cleanupErr.rowStatus : null;
     logger.error(
       {
         err: errKind(cleanupErr),
         errorKind: error.kind,
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId,
-        importId: error.importId,
+        importId,
         dispatchFailureKind: reason,
         expectedStatus: 'approved',
-        observedStatus: lostCas?.observedStatus ?? null,
-        rowStatus: lostCas?.rowStatus ?? null,
+        observedStatus,
+        rowStatus,
       },
       'broadcasts.audience_import.cleanup_failed',
     );
@@ -3092,11 +3102,15 @@ async function failTerminally(
   // only now, once the terminal write committed: before the fenced write it
   // also printed for a tick that then lost its lease (which logs only
   // `lease_lost`) or lost the CAS (which logs `cleanup_failed`).
+  const observed: Extract<BuildAudienceTickError, { kind: 'audience_import_failed' }>['observed'] =
+    error.kind === 'audience_import_failed' ? error.observed : ageMsOrNull;
+  const expected: Extract<BuildAudienceTickError, { kind: 'audience_import_failed' }>['expected'] =
+    error.kind === 'audience_import_failed' ? error.expected : IMPORT_STUCK_AFTER_MS;
   logger.error(
     {
       tenantId: deps.tenant.slug,
       broadcastId: input.broadcastId,
-      importId: error.importId,
+      importId,
       errorKind: error.kind,
       // NOT `reason` (round 3 finding 3-12). `'reason'` and `'*.reason'` are in
       // `logger.ts` REDACT_PATHS, deliberately broad because a Stripe SDK error
@@ -3116,8 +3130,8 @@ async function failTerminally(
       // `broadcast-failed-to-dispatch-email.test.ts` iterates it rather than a
       // copy, so adding a member without its three locales fails a test.
       dispatchFailureKind: reason,
-      observed: error.kind === 'audience_import_failed' ? error.observed : ageMsOrNull,
-      expected: error.kind === 'audience_import_failed' ? error.expected : IMPORT_STUCK_AFTER_MS,
+      observed,
+      expected,
     },
     'broadcasts.audience_import.failed',
   );

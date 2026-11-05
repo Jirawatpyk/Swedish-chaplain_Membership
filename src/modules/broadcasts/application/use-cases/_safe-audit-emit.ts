@@ -20,6 +20,7 @@
  * Pure Application logic — no framework imports beyond logger.
  */
 import { logger } from '@/lib/logger';
+import { errLogFields, hashId } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { AuditPortInvariantError } from '../ports/audit-port';
 import type {
@@ -82,10 +83,12 @@ export async function safeAuditEmit(
     if (isAdapterInvariantError(e)) throw e;
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        // Spec 140 s2d (#736c) — the class and SQLSTATE, never the message; the
+        // actor hashed, as every members log line does (`hashId`).
+        ...errLogFields(e),
         eventType: event.eventType,
         tenantId: event.tenantId,
-        actorUserId: event.actorUserId,
+        actorUserIdHash: hashId(event.actorUserId),
         requestId: event.requestId,
         ...extraContext,
       },
@@ -138,10 +141,10 @@ export async function safeAuditEmitTyped<
     if (isAdapterInvariantError(e)) throw e;
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        ...errLogFields(e),
         eventType: event.eventType,
         tenantId: event.tenantId,
-        actorUserId: event.actorUserId,
+        actorUserIdHash: hashId(event.actorUserId),
         requestId: event.requestId,
       },
       'broadcasts.audit.emit_failed',

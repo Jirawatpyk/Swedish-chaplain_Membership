@@ -545,7 +545,8 @@ export async function decideChangeRequest(
         return err({ type: 'server_error', message: `decide: ${re.code}` });
       }
       logger.error(
-        { tenantId, changeRequestId: input.changeRequestId, requestId: input.requestId, err: e instanceof Error ? e.name : String(e) },
+        // Spec 140 s2d (#736c) — the class, never `String(e)` of a non-Error throw.
+        { tenantId, changeRequestId: input.changeRequestId, requestId: input.requestId, err: errKind(e) },
         'change-request.decide.unexpected',
       );
       return err({ type: 'server_error', message: 'decide: unexpected' });

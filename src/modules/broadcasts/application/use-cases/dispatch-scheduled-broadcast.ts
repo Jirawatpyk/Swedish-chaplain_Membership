@@ -1071,9 +1071,14 @@ export async function dispatchScheduledBroadcast(
     // must never fall through to the branches below, which would mark the
     // broadcast failed with a fabricated "empty audience" reason.
     if (!resolvedResult.ok && resolvedResult.error.kind === 'resolve.server_error') {
+      // Spec 140 s2d review round 4 (code-review #9) — forward the resolver's
+      // class, as build-audience-tick's `mapResolveError` does, so the cron
+      // prints it rather than 'unclassified'.
+      const { errClass } = resolvedResult.error;
       return err({
         kind: 'dispatch.server_error',
         message: resolvedResult.error.message,
+        ...(errClass === undefined ? {} : { errClass }),
         phase: 'resolve',
       });
     }
@@ -1392,6 +1397,8 @@ export async function dispatchScheduledBroadcast(
     // that is quiet about a permanent leak.
     if (e instanceof BroadcastConcurrentMutationError) {
       if (resendAudienceId !== '') {
+        // Review round 2 — annotated with its class (check:log-error-objects TOKEN_FIELDS_BY_TYPE).
+        const observedStatus: BroadcastConcurrentMutationError['observedStatus'] = e.observedStatus;
         try {
           await deps.broadcastsGateway.deleteAudience(resendAudienceId);
           logger.info(
@@ -1399,7 +1406,7 @@ export async function dispatchScheduledBroadcast(
               tenantId: deps.tenant.slug,
               broadcastId: input.broadcastId as string,
               resendAudienceId,
-              observedStatus: e.observedStatus,
+              observedStatus,
             },
             'broadcasts.dispatch.audience_attach_lost_reclaimed',
           );
@@ -1509,7 +1516,9 @@ export async function dispatchScheduledBroadcast(
           {
             tenantId: deps.tenant.slug,
             broadcastId: input.broadcastId as string,
-            reason: shape.reason,
+            // Spec 140 s2d review round 3 — no `reason`: `classifyThrown`'s
+            // reason is the thrown message (and `reason` is a redacted key,
+            // so the line only ever carried `[REDACTED]`).
           },
           'broadcasts.dispatch.idempotency_conflict_pre_send',
         );

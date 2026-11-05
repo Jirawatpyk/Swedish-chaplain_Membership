@@ -82,6 +82,7 @@ function makeStubBridge(): {
       erasedCalls.push({ memberId });
       return { erasedAt: null };
     },
+    async filterErasedMemberIds() { return []; },
     async getMembersHaltedInTenant() {
       return [];
     },

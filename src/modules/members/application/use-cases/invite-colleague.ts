@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { hashId } from '@/lib/log-id';
+import { errLogFields, hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { type MemberId } from '../../domain/member';
 import type { Contact, ContactId, PreferredLanguage } from '../../domain/contact';
@@ -291,14 +291,15 @@ export async function inviteColleague(
 
     return ok({ contact, userId: created.value.user.id });
   } catch (e) {
-    const cause = e instanceof UseCaseAbort ? e.error : e;
+    const failure = e instanceof UseCaseAbort ? e.error : e;
     logger.error(
       {
         contactId: newContactId,
         // PII: hash the user id in logs (CLAUDE.md § Secrets) — consistent with
         // invite-user-for-member + the shared invite-saga compensation log.
         userIdHash: hashId(created.value.user.id),
-        cause,
+        // Spec 140 s2d (#736c) — the class and codes, never the error object.
+        ...errLogFields(failure),
         requestId: input.requestId,
       },
       'invite-colleague.tx_failed: rolling back orphaned F1 user (SAGA compensation)',

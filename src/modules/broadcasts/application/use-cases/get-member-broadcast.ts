@@ -11,6 +11,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errLogFields, hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '@/modules/members';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
@@ -77,7 +78,9 @@ export async function getMemberBroadcast(
           tenantId: deps.tenant.slug,
           memberId: input.memberId,
           broadcastId: input.broadcastId,
-          actorUserId: input.actorUserId,
+          // Spec 140 s2d review round 3 (security #7) — hashed, like the
+          // audit-failure line below (rules.md § Secrets).
+          actorUserIdHash: hashId(input.actorUserId),
           requestId: input.requestId,
         },
         'broadcasts.enumeration_probe.not_found',
@@ -104,11 +107,13 @@ export async function getMemberBroadcast(
       } catch (e) {
         logger.error(
           {
-            err: e instanceof Error ? e.message : String(e),
+            // Spec 140 s2d (#736c) — the class and SQLSTATE, never the message.
+            ...errLogFields(e),
             tenantId: deps.tenant.slug,
             memberId: input.memberId,
             broadcastId: input.broadcastId,
-            actorUserId: input.actorUserId,
+            // Review round 2 (code-review #9) — hashed, never the raw id (rules.md § Secrets).
+            actorUserIdHash: hashId(input.actorUserId),
             requestId: input.requestId,
           },
           'broadcasts.cross_member_probe.audit_emit_failed',

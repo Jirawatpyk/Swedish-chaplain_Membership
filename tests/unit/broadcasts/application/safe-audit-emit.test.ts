@@ -15,6 +15,7 @@ import {
   safeAuditEmitTyped,
 } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
 import { logger } from '@/lib/logger';
+import { hashId } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type {
   AuditEmitInput,
@@ -85,14 +86,16 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
     // load-bearing for the runbook (docs/runbooks/audit-emit-loss.md).
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        err: 'audit-storage transient failure',
+        // Spec 140 s2d (#736c) — the error CLASS and a hashed actor, never the message or the raw id.
+        err: 'Error',
         eventType: 'broadcast_image_unsafe',
         tenantId: 'tenant-test',
-        actorUserId: 'user-42',
+        actorUserIdHash: hashId('user-42'),
         requestId: 'req-test-001',
       }),
       'broadcasts.audit.emit_failed',
     );
+    expect(errorSpy.mock.calls[0]![0]).not.toHaveProperty('actorUserId');
 
     // H3 counter assertion: failure path MUST increment the counter
     // with the event type + tenant id, so the alert pipeline at
@@ -101,14 +104,14 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
     expect(metricSpy).toHaveBeenCalledWith('broadcast_image_unsafe', 'tenant-test');
   });
 
-  it('audit.emit rejects with non-Error value → still catches + logs stringified err', async () => {
+  it('audit.emit rejects with non-Error value → still catches + logs the unknown class', async () => {
     const audit: AuditPort = {
       emit: vi.fn().mockRejectedValue('plain string failure'),
       emitTyped: vi.fn().mockRejectedValue('plain string failure'),
     };
     await expect(safeAuditEmit(audit, null, SAMPLE_EVENT)).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ err: 'plain string failure' }),
+      expect.objectContaining({ err: 'unknown' }),
       'broadcasts.audit.emit_failed',
     );
   });
@@ -159,7 +162,7 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
     ).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        err: 'connection terminated unexpectedly',
+        err: 'Error',
       }),
       'broadcasts.audit.emit_failed',
     );
@@ -238,10 +241,10 @@ describe('safeAuditEmitTyped (R008 Round 2 closure — typed sibling coverage)',
     expect(errorSpy).toHaveBeenCalledTimes(1);
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        err: 'typed audit storage transient failure',
+        err: 'Error',
         eventType: 'broadcast_template_snapshot_refused_deleted',
         tenantId: 'tenant-typed-test',
-        actorUserId: 'user-typed-42',
+        actorUserIdHash: hashId('user-typed-42'),
         requestId: 'req-typed-test-001',
       }),
       'broadcasts.audit.emit_failed',
@@ -295,7 +298,7 @@ describe('safeAuditEmitTyped (R008 Round 2 closure — typed sibling coverage)',
       safeAuditEmitTyped(audit, null, SAMPLE_TYPED_EVENT),
     ).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ err: 'connection terminated unexpectedly' }),
+      expect.objectContaining({ err: 'Error' }),
       'broadcasts.audit.emit_failed',
     );
     expect(metricSpy).toHaveBeenCalledWith(

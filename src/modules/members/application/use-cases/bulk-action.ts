@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { primaryContactTriggerViolation } from '@/lib/db-errors';
 import { logger } from '@/lib/logger';
+import { errLogFields, errStep } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -164,7 +165,8 @@ export async function bulkAction(
       );
       if (!lookupResult.ok) {
         logger.error(
-          { err: lookupResult.error, requestId: meta.requestId },
+          // Spec 140 s2d (#736c) — the class and codes, never the RepoError's cause object.
+          { ...errLogFields(lookupResult.error), requestId: meta.requestId },
           'bulk-action: findManyByIdsInTx unexpected error',
         );
         // Round-6 S-1: preserve error code so catch block can distinguish
@@ -379,7 +381,11 @@ export async function bulkAction(
     // would collapse to "bulk operation failed" with zero forensic trace.
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        // Spec 140 s2d (#736c) — the class, the SQLSTATE and the code-authored step
+        // (`lookup_failed:repo.unexpected`, `audit_failed`), never the message: a
+        // Drizzle message quotes the statement's bound parameters.
+        ...errLogFields(e),
+        step: errStep(e),
         requestId: meta.requestId,
         action: data.action,
       },

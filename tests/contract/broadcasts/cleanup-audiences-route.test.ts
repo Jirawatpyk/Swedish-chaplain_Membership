@@ -123,17 +123,38 @@ describe('cron cleanup-audiences — wire contract', () => {
     expect(body.failed).toBe(2);
   });
 
-  it('valid bearer + use-case returns server_error → 500', async () => {
+  // Spec 140 s2d (#736a, pdpa M-3) — the drain's erasedReadFailed reaches
+  // the tick_complete line and the body, beside listFailed.
+  // Review round 1 (the maintainer's /verify finding) — erasedShareFull too.
+  it('the orphan drain counts, erasedReadFailed and erasedShareFull included, reach tick_complete and the body', async () => {
+    const orphans = { listed: 3, settled: 2, undecided: 0, waiting: 1, deferred: 0, listFailed: false, erasedReadFailed: true, erasedShareFull: true };
+    cleanupOrphanedAudiencesMock.mockResolvedValueOnce(ok({ processed: 0, deleted: 0, failed: 0, orphans }));
+    const { POST } = await import(
+      '@/app/api/cron/broadcasts/cleanup-audiences/route'
+    );
+    const { logger } = await import('@/lib/logger');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { orphans?: unknown }).orphans).toEqual(orphans);
+    const line = vi.mocked(logger.info).mock.calls.find((c) => c[1] === 'cron.broadcasts.cleanup_audiences.tick_complete');
+    expect((line?.[0] as { orphans?: unknown } | undefined)?.orphans).toEqual(orphans);
+  });
+
+  it('valid bearer + use-case returns server_error → 500, logged with its errClass', async () => {
     cleanupOrphanedAudiencesMock.mockResolvedValueOnce(
-      err({ kind: 'cleanup.server_error', message: 'neon outage' }),
+      err({ kind: 'cleanup.server_error', errClass: 'DrizzleQueryError' }),
     );
     const { POST } = await import(
       '@/app/api/cron/broadcasts/cleanup-audiences/route'
     );
+    const { logger } = await import('@/lib/logger');
     const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error?: { code?: string } };
     expect(body.error?.code).toBe('internal_error');
+    // Review round 1 (code-review #7) — the class, under its own name.
+    const line = vi.mocked(logger.error).mock.calls.find((c) => c[1] === 'cron.broadcasts.cleanup_audiences.server_error');
+    expect((line?.[0] as { err?: unknown } | undefined)?.err).toBe('DrizzleQueryError');
   });
 
   it('kill-switch off → 200 + {skipped:true, reason:feature_disabled}', async () => {

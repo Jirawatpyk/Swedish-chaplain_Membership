@@ -28,10 +28,22 @@ const f3 = vi.hoisted(() => ({
   getMembersBySegment: vi.fn(),
   countBroadcastOptedOutContacts: vi.fn(),
   findErasedAtById: vi.fn(),
+  findErasedIdsInTx: vi.fn(),
+  findById: vi.fn(),
 }));
 
+// Spec 140 s2d (#736a) - filterErasedMemberIds opens its own tenant tx.
+const TX = vi.hoisted(() => ({ kind: 'tenant-tx-stub' }));
+const runInTenantSpy = vi.hoisted(() => vi.fn(async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn(TX)));
+vi.mock('@/lib/db', () => ({ runInTenant: runInTenantSpy }));
+
 vi.mock('@/modules/members', () => ({
-  drizzleMemberRepo: { kind: 'member-repo-stub', findErasedAtById: (...a: unknown[]) => f3.findErasedAtById(...a) },
+  drizzleMemberRepo: {
+    kind: 'member-repo-stub',
+    findErasedAtById: (...a: unknown[]) => f3.findErasedAtById(...a),
+    findErasedIdsInTx: (...a: unknown[]) => f3.findErasedIdsInTx(...a),
+    findById: (...a: unknown[]) => f3.findById(...a),
+  },
   drizzleContactRepo: { kind: 'contact-repo-stub' },
   asMemberId: (id: string) => id,
   getBroadcastRecipientContacts: (...a: unknown[]) => f3.getBroadcastRecipientContacts(...a),
@@ -53,6 +65,8 @@ vi.mock('@/lib/logger', () => ({ logger: log }));
 import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
 import * as f3mod from '@/modules/members';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
+import { errStep } from '@/lib/log-id';
+import { pgErrorCode } from '@/lib/db-errors';
 
 const tenant = asTenantContext('test-tenant');
 
@@ -216,6 +230,69 @@ describe('membersBridge — the other lookups discriminate "no data" from "no an
     expect(await membersBridge.lookupMemberPrimaryContactEmailInTenant(tenant, email)).toBeNull();
   });
 
+  // Spec 140 s2d review round 1 (reliability M-1, code-review #4) — a failed
+  // read throws a step token (`errStep`-compatible) with the driver error as
+  // its `cause`, so a caller's log names the read and its SQLSTATE.
+  it('a failed read throws a members_bridge_<read>:<repoCode> step with the cause', async () => {
+    const cause = Object.assign(new Error('terminating connection'), { code: '57P01' });
+    const failed = () => err({ code: 'repo.unexpected' as const, cause });
+    const email = unsafeBrandEmailLower('a@b.co');
+    const caught = (p: Promise<unknown>) => p.then(() => null, (e: unknown) => e);
+    vi.mocked(f3mod.getMemberPrimaryContact).mockResolvedValueOnce(failed() as never);
+    vi.mocked(f3mod.getMembersHaltedInTenant).mockResolvedValueOnce(failed() as never);
+    vi.mocked(f3mod.lookupContactEmailInTenant).mockResolvedValueOnce(failed() as never);
+    const thrown = [
+      await caught(membersBridge.getMemberPrimaryContact(tenant, 'm-1')),
+      await caught(membersBridge.getMembersHaltedInTenant(tenant)),
+      await caught(membersBridge.lookupContactEmailInTenant(tenant, email)),
+    ];
+    expect(thrown.map((e) => errStep(e))).toEqual([
+      'members_bridge_get_member_primary_contact:repo.unexpected',
+      'members_bridge_get_members_halted:repo.unexpected',
+      'members_bridge_lookup_contact_email:repo.unexpected',
+    ]);
+    for (const e of thrown) expect(pgErrorCode(e)).toBe('57P01');
+  });
+
+  // Spec 140 s2d review round 2 (spec L1, code-review #5) — EVERY bridge read
+  // failure is a step token with the cause, not only the four round 1 moved:
+  // the segment reads, the existence read, the primary-contact lookup, the
+  // halt write and the opt-out filter used a free-text message
+  // (`members-bridge.<method>: <code> — refusing …`) with no cause, so no
+  // caller's log could name the read or reach the SQLSTATE.
+  it('every remaining read throws a members_bridge_<read>:<repoCode> step with the cause', async () => {
+    const cause = Object.assign(new Error('terminating connection'), { code: '57P01' });
+    const failed = () => err({ code: 'repo.unexpected' as const, cause });
+    const email = unsafeBrandEmailLower('a@b.co');
+    const caught = (p: Promise<unknown>) => p.then(() => null, (e: unknown) => e);
+    f3.getMembersBySegment.mockResolvedValueOnce(failed());
+    f3.getBroadcastRecipientContacts.mockResolvedValueOnce(failed());
+    f3.countBroadcastOptedOutContacts.mockResolvedValueOnce(failed());
+    f3.findById.mockResolvedValueOnce(failed());
+    vi.mocked(f3mod.lookupMemberPrimaryContactEmailInTenant).mockResolvedValueOnce(failed() as never);
+    vi.mocked(f3mod.setMemberHalt).mockResolvedValueOnce(failed() as never);
+    vi.mocked(f3mod.filterMarketingOptedOutEmails).mockResolvedValueOnce(failed() as never);
+    const thrown = [
+      await caught(membersBridge.getMembersBySegment(tenant, 'all_members', {})),
+      await caught(membersBridge.getContactsBySegment(tenant, 'all_members', {})),
+      await caught(membersBridge.countOptedOutContactsBySegment(tenant, 'all_members', {}, null)),
+      await caught(membersBridge.memberExistsInTenant(tenant, 'm-1')),
+      await caught(membersBridge.lookupMemberPrimaryContactEmailInTenant(tenant, email)),
+      await caught(membersBridge.setMemberHalt(tenant, 'm-1', false, 'admin')),
+      await caught(membersBridge.filterMarketingOptedOut(tenant, [email])),
+    ];
+    expect(thrown.map((e) => errStep(e))).toEqual([
+      'members_bridge_get_members_by_segment:repo.unexpected',
+      'members_bridge_get_contacts_by_segment:repo.unexpected',
+      'members_bridge_count_opted_out_contacts:repo.unexpected',
+      'members_bridge_member_exists:repo.unexpected',
+      'members_bridge_lookup_member_primary_contact_email:repo.unexpected',
+      'members_bridge_set_member_halt:repo.unexpected',
+      'members_bridge_filter_marketing_opted_out:repo.unexpected',
+    ]);
+    for (const e of thrown) expect(pgErrorCode(e)).toBe('57P01');
+  });
+
   // Review 2026-09-07 round 2 (C4, errors HIGH) — the WRITE path 20 lines
   // below the four lookups above still collapsed every repo failure into
   // "that member does not exist": an admin clearing a halt during a Neon
@@ -280,6 +357,59 @@ describe('membersBridge.getMemberErasedAt (spec 139 DE1)', () => {
     await expect(membersBridge.getMemberErasedAt(tenant, 'm-1')).rejects.toThrow(
       /repo\.unexpected/,
     );
+  });
+
+  it('repo.unexpected throws members_bridge_get_member_erased_at:repo.unexpected with the cause', async () => {
+    const cause = Object.assign(new Error('terminating connection'), { code: '57P01' });
+    f3.findErasedAtById.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const, cause }));
+    const thrown = await membersBridge.getMemberErasedAt(tenant, 'm-1').then(() => null, (e: unknown) => e);
+    expect(errStep(thrown)).toBe('members_bridge_get_member_erased_at:repo.unexpected');
+    expect(pgErrorCode(thrown)).toBe('57P01');
+  });
+});
+
+/**
+ * Spec 140 s2d (#736a) — the orphan drain's erased-requester read: ids in,
+ * ids out, ONE members read (`findErasedIdsInTx`, in a tenant tx). An empty list makes no
+ * read. A failed read THROWS: the drain logs it once and lets the requester's
+ * young rows wait the grace, never reading "not erased" silently.
+ */
+describe('membersBridge.filterErasedMemberIds (spec 140 s2d, #736a)', () => {
+  it('answers the erased ids, read once through findErasedIdsInTx in a tenant tx', async () => {
+    f3.findErasedIdsInTx.mockClear();
+    f3.findErasedIdsInTx.mockResolvedValueOnce(ok(new Set(['m-2'])));
+    expect(await membersBridge.filterErasedMemberIds(tenant, ['m-1', 'm-2'])).toEqual(['m-2']);
+    expect(f3.findErasedIdsInTx).toHaveBeenCalledTimes(1);
+    expect(f3.findErasedIdsInTx).toHaveBeenCalledWith(TX, tenant.slug, ['m-1', 'm-2']);
+    expect(runInTenantSpy).toHaveBeenCalledWith(tenant, expect.any(Function));
+  });
+
+  it('no ids → [] with no read', async () => {
+    f3.findErasedIdsInTx.mockClear();
+    runInTenantSpy.mockClear();
+    expect(await membersBridge.filterErasedMemberIds(tenant, [])).toEqual([]);
+    expect(f3.findErasedIdsInTx).not.toHaveBeenCalled();
+    expect(runInTenantSpy).not.toHaveBeenCalled();
+  });
+
+  it('repo.unexpected THROWS', async () => {
+    f3.findErasedIdsInTx.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const, cause: new Error('neon down') }));
+    await expect(membersBridge.filterErasedMemberIds(tenant, ['m-1'])).rejects.toThrow(/repo\.unexpected/);
+  });
+
+  // Review round 1 (reliability M-1, code-review #4) — a step token the drain's
+  // log can carry (`errStep`), and the driver error as its `cause`, so
+  // `pgErrorCode` reaches the SQLSTATE.
+  it('repo.unexpected throws members_bridge_filter_erased:repo.unexpected with the cause', async () => {
+    const cause = Object.assign(new Error('terminating connection'), { code: '57P01' });
+    f3.findErasedIdsInTx.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const, cause }));
+    const thrown = await membersBridge.filterErasedMemberIds(tenant, ['m-1']).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(errStep(thrown)).toBe('members_bridge_filter_erased:repo.unexpected');
+    expect((thrown as Error).cause).toBe(cause);
+    expect(pgErrorCode(thrown)).toBe('57P01');
   });
 });
 

@@ -56,10 +56,15 @@ export interface BroadcastsAudienceDerivationPort {
    *   tenant (`app.current_tenant`) before reading. Carrying the brand here lets
    *   the adapter forward it to the repo (which also takes a `TenantSlug`) with
    *   no `asTenantSlug` re-brand.
+   * @param asOf — Spec 140 s2d (#736b): the instant broadcasts judges its
+   *   stuck rule at when it caps the leaked-audience pairs (in place of the
+   *   database clock). The erasure passes `deps.clock.now()` read just before
+   *   the scrub tx starts.
    */
   listMemberAudienceContactsInTx(
     tx: TenantTx,
     tenantSlug: TenantSlug,
     emails: readonly string[],
+    asOf: Date,
   ): Promise<ReadonlyArray<SubprocessorAudienceContact>>;
 }

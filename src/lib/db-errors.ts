@@ -20,6 +20,31 @@
 const POSTGRES_CHECK_VIOLATION = '23514';
 
 /**
+ * Spec 140 s2d review rounds 2 and 3 (code-review #3, #8; security L2) — the
+ * most `.cause` hops any walker here follows. A cyclic chain (`a.cause = b;
+ * b.cause = a`) would otherwise loop forever, synchronously, inside whatever
+ * reached it: a log call, a catch block, a repo's error mapping.
+ */
+const MAX_CAUSE_HOPS = 10;
+
+/**
+ * The one `.cause` walk in this file: `visit` sees the value, then each
+ * `.cause` below it, at most {@link MAX_CAUSE_HOPS} hops down, and stops at
+ * `null` / `undefined`. The first non-`undefined` answer of `visit` ends the
+ * walk and is returned; `undefined` when no link answered. Exported for
+ * `log-id.ts`'s `errCode` (review round 4, reliability LOW-2).
+ */
+export function walkCauses<T>(error: unknown, visit: (link: unknown) => T | undefined): T | undefined {
+  let cur: unknown = error;
+  for (let hop = 0; hop <= MAX_CAUSE_HOPS && cur !== null && cur !== undefined; hop += 1) {
+    const answer = visit(cur);
+    if (answer !== undefined) return answer;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
+/**
  * Type-narrow an unknown thrown value to "looks like a Postgres
  * error". postgres-js attaches `code` and `message` strings to its
  * error class; we don't import the class here to keep this file
@@ -50,18 +75,15 @@ function isPostgresError(
 export function isLastAdminTriggerError(error: unknown): boolean {
   // Drizzle 0.45+ wraps Postgres errors in a `Failed query: ...` message;
   // the original error sits on `.cause`. Walk the chain.
-  let cur: unknown = error;
-  while (cur !== null && cur !== undefined) {
-    if (
+  return (
+    walkCauses(error, (cur) =>
       isPostgresError(cur) &&
       cur.code === POSTGRES_CHECK_VIOLATION &&
       cur.message.includes('last-admin-protection')
-    ) {
-      return true;
-    }
-    cur = (cur as { cause?: unknown } | null)?.cause;
-  }
-  return false;
+        ? true
+        : undefined,
+    ) ?? false
+  );
 }
 
 /**
@@ -82,35 +104,31 @@ export function primaryContactTriggerViolation(error: unknown): {
   readonly memberId: string | null;
   readonly tenantSlug: string | null;
 } | null {
-  let cur: unknown = error;
-  while (cur !== null && cur !== undefined) {
-    if (
-      isPostgresError(cur) &&
-      cur.code === POSTGRES_CHECK_VIOLATION &&
-      cur.message.includes('primary-contact-invariant')
-    ) {
-      // One decoder for every caller (round 4, F4-#9 / F4-#10). The raise is
-      // `primary-contact-invariant: member <uuid> in tenant <slug> has <n>
-      // live primary contact(s)` — pinned by T031 on the real trigger. A count
-      // that cannot be read lands on the ACTIONABLE side (0 → "the member
-      // needs a primary"), never on "retry"; a member that cannot be read is
-      // null and the caller falls back to its sanitized error.
-      const count = /has (\d+) live primary/.exec(cur.message);
-      const who = /member ([0-9a-f-]{36}) in tenant (\S+)/i.exec(cur.message);
-      return {
-        livePrimaries: count ? Number(count[1]) : 0,
-        memberId: who?.[1] ?? null,
-        tenantSlug: who?.[2] ?? null,
-      };
-    }
-    cur = (cur as { cause?: unknown } | null)?.cause;
-  }
-  return null;
+  const raise = walkCauses(error, (cur) =>
+    isPostgresError(cur) && cur.code === POSTGRES_CHECK_VIOLATION && cur.message.includes('primary-contact-invariant')
+      ? cur
+      : undefined,
+  );
+  if (raise === undefined) return null;
+  // One decoder for every caller (round 4, F4-#9 / F4-#10). The raise is
+  // `primary-contact-invariant: member <uuid> in tenant <slug> has <n>
+  // live primary contact(s)` — pinned by T031 on the real trigger. A count
+  // that cannot be read lands on the ACTIONABLE side (0 → "the member
+  // needs a primary"), never on "retry"; a member that cannot be read is
+  // null and the caller falls back to its sanitized error.
+  const count = /has (\d+) live primary/.exec(raise.message);
+  const who = /member ([0-9a-f-]{36}) in tenant (\S+)/i.exec(raise.message);
+  return {
+    livePrimaries: count ? Number(count[1]) : 0,
+    memberId: who?.[1] ?? null,
+    tenantSlug: who?.[2] ?? null,
+  };
 }
 
 /**
- * Concatenate `error.message` across the entire `.cause` chain into a
- * single inspectable string. Use this when you need to substring-match
+ * Concatenate `error.message` across the `.cause` chain (at most
+ * {@link MAX_CAUSE_HOPS} hops, review round 3) into a single inspectable
+ * string. Use this when you need to substring-match
  * against a Postgres error (e.g. unique-violation detection in repo
  * adapters) — Drizzle 0.45+ wraps the original Postgres error and the
  * trigger / constraint message lives on `.cause.message`, not the
@@ -118,11 +136,11 @@ export function primaryContactTriggerViolation(error: unknown): {
  */
 export function errorChainMessage(error: unknown): string {
   const parts: string[] = [];
-  let cur: unknown = error;
-  while (cur instanceof Error) {
+  walkCauses(error, (cur) => {
+    if (!(cur instanceof Error)) return true;
     parts.push(cur.message);
-    cur = (cur as { cause?: unknown }).cause;
-  }
+    return undefined;
+  });
   if (parts.length === 0 && error !== null && error !== undefined) {
     parts.push(String(error));
   }
@@ -133,15 +151,58 @@ export function errorChainMessage(error: unknown): string {
  * The SQLSTATE of the first Postgres error in the `.cause` chain, or
  * `undefined`. For LOGGING: pair with `errKind(e)` so a failure is
  * diagnosable without its message — a Drizzle `Failed query:` message quotes
- * the statement's parameters, which can carry member ids.
+ * the statement's parameters, which can carry member ids. Review round 2: at
+ * most 10 hops, and only a SQLSTATE-shaped code is read; review round 3: one
+ * that holds a digit (`/^(?=.*\d)[0-9A-Z]{5}$/`), so `EPIPE` is not.
  */
 export function pgErrorCode(error: unknown): string | undefined {
-  let cur: unknown = error;
-  while (cur !== null && cur !== undefined) {
-    if (isPostgresError(cur)) return cur.code;
-    cur = (cur as { cause?: unknown }).cause;
-  }
-  return undefined;
+  return firstSqlStateError(error)?.code;
+}
+
+/**
+ * A SQLSTATE: five digits or upper-case letters, at least one a digit. Every
+ * SQLSTATE holds one: a class is two characters, and even the all-letter
+ * classes have a digit in every subclass (`HV000`, `XX000`).
+ * `card_declined`, `ECONNRESET`, `repo.unexpected` and, since review round 3
+ * (code-review #2), the Node codes `EPIPE` / `EPERM` are not.
+ */
+const SQLSTATE = /^(?=.*\d)[0-9A-Z]{5}$/;
+
+/**
+ * The first link of the `.cause` chain that is a Postgres error with a
+ * SQLSTATE-shaped code, at most {@link MAX_CAUSE_HOPS} hops down, else
+ * `undefined`. A link whose `code` is not a SQLSTATE (a Stripe or Node error)
+ * is passed over, so the Postgres error beneath it is still found.
+ */
+function firstSqlStateError(error: unknown): { readonly code: string; readonly message: string } | undefined {
+  return walkCauses(error, (cur) => (isPostgresError(cur) && SQLSTATE.test(cur.code) ? cur : undefined));
+}
+
+/** What {@link pgErrorMeta} reads off a PostgresError: names only. */
+export interface PgErrorMeta {
+  readonly constraint?: string;
+  readonly table?: string;
+  readonly column?: string;
+}
+
+/**
+ * Spec 140 s2d (#736c) — the constraint / table / column NAMES of the first
+ * Postgres error in the `.cause` chain, or `undefined` when there is none. For
+ * LOGGING, beside `errKind(e)` and `pgErrorCode(e)`, where the constraint name
+ * is what an incident needs. Names are schema metadata; NEVER `detail`,
+ * `where`, `hint` or `message`, which postgres-js fills with the row's values
+ * (`Key (email)=(…) already exists.`). A non-string name is left out. The same
+ * bounded walk as {@link pgErrorCode} (review round 2).
+ */
+export function pgErrorMeta(error: unknown): PgErrorMeta | undefined {
+  const found = firstSqlStateError(error);
+  if (found === undefined) return undefined;
+  const pg = found as { constraint_name?: unknown; table_name?: unknown; column_name?: unknown };
+  return {
+    ...(typeof pg.constraint_name === 'string' ? { constraint: pg.constraint_name } : {}),
+    ...(typeof pg.table_name === 'string' ? { table: pg.table_name } : {}),
+    ...(typeof pg.column_name === 'string' ? { column: pg.column_name } : {}),
+  };
 }
 
 /**
@@ -150,12 +211,7 @@ export function pgErrorCode(error: unknown): string | undefined {
  * link in the chain is a Postgres error with code 23505.
  */
 export function isUniqueViolation(error: unknown): boolean {
-  let cur: unknown = error;
-  while (cur !== null && cur !== undefined) {
-    if (isPostgresError(cur) && cur.code === '23505') return true;
-    cur = (cur as { cause?: unknown } | null)?.cause;
-  }
-  return false;
+  return walkCauses(error, (cur) => (isPostgresError(cur) && cur.code === '23505' ? true : undefined)) ?? false;
 }
 
 /**
@@ -178,17 +234,14 @@ export function isUniqueViolationOnConstraint(
   error: unknown,
   constraintName: string,
 ): boolean {
-  let cur: unknown = error;
   let sawUnique = false;
-  while (cur !== null && cur !== undefined) {
-    if (isPostgresError(cur) && cur.code === '23505') {
-      sawUnique = true;
-      const cn = (cur as { constraint_name?: unknown }).constraint_name;
-      if (typeof cn === 'string' && cn === constraintName) return true;
-    }
-    cur = (cur as { cause?: unknown } | null)?.cause;
-  }
-  return sawUnique && errorChainMessage(error).includes(constraintName);
+  const named = walkCauses(error, (cur) => {
+    if (!isPostgresError(cur) || cur.code !== '23505') return undefined;
+    sawUnique = true;
+    const cn = (cur as { constraint_name?: unknown }).constraint_name;
+    return typeof cn === 'string' && cn === constraintName ? true : undefined;
+  });
+  return named ?? (sawUnique && errorChainMessage(error).includes(constraintName));
 }
 
 /**
@@ -200,12 +253,7 @@ export function isUniqueViolationOnConstraint(
  * (`invoices_membership_coverage_no_overlap`, mig 0281) call sites.
  */
 export function isExclusionViolation(error: unknown): boolean {
-  let cur: unknown = error;
-  while (cur !== null && cur !== undefined) {
-    if (isPostgresError(cur) && cur.code === '23P01') return true;
-    cur = (cur as { cause?: unknown } | null)?.cause;
-  }
-  return false;
+  return walkCauses(error, (cur) => (isPostgresError(cur) && cur.code === '23P01' ? true : undefined)) ?? false;
 }
 
 /**
@@ -222,17 +270,14 @@ export function isExclusionViolationOnConstraint(
   error: unknown,
   constraintName: string,
 ): boolean {
-  let cur: unknown = error;
   let sawExclusion = false;
-  while (cur !== null && cur !== undefined) {
-    if (isPostgresError(cur) && cur.code === '23P01') {
-      sawExclusion = true;
-      const cn = (cur as { constraint_name?: unknown }).constraint_name;
-      if (typeof cn === 'string' && cn === constraintName) return true;
-    }
-    cur = (cur as { cause?: unknown } | null)?.cause;
-  }
-  return sawExclusion && errorChainMessage(error).includes(constraintName);
+  const named = walkCauses(error, (cur) => {
+    if (!isPostgresError(cur) || cur.code !== '23P01') return undefined;
+    sawExclusion = true;
+    const cn = (cur as { constraint_name?: unknown }).constraint_name;
+    return typeof cn === 'string' && cn === constraintName ? true : undefined;
+  });
+  return named ?? (sawExclusion && errorChainMessage(error).includes(constraintName));
 }
 
 /**
@@ -257,12 +302,6 @@ export function isExclusionViolationOnConstraint(
  */
 export function describeStorageError(error: unknown): string {
   const message = errorChainMessage(error);
-  let cur: unknown = error;
-  while (cur !== null && cur !== undefined) {
-    if (isPostgresError(cur)) {
-      return `${message} [${cur.code}]`;
-    }
-    cur = (cur as { cause?: unknown } | null)?.cause;
-  }
-  return message;
+  const code = walkCauses(error, (cur) => (isPostgresError(cur) ? cur.code : undefined));
+  return code === undefined ? message : `${message} [${code}]`;
 }

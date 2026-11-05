@@ -127,6 +127,11 @@ jobs:
       - name: Every F8 renewals route names itself in the errorId taxonomy
         run: pnpm check:f8-error-id
 
+      # Spec 140 s2d (#736c) — no members / broadcasts log line carries an error
+      # object or its text (a DrizzleQueryError's enumerable params); AST, 1 s.
+      - name: No error object or error text in a members / broadcasts log line
+        run: pnpm check:log-error-objects
+
       # D-033 — was in pre-push and pnpm check but in no required CI job (only the
       # path-filtered template-seed-drift.yml); 1 s, so it joins the static gates.
       - name: F7.1a template seed matches its source
