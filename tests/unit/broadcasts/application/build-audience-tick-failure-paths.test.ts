@@ -352,7 +352,7 @@ function makeDeps(opts: {
   /** Spec 140 s1 (ED4) — what `deleteBroadcastOnce` answers; default: `deleted`. */
   readonly deleteOnceOutcome?: 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other';
   /** Spec 140 s1 review round 1 — what `retrieveBroadcastOnce` reads after a 403; default: `draft`. */
-  readonly retrieveOnceStatus?: 'draft' | 'queued' | 'sending' | 'sent';
+  readonly retrieveOnceStatus?: 'draft' | 'queued' | 'sending' | 'sent' | 'cancelled';
 }): { deps: DepsWithEveryPort & { sendStanding: ReturnType<typeof makeFakeSendStanding> }; rec: Recorder & { readonly deleteOnce: Array<{ id: string; transitionsBefore: number }> } } {
   let txSeq = 0;
   const deleteOnce: Array<{ id: string; transitionsBefore: number }> = [];
@@ -3384,20 +3384,76 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
   });
 
   /**
-   * `cancelled` is a scheduled send Resend cancelled. Only a DRAFT can be sent
-   * (MEASURED 2026-10-29: a non-draft `/send` answers 422), so reusing it is a
-   * guaranteed refusal. It is as dead as `not_found`: mint fresh and replace.
+   * Spec 140 DT2 — `cancelled` is a send Resend cancelled: only a DRAFT can be
+   * sent (MEASURED 2026-10-29), so the id is dead, and the cancel was decided
+   * outside this tick. Refused TERMINALLY (`provider_cancelled`), never
+   * re-minted: a fresh mint would send what someone at Resend stopped. The
+   * choke point's DELETE answers 403 and its GET reads `cancelled` (retained);
+   * the id stays on the terminal row, where the erasure terminal pass and
+   * `cleanup-audiences` reach it. `failed_to_dispatch` releases the quota slot
+   * (`countForMemberQuota` excludes it), and the member is told.
    */
-  it('re-entry, the probe answers CANCELLED → a FRESH resource is minted and replaces it; the cancelled one is never sent to', async () => {
-    const { deps, rec } = makeDeps({ ...TICK2, resendBroadcastId: 'rb-0', probe: { kind: 'present', status: 'cancelled' } });
+  it('re-entry, the probe answers CANCELLED → terminal provider_cancelled: nothing minted, nothing sent, the id kept', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'present', status: 'cancelled' },
+      deleteOnceOutcome: 'forbidden',
+      retrieveOnceStatus: 'cancelled',
+    });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(res).toEqual({ ok: true, value: { kind: 'sent', resendBroadcastId: 'rb-1', recipientCount: RECIPIENTS.length } });
-    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'getContactImport', 'createBroadcast', 'sendBroadcast']);
-    expect(rec.broadcastIdAttaches.map((a) => a.fence)).toEqual([{ expectedAudienceImportId: 'imp-1', replacesResendBroadcastId: 'rb-0' }]);
-    expect(rec.sends).toEqual(['rb-1']);
-    expect(sendStarted(rec)?.payload).toMatchObject({ handedToSendOnPriorTick: false, observedResendStatus: 'cancelled' });
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'provider_cancelled', importId: 'imp-1' });
+    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce', 'retrieveBroadcastOnce']);
+    expect(rec.deleteOnce.map((d) => d.id)).toEqual(['rb-0']);
+    expect(rec.sends).toEqual([]);
+    expect(rec.broadcastIdAttaches).toEqual([]);
+    expect(rec.releases).toEqual([]);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.audits.map((a) => a.eventType)).toEqual(['broadcast_failed_to_dispatch']);
+    expect(rec.audits[0]?.payload).toMatchObject({ reason: 'provider_cancelled', resendDraftOutcome: 'cancelled' });
+    expect(spy).toHaveBeenCalledWith('test-tenant', 'provider_cancelled');
+    expect(rec.memberEmails).toEqual([{ templateKey: 'broadcast_failed_to_dispatch', reason: 'provider_cancelled' }]);
+  });
+
+  /**
+   * DT2, the order (maintainer, 5 Nov 2026): the cancelled check sits AFTER the
+   * standing decision, on its `send` and `hold` arms only. An erased member's
+   * refusal keeps its own arm (no member email, `standing: 'erased'`), so a
+   * refactor that moves the check above the standing gate fails here.
+   */
+  it('an ERASED member whose inherited id is CANCELLED → still the erased refusal: member_not_in_good_standing, no member email', async () => {
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'present', status: 'cancelled' },
+      standing: { erased: true },
+      deleteOnceOutcome: 'forbidden',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_not_in_good_standing' });
+    expect(rec.audits[0]?.payload).toMatchObject({ reason: 'member_not_in_good_standing', standing: 'erased' });
+    expect(rec.memberEmails).toEqual([]);
+    expect(rec.gatewayCalls).not.toContain('createBroadcast');
+  });
+
+  it('a standing read that FAILS with a CANCELLED inherited id → decides nothing: no terminal write, retried next tick', async () => {
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'present', status: 'cancelled' },
+      standing: { access: 'lookup_error' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'dispatch.server_error', phase: 'standing' });
+    expect(rec.transitions).toEqual([]);
+    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast']);
   });
 
   it('re-entry, NOT FOUND then the re-probe finds it SENT → caught up, nothing minted, nothing sent', async () => {
@@ -3704,20 +3760,29 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     expect(rec.memberEmails).toEqual([]);
   });
 
-  it('tick 2 hold with an inherited CANCELLED id whose delete is REFUSED → the audience is still deleted and both columns released', async () => {
+  /**
+   * Spec 140 DT2 — a hold used to abandon the build (`restartAudienceBuild`)
+   * and release the cancelled id, so the tick after the unhold minted and sent
+   * it afresh. Now the hold arm refuses a cancelled id terminally first: no
+   * restart, no release, no mint on this tick or any later one.
+   */
+  it('tick 2 HOLD (suspended) with an inherited CANCELLED id → terminal provider_cancelled: never held, never restarted, never minted', async () => {
     const { deps, rec } = makeDeps({
       ...TICK2,
       resendBroadcastId: 'rb-0',
       probe: { kind: 'present', status: 'cancelled' },
       standing: { access: 'suspended' },
-      throwOn: { method: 'deleteBroadcast', kind: 'permanent', code: 'validation_error' },
+      deleteOnceOutcome: 'forbidden',
+      retrieveOnceStatus: 'cancelled',
     });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
-    expect(rec.audiencesDeleted).toEqual(['aud-1']);
-    expect(rec.releases.map((r) => r.method)).toEqual(['releaseAudienceImport', 'releaseResendAudience']);
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'provider_cancelled' });
+    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce', 'retrieveBroadcastOnce']);
+    expect(rec.audiencesDeleted).toEqual([]);
+    expect(rec.releases).toEqual([]);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
   });
 
   it.each([
@@ -3844,19 +3909,23 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
     expect(rec.memberEmails).toEqual([]);
   });
 
-  it('that teardown with a DEAD (cancelled) broadcast id whose delete is REFUSED → it carries on: the audience deleted, both released', async () => {
+  // Spec 140 DT2 — a cancelled id is refused before the teardown runs.
+  it('that teardown row with a CANCELLED broadcast id → terminal provider_cancelled: no teardown, the id and the audience kept', async () => {
     const { deps, rec } = makeDeps({
       resendAudienceId: 'aud-1',
       resendBroadcastId: 'rb-0',
       probe: { kind: 'present', status: 'cancelled' },
-      throwOn: { method: 'deleteBroadcast', kind: 'permanent', code: 'validation_error' },
+      deleteOnceOutcome: 'forbidden',
+      retrieveOnceStatus: 'cancelled',
     });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(res).toEqual({ ok: true, value: { kind: 'audience_restarted' } });
-    expect(rec.audiencesDeleted).toEqual(['aud-1']);
-    expect(rec.releases.map((r) => r.method)).toEqual(['releaseResendAudience']);
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'provider_cancelled', importId: null });
+    expect(rec.audiencesDeleted).toEqual([]);
+    expect(rec.releases).toEqual([]);
+    expect(rec.importsSubmitted).toEqual([]);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
   });
 
   it('that teardown with a DRAFT broadcast id whose delete is REFUSED → it stops: the id and the audience are kept', async () => {
@@ -3887,20 +3956,6 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
 
     expect(rec.reprobePauses).toEqual([REPROBE_PAUSE_MS]);
     expect(res.ok ? res.value : res.error).not.toEqual({ kind: 'audience_restarted' });
-    expect(rec.audiencesDeleted).toEqual([]);
-    expect(rec.releases).toEqual([]);
-  });
-
-  it('that teardown with a DEAD broadcast id whose delete fails RETRYABLY → it stops (a transient says nothing about the resource)', async () => {
-    const { deps, rec } = makeDeps({
-      resendAudienceId: 'aud-1',
-      resendBroadcastId: 'rb-0',
-      probe: { kind: 'present', status: 'cancelled' },
-      throwOn: { method: 'deleteBroadcast', kind: 'retryable', subKind: 'server_5xx' },
-    });
-
-    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
-
     expect(rec.audiencesDeleted).toEqual([]);
     expect(rec.releases).toEqual([]);
   });

@@ -108,6 +108,19 @@ describe('buildBroadcastFailedToDispatchEmail — the reason a MEMBER reads', ()
     },
   );
 
+  /**
+   * Spec 140 DT2 — a broadcast cancelled at our email provider is refused for
+   * good (`provider_cancelled`) and the member is told. Its own sentence: not
+   * `provider_failed` (a failed import job) and not the generic one.
+   */
+  it.each(LOCALES)('%s: provider_cancelled is a member-facing reason with its own sentence', (locale) => {
+    expect(KNOWN_REASONS as readonly string[]).toContain('provider_cancelled');
+    const cancelled = build('provider_cancelled', locale).text;
+    expect(cancelled).not.toBe(build('generic', locale).text);
+    expect(cancelled).not.toBe(build('provider_failed', locale).text);
+    expect(cancelled).not.toContain('provider_cancelled');
+  });
+
   it('en: malformed_segment tells the member who can fix it', () => {
     expect(build('malformed_segment', 'en').text).toMatch(/administrator/i);
   });

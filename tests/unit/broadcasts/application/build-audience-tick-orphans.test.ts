@@ -267,11 +267,23 @@ const row = (reason: string, resourceId: string | null, resourceType: 'broadcast
 });
 
 describe('spec 140 s2c — the import leg records its orphans at the caller', () => {
-  it('[A7] a cancelled inherited id replaced by a fresh mint → dead_broadcast_replaced with the REPLACED id', async () => {
-    const h = harness({ row: { ...TICK2_ROW, resendBroadcastId: 'rb-dead' }, probe: 'cancelled' });
+  // Spec 140 DT2 — no longer replaced: refused terminally, and the id stays on
+  // the terminal row (the erasure terminal pass and cleanup reach it there), so
+  // no orphan row is written for it.
+  it('DT2 — a cancelled inherited id → terminal provider_cancelled, no mint, no send, NO orphan row', async () => {
+    const h = harness({
+      row: { ...TICK2_ROW, resendBroadcastId: 'rb-dead' },
+      probe: 'cancelled',
+      deleteOnce: 'forbidden',
+      retrieveOnce: { kind: 'present', status: 'cancelled' },
+    });
     const res = await h.run();
-    expect(res.ok).toBe(true);
-    expect(h.recorded).toEqual([row('dead_broadcast_replaced', 'rb-dead')]);
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'provider_cancelled' });
+    expect(h.events).not.toContain('gw:createBroadcast');
+    expect(h.events).not.toContain('gw:sendBroadcast');
+    expect(h.events).toContain('transition:failed_to_dispatch');
+    expect(h.audits[0]).toMatchObject({ eventType: 'broadcast_failed_to_dispatch', payload: { reason: 'provider_cancelled', resendDraftOutcome: 'cancelled' } });
+    expect(h.recorded).toEqual([]);
   });
 
   it('[A7] a not_found inherited id replaced by a fresh mint → no row (Resend holds nothing)', async () => {
@@ -281,21 +293,28 @@ describe('spec 140 s2c — the import leg records its orphans at the caller', ()
     expect(h.recorded).toEqual([]);
   });
 
-  it('a hold whose restart cannot delete a cancelled id keeps it → dead_broadcast_kept', async () => {
+  // Spec 140 DT2 — the hold no longer restarts on a cancelled id (the restart
+  // released it and the next tick re-minted): terminal, the id kept on the row.
+  it('DT2 — a hold (suspended) on a cancelled id → terminal provider_cancelled, no restart, no dead_broadcast_kept row', async () => {
     const h = harness({
       row: { ...TICK2_ROW, resendBroadcastId: 'rb-dead' },
       probe: 'cancelled',
       standing: { access: 'suspended' },
       deleteBroadcastForbidden: true,
+      deleteOnce: 'forbidden',
+      retrieveOnce: { kind: 'present', status: 'cancelled' },
     });
     const res = await h.run();
-    expect(res.ok ? res.value : res.error).toEqual({ kind: 'dispatch_held_member_suspended' });
-    expect(h.recorded).toEqual([row('dead_broadcast_kept', 'rb-dead')]);
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'provider_cancelled' });
+    expect(h.events.filter((e) => e.startsWith('gw:deleteBroadcast:') || e.startsWith('gw:deleteAudience:'))).toEqual([]);
+    expect(h.events).not.toContain('gw:createBroadcast');
+    expect(h.recorded).toEqual([]);
   });
 
   it('a hold whose restart deletes the broadcast id → no row', async () => {
-    const h = harness({ row: { ...TICK2_ROW, resendBroadcastId: 'rb-dead' }, probe: 'cancelled', standing: { access: 'suspended' } });
-    await h.run();
+    const h = harness({ row: { ...TICK2_ROW, resendBroadcastId: 'rb-draft' }, probe: 'draft', standing: { access: 'suspended' } });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toEqual({ kind: 'dispatch_held_member_suspended' });
     expect(h.recorded).toEqual([]);
   });
 
