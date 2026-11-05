@@ -873,16 +873,41 @@ describe('eraseMember — requested audit + atomic scrub', () => {
       deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
       deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(async () => true);
       const deadlineAt = new Date(deps.clock.now().getTime() + PRIOR_PROPAGATION_READ_BUDGET_MS - 1);
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      try {
+        const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, { ...META, deadlineAt }, deps);
+        expect(res.ok).toBe(true);
+        expect(deps.memberRepo.hasSubprocessorPropagationInTx).not.toHaveBeenCalled();
+        expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+          expect.objectContaining({ addressesAlreadyScrubbed: true, priorPropagationRecorded: false }),
+        );
+        // Round 4 (code-review #2): a skip says so, so its not_attempted row can be told
+        // from a real "no earlier row".
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ memberId: 'm-1', reason: 'deadline' }),
+          'erase-member: prior subprocessor propagation read skipped',
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('runs when the deadline leaves exactly its budget', async () => {
+      const deps = buildEraseDeps();
+      deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
+      deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(async () => true);
+      const deadlineAt = new Date(deps.clock.now().getTime() + PRIOR_PROPAGATION_READ_BUDGET_MS);
       const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, { ...META, deadlineAt }, deps);
       expect(res.ok).toBe(true);
-      expect(deps.memberRepo.hasSubprocessorPropagationInTx).not.toHaveBeenCalled();
+      expect(deps.memberRepo.hasSubprocessorPropagationInTx).toHaveBeenCalled();
       expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
-        expect.objectContaining({ addressesAlreadyScrubbed: true, priorPropagationRecorded: false }),
+        expect.objectContaining({ priorPropagationRecorded: true }),
       );
     });
 
     it('is abandoned when it outlasts its budget', async () => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
       try {
         const deps = buildEraseDeps();
         deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
@@ -894,6 +919,26 @@ describe('eraseMember — requested audit + atomic scrub', () => {
         expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
           expect.objectContaining({ addressesAlreadyScrubbed: true, priorPropagationRecorded: false }),
         );
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ memberId: 'm-1', reason: 'timeout' }),
+          'erase-member: prior subprocessor propagation read failed',
+        );
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        warnSpy.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it('clears its timer when the read answers in time', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const deps = buildEraseDeps();
+        deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
+        deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(async () => true);
+        const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+        expect(res.ok).toBe(true);
+        expect(vi.getTimerCount()).toBe(0);
       } finally {
         vi.useRealTimers();
       }
