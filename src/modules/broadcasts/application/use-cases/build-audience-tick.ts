@@ -840,14 +840,18 @@ async function runLeasedTick(
   //
   // Reached only when nothing was handed to `/send`: the probe above returned
   // for a handed row.
-  const refused = await applySendStanding(deps, input, broadcast, probe);
-  if (refused !== null) return refused;
+  const gate = await applySendStanding(deps, input, broadcast, probe);
+  if ('stop' in gate) return gate.stop;
+  // Spec 140 s4 — the gate hands back the probe narrowed to a sendable one: a
+  // `cancelled` id was refused terminally inside it (DT2), so nothing past this
+  // line can see one, and the type says so.
+  const sendable = gate.sendable;
 
   return broadcast.audienceImportId === null
-    ? submitImport(deps, input, broadcast, probe)
+    ? submitImport(deps, input, broadcast)
     : confirmImport(deps, input, broadcast, broadcast.audienceImportId, now, {
         resendBroadcastId: inheritedBroadcastId,
-        observedResendStatus: probe === null ? null : probe.status,
+        observedResendStatus: sendable === null ? null : sendable.status,
       });
 }
 
@@ -890,7 +894,18 @@ function catchUpHanded(
  */
 type InheritedProbe =
   | { readonly handed: true; readonly status: 'queued' | 'sending' | 'sent'; readonly sentAt: string | null }
-  | { readonly handed: false; readonly status: 'draft' | 'cancelled' | null };
+  | { readonly handed: false; readonly status: 'draft' }
+  | { readonly handed: false; readonly status: 'cancelled' }
+  | { readonly handed: false; readonly status: null };
+
+/** The probe the standing gate is handed: Step 1a returned for a handed one. */
+type NotHandedProbe = Extract<InheritedProbe, { readonly handed: false }>;
+
+/**
+ * Spec 140 s4 — what the standing gate lets through: never `cancelled`, which
+ * it refuses terminally (DT2). The rest of the tick reads only this type.
+ */
+type SendableProbe = Exclude<NotHandedProbe, { readonly status: 'cancelled' }>;
 
 /**
  * S8 — ask Resend what became of the broadcast resource an earlier tick
@@ -1045,13 +1060,19 @@ async function probeInheritedBroadcast(
  * - anything else — a read that FAILED decides nothing: `dispatch.server_error`
  *   with phase `standing`, the row stays `approved` and the next tick asks
  *   again. Fail CLOSED: an unknown decision lands here too, never at the send.
+ *
+ * `{ sendable }` is "in good standing, carry on", with the probe narrowed to
+ * {@link SendableProbe}; `{ stop }` is the tick's answer.
  */
 async function applySendStanding(
   deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
-  probe: InheritedProbe | null,
-): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError> | null> {
+  probe: NotHandedProbe | null,
+): Promise<
+  | { readonly stop: Result<BuildAudienceTickOutput, BuildAudienceTickError> }
+  | { readonly sendable: SendableProbe | null }
+> {
   const standing = await decideDispatchStanding(
     deps.sendStanding,
     deps.tenant,
@@ -1071,53 +1092,55 @@ async function applySendStanding(
   // written: the id stays on the terminal row, where the erasure terminal pass
   // and `cleanup-audiences` reach it. A re-read row holding another id (a
   // sibling's persist) is decided by that id's own GET, as on every other path.
-  if ((standing.kind === 'send' || standing.kind === 'hold') && probe !== null && !probe.handed && probe.status === 'cancelled') {
-    return failTerminally(
-      deps,
-      input,
-      broadcast,
-      {
-        kind: 'audience_import_failed',
-        reason: 'provider_cancelled',
-        importId: broadcast.audienceImportId,
-        observed: null,
-        expected: null,
-      },
-      {
-        ...(broadcast.resendBroadcastId === null
-          ? {}
-          : { knownProbedStatus: { resendBroadcastId: broadcast.resendBroadcastId, status: 'cancelled' } }),
-        // Review round 1 (R1-E) — a suspended member cannot submit a new
-        // E-Blast now, so the email's quota line says when they can.
-        ...(standing.kind === 'hold' ? { notifyMemberStanding: 'held' } : {}),
-      },
-    );
-  }
-  if (standing.kind === 'send') return null;
-  if (standing.kind === 'hold') {
+  if (standing.kind === 'send' || standing.kind === 'hold') {
+    if (probe !== null && probe.status === 'cancelled') {
+      return {
+        stop: await failTerminally(
+          deps,
+          input,
+          broadcast,
+          {
+            kind: 'audience_import_failed',
+            reason: 'provider_cancelled',
+            importId: broadcast.audienceImportId,
+            observed: null,
+            expected: null,
+          },
+          {
+            ...(broadcast.resendBroadcastId === null
+              ? {}
+              : { knownProbedStatus: { resendBroadcastId: broadcast.resendBroadcastId, status: 'cancelled' } }),
+            // Review round 1 (R1-E) — a suspended member cannot submit a new
+            // E-Blast now, so the email's quota line says when they can.
+            ...(standing.kind === 'hold' ? { notifyMemberStanding: 'held' } : {}),
+          },
+        ),
+      };
+    }
+    if (standing.kind === 'send') return { sendable: probe };
     // Best-effort: a failed restart leaves the hold the decided answer. A lease
     // lost or running short while it ran is the tick's answer instead (review
     // round 2, CR#3), and so is a CAS the restart lost (round 3, CR#5): the
     // restart stopped where the next holder resumes.
-    const restarted = await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold', { bidIsDead: isDeadProbe(probe) });
-    if (isRestartStop(restarted)) return restartStopAnswer(restarted);
+    const restarted = await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold');
+    if (isRestartStop(restarted)) return { stop: restartStopAnswer(restarted) };
     // Review round 3 (CR#4) — only a tick that answers the hold records it and
     // resets the retry clock (outside every tx: the Step-1 lock tx has committed).
     recordDispatchHold(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
     await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed', deps.lease);
-    return ok({ kind: 'dispatch_held_member_suspended' });
+    return { stop: ok({ kind: 'dispatch_held_member_suspended' }) };
   }
   // Reached only for a NOT-handed probe (a handed row returned at Step 1a).
   const rowDraft =
     broadcast.resendBroadcastId === null
       ? null
-      : { resendBroadcastId: broadcast.resendBroadcastId, probedStatus: probe !== null && !probe.handed ? probe.status : null };
+      : { resendBroadcastId: broadcast.resendBroadcastId, probedStatus: probe === null ? null : probe.status };
   // Spec 140 s2b (A8) — both refusal arms DELETE the row's draft at Resend
   // (`deleteDraftBeforeRefusal`): an irreversible call, so the lease is checked
-  // first. Here, not inside the shared gate: the legacy leg holds no lease.
+  // first. Here, not inside the shared gate, which holds no lease of its own.
   if ((standing.kind === 'refuse' || standing.kind === 'refuse_erased') && rowDraft !== null && rowDraft.resendBroadcastId !== '') {
     const gated = await leaseGate(deps, input, 'deleteBroadcastOnce');
-    if (gated !== null) return gated;
+    if (gated !== null) return { stop: gated };
   }
   if (standing.kind === 'refuse') {
     const cleared = await deleteDraftBeforeStandingRefusal(
@@ -1128,7 +1151,7 @@ async function applySendStanding(
     // Review round 1 (reliability M-1) — a sibling tick sent the draft: the
     // mail is out, so no terminal write and no member email — a concurrent skip.
     if (cleared.kind === 'handed') {
-      return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+      return { stop: err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' }) };
     }
     // Spec 140 s2c (R1 #5) — the draft may still be at Resend: recorded before
     // the terminal write, so the drain reaches it once the row is terminal.
@@ -1141,36 +1164,38 @@ async function applySendStanding(
         reason: 'refused_draft_undeleted',
       });
     }
-    return failTerminally(
-      deps,
-      input,
-      broadcast,
-      {
-        kind: 'audience_import_failed',
-        reason: standing.reason,
-        importId: broadcast.audienceImportId,
-        observed: null,
-        expected: null,
-      },
-      {
-        payloadExtra:
-          cleared.kind === 'cleared'
-            ? { resendDraftOutcome: cleared.draftOutcome }
-            : { resendDraftOutcome: 'undeleted', resendDraftErrClass: cleared.errClass },
-        extraAudit: standingRefusalAuditEvent({
-          refusal: standing.refusal,
-          surface: 'dispatch',
-          tenantSlug: deps.tenant.slug,
-          memberId: broadcast.requestedByMemberId,
-          broadcastId: input.broadcastId as unknown as string,
-          actorUserId: 'system:cron',
-          actorRole: null,
-          requestId: null,
-        }),
-        // Spec 140 s2c — the gate's delete above IS this row's reclaim.
-        draftSettled: true,
-      },
-    );
+    return {
+      stop: await failTerminally(
+        deps,
+        input,
+        broadcast,
+        {
+          kind: 'audience_import_failed',
+          reason: standing.reason,
+          importId: broadcast.audienceImportId,
+          observed: null,
+          expected: null,
+        },
+        {
+          payloadExtra:
+            cleared.kind === 'cleared'
+              ? { resendDraftOutcome: cleared.draftOutcome }
+              : { resendDraftOutcome: 'undeleted', resendDraftErrClass: cleared.errClass },
+          extraAudit: standingRefusalAuditEvent({
+            refusal: standing.refusal,
+            surface: 'dispatch',
+            tenantSlug: deps.tenant.slug,
+            memberId: broadcast.requestedByMemberId,
+            broadcastId: input.broadcastId as unknown as string,
+            actorUserId: 'system:cron',
+            actorRole: null,
+            requestId: null,
+          }),
+          // Spec 140 s2c — the gate's delete above IS this row's reclaim.
+          draftSettled: true,
+        },
+      ),
+    };
   }
   if (standing.kind === 'refuse_erased') {
     // Review round 6 — the erased wrapper writes this arm's one log line.
@@ -1180,39 +1205,43 @@ async function applySendStanding(
       rowDraft,
     );
     if (cleared.kind === 'undecided') {
-      return err({ kind: 'dispatch.server_error', message: ERASED_DRAFT_NOT_DELETED, errClass: cleared.errClass, phase: 'standing' });
+      return { stop: err({ kind: 'dispatch.server_error', message: ERASED_DRAFT_NOT_DELETED, errClass: cleared.errClass, phase: 'standing' }) };
     }
-    return failTerminally(
-      deps,
-      input,
-      broadcast,
-      {
-        kind: 'audience_import_failed',
-        reason: standing.reason,
-        importId: broadcast.audienceImportId,
-        observed: null,
-        expected: null,
-      },
-      {
-        notifyMember: false,
-        payloadExtra: { standing: 'erased', resendDraftOutcome: cleared.draftOutcome },
-        concurrentLossIsSkip: true,
-        // Spec 140 s2c — the erased wrapper's delete above IS this row's reclaim.
-        draftSettled: true,
-      },
-    );
+    return {
+      stop: await failTerminally(
+        deps,
+        input,
+        broadcast,
+        {
+          kind: 'audience_import_failed',
+          reason: standing.reason,
+          importId: broadcast.audienceImportId,
+          observed: null,
+          expected: null,
+        },
+        {
+          notifyMember: false,
+          payloadExtra: { standing: 'erased', resendDraftOutcome: cleared.draftOutcome },
+          concurrentLossIsSkip: true,
+          // Spec 140 s2c — the erased wrapper's delete above IS this row's reclaim.
+          draftSettled: true,
+        },
+      ),
+    };
   }
   // Spec 139 P4 — a requester not in the tenant: nothing is sent, nothing
   // deleted, the row stays `approved` (runbook: cancel it by hand).
   if (standing.message === REQUESTER_NOT_FOUND) {
     recordRequesterNotFound(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
   }
-  return err({
-    kind: 'dispatch.server_error',
-    message: standing.message,
-    errClass: standing.errClass,
-    phase: 'standing',
-  });
+  return {
+    stop: err({
+      kind: 'dispatch.server_error',
+      message: standing.message,
+      errClass: standing.errClass,
+      phase: 'standing',
+    }),
+  };
 }
 
 /**
@@ -1224,18 +1253,6 @@ interface RowIds {
   readonly importId: string | null;
   readonly resendBroadcastId: string | null;
   readonly requestedByMemberId: string;
-}
-
-/**
- * The probe called the row's broadcast id `cancelled`: it exists and can never
- * be sent (only a draft can — a non-draft `/send` answers 422, MEASURED
- * 2026-10-29), so a refused delete of it says nothing about a sibling tick.
- * NOT `not_found`: the adapter already treats a 404 delete as success, so after
- * a (twice-confirmed) `not_found` a REFUSED delete proves the resource exists
- * and is not a draft — perhaps queued — and the teardown must stop (round 5).
- */
-function isDeadProbe(probe: InheritedProbe | null): boolean {
-  return probe !== null && !probe.handed && probe.status === 'cancelled';
 }
 
 function rowIds(broadcast: Broadcast): RowIds {
@@ -1280,8 +1297,9 @@ function recordOrphan(
  *
  * Reached only for a row nothing was handed to Resend for SENDING: the
  * inherited-id probe returns before this for `queued` / `sending` / `sent`
- * (and refuses an unreadable status), so any broadcast id on the row is one
- * the probe said this tick was `draft` / `cancelled` / gone.
+ * (and refuses an unreadable status), and the standing gate refuses a
+ * `cancelled` one terminally (DT2), so any broadcast id on the row is one the
+ * probe said this tick was `draft` or gone.
  *
  * **The row is the mutex** (2026-10-29). Since spec 140 s2b this tick holds
  * the row's dispatch lease and checks it before each delete below, but a
@@ -1335,7 +1353,6 @@ async function restartAudienceBuild(
   input: BuildAudienceTickInput,
   row: RowIds,
   why: RestartReason,
-  opts: { readonly bidIsDead: boolean },
 ): Promise<'restarted' | 'nothing' | 'failed' | 'cas_lost' | LeaseStop> {
   const { audienceId, importId, resendBroadcastId } = row;
   if (audienceId === null || audienceId === '') return 'nothing';
@@ -1399,22 +1416,12 @@ async function restartAudienceBuild(
     try {
       await deps.broadcastsGateway.deleteBroadcast(resendBroadcastId);
     } catch (e) {
-      // A refusal means "it may be out" — except for a `cancelled` id, which can
-      // never be sent, so its refused delete must not stop the restart (that
-      // would fail every tick for ever). A `not_found` id needs no exception:
-      // its delete 404s, which the adapter treats as success.
-      if (!opts.bidIsDead || isRetryableThrow(classifyThrown(e).kind)) return failed('delete_broadcast', e);
-      // Warn, not info: the cancelled resource stays at Resend (it cannot be
-      // deleted) and the release below drops its id from the row, so this
-      // line and the orphan row below are its only record.
-      logger.warn({ ...ids, err: errKind(e) }, `broadcasts.audience_import.${names.failed}_dead_broadcast_kept`);
-      // Spec 140 s2c — and its record: the drain settles it (`retained`).
-      await recordOrphan(deps, input, {
-        requestedByMemberId: row.requestedByMemberId,
-        resourceType: 'broadcast',
-        resourceId: resendBroadcastId,
-        reason: 'dead_broadcast_kept',
-      });
+      // A refusal means "it may be out", so the restart stops. A `not_found` id
+      // needs no exception: its delete 404s, which the adapter treats as
+      // success. (A `cancelled` id never reaches a restart: DT2 refuses it
+      // terminally first. Spec 140 s4 deleted the branch that once let one
+      // carry the teardown past a refused delete, `dead_broadcast_kept`.)
+      return failed('delete_broadcast', e);
     }
   }
   // 3. The audience.
@@ -1486,10 +1493,9 @@ async function selfHealMissingAudience(
   deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   row: RowIds,
-  bidIsDead: boolean,
   why: Exclude<RestartReason, 'hold'> = 'audience_missing',
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
-  const outcome = await restartAudienceBuild(deps, input, row, why, { bidIsDead });
+  const outcome = await restartAudienceBuild(deps, input, row, why);
   if (outcome === 'restarted') return ok({ kind: 'audience_restarted' });
   // Review round 2 (spec L-g) — a restart that lost the lease says so; a CAS
   // miss keeps the old label (round 3, CR#5).
@@ -1925,7 +1931,6 @@ async function submitImport(
   deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
-  probe: InheritedProbe | null,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   // A row that still carries an audience but no import is a tick 1 that died
   // after `attachAudienceId`, or a teardown (a hold, a self-heal) that stopped
@@ -1936,7 +1941,7 @@ async function submitImport(
   // orphan prevention needs on the Free plan's three audiences. Bounded: a
   // fresh audience's failures are budgeted (FR-021) or permanent.
   if ((broadcast.resendAudienceId ?? '') !== '') {
-    return selfHealMissingAudience(deps, input, rowIds(broadcast), isDeadProbe(probe), 'stale_audience');
+    return selfHealMissingAudience(deps, input, rowIds(broadcast), 'stale_audience');
   }
 
   const resolved = await deps.resolveRecipients(broadcast);
@@ -2064,11 +2069,12 @@ async function confirmImport(
    * minted twice), re-asserted through the sender's fence;
    * `observedResendStatus: null` (`not_found`, already re-probed once in Step 1a) is DEAD,
    * so a fresh resource replaces it. `cancelled` is refused terminally before
-   * this point (spec 140 DT2, `applySendStanding`), so it is never minted over.
+   * this point (spec 140 DT2, `applySendStanding`), so it is never minted over;
+   * the type ({@link SendableProbe}'s status) cannot carry it.
    */
   inherited: {
     readonly resendBroadcastId: string;
-    readonly observedResendStatus: 'draft' | 'cancelled' | null;
+    readonly observedResendStatus: SendableProbe['status'];
   },
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const polled = await viaGateway(() => deps.broadcastsGateway.getContactImport(importId));
@@ -2337,9 +2343,8 @@ async function confirmImport(
   // A DEAD inherited id is never sent to: `not_found` could only 404. A fresh
   // one is minted and replaces exactly that dead id
   // (`replacesResendBroadcastId`), still fenced. Spec 140 DT2: a `cancelled` id
-  // is NOT re-mintable (it was refused terminally before this point); should
-  // one ever arrive here it is reused, and its send's 422 is probed below and
-  // ends terminally, never a second resource.
+  // is NOT re-mintable; it was refused terminally before this point, and since
+  // spec 140 s4 `inherited`'s type cannot carry one.
   const inheritedId = inherited.resendBroadcastId;
   const inheritedDead = inheritedId !== '' && inherited.observedResendStatus === null;
   const minted = inheritedId === '' || inheritedDead;
@@ -2370,11 +2375,7 @@ async function confirmImport(
       // dead inherited id with it — `restartAudienceBuild` deletes it, 404 =
       // fine, and the release clears it) and build afresh next tick.
       if (isAudienceMissing(createdRb.error)) {
-        // Only `cancelled` may carry the teardown past a refused delete — the
-        // same rule as `isDeadProbe`; `inheritedDead` (a re-probed `not_found`
-        // only) answers the different question of minting. Since spec 140 DT2
-        // a `cancelled` id never reaches this point, so the flag is `false` here.
-        return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId }, inherited.observedResendStatus === 'cancelled');
+        return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId });
       }
       // Spec 140 s2c (DL5b) — a network failure, a timeout or a 5xx may have
       // minted a draft whose id we never received (one attempt, DL5a): an
@@ -2549,7 +2550,7 @@ interface SendHandOff {
    * What the probe answered on a NOT-handed row (`null`: nothing probed, or
    * `not_found`). A handed row's status is `handedOnPriorTick.status`.
    */
-  readonly notHandedStatus: 'draft' | 'cancelled' | null;
+  readonly notHandedStatus: SendableProbe['status'];
   /** What the probe of THIS tick's refused `/send` saw (`_probe-refused-send.ts`). */
   readonly acceptedOnRefusedSend: 'queued' | 'sending' | 'sent' | null;
 }

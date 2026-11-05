@@ -3,9 +3,10 @@
  * item 3). Each row is written at the CALLER that holds the id and the
  * requester, never inside a shared gateway helper [A2]:
  *
- *   - `dead_broadcast_replaced` — a dead inherited id replaced by a fresh mint,
- *     ONLY when the probe read `cancelled` (a `not_found` id is gone) [A7];
- *   - `dead_broadcast_kept` — a restart that could not delete a cancelled id;
+ *   - `dead_broadcast_replaced` and `dead_broadcast_kept` — no longer written:
+ *     spec 140 DT2 refuses a `cancelled` id terminally, and spec 140 s4 deleted
+ *     the restart branch that wrote `dead_broadcast_kept`. Both reasons stay in
+ *     the domain tuple because 0325 rows may hold them;
  *   - `audience_leaked` — `reclaimUnattachedAudience` at both of its leaks;
  *   - `refused_draft_undeleted` — a standing refusal whose DELETE stayed
  *     undecided (R1 #5);
