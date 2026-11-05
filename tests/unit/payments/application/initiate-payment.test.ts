@@ -716,7 +716,7 @@ describe('initiatePayment (T055)', () => {
     expect(switchEmits.length).toBe(0);
   });
 
-  it('cross-method skip — Stripe cancel returns OTHER permanent error (already-canceled) → marks DB canceled with cancel_outcome=stripe_error_bypassed (T-P4-05)', async () => {
+  it('cross-method skip — Stripe cancel returns resource_missing (no such PI) → marks DB canceled with cancel_outcome=stripe_pi_missing (T-P4-05, #731)', async () => {
     // Permanent non-succeeded errors (already-canceled, not-found,
     // etc.) leave Stripe in a terminal-non-succeeded state from our
     // perspective, so the local row CAN safely be marked canceled.
@@ -778,8 +778,62 @@ describe('initiatePayment (T055)', () => {
     expect(switchEmit).toBeDefined();
     expect(switchEmit?.[1]?.payload).toMatchObject({
       attempt_seq: 3,
-      cancel_outcome: 'stripe_error_bypassed',
+      cancel_outcome: 'stripe_pi_missing',
     });
+  });
+
+  // #731 (task 52) — fail closed. Only a confirmed cancel or a PI that does
+  // not exist at Stripe may mark the row canceled. Any other permanent error
+  // (a `processing` / `requires_capture` PI, an auth error, …) can leave a PI
+  // that still charges the member, and a late `payment_intent.succeeded` on a
+  // `canceled` row is a silent no-op — so the switch aborts with no write.
+  it.each([
+    { code: 'payment_intent_not_cancelable', reason: 'PI is processing; cannot be canceled' },
+    { code: 'authentication_error', reason: 'Invalid API Key provided' },
+  ])('cross-method skip — Stripe cancel permanent $code → aborts, no DB write, no audit (#731)', async (e) => {
+    const existingCard: Payment = {
+      id: asPaymentId('pmt_existing_card_not_cancelable'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'card',
+      status: 'pending',
+      amountSatang: asSatang(5_350_000n),
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_existing_processing',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 2,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_prev',
+    };
+    const deps = makeDeps();
+    (deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      existingCard,
+    );
+    (deps.processorGateway.cancelPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ kind: 'permanent', code: e.code, reason: e.reason }),
+    );
+
+    const result = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('processor_unavailable');
+    if (result.error.code !== 'processor_unavailable') return;
+    expect(result.error.kind).toBe('permanent');
+    expect(result.error.reason).toBe('cross_method_cancel_refused');
+    expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    const switchEmits = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (call) => call[1]?.eventType === 'payment_method_switched',
+    );
+    expect(switchEmits.length).toBe(0);
   });
 
   it('tenant_settings missing — tenant_settings_incomplete', async () => {
