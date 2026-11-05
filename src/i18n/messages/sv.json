@@ -3119,7 +3119,7 @@
           "fromLink": "Från din länk (finns inte i listan över senaste)",
           "fromLinkArchived": "Från din länk (arkiverat evenemang)",
           "searching": "Söker evenemang…",
-          "searchFailed": "Sökningen efter evenemang misslyckades. Försök igen."
+          "searchFailed": "Evenemangssökningen misslyckades. Försök igen."
         },
         "attendeePicker": {
           "label": "Deltagare",
