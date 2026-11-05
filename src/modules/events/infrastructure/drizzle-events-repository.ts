@@ -17,7 +17,7 @@
  * repository accepts a `TenantTx` executor — never the root `db` — to
  * prevent accidental RLS-bypass.
  */
-import { and, asc, desc, eq, ilike, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, isNotNull, lte, sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
 import {
@@ -263,6 +263,9 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
             // the members and directory repos.
             conditions.push(ilike(events.name, `%${trimmed.replace(/[\\%_]/g, '\\$&')}%`));
           }
+        }
+        if (input.startedOnOrBefore !== undefined) {
+          conditions.push(lte(events.startDate, new Date(input.startedOnOrBefore)));
         }
         const whereClause = and(...conditions);
 

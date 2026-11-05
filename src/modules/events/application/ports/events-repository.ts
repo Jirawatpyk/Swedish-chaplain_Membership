@@ -66,6 +66,12 @@ export interface ListEventsInput {
    * treated as no filter.
    */
   readonly searchQuery?: string;
+  /**
+   * #732 — only events starting at or before this ISO instant. The invoice
+   * event picker sends the oldest of the newest events it preloaded, so a
+   * name search reaches past them instead of returning them again.
+   */
+  readonly startedOnOrBefore?: string;
 }
 
 export interface ListEventsResult {

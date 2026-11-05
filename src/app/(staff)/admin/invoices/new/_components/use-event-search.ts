@@ -4,8 +4,14 @@
  * The page preloads only the newest 200 events, so an older event can only be
  * found by asking the server. Typed text is debounced (200 ms, as the member
  * pickers) and sent to `GET /api/admin/events?q=…`, a tenant-scoped name
- * search. A superseded search is aborted; a failed one is reported, not
- * shown as "no match".
+ * search bounded to events starting at or before the oldest preloaded one, so
+ * a recurring name ("Business Mixer") reaches past the preloaded events
+ * instead of returning them again. When the page preloaded fewer than a full
+ * page, every event is already listed and nothing is fetched.
+ *
+ * A superseded search is aborted; a failed one is reported, not shown as
+ * "no match". Each outcome is kept with the text it answers, so an earlier
+ * query's results or failure never show under newer text.
  */
 'use client';
 
@@ -16,52 +22,68 @@ import { toEventOption } from '../_lib/event-options';
 import type { EventOption } from './event-fee-form';
 
 const DEBOUNCE_MS = 200;
-/** The list route's `q` limit; longer text is searched as its first 100. */
+/** The list route's `q` limit; longer text is searched as its first 100 characters. */
 export const EVENT_SEARCH_MAX_CHARS = 100;
 /** Enough to pick from without paging; the newest first, as the list route orders. */
 export const EVENT_SEARCH_PAGE_SIZE = 25;
+const NO_RESULTS: readonly EventOption[] = [];
 
 const SearchResponseSchema = z.object({
   items: z.array(z.object({ eventId: z.string(), name: z.string(), startDate: z.string() })),
 });
 
-export interface EventSearch {
-  /** Hand to the Combobox's `onSearch`. */
-  readonly onSearch: (text: string) => void;
-  /** Forget the typed text — AURA clears its own on a pick, blur or close and does not call `onSearch('')`. */
-  readonly reset: () => void;
-  /** The trimmed text as typed (not debounced, capped). */
-  readonly typed: string;
-  /** Results for the last finished search; empty while nothing is typed. */
+/** Trimmed, and capped on code points so a surrogate pair is never split. */
+function searchText(text: string): string {
+  return Array.from(text.trim()).slice(0, EVENT_SEARCH_MAX_CHARS).join('');
+}
+
+interface Outcome {
+  readonly text: string;
   readonly results: readonly EventOption[];
-  /** From the first keystroke until the matching search finishes. */
-  readonly loading: boolean;
   readonly failed: boolean;
 }
 
-export function useEventSearch(): EventSearch {
-  const [rawText, setRawText] = useState('');
-  // A retry after a failure re-sends the same text, so the attempt is part of
-  // what is debounced (otherwise the effect never runs again).
-  const [attempt, setAttempt] = useState(0);
-  const typed = rawText.trim().slice(0, EVENT_SEARCH_MAX_CHARS);
-  const debounced = useDebouncedValue(`${attempt}\u0000${typed}`, DEBOUNCE_MS);
-  const query = debounced.slice(debounced.indexOf('\u0000') + 1);
-  const [results, setResults] = useState<readonly EventOption[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [failed, setFailed] = useState(false);
+export interface EventSearch {
+  /** Hand to the Combobox's `onSearch`. */
+  readonly onSearch: (text: string) => void;
+  /** Forget the typed text — AURA clears its own on a pick, Escape, blur or close and does not call `onSearch('')`. */
+  readonly reset: () => void;
+  /** The search text as typed (trimmed, capped; not debounced). */
+  readonly typed: string;
+  /** Server results for exactly `typed`; empty until they arrive. */
+  readonly results: readonly EventOption[];
+  /** A server search for `typed` is pending (debounce or request). */
+  readonly loading: boolean;
+  /** The server search for `typed` failed. */
+  readonly failed: boolean;
+}
 
-  // The state flips live inside the async run, not in the effect body.
+/**
+ * @param startedOnOrBefore the oldest preloaded event's start, or `null` when
+ *   every event is preloaded (no server search).
+ */
+export function useEventSearch(startedOnOrBefore: string | null): EventSearch {
+  const [rawText, setRawText] = useState('');
+  const typed = searchText(rawText);
+  const query = useDebouncedValue(typed, DEBOUNCE_MS);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  // "Try again" with the same text: the debounced query does not change, so
+  // a retry counter re-runs the search.
+  const [retry, setRetry] = useState(0);
+  const enabled = startedOnOrBefore !== null;
+
   useEffect(() => {
-    if (query === '') return;
+    if (!enabled || query === '') return;
     let cancelled = false;
     const controller = new AbortController();
 
     const run = async () => {
-      setSearching(true);
-      setFailed(false);
       try {
-        const params = new URLSearchParams({ q: query, pageSize: String(EVENT_SEARCH_PAGE_SIZE) });
+        const params = new URLSearchParams({
+          q: query,
+          pageSize: String(EVENT_SEARCH_PAGE_SIZE),
+          startedOnOrBefore,
+        });
         const res = await fetch(`/api/admin/events?${params.toString()}`, {
           signal: controller.signal,
           headers: { Accept: 'application/json' },
@@ -69,21 +91,19 @@ export function useEventSearch(): EventSearch {
         if (!res.ok) throw new Error(`event-search responded ${res.status}`);
         const parsed = SearchResponseSchema.safeParse(await res.json());
         if (!parsed.success) throw new Error('event-search response shape invalid');
-        if (!cancelled) {
-          setResults(
-            parsed.data.items.map((e) =>
-              toEventOption({ eventId: e.eventId, name: e.name, startDateIso: e.startDate }),
-            ),
-          );
-        }
+        if (cancelled) return;
+        setOutcome({
+          text: query,
+          failed: false,
+          results: parsed.data.items.map((e) =>
+            toEventOption({ eventId: e.eventId, name: e.name, startDateIso: e.startDate }),
+          ),
+        });
       } catch (err: unknown) {
         // A superseded search aborts — expected, and not a failure.
         if (cancelled || (err instanceof DOMException && err.name === 'AbortError')) return;
         console.error('event-search fetch failed', err);
-        setResults([]);
-        setFailed(true);
-      } finally {
-        if (!cancelled) setSearching(false);
+        setOutcome({ text: query, failed: true, results: NO_RESULTS });
       }
     };
 
@@ -92,17 +112,21 @@ export function useEventSearch(): EventSearch {
       cancelled = true;
       controller.abort();
     };
-  }, [query, debounced]);
+  }, [enabled, query, retry, startedOnOrBefore]);
 
+  const current = enabled && typed !== '' && outcome?.text === typed ? outcome : null;
   return {
     onSearch: (text: string) => {
-      if (failed) setAttempt((a) => a + 1);
+      if (outcome?.failed && outcome.text === searchText(text)) {
+        setOutcome(null);
+        setRetry((n) => n + 1);
+      }
       setRawText(text);
     },
     reset: () => setRawText(''),
     typed,
-    results: query === '' ? [] : results,
-    loading: typed !== '' && (searching || typed !== query),
-    failed: typed !== '' && failed,
+    results: current?.results ?? NO_RESULTS,
+    loading: enabled && typed !== '' && current === null,
+    failed: current?.failed ?? false,
   };
 }

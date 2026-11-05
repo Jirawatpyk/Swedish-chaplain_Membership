@@ -38,6 +38,9 @@ import { formatCalendarYear } from '@/lib/format-date-localised';
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Events the page preloads for the picker (newest first). */
+const EVENT_PRELOAD = 200;
+
 export default async function NewInvoiceDraftPage({
   searchParams,
 }: {
@@ -123,6 +126,9 @@ export default async function NewInvoiceDraftPage({
   // side so the picker is a fast searchable combobox over the tenant's
   // events (ceiling 200 mirrors the F6 detail-endpoint pageSize cap).
   let events: readonly EventOption[] = [];
+  // #732 — set when the preload is a full page, so the picker's search asks
+  // the server for events that started at or before the oldest one shown.
+  let eventSearchBefore: string | null = null;
   let initialEventId: string | undefined;
   // The event-fee VAT preview splits at the rate issuance pins
   // (`tenant_invoice_settings.vat_rate`), never a hardcoded 7%. `null` (no
@@ -131,7 +137,7 @@ export default async function NewInvoiceDraftPage({
   if (env.features.f6EventCreate) {
     const eventsResult = await runListEvents(tenantCtx.slug, {
       page: 1,
-      pageSize: 200,
+      pageSize: EVENT_PRELOAD,
       includeArchived: false,
       partnerBenefitOnly: false,
       culturalEventOnly: false,
@@ -151,7 +157,9 @@ export default async function NewInvoiceDraftPage({
     if (eventsResult.ok) {
       // CE start date (Asia/Bangkok) — BE is display-only, applied at the
       // user-facing renderer, not here. Matches the line-description date.
-      events = eventsResult.value.items.map((e) =>
+      const loaded = eventsResult.value.items;
+      if (loaded.length >= EVENT_PRELOAD) eventSearchBefore = loaded[loaded.length - 1]?.startDate ?? null;
+      events = loaded.map((e) =>
         toEventOption({ eventId: e.eventId, name: e.name, startDateIso: e.startDate }),
       );
     } else {
@@ -220,6 +228,7 @@ export default async function NewInvoiceDraftPage({
         members={members}
         plans={plans}
         events={events}
+        eventSearchBefore={eventSearchBefore}
         taxAtPayment={env.features.f088TaxAtPayment}
         vatRateBps={vatRateBps}
         {...(initialMemberId ? { initialMemberId } : {})}

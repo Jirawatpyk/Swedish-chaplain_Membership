@@ -46,6 +46,12 @@ export interface ListEventsInput {
    * undefined OR all-whitespace input.
    */
   readonly searchQuery?: string;
+  /**
+   * #732 — only events starting at or before this ISO instant. The invoice
+   * event picker sends the oldest of the newest events it preloaded, so a
+   * name search reaches past them instead of returning them again.
+   */
+  readonly startedOnOrBefore?: string;
 }
 
 export interface ListEventsItem {
@@ -112,6 +118,7 @@ export async function listEvents(
       offset,
       pageSize: input.pageSize,
       ...(input.searchQuery !== undefined && { searchQuery: input.searchQuery }),
+      ...(input.startedOnOrBefore !== undefined && { startedOnOrBefore: input.startedOnOrBefore }),
     }),
     // Empty-state context is always returned (the contract requires
     // it even when items.length > 0 so paginated views landing on
