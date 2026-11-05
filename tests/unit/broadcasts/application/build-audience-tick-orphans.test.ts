@@ -284,6 +284,45 @@ describe('spec 140 s2c — the import leg records its orphans at the caller', ()
     expect(h.events).toContain('transition:failed_to_dispatch');
     expect(h.audits[0]).toMatchObject({ eventType: 'broadcast_failed_to_dispatch', payload: { reason: 'provider_cancelled', resendDraftOutcome: 'cancelled' } });
     expect(h.recorded).toEqual([]);
+    // Spec 140 s3 review round 1 (R1-C) — the probe's `cancelled` decides the 403.
+    expect(h.events).not.toContain('gw:retrieveBroadcastOnce:rb-dead');
+  });
+
+  // Spec 140 s3 review round 1 (R1-C) — the choke point is handed the probe's
+  // `cancelled`, so its DELETE's 403 is cleared without a second GET: a GET that
+  // fails can no longer turn a known-cancelled id into an undecided orphan row.
+  it.each([
+    ['answers retryable', { kind: 'retryable' } as const],
+    ['answers draft', { kind: 'present', status: 'draft' } as const],
+  ])('DT2 — DELETE 403 and the GET %s → still no orphan row, no GET, terminal provider_cancelled', async (_label, retrieveOnce) => {
+    const h = harness({
+      row: { ...TICK2_ROW, resendBroadcastId: 'rb-dead' },
+      probe: 'cancelled',
+      deleteOnce: 'forbidden',
+      retrieveOnce,
+    });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'provider_cancelled' });
+    expect(h.events).toContain('gw:deleteBroadcastOnce:rb-dead');
+    expect(h.events).not.toContain('gw:retrieveBroadcastOnce:rb-dead');
+    expect(h.events).toContain('transition:failed_to_dispatch');
+    expect(h.audits[0]?.payload).toMatchObject({ reason: 'provider_cancelled', resendDraftOutcome: 'cancelled' });
+    expect(h.recorded).toEqual([]);
+  });
+
+  // The re-read row holds a different id (a sibling's persist after the probe):
+  // the probe's status is not that id's, so its 403 is decided by its own GET.
+  it('DT2 — the re-read row holds another id → its 403 is decided by its own GET', async () => {
+    const h = harness({
+      row: { ...TICK2_ROW, resendBroadcastId: 'rb-dead' },
+      probe: 'cancelled',
+      reread: { resendBroadcastId: 'rb-other' },
+      deleteOnce: 'forbidden',
+      retrieveOnce: { kind: 'retryable' },
+    });
+    await h.run();
+    expect(h.events).toContain('gw:retrieveBroadcastOnce:rb-other');
+    expect(h.recorded).toEqual([row('terminal_reclaim_undecided', 'rb-other')]);
   });
 
   it('[A7] a not_found inherited id replaced by a fresh mint → no row (Resend holds nothing)', async () => {
@@ -309,6 +348,8 @@ describe('spec 140 s2c — the import leg records its orphans at the caller', ()
     expect(h.events.filter((e) => e.startsWith('gw:deleteBroadcast:') || e.startsWith('gw:deleteAudience:'))).toEqual([]);
     expect(h.events).not.toContain('gw:createBroadcast');
     expect(h.recorded).toEqual([]);
+    // Spec 140 s3 review round 1 (R1-C) — the probe's `cancelled` decides the 403.
+    expect(h.events).not.toContain('gw:retrieveBroadcastOnce:rb-dead');
   });
 
   it('a hold whose restart deletes the broadcast id → no row', async () => {

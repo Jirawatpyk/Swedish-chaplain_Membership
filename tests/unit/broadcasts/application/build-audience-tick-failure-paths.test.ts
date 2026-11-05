@@ -4025,6 +4025,31 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
     expect(rec.releases).toEqual([]);
     expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
   });
+
+  // Spec 140 s3 review round 1 (R1-G) — the terminal audit names the gateway's
+  // OWN code when it is one of a closed set (never Resend's free text), so an
+  // operator can tell a quota from a refused name without the logs.
+  const failedPayload = (r: Recorder) => r.audits.find((a) => a.eventType === 'broadcast_failed_to_dispatch')?.payload;
+
+  it.each(['unsafe_recipient_format', 'daily_quota_exceeded', 'monthly_quota_exceeded', 'broadcast_name_too_long'])(
+    'a terminal gateway failure with code %s records it as gatewayCode',
+    async (code) => {
+      const { deps, rec } = makeDeps({ ...TICK2, throwOn: { method: 'createBroadcast', kind: 'permanent', code } });
+
+      await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+      expect(failedPayload(rec)).toMatchObject({ reason: 'gateway_permanent', gatewayCode: code });
+    },
+  );
+
+  it('a terminal gateway failure with a code outside the set records no gatewayCode', async () => {
+    const { deps, rec } = makeDeps({ ...TICK2, throwOn: { method: 'createBroadcast', kind: 'permanent', code: 'validation_error' } });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(failedPayload(rec)).toMatchObject({ reason: 'gateway_permanent' });
+    expect(failedPayload(rec)).not.toHaveProperty('gatewayCode');
+  });
 });
 
 /**
