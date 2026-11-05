@@ -42,7 +42,8 @@ export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'ap
  * a measured round trip of ~0.5 s. It bounds every method except
  * `createContactImport`, which has {@link IMPORT_CALL_TIMEOUT_MS} (30 s); a
  * port call that loops (`addContactsToAudience`, `listAudiences`) takes it per
- * request. Exported for the dispatch lease (slice 2b): in W_max only the one
+ * request; `listAudiences` also stops at its caller's `deadlineAt` (spec 140
+ * DT5). Exported for the dispatch lease (slice 2b): in W_max only the one
  * import-POST term takes {@link IMPORT_CALL_TIMEOUT_MS} (every other call stays
  * at this C), and the pre-call lease check before `createContactImport` must
  * demand at least IMPORT_CALL_TIMEOUT_MS + M of lease left, not C + M (plan.md,
@@ -580,12 +581,29 @@ export interface BroadcastsGatewayPort {
    * that exist in Resend but have no matching `broadcasts` DB row
    * (i.e. were leaked by a failed cleanup or a crash mid-dispatch).
    *
-   * Returns a flat array of `ResendAudienceSummary` — only the fields
-   * needed to correlate with DB records. `createdAt` is a parsed `Date`
-   * (UTC) from Resend's `created_at` field; the gateway adapter owns the
-   * parse so callers work with a proper Date, not raw strings.
+   * Returns `ResendAudienceSummary` rows — only the fields needed to
+   * correlate with DB records. `createdAt` is a parsed `Date` (UTC) from
+   * Resend's `created_at` field; the gateway adapter owns the parse so
+   * callers work with a proper Date, not raw strings.
+   *
+   * Spec 140 slice 3 (DT5) — a per-invocation budget: a page starts only while
+   * one bounded call ({@link RESEND_CALL_TIMEOUT_MS} on the default gateway)
+   * still fits before `deadlineAt`. `truncated` says the list is cut (the
+   * deadline, the page bound or a broken cursor), so a caller deletes less,
+   * never more, and can say so.
    */
-  listAudiences(): Promise<ReadonlyArray<ResendAudienceSummary>>;
+  listAudiences(input: ListAudiencesInput): Promise<ListAudiencesResult>;
+}
+
+/** Spec 140 slice 3 (DT5) — `listAudiences`' input. */
+export interface ListAudiencesInput {
+  readonly deadlineAt: Date;
+}
+
+/** Spec 140 slice 3 (DT5) — `listAudiences`' answer. */
+export interface ListAudiencesResult {
+  readonly audiences: ReadonlyArray<ResendAudienceSummary>;
+  readonly truncated: boolean;
 }
 
 /**

@@ -41,10 +41,16 @@ vi.mock('@/lib/tenant-context', () => ({
 vi.mock('@/modules/tenants', () => ({
   asTenantContext: (slug: string) => ({ slug }),
 }));
-vi.mock('@/modules/broadcasts', () => ({
+vi.mock('@/modules/broadcasts', async () => ({
   reclaimOrphanedAudiences: (...args: unknown[]) =>
     reclaimOrphanedAudiencesMock(...args),
   makeReclaimOrphanedAudiencesDeps: () => ({}),
+  // Spec 140 DT5 — the real margin, so the deadline case pins the route's rule.
+  RECLAIM_DEADLINE_MARGIN_MS: (
+    await vi.importActual<typeof import('@/modules/broadcasts/application/use-cases/reclaim-orphaned-audiences')>(
+      '@/modules/broadcasts/application/use-cases/reclaim-orphaned-audiences',
+    )
+  ).RECLAIM_DEADLINE_MARGIN_MS,
 }));
 
 function makeRequest(opts: { auth?: string }): NextRequest {

@@ -3237,6 +3237,25 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts_audience_reclaim_truncated_total{tenant,stage}` — spec 140
+   * slice 3 (DT5): a `reclaim-orphan-audiences` run cut by its time budget
+   * (`deadlineAt` = start + `maxDuration` − `RECLAIM_DEADLINE_MARGIN_MS`).
+   * `stage="listing"`: `listAudiences` came back `truncated` (the deadline, the
+   * page bound or a broken cursor), so audiences past the cut were not seen;
+   * `stage="deletes"`: orphans were left as `deferredDeletes`. Either way the run
+   * deleted less, never more, and the next daily run resumes. Alarm when it
+   * increases on 2 consecutive daily runs.
+   */
+  audienceReclaimTruncated(tenantId: string, stage: 'listing' | 'deletes'): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audience_reclaim_truncated_total',
+        'reclaim-orphan-audiences runs cut by their time budget, by stage (listing or deletes)',
+      ).add(1, { tenant: tenantId, stage });
+    });
+  },
+
+  /**
    * `broadcasts_orphaned_resend_ids_unsettled{tenant}` — spec 140 s2c review
    * round 1: orphan rows with an id still unsettled more than
    * `ORPHAN_UNSETTLED_GAUGE_AGE_HOURS` (24 h) after they were written — a

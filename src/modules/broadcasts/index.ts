@@ -440,6 +440,7 @@ export { makeCleanupOrphanedAudiencesDeps } from './infrastructure/broadcasts-de
 // cleanup-orphaned-audiences (which handles the row-exists-but-terminal case).
 export {
   reclaimOrphanedAudiences,
+  RECLAIM_DEADLINE_MARGIN_MS,
   type ReclaimOrphanedAudiencesDeps,
   type ReclaimOrphanedAudiencesInput,
   type ReclaimOrphanedAudiencesOutput,

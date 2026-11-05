@@ -44,7 +44,8 @@ import type {
   RetrievedBroadcastResource,
   RetrieveBroadcastOnceOutcome,
   RetrieveBroadcastOutcome,
-  ResendAudienceSummary,
+  ListAudiencesInput,
+  ListAudiencesResult,
 } from '../../application/ports/broadcasts-gateway-port';
 import { env } from '@/lib/env';
 import { RESEND_API_BASE_URL } from '@/lib/resend-api-base-url';
@@ -386,8 +387,10 @@ export interface ResendBroadcastsGatewayOptions {
    * The budget of one request, its retries and backoff included. Default
    * {@link RESEND_CALL_TIMEOUT_MS}; tests pass 50 ms. A port call that makes
    * several requests (`addContactsToAudience` per contact, `listAudiences` per
-   * page) has this budget PER REQUEST, so it can run N x C (a per-invocation
-   * budget is spec 140 slice 2b's).
+   * page) has this budget PER REQUEST, so it can run N x C. The per-invocation
+   * budgets: the import leg's tick (spec 140 slice 2b) and `listAudiences`'
+   * caller `deadlineAt` (slice 3, DT5); `addContactsToAudience` is legacy-only
+   * and goes with that leg in slice 4.
    */
   readonly callTimeoutMs?: number;
   /**
@@ -868,7 +871,7 @@ export function createResendBroadcastsGateway({
       }
     },
 
-    async listAudiences(): Promise<ReadonlyArray<ResendAudienceSummary>> {
+    async listAudiences({ deadlineAt }: ListAudiencesInput): Promise<ListAudiencesResult> {
       // Spec 141: on resend@6.35 `audiences.list` is the paginated
       // `GET /segments`, so follow `has_more` (cursor = the last id) instead of
       // reading page 1 only — reclaim-orphaned-audiences must see EVERY audience.
@@ -876,10 +879,17 @@ export function createResendBroadcastsGateway({
       const byId = new Map<string, { id: string; name: string; created_at: string }>();
       const seenCursors = new Set<string>();
       let after: string | undefined;
-      let truncated = false;
+      let truncatedBy: 'deadline' | 'max_pages' | 'empty_page' | 'repeated_cursor' | null = null;
       for (let page = 0; ; page += 1) {
         if (page === LIST_AUDIENCES_MAX_PAGES) {
-          truncated = true;
+          truncatedBy = 'max_pages';
+          break;
+        }
+        // Spec 140 DT5 — the caller's per-invocation budget: a page starts only
+        // while one bounded call still fits before `deadlineAt`, so the listing
+        // ends inside it (the page bound above stays as the runaway stop).
+        if (deadlineAt.getTime() - Date.now() < callTimeoutMs) {
+          truncatedBy = 'deadline';
           break;
         }
         const result = await boundedCall(
@@ -906,26 +916,30 @@ export function createResendBroadcastsGateway({
         if (result?.has_more !== true) break;
         // `has_more` with an empty page leaves no cursor to follow: the list is cut.
         if (last === undefined) {
-          truncated = true;
+          truncatedBy = 'empty_page';
           break;
         }
         // A cursor seen before would page forever over the same rows.
         if (seenCursors.has(last.id)) {
-          truncated = true;
+          truncatedBy = 'repeated_cursor';
           break;
         }
         seenCursors.add(last.id);
         after = last.id;
       }
       const rows = [...byId.values()];
+      const truncated = truncatedBy !== null;
       if (truncated) {
         // Reclaim then sees fewer audiences than exist: it deletes less, never
         // more, but say so rather than pass a cut list off as the whole.
-        logger.warn({ audienceCount: rows.length }, 'resend.broadcasts.audiences_list_truncated');
+        logger.warn({ audienceCount: rows.length, truncatedBy }, 'resend.broadcasts.audiences_list_truncated');
       }
-      logger.info({ audienceCount: rows.length }, 'resend.broadcasts.audiences_listed');
+      logger.info({ audienceCount: rows.length, truncated }, 'resend.broadcasts.audiences_listed');
       // Parse at the adapter boundary so callers work with Date, not raw strings.
-      return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at) }));
+      return {
+        audiences: rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at) })),
+        truncated,
+      };
     },
 
     async deleteAudience(audienceId: string): Promise<void> {
