@@ -66,7 +66,7 @@ describe('env.ts — BROADCAST_AUDIENCE_CEILING (spec 140 s4, DR3)', () => {
 
   // `""` coerces to 0, so it refuses by the lower bound rather than reading
   // as "unset": an empty Vercel value is a mistake, not a request for 900.
-  it.each(['0', '50001', ''])('refuses %j at boot', async (raw) => {
+  it.each(['0', '50001', ''])('refuses %j (env validation fails)', async (raw) => {
     stubCeiling(raw);
     await expect(import('@/lib/env')).rejects.toThrow(/BROADCAST_AUDIENCE_CEILING/);
   });

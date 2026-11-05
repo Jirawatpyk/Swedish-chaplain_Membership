@@ -2624,7 +2624,9 @@ interface SendHandOff {
   } | null;
   /**
    * What the probe answered on a NOT-handed row (`null`: nothing probed, or
-   * `not_found`). A handed row's status is `handedOnPriorTick.status`.
+   * `not_found`). A handed row's status is `handedOnPriorTick.status`. Kept,
+   * though the send path only ever sees `draft` or `null` here, because it
+   * carries that `draft` into the send audit payload's `observedResendStatus`.
    */
   readonly notHandedStatus: SendableProbe['status'];
   /** What the probe of THIS tick's refused `/send` saw (`_probe-refused-send.ts`). */

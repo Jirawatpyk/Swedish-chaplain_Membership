@@ -77,9 +77,13 @@ export const subprocessorErasureAdapter: SubprocessorErasurePort = {
     // ── Resend arm: DETACH each captured (audience, email) pair.
     //
     // ⚠️ THIS DOES NOT DELETE THE CONTACT AT THE PROCESSOR, and the provider's
-    // own response says it does. Measured 2026-09-09 (108 Phase 9 review U1):
-    // `DELETE /audiences/{id}/contacts/{email}` answers `{"deleted": true}`;
-    // afterwards the audience-scoped read 404s while an audience-less
+    // own response says it does. Measured 2026-09-09 (108 Phase 9 review U1) on
+    // the old `/audiences` wire (before spec 140 s4): `DELETE
+    // /audiences/{id}/contacts/{email}` answered `{"deleted": true}` whether or
+    // not the contact was there (the segment wire since then,
+    // `DELETE /contacts/{email}/segments/{id}`, answers 200 `deleted:true` only
+    // for a membership that existed and 404 otherwise); afterwards the
+    // audience-scoped read 404'd while an audience-less
     // `GET /contacts/{email}` still returns the contact at 200. An
     // audience-less `DELETE /contacts/{email}` was measured in the same run to
     // delete for real, and is deliberately NOT called here: spec 140 s4 removed

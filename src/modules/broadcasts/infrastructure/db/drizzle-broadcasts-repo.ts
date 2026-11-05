@@ -2621,7 +2621,9 @@ export function makeDrizzleBroadcastsRepo(
      * This arm first shipped without one, pairing every address with every live
      * audience, on the reasoning that a detach for an address that was never in
      * that audience 404s harmlessly. The 404 is harmless; **the request is not.**
-     * `DELETE /audiences/{id}/contacts/{email}` puts the address in the URL of a
+     * The detach (then `DELETE /audiences/{id}/contacts/{email}`, the old wire;
+     * since spec 140 s4 `DELETE /contacts/{email}/segments/{id}`, which answers
+     * 200 only for a membership that existed and 404 otherwise) puts the address in the URL of a
      * call to the marketing processor, so an address Resend had never seen is
      * transmitted to it — during, and because of, an erasure.
      *

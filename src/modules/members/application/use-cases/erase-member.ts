@@ -565,9 +565,12 @@ export async function eraseMember(
       // HERE, from the detach input only (the redactions below keep the whole
       // set). A re-drive reads only sentinels (`erased+<contact_id>@erased.invalid`
       // — the first pass replaced every address), and the derivation paired
-      // them with the member's live audiences: Resend answers 200 to any
-      // segment-contact DELETE, so the record counted removals of an address
-      // that was never there. Filtered in members, not in the broadcasts repo:
+      // them with the member's live audiences: on the old `/audiences` wire
+      // (before spec 140 s4) Resend answered 200 to any audience-contact
+      // DELETE, so the record counted removals of an address that was never
+      // there. (The segment wire since then answers 200 only for a membership
+      // that existed and 404 otherwise; the filter stays, as it also keeps a
+      // sentinel off the processor's URL.) Filtered in members, not in the broadcasts repo:
       // the sentinel shape is this module's fact (`erasure-sentinels.ts`), and
       // the port already reads an empty set as no pairs, so the repo stays a
       // generic address match.
