@@ -294,6 +294,50 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     expect(await screen.findByText(picker.searchFailed ?? '<missing eventPicker.searchFailed>')).toBeInTheDocument();
   });
 
+  it('UX M1 — loaded matches stay listed while the server search is still running', async () => {
+    stubFetch(() => new Promise<Response>(() => {}) as unknown as Response);
+    renderForm();
+    typeInPicker('Gala');
+    // Past the debounce: the search request is in flight (it never answers).
+    await new Promise((r) => setTimeout(r, 400));
+    expect(screen.getByRole('option', { name: /Annual Gala \(2026-06-01\)/ })).toBeInTheDocument();
+    expect(screen.queryByText(picker.searching ?? '')).not.toBeInTheDocument();
+  });
+
+  it('UX M2 — after a pick, reopening the picker lists every loaded event again', async () => {
+    stubFetch(() => listOf([oldEvent]));
+    const two: EventOption[] = [
+      { eventId: 'ev-1', label: 'Annual Gala (2026-06-01)' },
+      { eventId: 'ev-2', label: 'Spring Breakfast (2026-04-01)' },
+    ];
+    renderForm({ events: two });
+    typeInPicker('Old');
+    fireEvent.click(await screen.findByRole('option', { name: /Old Breakfast/ }));
+    const input = document.getElementById('eventId') as HTMLInputElement;
+    fireEvent.blur(input);
+    fireEvent.focus(input);
+    fireEvent.click(input);
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(await screen.findByRole('option', { name: /Spring Breakfast/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Annual Gala/ })).toBeInTheDocument();
+  });
+
+  it('UX L1 — a failed search says so even when loaded events match', async () => {
+    stubFetch(() => new Response('{}', { status: 500 }));
+    renderForm();
+    typeInPicker('Gala');
+    expect(await screen.findByText(picker.searchFailed ?? '')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Annual Gala/ })).toBeInTheDocument();
+  });
+
+  it('UX L3 — text over 100 characters is searched as its first 100, not refused', async () => {
+    const fn = stubFetch(() => listOf([]));
+    renderForm();
+    typeInPicker('x'.repeat(130));
+    expect(await screen.findByText(picker.empty ?? '')).toBeInTheDocument();
+    expect(searchCalls(fn)[0]?.searchParams.get('q')).toHaveLength(100);
+  });
+
   it('a loaded event still matches by its date while the server finds nothing', async () => {
     stubFetch(() => listOf([]));
     renderForm();
