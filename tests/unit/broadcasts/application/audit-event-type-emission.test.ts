@@ -22,7 +22,10 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { F7_AUDIT_EVENT_TYPES } from '@/modules/broadcasts/application/ports/audit-port';
+import {
+  F7_AUDIT_EVENT_TYPES,
+  RETIRED_F7_AUDIT_EVENT_TYPES,
+} from '@/modules/broadcasts/application/ports/audit-port';
 
 const ROOTS_TO_GREP = [
   'src/modules/broadcasts',
@@ -86,17 +89,18 @@ const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [
 ];
 
 /**
- * Spec 140 s4 (row 4) — event types whose ONLY emitter was the legacy dispatch
- * leg, deleted in that slice. They are not "not yet emitted" (that list is for
- * events still to be built, and would misdescribe these): nothing will emit
- * them again. The DB enum, the TS tuple and the en/th/sv labels keep them, so
- * rows already written still render in the F9 audit viewer and the DSAR export.
- * Asserted the other way round: each is an F7 type and has NO emission site.
+ * Event types that can never be emitted again, read from the audit port's
+ * `RETIRED_F7_AUDIT_EVENT_TYPES` rather than restated here: the six batch events
+ * of 108 Phase 9 and, since PR #756 review round 1 (pdpa L-2), the two whose
+ * ONLY emitter was the legacy dispatch leg spec 140 s4 deleted. They are not
+ * "not yet emitted" (that list is for events still to be built): nothing will
+ * emit them again. They are OUT of `F7_AUDIT_EVENT_TYPES` (which forces an emit
+ * site per entry) and the DB enum and the en/th/sv labels keep them, so rows
+ * already written still render in the F9 audit viewer and the DSAR export.
+ * Asserted the other way round: none is in the live tuple, and none has an
+ * emission site.
  */
-const RETIRED: ReadonlyArray<string> = [
-  'broadcast_resend_audience_drift',
-  'broadcast_dispatch_idempotency_conflict_pre_send',
-];
+const RETIRED: ReadonlyArray<string> = RETIRED_F7_AUDIT_EVENT_TYPES;
 
 function listTsFiles(root: string): string[] {
   const out: string[] = [];
@@ -159,16 +163,27 @@ describe('F7 audit-event emission-site parity (Round 5)', () => {
     ).toEqual([]);
   });
 
-  it('every RETIRED event is an F7 audit type, is not KNOWN_NOT_YET_EMITTED, and has NO emission site', () => {
+  it('every RETIRED event is out of the live tuple, is not KNOWN_NOT_YET_EMITTED, and has NO emission site', () => {
     const corpus = emissionCorpus();
     // Positive control: the corpus is the real tree, so an always-empty read
     // cannot pass the negative assertion below.
     expect(corpus).toContain(`'broadcast_failed_to_dispatch'`);
 
     const f7Types: ReadonlyArray<string> = F7_AUDIT_EVENT_TYPES;
-    expect(RETIRED.filter((t) => !f7Types.includes(t)), 'RETIRED ⊂ F7_AUDIT_EVENT_TYPES').toEqual([]);
+    expect(RETIRED.filter((t) => f7Types.includes(t)), 'RETIRED ∩ F7_AUDIT_EVENT_TYPES = ∅').toEqual([]);
     expect(RETIRED.filter((t) => KNOWN_NOT_YET_EMITTED.includes(t))).toEqual([]);
     const emitted = RETIRED.filter((t) => corpus.includes(`'${t}'`));
     expect(emitted, `RETIRED events that still have an emission site: ${emitted.join(', ')}`).toEqual([]);
+  });
+
+  // PR #756 review round 1 (pdpa L-2) — the legacy leg's two orphans are retired
+  // where every consumer reads it (the parity test, the audit viewer dropdown),
+  // and the unverifiable row, which the import tick emits again, is not.
+  it('the two types only the legacy leg emitted are RETIRED_F7_AUDIT_EVENT_TYPES; the unverifiable row is live', () => {
+    expect(RETIRED).toEqual(
+      expect.arrayContaining(['broadcast_resend_audience_drift', 'broadcast_dispatch_idempotency_conflict_pre_send']),
+    );
+    expect(RETIRED).not.toContain('broadcast_resend_drift_check_unverifiable');
+    expect(F7_AUDIT_EVENT_TYPES).toContain('broadcast_resend_drift_check_unverifiable');
   });
 });
