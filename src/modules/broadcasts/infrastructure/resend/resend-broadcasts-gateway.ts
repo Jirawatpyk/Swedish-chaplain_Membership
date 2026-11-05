@@ -176,6 +176,27 @@ function assertSegmentId(values: Readonly<Record<string, string>>): void {
 }
 
 /**
+ * Spec 140 s3 review round 1 (R1-K) — the email half of the detach guard. The
+ * SDK puts the address into the URL path unencoded, so `/`, `?`, `#`, `%` or
+ * `\` would end, re-route or (a `%2f`) be decoded into the path. Refused before
+ * any call, permanent `invalid_identifier`, with a message that never carries
+ * the address. `/ ? # \` fail every address validator here; `%` passes the
+ * members `asEmail` pattern, so such an address, if one was ever pushed, is
+ * detached by hand (`docs/runbooks/member-erasure.md` § Manual remediation).
+ */
+const PATH_UNSAFE_EMAIL_CHARS = /[/?#%\\]/;
+
+function assertPathSafeEmail(email: string): void {
+  if (PATH_UNSAFE_EMAIL_CHARS.test(email)) {
+    throw new GatewayThrowable({
+      kind: 'permanent',
+      code: 'invalid_identifier',
+      reason: 'email contains a character that is not safe in a URL path',
+    });
+  }
+}
+
+/**
  * The HTTP status the gateway acts on, read as resend@4.8 read it (spec 141,
  * the maintainer's option A, 30 Oct 2026).
  *
@@ -488,7 +509,10 @@ export function createResendBroadcastsGateway({
           async (signal) => {
             const sdk = client();
             const result = (await sdk.contacts.create({
-              email: c.emailLower,
+              // Spec 140 s3 review round 1 (R1-A) — lowercased, as the import
+              // CSV is: Resend matches contacts case-sensitively and the erasure
+              // detach sends lowercase (`EmailLower` is a brand, not a check).
+              email: c.emailLower.toLowerCase(),
               audienceId,
               ...(c.firstName !== undefined && { firstName: c.firstName }),
               ...(c.lastName !== undefined && { lastName: c.lastName }),
@@ -778,9 +802,14 @@ export function createResendBroadcastsGateway({
     ): Promise<RemoveContactOutcome> {
       assertNonEmpty({ audienceId, email });
       assertSegmentId({ audienceId });
+      assertPathSafeEmail(email);
       // The email goes to the SDK as given: it puts it in the path unencoded,
-      // Resend reads a `+` literally and matches case-insensitively (MEASURED
-      // 5 Nov 2026, spec 140 DT4), so neither encode nor lowercase it here.
+      // and Resend reads a `+` literally and matches the address
+      // case-SENSITIVELY (MEASURED 5 Nov 2026, spec 140 DT4 and the s3 Verify),
+      // answering 200 to any segment-contact DELETE. So it is neither encoded
+      // nor re-cased here: the address sent is the one given, which is
+      // lowercase because the erasure capture is lowercase and every push
+      // (`addContactsToAudience`, `createContactImport`) lowercases.
       try {
         await boundedCall(
           async (signal) => {
@@ -1143,16 +1172,13 @@ export function createResendBroadcastsGateway({
           // `deleted: true` while removing nothing). The erasure detach sends the
           // lowercased address, so a mixed-case push would leave an erased
           // member in a live segment while the Art. 30 record says detached.
-          // `EmailLower` is a brand, not a check (see above), so re-check here.
-          const mixedCase = emails.filter((e) => e !== e.toLowerCase());
-          if (mixedCase.length > 0) {
-            throw classifyResendError({
-              statusCode: 422,
-              name: 'non_lowercase_email',
-              message: `${mixedCase.length} recipient address(es) are not lowercase`,
-            });
-          }
-          const csv = ['email', ...emails].join('\n') + '\n';
+          // `EmailLower` is a brand, not a check (see above), so each address is
+          // lowercased here (spec 140 s3 review round 1, R1-A; it was refused,
+          // which failed the whole E-Blast for an address every producer
+          // already lowercases). Not de-duplicated: two addresses that collide
+          // once lowercased make Resend's count differ from the resolved count,
+          // and the completion rule refuses the send.
+          const csv = ['email', ...emails.map((e) => e.toLowerCase())].join('\n') + '\n';
           const form = new FormData();
           form.append('file', new Blob([csv], { type: 'text/csv' }), 'audience.csv');
           form.append('column_map', JSON.stringify({ email: 'email' }));
