@@ -753,6 +753,10 @@ describe('initiatePayment (T055)', () => {
         reason: 'No such payment_intent',
       }),
     );
+    // #731 M1 — the retrieve (which retries a read-lag 404) confirms it.
+    (deps.processorGateway.retrievePaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ kind: 'permanent', code: 'resource_missing', reason: 'No such payment_intent' }),
+    );
     (deps.paymentsRepo.nextAttemptSeq as ReturnType<typeof vi.fn>).mockResolvedValueOnce(4);
     (deps.processorGateway.createPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       ok({
@@ -780,6 +784,75 @@ describe('initiatePayment (T055)', () => {
       attempt_seq: 3,
       cancel_outcome: 'stripe_pi_missing',
     });
+  });
+
+  // #731 M1 (financial review) — Stripe can answer 404 for a just-created PI
+  // (read lag, fix/068). A cancel 404 alone is not proof the PI is gone: the
+  // switch confirms with retrievePaymentIntent (which retries 404s) and aborts
+  // when the PI is found, or when the check itself is inconclusive.
+  it.each([
+    {
+      name: 'the retrieve finds the PI',
+      retrieved: ok({
+        id: 'pi_existing_lagged',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_existing_lagged_secret',
+        latestChargeId: null,
+        livemode: false,
+        lastPaymentErrorCode: null,
+        card: null,
+      }),
+      kind: 'permanent',
+      reason: 'cross_method_cancel_refused',
+    },
+    {
+      name: 'the retrieve is inconclusive',
+      retrieved: err({ kind: 'retryable', reason: 'network timeout' }),
+      kind: 'retryable',
+      reason: 'cross_method_cancel_retryable',
+    },
+  ])('cross-method skip — cancel resource_missing but $name → aborts, no DB write (#731 M1)', async (c) => {
+    const existingCard: Payment = {
+      id: asPaymentId('pmt_existing_card_lagged_404'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'card',
+      status: 'pending',
+      amountSatang: asSatang(5_350_000n),
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_existing_lagged',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_prev',
+    };
+    const deps = makeDeps();
+    (deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      existingCard,
+    );
+    (deps.processorGateway.cancelPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ kind: 'permanent', code: 'resource_missing', reason: 'No such payment_intent' }),
+    );
+    (deps.processorGateway.retrievePaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      c.retrieved,
+    );
+
+    const result = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('processor_unavailable');
+    if (result.error.code !== 'processor_unavailable') return;
+    expect(result.error.kind).toBe(c.kind);
+    expect(result.error.reason).toBe(c.reason);
+    expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
   });
 
   // #731 (task 52) — fail closed. Only a confirmed cancel or a PI that does
