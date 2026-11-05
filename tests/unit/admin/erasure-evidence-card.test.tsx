@@ -52,6 +52,18 @@ describe('EvidenceCard', () => {
     expect(summary.hasAttribute('aria-expanded')).toBe(false);
   });
 
+  // Spec 140 s3 review round 1 (R1-I) — Resend answers 200 to a detach of an
+  // address that was not in the segment, so the figure is the requests Resend
+  // accepted, not memberships that existed; the note says it may include
+  // addresses that were already absent.
+  it('labels the detach figure as requests Resend accepted, and notes it may include absent addresses', () => {
+    renderCard(
+      baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 2, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+    );
+    expect(screen.getByText('Detach requests accepted by Resend')).toBeInTheDocument();
+    expect(screen.getByText(/may include addresses that were already absent/i)).toBeInTheDocument();
+  });
+
   it('degrades to the raw value instead of throwing when memberNumber is DB-invalid (0)', () => {
     expect(() => renderCard(baseRow({ memberNumber: 0 }))).not.toThrow();
     expect(screen.getByText('Member 0')).toBeInTheDocument();

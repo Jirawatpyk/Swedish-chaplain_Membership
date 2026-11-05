@@ -286,6 +286,9 @@ describe('spec 140 s2c — the import leg records its orphans at the caller', ()
     expect(h.recorded).toEqual([]);
     // Spec 140 s3 review round 1 (R1-C) — the probe's `cancelled` decides the 403.
     expect(h.events).not.toContain('gw:retrieveBroadcastOnce:rb-dead');
+    // R1-E — the send arm carries no standing: the member reads the general line.
+    expect(h.memberEmails).toHaveLength(1);
+    expect((h.memberEmails[0] as { payload: Record<string, unknown> }).payload).not.toHaveProperty('memberStanding');
   });
 
   // Spec 140 s3 review round 1 (R1-C) — the choke point is handed the probe's
@@ -350,6 +353,13 @@ describe('spec 140 s2c — the import leg records its orphans at the caller', ()
     expect(h.recorded).toEqual([]);
     // Spec 140 s3 review round 1 (R1-C) — the probe's `cancelled` decides the 403.
     expect(h.events).not.toContain('gw:retrieveBroadcastOnce:rb-dead');
+    // R1-E — the hold arm carries the standing, so the email says the member
+    // can submit again once the membership is active, not straight away.
+    expect(h.memberEmails).toHaveLength(1);
+    expect((h.memberEmails[0] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      reason: 'provider_cancelled',
+      memberStanding: 'held',
+    });
   });
 
   it('a hold whose restart deletes the broadcast id → no row', async () => {

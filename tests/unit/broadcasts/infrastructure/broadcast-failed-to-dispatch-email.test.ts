@@ -65,16 +65,24 @@ function standingReassuranceFor(locale: (typeof LOCALES)[number]): string {
 
 const STANDING_REASONS: ReadonlySet<string> = new Set(['member_halted', 'member_not_in_good_standing']);
 
+/** Spec 140 s3 review round 1 (R1-E) — the quota line for a member whose membership is suspended. */
+function heldReassuranceFor(locale: (typeof LOCALES)[number]): string | undefined {
+  const msgs = { en: enMessages, th: thMessages, sv: svMessages }[locale] as {
+    email: { broadcastFailedToDispatch: { reassuranceHeld?: string } };
+  };
+  return msgs.email.broadcastFailedToDispatch.reassuranceHeld;
+}
+
+const BASE = {
+  toEmail: 'member@example.test',
+  broadcastId: '11111111-1111-4111-8111-111111111111',
+  broadcastSubject: 'Chamber news',
+  tenantDisplayName: 'Test Chamber',
+  scheduledFor: '2026-09-07T09:00:00.000Z',
+} as const;
+
 function build(reason: string, locale: (typeof LOCALES)[number]) {
-  return buildBroadcastFailedToDispatchEmail({
-    toEmail: 'member@example.test',
-    broadcastId: '11111111-1111-4111-8111-111111111111',
-    broadcastSubject: 'Chamber news',
-    tenantDisplayName: 'Test Chamber',
-    scheduledFor: '2026-09-07T09:00:00.000Z',
-    reason,
-    locale,
-  });
+  return buildBroadcastFailedToDispatchEmail({ ...BASE, reason, locale });
 }
 
 describe('buildBroadcastFailedToDispatchEmail — the reason a MEMBER reads', () => {
@@ -119,6 +127,48 @@ describe('buildBroadcastFailedToDispatchEmail — the reason a MEMBER reads', ()
     expect(cancelled).not.toBe(build('generic', locale).text);
     expect(cancelled).not.toBe(build('provider_failed', locale).text);
     expect(cancelled).not.toContain('provider_cancelled');
+  });
+
+  /**
+   * Spec 140 s3 review round 1 (R1-E) — the hold arm refuses a cancelled id
+   * while the member is suspended. The general line invites a new E-Blast now,
+   * which a suspended member cannot submit; the held line says when they can.
+   */
+  it.each(LOCALES)('%s: provider_cancelled for a HELD member reads reassuranceHeld, not the general line', (locale) => {
+    const held = heldReassuranceFor(locale);
+    expect(held, `${locale} reassuranceHeld`).toEqual(expect.any(String));
+    const mail = buildBroadcastFailedToDispatchEmail({
+      ...BASE,
+      reason: 'provider_cancelled',
+      memberStanding: 'held',
+      locale,
+    } as Parameters<typeof buildBroadcastFailedToDispatchEmail>[0]);
+    expect(mail.text).toContain(held);
+    expect(mail.text).not.toContain(reassuranceFor(locale));
+  });
+
+  it.each(LOCALES)('%s: provider_cancelled on the send arm (no standing carried) keeps the general line', (locale) => {
+    const mail = build('provider_cancelled', locale);
+    expect(mail.text).toContain(reassuranceFor(locale));
+    expect(mail.text).not.toContain(heldReassuranceFor(locale) ?? '\u0000');
+  });
+
+  /**
+   * Spec 140 s3 review round 1 (R1-F) — nothing was ever sent, so neither the
+   * member sentence nor the staff one may say "again" (the member's general
+   * reassurance line, which does, is a separate paragraph).
+   */
+  it.each([
+    ['en', /\bagain\b/i],
+    ['th', /ซ้ำ/],
+    ['sv', /\bigen\b|på nytt/i],
+  ] as const)('%s: the provider_cancelled sentences never say it would be sent again', (locale, again) => {
+    const msgs = { en: enMessages, th: thMessages, sv: svMessages }[locale] as {
+      email: { broadcastFailedToDispatch: { failureReason: Record<string, string> } };
+      admin: { broadcasts: { review: { failureReason: Record<string, string> } } };
+    };
+    expect(msgs.email.broadcastFailedToDispatch.failureReason['provider_cancelled']).not.toMatch(again);
+    expect(msgs.admin.broadcasts.review.failureReason['provider_cancelled']).not.toMatch(again);
   });
 
   it('en: malformed_segment tells the member who can fix it', () => {
