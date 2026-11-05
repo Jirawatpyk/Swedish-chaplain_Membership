@@ -67,6 +67,18 @@ export function oneCallFitsBefore(deadlineAt: Date, nowMs: number, callBudgetMs:
 }
 
 /**
+ * Spec 140 slice 3 (DT3; review round 2, R2-D) — Resend's two sending-quota
+ * error names. A 429 with one of them is permanent, and the gateway keeps the
+ * name as the throw's `code` (an exact match against this list, so only these
+ * two fixed tokens pass, never other provider text). One list for the
+ * gateway's classifier, `isQuotaExceededCode` and the tick's audited codes.
+ */
+export const RESEND_QUOTA_EXCEEDED_CODES: ReadonlyArray<string> = [
+  'daily_quota_exceeded',
+  'monthly_quota_exceeded',
+];
+
+/**
  * Spec 140 s2a review round 2 (CR#3) — `createContactImport`'s budget: it
  * uploads the whole audience as one CSV (up to the 5,000 / 50,000 ceiling), so
  * 10 s is unsized for it. 30 s is the pre-s2a `importFetch` value and is

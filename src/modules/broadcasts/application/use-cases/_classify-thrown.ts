@@ -13,7 +13,7 @@
  * Two paths that classify differently are two paths an operator has to learn;
  * one shared reader is the point of this file.
  */
-import type { GatewayRetryableSubKind } from '../ports/broadcasts-gateway-port';
+import { RESEND_QUOTA_EXCEEDED_CODES, type GatewayRetryableSubKind } from '../ports/broadcasts-gateway-port';
 
 export type GatewayThrownShape = {
   kind?: string;
@@ -113,5 +113,5 @@ export function retryableSubKind(sub: string | undefined): RetryableSubKind {
  * it reached the `app_error` bucket the dispatch alert reads.
  */
 export function isQuotaExceededCode(code: string | undefined): boolean {
-  return code === 'daily_quota_exceeded' || code === 'monthly_quota_exceeded';
+  return code !== undefined && RESEND_QUOTA_EXCEEDED_CODES.includes(code);
 }

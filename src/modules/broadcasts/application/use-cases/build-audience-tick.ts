@@ -73,7 +73,11 @@ import {
   REQUESTER_NOT_FOUND,
   type DispatchStandingDeps,
 } from './_dispatch-standing-gate';
-import type { BroadcastsGatewayPort, GatewayRetryableSubKind } from '../ports/broadcasts-gateway-port';
+import {
+  RESEND_QUOTA_EXCEEDED_CODES,
+  type BroadcastsGatewayPort,
+  type GatewayRetryableSubKind,
+} from '../ports/broadcasts-gateway-port';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
 import { recordOrphanBestEffort } from './_record-orphaned-resend-id';
 import type { BroadcastOrphansRepo, RecordOrphanInput } from '../ports/broadcast-orphans-repo';
@@ -1892,9 +1896,9 @@ async function onGatewayFailure(
     },
     {
       failureMetric: importReasonToFailureMetric(failure.reason, failure.code),
-      // Review round 1 (R1-G) — only a code the gateway itself names, from a
-      // closed set: Resend's own names are provider text and stay out of an
-      // append-only payload.
+      // Review round 1 (R1-G) — only a code from a closed set
+      // (`AUDITED_GATEWAY_CODES`); any other code, which can be a provider's
+      // free `name`, stays out of an append-only payload.
       ...(failure.code !== undefined && AUDITED_GATEWAY_CODES.has(failure.code)
         ? { payloadExtra: { gatewayCode: failure.code } }
         : {}),
@@ -1903,15 +1907,16 @@ async function onGatewayFailure(
 }
 
 /**
- * Spec 140 s3 review round 1 (R1-G) — the gateway codes the terminal
- * `broadcast_failed_to_dispatch` payload names as `gatewayCode`: the CSV guard,
- * Resend's two sending-quota 429s (kept as their names, DT3) and the name cap
- * (DT1). Anything else adds no key.
+ * Spec 140 s3 review round 1 (R1-G) — the codes the terminal
+ * `broadcast_failed_to_dispatch` payload names as `gatewayCode`, a closed set:
+ * two the gateway mints itself (the CSV guard, the name cap, DT1) and Resend's
+ * two sending-quota names (DT3), which the gateway keeps as the code only on an
+ * exact match against `RESEND_QUOTA_EXCEEDED_CODES` (review round 2, R2-D), so
+ * they are fixed tokens, not free provider text. Anything else adds no key.
  */
 const AUDITED_GATEWAY_CODES: ReadonlySet<string> = new Set([
   'unsafe_recipient_format',
-  'daily_quota_exceeded',
-  'monthly_quota_exceeded',
+  ...RESEND_QUOTA_EXCEEDED_CODES,
   'broadcast_name_too_long',
 ]);
 

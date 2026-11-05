@@ -33,6 +33,7 @@ import type { RemoveContactOutcome } from '@/modules/broadcasts/application/port
 import {
   IMPORT_CALL_TIMEOUT_MS,
   RESEND_CALL_TIMEOUT_MS,
+  RESEND_QUOTA_EXCEEDED_CODES,
   oneCallFitsBefore,
 } from '../../application/ports/broadcasts-gateway-port';
 import type {
@@ -254,7 +255,7 @@ function classifyResendError(
       reason,
     });
   }
-  if (status === 429 && (err?.name === 'daily_quota_exceeded' || err?.name === 'monthly_quota_exceeded')) {
+  if (status === 429 && err?.name !== undefined && RESEND_QUOTA_EXCEEDED_CODES.includes(err.name)) {
     // Spec 140 slice 3 (DT3) — the account's sending QUOTA, not its rate: a
     // DOCUMENTED 429 that does not clear inside a call, nor inside FR-021's
     // hour (a daily quota may reset inside it; the spec chose permanent). The
