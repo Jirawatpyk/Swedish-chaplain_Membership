@@ -336,8 +336,8 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
  *     different block from the one holding that branch. A round-4 reviewer
  *     proposed its remediation against the wrong catch arm on the strength of
  *     this sentence.
- *  2. `db_write_after_resend_success` writes NO audit row and sends NO member
- *     email; it returns `gateway_retryable`.
+ *  2. `db_write_after_resend_success` wrote NO audit row and sent NO member
+ *     email; it returned `gateway_retryable`.
  *  3. The method this paragraph actually describes was `attachResendIds`, which
  *     round 3 did not change. It does now — see the call above.
  *

@@ -1245,13 +1245,13 @@ async function applySendStanding(
 
 /**
  * The three Resend-side ids a restart reads off the row (the broadcast id RAW —
- * `''` included), plus the requester, which an orphan row records (spec 140 s2c).
+ * `''` included). It carried the requester too, for the `dead_broadcast_kept`
+ * orphan row the restart wrote until spec 140 s4.
  */
 interface RowIds {
   readonly audienceId: string | null;
   readonly importId: string | null;
   readonly resendBroadcastId: string | null;
-  readonly requestedByMemberId: string;
 }
 
 function rowIds(broadcast: Broadcast): RowIds {
@@ -1259,7 +1259,6 @@ function rowIds(broadcast: Broadcast): RowIds {
     audienceId: broadcast.resendAudienceId ?? null,
     importId: broadcast.audienceImportId,
     resendBroadcastId: broadcast.resendBroadcastId ?? null,
-    requestedByMemberId: broadcast.requestedByMemberId,
   };
 }
 

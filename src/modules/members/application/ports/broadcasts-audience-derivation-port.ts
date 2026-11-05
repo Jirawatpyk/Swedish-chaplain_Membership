@@ -28,7 +28,8 @@
  * covers it).
  *
  * NB: distinct name (`SubprocessorAudienceContact`) from the broadcasts
- * gateway's `AudienceContact` — they are unrelated shapes.
+ * gateway's former `AudienceContact` (deleted in spec 140 s4) — they were
+ * unrelated shapes.
  */
 import type { TenantTx } from '@/lib/db';
 import type { TenantSlug } from '@/modules/tenants';
