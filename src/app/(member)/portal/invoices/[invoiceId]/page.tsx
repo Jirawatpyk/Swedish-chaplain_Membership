@@ -514,7 +514,8 @@ export async function renderPortalInvoiceDetailView({
                               size: 'sm',
                               touchHeight: true,
                             }}
-                            className="max-sm:w-full"
+                            // The same 44px row height as Email me a copy and Pay now (PR P).
+                            className="min-h-11 px-4 max-sm:w-full"
                             data-testid="portal-download-invoice"
                           />
                         )}
@@ -532,7 +533,8 @@ export async function renderPortalInvoiceDetailView({
                             // filled `default` CTA, ranking above the demoted bill
                             // PDF above.
                             appearance={{ variant: 'primary', size: 'sm', touchHeight: true }}
-                            className="max-sm:w-full"
+                            // The same 44px row height as Email me a copy and Pay now (PR P).
+                            className="min-h-11 px-4 max-sm:w-full"
                             data-testid="portal-download-receipt"
                           />
                         )}
