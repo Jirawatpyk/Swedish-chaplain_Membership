@@ -198,7 +198,7 @@ describe('MarkPaidOfflineDialog on AURA', () => {
     await waitFor(() => expect(toastError).toHaveBeenCalled());
     const [message, opts] = toastError.mock.calls[0] as [
       string,
-      { description?: string; action?: { label: string }; duration?: number },
+      { id?: string; description?: string; action?: { label: string }; duration?: number },
     ];
     expect(typeof c.title).toBe('string');
     expect(typeof c.detail).toBe('string');
@@ -207,5 +207,7 @@ describe('MarkPaidOfflineDialog on AURA', () => {
     expect(opts.action?.label).toBe(c.action);
     // Persistent: the facade turns a missing duration into Infinity (§ 4.2).
     expect(opts.duration).toBeUndefined();
+    // A fixed per-cycle id, so a repeat replaces the toast instead of stacking.
+    expect(opts.id).toContain(CYCLE_ID);
   });
 });

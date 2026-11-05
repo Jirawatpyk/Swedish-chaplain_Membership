@@ -215,8 +215,9 @@ export function MarkPaidOfflineDialog({
       if (!res.ok) {
         const err = await readError(res);
         if (onError(err)) return;
-        // The un-suffixed key is the full sentence, used when no link
-        // resolves; keep it in step with its `*Title` / `*Detail` pair (#73).
+        // #73 — for the three linked codes (orphan, bill exists, coverage
+        // overlap) this full sentence is the no-link fallback; keep it in step
+        // with that code's `*Title` / `*Detail` pair.
         const key = `markPaidOffline.error.${err.code}`;
         toast.error(t.has(key) ? t(key) : t('markPaidOffline.error.server_error'));
         return;
@@ -297,6 +298,9 @@ export function MarkPaidOfflineDialog({
             // No duration: an error with a next step stays until dismissed
             // (ux-standards § 4.2; the facade defaults errors to Infinity).
             toast.error(t('markPaidOffline.error.f4_orphan_invoiceTitle'), {
+              // A fixed id: a repeat replaces this toast instead of stacking
+              // another one that stays until dismissed.
+              id: `mark-paid-orphan-${cycleId}`,
               description: t('markPaidOffline.error.f4_orphan_invoiceDetail'),
               action: {
                 label: t('markPaidOffline.viewOrphanInvoice'),
@@ -326,6 +330,7 @@ export function MarkPaidOfflineDialog({
                   : 'markPaidOffline.error.membership_bill_already_existsTitle',
               ),
               {
+                id: `mark-paid-existing-bill-${cycleId}`,
                 description: t(
                   isOverlap
                     ? 'markPaidOffline.error.membership_coverage_overlapDetail'
