@@ -154,10 +154,28 @@ describe('createResendContractFake › segments.remove', () => {
 // answered as MEASURED on 5 Nov 2026 (research.md slice 4 step 0 item 1).
 describe('createResendContractFake › contacts.segments.remove', () => {
   // Spec 140 DR4 — the id-less `contacts.remove` is the account-wide
-  // `DELETE /contacts/{email}`; the fake refuses it instead of answering success.
-  it('contacts.remove (the account-wide delete) throws', async () => {
-    const { client } = createResendContractFake();
+  // `DELETE /contacts/{email}`; the fake refuses it instead of answering success,
+  // and RECORDS it (PR #756 review round 1, security L2): the gateway's
+  // `boundedCall` turns a throw that is not a `GatewayThrowable` into a
+  // retryable, so the throw alone could vanish inside the code under test.
+  it('contacts.remove (the account-wide delete) throws and is recorded in forbiddenCalls', async () => {
+    const { client, forbiddenCalls } = createResendContractFake({ forbiddenCallsFailTest: false });
     await expect(client.contacts.remove({ email: 'a@example.com' })).rejects.toThrow(/account-wide/);
+    expect(forbiddenCalls).toEqual([{ method: 'contacts.remove', args: [{ email: 'a@example.com' }] }]);
+  });
+
+  // The default fake fails the test a forbidden call happened in, from
+  // `onTestFinished`, even when the throw was swallowed: the body below catches
+  // it and asserts nothing, so `it.fails` passes only if the fake failed it.
+  it.fails('by default a swallowed contacts.remove still fails the test it ran in', async () => {
+    const { client } = createResendContractFake();
+    await client.contacts.remove({ email: 'a@example.com' }).catch(() => undefined);
+  });
+
+  it('a fake that saw no forbidden call leaves forbiddenCalls empty', async () => {
+    const { client, forbiddenCalls } = createResendContractFake();
+    await client.contacts.segments.remove({ email: 'a@example.com', segmentId: 'aud_unknown' });
+    expect(forbiddenCalls).toEqual([]);
   });
 
   it('answers 200 contact_segment deleted:true by default', async () => {
