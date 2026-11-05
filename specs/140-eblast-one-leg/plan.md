@@ -2255,7 +2255,7 @@ This section supersedes the build table above wherever the two disagree. The bui
 
 #### DT4 — contact detach (architect M4, pdpa M-1, reliability L1)
 - The guard exists: `assertNonEmpty({ audienceId, email })` (`gateway:726`, spec 141). Slice 3 **pins** it with a contract case and **tightens it to a UUID shape** (lowercase hex 8-4-4-4-12; a non-UUID id is a permanent refusal before any call). Evidence: a one-off read-only prod count the maintainer ordered on 5 Nov 2026 found 0 `broadcasts` rows (0 with an audience id, 0 non-UUID); dev holds 1, UUID-shaped; every segment id Resend returned in the step 0 probes was a UUID. The only caller is `subprocessor-erasure-adapter.ts:146`.
-- No encoding or lowercasing (step 0.1: the unencoded `+` is read literally, matching is case-insensitive). An MSW contract case pins the exact URL sent, so an SDK upgrade that starts encoding is caught.
+- No encoding or lowercasing (step 0.1: the unencoded `+` is read literally, ~~matching is case-insensitive~~ matching is case-SENSITIVE (Verify, 5 Nov 2026)). An MSW contract case pins the exact URL sent, so an SDK upgrade that starts encoding is caught.
 - The DT4 test asserts `detached`, never `already_absent` (step 0 item 2, reworded per reliability M7). The over-report is stated in `docs/runbooks/member-erasure.md`; the rotation note goes in the same runbook.
 
 #### DT5 — the reclaim time budget (architect H5/M1–M3, reliability H3/M1)
@@ -2310,6 +2310,26 @@ DT1 + DT2 (with the reason copy) → DT3 + the status readers → DT4 → DT5 �
 #### Verify (the maintainer's `/verify`, 5 Nov 2026, on `14bb642ec`): FAIL, then fixed
 - DT5 PASS (route body and tick log carry `truncated`, `deferredDeletes`, `durationMs`; wrong bearer 401). DT6 PASS at the route (a seeded stuck erasure is picked and re-driven; rotation across several stuck heads is not drivable at the route and rests on the integration test). The `invalid_identifier` probe PASS (no request). Log scan clean.
 - **DT4 FAIL, seed artefact with a real lesson.** The Verify seed created an UPPERCASE contact directly at Resend; the erasure detach sent lowercase, Resend answered 200 `deleted: true`, and the contact stayed in the segment while the record said removed 2. Measured after: Resend is case-sensitive (research step 0 item 1, corrected). The app never pushes uppercase (recipients are `EmailLower`; both push paths send `emailLower`), so production is not exposed, but nothing re-checked it at the push. Fix: `createContactImport` refuses a mixed-case address before any request (`non_lowercase_email`; RED `e18c25888`). The re-drive wording above is corrected.
+
+### Slice 3 — review round 1 (`/code-review high 750`: 9; security APPROVE WITH FIXES: 3 LOW; pdpa APPROVE WITH CONDITIONS: 6 MEDIUM, 3 LOW; reliability MERGEABLE: 1 MEDIUM, 5 LOW; i18n fix-then-ship; enterprise-ux ship with follow-ups: 1 HIGH, 2 MEDIUM; the maintainer's DT4 re-verify PASS on `de9005a89`; 5 Nov 2026)
+
+Fixed in this PR:
+- **R1-A, the push guard becomes a normalisation (code-review #2/#4, pdpa M-1, security L3, reliability M1).** Refusing a mixed-case address failed the whole E-Blast and reported "Resend refused". Both push paths (`createContactImport` and the live legacy `addContactsToAudience`) now send `toLowerCase()` of each address, which is what the detach sends. A collision after lowercasing makes Resend's count differ from the resolved count, and the existing completion rule refuses fail-closed. In practice nothing changes: every producer already lowercases. The `non_lowercase_email` refusal is removed.
+- **R1-B, the stale case-insensitive comment** at the gateway detach (`:782`) and `plan.md` DT4 subsection (all reviewers): reworded to case-sensitive.
+- **R1-C, DT2 passes the known `cancelled` into the pre-terminal reclaim (code-review #1, reliability L3)**, so a 403 on that id is cleared without a second GET, and a failing GET can no longer write a `terminal_reclaim_undecided` orphan row. A cell pins the GET-fails case.
+- **R1-D, a re-drive sends no detach for sentinel addresses (pdpa M-3; seen in the DT4 re-verify: a second erase recorded `removed_count: 2` for contacts already gone).** The erasure capture drops `@erased.invalid` sentinels before pairing, so a re-drive records 0 truthfully. The runbook's "structurally 0" passage is reworded to match.
+- **R1-E, a held member's failure email (enterprise-ux H1).** On the hold arm, `provider_cancelled` carries the standing, and the email uses a new `reassuranceHeld` paragraph (EN/TH/SV): the slot is released, the membership is suspended, and a new E-Blast can be submitted once it is active again.
+- **R1-F, the `provider_cancelled` copy (i18n 1–4, enterprise-ux M1/M2):** no "again" (nothing was ever sent); the staff copy says the cancel happened at Resend, outside Chamber-OS (Chamber-OS never cancels at Resend: staff cancel refuses an approved row that holds an id, and the gateway has no cancel call), and conditions the resubmit on an active membership. TH/SV follow the new EN.
+- **R1-G, the import leg's terminal audit names our own gateway code (reliability M1):** a closed allowlist (`unsafe_recipient_format`, `daily_quota_exceeded`, `monthly_quota_exceeded`, `broadcast_name_too_long`) adds `gatewayCode` to the `broadcast_failed_to_dispatch` payload.
+- **R1-H, DT5 accuracy (code-review #6/#7/#8):** the truncated metric's help text names every cause; the use case and the gateway judge the deadline with one budget and clock; the comments say a cut listing restarts from page one next run (only `deferredDeletes` carry over).
+- **R1-I, erasure documentation (pdpa M-4/M-5/M-6, L-1..L-3):** the runbook gains an `invalid_identifier` remediation (find and fix the non-UUID row; one row makes every later erasure in the tenant read partial); RoPA 8a names the lowercase-push control; the evidence card relabels the detach figure as detach requests Resend accepted, with the may-include-absent caveat (EN/TH/SV).
+- **R1-J, `retryableSubKind` is exhaustive (reliability L2):** a new `GatewayRetryableSubKind` member is a compile error, not a silent `unclassified`.
+- **R1-K, the detach email half (security L2):** `removeContactFromAudience` refuses an address containing `/ ? # % \` before any request (`invalid_identifier`), and the new throws' messages are asserted to carry no address or id (security test gap).
+
+Not fixed, with the reason:
+- code-review #5 (dead `isDeadProbe` / `bidIsDead` / `cancelled` self-heal plumbing): left for slice 4, which removes the legacy leg and this plumbing together; recorded in the DT1+DT2 build notes.
+- code-review #9 (a quota 429 ends every E-Blast in that tick): the spec's DT3 decision; recorded under DT3.
+- reliability L4 (an unbounded DB read between listing and deletes, pre-existing) and L5 (PG `lower()` vs JS `toLowerCase()` on non-ASCII; the validators are ASCII-only): recorded only.
 
 #### Housekeeping
 - Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
