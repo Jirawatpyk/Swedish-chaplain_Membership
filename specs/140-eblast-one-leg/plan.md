@@ -2450,6 +2450,101 @@ Not fixed, with the reason:
 - Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
 - For slice 4, not slice 3: `deleteContactGlobally` (`gateway:772`) has no caller but still sends `DELETE /contacts/{email}`; s4 removes it.
 
+### Slice 4 — build plan (DR1–DR4, D-042; agreed 5 Nov 2026)
+
+US4 (`spec.md`:140–146) plus the s3 carries named for s4. #739, #740 and #754 stay out. No migration.
+
+**Step 0: measurements** (Resend sink only, @resend.dev; never /send, schedule or cancel). Each goes into `research.md` with its date before code depends on it.
+1. `contacts.segments.remove({email, segmentId})` (`DELETE /contacts/{email}/segments/{id}`):
+   - a `+` address and an uppercase address are each detached and still exist;
+   - what a random segment UUID answers.
+   s3 measured the `/audiences/{id}/contacts/{email}` path; that does not transfer.
+2. `broadcasts.create({segmentId})` and `contacts.list({segmentId})` on a sink segment answer in the same shape as today.
+3. Import timing (maintainer, 5 Nov 2026): a 100-address sink import is timed, then each contact is deleted by id (a segment DELETE deletes no contacts). The 900-row figure is labelled EXTRAPOLATED, not MEASURED, against the 30 s `IMPORT_CALL_TIMEOUT_MS` assumption (:1216). Measuring at 900 would fill the shared Free account (1,000 contacts team-wide, 22 used).
+
+**Build rows** (RED before GREEN per row; pure deletions and refactors are exempt from red-first)
+
+| # | Done-when | Change |
+|---|---|---|
+| 1 | DR3 | A new env `BROADCAST_AUDIENCE_CEILING`: `z.coerce.number().int().min(1).max(50000).default(900)`, in `env.ts` and `.env.example`. `currentAudienceCeiling()` returns it. `configuredAudienceCeiling`, `audienceCeiling(wide)` and `DELIVERABLE_RECIPIENTS_PER_TICK` are removed. `FEATURE_CONTACT_MARKETING_RECIPIENTS` loses only its ceiling role and keeps its recipient-scope role. The resolver check (`resolve-segment-recipients.ts:457`) is unchanged. The i18n keys already interpolate `{ceiling}`, so no keys are added; the i18n reviewer reads them in place. The stale CHECK comment (`schema.ts:348`) is fixed, comment only. The `audience-cap` integration moves to 901 / 900 / 899 |
+| 2 | — | Refactor: the cron route builds the import deps without the legacy maker. The tick memo is built from the raw `membersBridge` export plus `asTenantContext` (`route.ts:343-375`). In the same commit, the cron contract test stops mocking `makeDispatchScheduledBroadcastDeps` for `STUB_BRIDGE` |
+| 3 | DR1 | Delete the legacy leg:<br>• the use case and its exports;<br>• `makeDispatchScheduledBroadcastDeps`;<br>• `legacyResendBroadcastsGateway` and `createBroadcastRetry` (create always `rate_limit`);<br>• `addContactsToAudience` and `AudienceContact`;<br>• `deleteContactGlobally`;<br>• `metrics.audienceDriftDetected`;<br>• the flag, in `env.ts`, `feature-flags.ts` and `.env.example` together;<br>• the route's import-row filter, its `import_row_skipped` and `gateway_retryable` arms, and its flag read;<br>• the `'live'` leg literal in `_dispatch-standing-gate.ts`.<br><br>Also the s3 dead plumbing: `isDeadProbe`, `restartAudienceBuild`'s `bidIsDead` branch, `selfHealMissingAudience`'s `bidIsDead` argument, `'cancelled'` in `observedResendStatus`, and `notHandedStatus`.<br><br>**Kept:** `inheritedDead` (still live for `not_found`); `hasLiveDispatchLease` (confirm-schedule uses it); `dead_broadcast_kept` in the domain union (0325 rows may hold it) |
+| 4 | — | Three audit types lose their only emitter: `broadcast_resend_audience_drift`, `broadcast_resend_drift_check_unverifiable` and `broadcast_dispatch_idempotency_conflict_pre_send`. The DB enum keeps them. A `RETIRED` list in `audit-event-type-emission.test.ts` names them; `KNOWN_NOT_YET_EMITTED` would misdescribe them. `check:audit-events` and `check:audit-counts` are run |
+| 5 | — | Segments names, at the SDK calls only. The port method names and the `resend_audience_id` columns stay, since no Done-when line asks for a port rename.<br>• `audiences.*` → `segments.*`;<br>• `broadcasts.create` and `contacts.list` → `segmentId`;<br>• `removeContactFromAudience` → `contacts.segments.remove({email, segmentId})`.<br><br>`assertSegmentId` and `assertPathSafeEmail` stay. The SDK contract wire and the SDK-shaped fake are re-recorded |
+| 6 | DR4 | A guard in `tests/contract/resend/_wire.ts` `stubWire` fails any `DELETE ^https://api\.resend\.com/contacts/[^/]+$`. The four direct `vi.stubGlobal('fetch')` sites route through `stubWire`. A positive control that sends that exact URL and expects the guard to fail it is committed RED first. The erasure-cascade integration's `deleteContactGlobally` spy assertion moves to the wire guard |
+| 7 | — | Tests.<br>**Deleted (legacy-only):** `dispatch-scheduled-broadcast.test.ts`, `dispatch-failure-notification.test.ts`, and the legacy case of `dispatch-persist-before-send.test.ts` (its repo CAS case stays). `cron-dispatch-idempotency.test.ts` is checked for an import-leg twin before it goes.<br>**Ported to `buildAudienceTick`:** `eblast-approval-happy-path` "delivered content = approved version", and the legacy cases of `eblast-send-time-standing`, `erasure-vs-dispatch-begun` and `eblast-approved-exit-vs-dispatch` (dropped where an import twin exists).<br>**Fakes:** every typed fake loses the two deleted port methods |
+| 8 | — | Docs:<br>• D-042, placed before D-043 as reserved, carrying the prod count;<br>• go-live § 6.10, rewritten from "flip the flag" to "merged = live";<br>• `operational-state.md`:8 and the dated 139 s2 gate;<br>• RoPA 8a (the remove wire), 8d and :224;<br>• the runbooks `broadcast-audience-build`, `cron-jobs`, `eblast-approval`, `broadcasts-dispatch-failure`, `member-erasure` and `go-live-operator-gates`;<br>• `observability.md` (the drift rows, § 22.14, :1723, :1750);<br>• `.claude/rules/modules/broadcasts.md`:18–26;<br>• the changelog |
+
+**Test plan rows (slice 4)**
+
+| Done-when | Test that goes red first | Level |
+|---|---|---|
+| DR3 | `broadcasts-deps-audience` "the ceiling is BROADCAST_AUDIENCE_CEILING, default 900, with no import flag"; `audience-cap` "901 refused, 900 and 899 accepted" | unit + integration |
+| DR3 (env bound) | `env` unit: 0 and 50,001 refused, unset → 900 | unit |
+| DR4 | `broadcasts-sdk.contract` "the wire guard fails a DELETE /contacts/{email}" (positive control) | contract |
+| DR1 | the `rg` command, recorded in § Evidence | — |
+| DR2 | `/verify`: two ticks, `approved → sending → sent` on the sink | Verify |
+
+**Verify** (the maintainer's `/verify`, D-044, on :3401 if another session holds :3400; sink only, flag absent):
+- DR2 over two cron ticks, with a wrong-Bearer 401 probe;
+- DR3: 901 refused in EN, TH and SV, and 900 accepted; the ceiling env set to 1, then unset.
+
+**Before merge:** the maintainer orders a prod read-only count of `approved` and `sending` rows (D-034). The number goes into D-042 and the PR.
+
+**Rollback:** a revert re-adds the flag check with the flag absent, which makes the legacy leg live again; s2's skip keeps it off any import row in flight.
+
+### Slice 4 — plan review (chamber-os-architect: 3 HIGH, 4 MEDIUM, 5 LOW; security APPROVE WITH FIXES: 2 HIGH, 2 MEDIUM, 3 LOW; pdpa APPROVE WITH CONDITIONS: 2 HIGH, 5 MEDIUM, 2 LOW; reliability CHANGES REQUESTED: 1 HIGH, 5 MEDIUM, 5 LOW; 5 Nov 2026)
+
+No reviewer raised a BLOCKER. Each finding is folded into the build rows below. Rows whose ids match across reviewers are merged.
+
+**Step 0** (research.md § slice 4, items 1–5, all MEASURED 5 Nov 2026). These measurements close pdpa H-1, pdpa H-2, security H2, architect H3 and the measurement half of architect H2.
+- **`contacts.segments.remove` answers `200 deleted:true` only for a membership that existed.** Every no-op case read here answered `404 not_found`: a random segment, the wrong case, and a non-member. An id minted by the old `POST /audiences` detaches on the new wire.
+- **None of the three 404 bodies echoes the address.** The messages were "Audience not found", "Contact not found" and "Audience not found in contact's audience list". `classifyResendError` putting `err.message` into `reason` therefore leaks no PII on this wire. Row 5 still passes `{statusCode, name}` only for this call, so a later wording change cannot leak an address.
+- **The 100 import contacts were deleted one by one, by id.** The account is back at 22 contacts. A segment DELETE deletes no contacts.
+- **A segment DELETE on a random id answered `403 "Cannot delete last audience."`** The account held only `General`. `deleteAudience`'s existing 403-then-GET probe settles this.
+
+**Decision (the maintainer, 5 Nov 2026): the ceiling bound stays at 1–50,000, as decided on 31 Oct (reliability M4).**
+- A value above about 1,000 does not open a safety hole on the Free plan. It ends that E-Blast terminally, with a reason and a member notice. Every Resend call is bounded by its own timeout, and the lease and its fencing token stop a slow resolve from producing a double send.
+- `env.ts` carries a docblock on the variable. The lease budget (`_dispatch-lease.ts:64-77`) and the 30 s import timeout were derived at 900 or fewer recipients. A value above about 1,000 needs a Resend plan upgrade, plus a fresh measurement of the import timing and of the resolve budget.
+- The effective ceiling is logged once per tick in the cron summary (security L7).
+- Build checks, not assertions:
+  - a cap error on the import POST classifies **permanent**;
+  - a resolve that overruns `DB_AND_RESOLVE_MS` ends fail-closed through the pre-call lease check.
+  - The runbook states the outcome of each.
+
+**Amendments to the build rows**
+
+| Row | Source | Amendment |
+|---|---|---|
+| 1 | arch M1, L3, L4 | `domain/audience-ceiling.ts` is empty once the rest is removed. The file, its test and the `vitest.config.ts` pin (:726–729) are deleted. `recipient-count-routes` expects 900 as a literal, not the function under test. The `broadcasts-deps-audience` matrix is rewritten as "900 with `FEATURE_CONTACT_MARKETING_RECIPIENTS` on and off". `audience-cap` injects the ceiling directly, so the env wiring is covered by `broadcasts-deps-audience` only; accepted. The env unit also checks that `""` refuses boot |
+| 2 | arch M2, sec M4, rel L2 | `makeBuildAudienceTickDeps(slug, tickBudget)` builds the tick memo itself, for the resolver, `membersBridge` and `sendStanding.membersBridge`. `haltReadFresh` stays the raw bridge. The route becomes `{...await makeBuildAudienceTickDeps(slug, tickBudget), brandChrome}`, and the memo assertion moves to `broadcasts-deps-audience`. The route keeps the Bearer check (:126), `cronReadOnlyGuard` (:135) and the `FEATURE_F7_BROADCASTS` kill switch (:152), in that order. Only the import-flag read (:187) goes. The cron contract keeps the three pinned guard cases (:157–188) and adds "the kill-switch arm builds no import deps". The switch `default` becomes `const _exhaustive: never = …; void _exhaustive;` plus `unknown_error` |
+| 3 | arch M1, M4, rel H1 | The deletion list gains:<br>• `scripts/inventory-broadcast-outbox.ts`, rewritten to the env ceiling;<br>• the barrel lines `index.ts` :247–251, :312, :317–320, :347, :361;<br>• `metrics.ts` :3108, `submit-feedback.ts` :25, `env.ts` :674–676 and `.env.example` :415–422;<br>• the "both dispatch legs" comments in the `_*.ts` helpers and `broadcasts-repo.ts` :525.<br><br>The s3 dead plumbing is deleted in its own commit, after a mutation proof from a committed base: `isDeadProbe(probe)` → `false`, then the DT2 and `build-audience-tick` suites stay green, recorded in § Evidence. Narrowing `observedResendStatus` uses no cast. `applySendStanding` returns the probe narrowed to a non-cancelled type. Where the compiler cannot carry that, a fail-closed runtime guard returns `dispatch.server_error` with the row kept `approved`, and a unit test reaches it |
+| 4 | rel L1, pdpa L-1 | `RETIRED` is a negative assertion: no emit site under `ROOTS_TO_GREP` for each type, and `RETIRED` ⊂ `F7_AUDIT_EVENT_TYPES`. The TS tuple entries (`audit-port.ts` :94–95, :131) and the en/th/sv labels stay, because old rows still render in the F9 viewer and the DSAR export. RoPA :262 counts 68 live and 3 retired |
+| 5 | sec L5, L6 | `assertSegmentId` also guards `contacts.list` (a falsy id lists the whole account) and `segments.remove`. The re-recorded wire pins the exact URLs: `/segments/{uuid}/contacts`, `DELETE /segments/{uuid}`, `DELETE /contacts/{email}/segments/{uuid}`, and `segment_id` in the `broadcasts.create` body. A 404 on the detach maps to `already_absent`, now reachable (step 0 item 4).<br><br>**Not taken:** sec L6, refusing a non-lowercase detach address. The detach already sends the lowercased captured address. A refusal would turn an uppercase stored address into a permanently stuck erasure rather than a detach |
+| 6 | sec H1, pdpa M-1, arch L2, L5 | The DR4 guard **records** each violation, and `stubWire` registers `onTestFinished(() => expect(violations).toEqual([]))`. A throw inside the stub would be swallowed by the SDK's `fetchRequest` catch. The check runs on the normalised URL: `new URL(...)`; the method from `init` or the `Request`; `DELETE` plus `/^\/+contacts\/[^/]+\/?$/i` on the pathname, on any host. The positive control drives the SDK (`contacts.remove({ email })` through `stubWire`) and expects the test to fail. It is committed RED with the mutants: trailing slash, query, uppercase `Contacts`, and a `Request` object. Every direct `vi.stubGlobal('fetch')` site that reaches the gateway is listed and routed through `stubWire`: `broadcasts-sdk.contract` :124, :498, :707, :723, and the unit files `resend-{contact-import,delete-broadcast-once,retrieve-broadcast-once,send-broadcast}`. § Evidence adds `rg -n "contacts\.remove\(" src`, which must print nothing, and the SDK-shaped fake's `contacts.remove` throws. In `erase-member-subprocessor-cascade` the `deleteContactGlobally` spy is deleted (the port has no such method, so the type system forbids the call), and the test keeps its positive assertion that `removeContactFromAudience` was called with (segmentId, the lowercase captured email) |
+| 7 | arch H1, rel M1 | `dispatch-failure-notification.test.ts` is **ported, not deleted**. Both cases move to `buildAudienceTick`: retryable past budget writes an outbox row and leaves tenant B's outbox unchanged (FR-021, Principle I); within budget writes no outbox row. New tests for a row the legacy leg left behind:<br>• unit, an `approved` row with `resend_audience_id` only, then with that plus a draft id that probes `draft` → `audience_restarted`, gateway calls `['retrieveBroadcast','deleteBroadcast','deleteAudience']`;<br>• integration on live Neon: that shape seeded, `buildAudienceTick` run through the real repo.<br><br>`member-send-standing-unknown-kind` drops its legacy row. The legacy cases are removed from `resend-gateway-bounded-calls`, `resend-broadcasts-gateway-contract`, `resend-contact-import`, and the fakes in `cleanup-orphaned-audiences`, `reclaim-orphaned-audiences` and `reconcile-stuck-sending` |
+| 8 | pdpa M-2 … M-5, rel L3, L4, arch L1, H2 | Docs, beyond the earlier list:<br>• **RoPA 8a:** the wire `DELETE /contacts/{email}/segments/{id}` (step 0, 5 Nov 2026); the Verify `rg` names `createContactImport` only; `deleteContactGlobally` → "removed in spec 140 s4; the DR4 guard fails any `DELETE /contacts/{email}`"; the safe-behaviour line points at "no global-delete port method + the DR4 contract guard".<br>• **Retention row :264:** "segment"; the purpose (keeping the Resend `unsubscribed` flag that the upsert import preserves); from s4 it covers every recipient of every E-Blast.<br>• **:224** names the only leg. **8d** closes residual (4) and puts the legacy-retry sentences and "both legs" in the past tense, bounded by the prod count below.<br>• **Gateway comment :814** drops `addContactsToAudience`.<br>• **Runbook `member-erasure` :396–405:** the new wire and its date.<br>• **Runbook `broadcast-audience-build`:** raising the ceiling is safe; lowering it fails an `approved` row above it at the next tick; the cap-error and resolve-overrun outcomes.<br>• **`route.ts`** comments :92–109, :138–142 and :173–200 point at the `_dispatch-lease.ts` budget.<br>• **`observability.md`:** retire `cron.import_row_skipped`, `leg=live`, the drift metric and its alarm (:1423–1424, :1500); add an alert on `audienceImportSubmitMs` p99 > 15 s (rel M4).<br>• **go-live § 6.10:** an operator step to read the account's contact count before the first prod E-Blast |
+
+**Risks row (arch H2, sec M3, rel M5, pdpa L-2), replacing "Slice 4 hits the Free-plan cap":**
+- The Free cap of 1,000 contacts is team-wide and accumulates: every distinct address ever imported stays, and no code path deletes it.
+- The 900 ceiling bounds one E-Blast only. Two in-flight E-Blasts are allowed (3 segments, `operational-state.md`:8), and together they can exceed the cap.
+- **How we notice:** the import POST answers a cap error, and the row ends `failed_to_dispatch`. go-live § 6.10 reads the contact count first.
+- SweCham held 150 contact emails in prod (5 Nov 2026 probe).
+
+**Before merge (rel M2, pdpa M-5): a gate, not a record.** The maintainer orders a prod read-only count (D-034) of:
+- `status='approved' AND scheduled_for <= now() + interval '15 min'`, which must be 0, or the merge waits;
+- `approved AND resend_audience_id IS NOT NULL`;
+- rows that ever carried `resend_broadcast_id`, to bound the legacy-retry residual in 8d.
+
+The numbers go into D-042 and the PR. The 139 s2 gate after the merge is docs-only (sec I-8); the PR names the maintainer as its owner.
+
+**Rollback (arch M3, rel M3), replacing the line above.** A revert re-adds the flag check with the flag absent, so the legacy leg is live again, and s2's skip stops it double-sending an import row. Three effects remain:
+- (a) Rows holding import columns stay `approved` under the skip until staff cancel them. Query: `approved AND audience_import_id IS NOT NULL`.
+- (b) The 500 clamp returns. An `approved` row with 501–900 recipients fails at dispatch, as `audience_too_large`, and the member is emailed. Query: `approved AND estimated_recipient_count > 500`.
+- (c) The cleaner alternative is a revert plus `FEATURE_F7_IMPORT_AUDIENCE=true`, which restores the import leg. Its ceiling then becomes 5,000 (50,000 with 1:N), past the Free cap.
+
+All three go into D-042 and the `broadcast-audience-build` runbook.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
@@ -2465,5 +2560,5 @@ Not fixed, with the reason:
 |---|---|
 | Erasure re-drives forever on a permanent Resend error | The `reconcile-erasures` stuck gauge; ED3 |
 | A terminal draft is deleted while Resend is sending it | Not possible: DELETE answers 403 on queued/sent (MEASURED 2026-10-29); probed |
-| Slice 4 hits the Free-plan cap | The ceiling of 900 at submit; DR3 |
+| Slice 4 hits the Free-plan cap (team-wide, accumulating; the 900 ceiling bounds one E-Blast only) | The import POST answers a cap error and the row ends `failed_to_dispatch`; go-live § 6.10 reads the account contact count first (slice 4 plan review) |
 | A wire change deletes contacts account-wide | DR4's contract assertion |
