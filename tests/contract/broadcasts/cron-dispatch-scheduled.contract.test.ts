@@ -116,6 +116,9 @@ vi.mock('@/modules/broadcasts', () => ({
   isF71aUs1Enabled: () => isF71aUs1EnabledMock(),
   isF7ImportAudienceEnabled: () => isF7ImportAudienceEnabledMock(),
   buildAudienceTick: (...args: unknown[]) => buildAudienceTickMock(...args),
+  // Spec 140 s4 (security L7) — a distinctive value, so the log assertion
+  // below can only pass if the route read this function.
+  currentAudienceCeiling: () => 777,
   makeBuildAudienceTickDeps: async (...args: unknown[]) => {
     buildDepsArgs.push(args);
     // Like the real maker: the tick budget (its third argument) rides the deps.
@@ -196,6 +199,24 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     const body = (await res.json()) as { processed?: number; skipped?: boolean };
     expect(body.processed ?? 0).toBe(0);
     expect(dispatchScheduledBroadcastMock).not.toHaveBeenCalled();
+  });
+
+  // Spec 140 s4 (security L7) — the effective ceiling is logged once per tick,
+  // on the tick_complete line only: not a summary bucket, so neither the JSON
+  // body nor the `cron.<key>` span attributes carry it.
+  it('tick_complete logs the effective audience ceiling once, outside the summary', async () => {
+    vi.mocked(logger.info).mockClear();
+    runInTenantMock.mockImplementation(async (_ctx, fn) => fn({ execute: async () => [] }));
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, unknown>;
+    const completes = vi
+      .mocked(logger.info)
+      .mock.calls.filter(([, msg]) => msg === 'cron.broadcasts.dispatch.tick_complete');
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.[0]).toMatchObject({ tenantId: 'test-tenant', audienceCeiling: 777 });
+    expect(body).not.toHaveProperty('audienceCeiling');
+    expect([...spanAttributes.keys()].some((k) => k.includes('audienceCeiling'))).toBe(false);
   });
 
   it('one eligible row answering dispatch.server_error → retryable:1, counted once, nothing else touched', async () => {
