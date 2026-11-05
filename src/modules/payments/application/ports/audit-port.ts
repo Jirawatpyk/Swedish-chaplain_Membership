@@ -272,7 +272,10 @@ export interface F5AuditPayloadByType {
     new_method: 'card' | 'promptpay';
     processor_payment_intent_id: string;
     attempt_seq: number;
-    cancel_outcome: 'stripe_confirmed' | 'stripe_error_bypassed';
+    // #731 — `stripe_pi_missing` replaced `stripe_error_bypassed` (any other
+    // permanent cancel error now aborts the switch). Rows written before
+    // #731 may still carry `stripe_error_bypassed`.
+    cancel_outcome: 'stripe_confirmed' | 'stripe_pi_missing';
   };
   payment_auto_refunded_stale_invoice: {
     payment_id: string;

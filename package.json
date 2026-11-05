@@ -68,6 +68,7 @@
     "seed:system-actors": "node --env-file=.env.local --import tsx scripts/seed-system-actors.ts",
     "seed:system-actors:prod": "node --env-file=.env.production --import tsx scripts/seed-system-actors.ts",
     "seed:f5-e2e:reconciliation": "node --env-file=.env.local --import tsx scripts/seed-f5-e2e-reconciliation.ts",
+    "seed:f5-e2e:refundable": "node --env-file=.env.local --import tsx scripts/seed-f5-e2e-refundable.ts",
     "db:clear-ratelimit": "node --env-file=.env.local --import tsx scripts/clear-rate-limit.ts",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
