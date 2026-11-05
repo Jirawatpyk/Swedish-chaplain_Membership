@@ -118,7 +118,7 @@ function makeTrackedGateway(tracker: CallTracker): BroadcastsGatewayPort {
     async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
     async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
     async deleteBroadcast() {},
-    async listAudiences() { return []; },
+    async listAudiences() { return { audiences: [], truncated: false }; },
   };
 }
 
@@ -334,7 +334,7 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
       async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
       async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
       async deleteBroadcast() {},
-      async listAudiences() { return []; },
+      async listAudiences() { return { audiences: [], truncated: false }; },
     };
 
     const buildDeps = () => ({

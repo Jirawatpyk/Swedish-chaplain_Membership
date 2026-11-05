@@ -211,7 +211,10 @@ describe('resendBroadcastsGateway.listAudiences — Resend contract', () => {
     // Drive the REAL gateway method — this is the point of this test.
     // If the gateway mis-reads result.data instead of result.data.data, or
     // forgets to map created_at→createdAt, this assertion fails.
-    const audiences = await resendBroadcastsGateway.listAudiences();
+    const { audiences, truncated } = await resendBroadcastsGateway.listAudiences({
+      deadlineAt: new Date(Date.now() + 60_000),
+    });
+    expect(truncated).toBe(false);
 
     expect(audiences).toHaveLength(1);
     expect(audiences[0]).toMatchObject({ id: 'aud_fake_2', name: 'Audience Beta' });

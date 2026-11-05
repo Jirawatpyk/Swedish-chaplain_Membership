@@ -170,7 +170,7 @@ function fakeResend(opts: { parkSend?: ReturnType<typeof gate>; parkDelete?: Ret
     },
     async deleteContactGlobally() {},
     async listAudiences() {
-      return [];
+      return { audiences: [], truncated: false };
     },
   } satisfies BroadcastsGatewayPort;
   return { port, state, accepted, reclaimed, calls };

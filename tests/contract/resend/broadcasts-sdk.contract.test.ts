@@ -21,7 +21,10 @@ vi.hoisted(() => {
   delete process.env['RESEND_USER_AGENT'];
 });
 import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
-import type { CreateBroadcastInput } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import {
+  RESEND_CALL_TIMEOUT_MS,
+  type CreateBroadcastInput,
+} from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { logger } from '@/lib/logger';
 import { json, stubWire, type WireCall } from './_wire';
 
@@ -29,6 +32,9 @@ import { json, stubWire, type WireCall } from './_wire';
 // UUID-shaped, so its cases use a real-shaped id (every segment id Resend has
 // returned is one, research.md slice 3 step 0).
 const AUD = '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19';
+
+/** Spec 140 DT5 — a `listAudiences` deadline no page in these cases comes near. */
+const farDeadline = () => new Date(Date.now() + 10 * 60_000);
 
 const compact = (calls: readonly WireCall[]) =>
   calls.map((c) => {
@@ -262,14 +268,17 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     const calls = stubWire(() =>
       json(200, { object: 'list', data: [{ id: 'aud_1', name: 'probe', created_at: '2026-10-30T00:00:00Z' }] }),
     );
-    await expect(resendBroadcastsGateway.listAudiences()).resolves.toMatchInlineSnapshot(`
-      [
-        {
-          "createdAt": 2026-10-30T00:00:00.000Z,
-          "id": "aud_1",
-          "name": "probe",
-        },
-      ]
+    await expect(resendBroadcastsGateway.listAudiences({ deadlineAt: farDeadline() })).resolves.toMatchInlineSnapshot(`
+      {
+        "audiences": [
+          {
+            "createdAt": 2026-10-30T00:00:00.000Z,
+            "id": "aud_1",
+            "name": "probe",
+          },
+        ],
+        "truncated": false,
+      }
     `);
     expect(calls).toMatchInlineSnapshot(`
       [
@@ -293,8 +302,9 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
         ? json(200, { object: 'list', has_more: true, data: [{ id: 'aud_1', name: 'a', created_at: '2026-10-30T00:00:00Z' }] })
         : json(200, { object: 'list', has_more: false, data: [{ id: 'aud_2', name: 'b', created_at: '2026-10-30T00:00:00Z' }] }),
     );
-    const rows = await resendBroadcastsGateway.listAudiences();
-    expect({ ids: rows.map((r) => r.id), urls: calls.map((c) => c.url) }).toEqual({
+    const { audiences: rows, truncated } = await resendBroadcastsGateway.listAudiences({ deadlineAt: farDeadline() });
+    expect({ ids: rows.map((r) => r.id), urls: calls.map((c) => c.url), truncated }).toEqual({
+      truncated: false,
       ids: ['aud_1', 'aud_2'],
       urls: ['https://api.resend.com/segments?limit=100', 'https://api.resend.com/segments?limit=100&after=aud_1'],
     });
@@ -304,20 +314,67 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     const calls = stubWire(() =>
       json(200, { object: 'list', has_more: true, data: [{ id: 'aud_1', name: 'a', created_at: '2026-10-30T00:00:00Z' }] }),
     );
-    const rows = await resendBroadcastsGateway.listAudiences();
-    expect({ ids: rows.map((r) => r.id), pages: calls.length }).toEqual({ ids: ['aud_1'], pages: 2 });
+    const { audiences: rows, truncated } = await resendBroadcastsGateway.listAudiences({ deadlineAt: farDeadline() });
+    expect({ ids: rows.map((r) => r.id), pages: calls.length, truncated }).toEqual({
+      ids: ['aud_1'],
+      pages: 2,
+      truncated: true,
+    });
   });
 
-  it('listAudiences: an empty page that still says has_more is logged as truncated', async () => {
+  it('listAudiences: an empty page that still says has_more is truncated, and logged', async () => {
     const warn = vi.spyOn(logger, 'warn');
     stubWire((n) =>
       n === 1
         ? json(200, { object: 'list', has_more: true, data: [{ id: 'aud_1', name: 'a', created_at: '2026-10-30T00:00:00Z' }] })
         : json(200, { object: 'list', has_more: true, data: [] }),
     );
-    await resendBroadcastsGateway.listAudiences();
+    await expect(resendBroadcastsGateway.listAudiences({ deadlineAt: farDeadline() })).resolves.toMatchObject({
+      truncated: true,
+    });
     expect(warn.mock.calls.map((c) => c[1])).toContain('resend.broadcasts.audiences_list_truncated');
     warn.mockRestore();
+  });
+
+  // Spec 140 DT5 — a per-invocation budget: the gateway starts a page only
+  // while one bounded call (`callTimeoutMs`, RESEND_CALL_TIMEOUT_MS = 10 s here)
+  // still fits before the caller's deadline, and says the list is cut. The
+  // budget is read from `Date.now()`, so the test moves that clock by hand
+  // (`AbortSignal.timeout` runs on real timers, which fake timers cannot drive).
+  describe("listAudiences stops at the caller's deadline (spec 140 DT5)", () => {
+    const page = (id: string) =>
+      json(200, { object: 'list', has_more: true, data: [{ id, name: id, created_at: '2026-10-30T00:00:00Z' }] });
+
+    it('a deadline less than one call away sends no request and answers truncated', async () => {
+      const calls = stubWire(() => page('aud_1'));
+      await expect(
+        resendBroadcastsGateway.listAudiences({ deadlineAt: new Date(Date.now() + RESEND_CALL_TIMEOUT_MS - 1) }),
+      ).resolves.toEqual({ audiences: [], truncated: true });
+      expect(calls).toHaveLength(0);
+    });
+
+    it('paging stops once less than one call is left, keeping the pages read', async () => {
+      const realNow = Date.now.bind(Date);
+      let elapsed = 0;
+      const now = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + elapsed);
+      try {
+        const deadlineAt = new Date(Date.now() + 25_000);
+        // Each page "takes" 8 s: page 1 starts with 25 s left, page 2 with 17 s,
+        // and a third would start with 9 s, under one 10 s call.
+        const calls = stubWire((n) => {
+          elapsed += 8_000;
+          return page(`aud_${n}`);
+        });
+        const result = await resendBroadcastsGateway.listAudiences({ deadlineAt });
+        expect({ ids: result.audiences.map((a) => a.id), truncated: result.truncated, pages: calls.length }).toEqual({
+          ids: ['aud_1', 'aud_2'],
+          truncated: true,
+          pages: 2,
+        });
+      } finally {
+        now.mockRestore();
+      }
+    });
   });
 
   it('addContactsToAudience with no contacts is a no-op, even for a blank id (no request)', async () => {
@@ -751,7 +808,7 @@ describe('Broadcasts gateway bounded calls on the wire (spec 140 s2a)', () => {
     ['getAudienceContactCount', () => resendBroadcastsGateway.getAudienceContactCount('aud_1')],
     ['retrieveBroadcast', () => resendBroadcastsGateway.retrieveBroadcast('bc_1')],
     ['removeContactFromAudience', () => resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')],
-    ['listAudiences', () => resendBroadcastsGateway.listAudiences()],
+    ['listAudiences', () => resendBroadcastsGateway.listAudiences({ deadlineAt: farDeadline() })],
     ['deleteAudience', () => resendBroadcastsGateway.deleteAudience('aud_1')],
     ['deleteBroadcast', () => resendBroadcastsGateway.deleteBroadcast('bc_1')],
   ])('%s: the signal reaches fetch', async (_name, run) => {

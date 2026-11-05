@@ -554,7 +554,7 @@ function makeGateway(opts: GatewayOpts = {}): {
           throw new Error('Resend 500 on DELETE /broadcasts');
         }
       },
-      async listAudiences() { return []; },
+      async listAudiences() { return { audiences: [], truncated: false }; },
     },
   };
 }

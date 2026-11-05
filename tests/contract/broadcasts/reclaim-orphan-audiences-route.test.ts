@@ -128,6 +128,48 @@ describe('cron reclaim-orphan-audiences — wire contract', () => {
     expect(body.skippedNonMatching).toBe(4);
   });
 
+  // Spec 140 DT5 — the run has a budget: the route's own maxDuration, and one
+  // deadline inside it that covers the listing and the deletes. No request
+  // field can move it.
+  it('GET and POST are the same handler; a function budget of 300 s', async () => {
+    const route = await import('@/app/api/cron/broadcasts/reclaim-orphan-audiences/route');
+    expect(route.GET).toBe(route.POST);
+    expect(route.maxDuration).toBe(300);
+  });
+
+  it('passes the use case a deadline of start + maxDuration − the margin', async () => {
+    reclaimOrphanedAudiencesMock.mockResolvedValueOnce(
+      ok({ scanned: 0, orphaned: 0, deleted: 0, failed: 0, skippedLastAudience: 0, skippedNonMatching: 0, truncated: false, deferredDeletes: 0 }),
+    );
+    const { POST } = await import('@/app/api/cron/broadcasts/reclaim-orphan-audiences/route');
+    const { RECLAIM_DEADLINE_MARGIN_MS } = await import(
+      '@/modules/broadcasts/application/use-cases/reclaim-orphaned-audiences'
+    );
+    const before = Date.now();
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const input = reclaimOrphanedAudiencesMock.mock.calls[0]![1] as { deadlineAt?: Date };
+    expect(input.deadlineAt).toBeInstanceOf(Date);
+    const expected = before + 300_000 - RECLAIM_DEADLINE_MARGIN_MS;
+    expect(input.deadlineAt!.getTime()).toBeGreaterThanOrEqual(expected);
+    expect(input.deadlineAt!.getTime() - expected).toBeLessThan(5_000);
+  });
+
+  it('a run cut by its budget answers 200 and reports truncated + deferredDeletes in the body and the log', async () => {
+    reclaimOrphanedAudiencesMock.mockResolvedValueOnce(
+      ok({ scanned: 120, orphaned: 9, deleted: 5, failed: 0, skippedLastAudience: 0, skippedNonMatching: 3, truncated: true, deferredDeletes: 4 }),
+    );
+    const { POST } = await import('@/app/api/cron/broadcasts/reclaim-orphan-audiences/route');
+    const { logger } = await import('@/lib/logger');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ deleted: 5, truncated: true, deferredDeletes: 4 });
+    const tick = vi
+      .mocked(logger.info)
+      .mock.calls.filter((c) => c[1] === 'cron.broadcasts.reclaim_orphan_audiences.tick_complete')
+      .at(-1);
+    expect(tick?.[0]).toMatchObject({ truncated: true, deferredDeletes: 4 });
+  });
+
   it('valid bearer + use-case returns server_error → 500', async () => {
     reclaimOrphanedAudiencesMock.mockResolvedValueOnce(
       err({ kind: 'reclaim.server_error', message: 'listAudiences failed' }),
