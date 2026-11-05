@@ -215,6 +215,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #197 | Cursor `Pagination` always draws Previous (disabled with no `previousHref`); only First can be left out (`showFirst`). Ask: `showPrevious={false}` for forward-only keyset lists (handoff addendum 98, found in PR P's UX review) | None: the E-Blast queue, change requests, renewals pipeline and tasks keep the disabled step (not focusable, no click) |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
