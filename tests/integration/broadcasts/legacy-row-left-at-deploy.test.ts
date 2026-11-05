@@ -16,13 +16,21 @@
  * passed the first time they ran. They pin what the deletion relies on, against
  * the real `releaseResendAudience` CAS rather than a double.
  *
+ * PR #756 review round 1 (code-review #6) — the third shape: the legacy leg had
+ * already HANDED the broadcast to `/send` before the deploy. Its inherited probe
+ * reads `sent` / `queued`, so the tick catches the row up to `sending` through
+ * the real `advanceToSending` CAS, with no second `/send`, no
+ * `failed_to_dispatch` and no member email. Also characterisation: it passed
+ * the first time it ran.
+ *
  * **The gateway is a recording fake, never real Resend**: dev and prod share the
  * Resend Broadcasts key.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runInTenant } from '@/lib/db';
+import { db, runInTenant } from '@/lib/db';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { asBroadcastId } from '@/modules/broadcasts';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
@@ -104,18 +112,19 @@ describe('spec 140 s4 — a row the legacy leg left behind at deploy (live Neon)
       (await tx.select().from(broadcasts).where(and(eq(broadcasts.tenantId, tenant.ctx.slug), eq(broadcasts.broadcastId, id))))[0]!,
     );
 
-  const tick = async (id: string, gateway: BroadcastsGatewayPort) =>
+  const tick = async (id: string, gateway: BroadcastsGatewayPort, extra: Record<string, unknown> = {}) =>
     buildAudienceTick(
       {
         ...(await makeBuildAudienceTickDeps(tenant.ctx.slug, { tickStartedAt: Date.now() })),
         broadcastsGateway: gateway,
         brandChrome: NO_BRAND,
+        ...extra,
       },
       { broadcastId: asBroadcastId(id) },
     );
 
   it('audience id only → audience_restarted: the audience deleted, the column released, the row still approved, nothing imported', async () => {
-    const audienceId = `aud-legacy-${randomUUID()}`;
+    const audienceId = randomUUID();
     const id = await seedLegacyRow({ resendAudienceId: audienceId });
     const gw = recordingGateway({ deleteAudience: undefined });
 
@@ -133,7 +142,7 @@ describe('spec 140 s4 — a row the legacy leg left behind at deploy (live Neon)
   });
 
   it('audience id + a draft broadcast id → audience_restarted: probed draft, the draft deleted, then the audience, both columns released', async () => {
-    const audienceId = `aud-legacy-${randomUUID()}`;
+    const audienceId = randomUUID();
     const resendBroadcastId = `rb-legacy-${randomUUID()}`;
     const id = await seedLegacyRow({ resendAudienceId: audienceId, resendBroadcastId });
     const gw = recordingGateway({
@@ -158,4 +167,42 @@ describe('spec 140 s4 — a row the legacy leg left behind at deploy (live Neon)
       dispatchLeaseToken: null,
     });
   });
+
+  it.each(['sent', 'queued'] as const)(
+    'audience id + a broadcast id the legacy leg HANDED (probe %s) → caught up to sending: no second /send, no failure, no member email',
+    async (status) => {
+      const audienceId = randomUUID();
+      const resendBroadcastId = randomUUID();
+      const id = await seedLegacyRow({ resendAudienceId: audienceId, resendBroadcastId });
+      const sentAt = status === 'sent' ? new Date(Date.now() - 300_000).toISOString() : null;
+      // Any method but the probe throws, so a second `/send`, a mint or a
+      // teardown fails the case by itself.
+      const gw = recordingGateway({
+        retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status, sentAt } },
+      });
+      // Every transactional email (the member's failure notice included) is a
+      // call on this port; none is allowed.
+      const email = recordingGateway({});
+
+      const r = await tick(id, gw.port, { emailTransactional: email.port });
+
+      expect(r).toEqual({ ok: true, value: { kind: 'sent', resendBroadcastId, recipientCount: 1 } });
+      expect(gw.calls).toEqual([{ method: 'retrieveBroadcast', args: [resendBroadcastId] }]);
+      expect(email.calls).toEqual([]);
+      expect(await readRow(id)).toMatchObject({
+        status: 'sending',
+        resendAudienceId: audienceId,
+        resendBroadcastId,
+        audienceImportId: null,
+        failureReason: null,
+        dispatchLeaseToken: null,
+      });
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .where(and(eq(auditLog.tenantId, tenant.ctx.slug), sql`${auditLog.payload}->>'broadcastId' = ${id}`));
+      expect(rows.map((a) => a.eventType)).toEqual(['broadcast_send_started']);
+      expect(rows[0]?.payload).toMatchObject({ handedToSendOnPriorTick: true, observedResendStatus: status, importId: null });
+    },
+  );
 });
