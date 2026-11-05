@@ -215,6 +215,8 @@ export function MarkPaidOfflineDialog({
       if (!res.ok) {
         const err = await readError(res);
         if (onError(err)) return;
+        // The un-suffixed key is the full sentence, used when no link
+        // resolves; keep it in step with its `*Title` / `*Detail` pair (#73).
         const key = `markPaidOffline.error.${err.code}`;
         toast.error(t.has(key) ? t(key) : t('markPaidOffline.error.server_error'));
         return;
@@ -292,6 +294,8 @@ export function MarkPaidOfflineDialog({
             // support ticket. Dialog stays OPEN (nothing to refresh away).
             // #73 — a short title plus a description, so the copy does not
             // wrap into a narrow column beside the action button.
+            // No duration: an error with a next step stays until dismissed
+            // (ux-standards § 4.2; the facade defaults errors to Infinity).
             toast.error(t('markPaidOffline.error.f4_orphan_invoiceTitle'), {
               description: t('markPaidOffline.error.f4_orphan_invoiceDetail'),
               action: {
@@ -300,7 +304,6 @@ export function MarkPaidOfflineDialog({
                   router.push(orphanHref);
                 },
               },
-              duration: 30_000,
             });
             return true;
           }
@@ -334,7 +337,6 @@ export function MarkPaidOfflineDialog({
                     router.push(existingBillHref);
                   },
                 },
-                duration: 30_000,
               },
             );
             closeStale();

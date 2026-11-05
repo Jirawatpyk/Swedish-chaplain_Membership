@@ -205,6 +205,7 @@ describe('MarkPaidOfflineDialog on AURA', () => {
     expect(message).toBe(c.title);
     expect(opts.description).toBe(c.detail);
     expect(opts.action?.label).toBe(c.action);
-    expect(opts.duration).toBe(30_000);
+    // Persistent: the facade turns a missing duration into Infinity (§ 4.2).
+    expect(opts.duration).toBeUndefined();
   });
 });
