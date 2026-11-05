@@ -215,6 +215,9 @@ export function MarkPaidOfflineDialog({
       if (!res.ok) {
         const err = await readError(res);
         if (onError(err)) return;
+        // #73 — for the three linked codes (orphan, bill exists, coverage
+        // overlap) this full sentence is the no-link fallback; keep it in step
+        // with that code's `*Title` / `*Detail` pair.
         const key = `markPaidOffline.error.${err.code}`;
         toast.error(t.has(key) ? t(key) : t('markPaidOffline.error.server_error'));
         return;
@@ -290,14 +293,21 @@ export function MarkPaidOfflineDialog({
             // failed. The admin must resume from the F4 invoice list —
             // surface the deep-link in the toast so they can act without a
             // support ticket. Dialog stays OPEN (nothing to refresh away).
-            toast.error(t('markPaidOffline.error.f4_orphan_invoice'), {
+            // #73 — a short title plus a description, so the copy does not
+            // wrap into a narrow column beside the action button.
+            // No duration: an error with a next step stays until dismissed
+            // (ux-standards § 4.2; the facade defaults errors to Infinity).
+            toast.error(t('markPaidOffline.error.f4_orphan_invoiceTitle'), {
+              // A fixed id: a repeat replaces this toast instead of stacking
+              // another one that stays until dismissed.
+              id: `mark-paid-orphan-${cycleId}`,
+              description: t('markPaidOffline.error.f4_orphan_invoiceDetail'),
               action: {
                 label: t('markPaidOffline.viewOrphanInvoice'),
                 onClick: () => {
                   router.push(orphanHref);
                 },
               },
-              duration: 30_000,
             });
             return true;
           }
@@ -312,20 +322,26 @@ export function MarkPaidOfflineDialog({
             // #730 — a coverage overlap links its covering bill too, with its
             // own copy: that bill may be another plan year or already paid, so
             // "record the payment there" would be wrong for it.
+            const isOverlap = err.code === 'membership_coverage_overlap';
             toast.error(
               t(
-                err.code === 'membership_coverage_overlap'
-                  ? 'markPaidOffline.error.membership_coverage_overlap'
-                  : 'markPaidOffline.error.membership_bill_already_exists',
+                isOverlap
+                  ? 'markPaidOffline.error.membership_coverage_overlapTitle'
+                  : 'markPaidOffline.error.membership_bill_already_existsTitle',
               ),
               {
+                id: `mark-paid-existing-bill-${cycleId}`,
+                description: t(
+                  isOverlap
+                    ? 'markPaidOffline.error.membership_coverage_overlapDetail'
+                    : 'markPaidOffline.error.membership_bill_already_existsDetail',
+                ),
                 action: {
                   label: t('markPaidOffline.viewExistingInvoice'),
                   onClick: () => {
                     router.push(existingBillHref);
                   },
                 },
-                duration: 30_000,
               },
             );
             closeStale();

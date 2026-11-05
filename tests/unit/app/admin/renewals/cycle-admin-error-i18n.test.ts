@@ -112,8 +112,23 @@ describe('CycleAdminActions mark-paid-offline — EN i18n coverage (DV-5)', () =
       // branch's distinct success copy.
       'successReanchored',
       'viewOrphanInvoice',
+      'viewExistingInvoice',
     ]) {
       expect(typeof block[k], `markPaidOffline.${k}`).toBe('string');
+    }
+  });
+
+  // #73 — the three linked toasts read a short title and a description.
+  it('the linked toasts\' title/description keys are present', () => {
+    for (const code of [
+      'f4_orphan_invoice',
+      'membership_bill_already_exists',
+      'membership_coverage_overlap',
+    ]) {
+      for (const suffix of ['Title', 'Detail']) {
+        const k = `${code}${suffix}`;
+        expect(typeof errors[k], `markPaidOffline.error.${k}`).toBe('string');
+      }
     }
   });
 

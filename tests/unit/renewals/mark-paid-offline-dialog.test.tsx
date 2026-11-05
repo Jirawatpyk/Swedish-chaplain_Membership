@@ -155,12 +155,36 @@ describe('MarkPaidOfflineDialog on AURA', () => {
   // #730 /code-review — a coverage overlap that names its covering bill links
   // it, with its OWN copy: never the live-bill "record the payment there",
   // which is wrong for another plan year or a bill already paid.
-  it('#730 a coverage overlap with a covering bill toasts its own copy, with the link', async () => {
+  // #73 — each linked toast is a short title plus a description, so the copy
+  // does not wrap into a narrow column beside the action button (R130).
+  it.each([
+    {
+      code: 'membership_coverage_overlap',
+      body: { existing_invoice_id: 'inv-9' },
+      title: M.error.membership_coverage_overlapTitle,
+      detail: M.error.membership_coverage_overlapDetail,
+      action: M.viewExistingInvoice,
+    },
+    {
+      code: 'membership_bill_already_exists',
+      body: { existing_invoice_id: 'inv-9' },
+      title: M.error.membership_bill_already_existsTitle,
+      detail: M.error.membership_bill_already_existsDetail,
+      action: M.viewExistingInvoice,
+    },
+    {
+      code: 'f4_orphan_invoice',
+      body: { orphan_invoice_id: 'inv-7' },
+      title: M.error.f4_orphan_invoiceTitle,
+      detail: M.error.f4_orphan_invoiceDetail,
+      action: M.viewOrphanInvoice,
+    },
+  ])('#73 the linked $code toast is a short title with a description', async (c) => {
     toastError.mockClear();
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 409,
-      json: async () => ({ error: { code: 'membership_coverage_overlap', existing_invoice_id: 'inv-9' } }),
+      json: async () => ({ error: { code: c.code, ...c.body } }),
     });
     vi.stubGlobal('fetch', fetchMock);
     renderWithCompany('Acme Co., Ltd.');
@@ -172,9 +196,18 @@ describe('MarkPaidOfflineDialog on AURA', () => {
     await waitFor(() => expect(confirm).not.toBeDisabled());
     fireEvent.click(confirm);
     await waitFor(() => expect(toastError).toHaveBeenCalled());
-    const [message, opts] = toastError.mock.calls[0] as [string, { action?: { label: string } }];
-    expect(message).toBe(M.error.membership_coverage_overlap);
-    expect(message).not.toBe(M.error.membership_bill_already_exists);
-    expect(opts.action?.label).toBe(M.viewExistingInvoice);
+    const [message, opts] = toastError.mock.calls[0] as [
+      string,
+      { id?: string; description?: string; action?: { label: string }; duration?: number },
+    ];
+    expect(typeof c.title).toBe('string');
+    expect(typeof c.detail).toBe('string');
+    expect(message).toBe(c.title);
+    expect(opts.description).toBe(c.detail);
+    expect(opts.action?.label).toBe(c.action);
+    // Persistent: the facade turns a missing duration into Infinity (§ 4.2).
+    expect(opts.duration).toBeUndefined();
+    // A fixed per-cycle id, so a repeat replaces the toast instead of stacking.
+    expect(opts.id).toContain(CYCLE_ID);
   });
 });
