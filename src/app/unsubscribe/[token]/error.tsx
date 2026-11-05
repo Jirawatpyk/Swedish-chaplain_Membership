@@ -23,7 +23,7 @@
 
 import { useEffect } from 'react';
 import { useUnsubscribeContact, type UnsubscribeLocale } from './unsubscribe-contact-context';
-import { Button, Card } from '@jirawatpyk/aura-react';
+import { Button, Card, linkClass } from '@jirawatpyk/aura-react';
 
 interface ErrorProps {
   readonly error: Error & { digest?: string };
@@ -109,7 +109,7 @@ export default function UnsubscribeErrorBoundary({
               {copy.contactWith[0]}
               <a
                 href={`mailto:${email}`}
-                className="inline-block py-1 font-medium underline underline-offset-4 [overflow-wrap:anywhere] hover:text-[var(--aura-fg-primary)]"
+                className={linkClass({ className: 'font-medium [overflow-wrap:anywhere]' })}
               >
                 {email}
               </a>

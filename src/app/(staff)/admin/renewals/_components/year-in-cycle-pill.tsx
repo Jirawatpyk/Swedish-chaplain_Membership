@@ -75,8 +75,8 @@ export function YearInCyclePill({
     return (
       // PR O — AURA's neutral Badge, not a hand-built pill. Its name is
       // screen-reader text: ARIA forbids an aria-label on a role-less span
-      // (review a11y M1). It may wrap, so a long company name fits a phone.
-      <Badge tone="neutral" className="max-w-full gap-1.5 whitespace-normal">
+      // (review a11y M1).
+      <Badge tone="neutral" className="gap-1.5">
         <span className="sr-only">
           {t('aria_label', {
             year: yearInCycle,

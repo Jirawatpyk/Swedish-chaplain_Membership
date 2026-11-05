@@ -215,7 +215,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | #195 | `Combobox`'s status line (`loading` / `loadingText`, the no-match `emptyText`) is a `role="status"` region mounted together with its text and taken away when it changes, so NVDA and VoiceOver may announce nothing, and no result count is announced. Ask: keep the region mounted, change only its text, and announce the count ("12 results") (handoff addendum 96, found in #752, UX L6) | None (the invoice event picker relies on it as is) |
-| #196 | `Alert`'s `onDismiss` button is always named "Dismiss"; a banner that names its subject (the starter-template banner: "Dismiss starter warning for {template}") cannot say so. Ask: `dismissLabel` (handoff addendum 97, found in PR O) | `template-edit-confirm-starter.tsx` keeps its own `IconButton` in the Alert's `action` slot, labelled with the template's name |
+| #196 | `Alert`'s `onDismiss` button is always named "Dismiss"; a banner that names its subject (the starter-template banner: "Dismiss starter warning for {template}") cannot say so. Ask: `dismissLabel` (handoff addendum 97, found in PR O) | `template-edit-confirm-starter.tsx` places its own `IconButton`, labelled with the template's name, beside the Alert (top right: a `relative` section, the button `absolute end-1 top-1`, the Alert `pe-12`); with `dismissLabel` all three go and the Alert takes `onDismiss` |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

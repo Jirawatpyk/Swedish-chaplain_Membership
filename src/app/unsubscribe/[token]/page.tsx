@@ -29,7 +29,7 @@ import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
 import { getTranslations } from 'next-intl/server';
 import { AlertCircle, CheckCircle2, Clock, Info, XCircle } from 'lucide-react';
-import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, buttonClass, linkClass } from '@jirawatpyk/aura-react/server';
 
 import { peekTokenLang } from '@/modules/broadcasts';
 import { resolveTenantDisplayName } from '@/lib/broadcasts-route-helpers';
@@ -170,7 +170,7 @@ export default async function UnsubscribePage({
   const mailtoLink = (): React.ReactNode => (
     <a
       href={`mailto:${supportEmail}`}
-      className="inline-block py-1 font-medium underline underline-offset-4 [overflow-wrap:anywhere] hover:text-[var(--aura-fg-primary)]"
+      className={linkClass({ className: 'font-medium [overflow-wrap:anywhere]' })}
     >
       {supportEmail}
     </a>
@@ -331,5 +331,6 @@ export default async function UnsubscribePage({
   );
 }
 
-const EXTERNAL_LINK_CLASS =
-  'inline-block py-1 underline underline-offset-2 text-[var(--aura-fg-secondary)] hover:text-[var(--aura-fg-primary)]';
+// AURA's text link in the surrounding (secondary) colour, its own focus ring
+// and hover; a 44px target below 640px, as it stands on its own line.
+const EXTERNAL_LINK_CLASS = linkClass({ tone: 'inherit', touchHeight: true });
