@@ -272,6 +272,18 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     ]);
   });
 
+  // PR #756 review round 1 (code-review #4) — a 410 Gone is "already gone" as a
+  // 404 is, on this call as on its siblings `deleteAudience` / `deleteBroadcast`
+  // (`isProviderGone`). Read as `permanent`, the erasure record would count a
+  // member's detach FAILED and send an operator to remediate a no-op.
+  it('removeContactFromAudience reads a JSON 410 Gone as already_absent, one request', async () => {
+    const calls = stubWire(() => json(410, { statusCode: 410, name: 'gone', message: 'Segment gone' }));
+    await expect(resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')).resolves.toEqual({
+      kind: 'already_absent',
+    });
+    expect(calls).toHaveLength(1);
+  });
+
   // Spec 140 s4 — `detached` reaches an append-only Art. 30 record as a removal,
   // so it needs Resend's own `deleted: true`. Never measured, so read
   // conservatively: a 200 without it is not a detach. It is a permanent failure
@@ -765,6 +777,8 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       ['deleteAudience, HTML 404', 404, () => resendBroadcastsGateway.deleteAudience(AUD), 4],
       ['deleteBroadcast, HTML 410', 410, () => resendBroadcastsGateway.deleteBroadcast('bc_1'), 4],
       ['removeContactFromAudience, HTML 404 (the erasure path)', 404, () =>
+        resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com'), 4],
+      ['removeContactFromAudience, HTML 410 (the erasure path)', 410, () =>
         resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com'), 4],
       ['sendBroadcast, HTML 409', 409, () => resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'), 4],
       ['createAudience, HTML 413', 413, () => resendBroadcastsGateway.createAudience('probe'), 1],
