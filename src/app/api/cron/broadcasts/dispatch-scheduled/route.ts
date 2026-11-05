@@ -12,7 +12,7 @@
  * 2026-05-01):
  *   - Eligible-row scan uses `FOR UPDATE SKIP LOCKED` to skip rows
  *     ALREADY held by another concurrent scan. **The row lock is
- *     released the moment `runInTenant` returns** (tx ends at line 69),
+ *     released the moment `runInTenant` returns** (the scan's own tx),
  *     so SKIP LOCKED only protects against two ticks racing to read the
  *     SAME eligibility batch — it does NOT protect the per-row dispatch
  *     window against another tick that arrives after this one's tx
@@ -239,9 +239,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // T172 — emit no-due-rows skip when query returned an empty set so
   // the cron tick observability dashboard can distinguish "queue
   // empty" from "feature_disabled". (R6 W-P5: `advisory_lock_held`
-  // bucket removed — never emitted because FOR UPDATE SKIP LOCKED +
-  // advisory_xact_lock pattern means contested rows aren't returned to
-  // the scanner in the first place.)
+  // bucket removed — never emitted, because `FOR UPDATE SKIP LOCKED` keeps a
+  // contested row out of the scan and the dispatch lease keeps out a row a tick
+  // is working.)
   if (eligible.length === 0) {
     broadcastsMetrics.cronSkippedCount(tenant.slug, 'no_due_rows');
   }
@@ -275,17 +275,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // members-bridge memo itself (R6 W-P3, spec 140 s4 row 2), so every row the
     // tick works shares one segment read and one halt-list read.
     //
+    // PR #756 review round 1 (code-review #3) — built at the FIRST row, so a tick
+    // with no due rows (most of them) skips the maker's dynamic import, its
+    // tenant display-name read and its memo. Before the per-row `try`, so a
+    // throw from the maker still fails the tick as before rather than being
+    // counted `uncaught_error` against a row.
+    //
     // T087 — the whole audience goes to Resend in ONE import call and is
     // confirmed on a later tick (`buildAudienceTick`, the only dispatch leg
     // since spec 140 s4). F119 T031 (FR-041c) — brand chrome is read live at
     // dispatch and composed here (the seam lives in src/lib) so the delivered
     // email carries the logo, colour and address the preview showed.
-    const deps = {
-      ...(await makeBuildAudienceTickDeps(tenant.slug, tickBudget)),
-      brandChrome: brandChromePort,
-    };
+    let deps: Parameters<typeof buildAudienceTick>[0] | null = null;
 
     for (const [rowIndex, row] of eligible.entries()) {
+      deps ??= {
+        ...(await makeBuildAudienceTickDeps(tenant.slug, tickBudget)),
+        brandChrome: brandChromePort,
+      };
       // Review rounds 2–3 (CR#5, CR#8) — `processed` counts every row reached
       // except a deferred one, once, in the `finally` below (every `continue`,
       // the `break` and the catch pass through it): processed +
@@ -307,11 +314,41 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             summary.deferred_past_cutoff += eligible.length - rowIndex;
             break;
           }
-          if (built.value.kind === 'sent') summary.succeeded++;
-          else if (built.value.kind === 'import_submitted') summary.import_submitted++;
-          else if (built.value.kind === 'dispatch_held_member_suspended') summary.held++;
-          else if (built.value.kind === 'audience_restarted') summary.audience_restarted++;
-          else summary.import_pending++;
+          // PR #756 review round 1 (rel L3) — exhaustive, like the error switch
+          // below: a kind with no arm fails to compile, and at runtime it pages as
+          // `unknown_error` (`void`, never `return`, so it cannot fail open)
+          // instead of being counted `import_pending` by a bare `else`.
+          switch (built.value.kind) {
+            case 'sent':
+              summary.succeeded++;
+              break;
+            case 'import_submitted':
+              summary.import_submitted++;
+              break;
+            case 'import_pending':
+              summary.import_pending++;
+              break;
+            case 'dispatch_held_member_suspended':
+              summary.held++;
+              break;
+            case 'audience_restarted':
+              summary.audience_restarted++;
+              break;
+            default: {
+              const _exhaustive: never = built.value;
+              void _exhaustive;
+              summary.unknown_error++;
+              broadcastsMetrics.cronUnknownErrorCount(tenant.slug);
+              logger.error(
+                {
+                  tenantId: tenant.slug,
+                  broadcastId: row.broadcast_id,
+                  outcomeKind: (built.value as { kind?: string }).kind ?? 'unknown',
+                },
+                'cron.broadcasts.dispatch.unknown_outcome_kind',
+              );
+            }
+          }
           continue;
         }
         switch (built.error.kind) {
