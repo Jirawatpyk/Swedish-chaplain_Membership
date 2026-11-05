@@ -789,7 +789,7 @@ Flag OFF, Resend sink address only, no `/send`, no Vercel env.
 | II Test-First | Pass. RED commit per row. |
 | III Clean Architecture | Pass. members reaches broadcasts only through the cascade port and adapter. |
 | IV PCI | n/a |
-| V i18n | Slice 4 only (the ceiling message, EN/TH/SV). |
+| V i18n | Slice 3: the new member-facing `provider_cancelled` reason (EN/TH/SV, i18n review). Slice 4: the ceiling message, EN/TH/SV. |
 | VI Inclusive UX | Slice 4 only (the refusal copy). |
 | VII Perf & Observability | Pass. Every Resend call is bounded (slice 1 uses the `*Once` 10 s calls); the stuck gauge is added. |
 | VIII Reliability | Pass. Fail-closed table; slice 2's fencing. |
@@ -2196,6 +2196,92 @@ These are the spec's open questions (spec :160–162; research Q4, Q7). Each ans
 - `pnpm check`, contract, unit for broadcasts and members, and the integration files for the tick, reclaim and reconcile-erasures.
 - `/verify` as above.
 - Step 0's measurements are recorded in `research.md` with dates.
+
+### Slice 3 — plan review (chamber-os-architect: 1 BLOCKER, 5 HIGH, 6 MEDIUM, 5 LOW; pdpa APPROVE WITH CONDITIONS: 3 HIGH, 3 MEDIUM, 2 LOW; reliability: 1 BLOCKER, 3 HIGH, 7 MEDIUM, 2 LOW; 5 Nov 2026)
+
+This section supersedes the build table above wherever the two disagree. The builders work from this section.
+
+**The live leg.** `FEATURE_F7_IMPORT_AUDIENCE` is OFF in production (`docs/operational-state.md`), so the **legacy leg is the one running today**. Every change in the gateway (`classifyResendError`, `normaliseStatus`) changes production behaviour the moment it merges, not only the dark import leg. Every row below names its legacy-leg effect.
+
+**Maintainer decisions (5 Nov 2026).**
+- DT2's new reason **notifies the member**: a new `provider_cancelled` reason with EN/TH/SV copy and an i18n review.
+- Rotation uses the **latest `subprocessor_erasure_propagated` attempt**, not a per-tick hash. The hash alternative is recorded in Complexity Tracking below.
+- The quota 429 being permanent is already the spec's DT3 line; no new decision.
+
+#### Rotation (B1 in both reviews; DT6 added to spec.md)
+- The planned key was wrong. `member_erasure_requested` is the only `member_erasure_*` event and is written once (`erase-member.ts:311`, `if (!alreadyErased)`), so ordering by it equals ordering by `erased_at` and never rotates. The query reads that event's first row for `reason` only.
+- **The key.** `findStuckErasuresInTx` (`drizzle-member-repo.ts:711–758`) orders by
+  `COALESCE((SELECT max(al."timestamp") FROM audit_log al WHERE al.tenant_id = ${slug} AND al.event_type = 'subprocessor_erasure_propagated' AND al.payload ? 'member_id' AND al.payload->>'member_id' = m.member_id::text), m.erased_at) ASC`, then `m.member_id` as a tiebreak.
+  - The event is written on every committed scrub tx, re-drives included (`erase-member.ts:786–831`, unconditional), which covers the real s1 stuck case: scrub done, broadcasts cascade undecided.
+  - `al.tenant_id = ${slug}` is mandatory (audit_log's policy is PERMISSIVE; Principle I).
+  - `al.payload ? 'member_id'` lets the planner prove the partial index `audit_log_member_timeline_idx` (`0189:158`).
+  - `FOR UPDATE OF m SKIP LOCKED` keeps its meaning: the sort key lives in audit_log, which is not locked. The stuck set is small (≈ 0–2 a year), so sorting it whole is fine.
+  - `countStuckErasuresInTx` is unchanged (a count needs no order).
+  - `pnpm db:query "EXPLAIN …"` on dev is recorded in § Evidence before GREEN.
+- **Residual holes, recorded, not closed:** (1) the emit is best-effort, so a lost emit does not move the member back; (2) a head that fails **before** the scrub tx commits, or a re-drive that exits early, writes no marker and does not rotate. The per-tick hash would close (2) but cannot be tested deterministically; rejected for that.
+- **Tests (RED first, `test(members)`):** integration "20 stuck heads with recent attempts do not starve a 21st"; a cross-tenant case where tenant B's audit rows do not change tenant A's order.
+- **Runbook (pdpa M-3):** the erasure-reconcile runbook says the queue rotates by last attempt and names the two residual holes.
+- Commit scope `members`; only the members infra repo changes, no cross-module import.
+
+#### DT2 — a cancelled inherited broadcast (architect H1/H2, reliability H2, pdpa M-2)
+- **Where.** Decide terminally **right after the inherited probe at Step 1a** (`runLeasedTick`, `build-audience-tick.ts:790–812`), before `applySendStanding`. Deciding at `confirmImport` alone is not enough: a suspend → `restartAudienceBuild(…, { bidIsDead: isDeadProbe(probe) })` (`:1050`) and `releaseResendAudience` (`:1371–1383`) clear `resend_broadcast_id`, and the next tick mints and sends again; the `stale_audience` path (`:1855`) clears it the same way.
+- `cancelled` is trusted from one GET (unlike 404, no re-probe).
+- **How.** `failTerminally` with the new `provider_cancelled` reason. Its choke point DELETEs (403) → GET → `unsendable/cancelled` → retained, as s1 classifies. The id stays on the terminal row, where the erasure terminal pass and `cleanup-audiences` reach it, so **the new path writes no orphan row** (this replaces "the s2c orphan row stays as it is").
+- **Do not touch** `isDeadProbe` (`:1185`; hold teardown `:1050` and self-heal `:1855` use it). Only `inheritedDead` (`:2257`) stops counting `cancelled` as re-mintable.
+- **Neighbours.** `bidIsDead`, the `=== 'cancelled'` arm of `selfHealMissingAudience` (`:2289`), and the writers `dead_broadcast_replaced` (`:2333`) and `dead_broadcast_kept` (`:1354`) are no longer reached from the tick for a cancelled id; they stay as intentionally dead writers for a `not_found` id. **Do not delete** either reason from `domain/value-objects/orphaned-resend-id.ts:31–32`: 0325 rows may hold them.
+- **Tests that go RED and are rewritten** to assert the terminal end: `build-audience-tick-failure-paths.test.ts` (:3391) and `build-audience-tick-orphans.test.ts` (:270). New: `resend_copies_retained` = 1 on the terminal row; a suspend-then-unhold case that never mints.
+- **Reason and copy.** `provider_cancelled` joins `IMPORT_FAILURE_REASONS` (a TS const, no enum), so it joins `MEMBER_FACING_FAILURE_REASONS` (`:233`) and `broadcast-failed-to-dispatch-email.test.ts` requires EN/TH/SV copy; `i18n-translation-reviewer` reviews it. Do not reuse `provider_failed` (it means "import job failed"). The status is `failed_to_dispatch`, so the quota slot is refunded; the metric maps it to its own label.
+- **Legacy leg.** Unchanged: on `cancelled` it sends, gets 422, `probeRefusedSend` reads `refused`, and ends terminally without a re-mint. DT2 makes the two legs agree. The path is shorter, so `TICK*_CALLS` and W_max are unchanged.
+
+#### The status readers (architect H3, reliability H1, pdpa H-3)
+- **Option (a):** do not widen `retrieveBroadcast`'s union (`broadcasts-gateway-port.ts:146–152` keeps `failed` deliberately unmapped because the live `reconcile-stuck-sending` reads it). Change **only how the result is read**, never the call: one pure reader that accepts either outcome shape, so the throw/outcome split, the retry policy and `TICK2_RESEND_CALLS` stay as they are.
+- Pin `isHandedStatus('failed') === false`, and keep `failed` out of every dead set.
+- **Shadow sweep.** grep every reader of `RetrievedBroadcastResource['status']` for `=== 'unknown'` and a negative `else`. Known sites:
+  - legacy `dispatch-scheduled-broadcast.ts:741–806`: its trailing `else` is a negative test. Turn it into a positive one (`draft` / `cancelled` continue; everything else refuses) and add a `failed` cell in `dispatch-scheduled-broadcast.test.ts`. On the refuse arm, `rowDraft.probedStatus` (`:850–854`) must not fold `failed` to `'not_found'` before `deleteDraftBeforeStandingRefusal`.
+  - `reconcile-stuck-sending.ts:251–287`: positive on `sent`, safe; if its metric or log label moves from `unknown` to `failed`, the runbook line saying "`unknown` goes to a human" is updated too.
+  - `src/lib/metrics.ts:2802` `reconcileUnresolvedStatus`: a literal union; the compiler will flag it.
+  - the import probe (`:981`) and `probeRefusedSend` (`:80`) are already positive tests.
+
+#### DT3 — error classes (architect H4, reliability M2–M6, pdpa L-2)
+- `classifyResendError` (`gateway:184`): 409 `resource_locked` → `retryable`, subKind `locked`; 429 `daily_quota_exceeded` / `monthly_quota_exceeded` → `permanent`; 429 `rate_limit_exceeded` and a 429 with no name stay `retryable`; any other 409 keeps today's `idempotency_conflict`.
+- **subKind sweep** (else `locked` lands in `unclassified`, which pages): `GatewayRetryableSubKind` (`broadcasts-gateway-port.ts:31`), `_classify-thrown.ts:82`, `viaGateway` / `GatewayFailure.subKind` (`build-audience-tick.ts:1463`), `budgetSubKindToFailureMetric` (`:1603`, `:1678`), `dispatchBudgetExhausted` (`metrics.ts:2228`), dispatch `:122`. `isCreateUnconfirmed` (`:1424`) stays an allowlist that excludes `locked`: a locked create made nothing.
+- **Quota metric.** `code = err.name`, so `importReasonToFailureMetric` (`:1625`) misses `http_429` and quota lands in `app_error`, the bucket the dispatch alert reads. Map both quota names to `resend_429` on both legs.
+- **W_max is unchanged.** It bounds time per call, not attempts; send / delete / retrieve use `retry: 'retryable'` (`gateway:587/956/677`), so `locked` retries inside one call (about 4 attempts) and the create's `'rate_limit'` policy does not retry it. FR-021's budget counts time.
+- **409 then 422.** 422 is permanent and leaves `boundedCall` at once (`:296`), then `probeRefusedSend` reads `accepted` and the row advances to `sending`, with no failure write and no slot release. Pinned at gateway level and at the tick. The replay arm (`:2356`) calls `probeRefusedSend`.
+- **Legacy leg.** Today any pre-send 409 (`dispatch-scheduled-broadcast.ts:1514–1560`) writes `broadcast_dispatch_idempotency_conflict_pre_send` and ends permanently with a member email. After DT3 a `resource_locked` 409 retries inside FR-021 instead; one legacy test cell pins it. A quota 429 now ends permanently in one tick instead of after the 1 h budget: the slot is refunded either way, the member email reads `gateway_permanent`, and one shared-account quota hit ends every approved row in that tick terminally. Daily quota may reset inside the hour FR-021 used to wait; the spec chose permanent.
+- `throwImportError` (`gateway:1193`) goes through `classifyResendError`, so the import calls inherit DT3. The raw `*Once` readers (`deleteOnceOutcomeFor`, `retrieveOnceOutcomeFor`) keep 409 → `other` (undecided), deliberately outside DT3.
+- Residual (Evidence): non-`resource_locked` 409s still reach the legacy replay arm, which is unreachable in practice because Resend ignores the Idempotency-Key on broadcasts.
+
+#### DT4 — contact detach (architect M4, pdpa M-1, reliability L1)
+- The guard exists: `assertNonEmpty({ audienceId, email })` (`gateway:726`, spec 141). Slice 3 **pins** it with a contract case and tightens it to a UUID shape. The only caller is `subprocessor-erasure-adapter.ts:146`.
+- No encoding or lowercasing (step 0.1: the unencoded `+` is read literally, matching is case-insensitive). An MSW contract case pins the exact URL sent, so an SDK upgrade that starts encoding is caught.
+- The DT4 test asserts `detached`, never `already_absent` (step 0 item 2, reworded per reliability M7).
+
+#### DT5 — the reclaim time budget (architect H5/M1–M3, reliability H3/M1)
+- Add `export const maxDuration = 300` to `src/app/api/cron/broadcasts/reclaim-orphan-audiences/route.ts`, pinned by a test. `deadlineAt` = request start + `maxDuration` − a margin, in the existing shape of `subprocessor-erasure-adapter.ts:121–123` (`deadlineAt: Date`, stop when `remaining < RESEND_CALL_TIMEOUT_MS`).
+- One deadline covers both the listing and the delete chunks (200 × C / 5 ≈ 400 s exceeds 300 s). Candidates not reached are counted as `deferredDeletes`.
+- The port returns `{ audiences, truncated }`; the gateway's internal `truncated` (`:825`) is passed up. The reclaim output and route log carry `truncated` and `deferredDeletes`, with a metric and an alert on truncated.
+- Stubs to update (≈ 15): `tests/integration/broadcasts/*`, `tests/unit/broadcasts/application/{cleanup-orphaned-audiences,dispatch-scheduled-broadcast,reclaim-orphaned-audiences}.test.ts`, the inline snapshot at `tests/contract/resend/broadcasts-sdk.contract.test.ts:236`. grep for `listAudiences` too, because `as unknown as` stubs escape the typecheck.
+- **Verify change.** No request-supplied deadline on a production cron route (that would be a new input surface). Truncation is proved by unit/contract tests (a slow MSW page or fake timers); the `/verify` line "forced with a short deadline through the route" is removed.
+
+#### DT1 (reliability L2, architect LOW)
+- `resendDashboardName(deps.tenantDisplayName, broadcast.subject)` replaces the raw template at `build-audience-tick.ts:~2275`. A 70-code-point length check at the gateway `createBroadcast` (`:503`) is added as a second layer. A cap by code point may split a Thai vowel or tone mark from its consonant; cosmetic only.
+
+#### Constitution Check, slice 3
+- **I:** the new audit_log subquery is tenant-fenced, with a cross-tenant integration case.
+- **V:** `provider_cancelled` EN/TH/SV.
+- **VII:** label changes are `locked`, `failed` (if reconcile's label moves), quota → `resend_429`, the truncated metric.
+- **VIII:** the legacy-leg behaviour changes listed under DT3 and the status readers.
+
+#### Complexity Tracking, slice 3
+- Rotation by the latest propagation marker, over a per-tick hash: the hash covers a head that fails before the scrub commits, but its order cannot be pinned by a deterministic test. Chosen by the maintainer on 5 Nov 2026.
+
+#### Build order (unchanged in shape)
+DT1 + DT2 (with the reason copy) → DT3 + the status readers → DT4 → DT5 → Rotation. Each builder brief points at its subsection here.
+
+#### Housekeeping
+- Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
+- For slice 4, not slice 3: `deleteContactGlobally` (`gateway:772`) has no caller but still sends `DELETE /contacts/{email}`; s4 removes it.
 
 ## Rollout
 

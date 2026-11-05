@@ -135,6 +135,7 @@ As the chamber, an E-Blast is built and sent by one cron invocation at a time. A
 - **DT4.** A `+` address and an uppercase address:
   - are each detached from their segment;
   - still exist as contacts afterwards.
+- **DT6.** The erasure reconciler rotates its queue: with 20 stuck erasures whose latest propagation attempt is recent, a 21st with an older attempt (or none) is picked in the next tick. Another tenant's audit rows never change one tenant's order.
 
 ### US4 — One dispatch leg (slice 4, D-042)
 
