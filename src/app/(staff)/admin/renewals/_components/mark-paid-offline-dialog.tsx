@@ -215,9 +215,9 @@ export function MarkPaidOfflineDialog({
       if (!res.ok) {
         const err = await readError(res);
         if (onError(err)) return;
-        // #73 — for the three linked codes (orphan, bill exists, coverage
-        // overlap) this full sentence is the no-link fallback; keep it in step
-        // with that code's `*Title` / `*Detail` pair.
+        // #74 — bill exists and coverage overlap never reach here (both
+        // close the dialog above, linked or not); for those two the
+        // un-suffixed key is the description of the unlinked toast.
         const key = `markPaidOffline.error.${err.code}`;
         toast.error(t.has(key) ? t(key) : t('markPaidOffline.error.server_error'));
         return;
@@ -342,6 +342,33 @@ export function MarkPaidOfflineDialog({
                     router.push(existingBillHref);
                   },
                 },
+              },
+            );
+            closeStale();
+            return true;
+          }
+          // #74 — a coverage overlap whose covering bill could not be looked
+          // up (or a bill-exists with no id) has nothing to link. Its copy
+          // points at the member's invoices instead, and the stale dialog
+          // closes: the refusal is permanent, so a retry can never pass.
+          if (
+            err.code === 'membership_coverage_overlap' ||
+            err.code === 'membership_bill_already_exists'
+          ) {
+            const isOverlap = err.code === 'membership_coverage_overlap';
+            toast.error(
+              t(
+                isOverlap
+                  ? 'markPaidOffline.error.membership_coverage_overlapTitle'
+                  : 'markPaidOffline.error.membership_bill_already_existsTitle',
+              ),
+              {
+                id: `mark-paid-existing-bill-${cycleId}`,
+                description: t(
+                  isOverlap
+                    ? 'markPaidOffline.error.membership_coverage_overlap'
+                    : 'markPaidOffline.error.membership_bill_already_exists',
+                ),
               },
             );
             closeStale();
