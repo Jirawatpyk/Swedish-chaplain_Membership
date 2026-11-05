@@ -186,7 +186,46 @@ describe('PortalPdfDownloadButton — AURA Button / IconButton (spec 122)', () =
       name: 'Download tax invoice PDF for invoice SC-2026-000045',
     });
     expect(icon).toHaveClass('aura-icon-btn');
-    expect(icon).toHaveAttribute('title', 'Invoice');
+    // PR P review L10 — no native `title`, so AURA's own tooltip (the name)
+    // shows on focus and touch too.
+    expect(icon).not.toHaveAttribute('title');
     expect(icon).not.toHaveTextContent('Invoice');
+  });
+
+  it('PR P review M2 — while loading neither form is `disabled` (focus stays on it, WCAG 2.4.3), it is aria-disabled + aria-busy, and a second click starts no second download', () => {
+    const { unmount } = render(
+      <PortalReceiptDownloadButton
+        invoiceId={INVOICE_ID}
+        documentNumber="RC-2026-000123"
+        label="Receipt"
+        ariaLabel="Download tax receipt PDF for invoice RC-2026-000123"
+      />,
+    );
+    const btn = screen.getByRole('button', { name: 'Download tax receipt PDF for invoice RC-2026-000123' });
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect(btn).not.toBeDisabled();
+    expect(btn).toHaveAttribute('aria-disabled', 'true');
+    expect(btn).toHaveAttribute('aria-busy', 'true');
+    expect(downloadPdf).toHaveBeenCalledTimes(1);
+    unmount();
+    downloadPdf.mockClear();
+
+    render(
+      <PortalInvoiceDownloadButton
+        invoiceId={INVOICE_ID}
+        documentNumber="SC-2026-000045"
+        label="Invoice"
+        ariaLabel="Download tax invoice PDF for invoice SC-2026-000045"
+        iconOnly
+      />,
+    );
+    const icon = screen.getByRole('button', { name: 'Download tax invoice PDF for invoice SC-2026-000045' });
+    fireEvent.click(icon);
+    fireEvent.click(icon);
+    expect(icon).not.toBeDisabled();
+    expect(icon).toHaveAttribute('aria-disabled', 'true');
+    expect(icon).toHaveAttribute('aria-busy', 'true');
+    expect(downloadPdf).toHaveBeenCalledTimes(1);
   });
 });

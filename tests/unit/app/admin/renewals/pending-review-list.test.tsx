@@ -25,6 +25,7 @@ import {
   type PendingReviewRow,
 } from '@/app/(staff)/admin/renewals/_components/pending-review-list';
 import enMessages from '@/i18n/messages/en.json';
+import thMessages from '@/i18n/messages/th.json';
 
 // B2 — the component calls `useRouter()` for the post-approve refresh. The
 // approve dialog is the real AURA one (122 US7a T707): no primitive mocks.
@@ -207,9 +208,7 @@ describe('<PendingReviewList> — B3 aging chip + sortable "Pending since"', () 
   it('toggles to newest-first when the header button is clicked', () => {
     renderList([NEWER, OLDER]);
     fireEvent.click(
-      screen.getByRole('button', {
-        name: 'Sort by pending since, newest first',
-      }),
+      screen.getByRole('button', { name: 'Pending since' }),
     );
     expect(companyOrder()).toEqual(['Newer Co', 'Older Co']);
   });
@@ -217,19 +216,29 @@ describe('<PendingReviewList> — B3 aging chip + sortable "Pending since"', () 
   it('marks the columnheader aria-sort state (ascending by default)', () => {
     renderList([NEWER, OLDER]);
     const header = screen
-      .getByRole('button', { name: 'Sort by pending since, newest first' })
+      .getByRole('button', { name: 'Pending since' })
       .closest('th');
     expect(header).toHaveAttribute('aria-sort', 'ascending');
   });
 
-  it('the sort is AURA Th\'s own sortable header: its button, named for the next order, flips aria-sort', () => {
+  it('the sort is AURA Th\'s own sortable header: its button is named by the visible label (EN + TH) and aria-sort on the th carries the order (APG)', () => {
     renderList([NEWER, OLDER]);
-    const button = screen.getByRole('button', { name: 'Sort by pending since, newest first' });
+    const button = screen.getByRole('button', { name: 'Pending since' });
     expect(button).toHaveClass('aura-table__sort', 'is-active');
     const header = button.closest('th');
     fireEvent.click(button);
     expect(header).toHaveAttribute('aria-sort', 'descending');
-    expect(screen.getByRole('button', { name: 'Sort by pending since, oldest first' })).toBe(button);
+    expect(screen.getByRole('button', { name: 'Pending since' })).toBe(button);
+    cleanup();
+
+    render(
+      <NextIntlClientProvider locale="th" messages={thMessages as Record<string, unknown>}>
+        <PendingReviewList rows={[NEWER, OLDER]} canApprove={false} />
+      </NextIntlClientProvider>,
+    );
+    const th = screen.getByRole('button', { name: 'รอตั้งแต่' });
+    expect(th).toHaveTextContent('รอตั้งแต่');
+    expect(th.closest('th')).toHaveAttribute('aria-sort', 'ascending');
   });
 
   it('renders the amber "Aged {n}d" chip only on an aged row', () => {

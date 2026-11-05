@@ -70,7 +70,8 @@ describe('renderPipelineLens — the keyset footer', () => {
       canManageSchedules: true,
     })) as ReactElement;
     render(lens);
-    const nav = screen.getByRole('navigation', { name: 'Pagination' });
+    // PR P review L6 — the nav is named for its list, not AURA's generic default.
+    const nav = screen.getByRole('navigation', { name: 'Renewal pages' });
     expect(nav).toHaveClass('aura-pagination', 'aura-pagination--cursor');
     expect(nav).toHaveTextContent(en.admin.renewals.table.pagination.showingFirst);
     expect(screen.getByRole('link', { name: 'Next page' })).toHaveAttribute(

@@ -21,7 +21,7 @@
  *     loading toast dismisses before the user sees it (R5-UX-M1).
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { IconLoaderCircle } from '@jirawatpyk/aura-react/icons';
@@ -90,6 +90,9 @@ export function usePortalPdfDownload({
 }): { readonly loading: boolean; readonly download: () => Promise<void> } {
   const t = useTranslations('portal.invoices.toast');
   const [loading, setLoading] = useState(false);
+  // PR P review M2 — the buttons stay focusable while loading (no `disabled`),
+  // so this ref, not the DOM, is what refuses a second download in flight.
+  const inFlight = useRef(false);
 
   const url =
     variant === 'receipt'
@@ -130,6 +133,8 @@ export function usePortalPdfDownload({
         };
 
   const download = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setLoading(true);
     const loadingId = toast.loading(t('downloadInProgress'));
     try {
@@ -142,6 +147,7 @@ export function usePortalPdfDownload({
       });
     } finally {
       toast.dismiss(loadingId);
+      inFlight.current = false;
       setLoading(false);
     }
   };
@@ -164,25 +170,26 @@ function PortalPdfDownloadButton({
   const name = ariaLabel ?? label;
   const shared = {
     onClick: download,
-    // A real `disabled` while the PDF is fetched, as before the AURA swap.
-    disabled: loading,
     ...(className !== undefined && { className }),
     ...(testId !== undefined && { 'data-testid': testId }),
   };
 
   // Spec 122 US3 — the icon-only form (dashboard rows) is an AURA IconButton:
-  // the name is the full "Download … for {number}", the short label its
-  // native tooltip. The spinner replaces the download icon while fetching,
-  // balancing the icon-only resend button in the same action row.
+  // the name is the full "Download … for {number}", which AURA's own tooltip
+  // shows on hover, focus and touch (no native `title`, PR P review L10). The
+  // spinner replaces the download icon while fetching, balancing the icon-only
+  // resend button in the same action row. PR P review M2 — while loading both
+  // forms are aria-disabled, never `disabled`, so focus is not dropped to
+  // <body> (WCAG 2.4.3); AURA swallows the click and the hook refuses too.
   if (iconOnly) {
     return (
       <IconButton
         {...shared}
         icon={loading ? <IconLoaderCircle className="aura-spin" /> : 'download'}
         label={name}
-        title={label}
         // 44px on a phone or a coarse pointer, like every tapped IconButton.
         touchHeight
+        aria-disabled={loading || undefined}
         aria-busy={loading || undefined}
       />
     );

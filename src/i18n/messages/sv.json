@@ -443,9 +443,7 @@
       },
       "pagination": {
         "label": "Granskningsloggens sidor",
-        "first": "Senaste",
-        "previous": "Nyare",
-        "next": "Äldre"
+        "order": "Nyaste först"
       }
     },
     "compliance": {
@@ -1189,7 +1187,7 @@
           "overdue": "Försenad",
           "archivedMember": "Arkiverad",
           "view": "Visa",
-          "nextPage": "Nästa sida",
+          "paginationLabel": "Sidor med ändringsbegäranden",
         "title": "Ändringsbegäranden",
         "subtitle": "Ändringar som medlemmar föreslagit i sin medlemspost. Väntande begäranden först, den som väntat längst överst.",
         "empty": "Inga ändringsbegäranden väntar på beslut.",
@@ -3718,9 +3716,7 @@
         },
         "pagination": {
           "label": "Sidor i kön",
-          "summary": "Visar {shown} av {total}",
-          "next": "Nästa sida",
-          "first": "Första sidan"
+          "summary": "Visar {shown} av {total}"
         },
         "ageBadge": {
           "aging": "{hours} h väntar",
@@ -4384,8 +4380,6 @@
         "viewAction": "Visa",
         "settlingPill": "Återbetalning behandlas",
         "loadFailed": "Det gick inte att läsa in listan över väntande granskningar. Försök igen.",
-        "sortPendingSinceToOldest": "Sortera efter väntande sedan, äldst först",
-        "sortPendingSinceToNewest": "Sortera efter väntande sedan, nyast först",
         "agedChip": "Väntat {days} d",
         "agedChipTitle": "Väntar på beslut sedan {days} dagar",
         "approveAction": "Godkänn",
@@ -4508,7 +4502,7 @@
         "emailUnverifiedHint": "E-postadressen är overifierad — nyligen upptäckta studsar; systempåminnelser är pausade tills kontaktens e-post uppdateras och verifieras på nytt.",
         "srResultCount": "{count, plural, one {Visar # medlem i {urgency}} other {Visar # medlemmar i {urgency}}}",
         "pagination": {
-          "next": "Nästa 50 →",
+          "label": "Sidor med förnyelser",
           "showingFirst": "Visar första 50"
         }
       },
@@ -5185,7 +5179,7 @@
         "task_type_filter_all": "Alla typer",
         "pagination": {
           "showingFirst": "Visar 50 per sida",
-          "next": "Nästa 50 →"
+          "label": "Sidor med uppföljningsuppgifter"
         },
         "status_tab": {
           "open": "Öppen",
@@ -7208,9 +7202,6 @@
           "partial_delivery_accepted": "Godkänd partiell leverans"
         },
         "pagination": {
-          "previous": "Föregående",
-          "next": "Nästa",
-          "pageOf": "Sida {page} av {total}",
           "ariaLabel": "Paginering för utskickshistorik"
         }
       },

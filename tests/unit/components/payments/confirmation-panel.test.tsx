@@ -323,6 +323,12 @@ describe('<ConfirmationPanel>', () => {
     });
     expect(cta).toHaveClass('is-loading');
     expect(cta).toHaveAttribute('aria-busy', 'true');
+    // PR P review M2 — loading, not `disabled`: focus stays on the CTA
+    // (WCAG 2.4.3) and AURA swallows a second press, so one fetch only.
+    expect(cta).not.toBeDisabled();
+    expect(cta).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(cta);
+    expect(fetch).toHaveBeenCalledTimes(1);
     const pause = screen.getByTestId('pay-sheet-confirmation-pause');
     expect(pause).toHaveClass('aura-btn', 'aura-btn--sm', 'aura-btn--touch');
     expect(pause.querySelector('.aura-icon')).not.toBeNull();

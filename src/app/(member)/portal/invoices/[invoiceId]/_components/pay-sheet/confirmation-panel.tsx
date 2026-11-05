@@ -86,7 +86,7 @@ export function ConfirmationPanel({
   }, []);
 
   // 090 finding #2 — in-flight state for the fetch+blob receipt download so the
-  // CTA shows a spinner + is disabled while the request is running.
+  // CTA shows a spinner + refuses a second press while the request is running.
   const [downloading, setDownloading] = useState<boolean>(false);
 
   // One-shot toast on mount — guarded so StrictMode's double-invoke in
@@ -230,8 +230,10 @@ export function ConfirmationPanel({
         variant="primary"
         fullWidth
         icon="download"
+        // PR P review M2 — `loading` only, never `disabled`: AURA marks it
+        // aria-disabled + aria-busy and swallows a second press, and focus
+        // stays on the CTA instead of dropping to <body> (WCAG 2.4.3).
         loading={downloading}
-        disabled={downloading}
         onClick={handleDownloadReceipt}
         // WCAG 2.5.5 / SC 2.5.8 — AURA's md button is the 44px tap target
         // (G-Review Finding #5).

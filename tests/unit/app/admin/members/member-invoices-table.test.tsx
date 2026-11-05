@@ -10,11 +10,37 @@
  *   saying why (the tooltip before) — never a dead link.
  * - The figures are the server's: the table prints what it is given.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemberInvoicesTable, type MemberInvoiceRow } from '@/app/(staff)/admin/members/[memberId]/_components/member-invoices-table';
 
-afterEach(cleanup);
+// PR P review M4 — jsdom has no layout: AURA DataTable measures its wrapper
+// (`getBoundingClientRect().width` in a layout effect, then a ResizeObserver),
+// and a 0px box reads as a phone. Give every box a desktop 1280px width and a
+// ResizeObserver that reports it, so the table renders as a browser at 1280
+// does: not stacked, and the card-only columns removed by their `hideBelow`.
+const DESKTOP_WIDTH = 1280;
+beforeEach(() => {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    () => ({ x: 0, y: 0, top: 0, left: 0, right: DESKTOP_WIDTH, bottom: 0, width: DESKTOP_WIDTH, height: 0, toJSON: () => ({}) }) as DOMRect,
+  );
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(private readonly cb: ResizeObserverCallback) {}
+      observe(target: Element): void {
+        this.cb([{ target, borderBoxSize: [{ inlineSize: DESKTOP_WIDTH, blockSize: 0 }] } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver);
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+    },
+  );
+});
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 const labels = {
   caption: 'Invoices for this member',
@@ -69,11 +95,13 @@ describe('MemberInvoicesTable (T556)', () => {
     const headers = within(grid).getAllByRole('columnheader').map((h) => h.textContent?.trim());
     // PR P — the status pill sits under the number in the table, so the card
     // holds every column at 1280; the card-only Number/Status columns (the
-    // phone card's title and pill) follow and are hidden from the grid by CSS.
-    expect(headers.slice(0, 8)).toEqual(['Number', 'Number', 'Status', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
-    const firstCell = within(grid).getAllByRole('row')[1]!.querySelector('[role=gridcell]')!;
+    // phone card's title and pill) are not rendered at this width.
+    expect(headers.slice(0, 6)).toEqual(['Number', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
+    expect(headers.filter((h) => h === 'Number')).toHaveLength(1);
+    expect(headers).not.toContain('Status');
+    const firstCell = within(grid).getAllByRole('row')[1]!.querySelector<HTMLElement>('[role=gridcell]')!;
     expect(firstCell).toHaveTextContent('SC-2026-000123');
-    expect(firstCell.querySelector('.aura-pill, .aura-status-pill, [class*=pill]')).not.toBeNull();
+    expect(within(firstCell).getByText(issued.statusLabel)).toBeInTheDocument();
     expect(grid).toHaveTextContent('SC-2026-000123');
     expect(grid).toHaveTextContent('38,520.00 THB');
     // The board prints "Not paid yet" in the Paid column (G-U7P: words, not a dash).

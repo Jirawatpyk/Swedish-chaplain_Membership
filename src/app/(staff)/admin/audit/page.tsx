@@ -389,6 +389,8 @@ export async function renderAuditListView({
             // Spec 122: AURA cursor Pagination; the same three hrefs as before.
             <CursorPagination
               label={t('pagination.label')}
+              // Keyset pages run newest to oldest; say so beside the steps.
+              status={t('pagination.order')}
               firstHref={firstHref}
               hasFirst={showFirst}
               previousHref={prevHref ?? undefined}

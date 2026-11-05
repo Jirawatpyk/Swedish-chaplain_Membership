@@ -239,21 +239,17 @@ export function PendingReviewList({
           <Tr>
             <Th>{t('columns.member')}</Th>
             {/* B3 — sortable "Pending since", on AURA Th's own sortable
-                header (5.70, #188): `aria-sort` on the columnheader (WCAG
-                1.3.1 / 4.1.2), the button and its direction icon inside. The
-                button's name is the action (what the next click does), so
-                the visible label is hidden from it and the action read
-                instead; `label` keeps the phone card's cell label. */}
+                header (5.70, #188): `aria-sort` on the columnheader carries
+                the order (WCAG 1.3.1 / 4.1.2, APG sortable table), so the
+                button's name is the visible label (2.5.3 Label in Name);
+                `label` keeps the phone card's cell label. */}
             <Th
               sort={sortDir === 'asc' ? 'ascending' : 'descending'}
               onSort={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
               label={t('columns.pendingSince')}
               className="whitespace-nowrap"
             >
-              <span aria-hidden="true">{t('columns.pendingSince')}</span>
-              <span className="sr-only">
-                {t(sortDir === 'asc' ? 'sortPendingSinceToNewest' : 'sortPendingSinceToOldest')}
-              </span>
+              {t('columns.pendingSince')}
             </Th>
             <Th>{t('columns.expiry')}</Th>
             <Th>{t('columns.action')}</Th>

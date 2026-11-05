@@ -194,7 +194,12 @@ export async function renderPipelineLens({
         // "Showing first 50" status so everyone knows the list is truncated.
         // Forward-only, so no First link. UrgencyBucketTabs drops the cursor
         // on a tab switch.
-        <CursorPagination showFirst={false} status={t('table.pagination.showingFirst')} nextHref={nextHref} />
+        <CursorPagination
+          label={t('table.pagination.label')}
+          showFirst={false}
+          status={t('table.pagination.showingFirst')}
+          nextHref={nextHref}
+        />
       ) : null}
     </div>
   );

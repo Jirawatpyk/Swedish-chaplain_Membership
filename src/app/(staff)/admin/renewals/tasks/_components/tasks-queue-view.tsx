@@ -49,7 +49,12 @@ export async function renderTasksQueueView({ sectionTabs, queue, nextHref, loadF
                 A real link (works without JavaScript); the status is
                 page-position-neutral, so it holds on page 2 too. */}
             {nextHref ? (
-              <CursorPagination showFirst={false} status={t('pagination.showingFirst')} nextHref={nextHref} />
+              <CursorPagination
+                label={t('pagination.label')}
+                showFirst={false}
+                status={t('pagination.showingFirst')}
+                nextHref={nextHref}
+              />
             ) : null}
           </>
         )}

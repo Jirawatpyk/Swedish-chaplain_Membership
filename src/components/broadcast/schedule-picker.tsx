@@ -62,7 +62,10 @@ export function SchedulePicker({
         icon={
           <ChevronRight className={cn('motion-safe:transition-transform', open && 'rotate-90')} />
         }
-        className="-ms-1 self-start text-start"
+        // PR P review M1 — the line wraps instead of overflowing (SV with a
+        // date at 320px): the button grows from 44px (32px on a wide screen
+        // with a mouse, AURA's compact `sm`), the chevron stays on the start.
+        className="-ms-1 h-auto min-h-11 self-start whitespace-normal py-1 text-start sm:[@media(pointer:fine)]:min-h-8"
       >
         <span>{t('fields.sendOptions')}</span>{' '}
         <span className="font-normal text-[var(--aura-fg-secondary)]">

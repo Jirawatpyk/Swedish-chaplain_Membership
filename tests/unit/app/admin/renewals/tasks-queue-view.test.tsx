@@ -41,7 +41,8 @@ describe('renderTasksQueueView', () => {
 
   it('adds AURA cursor Pagination with "Showing 50 per page" and the same Next href when there is a next page', async () => {
     await renderView({ sectionTabs: null, queue: <p>QUEUE</p>, nextHref: '/admin/renewals/tasks?cursor=abc' });
-    const nav = screen.getByRole('navigation', { name: 'Pagination' });
+    // PR P review L6 — the nav is named for its list, not AURA's generic default.
+    const nav = screen.getByRole('navigation', { name: 'Escalation task pages' });
     expect(nav).toHaveClass('aura-pagination', 'aura-pagination--cursor');
     expect(nav).toHaveTextContent(T.pagination.showingFirst);
     const next = screen.getByRole('link', { name: 'Next page' });
@@ -50,7 +51,7 @@ describe('renderTasksQueueView', () => {
 
   it('has no footer on the last page', async () => {
     await renderView({ sectionTabs: null, queue: <p>QUEUE</p>, nextHref: null });
-    expect(screen.queryByRole('navigation', { name: 'Pagination' })).toBeNull();
+    expect(screen.queryByRole('navigation')).toBeNull();
   });
 
   it('shows a failed read as an AURA danger alert with Retry, in place of the queue', async () => {

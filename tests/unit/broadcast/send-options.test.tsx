@@ -58,6 +58,8 @@ describe('Send options (T1266)', () => {
     expect(disclosure()).toHaveAttribute('aria-expanded', 'true');
     // An AURA ghost Button that controls the panel holding the field.
     expect(disclosure()).toHaveClass('aura-btn', 'aura-btn--ghost', 'aura-btn--touch');
+    // PR P review M1 — the line wraps (SV + a date at 320px) and the button grows.
+    expect(disclosure()).toHaveClass('h-auto', 'min-h-11', 'whitespace-normal');
     const panel = document.getElementById(disclosure().getAttribute('aria-controls') ?? '');
     const input = screen.getByLabelText(new RegExp(f.schedulePicker));
     expect(panel).toContainElement(input);

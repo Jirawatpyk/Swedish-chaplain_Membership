@@ -131,9 +131,10 @@ describe('renderChangeRequestQueueView', () => {
 
   it('pages forward with AURA cursor Pagination, the same Next href', async () => {
     await renderView({ ...base, hasMore: true, nextHref: '/admin/change-requests?state=pending&cursor=c2' });
-    const nav = screen.getByRole('navigation', { name: 'Pagination' });
+    // PR P review L6 — the nav is named for its list, not AURA's generic default.
+    const nav = screen.getByRole('navigation', { name: 'Change request pages' });
     expect(nav).toHaveClass('aura-pagination', 'aura-pagination--cursor');
-    expect(screen.getByRole('link', { name: Q.nextPage })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Next page' })).toHaveAttribute(
       'href',
       '/admin/change-requests?state=pending&cursor=c2',
     );

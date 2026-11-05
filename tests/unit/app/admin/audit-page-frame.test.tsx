@@ -204,6 +204,8 @@ describe('AuditLogPage on AURA', () => {
     const older = tagFor(html, 'Next page');
     expect(older).toContain('href="/admin/audit?cursor=c-next"');
     expect(older).toContain('aura-page--step');
+    // PR P review L7 — the status line says which way the pages run.
+    expect(html).toContain('<span class="aura-pagination__status">Newest first</span>');
   });
 
   it('gives Export CSV a 44px box on phones', async () => {

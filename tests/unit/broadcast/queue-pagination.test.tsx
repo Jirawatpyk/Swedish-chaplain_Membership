@@ -28,8 +28,8 @@ describe('renderQueuePagination', () => {
     );
     const nav = screen.getByRole('navigation', { name: P.label });
     expect(nav).toHaveClass('aura-pagination', 'aura-pagination--cursor');
-    expect(screen.getByRole('link', { name: P.first })).toHaveAttribute('href', '/admin/broadcasts?status=submitted');
-    expect(screen.getByRole('link', { name: P.next })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'First page' })).toHaveAttribute('href', '/admin/broadcasts?status=submitted');
+    expect(screen.getByRole('link', { name: 'Next page' })).toHaveAttribute(
       'href',
       '/admin/broadcasts?status=submitted&cursor=c2',
     );

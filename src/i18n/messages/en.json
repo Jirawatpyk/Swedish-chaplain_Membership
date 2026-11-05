@@ -443,9 +443,7 @@
       },
       "pagination": {
         "label": "Audit log pages",
-        "first": "Latest",
-        "previous": "Newer",
-        "next": "Older"
+        "order": "Newest first"
       }
     },
     "compliance": {
@@ -1189,7 +1187,7 @@
           "overdue": "Overdue",
           "archivedMember": "Archived",
           "view": "View",
-          "nextPage": "Next page",
+          "paginationLabel": "Change request pages",
         "title": "Change requests",
         "subtitle": "Changes members proposed to their record. Pending requests first, the longest wait on top.",
         "empty": "No change requests are awaiting a decision.",
@@ -3718,9 +3716,7 @@
         },
         "pagination": {
           "label": "Queue pages",
-          "summary": "Showing {shown} of {total}",
-          "next": "Next page",
-          "first": "First page"
+          "summary": "Showing {shown} of {total}"
         },
         "ageBadge": {
           "aging": "{hours} h waiting",
@@ -4384,8 +4380,6 @@
         "viewAction": "View",
         "settlingPill": "Refund settling",
         "loadFailed": "Couldn't load the pending-review list. Please try again.",
-        "sortPendingSinceToOldest": "Sort by pending since, oldest first",
-        "sortPendingSinceToNewest": "Sort by pending since, newest first",
         "agedChip": "Aged {days}d",
         "agedChipTitle": "Pending {days} days — awaiting a decision",
         "approveAction": "Approve",
@@ -4508,7 +4502,7 @@
         "emailUnverifiedHint": "Email unverified — recent bounces detected; system reminders are paused until the contact's email is updated and re-verified.",
         "srResultCount": "{count, plural, one {Showing # member in {urgency}} other {Showing # members in {urgency}}}",
         "pagination": {
-          "next": "Next 50 →",
+          "label": "Renewal pages",
           "showingFirst": "Showing first 50"
         }
       },
@@ -5185,7 +5179,7 @@
         "task_type_filter_all": "All types",
         "pagination": {
           "showingFirst": "Showing 50 per page",
-          "next": "Next 50 →"
+          "label": "Escalation task pages"
         },
         "status_tab": {
           "open": "Open",
@@ -7208,9 +7202,6 @@
           "partial_delivery_accepted": "Partial delivery accepted"
         },
         "pagination": {
-          "previous": "Previous",
-          "next": "Next",
-          "pageOf": "Page {page} of {total}",
           "ariaLabel": "Broadcast history pagination"
         }
       },

@@ -296,7 +296,7 @@ export async function renderChangeRequestQueueView({
           )}
           {/* Spec 122: AURA cursor Pagination — a forward-only keyset, so no
               First link; the same Next href as before. */}
-          {nextHref ? <CursorPagination showFirst={false} nextHref={nextHref} /> : null}
+          {nextHref ? <CursorPagination label={t('paginationLabel')} showFirst={false} nextHref={nextHref} /> : null}
         </div>
       </Card>
     </TableContainer>
