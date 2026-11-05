@@ -59,6 +59,12 @@ export function EvidenceCard({
   const t = useTranslations('admin.compliance.erasureLog');
   const headingId = `erasure-${row.memberId}`;
   const isComplete = !row.halfRun;
+  // Spec 140 s3 final Verify finding: a complete erasure whose Resend outcome
+  // still needs the DPO is flagged on the summary and opens, so "Complete" alone
+  // never hides it on a collapsed card.
+  const resendNeedsAction =
+    row.subprocessorOutcome !== null &&
+    ['partial', 'failed', 'not_attempted'].includes(row.subprocessorOutcome.resendOutcome);
   const fmtDate = (d: Date | null) => (d ? fmt.format(d) : DASH);
   const fmtBool = (b: boolean | null) => (b === null ? DASH : b ? t('value.yes') : t('value.no'));
   const fmtText = (s: string | null) => (s && s.trim() !== '' ? s : DASH);
@@ -77,7 +83,7 @@ export function EvidenceCard({
 
   return (
     <Card className={cn('overflow-hidden p-0', row.isOverdue && 'border-[var(--aura-border-danger)]')}>
-      <details data-evidence open={!isComplete} className="group">
+      <details data-evidence open={!isComplete || resendNeedsAction} className="group">
         <summary className="flex cursor-pointer list-none items-start justify-between gap-[var(--aura-space-3)] px-[var(--aura-space-5)] py-[var(--aura-space-4)] group-open:border-b group-open:border-[var(--aura-border-default)] [&::-webkit-details-marker]:hidden [&::marker]:content-['']">
           <div className="flex min-w-0 items-start gap-[var(--aura-space-3)]">
             <ChevronDownIcon
@@ -91,9 +97,16 @@ export function EvidenceCard({
               <p className="text-sm text-[var(--aura-fg-secondary)]">{t('erasedAt', { at: fmtDate(row.erasedAt) })}</p>
             </div>
           </div>
-          <StatusPill tone={statusTone} data-tone={statusTone} className="shrink-0">
-            {statusLabel}
-          </StatusPill>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-[var(--aura-space-2)]">
+            {resendNeedsAction ? (
+              <Badge tone="warning" data-testid="erasure-resend-action">
+                {t('status.resendActionNeeded')}
+              </Badge>
+            ) : null}
+            <StatusPill tone={statusTone} data-tone={statusTone} className="shrink-0">
+              {statusLabel}
+            </StatusPill>
+          </div>
         </summary>
 
         {/* Board `Admin-erasure-log`: the sections are ruled off from one another. */}

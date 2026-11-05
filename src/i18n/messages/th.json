@@ -493,6 +493,7 @@
           "complete": "เสร็จสมบูรณ์",
           "halfRun": "กำลังดำเนินการ",
           "overdue": "เกินกำหนด",
+          "resendActionNeeded": "ต้องดำเนินการที่ Resend",
           "elapsedDays": "{count} วัน",
           "elapsedHours": "{count} ชั่วโมง",
           "elapsedMinutes": "{count} นาที"

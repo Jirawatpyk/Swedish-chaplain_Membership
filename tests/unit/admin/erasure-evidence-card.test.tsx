@@ -40,6 +40,29 @@ describe('EvidenceCard', () => {
     expect(details!.hasAttribute('open')).toBe(false);
   });
 
+  // Spec 140 s3 final Verify finding — a complete erasure whose Resend outcome
+  // needs the DPO (partial / failed / not_attempted) read only "Complete" on the
+  // collapsed card. It now flags the Resend action on the summary and opens.
+  it.each(['partial', 'failed', 'not_attempted'] as const)(
+    'a complete card whose Resend outcome is %s flags the action and opens',
+    (resendOutcome) => {
+      const { container } = renderCard(
+        baseRow({ subprocessorOutcome: { resendOutcome, contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+      );
+      const summary = container.querySelector('details[data-evidence] > summary')!;
+      expect(summary.textContent).toContain('Resend action needed');
+      expect(container.querySelector('details[data-evidence]')!.hasAttribute('open')).toBe(true);
+    },
+  );
+
+  it.each(['ok', 'already_propagated'] as const)('a complete card whose Resend outcome is %s stays quiet and collapsed', (resendOutcome) => {
+    const { container } = renderCard(
+      baseRow({ subprocessorOutcome: { resendOutcome, contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+    );
+    expect(container.querySelector('details[data-evidence] > summary')!.textContent).not.toContain('Resend action needed');
+    expect(container.querySelector('details[data-evidence]')!.hasAttribute('open')).toBe(false);
+  });
+
   it('an OVERDUE card is open by default', () => {
     const { container } = renderCard(baseRow({ halfRun: true, isOverdue: true, completedAt: null }));
     expect(container.querySelector('details[data-evidence]')!.hasAttribute('open')).toBe(true);

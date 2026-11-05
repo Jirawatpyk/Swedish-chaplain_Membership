@@ -493,6 +493,7 @@
           "complete": "Complete",
           "halfRun": "In progress",
           "overdue": "Overdue",
+          "resendActionNeeded": "Resend action needed",
           "elapsedDays": "{count, plural, one {# day} other {# days}}",
           "elapsedHours": "{count, plural, one {# hour} other {# hours}}",
           "elapsedMinutes": "{count, plural, one {# minute} other {# minutes}}"

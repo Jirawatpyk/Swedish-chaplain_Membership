@@ -493,6 +493,7 @@
           "complete": "Slutförd",
           "halfRun": "Pågår",
           "overdue": "Försenad",
+          "resendActionNeeded": "Åtgärd krävs i Resend",
           "elapsedDays": "{count, plural, one {# dag} other {# dagar}}",
           "elapsedHours": "{count, plural, one {# timme} other {# timmar}}",
           "elapsedMinutes": "{count, plural, one {# minut} other {# minuter}}"
