@@ -652,8 +652,6 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     it.each([
       ['getAudienceContactCount, a legacy-looking id', () => resendBroadcastsGateway.getAudienceContactCount('aud_1')],
       ['getAudienceContactCount, a path segment', () => resendBroadcastsGateway.getAudienceContactCount(`${AUD}/x`)],
-      ['deleteAudience, a legacy-looking id', () => resendBroadcastsGateway.deleteAudience('aud_1')],
-      ['deleteAudience, a path segment', () => resendBroadcastsGateway.deleteAudience(`../contacts/${AUD}`)],
     ])('%s is refused as invalid_identifier, with no request', async (_name, run) => {
       const calls = stubWire(() => json(200, { object: 'list', has_more: false, data: [] }));
       await expect((run as () => Promise<unknown>)()).rejects.toMatchObject({
@@ -662,6 +660,27 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
         code: 'invalid_identifier',
       });
       expect(calls).toHaveLength(0);
+    });
+
+    // PR #756 review round 2 (code-review #3) — `deleteAudience` on an id that is
+    // not UUID-shaped: no such segment can exist at Resend (every id it returns
+    // is a UUID), so the delete's goal is met. It resolves as already gone with NO
+    // request and a warn naming the id's class, never the id, instead of a
+    // permanent `invalid_identifier` the cleanup cron would hit every tick
+    // forever (dev litter such as `aud_fake_N`). The detach and the count keep
+    // refusing above: an id-less call there is account-wide.
+    it.each([
+      ['a legacy-looking id', 'aud_1', 'aud_prefixed'],
+      ['old fake-gateway litter', 'aud_fake_3', 'aud_prefixed'],
+      ['a path segment', `../contacts/${AUD}`, 'not_a_segment_id'],
+    ])('deleteAudience on %s resolves as already gone, with no request', async (_name, audienceId, idClass) => {
+      const warn = vi.spyOn(logger, 'warn');
+      const calls = stubWire(() => json(200, { deleted: true }));
+      await expect(resendBroadcastsGateway.deleteAudience(audienceId)).resolves.toBeUndefined();
+      expect(calls).toHaveLength(0);
+      const line = warn.mock.calls.find((c) => c[1] === 'resend.broadcasts.audience_id_not_a_segment');
+      expect(line?.[0]).toEqual({ idClass });
+      warn.mockRestore();
     });
 
     // Spec 140 s3 review round 1 (R1-K) — the SDK puts the email in the URL path
