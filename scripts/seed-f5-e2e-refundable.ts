@@ -141,6 +141,8 @@ async function findTarget(ctx: TenantContext): Promise<Target> {
         and(
           eq(invoices.tenantId, ctx.slug),
           eq(invoices.status, 'paid'),
+          // A membership invoice (event-fee bills carry no member).
+          sql`${invoices.memberId} IS NOT NULL`,
           existing[0]
             ? eq(invoices.invoiceId, existing[0].invoiceId)
             : and(
@@ -209,13 +211,13 @@ async function main(): Promise<void> {
   const account = await connectedAccount(ctx);
   const actorUserId = await seedActorUserId();
   const target = await findTarget(ctx);
-  const pi = await confirmedTestIntent(account, target);
-  const now = Date.now();
   if (target.existingStatus !== null && target.existingStatus !== 'succeeded') {
     throw new Error(
       `seed-f5-e2e-refundable: the seeded payment is now ${target.existingStatus} (a real refund ran on it), so a reset orphan could exceed what is left to refund. Delete ${PAYMENT_ID} on dev to start over.`,
     );
   }
+  const pi = await confirmedTestIntent(account, target);
+  const now = Date.now();
 
   await runInTenant(ctx, async (tx) => {
     await tx
@@ -276,15 +278,17 @@ async function main(): Promise<void> {
 main()
   .then(() => process.exit(0))
   .catch((error) => {
-    // Ids and codes only: a StripeError object carries raw headers and, on a
-    // card error, payment-method details (PCI review, #731).
+    // Ids and codes only: a StripeError carries raw headers, can echo
+    // submitted values in its message and, on a card error, payment-method
+    // details (PCI review, #731). The seed's own guard errors are plain
+    // Errors with no Stripe `type`, so their message is safe to print.
     const e = error as { type?: string; code?: string; requestId?: string; message?: string };
     console.error(
       'seed-f5-e2e-refundable failed:',
       e.type ?? (error instanceof Error ? error.constructor.name : 'unknown'),
       e.code ?? '',
       e.requestId ?? '',
-      e.message ?? String(error),
+      e.type === undefined ? (e.message ?? String(error)) : '',
     );
     process.exit(1);
   });

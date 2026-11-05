@@ -126,6 +126,12 @@ export function errorResponse(
 }
 
 /**
+ * #731 — a closed snake_case code; the closed `reason` unions at each use case
+ * are the real guarantee, this is the second wall.
+ */
+const REASON_CODE = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
  * PCI / log-hygiene telemetry extractor for use-case error results
  *
  * Replaces the ternary-chain copy that appeared verbatim in 3 routes
@@ -154,8 +160,6 @@ export function errorResponse(
  *     MUST NOT carry Retry-After (would mislead upstream proxies +
  *     monitoring into thinking a retry would help).
  */
-const REASON_CODE = /^[a-z][a-z0-9_]{0,63}$/;
-
 export function buildUseCaseErrorTelemetry(error: {
   readonly code: string;
   readonly kind?: unknown;

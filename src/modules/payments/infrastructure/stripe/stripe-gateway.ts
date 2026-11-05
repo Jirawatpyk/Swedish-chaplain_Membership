@@ -581,8 +581,8 @@ export const stripeGateway: ProcessorGatewayPort = {
               reason: 'PI is succeeded; cannot be canceled',
             });
           }
-          // #731 (task 52) — any other status (`processing`,
-          // `requires_capture`, …) is NOT terminal: the PI can still be
+          // #731 (task 52) — any other status Stripe refused to cancel
+          // (typically `processing`) is NOT terminal: the PI can still be
           // charged. Name it explicitly so no caller reads the generic
           // permanent mapping as "safe to mark canceled".
           logger.warn(
