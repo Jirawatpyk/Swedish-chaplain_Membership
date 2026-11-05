@@ -64,6 +64,22 @@ describe('EvidenceCard', () => {
     expect(screen.getByText(/may include addresses that were already absent/i)).toBeInTheDocument();
   });
 
+  // Spec 140 s3 review round 2 (R2-A) — a `not_attempted` row is a re-drive that
+  // met only scrub sentinels. Its zeros are not "nothing to detach", so the card
+  // says what the DPO must do instead of letting 0/0/0 read as done.
+  it('explains a not_attempted outcome and sends the DPO to Resend; an ok outcome has no such note', () => {
+    const note = /not attempted: the member's addresses were already scrubbed/i;
+    renderCard(
+      baseRow({ subprocessorOutcome: { resendOutcome: 'not_attempted', contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+    );
+    expect(screen.getByText(note)).toBeInTheDocument();
+    cleanup();
+    renderCard(
+      baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+    );
+    expect(screen.queryByText(note)).toBeNull();
+  });
+
   it('degrades to the raw value instead of throwing when memberNumber is DB-invalid (0)', () => {
     expect(() => renderCard(baseRow({ memberNumber: 0 }))).not.toThrow();
     expect(screen.getByText('Member 0')).toBeInTheDocument();
