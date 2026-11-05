@@ -786,6 +786,26 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect((derive.mock.calls[0] as unknown[])[3]).toEqual(new Date('2026-06-16T00:00:00.000Z'));
   });
 
+  // Spec 140 s3 review round 1 (R1-D) — a re-drive reads the contacts' scrub
+  // sentinels (`erased+<contact_id>@erased.invalid`), never the real address.
+  // Paired with the member's audiences they drove a detach of an address that
+  // was never in them, which Resend answers 200 and the record counted as
+  // removed. The detach derivation gets no sentinel; the tombstones keep the
+  // whole set.
+  it('hands the detach derivation no erasure-sentinel address (R1-D)', async () => {
+    const deps = buildEraseDeps();
+    deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [
+      'live@x.io',
+      'erased+11111111-1111-4111-8111-111111111111@erased.invalid',
+      'erased+22222222-2222-4222-8222-222222222222@ERASED.INVALID',
+    ]);
+    const derive = vi.fn(async () => [] as Array<{ audienceId: string; email: string }>);
+    deps.broadcastsAudienceDerivation.listMemberAudienceContactsInTx = derive as never;
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    expect((derive.mock.calls[0] as unknown[])[2]).toEqual(['live@x.io']);
+  });
+
   it('a subprocessor audit-emit failure is NON-BLOCKING — member_erased still emitted (US3-C)', async () => {
     const deps = buildEraseDeps();
     // Member received an audience-bearing broadcast → one pair to propagate, so

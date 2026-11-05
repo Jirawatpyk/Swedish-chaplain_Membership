@@ -679,7 +679,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     });
   }, 120_000);
 
-  it('3 — RE-DRIVE: first pass fails → failed audit + member_erased; the re-drive now RETRIES the detach (B-1) → second audit removed_count:1, member_erased re-emitted', async () => {
+  it('3 — RE-DRIVE: first pass fails → failed audit + member_erased; the re-drive sends NO detach (its addresses are sentinels) → second audit removed_count:0, member_erased re-emitted', async () => {
     const { memberId, contactEmail } = await seedMember(tenant);
     const audienceId = `aud-cap-redrive-${randomUUID().slice(0, 8)}`;
     await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceId);
@@ -726,43 +726,29 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     if (!second.ok) return;
     expect(second.value.cascadesComplete).toBe(true);
 
-    // Round 4 B-1 — INVERTED, and this one is the change paying for itself.
-    //
-    // This asserted `not.toHaveBeenCalled()` and documented a residual:
-    // "best-effort-ONCE — the first-pass inputs are destroyed by the same
-    // erasure, so a re-drive re-captures an EMPTY set and the second ok/removed:0
-    // audit is a VACUOUS no-op, NOT proof the Resend removal succeeded."
-    //
-    // That residual existed because arm 1 matches on
-    // `broadcast_deliveries.recipient_email_lower`, which the erasure redacts —
-    // so after the first pass nothing could find the pair again — and R2-3's
-    // `NOT EXISTS` had switched arm 2 off for any broadcast with a delivery row,
-    // which is this fixture. With the clause gone, arm 2 still finds the LIVE
-    // audience, so a failed detach is RETRYABLE instead of lost.
-    //
-    // The DPO consequence is the one that matters: the second audit is now
-    // evidence of an actual detach rather than a vacuous zero.
-    expect(removeContactFromAudienceSpy).toHaveBeenCalledTimes(1);
+    // Spec 140 s3 review round 1 (R1-D) — INVERTED again. Round 4's B-1 read a
+    // call here as a retried detach. It was not: the re-drive's input is
+    // `tombstoneEmails`, which the first pass already replaced with the
+    // contacts' scrub sentinels (`erased+<contact_id>@erased.invalid`). Arm 2
+    // paired those with the member's live audience, so the "retry" detached an
+    // address that was never in it, Resend answered 200 to it (MEASURED
+    // 5 Nov 2026), and the second audit counted a removal that never happened
+    // (the DT4 re-verify saw `removed_count: 2` this way). The capture now drops
+    // sentinels, so the re-drive sends nothing and records a true 0. A failed
+    // first-pass detach is still finished by hand (best-effort-ONCE).
+    expect(removeContactFromAudienceSpy).not.toHaveBeenCalled();
 
     const auditsAfterSecond = await rawSelectSubprocessorAudits(tenant.ctx.slug, memberId);
     expect(auditsAfterSecond).toHaveLength(2);
-    // Round 4 B-1 — was `removed_count === 0`, matching the vacuous no-op this
-    // test used to document. The re-drive now performs a real detach, so the
-    // second audit records ONE removal: it is evidence, not a placeholder.
     const secondAudit = auditsAfterSecond.find(
-      (a) =>
-        (a.payload as { resend_outcome?: string; resend_contacts_removed_count?: number })
-          .resend_contacts_removed_count === 1 &&
-        (a.payload as { resend_outcome?: string }).resend_outcome === 'ok',
+      (a) => (a.payload as { resend_outcome?: string }).resend_outcome === 'ok',
     );
-    expect(
-      secondAudit,
-      'the re-drive must record a second ok audit with a REAL removal (B-1)',
-    ).toBeDefined();
-    expect(
-      (secondAudit!.payload as { resend_contacts_failed_count?: number })
-        .resend_contacts_failed_count,
-    ).toBe(0);
+    expect(secondAudit, 'the re-drive records a second ok audit').toBeDefined();
+    expect(secondAudit!.payload).toMatchObject({
+      resend_contacts_removed_count: 0,
+      resend_contacts_already_absent_count: 0,
+      resend_contacts_failed_count: 0,
+    });
 
     // member_erased is emitted on EACH clean completing pass: the first pass was
     // non-blocking-complete (1), and the re-drive over the already-erased member
