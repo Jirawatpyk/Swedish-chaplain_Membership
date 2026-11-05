@@ -15,7 +15,7 @@
  * recorded; the `it.fails` case proves that the default `stubWire` fails the
  * test it ran in.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Resend } from 'resend';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -98,45 +98,100 @@ describe('the DR4 wire guard (spec 140 s4)', () => {
 });
 
 /**
- * PR #756 review round 1 (security L1) — the runtime guard above sees only what
- * a test drives. This reads the gateway SOURCE, so an account-wide contact
- * delete cannot ship on a path no test reaches: no `contacts.remove(` call, and
- * no raw `fetch(` / `importFetch(` whose path is `/contacts/${…}` sent with
- * `method: 'DELETE'`. The segment detach goes through the SDK
- * (`contacts.segments.remove(`), which the positive controls require exactly
- * once. `\s` spans `\r\n`, so the scan holds on a Windows CRLF checkout.
+ * PR #756 review rounds 1 and 2 (security L1, M1) — the runtime guard above sees
+ * only what a test drives. This reads the SOURCE of every file under `src/` that
+ * imports `resend`, so an account-wide contact delete cannot ship on a path no
+ * test reaches. Structural, not method-aware: it forbids
+ *
+ *   - any raw `fetch(` / `importFetch(` / `.delete(` call whose path literal
+ *     holds `/contacts/${`, whatever method it sends (`/contacts/imports` and
+ *     `/contacts/imports/${id}` never contain `/contacts/${`, so they pass);
+ *   - any string literal ending in `/contacts/` that is concatenated (`+`);
+ *   - the SDK's `contacts.remove(` in every spelling the pattern can see
+ *     (`contacts.remove (`, `contacts?.remove(`, `contacts ["remove"]`).
+ *
+ * The segment detach goes through `contacts.segments.remove(`, which the
+ * positive controls require exactly once in the gateway.
+ *
+ * STILL OUT OF REACH of a source scan, stated rather than implied: a
+ * destructured method (`const { remove } = sdk.contacts; remove(...)`), a path
+ * held in a variable (`const p = '/contacts/' + e; fetch(p)` passes the concat
+ * pattern only if the literal and the `+` sit together, and `fetch(p)` alone
+ * says nothing), a path built by `[...].join('/')` or a helper, and a file that
+ * reaches Resend without importing `resend` (a raw fetch to `api.resend.com`).
+ * Those are the runtime wire guard's layer (`tests/support/resend/wire-guard.ts`):
+ * every stubbed Resend `fetch` records a `DELETE /contacts/{email}` and fails the
+ * test that sent it. `\s` spans `\r\n`, so the scan holds on a CRLF checkout.
  */
-describe('the DR4 source gate on the Resend gateway (spec 140 s4)', () => {
-  const GATEWAY = 'src/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway.ts';
-  // A raw call whose first argument holds `/contacts/${`, and the 300 characters
-  // after it (its init object), which must not carry a DELETE method.
-  const RAW_CONTACT_CALL = /\b(?:importFetch|fetch)\(\s*[`'"][^`'"]*\/contacts\/\$\{[\s\S]{0,300}/g;
-  const DELETE_METHOD = /method:\s*[`'"]delete[`'"]/i;
-  const rawContactDeletes = (source: string): string[] =>
-    [...source.matchAll(RAW_CONTACT_CALL)].map((m) => m[0]).filter((call) => DELETE_METHOD.test(call));
+describe('the DR4 source gate on every file that imports resend (spec 140 s4)', () => {
+  const GATEWAY = join('src', 'modules', 'broadcasts', 'infrastructure', 'resend', 'resend-broadcasts-gateway.ts');
+  const RAW_CONTACT_PATH = /(?:importFetch|fetch|\.delete)\s*\(\s*[`'"][^`'"]*\/contacts\/\$\{/;
+  const CONCAT_CONTACT_PATH = /[`'"][^`'"\r\n]*\/contacts\/[`'"]\s*\+/;
+  const SDK_CONTACT_REMOVE = /\bcontacts\s*\??\.\s*remove\s*\(|\bcontacts\s*\[\s*['"`]remove/;
+  const IMPORTS_RESEND = /\bfrom\s+['"]resend['"]|\brequire\(\s*['"]resend['"]\s*\)/;
+  const forbidden = (source: string): string[] =>
+    [RAW_CONTACT_PATH, CONCAT_CONTACT_PATH, SDK_CONTACT_REMOVE].filter((p) => p.test(source)).map(String);
 
-  it('the gateway source holds no contacts.remove( and no raw DELETE /contacts/${…}', () => {
-    const source = readFileSync(join(process.cwd(), GATEWAY), 'utf-8');
-    // Positive controls: the file was read, and the detach is the SDK's.
-    expect(source.length).toBeGreaterThan(1000);
-    expect(source.split('contacts.segments.remove(')).toHaveLength(2);
+  function sourceFiles(dir: string): string[] {
+    const out: string[] = [];
+    for (const name of readdirSync(dir)) {
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) out.push(...sourceFiles(full));
+      else if (/\.(?:ts|tsx|mts|cts|js|mjs)$/.test(name)) out.push(full);
+    }
+    return out;
+  }
 
-    expect(source).not.toMatch(/\bcontacts\.remove\(/);
-    expect(rawContactDeletes(source)).toEqual([]);
+  it('no file under src/ that imports resend holds a forbidden contact-delete form', () => {
+    const files = sourceFiles(join(process.cwd(), 'src'))
+      .map((path) => ({ path, source: readFileSync(path, 'utf-8') }))
+      .filter((f) => IMPORTS_RESEND.test(f.source));
+    // Positive controls: at least one file was read, the gateway is among them,
+    // and the detach there is the SDK's segment call, exactly once.
+    expect(files.length).toBeGreaterThanOrEqual(1);
+    const gateway = files.find((f) => f.path.endsWith(GATEWAY));
+    expect(gateway, 'the gateway imports resend and is scanned').toBeDefined();
+    expect(gateway!.source.length).toBeGreaterThan(1000);
+    expect(gateway!.source.split('contacts.segments.remove(')).toHaveLength(2);
+
+    const offenders = files
+      .map((f) => ({ path: f.path, hits: forbidden(f.source) }))
+      .filter((f) => f.hits.length > 0);
+    expect(offenders).toEqual([]);
   });
 
-  // The scan's own positive control: each forbidden shape is caught, CRLF included.
+  // The scan's own positive control: each forbidden shape it can see is caught,
+  // CRLF included.
   it.each([
-    ['an SDK account-wide delete', "await sdk.contacts.remove({ email });"],
-    ['a raw fetch, CRLF', "await fetch(`${BASE}/contacts/${email}`, {\r\n  method: 'DELETE',\r\n});"],
-    ['an importFetch, LF', "await importFetch(\n  `/contacts/${encodeURIComponent(email)}`,\n  { method: \"delete\" },\n);"],
+    ['the SDK account-wide delete', 'await sdk.contacts.remove({ email });'],
+    ['a space before the paren', 'await sdk.contacts.remove ({ email });'],
+    ['optional chaining', 'await sdk.contacts?.remove({ email });'],
+    ['a bracket lookup', "await sdk.contacts['remove']({ email });"],
+    ['a bracket lookup with spaces and double quotes', 'await sdk.contacts [ "remove" ]({ email });'],
+    ['a member access across a CRLF', 'await sdk.contacts\r\n  .remove({ email });'],
+    ['a raw fetch DELETE, CRLF', "await fetch(`${BASE}/contacts/${email}`, {\r\n  method: 'DELETE',\r\n});"],
+    ['a raw fetch whose method is a const', 'const m = "DELETE" as const;\nawait fetch(`${BASE}/contacts/${email}`, { method: m });'],
+    ['an importFetch, any method', 'await importFetch(\n  `/contacts/${encodeURIComponent(email)}`,\n  { method: "GET" },\n);'],
+    ['the SDK low-level delete', 'await sdk.delete(`/contacts/${email}`);'],
+    ['a concatenated path', 'await fetch(BASE + "/contacts/" + email, { method: "DELETE" });'],
   ])('the scan catches %s', (_label, snippet) => {
-    expect(/\bcontacts\.remove\(/.test(snippet) || rawContactDeletes(snippet).length > 0).toBe(true);
+    expect(forbidden(snippet)).not.toEqual([]);
   });
 
-  it('the scan passes the segment detach and a contact GET', () => {
-    expect(rawContactDeletes("await sdk.contacts.segments.remove({ email, segmentId });")).toEqual([]);
-    expect(/\bcontacts\.remove\(/.test('sdk.contacts.segments.remove({ email, segmentId })')).toBe(false);
-    expect(rawContactDeletes('await fetch(`${BASE}/contacts/${email}`, { method: "GET" });')).toEqual([]);
+  it('the scan passes the segment detach, the contact imports and a segment delete', () => {
+    expect(forbidden('await sdk.contacts.segments.remove({ email, segmentId });')).toEqual([]);
+    expect(forbidden("await importFetch('/contacts/imports', { method: 'POST' });")).toEqual([]);
+    expect(forbidden('await importFetch(\n  `/contacts/imports/${encodeURIComponent(importId)}`,\n  { method: "GET" },\n);')).toEqual([]);
+    expect(forbidden('await sdk.segments.remove(audienceId, { signal });')).toEqual([]);
+  });
+
+  // Recorded as out of reach (the docblock): pinned so a reader sees exactly
+  // which forms the runtime guard alone covers.
+  it.each([
+    ['a destructured method', 'const { remove } = sdk.contacts;\nawait remove({ email });'],
+    ['a path held in a variable', 'const p = `${BASE}/contacts/${email}`;\nawait fetch(p, { method: "DELETE" });'],
+    ['a joined path', "await fetch([BASE, 'contacts', email].join('/'), { method: 'DELETE' });"],
+  ])('out of reach of the source scan (runtime guard only): %s', (_label, snippet) => {
+    expect(forbidden(snippet)).toEqual([]);
   });
 });
