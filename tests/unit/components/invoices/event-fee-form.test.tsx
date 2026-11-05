@@ -51,6 +51,10 @@ import {
 import enMessages from '@/i18n/messages/en.json';
 import svMessages from '@/i18n/messages/sv.json';
 
+// AURA 5.83 (#195): the Combobox note is mirrored in a visually hidden
+// status region, so text queries scope to the visible note.
+const NOTE = { selector: '.aura-combo__note' } as const;
+
 /** The oldest preloaded event's start: the page sends it when it loaded a full 200. */
 const SEARCH_BEFORE = '2026-01-15T03:00:00.000Z';
 
@@ -283,7 +287,7 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     stubFetch(() => new Promise<Response>((r) => (release = r)) as unknown as Response);
     renderForm();
     typeInPicker('Old');
-    expect(await screen.findByText(picker.searching ?? '<missing eventPicker.searching>')).toBeInTheDocument();
+    expect(await screen.findByText(picker.searching ?? '<missing eventPicker.searching>', NOTE)).toBeInTheDocument();
     release(listOf([]));
   });
 
@@ -291,13 +295,13 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     stubFetch(() => listOf([]));
     const { unmount } = renderForm();
     typeInPicker('Nothing');
-    expect(await screen.findByText(picker.empty ?? '')).toBeInTheDocument();
+    expect(await screen.findByText(picker.empty ?? '', NOTE)).toBeInTheDocument();
     unmount();
     vi.unstubAllGlobals();
     stubFetch(() => new Response('{}', { status: 500 }));
     renderForm();
     typeInPicker('Nothing');
-    expect(await screen.findByText(picker.searchFailed ?? '<missing eventPicker.searchFailed>')).toBeInTheDocument();
+    expect(await screen.findByText(picker.searchFailed ?? '<missing eventPicker.searchFailed>', NOTE)).toBeInTheDocument();
   });
 
   it('fewer than a full page preloaded (every event is listed) → typing filters locally, no server search', async () => {
@@ -313,7 +317,7 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     stubFetch(() => listOf([]));
     renderForm({ initialEventId: 'ev-1' });
     typeInPicker('zzz');
-    expect(await screen.findByText(picker.empty ?? '')).toBeInTheDocument();
+    expect(await screen.findByText(picker.empty ?? '', NOTE)).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /Annual Gala/ })).not.toBeInTheDocument();
   });
 
@@ -338,7 +342,7 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     // Past the debounce: the search request is in flight (it never answers).
     await new Promise((r) => setTimeout(r, 400));
     expect(screen.getByRole('option', { name: /Annual Gala \(2026-06-01\)/ })).toBeInTheDocument();
-    expect(screen.queryByText(picker.searching ?? '')).not.toBeInTheDocument();
+    expect(screen.queryByText(picker.searching ?? '', NOTE)).not.toBeInTheDocument();
   });
 
   it('UX M2 — after a pick, reopening the picker lists every loaded event again', async () => {
@@ -363,7 +367,8 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     stubFetch(() => new Response('{}', { status: 500 }));
     renderForm();
     typeInPicker('Gala');
-    expect(await screen.findByText(picker.searchFailed ?? '')).toBeInTheDocument();
+    // With loaded matches on show, the failure is the field's hint, not the note.
+    expect(await screen.findByText(picker.searchFailed ?? '', { selector: ':not(.aura-combo__status)' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Annual Gala/ })).toBeInTheDocument();
   });
 
@@ -372,7 +377,7 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     const fn = stubFetch(() => (++calls === 1 ? new Response('{}', { status: 500 }) : listOf([oldEvent])));
     renderForm();
     typeInPicker('Old');
-    expect(await screen.findByText(picker.searchFailed ?? '')).toBeInTheDocument();
+    expect(await screen.findByText(picker.searchFailed ?? '', NOTE)).toBeInTheDocument();
     typeInPicker('Old ');
     expect(await screen.findByRole('option', { name: /Old Breakfast/ })).toBeInTheDocument();
     expect(searchCalls(fn).map((u) => u.searchParams.get('q'))).toEqual(['Old', 'Old']);
@@ -382,7 +387,7 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     const fn = stubFetch(() => listOf([]));
     renderForm();
     typeInPicker('x'.repeat(130));
-    expect(await screen.findByText(picker.empty ?? '')).toBeInTheDocument();
+    expect(await screen.findByText(picker.empty ?? '', NOTE)).toBeInTheDocument();
     expect(searchCalls(fn)[0]?.searchParams.get('q')).toHaveLength(100);
   });
 

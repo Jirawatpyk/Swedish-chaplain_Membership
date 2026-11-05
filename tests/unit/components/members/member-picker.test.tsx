@@ -11,6 +11,10 @@ import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { MemberPicker } from '@/components/members/member-picker';
 
+// AURA 5.83 (#195): the Combobox note is mirrored in a visually hidden
+// status region, so text queries scope to the visible note.
+const NOTE = { selector: '.aura-combo__note' } as const;
+
 const l = en.admin.users.invite.linkMember;
 
 const json = (body: unknown, status = 200) =>
@@ -106,7 +110,7 @@ describe('<MemberPicker> on AURA Combobox', () => {
     fireEvent.change(box(), { target: { value: 'x' } });
     act(() => vi.advanceTimersByTime(250));
     await flush();
-    expect(screen.getByText(l.fetchError)).toBeInTheDocument();
+    expect(screen.getByText(l.fetchError, NOTE)).toBeInTheDocument();
     expect(screen.queryByText(l.noMembersFound)).not.toBeInTheDocument();
   });
 
