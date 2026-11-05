@@ -2337,6 +2337,50 @@ Not fixed, with the reason:
 - code-review #9 (a quota 429 ends every E-Blast in that tick): the spec's DT3 decision; recorded under DT3.
 - reliability L4 (an unbounded DB read between listing and deletes, pre-existing) and L5 (PG `lower()` vs JS `toLowerCase()` on non-ASCII; the validators are ASCII-only): recorded only.
 
+### Slice 3 — review round 2 (full; `/code-review high 750`: 8; security APPROVE: 1 LOW; pdpa APPROVE: 4 LOW; reliability MERGEABLE: 3 LOW, 2 NIT; i18n ship: 3 copy fixes; spec-compliance PARTIAL: 1 HIGH (DT1 Verify), 4 MEDIUM (evidence, test-plan rows, stale docs); 5 Nov 2026)
+
+Round 1's security L1 was the stale case-insensitive comment, closed by R1-B.
+
+Fixed in this PR:
+- **R2-A, a re-drive whose capture is empty only because the scrub already ran records `not_attempted`, not `ok` (code-review #1).** R1-D made a re-drive send nothing, so a first pass that crashed after the scrub but before the propagation (or its audit row) left one `subprocessor_erasure_propagated` row saying `ok` 0/0/0 while the real address could still be in a live segment. The re-drive now records `resend_outcome: 'not_attempted'`, which pages like `failed` (the DPO alert), with the runbook step (search the Resend dashboard from the DSR intake). `SubprocessorResendOutcome` widens; every reader is swept (metric label, evidence card, alert, runbook).
+- **R2-B, i18n copy (i18n round 2):** the staff `provider_cancelled` names Resend once per clause and reads the suspended condition plainly (EN/TH/SV); the SV `countsNote` pronoun is fixed; the TH `countsNote` reuses "ไม่พบในกลุ่มอยู่แล้ว"; the evidence card's R2-25 comment matches the new note.
+- **R2-C, one deadline rule everywhere (code-review #7, reliability LOW-1):** the erasure adapter calls `oneCallFitsBefore`.
+- **R2-D, one quota-name constant (code-review #6):** the gateway, `isQuotaExceededCode` and `AUDITED_GATEWAY_CODES` read one exported list.
+- **R2-E, a route test that a non-`held` `memberStanding` is ignored (security LOW).**
+- **R2-F, documentation (pdpa L-1..L-4, spec-compliance stale text, reliability LOW-2/NIT):** research.md step 0 item 1 names the lowercase push (R1-A), not the removed refusal; plan.md pointers (DT4, Verify) to R1-A/R1-D; the changelog line covers R1-A, R1-D, R1-E, R1-G, R1-K, R2-A and the evidence-card relabel; the runbook's "Security cond-3" reason; RoPA 8a gains its `rg` verification line; the broadcasts rule's SDK line names the lowercase push and the path-character refusal; the collision note says the completion-rule refusal holds on the import leg only (the legacy leg dedupes at resolve); the R1 ledger attributes R1-A correctly; the Slices row names the reviewers that ran.
+- **R2-G, the slice 3 test-plan rows** (below).
+
+Measured, not changed:
+- **code-review #4 (code points vs UTF-16):** MEASURED 5 Nov 2026 on the sink, drafts only: a 70-emoji name (70 code points, 140 UTF-16 units) is accepted; 71 emoji and 71 ASCII answer 422 `Field name has a maximum of 70 items`. Resend counts code points, as the cap does.
+
+Not fixed, with the reason:
+- **code-review #3 (the live legacy leg reads a dashboard-cancelled broadcast as `gateway_permanent`):** the legacy leg is retired in slice 4; prod holds 0 `broadcasts` rows (5 Nov 2026). Carried to slice 4.
+- **code-review #5 (dead cancelled plumbing):** slice 4, as round 1.
+- **code-review #8 (rotation drops oldest-first and the index-ordered LIMIT):** every stuck erasure is attempted within ceil(stuck / 50) ticks, and the stuck set is about 0 to 2 a year (plan review), so neither the Art. 12 ordering nor the scan cost binds; recorded.
+- **DT1 at the Verify surface:** the import leg creates its Resend draft in the tick that sends it, so driving DT1 means a /send, which the probe rules forbid. DT1 rests on the tick cell (name at most 70 code points), the gateway cell and the measurement above.
+
+#### Slice 3 — test plan rows (R2-G; every mechanism a reviewer asked for, pointing at the test that went red)
+
+| Mechanism | Test (RED commit) |
+|---|---|
+| DT1 name cap at the tick and the gateway | `build-audience-tick.test.ts` "75-character subject", `broadcasts-sdk.contract.test.ts` "71 code points" (`5092c3382`) |
+| DT2 cancelled ends terminal on send / hold, never on refuse / refuse_erased | `build-audience-tick-failure-paths.test.ts` CANCELLED cells, `build-audience-tick-orphans.test.ts` DT2 cells (`dafe1c3c3`) |
+| Status readers: one `probedStatusOf`, legacy positive gate, `failed` refuses | `probedStatusOf` cells + `dispatch-scheduled-broadcast.test.ts` FAILED cell (`1d549044a`) |
+| DT3 locked retried, quota permanent, `resend_429`, 409 then 422 | contract "DT3 — Resend error classes", legacy + tick DT3 cells (`2d837b557`) |
+| DT4 segment-id UUID guard, literal URL, `detached` | contract DT4 cells (`a7008161f`) |
+| DT5 one deadline over listing and deletes, `maxDuration` | contract deadline cells, reclaim unit, route contract (`352d48113`) |
+| DT6 rotation by latest propagation, cross-tenant | `find-stuck-erasures-rotation.test.ts` (`704c88a12`) |
+| R1-A lowercase on both push paths | contract "sends a mixed-case address lowercased" and the CSV cell (`2bf4d4840`) |
+| R1-C known cancelled at the reclaim | orphans GET-fails cell (`b0533de7f`) |
+| R1-D no detach for sentinels on a re-drive | erase-member unit + `erase-member-subprocessor-cascade` cell 3 (`90da5c7b9`) |
+| R1-E held member's email | email builder + tick hold cell (`8e729093d`) |
+| R1-G audited gateway code | tick allowlist it.each (`b0533de7f`) |
+| R1-H one deadline rule | `oneCallFitsBefore` cells (`b1b62528c`) |
+| R1-J exhaustive sub-kinds | `classify-thrown.test.ts` (`965df2287`) |
+| R1-K path-unsafe email refused | contract R1-K cells (`2bf4d4840`) |
+| R2-A `not_attempted` on an empty re-drive capture | added in round 2 |
+| R2-E non-`held` standing ignored | added in round 2 |
+
 #### Housekeeping
 - Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
 - For slice 4, not slice 3: `deleteContactGlobally` (`gateway:772`) has no caller but still sends `DELETE /contacts/{email}`; s4 removes it.
