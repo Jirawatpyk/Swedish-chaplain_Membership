@@ -900,8 +900,9 @@ When the alert fires:
      ```
 
      and correct the value to the real Resend segment id or clear it. Until
-     then, **every later erasure that pairs with that id reads `partial`** on
-     it — for an unsettled orphan-table row that is every erasure in the tenant,
+     then, **every later erasure that pairs with that id counts it in
+     `resend_contacts_failed_count` and reads `partial`** (or `failed` when it
+     is the only pair) — for an unsettled orphan-table row that is every erasure in the tenant,
      since each one is asked to detach from the tenant's open audience orphans
      (residual 8d). If the logged `audienceId` IS
      UUID-shaped, the member's address held a character unsafe in a URL path
