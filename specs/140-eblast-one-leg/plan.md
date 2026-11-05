@@ -2652,6 +2652,59 @@ Two throwaway tenants were reached with `x-tenant`. Tenant A had 3 recipients on
 | Verify findings | **Fixed** in `c54e71fa2` (go-live `sending` wait; env failure mode) |
 | reliability / pdpa conditions: the D-042 prod count | **Open, the maintainer's gate before merge** |
 
+### Slice 4 — review round 2 (full; `/code-review high 756`: 7; security APPROVE, signed: 1 MEDIUM, 1 LOW; pdpa APPROVE WITH CONDITIONS: 1 MEDIUM, 6 LOW; reliability MERGEABLE with conditions: 4 LOW; i18n ship: 1 strong recommendation; enterprise-ux ship with follow-ups: 2 to fix now, 4 later; spec-compliance PARTIAL: 3 MEDIUM, 5 LOW; 6 Nov 2026)
+
+| Finding | Disposition |
+|---|---|
+| security M1: the DR4 source gate missed `sdk.delete(...)` and nine other spellings, and read one file | **Fixed** in `d34eb84f2`. The gate no longer reads the method: it forbids any `fetch` / `importFetch` / `.delete` call on a `/contacts/${` path and every `contacts.remove` spelling. It scans every src file that imports `resend` (four today; the positive control needs the gateway among them). The forms still out of its reach are named and pinned as out of reach, and the runtime wire guard covers them: a destructured method, a path held in a variable, a path built by a helper, a concat split across a line, and a raw fetch outside a `resend` importer |
+| security L2: `errorReason` was not type-bounded on the permanent arm | **Fixed** in `bd1c4c339` / `0f12ec606`. It is a closed union; anything else reads `'other'` |
+| code-review r2 #5 / reliability L1: the unverifiable row was written on every attempt, before the send, inside the leased window | **Fixed** in the same commits. The row is written after `advanceToSending` returns and names the sent broadcast. A send that fails writes none. An invariant refusal after the send is logged critical and counted, never thrown past a send that went out |
+| spec L-1 / reliability L4: no test reached the invariant path | **Fixed** (same RED) |
+| code-review r2 #3: `deleteAudience` on a non-UUID id failed permanently every tick | **Fixed** in `03d06f124` / `baf6338f7`. It resolves as already gone with no request, and the warn names the id class, never the id. The detach and `contacts.list` still refuse such an id |
+| code-review r2 #6: the detach's `resource_missing` catch arm was unreachable | **Fixed**: removed in `cd6d38859` |
+| code-review r2 #2: the docblock said every tick attach is fenced | **Fixed (docblock)** in `8a66d23f1`. It names the fenced calls, and says the post-send `attachBroadcastId` on the handed path has none. **Accepted (Low):** `lease` stays `LeaseToken \| null` on the four attach* methods. The import tick is their only src caller, but about 45 test call sites drive the unfenced CAS directly, and narrowing the type would mean seeding a lease in six integration files for no production effect |
+| code-review r2 #7 (= r1 CR#7): single-value parameters | **Accepted (Low)**, as in round 1. The retry-epoch docblocks no longer speak of two legs (`8a66d23f1`) |
+| code-review r2 #1: the ceiling bound of 50,000 | **Not taken.** The maintainer's decision (D-042, 5 Nov 2026): an over-cap value fails that E-Blast terminally, and a tighter bound would only refuse earlier |
+| code-review r2 #4: a wrong-case 404 reads `already_absent` | **Accepted, documented.** RoPA 8a and the runbook already say it; the card note now does too (pdpa M-1) |
+| pdpa M-1: the Segments note did not say a wrong-case copy may remain | **Fixed** in `74b875f7c`, final copy below |
+| pdpa L-1: the absent label said "audience" on a segment-wire record | **Fixed.** New key `contactsAlreadyAbsentSegments` |
+| pdpa L-2: three docblocks said the old wire answered 200 to anything | **Fixed** in `8a66d23f1`, plus the adapter and the card comment |
+| pdpa L-3: the marker is a literal, not tied to the gateway's call | **Accepted (Low).** The source gate's positive control requires `contacts.segments.remove(` exactly once in the gateway; a full revert reverts both |
+| pdpa L-5 / UX F3: a capital after the colon, and the older note's internal name | **Fixed.** "Earlier record (older Resend detach method): each contact …" |
+| pdpa L-6: the hidden filter for the two retired types | **Folded into the D-042 prod read.** The count includes `SELECT event_type, count(*) FROM audit_log WHERE event_type IN ('broadcast_resend_audience_drift', 'broadcast_dispatch_idempotency_conflict_pre_send') GROUP BY 1`. If it is above 0, RoPA :262 says so (rows remain readable unfiltered) |
+| UX F1 / i18n: "membership" reads as chamber membership | **Fixed.** "Removed from Resend segments", "segment entries" |
+| UX F2: the Segments note dropped "do not add the figures" | **Fixed** |
+| reliability L2: a removal whose answer was lost counts as absent | **Fixed in the note** ("it is a minimum"); already in the runbook |
+| reliability L3: the `errorReason` vocabulary changed from the legacy class names | **Documented** in the docblock and `observability.md` |
+| UX F4–F6, i18n optional wording | **Accepted (Low).** F4 is covered by the wrong-case sentence; F5 is the segment wording on segment-wire records only; F6 (a Thai note at 12 px) stays as it was measured at 320 px in s3 |
+| spec M-1: Verify ran before the round 1 fixes on the DR2 path | **Open: the maintainer's `/verify`** on the final head (DR2 and the card) |
+| spec M-2: the `detachWire` reader had no test-plan row | **Fixed**: the row below |
+| spec M-3: the card had no UX or i18n review | **Fixed**: both reviewed in this round. It counts as D-023 presentation: the component chooses copy from a DTO field. The audit payload marker it reads went red first in `306a30696` |
+| spec L-2: go-live :276 still described the push | **Fixed** |
+| spec L-3: the mutation proof of pdpa L-5 was not recorded | **Fixed** below |
+| spec L-4: the label commit's sha | `5ccf2f373`, then the final copy `74b875f7c` |
+| reliability / pdpa: the D-042 prod count; the Vercel preview of `edafab350` failed | **Prod count: open, the maintainer's gate.** The preview failed with `BUILD_FAILED`, "Resource provisioning timed out" (Vercel API, 6 Nov 2026), a platform fault. The next push rebuilds it |
+
+**Added test-plan row:** the evidence fold reads `detachWire` fail-closed ('segments' only, else `null`) from the earliest propagation row (`tests/unit/insights/erasure-evidence.test.ts`), unit.
+
+**pdpa L-5 mutation proof** (`978b740cf`): with `.toLowerCase()` removed from `listMemberResendAudienceContactsInTx`, and `lower(c.email)` from `listTombstoneEmailsForMemberInTx`, case 1 of `erase-member-subprocessor-cascade` goes red (`expected [ 'aud-cap-a-…', …(1) ] to deeply equal [ Any<String>, …(1) ]`). Removing only one of the two stays green, because the other covers it. Both mutants were reverted.
+
+**Round 2 evidence-card failing runs** (D-023; the final copy against the round 1 copy):
+- `… shows the Segments counts note …` → `Unable to find … /counts segment entries Resend confirmed it removed\. It is a minimum/i`;
+- `… labels both figures by the segment wire …` → `Unable to find … Removed from Resend segments`;
+- `… shows the note for older records, marked as such` → `Unable to find … /^Earlier record \(older Resend detach method\): each contact is counted once\./`.
+
+**Final card copy** (`admin.compliance.erasureLog.fields`, EN; TH and SV say the same):
+
+| Key | Copy |
+|---|---|
+| `contactsDetachedSegments` | "Removed from Resend segments" |
+| `contactsAlreadyAbsentSegments` | "Not in the Resend segment" |
+| `countsNoteSegments` | "The first figure counts segment entries Resend confirmed it removed. It is a minimum: a removal whose answer was lost is counted as not in the segment. Cite that figure; do not add the second figure to it. A copy of the address stored in another letter case is not covered and may still be in the segment, so if the member's address was ever imported by hand, search the Resend dashboard for it." |
+| `countsNote` | prefixed "Earlier record (older Resend detach method): " |
+
+The old keys keep their names.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.

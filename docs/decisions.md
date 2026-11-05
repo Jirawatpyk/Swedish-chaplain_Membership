@@ -250,7 +250,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
   - **The Resend SDK calls use the Segments names.** The port method names and the `resend_audience_id` columns stay. The erasure detach moves to `DELETE /contacts/{email}/segments/{id}`, measured 2026-11-05.
   - **The contract suite fails any `DELETE /contacts/{email}` (DR4).**
 - *Rejected*: retiring the legacy leg first (it would have flipped the import leg live without a lease, which D-038 forbids); keeping both legs behind the flag (every fix twice); renaming the port to Segments (churn with no Done-when line behind it).
-- *Prod count before merge* (D-034, a read-only probe the maintainer orders): pending. It is written here and in the PR before the merge. The merge waits while any `approved` row is due within 15 minutes.
+- *Prod count before merge* (D-034, a read-only probe the maintainer orders; it also counts `audit_log` rows of the two retired types, which the audit viewer's filter no longer offers): pending. It is written here and in the PR before the merge. The merge waits while any `approved` row is due within 15 minutes.
 - *Rollback*: a revert re-adds the flag check with the flag absent, so the legacy leg is live again. s2's skip stops it touching an import row. Three effects remain:
   - rows holding import columns stay `approved` under the skip, and staff cannot cancel them (`cancel-broadcast.ts` refuses an `approved` row with `audience_import_id` as `sending_started`); they need (c) or a roll-forward;
   - the 500 clamp returns, so an `approved` row with 501–900 recipients fails at dispatch and the member is emailed;
