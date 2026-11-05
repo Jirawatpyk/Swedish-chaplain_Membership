@@ -839,18 +839,27 @@ export async function eraseMember(
   const readFits =
     meta.deadlineAt === undefined ||
     meta.deadlineAt.getTime() - deps.clock.now().getTime() >= PRIOR_PROPAGATION_READ_BUDGET_MS;
+  // Round 4 (code-review #2): a skip and a timeout each log a `reason`, so a
+  // `not_attempted` row they cause can be told from a real "no earlier row".
+  if (addressesAlreadyScrubbed && !readFits) {
+    logger.warn(
+      { memberId, requestId: meta.requestId, cascade: 'subprocessor_erasure', reason: 'deadline' },
+      'erase-member: prior subprocessor propagation read skipped',
+    );
+  }
   if (addressesAlreadyScrubbed && readFits) {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
     try {
       priorPropagationRecorded = await Promise.race([
         runInTenant(deps.tenant, (tx) =>
           deps.memberRepo.hasSubprocessorPropagationInTx(tx, deps.tenant.slug, memberId),
         ),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error('prior propagation read exceeded its budget')),
-            PRIOR_PROPAGATION_READ_BUDGET_MS,
-          );
+          timer = setTimeout(() => {
+            timedOut = true;
+            reject(new Error('prior propagation read exceeded its budget'));
+          }, PRIOR_PROPAGATION_READ_BUDGET_MS);
         }),
       ]);
     } catch (readErr) {
@@ -861,6 +870,7 @@ export async function eraseMember(
           memberId,
           requestId: meta.requestId,
           cascade: 'subprocessor_erasure',
+          reason: timedOut ? 'timeout' : 'error',
         },
         'erase-member: prior subprocessor propagation read failed',
       );
