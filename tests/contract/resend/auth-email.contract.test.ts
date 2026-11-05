@@ -154,18 +154,13 @@ describe('emailSender on the wire (spec 141)', () => {
 
   it('reads a network failure as transient and retries it', async () => {
     vi.useFakeTimers();
-    let n = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        n += 1;
-        if (n === 1) throw new TypeError('fetch failed');
-        return json(200, { id: 'msg-5' });
-      }),
-    );
+    const calls = stubWire((n) => {
+      if (n === 1) throw new TypeError('fetch failed');
+      return json(200, { id: 'msg-5' });
+    });
     const sent = emailSender.send(MESSAGE);
     await vi.advanceTimersByTimeAsync(1_000);
     await expect(sent).resolves.toEqual({ ok: true, value: { messageId: 'msg-5' } });
-    expect(n).toBe(2);
+    expect(calls).toHaveLength(2);
   });
 });

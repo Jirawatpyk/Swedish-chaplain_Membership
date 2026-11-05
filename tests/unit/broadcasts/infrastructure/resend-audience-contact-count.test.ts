@@ -30,6 +30,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
+import { stubResendFetch } from '../../../support/resend/wire-guard';
 
 // Spec 140 s4 — the gateway refuses a segment id that is not UUID-shaped here too.
 const AUDIENCE_ID = '11111111-2222-4333-8444-555555555555';
@@ -42,10 +43,7 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 function stubListOnce(status: number, body: unknown): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => jsonResponse(status, body)),
-  );
+  stubResendFetch(async () => jsonResponse(status, body));
 }
 
 beforeEach(() => {

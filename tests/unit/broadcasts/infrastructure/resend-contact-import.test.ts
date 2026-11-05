@@ -41,6 +41,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
+import { stubResendFetch } from '../../../support/resend/wire-guard';
 
 const AUDIENCE_ID = '11111111-2222-4333-8444-555555555555';
 
@@ -71,35 +72,32 @@ function jsonResponse(status: number, body: unknown): Response {
 
 /** Records what the adapter actually put on the wire, then answers `respond`. */
 function stubFetch(respond: (call: number) => Response): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const fields: Record<string, string> = {};
-      let fileText = '';
-      let fileFieldName: string | null = null;
-      let fileName: string | null = null;
-      if (init?.body instanceof FormData) {
-        for (const [k, v] of init.body.entries()) {
-          if (v instanceof Blob) {
-            fileText = await v.text();
-            fileFieldName = k;
-            fileName = v instanceof File ? v.name : null;
-          } else fields[k] = String(v);
-        }
+  stubResendFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const fields: Record<string, string> = {};
+    let fileText = '';
+    let fileFieldName: string | null = null;
+    let fileName: string | null = null;
+    if (init?.body instanceof FormData) {
+      for (const [k, v] of init.body.entries()) {
+        if (v instanceof Blob) {
+          fileText = await v.text();
+          fileFieldName = k;
+          fileName = v instanceof File ? v.name : null;
+        } else fields[k] = String(v);
       }
-      const headers = new Headers(init?.headers ?? {});
-      captured.push({
-        url: String(input),
-        method: init?.method ?? 'GET',
-        authorization: headers.get('authorization'),
-        fields,
-        fileText,
-        fileFieldName,
-        fileName,
-      });
-      return respond(captured.length);
-    }),
-  );
+    }
+    const headers = new Headers(init?.headers ?? {});
+    captured.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      authorization: headers.get('authorization'),
+      fields,
+      fileText,
+      fileFieldName,
+      fileName,
+    });
+    return respond(captured.length);
+  });
 }
 
 beforeEach(() => {

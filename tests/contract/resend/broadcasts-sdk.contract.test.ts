@@ -84,14 +84,11 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
   // leg in spec 140 s4.)
   it('createContactImport puts each address in the CSV lowercased', async () => {
     const csvs: string[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-        const file = (init?.body as FormData).get('file') as Blob;
-        csvs.push(await file.text());
-        return json(200, { object: 'contact_import', id: 'imp_1' });
-      }),
-    );
+    stubWire(async (_n, _input, init) => {
+      const file = (init?.body as FormData).get('file') as Blob;
+      csvs.push(await file.text());
+      return json(200, { object: 'contact_import', id: 'imp_1' });
+    });
     await expect(
       resendBroadcastsGateway.createContactImport(AUD, ['a@example.com', 'Mixed.Case@Example.com']),
     ).resolves.toEqual({ importId: 'imp_1' });
@@ -501,21 +498,16 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     });
 
     it('a 403 whose probe throws (network) throws the DELETE classification', async () => {
-      let n = 0;
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async () => {
-          n += 1;
-          if (n === 1) return lastAudience();
-          throw new TypeError('fetch failed');
-        }),
-      );
+      const calls = stubWire((n) => {
+        if (n === 1) return lastAudience();
+        throw new TypeError('fetch failed');
+      });
       await expect(resendBroadcastsGateway.deleteAudience(AUD)).rejects.toMatchObject({
         name: 'GatewayThrowable',
         kind: 'permanent',
         code: 'validation_error',
       });
-      expect(n).toBe(2);
+      expect(calls).toHaveLength(2);
     });
 
     it('a 404 on the DELETE itself still needs no probe (one request)', async () => {
@@ -729,9 +721,9 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
 
   it('a network failure that never clears is retryable, tagged network', async () => {
     vi.useFakeTimers();
-    vi.stubGlobal('fetch', vi.fn(async () => {
+    stubWire(() => {
       throw new TypeError('fetch failed');
-    }));
+    });
     const done = resendBroadcastsGateway.createAudience('probe').then(
       () => null,
       (e: { kind?: string; subKind?: string }) => ({ kind: e.kind, subKind: e.subKind }),
@@ -744,18 +736,13 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
   // failure is pinned on a DELETE.
   it('a network failure is retryable (network)', async () => {
     vi.useFakeTimers();
-    let n = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        n += 1;
-        if (n === 1) throw new TypeError('fetch failed');
-        return json(200, { object: 'segment', id: AUD, deleted: true });
-      }),
-    );
+    const calls = stubWire((n) => {
+      if (n === 1) throw new TypeError('fetch failed');
+      return json(200, { object: 'segment', id: AUD, deleted: true });
+    });
     const done = resendBroadcastsGateway.deleteAudience(AUD);
     await vi.advanceTimersByTimeAsync(40_000);
-    expect({ value: await done, attempts: n }).toMatchInlineSnapshot(`
+    expect({ value: await done, attempts: calls.length }).toMatchInlineSnapshot(`
       {
         "attempts": 2,
         "value": undefined,

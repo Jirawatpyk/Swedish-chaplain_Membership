@@ -25,7 +25,8 @@ export interface ResendBroadcastsClientLike {
     list(): Promise<ResendResult<{ object: 'list'; data: Array<{ id: string; name: string; created_at: string }> }>>;
   };
   readonly contacts: {
-    remove(args: unknown): Promise<ResendResult<{ deleted: boolean }>>;
+    /** Spec 140 DR4 — throws: nothing in `src` may call the account-wide delete. */
+    remove(args: unknown): Promise<never>;
     list(args: unknown): Promise<ResendResult<{ data: unknown[] }>>;
     readonly segments: {
       remove(args: { email: string; segmentId: string }): Promise<ResendResult<{ object: 'contact_segment'; deleted: boolean }>>;
@@ -149,9 +150,11 @@ export function createResendContractFake(opts: {
     // per-contact push, was deleted with the legacy dispatch leg.
     contacts: {
       async remove() {
-        // Spec 140 s4 — the gateway no longer calls it: it detaches through
-        // `contacts.segments.remove`.
-        return { data: { deleted: true }, error: null };
+        // Spec 140 DR4 — without a segment this is `DELETE /contacts/{email}`,
+        // the ACCOUNT-WIDE delete shared by every tenant. The gateway detaches
+        // through `contacts.segments.remove`; a call here is a defect, so it
+        // throws rather than answering a plausible success.
+        throw new Error('resend-contract-fake: contacts.remove is the account-wide contact delete (spec 140 DR4)');
       },
       async list() { return { data: { data: [] }, error: null }; },
       segments: {

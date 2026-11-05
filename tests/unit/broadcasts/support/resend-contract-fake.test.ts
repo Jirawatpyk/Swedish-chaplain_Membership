@@ -153,6 +153,13 @@ describe('createResendContractFake › segments.remove', () => {
 // Spec 140 s4 — the detach is `contacts.segments.remove({ email, segmentId })`,
 // answered as MEASURED on 5 Nov 2026 (research.md slice 4 step 0 item 1).
 describe('createResendContractFake › contacts.segments.remove', () => {
+  // Spec 140 DR4 — the id-less `contacts.remove` is the account-wide
+  // `DELETE /contacts/{email}`; the fake refuses it instead of answering success.
+  it('contacts.remove (the account-wide delete) throws', async () => {
+    const { client } = createResendContractFake();
+    await expect(client.contacts.remove({ email: 'a@example.com' })).rejects.toThrow(/account-wide/);
+  });
+
   it('answers 200 contact_segment deleted:true by default', async () => {
     const { client } = createResendContractFake();
     const result = await client.contacts.segments.remove({ email: 'a@example.com', segmentId: 'aud_unknown' });

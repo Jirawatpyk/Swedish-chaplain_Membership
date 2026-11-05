@@ -30,6 +30,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
+import { stubResendFetch } from '../../../support/resend/wire-guard';
 
 const BROADCAST_ID = 'bc_11111111-2222-4333-8444-555555555555';
 const IDEMPOTENCY_KEY = 'broadcast-test-tenant-44444444-4444-4444-8444-444444444444';
@@ -51,21 +52,18 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 function stubFetch(respond: (call: number) => Response): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const headers = new Headers(init?.headers ?? {});
-      captured.push({
-        url: String(input),
-        method: init?.method ?? 'GET',
-        // Header lookup is case-insensitive through `Headers`, so this does not
-        // depend on how the SDK spells it.
-        idempotencyKey: headers.get('idempotency-key'),
-        body: typeof init?.body === 'string' ? init.body : '',
-      });
-      return respond(captured.length);
-    }),
-  );
+  stubResendFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const headers = new Headers(init?.headers ?? {});
+    captured.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      // Header lookup is case-insensitive through `Headers`, so this does not
+      // depend on how the SDK spells it.
+      idempotencyKey: headers.get('idempotency-key'),
+      body: typeof init?.body === 'string' ? init.body : '',
+    });
+    return respond(captured.length);
+  });
 }
 
 beforeEach(() => {

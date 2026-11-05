@@ -28,26 +28,30 @@ import {
   type BroadcastsGatewayPort,
   type CreateBroadcastInput,
 } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import { stubResendFetch } from '../../../support/resend/wire-guard';
 
 type Handler = (call: number, init: RequestInit | undefined) => Promise<Response>;
 
 /**
- * Installed for the whole file and never removed: a call left running by a
+ * Installed before every case and never removed: a call left running by a
  * failing case (an unbounded retry loop sleeping 16 s) meets this, never the
- * network. Between cases the handler answers a transport failure.
+ * network. Between cases the handler answers a transport failure. Spec 140 DR4:
+ * it goes through the wire guard, so an account-wide `DELETE /contacts/{email}`
+ * fails the case that sent it (re-installed per case, because the guard's check
+ * belongs to one test).
  */
 const closed: Handler = async () => {
   throw new TypeError('fetch closed: the case that made this request has ended');
 };
 let handler: Handler = closed;
 let requests: Array<{ readonly url: string; readonly signal: AbortSignal | null }> = [];
-vi.stubGlobal(
-  'fetch',
-  vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    requests.push({ url: String(input), signal: init?.signal ?? null });
-    return handler(requests.length, init);
-  }),
-);
+const recordingFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  requests.push({ url: String(input), signal: init?.signal ?? null });
+  return handler(requests.length, init);
+};
+beforeEach(() => {
+  stubResendFetch(recordingFetch);
+});
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
