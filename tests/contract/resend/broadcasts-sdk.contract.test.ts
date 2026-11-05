@@ -505,6 +505,36 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     });
   });
 
+  // Spec 140 DT1 — Resend refuses a broadcast `name` over 70 code points. The
+  // callers cap it (`resendDashboardName`); the gateway refuses a longer one
+  // before any request, so a caller that forgets cannot reach Resend with it.
+  describe('createBroadcast refuses a name over 70 code points, with no request', () => {
+    const create = (name: string) =>
+      resendBroadcastsGateway.createBroadcast({
+        audienceId: 'aud_1',
+        subject: 'Hello',
+        htmlBody: '<p>hi</p>',
+        fromName: 'SweCham',
+        fromEmail: 'noreply@example.com',
+        replyToEmail: 'office@example.com',
+        broadcastNameForResendDashboard: name,
+        tenantDisplayName: 'SweCham',
+        locale: 'en',
+      });
+
+    it('71 code points → permanent broadcast_name_too_long, nothing sent', async () => {
+      const calls = stubWire(() => json(201, { id: 'bc_1' }));
+      await expect(create('ก'.repeat(71))).rejects.toMatchObject({ kind: 'permanent', code: 'broadcast_name_too_long' });
+      expect(calls).toHaveLength(0);
+    });
+
+    it('70 code points, each two UTF-16 units → sent (counted by code point, not .length)', async () => {
+      const calls = stubWire(() => json(201, { id: 'bc_1' }));
+      await expect(create('😀'.repeat(70))).resolves.toEqual({ broadcastId: 'bc_1' });
+      expect(calls).toHaveLength(1);
+    });
+  });
+
   it('a network failure that never clears is retryable, tagged network', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('fetch', vi.fn(async () => {
