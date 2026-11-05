@@ -1059,18 +1059,30 @@ async function applySendStanding(
   // the hold arm's restart would release the id, so the tick after the unhold
   // would mint and send. The two refusal arms below keep their own end (already
   // terminal, never a mint; the erased one emails nobody); a failed read
-  // decides nothing. `failTerminally`'s choke point meets the 403 on the DELETE
-  // and reads `cancelled` (retained); the id stays on the terminal row, where
-  // the erasure terminal pass and `cleanup-audiences` reach it, so no orphan
-  // row is written.
+  // decides nothing. `failTerminally`'s choke point re-reads the row and sends
+  // ONE DELETE for its id. Resend answers 403 to a cancelled broadcast, and the
+  // choke point is handed this probe's `cancelled` for this id (review round 1,
+  // R1-C), so when the re-read id is the probed one the 403 is cleared as
+  // `resendDraftOutcome: 'cancelled'` with no second GET, and no orphan row is
+  // written: the id stays on the terminal row, where the erasure terminal pass
+  // and `cleanup-audiences` reach it. A re-read row holding another id (a
+  // sibling's persist) is decided by that id's own GET, as on every other path.
   if ((standing.kind === 'send' || standing.kind === 'hold') && probe !== null && !probe.handed && probe.status === 'cancelled') {
-    return failTerminally(deps, input, broadcast, {
-      kind: 'audience_import_failed',
-      reason: 'provider_cancelled',
-      importId: broadcast.audienceImportId,
-      observed: null,
-      expected: null,
-    });
+    return failTerminally(
+      deps,
+      input,
+      broadcast,
+      {
+        kind: 'audience_import_failed',
+        reason: 'provider_cancelled',
+        importId: broadcast.audienceImportId,
+        observed: null,
+        expected: null,
+      },
+      broadcast.resendBroadcastId === null
+        ? {}
+        : { knownProbedStatus: { resendBroadcastId: broadcast.resendBroadcastId, status: 'cancelled' } },
+    );
   }
   if (standing.kind === 'send') return null;
   if (standing.kind === 'hold') {
@@ -1872,9 +1884,30 @@ async function onGatewayFailure(
       observed: null,
       expected: null,
     },
-    { failureMetric: importReasonToFailureMetric(failure.reason, failure.code) },
+    {
+      failureMetric: importReasonToFailureMetric(failure.reason, failure.code),
+      // Review round 1 (R1-G) — only a code the gateway itself names, from a
+      // closed set: Resend's own names are provider text and stay out of an
+      // append-only payload.
+      ...(failure.code !== undefined && AUDITED_GATEWAY_CODES.has(failure.code)
+        ? { payloadExtra: { gatewayCode: failure.code } }
+        : {}),
+    },
   );
 }
+
+/**
+ * Spec 140 s3 review round 1 (R1-G) — the gateway codes the terminal
+ * `broadcast_failed_to_dispatch` payload names as `gatewayCode`: the CSV guard,
+ * Resend's two sending-quota 429s (kept as their names, DT3) and the name cap
+ * (DT1). Anything else adds no key.
+ */
+const AUDITED_GATEWAY_CODES: ReadonlySet<string> = new Set([
+  'unsafe_recipient_format',
+  'daily_quota_exceeded',
+  'monthly_quota_exceeded',
+  'broadcast_name_too_long',
+]);
 
 /** Tick 1 — hand the audience over. Sends nothing. */
 async function submitImport(
@@ -2845,6 +2878,12 @@ async function advanceToSending(
   return ok({ kind: 'sent', resendBroadcastId, recipientCount });
 }
 
+/** Spec 140 s3 review round 1 (R1-C) — what this tick's probe read, and for which id. */
+interface KnownProbedStatus {
+  readonly resendBroadcastId: string;
+  readonly status: 'cancelled';
+}
+
 /**
  * Spec 140 s2c, item 4 — delete the Resend draft the row holds before a
  * terminal write (`failTerminally`'s choke point; plan.md § Slice 2c [A2–A4]).
@@ -2858,7 +2897,10 @@ async function advanceToSending(
  *    → `lease_lost` (row 9), expiring → `lease_expiring`, a failed check →
  *    retryable. None writes a terminal row.
  * 4. `deleteDraftBeforeStandingRefusal` (`_dispatch-standing-gate.ts`, the full
- *    outcome set) with no probed status, so a 403 is decided by its one GET:
+ *    outcome set) with no probed status — unless the caller passes the status
+ *    this tick's probe read for the same id (`knownProbedStatus`, DT2's
+ *    `cancelled`; review round 1, R1-C), which clears that 403 with no GET —
+ *    so a 403 is decided by its one GET:
  *    - `cleared` (`deleted` / `absent` / `cancelled` / `failed`) → terminal,
  *      `resendDraftOutcome` in the payload;
  *    - `handed` → the mail is out (a sibling sent it, or this tick's own
@@ -2886,6 +2928,7 @@ async function reclaimDraftBeforeTerminal(
   deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
+  knownProbedStatus: KnownProbedStatus | undefined,
 ): Promise<
   | { readonly stop: Result<BuildAudienceTickOutput, BuildAudienceTickError> }
   | { readonly payloadExtra?: Readonly<Record<string, string>> }
@@ -2905,10 +2948,14 @@ async function reclaimDraftBeforeTerminal(
   if (draftId === '') return {};
   const gated = await leaseGate(deps, input, 'terminal_reclaim');
   if (gated !== null) return { stop: gated };
+  // Review round 1 (R1-C) — a status this tick's probe read for THIS id decides
+  // the 403 without a second GET; for any other id it is not evidence.
+  const probedStatus =
+    knownProbedStatus !== undefined && knownProbedStatus.resendBroadcastId === draftId ? knownProbedStatus.status : null;
   const cleared = await deleteDraftBeforeStandingRefusal(
     deps.broadcastsGateway,
     { ...ids, leg: 'import' },
-    { resendBroadcastId: draftId, probedStatus: null },
+    { resendBroadcastId: draftId, probedStatus },
     'terminal',
   );
   if (cleared.kind === 'handed') {
@@ -2996,13 +3043,19 @@ async function failTerminally(
      * second time. Every other caller leaves it unset.
      */
     readonly draftSettled?: true;
+    /**
+     * Spec 140 s3 review round 1 (R1-C) — the status this tick's probe read for
+     * the row's id (DT2's `cancelled`), so the choke point's 403 on that id is
+     * cleared without a second GET. Honoured only for the same id.
+     */
+    readonly knownProbedStatus?: KnownProbedStatus;
   } = {},
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   // Spec 140 s2c, item 4 (pdpa M-1) — THE CHOKE POINT: no terminal row on this
   // leg keeps a Resend draft it could have deleted. Before the terminal tx.
   let payloadExtra = opts.payloadExtra;
   if (opts.draftSettled !== true) {
-    const reclaimed = await reclaimDraftBeforeTerminal(deps, input, broadcast);
+    const reclaimed = await reclaimDraftBeforeTerminal(deps, input, broadcast, opts.knownProbedStatus);
     if ('stop' in reclaimed) return reclaimed.stop;
     if (reclaimed.payloadExtra !== undefined) payloadExtra = { ...(payloadExtra ?? {}), ...reclaimed.payloadExtra };
   }

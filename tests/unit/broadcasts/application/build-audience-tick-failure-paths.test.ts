@@ -3407,8 +3407,8 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
    * sent (MEASURED 2026-10-29), so the id is dead, and the cancel was decided
    * outside this tick. Refused TERMINALLY (`provider_cancelled`), never
    * re-minted: a fresh mint would send what someone at Resend stopped. The
-   * choke point's DELETE answers 403 and its GET reads `cancelled` (retained);
-   * the id stays on the terminal row, where the erasure terminal pass and
+   * choke point's DELETE answers 403, cleared by the probe's `cancelled` with no
+   * second GET (review round 1, R1-C); the id stays on the terminal row, where the erasure terminal pass and
    * `cleanup-audiences` reach it. `failed_to_dispatch` releases the quota slot
    * (`countForMemberQuota` excludes it), and the member is told.
    */
@@ -3425,7 +3425,8 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'provider_cancelled', importId: 'imp-1' });
-    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce', 'retrieveBroadcastOnce']);
+    // Review round 1 (R1-C) — the probe's `cancelled` clears the DELETE's 403: no second GET.
+    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce']);
     expect(rec.deleteOnce.map((d) => d.id)).toEqual(['rb-0']);
     expect(rec.sends).toEqual([]);
     expect(rec.broadcastIdAttaches).toEqual([]);
@@ -3820,7 +3821,8 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'provider_cancelled' });
-    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce', 'retrieveBroadcastOnce']);
+    // Review round 1 (R1-C) — the probe's `cancelled` clears the DELETE's 403: no second GET.
+    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce']);
     expect(rec.audiencesDeleted).toEqual([]);
     expect(rec.releases).toEqual([]);
     expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
