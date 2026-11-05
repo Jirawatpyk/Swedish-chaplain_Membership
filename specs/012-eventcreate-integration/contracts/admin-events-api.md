@@ -23,6 +23,7 @@ List imported events for the current tenant, sorted by `start_date` desc (defaul
 | `pageSize` | int 10..100 | 25 |  |
 | `includeArchived` | boolean | false | When true, includes archived rows |
 | `categoryFilter` | string | (none) | Exact match on `events.category` |
+| `q` | string ≤ 100 | (none) | Case-insensitive substring match on `events.name`, trimmed; whitespace-only is no search; `%`, `_` and `\` match literally (#732). Over 100 characters → 400 |
 | `partnerBenefitOnly` | boolean | false |  |
 | `culturalEventOnly` | boolean | false |  |
 

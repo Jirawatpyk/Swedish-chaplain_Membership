@@ -68,6 +68,9 @@ const ListQuerySchema = z.object({
     .optional()
     .default(false),
   categoryFilter: z.string().min(1).max(120).optional(),
+  // #732 — name search (the invoice event picker). Trimmed; whitespace-only
+  // is no search.
+  q: z.string().trim().max(100).optional(),
 });
 
 
@@ -126,6 +129,7 @@ export async function GET(request: NextRequest) {
     partnerBenefitOnly: searchParams.get('partnerBenefitOnly') ?? undefined,
     culturalEventOnly: searchParams.get('culturalEventOnly') ?? undefined,
     categoryFilter: searchParams.get('categoryFilter') ?? undefined,
+    q: searchParams.get('q') ?? undefined,
   });
   if (!parsed.success) {
     return NextResponse.json(
@@ -179,6 +183,7 @@ export async function GET(request: NextRequest) {
           partnerBenefitOnly: parsed.data.partnerBenefitOnly,
           culturalEventOnly: parsed.data.culturalEventOnly,
           categoryFilter: trimmedCategory && trimmedCategory.length > 0 ? trimmedCategory : null,
+          ...(parsed.data.q ? { searchQuery: parsed.data.q } : {}),
         }),
     );
   } catch (e) {

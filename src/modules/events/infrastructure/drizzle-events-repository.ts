@@ -258,7 +258,10 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
             // filters the remaining candidate set in-memory. Upgrade
             // to a pg_trgm GIN on `events.name` (mirroring F3 members)
             // if p95 ever exceeds 500ms — F6.2 backlog.
-            conditions.push(ilike(events.name, `%${trimmed}%`));
+            // #732 — `\`, `%` and `_` in the typed text match
+            // literally (Postgres' default LIKE escape is `\`), as in
+            // the members and directory repos.
+            conditions.push(ilike(events.name, `%${trimmed.replace(/[\\%_]/g, '\\$&')}%`));
           }
         }
         const whereClause = and(...conditions);

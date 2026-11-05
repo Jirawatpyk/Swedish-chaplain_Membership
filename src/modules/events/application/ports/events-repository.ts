@@ -61,8 +61,9 @@ export interface ListEventsInput {
   readonly pageSize: number;
   /**
    * Free-text substring match on `events.name` (case-insensitive).
-   * Repo applies `ilike(events.name, '%trimmed%')`; undefined OR
-   * whitespace-only treated as no filter.
+   * Repo applies `ilike(events.name, '%trimmed%')` with `\`, `%` and `_`
+   * escaped, so they match literally; undefined OR whitespace-only
+   * treated as no filter.
    */
   readonly searchQuery?: string;
 }
