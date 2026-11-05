@@ -299,7 +299,7 @@ describe('MemberRepo.hasSubprocessorPropagationInTx — live Neon', () => {
 
   it('sets its own statement_timeout for the rest of its transaction', async () => {
     const setting = await runInTenant(tenant.ctx, async (tx) => {
-      await drizzleMemberRepo.hasSubprocessorPropagationInTx(tx, tenant.ctx.slug, randomUUID());
+      await drizzleMemberRepo.hasSubprocessorPropagationInTx(tx, tenant.ctx.slug, asMemberId(randomUUID()));
       const rows = (await tx.execute(sql`SELECT current_setting('statement_timeout') AS v`)) as unknown as Array<{
         v: string;
       }>;
