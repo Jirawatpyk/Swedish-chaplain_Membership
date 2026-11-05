@@ -297,14 +297,14 @@ describe('MemberRepo.hasSubprocessorPropagationInTx — live Neon', () => {
     await tenant?.cleanup().catch(() => {});
   });
 
-  it('sets its own statement_timeout for the rest of its transaction', async () => {
+  it('sets the caller\'s statement_timeout for the rest of its transaction', async () => {
     const setting = await runInTenant(tenant.ctx, async (tx) => {
-      await drizzleMemberRepo.hasSubprocessorPropagationInTx(tx, tenant.ctx.slug, asMemberId(randomUUID()));
+      await drizzleMemberRepo.hasSubprocessorPropagationInTx(tx, tenant.ctx.slug, asMemberId(randomUUID()), 1500);
       const rows = (await tx.execute(sql`SELECT current_setting('statement_timeout') AS v`)) as unknown as Array<{
         v: string;
       }>;
       return rows[0]?.v;
     });
-    expect(setting).toBe('3s');
+    expect(setting).toBe('1500ms');
   });
 });

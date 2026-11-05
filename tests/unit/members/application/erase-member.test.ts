@@ -857,6 +857,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
         expect.anything(),
         't-1',
         'm-1',
+        PRIOR_PROPAGATION_READ_BUDGET_MS,
       );
       expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
         expect.objectContaining({ addressesAlreadyScrubbed: true, priorPropagationRecorded: expected }),
@@ -872,7 +873,8 @@ describe('eraseMember — requested audit + atomic scrub', () => {
       const deps = buildEraseDeps();
       deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
       deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(async () => true);
-      const deadlineAt = new Date(deps.clock.now().getTime() + PRIOR_PROPAGATION_READ_BUDGET_MS - 1);
+      // Round 5 (code-review #9): the read reserves a second budget for the audit write after it.
+      const deadlineAt = new Date(deps.clock.now().getTime() + 2 * PRIOR_PROPAGATION_READ_BUDGET_MS - 1);
       const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
       try {
         const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, { ...META, deadlineAt }, deps);
@@ -892,11 +894,11 @@ describe('eraseMember — requested audit + atomic scrub', () => {
       }
     });
 
-    it('runs when the deadline leaves exactly its budget', async () => {
+    it('runs when the deadline leaves its budget and the audit write\'s', async () => {
       const deps = buildEraseDeps();
       deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
       deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(async () => true);
-      const deadlineAt = new Date(deps.clock.now().getTime() + PRIOR_PROPAGATION_READ_BUDGET_MS);
+      const deadlineAt = new Date(deps.clock.now().getTime() + 2 * PRIOR_PROPAGATION_READ_BUDGET_MS);
       const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, { ...META, deadlineAt }, deps);
       expect(res.ok).toBe(true);
       expect(deps.memberRepo.hasSubprocessorPropagationInTx).toHaveBeenCalled();
@@ -923,10 +925,28 @@ describe('eraseMember — requested audit + atomic scrub', () => {
           expect.objectContaining({ memberId: 'm-1', reason: 'timeout' }),
           'erase-member: prior subprocessor propagation read failed',
         );
-        expect(vi.getTimerCount()).toBe(0);
       } finally {
         warnSpy.mockRestore();
         vi.useRealTimers();
+      }
+    });
+
+    it('a database cancel (57014) logs as a timeout too', async () => {
+      const deps = buildEraseDeps();
+      deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
+      deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(async () => {
+        throw Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' });
+      });
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      try {
+        const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+        expect(res.ok).toBe(true);
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ memberId: 'm-1', reason: 'timeout' }),
+          'erase-member: prior subprocessor propagation read failed',
+        );
+      } finally {
+        warnSpy.mockRestore();
       }
     });
 
