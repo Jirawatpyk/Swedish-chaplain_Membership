@@ -743,69 +743,59 @@ export function createResendBroadcastsGateway({
       // 1). So it is neither encoded nor re-cased here: the address sent is the
       // one given, which is lowercase because the erasure capture is lowercase
       // and the only push, `createContactImport`, lowercases.
-      try {
-        const absent = await boundedCall(
-          async (signal) => {
-            const sdk = client();
-            const result = (await sdk.contacts.segments.remove({
-              email,
-              segmentId: audienceId,
-            }, { signal })) as ResendSdkResponse<{ object?: string; deleted?: boolean }>;
-            if (result.error) {
-              // A 404 → the contact was not in that segment, or the segment does
-              // not exist → nothing to detach. Since spec 140 s4 this fires: on
-              // this endpoint every no-op answered `404 not_found` (random
-              // segment, wrong case, non-member) and only a membership that
-              // existed answered `200 deleted:true` (MEASURED 5 Nov 2026,
-              // research.md slice 4 step 0 items 1 and 4). A 410 Gone means the
-              // same, as on the siblings `deleteAudience` / `deleteBroadcast`
-              // (PR #756 review round 1, code-review #4). An HTML 404 / 410 is not
-              // Resend's answer and stays retryable (`httpStatusOf`).
-              if (isProviderGone(statusAndNameOf(result.error))) return true;
-              // Status and name only, never Resend's message: the thrown reason
-              // reaches log lines, and a later wording change could put the
-              // address into it (spec 140 s4 plan review). The step 0 404 bodies
-              // carried none.
-              throw classifyResendError(statusAndNameOf(result.error), 'audience', audienceId);
-            }
-            // `detached` becomes a removal in an append-only Art. 30 record, so
-            // it needs Resend's own `deleted: true` (MEASURED: `200
-            // {"object":"contact_segment","deleted":true}`). A 200 without it
-            // was never seen; it is not read as a detach. Permanent, so the
-            // erasure record counts it failed and the runbook remediates it.
-            if (result.data?.deleted !== true) {
-              throw new GatewayThrowable({
-                kind: 'permanent',
-                code: 'detach_unconfirmed',
-                reason: 'the segment detach answered without deleted: true',
-              });
-            }
-            return false;
-          },
-          { method: 'removeContactFromAudience', callTimeoutMs, retry: 'retryable' },
-        );
-        if (absent) {
-          logger.info({ audienceId }, 'resend.broadcasts.contact_already_absent');
-          return { kind: 'already_absent' };
-        }
-        logger.info({ audienceId }, 'resend.broadcasts.contact_detached');
-        return { kind: 'detached' };
-      } catch (e) {
-        // A `resource_missing` throw (the classifier's reading of a not-found it
-        // did not see as a plain 404 / 410 above) is the same "nothing to detach".
-        //
-        // Round 2 R2-25 — this used to `return` here, indistinguishable from a real
-        // detach. The caller counted both as removals, and that count became
-        // `resend_contacts_removed_count` in an append-only Art. 30 record shown to
-        // a DPO as "Contacts removed". Reporting a removal that did not happen is
-        // worse than reporting none: it is a false statement under Art. 12(3), and
-        // the register entry cannot be corrected once written.
-        if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
-          logger.info({ audienceId }, 'resend.broadcasts.contact_already_absent');
-          return { kind: 'already_absent' };
-        }
-        throw e;
+      const absent = await boundedCall(
+        async (signal) => {
+          const sdk = client();
+          const result = (await sdk.contacts.segments.remove({
+            email,
+            segmentId: audienceId,
+          }, { signal })) as ResendSdkResponse<{ object?: string; deleted?: boolean }>;
+          if (result.error) {
+            // A 404 → the contact was not in that segment, or the segment does
+            // not exist → nothing to detach. Since spec 140 s4 this fires: on
+            // this endpoint every no-op answered `404 not_found` (random
+            // segment, wrong case, non-member) and only a membership that
+            // existed answered `200 deleted:true` (MEASURED 5 Nov 2026,
+            // research.md slice 4 step 0 items 1 and 4). A 410 Gone means the
+            // same, as on the siblings `deleteAudience` / `deleteBroadcast`
+            // (PR #756 review round 1, code-review #4). An HTML 404 / 410 is not
+            // Resend's answer and stays retryable (`httpStatusOf`).
+            if (isProviderGone(statusAndNameOf(result.error))) return true;
+            // Status and name only, never Resend's message: the thrown reason
+            // reaches log lines, and a later wording change could put the
+            // address into it (spec 140 s4 plan review). The step 0 404 bodies
+            // carried none.
+            throw classifyResendError(statusAndNameOf(result.error), 'audience', audienceId);
+          }
+          // `detached` becomes a removal in an append-only Art. 30 record, so
+          // it needs Resend's own `deleted: true` (MEASURED: `200
+          // {"object":"contact_segment","deleted":true}`). A 200 without it
+          // was never seen; it is not read as a detach. Permanent, so the
+          // erasure record counts it failed and the runbook remediates it.
+          if (result.data?.deleted !== true) {
+            throw new GatewayThrowable({
+              kind: 'permanent',
+              code: 'detach_unconfirmed',
+              reason: 'the segment detach answered without deleted: true',
+            });
+          }
+          return false;
+        },
+        { method: 'removeContactFromAudience', callTimeoutMs, retry: 'retryable' },
+      );
+      // Round 2 R2-25 — an absent contact is reported as `already_absent`, never
+      // as `detached`: the caller counts detaches into
+      // `resend_contacts_removed_count`, an append-only Art. 30 record shown to a
+      // DPO, and a removal that did not happen is a false statement under
+      // Art. 12(3). (PR #756 review round 2, code-review #6: the `resource_missing`
+      // catch that used to sit here was unreachable, since the classifier gives
+      // that kind only to a 404, which `isProviderGone` already answered.)
+      if (absent) {
+        logger.info({ audienceId }, 'resend.broadcasts.contact_already_absent');
+        return { kind: 'already_absent' };
       }
+      logger.info({ audienceId }, 'resend.broadcasts.contact_detached');
+      return { kind: 'detached' };
     },
 
     async listAudiences({ deadlineAt }: ListAudiencesInput): Promise<ListAudiencesResult> {
