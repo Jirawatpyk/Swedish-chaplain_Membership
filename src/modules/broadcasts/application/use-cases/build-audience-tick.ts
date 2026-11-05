@@ -78,7 +78,7 @@ import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
 import { recordOrphanBestEffort } from './_record-orphaned-resend-id';
 import type { BroadcastOrphansRepo, RecordOrphanInput } from '../ports/broadcast-orphans-repo';
 import { rereadAfterLostRace } from './_reread-after-lost-race';
-import { isHandedStatus, probeRefusedSend } from './_probe-refused-send';
+import { isHandedStatus, probeRefusedSend, probedStatusOf } from './_probe-refused-send';
 import type { BroadcastsRepo, LeaseCheck, LeaseToken, ReleaseOutcome } from '../ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
@@ -982,7 +982,10 @@ async function probeInheritedBroadcast(
     logger.warn({ ...ids, observedResendStatus: 'not_found' }, 'broadcasts.audience_import.inherited_broadcast_send_attempted');
     return { probe: { handed: false, status: null } };
   }
-  const { status, sentAt } = retrieved.resource;
+  // Spec 140 slice 3 — the shared reader (its type names `failed`), so the arms
+  // below stay positive tests.
+  const status = probedStatusOf(retrieved);
+  const { sentAt } = retrieved.resource;
   if (isHandedStatus(status)) {
     logger.warn({ ...ids, observedResendStatus: status }, 'broadcasts.audience_import.inherited_broadcast_already_handed_to_send');
     return { probe: { handed: true, status, sentAt } };

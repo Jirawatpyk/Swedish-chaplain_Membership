@@ -97,7 +97,7 @@ import { resendDashboardName } from '../format/resend-dashboard-name';
 // WE attempt and Resend rejects; a paused cron, a hold or the read-only freeze
 // never spends it, because nothing failed.
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
-import { probeRefusedSend } from './_probe-refused-send';
+import { isHandedStatus, probeRefusedSend, probedStatusOf } from './_probe-refused-send';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
 import { recordOrphanBestEffort } from './_record-orphaned-resend-id';
 import type { BroadcastOrphansRepo } from '../ports/broadcast-orphans-repo';
@@ -711,7 +711,10 @@ export async function dispatchScheduledBroadcast(
       });
     }
     if (probe.kind === 'present') {
-      observedResendStatus = probe.resource.status;
+      // Spec 140 slice 3 — read through the shared reader, whose type names
+      // `failed` (and the once-reader's kinds), so every arm below is a
+      // positive test and the compiler refuses a negative one.
+      const status = probedStatusOf(probe);
       // POSITIVE, and that is the whole lesson of this gate's first version. It
       // was `status !== 'draft'`, a negative test over a provider string that
       // `normaliseStatus` used to close by fabricating `'queued'` -- so
@@ -719,11 +722,8 @@ export async function dispatchScheduledBroadcast(
       // "already sent", the send was SKIPPED, the row still advanced to
       // `sending`, and `reconcile-stuck-sending` later stamped `sent` and burned
       // the member's annual quota for mail that never went out.
-      if (
-        probe.resource.status === 'queued' ||
-        probe.resource.status === 'sending' ||
-        probe.resource.status === 'sent'
-      ) {
+      if (isHandedStatus(status)) {
+        observedResendStatus = status;
         alreadyHandedToSend = true;
         // Carried into Step 4's audit row. `null` for `queued`/`sending` is the
         // honest answer -- "accepted, not yet reported sent" -- and Step 4 must
@@ -734,11 +734,32 @@ export async function dispatchScheduledBroadcast(
             tenantId: deps.tenant.slug,
             broadcastId: input.broadcastId as string,
             resendBroadcastId,
-            observedResendStatus: probe.resource.status,
+            observedResendStatus: status,
           },
           'broadcasts.dispatch.inherited_broadcast_already_handed_to_send',
         );
-      } else if (probe.resource.status === 'unknown') {
+      } else if (status === 'draft' || status === 'cancelled') {
+        // `'draft'` (never sent -- the case this whole gate exists for) and
+        // `'cancelled'`. Both proceed to the send, where a genuine refusal
+        // reaches the permanent / `resource_missing` arms and is reported as
+        // what it is. Logged HERE because the fall-through is a decision, and
+        // the only other signal for `cancelled` is the absence of one.
+        observedResendStatus = status;
+        logger.warn(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            resendBroadcastId,
+            observedResendStatus: status,
+          },
+          'broadcasts.dispatch.inherited_broadcast_send_attempted',
+        );
+      } else {
+        // Every other reading: `unknown`, and any status the reader names that
+        // this gate has not learnt (spec 140 slice 3: `failed`). It was the
+        // trailing arm's job to catch `draft` / `cancelled`, so a newly named
+        // status would have been SENT; now it is refused.
+        //
         // FAIL CLOSED. Re-sending on a status we cannot interpret risks a second
         // delivery to the whole audience, and skipping the send risks recording a
         // dispatch that never happened -- and BOTH directions are unmeasured.
@@ -779,7 +800,7 @@ export async function dispatchScheduledBroadcast(
             // The adapter logs the RAW status on its own line but carries no
             // broadcast id; this line carries the ids but not the raw value.
             // Neither is joinable alone, so name what we mapped it to.
-            observedResendStatus: probe.resource.status,
+            observedResendStatus: status,
             severity: 'critical',
           },
           'broadcasts.dispatch.inherited_resource_unrecognised_status',
@@ -790,21 +811,6 @@ export async function dispatchScheduledBroadcast(
           errClass: 'gate',
           phase: 'inherited_status',
         });
-      } else {
-        // `'draft'` (never sent -- the case this whole gate exists for) and
-        // `'cancelled'`. Both proceed to the send, where a genuine refusal
-        // reaches the permanent / `resource_missing` arms and is reported as
-        // what it is. Logged HERE because the fall-through is a decision, and
-        // the only other signal for `cancelled` is the absence of one.
-        logger.warn(
-          {
-            tenantId: deps.tenant.slug,
-            broadcastId: input.broadcastId as string,
-            resendBroadcastId,
-            observedResendStatus: probe.resource.status,
-          },
-          'broadcasts.dispatch.inherited_broadcast_send_attempted',
-        );
       }
     }
     // `not_found` deliberately falls through: the send 404s into the

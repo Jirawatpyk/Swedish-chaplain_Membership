@@ -3540,11 +3540,12 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     expect(rec.memberEmails).toEqual([]);
   });
 
-  it('re-entry, the probe answers a status this build cannot read → REFUSED: row stays approved, no clock, nothing sent', async () => {
+  // Spec 140 slice 3 — `failed` pinned beside `unknown`: never handed, never sent.
+  it.each(['unknown', 'failed'])('re-entry, the probe answers %s → REFUSED: row stays approved, no clock, nothing sent', async (status) => {
     const { deps, rec } = makeDeps({
       ...TICK2,
       resendBroadcastId: 'rb-0',
-      probe: { kind: 'present', status: 'unknown' },
+      probe: { kind: 'present', status },
       dispatchFirstFailedAt: minutesAgo(120),
     });
 
@@ -4067,6 +4068,8 @@ describe('buildAudienceTick — a refused /send is probed before it is believed'
   it.each([
     ['the probe throws', { probeThrows: true }],
     ['the probe answers a status this build cannot read', { probe: { kind: 'present', status: 'unknown' } }],
+    // Spec 140 slice 3 — a `failed` broadcast was never delivered: not accepted.
+    ['the probe answers failed', { probe: { kind: 'present', status: 'failed' } }],
     ['the probe answers not found', { probe: { kind: 'not_found' } }],
   ] as const)('422 + %s → REFUSED (fail closed): row stays approved, no clock, nobody told', async (_label, extra) => {
     const { deps, rec } = makeDeps({ ...TICK2, throwOn: REFUSED, dispatchFirstFailedAt: new Date(NOW.getTime() - 2 * 3_600_000), ...extra });
