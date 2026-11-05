@@ -1983,7 +1983,7 @@ export default async function AuraAdminPreviewPage({
       halfRun: false,
       userErasedProofs: [{ occurredAt: daysAgo(100), credentialErased: true }],
       taxRedactions: [{ documentKind: 'invoice', occurredAt: daysAgo(100) }],
-      subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 0, contactsFailed: 0 },
+      subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: 'segments' },
     });
     const rows =
       state === 'empty'

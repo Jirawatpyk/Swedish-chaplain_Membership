@@ -99,6 +99,15 @@ export interface SubprocessorOutcomeEvidence {
    */
   readonly contactsAlreadyAbsent: number | null;
   readonly contactsFailed: number;
+  /**
+   * PR #756 review round 1 (pdpa M-1) — the Resend detach wire that wrote these
+   * counts, from the row's `resend_detach_wire`. `'segments'` (spec 140 s4 on):
+   * Resend answered 200 only for a membership that existed, so "already absent"
+   * is its own answer. `null` for a row without the key (the old `/audiences`
+   * wire, which answered 200 to anything) or any other value: the card then
+   * shows the older records' explanation, never the newer one by guess.
+   */
+  readonly detachWire: 'segments' | null;
 }
 
 /** One erased member's full, folded Art.17 evidence — the page's per-member card. */
@@ -315,6 +324,7 @@ function fold(member: ErasedMemberRow, rows: readonly ErasureEvidenceRow[], now:
         // manufactured zero.
         contactsAlreadyAbsent: num(sub.payload, 'resend_contacts_already_absent_count'),
         contactsFailed: num(sub.payload, 'resend_contacts_failed_count') ?? 0,
+        detachWire: str(sub.payload, 'resend_detach_wire') === 'segments' ? 'segments' : null,
       }
     : null;
 
