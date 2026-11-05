@@ -67,7 +67,13 @@ describe('MemberInvoicesTable (T556)', () => {
     render(<MemberInvoicesTable rows={[issued, paid]} labels={labels} canMutate />);
     const grid = screen.getByRole('grid', { name: labels.caption });
     const headers = within(grid).getAllByRole('columnheader').map((h) => h.textContent?.trim());
-    expect(headers.slice(0, 7)).toEqual(['Number', 'Status', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
+    // PR P — the status pill sits under the number in the table, so the card
+    // holds every column at 1280; the card-only Number/Status columns (the
+    // phone card's title and pill) follow and are hidden from the grid by CSS.
+    expect(headers.slice(0, 8)).toEqual(['Number', 'Number', 'Status', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
+    const firstCell = within(grid).getAllByRole('row')[1]!.querySelector('[role=gridcell]')!;
+    expect(firstCell).toHaveTextContent('SC-2026-000123');
+    expect(firstCell.querySelector('.aura-pill, .aura-status-pill, [class*=pill]')).not.toBeNull();
     expect(grid).toHaveTextContent('SC-2026-000123');
     expect(grid).toHaveTextContent('38,520.00 THB');
     // The board prints "Not paid yet" in the Paid column (G-U7P: words, not a dash).
