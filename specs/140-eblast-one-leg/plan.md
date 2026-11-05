@@ -2417,6 +2417,7 @@ Not fixed, with the reason:
 - Evidence card, EN/TH/SV: A and S both show "Detach requests accepted by Resend" (and TH / SV); only S shows the `not_attempted` note; no `MISSING_MESSAGE`. Observation: the card's badge reads "Complete" while the sub-processor outcome is `not_attempted` (the badge follows `member_erased`).
 - Log scan, 208 lines: no address, no `Failed query`, no `params:`. Teardown: seeds, the segment and its contacts deleted by id; `General` only.
 - DT1–DT3 are not drivable without a send; they rest on their cells and the measurements (§ review round 2).
+- **Verify finding fixed (`f5cbb5e22`, UI presentation, D-023):** a complete card whose Resend outcome is `partial`, `failed` or `not_attempted` shows a "Resend action needed" warning badge (EN/TH/SV) beside the status pill and opens; `ok` and `already_propagated` stay quiet and collapsed. The failing run before the code: `erasure-evidence-card.test.tsx` "a complete card whose Resend outcome is partial / failed / not_attempted flags the action and opens" (3 cells), `AssertionError: expected 'Member SCCM-0042Erased 19 Jun 2026, 0…' to contain 'Resend action needed'`. The second finding (the card is collapsed by default) is the intended progressive disclosure and is unchanged, except that these outcomes now open.
 
 #### Slice 3 — test plan rows (R2-G; every mechanism a reviewer asked for, pointing at the test that went red)
 
