@@ -450,11 +450,14 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     expect(row!.pdfDocKind).toBeNull();
   });
 
-  // #732 — with no deep link, the event is found by typing its name (the
-  // server search), not only from the newest 200 the page preloads.
+  // #732 — with no deep link, the event is found by typing its name and
+  // picked. Whether the typed text also reaches the server search depends on
+  // how many events the tenant has (only a full preload of 200 asks it), so
+  // that branch is covered by the unit tests and the relay's by-hand check.
   test('no deep link: typing the event name finds it, and picking it lists its attendees', async ({
     page,
   }) => {
+    await signInAsAdmin(page);
     await page.goto('/admin/invoices/new');
     const eventFee = page.getByRole('radio', { name: /Event fee/ });
     await eventFee.waitFor({ state: 'visible', timeout: 60_000 });
