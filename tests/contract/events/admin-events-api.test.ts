@@ -630,6 +630,44 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
     expect(res.status).toBe(400);
   });
 
+  // ---- #732 — name search for the invoice event picker ----
+  const EMPTY_LIST = {
+    ok: true as const,
+    value: {
+      items: [],
+      pagination: { page: 1, pageSize: 25, totalCount: 0 },
+      emptyStateContext: { integrationConfigured: true, everReceivedDelivery: true, totalArchived: 0 },
+    },
+  };
+
+  it('#732 — q is trimmed and passed as searchQuery', async () => {
+    listEventsMock.mockResolvedValueOnce(EMPTY_LIST);
+    const { GET } = await loadListRoute();
+    const res = await GET(buildListRequest({ q: '  Midsummer gala  ' }));
+    expect(res.status).toBe(200);
+    expect(listEventsMock).toHaveBeenCalledWith(
+      TENANT_SLUG,
+      expect.objectContaining({ searchQuery: 'Midsummer gala' }),
+    );
+  });
+
+  it('#732 — a whitespace-only or absent q sends no searchQuery', async () => {
+    listEventsMock.mockResolvedValueOnce(EMPTY_LIST).mockResolvedValueOnce(EMPTY_LIST);
+    const { GET } = await loadListRoute();
+    expect((await GET(buildListRequest({ q: '   ' }))).status).toBe(200);
+    expect((await GET(buildListRequest())).status).toBe(200);
+    for (const call of listEventsMock.mock.calls) {
+      expect(call[1]).not.toHaveProperty('searchQuery');
+    }
+  });
+
+  it('#732 — a q longer than 100 characters → 400', async () => {
+    const { GET } = await loadListRoute();
+    const res = await GET(buildListRequest({ q: 'x'.repeat(101) }));
+    expect(res.status).toBe(400);
+    expect(listEventsMock).not.toHaveBeenCalled();
+  });
+
   // ---- T10 — emptyStateContext always emitted even on populated list ----
   it('T10 — populated list still emits emptyStateContext', async () => {
     listEventsMock.mockResolvedValueOnce({
