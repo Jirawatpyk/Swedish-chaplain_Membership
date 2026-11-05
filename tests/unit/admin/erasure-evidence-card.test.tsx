@@ -47,7 +47,7 @@ describe('EvidenceCard', () => {
     'a complete card whose Resend outcome is %s flags the action and opens',
     (resendOutcome) => {
       const { container } = renderCard(
-        baseRow({ subprocessorOutcome: { resendOutcome, contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+        baseRow({ subprocessorOutcome: { resendOutcome, contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: null } }),
       );
       const summary = container.querySelector('details[data-evidence] > summary')!;
       expect(summary.textContent).toContain('Action needed in Resend');
@@ -62,7 +62,7 @@ describe('EvidenceCard', () => {
 
   it.each(['ok', 'already_propagated'] as const)('a complete card whose Resend outcome is %s stays quiet and collapsed', (resendOutcome) => {
     const { container } = renderCard(
-      baseRow({ subprocessorOutcome: { resendOutcome, contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+      baseRow({ subprocessorOutcome: { resendOutcome, contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: null } }),
     );
     expect(container.querySelector('details[data-evidence] > summary')!.textContent).not.toContain('Action needed in Resend');
     expect(container.querySelector('details[data-evidence]')!.hasAttribute('open')).toBe(false);
@@ -86,10 +86,31 @@ describe('EvidenceCard', () => {
   // addresses that were already absent.
   it('labels the detach figure as requests Resend accepted, and notes it may include absent addresses', () => {
     renderCard(
-      baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 2, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+      baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 2, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: null } }),
     );
     expect(screen.getByText('Detach requests accepted by Resend')).toBeInTheDocument();
     expect(screen.getByText(/may include addresses that were already absent/i)).toBeInTheDocument();
+  });
+
+  // PR #756 review round 1 (pdpa M-1) — the counts note follows the wire that
+  // wrote the record: a segment-wire row (`detachWire: 'segments'`) says what its
+  // figures are; an older row keeps the old note, now marked as the older
+  // records' note. Rendered fresh per case.
+  it('a segment-wire record shows the Segments counts note, not the note for older records', () => {
+    renderCard(
+      baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 1, contactsFailed: 0, detachWire: 'segments' } }),
+    );
+    expect(screen.getByText(/counts memberships Resend confirmed it removed/i)).toBeInTheDocument();
+    expect(screen.getByText(/no membership in that segment for the address in lowercase/i)).toBeInTheDocument();
+    expect(screen.queryByText(/may include addresses that were already absent/i)).toBeNull();
+  });
+
+  it('a record without the wire marker shows the note for older records, marked as such', () => {
+    renderCard(
+      baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: null } }),
+    );
+    expect(screen.getByText(/^For records written before the Segments detach: /)).toBeInTheDocument();
+    expect(screen.queryByText(/counts memberships Resend confirmed it removed/i)).toBeNull();
   });
 
   // Spec 140 s3 review round 2 (R2-A) — a `not_attempted` row is a re-drive that
@@ -98,12 +119,12 @@ describe('EvidenceCard', () => {
   it('explains a not_attempted outcome and sends the DPO to Resend; an ok outcome has no such note', () => {
     const note = /not attempted: the member's addresses were already scrubbed/i;
     renderCard(
-      baseRow({ subprocessorOutcome: { resendOutcome: 'not_attempted', contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+      baseRow({ subprocessorOutcome: { resendOutcome: 'not_attempted', contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: null } }),
     );
     expect(screen.getByText(note)).toBeInTheDocument();
     cleanup();
     renderCard(
-      baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+      baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: null } }),
     );
     expect(screen.queryByText(note)).toBeNull();
   });

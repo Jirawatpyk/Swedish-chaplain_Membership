@@ -255,8 +255,16 @@ export function EvidenceCard({
                 (`only-dlitems` — a <dl> may directly contain only dt/dd groups,
                 div, script, template). It is the same note, one element out.
               */}
+              {/*
+                PR #756 review round 1 (pdpa M-1) — the note follows the wire that
+                wrote the record. A segment-wire row (`detachWire: 'segments'`, spec
+                140 s4 on) has figures Resend confirmed; an older row keeps the old
+                note, which says it is for records before the Segments detach.
+              */}
               <p className="text-xs text-[var(--aura-fg-secondary)]">
-                {t('fields.countsNote')}
+                {row.subprocessorOutcome.detachWire === 'segments'
+                  ? t('fields.countsNoteSegments')
+                  : t('fields.countsNote')}
               </p>
               {/*
                 Spec 140 s3 review round 2 (R2-A) — `not_attempted` is a re-drive
