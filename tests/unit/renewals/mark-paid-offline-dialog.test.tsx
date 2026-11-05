@@ -210,4 +210,54 @@ describe('MarkPaidOfflineDialog on AURA', () => {
     // A fixed per-cycle id, so a repeat replaces the toast instead of stacking.
     expect(opts.id).toContain(CYCLE_ID);
   });
+
+  // #74 — a coverage overlap whose covering bill could not be looked up (or a
+  // bill-exists with no id) has nothing to link: its copy must not promise a
+  // link, and the stale dialog closes, since a retry can never pass.
+  it.each([
+    {
+      code: 'membership_coverage_overlap',
+      title: M.error.membership_coverage_overlapTitle,
+      detail: M.error.membership_coverage_overlap,
+    },
+    {
+      code: 'membership_bill_already_exists',
+      title: M.error.membership_bill_already_existsTitle,
+      detail: M.error.membership_bill_already_exists,
+    },
+  ])('#74 an unlinked $code toasts its title, no action, and closes the dialog', async (c) => {
+    toastError.mockClear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: { code: c.code } }),
+      }),
+    );
+    const onOpenChange = vi.fn();
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MarkPaidOfflineDialog cycleId={CYCLE_ID} open onOpenChange={onOpenChange} />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: M.paymentReferenceLabel }), {
+      target: { value: 'KBANK-1' },
+    });
+    typeDate(M.paymentDateLabel, '2026-09-24');
+    const confirm = screen.getByRole('button', { name: M.confirm });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    const [message, opts] = toastError.mock.calls[0] as [
+      string,
+      { id?: string; description?: string; action?: unknown } | undefined,
+    ];
+    expect(message).toBe(c.title);
+    expect(opts?.description).toBe(c.detail);
+    expect(opts?.action).toBeUndefined();
+    expect(opts?.id).toContain(CYCLE_ID);
+    expect(c.detail).not.toMatch(/open that invoice/i);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
 });
