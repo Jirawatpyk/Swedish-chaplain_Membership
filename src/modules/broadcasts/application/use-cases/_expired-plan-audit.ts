@@ -8,8 +8,8 @@
  * still held the lower tier". Forensic only: never throws, never blocks the
  * dispatch result.
  *
- * Extracted from `dispatch-scheduled-broadcast.ts` in 108 Phase 9. The import
- * path could not perform this check at all — `BuildAudienceTickDeps` declared no
+ * Extracted from the legacy dispatch use case in 108 Phase 9 (that leg was
+ * deleted in spec 140 s4). The import path could not perform this check at all — `BuildAudienceTickDeps` declared no
  * `plansBridge`, so it was unrepresentable rather than merely omitted, which is
  * why no diff of the two paths revealed it. Sharing the function rather than
  * copying it is the point: two implementations of one forensic rule drift, and a

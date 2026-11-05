@@ -1,16 +1,15 @@
 /**
  * FR-021 / AS2 — tell the member their broadcast did not go out.
  *
- * Extracted from `dispatch-scheduled-broadcast.ts` in 108 Phase 9. It lived
- * inside that 1,200-line module and required its whole `Deps`, which is why
+ * Extracted from the legacy dispatch use case in 108 Phase 9 (that leg was
+ * deleted in spec 140 s4). It lived inside that 1,200-line module and required its whole `Deps`, which is why
  * `buildAudienceTick` could not call it and shipped with NO member
  * notification: a member whose broadcast died learned nothing, while
  * `docs/runbooks/broadcast-audience-build.md` § C.4 stated they were told.
  *
- * Moved rather than imported across because `build-audience-tick.ts` exists on
- * the premise that neither dispatch path knows the other is there. A shared
- * helper in its own file keeps that true; importing the legacy use case would
- * not.
+ * Moved rather than imported across because `build-audience-tick.ts` existed on
+ * the premise that neither dispatch path knew the other was there. A shared
+ * helper in its own file kept that true while both legs lived.
  */
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
@@ -37,11 +36,10 @@ import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 /**
  * Exactly what the FR-021 / AS2 notification needs — no more.
  *
- * It used to require the whole `DispatchScheduledBroadcastDeps`, which is why
+ * It used to require the legacy dispatch use case's whole `Deps`, which is why
  * `buildAudienceTick` could not call it and shipped with no member notification
  * at all: a member whose broadcast died had no way to learn that, and the
- * runbook claimed otherwise. `DispatchScheduledBroadcastDeps` still satisfies
- * this structurally, so the legacy caller is unchanged.
+ * runbook claimed otherwise.
  *
  * The review's sharpest finding was the mirror image of this — a port narrowed
  * to "what this use case reads" silently discarded a field a previous round had
@@ -66,7 +64,7 @@ export async function enqueueDispatchFailureNotification(args: {
    * Spec 140 s3 review round 1 (R1-E) — set only by the import leg's DT2 hold
    * arm (`'held'`: the membership is suspended), so the email's quota line says
    * a new E-Blast can be submitted once it is active again. Carried in
-   * `context_data`; the legacy leg never sets it.
+   * `context_data`; the legacy leg (deleted in spec 140 s4) never set it.
    */
   readonly memberStanding?: 'held';
 }): Promise<void> {

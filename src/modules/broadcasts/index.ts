@@ -243,14 +243,8 @@ export {
   type BuildAudienceTickError,
   type BuildAudienceTickOutput,
 } from './application/use-cases/build-audience-tick';
-export {
-  dispatchScheduledBroadcast,
-  type DispatchScheduledBroadcastError,
-  type DispatchScheduledBroadcastInput,
-  type DispatchScheduledBroadcastOutput,
-} from './application/use-cases/dispatch-scheduled-broadcast';
-// Moved out of `dispatch-scheduled-broadcast` in 108 Phase 9 so BOTH dispatch
-// paths can send the FR-021 notification. The import path had none.
+// The FR-021 dispatch-failure notification (moved out of the legacy dispatch use
+// case in 108 Phase 9; that leg was deleted in spec 140 s4).
 export {
   enqueueDispatchFailureNotification,
   type DispatchFailureNotificationDeps,
@@ -338,7 +332,6 @@ export {
   makeCancelBroadcastDeps,
   makeProxySubmitBroadcastDeps,
   makeClearHaltDeps,
-  makeDispatchScheduledBroadcastDeps,
   makeBuildAudienceTickDeps,
   makePruneExpiredDraftsDeps,
   makeSweepExpiredBroadcastsDeps,
@@ -352,7 +345,6 @@ export {
 } from './infrastructure/broadcasts-deps';
 export {
   isF71aUs1Enabled,
-  isF7ImportAudienceEnabled,
   f71aUs1DisabledReason,
   type F71aUs1DisabledReason,
   isF71aUs7Enabled,

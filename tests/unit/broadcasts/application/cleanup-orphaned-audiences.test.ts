@@ -152,7 +152,6 @@ function makeGateway(opts: {
 
   const port: BroadcastsGatewayPort = {
     async createAudience() { throw new Error('not used'); },
-    async addContactsToAudience() { throw new Error('not used'); },
     // T086 — unused by this fixture; present so the stub still satisfies BroadcastsGatewayPort.
     async createContactImport() { throw new Error('not used'); },
     async getContactImport() { throw new Error('not used'); },
@@ -162,7 +161,6 @@ function makeGateway(opts: {
     async getAudienceContactCount() { return { count: 0, complete: false }; },
     async removeContactFromAudience() {
       return { kind: 'detached' as const }; throw new Error('not used'); },
-    async deleteContactGlobally() { throw new Error('not used'); },
     async deleteAudience(audienceId) {
       deleteCalls.push(audienceId);
       const err = opts.throws?.[audienceId];
@@ -304,7 +302,6 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
 
     const gateway: BroadcastsGatewayPort = {
       async createAudience() { throw new Error('not used'); },
-      async addContactsToAudience() { throw new Error('not used'); },
       // T086 — unused by this fixture; present so the stub still satisfies BroadcastsGatewayPort.
       async createContactImport() { throw new Error('not used'); },
       async getContactImport() { throw new Error('not used'); },
@@ -314,7 +311,6 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
       async getAudienceContactCount() { return { count: 0, complete: false }; },
       async removeContactFromAudience() {
       return { kind: 'detached' as const }; throw new Error('not used'); },
-      async deleteContactGlobally() { throw new Error('not used'); },
       async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
       async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
       async deleteBroadcast() { throw new Error('not used'); },

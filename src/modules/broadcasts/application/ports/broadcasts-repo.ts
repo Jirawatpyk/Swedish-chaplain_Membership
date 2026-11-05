@@ -522,9 +522,9 @@ export interface BroadcastsRepo {
    * Persist the `resend_audience_id` column ALONE, without changing
    * `resend_broadcast_id` or status. Called immediately after
    * `gateway.createAudience` succeeds during dispatch so a subsequent
-   * retry (after a partial failure on `addContactsToAudience` or
-   * `createBroadcast`) can REUSE the existing Resend audience instead
-   * of creating an orphan one.
+   * tick (after a failure on `createContactImport` or the attach that
+   * follows it) finds the audience on the row and tears it down rather
+   * than leaving an orphan one (`build-audience-tick.ts`, stale_audience).
    *
    * Idempotent on the SAME value: a retried tick that already attached this
    * audience writes it again harmlessly.

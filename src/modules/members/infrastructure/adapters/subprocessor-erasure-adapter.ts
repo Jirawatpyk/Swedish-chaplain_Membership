@@ -82,8 +82,8 @@ export const subprocessorErasureAdapter: SubprocessorErasurePort = {
     // afterwards the audience-scoped read 404s while an audience-less
     // `GET /contacts/{email}` still returns the contact at 200. An
     // audience-less `DELETE /contacts/{email}` was measured in the same run to
-    // delete for real — so the capability exists (`deleteContactGlobally`) and
-    // is deliberately NOT called here.
+    // delete for real, and is deliberately NOT called here: spec 140 s4 removed
+    // the port method that made that call.
     //
     // Why not: the Resend account is ONE account shared by every tenant (a
     // single API key), so two tenants whose members share an address share ONE

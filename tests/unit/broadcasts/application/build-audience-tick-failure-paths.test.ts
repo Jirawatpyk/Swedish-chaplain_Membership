@@ -3,8 +3,9 @@
  *
  * `build-audience-tick.test.ts` next door covers the completion rule. This file
  * covers what happens when something goes wrong, because the review found that
- * `buildAudienceTick` had been written as a clean sibling of
- * `dispatchScheduledBroadcast` and had dropped four things the older path
+ * `buildAudienceTick` had been written as a clean sibling of the legacy
+ * dispatch use case (deleted in spec 140 s4) and had dropped four things the
+ * older path
  * accumulated over five review rounds: the terminal transition on a resolver
  * refusal, the FR-021 member notification, the `failureReason` write, and any
  * `catch` at all around the gateway.
@@ -470,8 +471,8 @@ function makeDeps(opts: {
     if (opts.resolveFails === 'empty') {
       // Round 3 finding 3-2 — the kind the RESOLVER actually returns
       // (`resolve-segment-recipients.ts:422`). This stub said
-      // `broadcast_audience_post_suppression_empty`, which only
-      // `dispatchScheduledBroadcast` produces, as its OUTPUT. So every "empty
+      // `broadcast_audience_post_suppression_empty`, which only the legacy
+      // dispatch use case produced, as its OUTPUT. So every "empty
       // audience" case in this file exercised dead code and passed green while
       // the real kind fell through to `dispatch.server_error`.
       return err({
@@ -1248,8 +1249,8 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
    * createdAt`, not from the first failure, so an `approved` row already an hour
    * past its epoch — a paused cron, a late approval, a flag enabled
    * retroactively — died on its FIRST transient DB error, never having been
-   * retried once. It also forked the legs: `dispatchScheduledBroadcast` does not
-   * budget resolve failures, so a flag flip changed whether the same fault was
+   * retried once. It also forked the legs: the legacy leg did not budget
+   * resolve failures, so a flag flip changed whether the same fault was
    * terminal.
    *
    * So the resolve-side budget is gone and this case now pins the behaviour that

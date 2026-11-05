@@ -124,8 +124,8 @@ export function recipientSegmentFromPersisted(row: {
  * the same DU shape as `RecipientSegment` rather than `Record<string,
  * unknown>`. This catches mis-typed param keys at compile time and
  * removes the `as { tierCodes?: string[] } | null` casts that were
- * appearing in `dispatch-scheduled-broadcast.ts buildSegmentFromBroadcast`
- * and `Broadcast.segmentParams` consumers.
+ * appearing in the legacy dispatch use case's `buildSegmentFromBroadcast`
+ * (deleted in spec 140 s4) and `Broadcast.segmentParams` consumers.
  *
  * Why a separate type rather than reusing `RecipientSegment` directly:
  * the persisted definition row has no `kind` discriminant column —

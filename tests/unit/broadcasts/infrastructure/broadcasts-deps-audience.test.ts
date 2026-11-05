@@ -91,8 +91,7 @@ vi.mock(
   },
 );
 
-// `makeDispatchScheduledBroadcastDeps` and `makeBuildAudienceTickDeps` read
-// the tenant display name from the DB; the name is not what this file pins.
+// `makeBuildAudienceTickDeps` reads the tenant display name from the DB; the name is not what this file pins.
 vi.mock('@/lib/broadcasts-route-helpers', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/broadcasts-route-helpers')>();
   return { ...actual, resolveTenantDisplayName: async () => 'SweCham (fixture)' };
@@ -126,8 +125,6 @@ const BASE_ENV: Record<string, string> = {
 
 type Env = {
   readonly contactMarketing: 'true' | 'false' | undefined;
-  /** Still read by the legacy leg until row 3 deletes it; flipped to prove the ceiling ignores it. */
-  readonly importAudience: 'true' | 'false';
   readonly ceiling: string | undefined;
 };
 
@@ -140,7 +137,6 @@ function stubEnv(e: Env): void {
   // The F7 master flag stays ON — the kill switch is not what this file pins.
   vi.stubEnv('FEATURE_F7_BROADCASTS', 'true');
   vi.stubEnv('FEATURE_F71A_BROADCAST_ADVANCED', 'true');
-  vi.stubEnv('FEATURE_F7_IMPORT_AUDIENCE', e.importAudience);
 }
 
 async function loadDeps() {
@@ -182,26 +178,20 @@ describe('broadcasts-deps — audience mode from FEATURE_CONTACT_MARKETING_RECIP
     ['false', 'primary_only'],
     ['true', 'all_contacts'],
   ])('FEATURE_CONTACT_MARKETING_RECIPIENTS=%s → mode %s', async (contactMarketing, mode) => {
-    stubEnv({ contactMarketing, importAudience: 'false', ceiling: undefined });
+    stubEnv({ contactMarketing, ceiling: undefined });
     const deps = await loadDeps();
     expect(deps.currentAudienceMode()).toBe(mode);
   });
 });
 
 describe('broadcasts-deps — the ceiling is BROADCAST_AUDIENCE_CEILING (spec 140 s4, DR3)', () => {
-  // Both retired ceiling inputs are flipped: the 1:N flag (which keeps its
-  // recipient-scope role) and the import flag (deleted in row 3). Neither moves
-  // the number any more.
-  it.each<[Env['contactMarketing'], Env['importAudience']]>([
-    [undefined, 'false'],
-    ['false', 'false'],
-    ['true', 'false'],
-    ['false', 'true'],
-    ['true', 'true'],
-  ])(
-    'the ceiling is BROADCAST_AUDIENCE_CEILING, default 900, independent of FEATURE_CONTACT_MARKETING_RECIPIENTS (%s) and the import flag (%s)',
-    async (contactMarketing, importAudience) => {
-      stubEnv({ contactMarketing, importAudience, ceiling: undefined });
+  // The retired ceiling input is flipped: the 1:N flag keeps its
+  // recipient-scope role and no longer moves the number. (The import flag, the
+  // other retired input, was deleted in spec 140 s4.)
+  it.each<[Env['contactMarketing']]>([[undefined], ['false'], ['true']])(
+    'the ceiling is BROADCAST_AUDIENCE_CEILING, default 900, independent of FEATURE_CONTACT_MARKETING_RECIPIENTS (%s)',
+    async (contactMarketing) => {
+      stubEnv({ contactMarketing, ceiling: undefined });
       const deps = await loadDeps();
       expect(deps.currentAudienceCeiling()).toBe(900);
       expect(deps.makeResolveSegmentDeps('swecham').audienceCeiling).toBe(900);
@@ -209,7 +199,7 @@ describe('broadcasts-deps — the ceiling is BROADCAST_AUDIENCE_CEILING (spec 14
   );
 
   it('an env value of N is the ceiling for count, submit and dispatch', async () => {
-    stubEnv({ contactMarketing: 'false', importAudience: 'false', ceiling: '3' });
+    stubEnv({ contactMarketing: 'false', ceiling: '3' });
     const deps = await loadDeps();
     expect(deps.currentAudienceCeiling()).toBe(3);
     // Count and submit expose the number they compare against.
@@ -234,7 +224,7 @@ describe('broadcasts-deps — the ceiling is BROADCAST_AUDIENCE_CEILING (spec 14
   });
 
   it('SC-004 — the count, submit and dispatch deps carry the SAME mode and ceiling under one env', async () => {
-    stubEnv({ contactMarketing: 'true', importAudience: 'true', ceiling: undefined });
+    stubEnv({ contactMarketing: 'true', ceiling: undefined });
     const deps = await loadDeps();
     const count = deps.makeResolveSegmentDeps('swecham');
     const submit = deps.makeSubmitBroadcastDeps('swecham', makeFakeMarketingDirectory([]));
@@ -249,12 +239,12 @@ describe('broadcasts-deps — the ceiling is BROADCAST_AUDIENCE_CEILING (spec 14
   // of its own: a fresh env parse yields a fresh answer. `env` memoises, so a
   // change lands on the next cold start.
   it('broadcasts-deps holds no copy of the env: a fresh parse yields a fresh mode and ceiling', async () => {
-    stubEnv({ contactMarketing: 'false', importAudience: 'false', ceiling: undefined });
+    stubEnv({ contactMarketing: 'false', ceiling: undefined });
     const deps = await loadDeps();
     expect(deps.currentAudienceMode()).toBe('primary_only');
     expect(deps.currentAudienceCeiling()).toBe(900);
     vi.resetModules();
-    stubEnv({ contactMarketing: 'true', importAudience: 'false', ceiling: '1200' });
+    stubEnv({ contactMarketing: 'true', ceiling: '1200' });
     const fresh = await loadDeps();
     expect(fresh.currentAudienceMode()).toBe('all_contacts');
     expect(fresh.currentAudienceCeiling()).toBe(1200);
@@ -266,7 +256,7 @@ describe('broadcasts-deps — the ceiling is BROADCAST_AUDIENCE_CEILING (spec 14
 // see it: the route hands the maker no bridge).
 describe('broadcasts-deps — the import maker builds its own tick memo (spec 140 s4)', () => {
   it('the resolver, membersBridge and sendStanding read one memo; haltReadFresh stays the raw bridge', async () => {
-    stubEnv({ contactMarketing: 'false', importAudience: 'false', ceiling: undefined });
+    stubEnv({ contactMarketing: 'false', ceiling: undefined });
     const deps = await loadDeps();
     const { membersBridge: raw } = await import('@/modules/broadcasts/infrastructure/members-bridge');
     const tick = await deps.makeBuildAudienceTickDeps('swecham', TICK);
@@ -292,16 +282,14 @@ describe('broadcasts-deps — the import maker builds its own tick memo (spec 14
   });
 });
 
-// Spec 140 s2a review round 2, CR#2 (maintainer decision, 1 Nov 2026): only the
-// legacy dispatch leg gets the gateway instance whose createBroadcast retries a
-// 5xx; the import leg keeps the default one-attempt instance.
-describe('broadcasts-deps — the legacy gateway instance (spec 140 s2a)', () => {
-  it('makeDispatchScheduledBroadcastDeps wires the legacy instance', async () => {
-    stubEnv({ contactMarketing: 'false', importAudience: 'false', ceiling: undefined });
+// Spec 140 s2a review round 2, CR#2 (maintainer decision, 1 Nov 2026): the
+// dispatch tick keeps the default one-attempt gateway instance. (The legacy
+// leg's retrying instance was deleted with that leg in spec 140 s4.)
+describe('broadcasts-deps — the dispatch tick\'s gateway instance (spec 140 s2a)', () => {
+  it('makeBuildAudienceTickDeps wires the default instance', async () => {
+    stubEnv({ contactMarketing: 'false', ceiling: undefined });
     const deps = await loadDeps();
     const gateway = await import('@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway');
-    const dispatch = await deps.makeDispatchScheduledBroadcastDeps('swecham');
-    expect(dispatch.broadcastsGateway).toBe(gateway.legacyResendBroadcastsGateway);
     const importLeg = await deps.makeBuildAudienceTickDeps('swecham', TICK);
     expect(importLeg.broadcastsGateway).toBe(gateway.resendBroadcastsGateway);
   });

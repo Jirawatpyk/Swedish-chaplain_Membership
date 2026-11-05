@@ -2,8 +2,8 @@
  * T104 — Resend Broadcasts gateway adapter (F7 US2).
  *
  * Concrete `BroadcastsGatewayPort` impl wrapping Resend SDK Broadcasts
- * surface (`audiences.create`, `contacts.create`, `broadcasts.create`,
- * `broadcasts.send`, `broadcasts.get`).
+ * surface (`audiences.create`, the Contacts-Import endpoint,
+ * `broadcasts.create`, `broadcasts.send`, `broadcasts.get`).
  *
  * Error classification (thrown shapes per port docstring):
  *   - 5xx / network / timeout → `{kind: 'retryable', reason}`
@@ -14,13 +14,12 @@
  * Retry policy: 1/2/4/8/16s backoff (CHK020) on retryable errors only, inside
  * ONE budget per request (`callTimeoutMs`, default `RESEND_CALL_TIMEOUT_MS` =
  * 10 s; spec 140 s2a): a backoff is taken only while the budget left exceeds
- * it + 1 s, so a retried call gives up within 10 s, not ~31 s. On the
- * default instance the creates (`createAudience`, `createBroadcast`,
- * `createContactImport`) make ONE attempt unless Resend answered 429 (it
- * created nothing); `createContactImport`'s budget is `IMPORT_CALL_TIMEOUT_MS`
- * (30 s). The legacy instance (`legacyResendBroadcastsGateway`, the legacy
- * dispatch leg only, until slice 4) retries `createBroadcast` on any retryable
- * error inside the budget. Permanent errors throw immediately.
+ * it + 1 s, so a retried call gives up within 10 s, not ~31 s. The creates
+ * (`createAudience`, `createBroadcast`, `createContactImport`) make ONE
+ * attempt unless Resend answered 429 (it created nothing);
+ * `createContactImport`'s budget is `IMPORT_CALL_TIMEOUT_MS` (30 s). Spec 140
+ * s4 deleted the legacy instance whose `createBroadcast` retried any retryable
+ * error. Permanent errors throw immediately.
  *
  * Logging: pino with `redact` configured globally to drop request
  * bodies; only metadata (audienceId, broadcastId, recipientCount,
@@ -37,7 +36,6 @@ import {
   oneCallFitsBefore,
 } from '../../application/ports/broadcasts-gateway-port';
 import type {
-  AudienceContact,
   AudienceContactCount,
   BroadcastsGatewayPort,
   CreateBroadcastInput,
@@ -325,14 +323,13 @@ function isRateLimited(e: unknown): boolean {
  * `statusCode: null`, and a raw `fetch` rejects with a `TimeoutError`, before
  * or mid-body.
  *
- * `retry: 'rate_limit'` (the creates, on the default instance) retries a 429
- * only: Resend refused the request for its rate and created nothing. Anything
- * else that may have reached Resend (a 5xx, a network failure, a timeout) is
- * one attempt, because a retried create that reached Resend mints a second
- * resource; a failed create waits for the next tick, inside the FR-021 hour
- * (review round 1, CR#1). `retry: 'retryable'` retries every retryable error;
- * the legacy instance uses it for `createBroadcast` (review round 2, CR#2,
- * until slice 4). A timeout is never retried: the signal is spent.
+ * `retry: 'rate_limit'` (the creates) retries a 429 only: Resend refused the
+ * request for its rate and created nothing. Anything else that may have
+ * reached Resend (a 5xx, a network failure, a timeout) is one attempt, because
+ * a retried create that reached Resend mints a second resource; a failed
+ * create waits for the next tick, inside the FR-021 hour (review round 1,
+ * CR#1). `retry: 'retryable'` retries every retryable error (the reads, the
+ * deletes and `/send`). A timeout is never retried: the signal is spent.
  */
 async function boundedCall<T>(
   op: (signal: AbortSignal) => Promise<T>,
@@ -409,11 +406,9 @@ export interface ResendBroadcastsGatewayOptions {
   /**
    * The budget of one request, its retries and backoff included. Default
    * {@link RESEND_CALL_TIMEOUT_MS}; tests pass 50 ms. A port call that makes
-   * several requests (`addContactsToAudience` per contact, `listAudiences` per
-   * page) has this budget PER REQUEST, so it can run N x C. The per-invocation
-   * budgets: the import leg's tick (spec 140 slice 2b) and `listAudiences`'
-   * caller `deadlineAt` (slice 3, DT5); `addContactsToAudience` is legacy-only
-   * and goes with that leg in slice 4.
+   * several requests (`listAudiences`, per page) has this budget PER REQUEST,
+   * so it can run N x C. The per-invocation budgets: the import leg's tick
+   * (spec 140 slice 2b) and `listAudiences`' caller `deadlineAt` (slice 3, DT5).
    */
   readonly callTimeoutMs?: number;
   /**
@@ -421,21 +416,12 @@ export interface ResendBroadcastsGatewayOptions {
    * (one attempt, a 429 aside). Default {@link IMPORT_CALL_TIMEOUT_MS}.
    */
   readonly importCallTimeoutMs?: number;
-  /**
-   * Spec 140 s2a review round 2 (CR#2, the maintainer's decision, 1 Nov 2026)
-   * — `createBroadcast`'s retry. Default `'rate_limit'`: one attempt, a 429
-   * retried. `'retryable'` (only {@link legacyResendBroadcastsGateway}) also
-   * retries a 5xx or a network failure inside the budget, as the legacy leg
-   * did before s2a.
-   */
-  readonly createBroadcastRetry?: 'retryable' | 'rate_limit';
 }
 
 /** Spec 140 s2a — a gateway whose every request is bounded by `callTimeoutMs`. */
 export function createResendBroadcastsGateway({
   callTimeoutMs = RESEND_CALL_TIMEOUT_MS,
   importCallTimeoutMs = IMPORT_CALL_TIMEOUT_MS,
-  createBroadcastRetry = 'rate_limit',
 }: ResendBroadcastsGatewayOptions = {}): BroadcastsGatewayPort {
   return {
     async createAudience(name: string): Promise<{ readonly audienceId: string }> {
@@ -455,85 +441,6 @@ export function createResendBroadcastsGateway({
           return { audienceId: result.data.id };
         },
         { method: 'createAudience', callTimeoutMs, retry: 'rate_limit' },
-      );
-    },
-
-    async addContactsToAudience(
-      audienceId: string,
-      contacts: ReadonlyArray<AudienceContact>,
-    ): Promise<void> {
-      if (contacts.length === 0) return;
-      assertNonEmpty({ audienceId });
-
-      // The Resend Contacts API is one-at-a-time (no bulk endpoint). The
-      // account limit is 10 req/s, NOT the 2 this comment used to claim
-      // (measured 2026-09-08, T095: `ratelimit-policy: 10;w=1` straight from
-      // the API's headers). But this loop is serial, so it can only reach
-      // `min(10, 1/RTT)` and the warm round trip is ~0.29 s — i.e. ~3.4 req/s,
-      // latency-bound. Two consequences worth knowing before you tune anything
-      // here: one tick drains ~1,000 contacts, not the ~3,000 the documented
-      // limit suggests; and on the `dispatch-scheduled` path the 429 backoff
-      // below never fires, because one serial loop at 3.45 req/s never
-      // approaches 10.
-      //
-      // That second point is path-specific — corrected 2026-09-08 after review.
-      // `dispatch-batches` drives this same method through
-      // `batch-dispatcher.ts`, which keeps up to `concurrencyCap` batches in
-      // flight (default 4). Four serial loops are ~13.8 req/s against a 10 req/s
-      // policy, so on THAT path 429s are expected and the backoff is load-bearing.
-      // Do not tune it away on the strength of the serial-path reasoning.
-      // See `specs/108-contact-recipient-rules/research.md` § R9 (T095 block).
-      //
-      // Wrap EACH single create in its own
-      // boundedCall (its own 10 s budget; spec 140 s2a) so that when Resend answers 429 (now classified retryable —
-      // see classifyResendError), the 1/2/4/8/16s backoff self-throttles just
-      // that ONE contact and retries it, WITHOUT re-creating the contacts that
-      // already succeeded. Previously the retry wrapped a whole 100-contact
-      // batch, so a mid-batch 429 re-ran the entire batch (duplicate creates)
-      // AND — before 429 was retryable — killed the broadcast outright
-      // (BUG-028).
-      //
-      // We deliberately do NOT add a fixed per-contact sleep: a blanket delay
-      // across a list bounded only by `audienceCeiling()` (5,000, or 50,000 once
-      // the 108 flag and batching are both on — `domain/audience-ceiling.ts`;
-      // the `AUDIENCE_HARD_CAP` this comment used to name was deleted by 108
-      // T085) would burn the whole dispatch-function time budget on sleeping and
-      // time the invocation out before it finishes. Reactive backoff only pays
-      // the cost when the limit is actually hit. Reliable delivery of very large
-      // audiences within a single invocation is what `createContactImport` below
-      // solves — one multipart upload instead of N requests — so this loop is the
-      // legacy path only, reached when `FEATURE_F7_IMPORT_AUDIENCE` is off. Its
-      // capacity is the reason `currentAudienceCeiling()` clamps in that state:
-      // measured 2.08 req/s ⇒ ~623 per 300 s tick ⇒ a 500 accept bound. Anything
-      // above that used to be accepted and never delivered.
-      for (const c of contacts) {
-        await boundedCall(
-          async (signal) => {
-            const sdk = client();
-            const result = (await sdk.contacts.create({
-              // Spec 140 s3 review round 1 (R1-A) — lowercased, as the import
-              // CSV is: Resend matches contacts case-sensitively and the erasure
-              // detach sends lowercase (`EmailLower` is a brand, not a check).
-              email: c.emailLower.toLowerCase(),
-              audienceId,
-              ...(c.firstName !== undefined && { firstName: c.firstName }),
-              ...(c.lastName !== undefined && { lastName: c.lastName }),
-              unsubscribed: false,
-            }, { signal })) as ResendSdkResponse<{ id: string }>;
-            if (result.error) {
-              throw classifyResendError(
-                result.error ?? undefined,
-                'audience',
-                audienceId,
-              );
-            }
-          },
-          { method: 'addContactsToAudience', callTimeoutMs, retry: 'retryable' },
-        );
-      }
-      logger.info(
-        { audienceId, recipientCount: contacts.length },
-        'resend.broadcasts.contacts_added',
       );
     },
 
@@ -594,7 +501,7 @@ export function createResendBroadcastsGateway({
           );
           return { broadcastId: result.data.id };
         },
-        { method: 'createBroadcast', callTimeoutMs, retry: createBroadcastRetry },
+        { method: 'createBroadcast', callTimeoutMs, retry: 'rate_limit' },
       );
     },
 
@@ -638,15 +545,15 @@ export function createResendBroadcastsGateway({
           // Resend already accepted the send) is answered `422 validation_error
           // "Only draft broadcasts can be sent or scheduled"` whatever the key,
           // and Resend delivers once. That 422 is classified `permanent` below;
-          // both dispatch legs probe it (`_probe-refused-send.ts`) rather than
+          // the dispatch tick probes it (`_probe-refused-send.ts`) rather than
           // record a failure for mail that went out.
           //
           // What it does NOT close: `createBroadcast` carries no key at all, so
           // a re-entered tick that minted again would send a NEW resource, where
-          // no key can help. Neither leg relies on the key for that: both persist
-          // the minted id BEFORE this call (`attachBroadcastId`) and a re-entered
-          // tick probes it (`retrieveBroadcast`) and reuses it — S8, closed on
-          // the import leg in `build-audience-tick.ts`.
+          // no key can help. The tick does not rely on the key for that: it
+          // persists the minted id BEFORE this call (`attachBroadcastId`) and a
+          // re-entered tick probes it (`retrieveBroadcast`) and reuses it — S8,
+          // in `build-audience-tick.ts`.
           const result = (await sdk.post(`/broadcasts/${broadcastId}/send`, {}, {
             idempotencyKey,
             signal,
@@ -810,8 +717,8 @@ export function createResendBroadcastsGateway({
       // case-SENSITIVELY (MEASURED 5 Nov 2026, spec 140 DT4 and the s3 Verify),
       // answering 200 to any segment-contact DELETE. So it is neither encoded
       // nor re-cased here: the address sent is the one given, which is
-      // lowercase because the erasure capture is lowercase and every push
-      // (`addContactsToAudience`, `createContactImport`) lowercases.
+      // lowercase because the erasure capture is lowercase and the only push,
+      // `createContactImport`, lowercases.
       try {
         await boundedCall(
           async (signal) => {
@@ -840,63 +747,6 @@ export function createResendBroadcastsGateway({
         if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
           logger.info({ audienceId }, 'resend.broadcasts.contact_already_absent');
           return { kind: 'already_absent' };
-        }
-        throw e;
-      }
-    },
-
-    /**
-     * COMP-1 US3-C — the call that actually erases.
-     *
-     * `removeContactFromAudience` above answers `{"deleted": true}` and DETACHES:
-     * measured 2026-09-09, the audience-scoped read 404s afterwards while
-     * `GET /contacts/{email}` still returns the contact at 200. This endpoint's
-     * read-back is a real 404.
-     *
-     * The distinction matters because the erasure cascade was calling the wrong
-     * one and counting each call as a removal, so `resendOutcome: 'ok'` was
-     * reported for members whose addresses were still at the processor.
-     */
-    async deleteContactGlobally(email: string): Promise<void> {
-      assertNonEmpty({ email });
-      try {
-        await boundedCall(
-          async (signal) => {
-            const body = await importFetch(
-              `/contacts/${encodeURIComponent(email)}`,
-              { method: 'DELETE' },
-              signal,
-              // No resourceId: it would be the address, and that must not reach a
-              // classified error's `reason`, which is logged.
-            );
-            // The provider says `deleted: true` for a detach as well, so this is
-            // logged rather than trusted as proof. What makes this call correct is
-            // the endpoint, not the answer.
-            if ((body as { deleted?: unknown }).deleted !== true) {
-              logger.warn(
-                { deleted: (body as { deleted?: unknown }).deleted },
-                'resend.broadcasts.contact_delete_unexpected_body',
-              );
-            }
-          },
-          { method: 'deleteContactGlobally', callTimeoutMs, retry: 'retryable' },
-        );
-        // No email in the log line — forbidden-fields hygiene (FR-053a).
-        logger.info({}, 'resend.broadcasts.contact_deleted_globally');
-      } catch (e) {
-        // A 404 means the contact is already gone: the erasure goal is met.
-        if (e instanceof GatewayThrowable && e.kind === 'resource_missing') return;
-        // `resource_missing` needs a resourceId, and the only id available here is
-        // the address itself — which must not reach a classified error's `reason`,
-        // because that is logged. So a genuine 404 arrives as `permanent`, and its
-        // `code` carries the provider's `name`. Measured: Resend answers
-        // `{"statusCode":404,"name":"not_found"}`.
-        if (
-          e instanceof GatewayThrowable &&
-          e.kind === 'permanent' &&
-          e.code === 'not_found'
-        ) {
-          return;
         }
         throw e;
       }
@@ -1096,9 +946,9 @@ export function createResendBroadcastsGateway({
     /**
      * T086 — hand the WHOLE audience to Resend in one multipart request.
      *
-     * Replaces the `addContactsToAudience` loop, which is serial and therefore
-     * bounded by latency (~2.08 req/s measured, so ~623 contacts per 300 s
-     * function). This call is size-independent: ~412 ms for one address and the
+     * Replaced the per-contact push loop (deleted in spec 140 s4), which was
+     * serial and therefore bounded by latency (~2.08 req/s measured, so ~623
+     * contacts per 300 s function). This call is size-independent: ~412 ms for one address and the
      * same for thousands, because Resend processes the CSV asynchronously and
      * answers with a job id. `getContactImport` below is how we learn it landed.
      *
@@ -1476,9 +1326,9 @@ function normaliseStatus(
       //
       // `failed` and `scheduled` land here on purpose (both real — MEASURED
       // 2026-10-29: a `queued` broadcast whose audience is deleted turns
-      // `failed`, no mail). Both dispatch legs refuse an `unknown` probe
+      // `failed`, no mail). The dispatch tick refuses an `unknown` probe
       // (fail closed); see `RetrievedBroadcastResource['status']` for why
-      // they are not mapped, and the dispatch legs for the recovery.
+      // they are not mapped, and the dispatch tick for the recovery.
       logger.error(
         { rawStatus: raw },
         'resend.broadcasts.unknown_status',
@@ -1489,17 +1339,3 @@ function normaliseStatus(
 
 /** The production gateway: every call bounded by {@link RESEND_CALL_TIMEOUT_MS}. */
 export const resendBroadcastsGateway: BroadcastsGatewayPort = createResendBroadcastsGateway();
-
-/**
- * Spec 140 s2a review round 2 (CR#2, the maintainer's decision, 1 Nov 2026) —
- * the legacy dispatch leg's gateway: its `createBroadcast` retries a 5xx or a
- * network failure inside the 10 s budget, as before s2a, so one 5xx does not
- * end the tick and re-push every contact. Wired ONLY by
- * `makeDispatchScheduledBroadcastDeps`. Each failed attempt (5xx, network
- * failure, or one our timeout aborts) that did mint leaves a draft whose id we
- * never received, up to 4 per call (RoPA 8d). DELETED with the legacy leg in
- * slice 4.
- */
-export const legacyResendBroadcastsGateway: BroadcastsGatewayPort = createResendBroadcastsGateway({
-  createBroadcastRetry: 'retryable',
-});

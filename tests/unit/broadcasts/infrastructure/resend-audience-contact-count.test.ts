@@ -73,13 +73,11 @@ describe('getAudienceContactCount — has_more decides `complete` (FINAL round, 
 
   /**
    * THE FINDING. An older or changed API shape omits the field entirely. The
-   * count is then a lower bound, and both callers derive their fail-safe from
-   * this flag — `build-audience-tick.ts` (`complete || count > resolved`) and
-   * `dispatch-scheduled-broadcast.ts` (`outcome.complete || outcome.count >
-   * expected`). Reporting `true` here makes a truncated read authoritative: on
-   * the LIVE leg that files a false `broadcast_resend_audience_drift` row into an
-   * append-only table and pages § 22.3; on the import leg it reports a
-   * carried-over unsubscribed contact as a verified-clean audience.
+   * count is then a lower bound, and the caller derives its fail-safe from this
+   * flag — `build-audience-tick.ts` (`complete || count > resolved`; the legacy
+   * leg, deleted in spec 140 s4, read it the same way). Reporting `true` here
+   * makes a truncated read authoritative: the tick would report a carried-over
+   * unsubscribed contact as a verified-clean audience.
    */
   it('has_more ABSENT → complete: false — an absent signal is not verification', async () => {
     stubListOnce(200, { object: 'list', data: [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }] });
@@ -128,8 +126,7 @@ describe('getAudienceContactCount — has_more decides `complete` (FINAL round, 
    *     the one shape that makes `complete` authoritative. So the honest answer
    *     from this adapter is a verified-complete zero, and the "an audience that
    *     reports 0 when we just pushed N is far more likely GONE than empty"
-   *     judgement belongs to the caller, not here. `dispatch-scheduled-broadcast`
-   *     is where that lands.
+   *     judgement belongs to the caller, not here (`build-audience-tick.ts`).
    */
   it('a deleted audience is a verified-complete ZERO here, not not_found (measured)', async () => {
     stubListOnce(200, { object: 'list', has_more: false, data: [] });

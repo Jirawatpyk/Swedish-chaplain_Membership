@@ -1,6 +1,7 @@
 /**
- * Reclaim a Resend broadcast resource THIS TICK minted and cannot keep — shared
- * by both dispatch legs (`dispatchScheduledBroadcast`, `buildAudienceTick`).
+ * Reclaim a Resend broadcast resource THIS TICK minted and cannot keep — the
+ * dispatch tick's (`buildAudienceTick`; shared with the legacy leg until spec
+ * 140 s4 deleted it).
  *
  * Called when the pre-send persist refuses the id
  * (`_persist-minted-broadcast-id.ts`): the resource we just minted is then

@@ -6,10 +6,11 @@
  * narrowed envelopes per Constitution Principle III + OWASP A06
  * sanitiser-boundary discipline.
  *
- * Workflow per broadcast (FR-020 + US2 send-now path):
+ * Workflow per broadcast (FR-020; `build-audience-tick.ts`, the only dispatch
+ * leg since spec 140 s4):
  *   1. `createAudience(name)` — fresh audience per broadcast
- *   2. `addContactsToAudience(audienceId, contacts)` — paginated if
- *      recipients > 100 (Resend per-call limit)
+ *   2. `createContactImport(audienceId, emails)` — the whole audience in one
+ *      call; `getContactImport(importId)` on a later tick confirms it
  *   3. `createBroadcast(input)` — registers the broadcast resource
  *   4. `sendBroadcast(broadcastId, idempotencyKey)` — fires the dispatch
  *
@@ -41,8 +42,7 @@ export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'ap
  * backoff included: one `AbortSignal.timeout` spans every attempt. 10 s against
  * a measured round trip of ~0.5 s. It bounds every method except
  * `createContactImport`, which has {@link IMPORT_CALL_TIMEOUT_MS} (30 s); a
- * port call that loops (`addContactsToAudience`, `listAudiences`) takes it per
- * request; `listAudiences` also stops at its caller's `deadlineAt` (spec 140
+ * port call that loops (`listAudiences`) takes it per request; `listAudiences` also stops at its caller's `deadlineAt` (spec 140
  * DT5). Exported for the dispatch lease (slice 2b): in W_max only the one
  * import-POST term takes {@link IMPORT_CALL_TIMEOUT_MS} (every other call stays
  * at this C), and the pre-call lease check before `createContactImport` must
@@ -107,12 +107,6 @@ export type BroadcastsGatewayError =
     }
   | { readonly kind: 'permanent'; readonly code: string; readonly reason: string };
 
-export interface AudienceContact {
-  readonly emailLower: string;
-  readonly firstName?: string;
-  readonly lastName?: string;
-}
-
 export interface CreateBroadcastInput {
   readonly audienceId: string;
   readonly subject: string;
@@ -166,9 +160,9 @@ export interface RetrievedBroadcastResource {
    * **Only the never-sent direction is measured.** `'draft'` proves a resource was
    * never sent; a non-draft status does NOT prove one was. So a caller deciding
    * anything consequential must test POSITIVELY for the states it means.
-   * `dispatchScheduledBroadcast` reads `'queued' | 'sending' | 'sent'` to decide
-   * whether a re-entered tick may send an inherited id — rather than assuming
-   * Resend answers 409, which that file refuses to rely on because the idempotency
+   * The dispatch tick reads `'queued' | 'sending' | 'sent'` (`isHandedStatus`)
+   * to decide whether a re-entered tick may send an inherited id — rather than
+   * assuming Resend answers 409, which it refuses to rely on because the idempotency
    * header is MEASURED inert on `POST /broadcasts`, and on `/send` Resend answers
    * any second send of a non-draft broadcast 422, whatever the key (MEASURED
    * 2026-10-29, `_probe-refused-send.ts`).
@@ -181,7 +175,7 @@ export interface RetrievedBroadcastResource {
    * `failed` and `scheduled` are real Resend statuses too (MEASURED 2026-10-29:
    * deleting the audience of a `queued` broadcast turns it `failed` within 5 s,
    * `sent_at` null, no mail) and still arrive here as `'unknown'`, refused by
-   * both dispatch legs' probes. Deliberately not mapped: the union is read by
+   * the dispatch tick's probe. Deliberately not mapped: the union is read by
    * the live `reconcile-stuck-sending` too, and the import leg's fence closed
    * the one path this code had to produce `failed`.
    */
@@ -264,8 +258,8 @@ export type DeleteBroadcastOnceOutcome =
  * `queued` broadcast turns it `failed`, no mail). The erasure cascade's
  * terminal-draft pass is the only caller that needs it: after a 403 it records
  * such a copy as retained at Resend. It is added HERE, not to
- * `RetrievedBroadcastResource['status']`, because that union is read by both
- * dispatch legs and the live `reconcile-stuck-sending`, where `failed` must
+ * `RetrievedBroadcastResource['status']`, because that union is read by the
+ * dispatch tick and the live `reconcile-stuck-sending`, where `failed` must
  * keep reading `unknown` (refused, fail closed). The in-flight arm of the
  * cascade still treats `failed` as unexpected.
  */
@@ -327,11 +321,6 @@ export interface AudienceContactCount {
 export interface BroadcastsGatewayPort {
   createAudience(name: string): Promise<{ readonly audienceId: string }>;
 
-  addContactsToAudience(
-    audienceId: string,
-    contacts: ReadonlyArray<AudienceContact>,
-  ): Promise<void>;
-
   createBroadcast(
     input: CreateBroadcastInput,
   ): Promise<{ readonly broadcastId: string }>;
@@ -382,12 +371,12 @@ export interface BroadcastsGatewayPort {
   retrieveBroadcastOnce(broadcastId: string): Promise<RetrieveBroadcastOnceOutcome>;
 
   /**
-   * Round-4 IMP-5 — count contacts present in a Resend audience. Used
-   * by the dispatch worker on idempotency-replay paths to verify the
-   * prior attempt's `addContactsToAudience` populated all expected
-   * recipients. A mismatch surfaces as
-   * `broadcast_resend_audience_drift` audit emission so ops can
-   * investigate partial-delivery before the broadcast ships.
+   * Round-4 IMP-5 — count contacts present in a Resend audience. The
+   * dispatch tick reads it before the send (`build-audience-tick.ts`): an
+   * audience holding MORE contacts than were resolved is refused as
+   * `audience_membership_drift`. (The legacy leg's replay-arm reading of it,
+   * and its `broadcast_resend_audience_drift` audit, went with that leg in
+   * spec 140 s4.)
    *
    * A DELETED audience is a verified-complete ZERO here, not an error — see
    * `AudienceContactCount`. Transport and 5xx failures throw a retryable
@@ -409,10 +398,10 @@ export interface BroadcastsGatewayPort {
    * detaches.
    *
    * **This is nevertheless the call the erasure cascade makes, on purpose.**
-   * Round 3 finding 3-10: this line used to read "For erasure use
-   * `deleteContactGlobally` below", which contradicted the only erasure caller
-   * (`subprocessor-erasure-adapter.ts:68`) and pointed a compliance reader at a
-   * call the codebase deliberately does not make. The Resend account is ONE
+   * Round 3 finding 3-10: this line used to point at a global contact delete,
+   * which contradicted the only erasure caller (`subprocessor-erasure-adapter.ts`)
+   * and pointed a compliance reader at a call the codebase deliberately does not
+   * make; spec 140 s4 removed that port method altogether. The Resend account is ONE
    * account shared by every tenant, so a global delete during tenant A's
    * erasure would destroy tenant B's contact record — including the
    * Resend-side `unsubscribed` flag that `on_conflict=upsert` exists to
@@ -435,30 +424,11 @@ export interface BroadcastsGatewayPort {
   ): Promise<RemoveContactOutcome>;
 
   /**
-   * COMP-1 US3-C — DELETE the contact record itself, across every audience.
-   *
-   * **Not called by the erasure cascade** — see `removeContactFromAudience`
-   * above for why, and residual 8a. It stays on the port because it is the only
-   * call that genuinely erases, and the day the Resend account is split per
-   * tenant it becomes the right one.
-   *
-   * Measured in the same run (U1b): `DELETE /contacts/{email}` answers 200 and
-   * the read-back is a genuine 404, so unlike the audience-scoped call above
-   * this is the one that actually erases. The erasure cascade had been calling
-   * the other one and reporting `resendOutcome: 'ok'` while every address
-   * remained at the processor — on both dispatch paths, not just the import.
-   *
-   * Same idempotency contract: a 404 resolves, transport errors throw
-   * retryable.
-   */
-  deleteContactGlobally(email: string): Promise<void>;
-
-  /**
    * T086 (108 US5) — hand an entire audience to the provider in ONE call.
    *
-   * The alternative, `addContactsToAudience`, is a serial loop bounded by
-   * latency (~2.08 req/s measured), so roughly 623 contacts is all a 300 s
-   * function can drain. This is size-independent: one multipart request,
+   * The per-contact loop it replaced (deleted in spec 140 s4) was serial and
+   * bounded by latency (~2.08 req/s measured), so roughly 623 contacts was all
+   * a 300 s function could drain. This is size-independent: one multipart request,
    * ~412 ms whether it carries one address or fifty thousand, because the
    * provider processes it asynchronously and answers with a job id.
    *
@@ -514,7 +484,7 @@ export interface BroadcastsGatewayPort {
   /**
    * Delete a broadcast RESOURCE this tick minted and cannot keep.
    *
-   * Exists because `dispatchScheduledBroadcast` has three arms where
+   * Exists because the dispatch legs had three arms where
    * `createBroadcast` has returned an id that will never be persisted — a
    * sibling tick attached its own id first (CAS loss), the row vanished, or the
    * persist itself faulted — and until 2026-09-10 each of them wrote "we leak

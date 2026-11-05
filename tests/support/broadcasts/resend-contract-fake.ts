@@ -21,7 +21,6 @@ export interface ResendBroadcastsClientLike {
     list(): Promise<ResendResult<{ object: 'list'; data: Array<{ id: string; name: string; created_at: string }> }>>;
   };
   readonly contacts: {
-    create(args: unknown): Promise<ResendResult<{ id: string }>>;
     remove(args: unknown): Promise<ResendResult<{ deleted: boolean }>>;
     list(args: unknown): Promise<ResendResult<{ data: unknown[] }>>;
   };
@@ -54,13 +53,6 @@ export function createResendContractFake(opts: {
   createdAudienceIdsInOrder: () => readonly string[];
   /** F119 T031 — the `html` of the LAST `broadcasts.create` call (null before any). */
   lastCreatedBroadcastHtml: () => string | null;
-  /**
-   * The set of contact emails (lower-cased) recorded against `audienceId` via
-   * `contacts.create`. Returns an empty set for an unknown audience. The
-   * cross-member isolation test reads this to assert each broadcast's audience
-   * holds EXACTLY its own recipients (no cross-member PII leak).
-   */
-  getAudienceContacts: (audienceId: string) => ReadonlySet<string>;
 } {
   const audienceLimit = opts.audienceLimit ?? Number.POSITIVE_INFINITY;
   const remove404OnDeletedAudience =
@@ -71,8 +63,6 @@ export function createResendContractFake(opts: {
   // `createdAudienceIds` liveness set above.
   const createdAudienceIdsInOrder: string[] = [];
   let lastCreatedBroadcastHtml: string | null = null;
-  // audienceId → set of lower-cased contact emails added to it.
-  const audienceContacts = new Map<string, Set<string>>();
   // audienceId → display name (populated on create; NOT removed on remove so
   // createdAudienceIdsInOrder can still resolve names for diagnostics).
   const audienceNames = new Map<string, string>();
@@ -127,7 +117,6 @@ export function createResendContractFake(opts: {
         const id = `aud_fake_${audienceCount}`;
         createdAudienceIds.add(id);
         createdAudienceIdsInOrder.push(id);
-        audienceContacts.set(id, new Set<string>());
         audienceNames.set(id, args.name);
         return { data: { id }, error: null };
       },
@@ -152,20 +141,9 @@ export function createResendContractFake(opts: {
         return { data: { object: 'list' as const, data }, error: null };
       },
     },
+    // Spec 140 s4 — no `contacts.create`: its only caller, the legacy
+    // per-contact push, was deleted with the legacy dispatch leg.
     contacts: {
-      async create(args: unknown) {
-        // Record (audienceId → lower-cased email) so a test can assert which
-        // contacts landed in which audience. The gateway's
-        // `addContactsToAudience` calls `sdk.contacts.create({ audienceId,
-        // email, ... })`, one contact per call.
-        const a = (args ?? {}) as { audienceId?: unknown; email?: unknown };
-        if (typeof a.audienceId === 'string' && typeof a.email === 'string') {
-          const set = audienceContacts.get(a.audienceId) ?? new Set<string>();
-          set.add(a.email.toLowerCase());
-          audienceContacts.set(a.audienceId, set);
-        }
-        return { data: { id: `contact_fake_${randomId()}` }, error: null };
-      },
       async remove(args: unknown) {
         const a = (args ?? {}) as { audienceId?: unknown; email?: unknown };
         // Opt-in only: model a deleted/never-created audience as a 404 so the
@@ -181,11 +159,7 @@ export function createResendContractFake(opts: {
             error: { statusCode: 404, message: 'Audience not found', name: 'not_found' },
           };
         }
-        // Default (back-compat): succeed. Also drop the email from the recorded
-        // set when both fields are present, so a test can observe removal.
-        if (typeof a.audienceId === 'string' && typeof a.email === 'string') {
-          audienceContacts.get(a.audienceId)?.delete(a.email.toLowerCase());
-        }
+        // Default (back-compat): succeed.
         return { data: { deleted: true }, error: null };
       },
       async list() { return { data: { data: [] }, error: null }; },
@@ -196,13 +170,5 @@ export function createResendContractFake(opts: {
     createdAudienceCount: () => audienceCount,
     createdAudienceIdsInOrder: () => [...createdAudienceIdsInOrder],
     lastCreatedBroadcastHtml: () => lastCreatedBroadcastHtml,
-    getAudienceContacts: (audienceId: string) =>
-      new Set(audienceContacts.get(audienceId) ?? new Set<string>()),
   };
-}
-
-/** Short random suffix for fake contact ids — avoids id collisions when many
- *  contacts are created in one test (purely cosmetic; ids are unused). */
-function randomId(): string {
-  return Math.random().toString(36).slice(2, 10);
 }

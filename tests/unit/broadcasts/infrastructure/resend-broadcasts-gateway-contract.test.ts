@@ -95,16 +95,16 @@ describe('resendBroadcastsGateway.createBroadcast — Resend contract', () => {
 
 /**
  * `POST /broadcasts` on a DELETED audience answers `404 {name:"not_found",
- * message:"Audience not found"}` (MEASURED 2026-10-29). Pinned UNCHANGED for
- * the live legacy leg: with no resource id passed, a 404 classifies
- * `permanent` with `code: 'not_found'` — never `resource_missing`. The import
- * leg (opt-in, at its own call site) reads exactly this shape as "the audience
- * is gone" and restarts the build; the legacy leg keeps its permanent arm.
+ * message:"Audience not found"}` (MEASURED 2026-10-29). Pinned UNCHANGED: with
+ * no resource id passed, a 404 classifies `permanent` with `code: 'not_found'`
+ * — never `resource_missing`. The dispatch tick (at its own call site) reads
+ * exactly this shape as "the audience is gone" and restarts the build. (The
+ * legacy leg, which kept a permanent arm for it, was deleted in spec 140 s4.)
  */
 describe('resendBroadcastsGateway.createBroadcast — a 404 on a deleted audience', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('is permanent with code not_found and no resource id (the legacy classification, unchanged)', async () => {
+  it('is permanent with code not_found and no resource id (the classification, unchanged)', async () => {
     vi.spyOn(fake.client.broadcasts, 'create').mockResolvedValue({
       data: null,
       error: { statusCode: 404, message: 'Audience not found', name: 'not_found' },
@@ -114,80 +114,6 @@ describe('resendBroadcastsGateway.createBroadcast — a 404 on a deleted audienc
 
     expect(thrown).toMatchObject({ kind: 'permanent', code: 'not_found' });
     expect((thrown as { resourceId?: unknown }).resourceId).toBeUndefined();
-  });
-});
-
-describe('resendBroadcastsGateway.addContactsToAudience — 429 rate-limit handling (BUG-028)', () => {
-  beforeEach(() => vi.clearAllMocks());
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.useRealTimers();
-  });
-
-  type Contact = Parameters<typeof resendBroadcastsGateway.addContactsToAudience>[1][number];
-  const contact = (email: string): Contact => ({ emailLower: email }) as Contact;
-
-  it('retries a single 429 with backoff and does NOT re-create the contacts that already succeeded', async () => {
-    vi.useFakeTimers();
-    // Contact A succeeds; contact B answers 429 once, then succeeds on retry.
-    let call = 0;
-    const createSpy = vi
-      .spyOn(fake.client.contacts, 'create')
-      .mockImplementation(async () => {
-        call += 1;
-        if (call === 2) {
-          return {
-            data: null,
-            error: {
-              statusCode: 429,
-              message: 'Too many requests. You can only make 2 requests per second.',
-              name: 'rate_limit_exceeded',
-            },
-          } as Awaited<ReturnType<typeof fake.client.contacts.create>>;
-        }
-        return { data: { id: `contact_${call}` }, error: null } as Awaited<
-          ReturnType<typeof fake.client.contacts.create>
-        >;
-      });
-
-    const promise = resendBroadcastsGateway.addContactsToAudience('aud_fake_1', [
-      contact('a@example.com'),
-      contact('b@example.com'),
-    ]);
-    // Only timer in play is the single 1s backoff for B's one 429 — no fixed
-    // per-contact pacing exists anymore (that caused the dispatch timeout).
-    await vi.advanceTimersByTimeAsync(1_500);
-    await promise;
-
-    // 3 calls total: A(ok), B(429), B(retry ok).
-    expect(createSpy).toHaveBeenCalledTimes(3);
-    const emails = createSpy.mock.calls.map((c) => (c[0] as { email: string }).email);
-    // A is created exactly ONCE — the retry did not re-run the whole batch.
-    expect(emails.filter((e) => e === 'a@example.com')).toHaveLength(1);
-    expect(emails.filter((e) => e === 'b@example.com')).toHaveLength(2);
-  });
-
-  it('treats 429 as retryable (not permanent) — exhausts the backoff schedule before throwing', async () => {
-    vi.useFakeTimers();
-    const createSpy = vi.spyOn(fake.client.contacts, 'create').mockResolvedValue({
-      data: null,
-      error: { statusCode: 429, message: 'rate limited', name: 'rate_limit_exceeded' },
-    } as Awaited<ReturnType<typeof fake.client.contacts.create>>);
-
-    const settled = resendBroadcastsGateway
-      .addContactsToAudience('aud_fake_1', [contact('x@example.com')])
-      .then(() => 'resolved')
-      .catch((e: unknown) => e);
-    // Spec 140 s2a: the backoff runs inside the 10 s call budget, and a
-    // backoff is taken only while the budget left exceeds it + 1 s, so the
-    // attempts land at 0, 1, 3 and 7 s.
-    await vi.advanceTimersByTimeAsync(35_000);
-    const outcome = await settled;
-
-    // 4 calls proves 429 flows through the retry (a 'permanent'
-    // classification would have thrown after a single call).
-    expect(createSpy).toHaveBeenCalledTimes(4);
-    expect(outcome).toBeInstanceOf(Error);
   });
 });
 

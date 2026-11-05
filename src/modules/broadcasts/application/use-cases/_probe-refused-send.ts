@@ -1,6 +1,7 @@
 /**
- * A `/send` Resend refused NON-retryably — did it really not go out? Shared by
- * both dispatch legs (`dispatchScheduledBroadcast`, `buildAudienceTick`).
+ * A `/send` Resend refused NON-retryably — did it really not go out? Read by
+ * the dispatch tick (`buildAudienceTick`; shared with the legacy leg until
+ * spec 140 s4 deleted it).
  *
  * MEASURED 2026-10-29 (live Broadcasts account, sink address only): one
  * broadcast sent four times — `/send` with key K → 200; again with K, with a
@@ -64,7 +65,7 @@ export type ProbedStatus =
  *
  * Spec 140 slice 3 (the status readers, option a) — it reads the bounded
  * `retrieveBroadcast` outcome too, so every probe in this module (the inherited
- * id on both legs, the refused send, the erasure cascade) reads one shape. Only
+ * id, the refused send, the erasure cascade) reads one shape. Only
  * the READING is shared: each caller keeps its own call, so the throw/outcome
  * split and the retry policy are as they were. `retrieveBroadcast`'s union is
  * not widened — `normaliseStatus` still folds `failed` to `unknown` there for

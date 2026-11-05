@@ -1853,7 +1853,8 @@ void asBroadcastId;
 
 // Round-2 code review, finding 10: three behaviours shipped with no test.
 // The two that live in this use case are pinned here; the third (the
-// per-broadcast drop log) is pinned in dispatch-scheduled-broadcast.test.ts.
+// per-broadcast drop log) was pinned in the legacy dispatch suite, deleted with
+// that leg in spec 140 s4.
 describe('submit-broadcast — 108 PR-D opt-out filter at submit (round-2 finding 10)', () => {
   it('a THROWING opt-out lookup becomes a typed submit.server_error, not an escaped rejection', async () => {
     // The resolver throws by design (fail-closed). The three dispatch call

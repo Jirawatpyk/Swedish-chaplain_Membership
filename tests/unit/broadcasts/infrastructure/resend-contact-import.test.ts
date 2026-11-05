@@ -10,13 +10,14 @@
  * it. (Sibling symptom of the repo's fake-timer trap: a 30 s timeout is the
  * harness, not the component.)
  *
- * These two calls replace the per-contact push. `addContactsToAudience` is a
- * serial `await` loop at a measured ~2.08 req/s, so ~623 contacts is all one
- * 300 s function can drain; `POST /contacts/imports` takes the whole list in
- * one multipart request in ~412 ms **regardless of size** (T145, 2026-09-08).
- * Every mechanism this codebase grew to work around the loop — split
- * thresholds, per-batch manifests, one-wave dispatch, cross-tick drift guards
- * — exists only because the push was per-contact.
+ * These two calls replaced the per-contact push (deleted with the legacy
+ * dispatch leg in spec 140 s4). That push was a serial `await` loop at a
+ * measured ~2.08 req/s, so ~623 contacts was all one 300 s function could
+ * drain; `POST /contacts/imports` takes the whole list in one multipart request
+ * in ~412 ms **regardless of size** (T145, 2026-09-08). Every mechanism this
+ * codebase grew to work around the loop — split thresholds, per-batch
+ * manifests, one-wave dispatch, cross-tick drift guards — existed only because
+ * the push was per-contact.
  *
  * The SDK (`resend@4.8`) has no `contacts.imports`, so the adapter issues a raw
  * multipart `fetch`. That makes the REQUEST SHAPE the contract, and this file

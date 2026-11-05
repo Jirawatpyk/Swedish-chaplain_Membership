@@ -1,12 +1,13 @@
 /**
- * Persist a Resend broadcast id BEFORE the send — shared by both dispatch legs
- * (`dispatchScheduledBroadcast`'s F4 block, `buildAudienceTick`'s S8 block),
- * which carried the same ~100 lines each until code review #8 (2026-10-29).
+ * Persist a Resend broadcast id BEFORE the send — `buildAudienceTick`'s S8
+ * block. It was shared with the legacy leg's F4 block (the two carried the same
+ * ~100 lines each until code review #8, 2026-10-29) until spec 140 s4 deleted
+ * that leg.
  *
  * The write is `attachBroadcastId`, in its OWN tx and its own try/catch: it
  * must commit independently of the later status flip, and its CAS refusals are
  * repo faults, not gateway faults (a gateway catch around it once deleted the
- * winner's live audience — see the legacy leg's Step-3 catch).
+ * winner's live audience, on the legacy leg's Step-3 catch).
  *
  * `null` = landed, send it. Anything else is the tick's answer, and on every
  * one of them NOTHING is sent:
@@ -21,8 +22,8 @@
  *   vanished row into the DB-fault arm would page at critical for a row that
  *   can never be retried.
  * - Anything else — a DB fault, BEFORE any mail went out, so the safe answer
- *   is the transient one (`persist_broadcast_id` — NOT budgeted by FR-021 on
- *   either leg: round 4 F3 removed DB-fault budgeting). For a minted id the
+ *   is the transient one (`persist_broadcast_id` — NOT budgeted by FR-021:
+ *   round 4 F3 removed DB-fault budgeting). For a minted id the
  *   throw cannot say whether the write landed (a commit whose ack was lost on
  *   the pooler looks identical), so the row is read back first: landed → KEEP
  *   the resource (the next tick inherits and probes it — deleting it would make
@@ -43,10 +44,9 @@
  * the row after all; the drain skips it while a non-terminal row holds it). A
  * reclaimed id, a landed id and an inherited id are not recorded.
  *
- * `logPrefix` keeps each leg's log namespace — the names below are unchanged
- * from the code they replace (`broadcasts.dispatch.*` is the LIVE leg's, read
- * by runbooks and alerts); `logFields` adds a leg's extra ids (the import leg's
- * `importId`). The returned error shapes are the ones both legs returned.
+ * `logPrefix` keeps the caller's log namespace (`broadcasts.audience_import.*`
+ * since spec 140 s4; `broadcasts.dispatch.*` was the legacy leg's); `logFields`
+ * adds the caller's extra ids (`importId`).
  */
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
@@ -59,7 +59,7 @@ import { BroadcastConcurrentMutationError, BroadcastNotFoundError } from '../por
 import { reclaimMintedBroadcast } from './_reclaim-minted-broadcast';
 import { recordOrphanBestEffort } from './_record-orphaned-resend-id';
 
-/** The three refusals, in the shape both legs' error unions already carry. */
+/** The three refusals, in the shape the tick's error union already carries. */
 export type PersistBroadcastIdRefusal =
   | { readonly kind: 'broadcast_invalid_state_transition'; readonly observedStatus: string }
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
@@ -87,7 +87,7 @@ export async function persistBroadcastIdBeforeSend(
     readonly resendAudienceId: string;
     readonly minted: boolean;
     /**
-     * Spec 140 s2b — the import tick's lease token (`null`: the legacy leg).
+     * Spec 140 s2b — the import tick's lease token (`null`: a non-holder).
      * A lost token is a `BroadcastConcurrentMutationError` (`lease_lost`), so it
      * takes the concurrent arm below: a minted id is reclaimed. That reclaim is
      * deliberately NOT lease-checked (A2): the id is on no row, so no other

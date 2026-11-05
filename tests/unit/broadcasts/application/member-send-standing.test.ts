@@ -141,7 +141,7 @@ describe('readDispatchHold — an erased member is never "held" (spec 139)', () 
  * stalling on it.
  */
 describe('deleteDraftBeforeRefusal (spec 139 P2, spec 140 s1 ED4)', () => {
-  const ids = { tenantId: 'test-tenant', broadcastId: 'b-1', leg: 'live' as const, refusal: 'erased' as const };
+  const ids = { tenantId: 'test-tenant', broadcastId: 'b-1', leg: 'import' as const, refusal: 'erased' as const };
   const gw = (answer: 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other' | 'throws') => ({
     deleteBroadcastOnce: vi.fn(async () => {
       if (answer === 'throws') throw new Error('gateway wiring fault');

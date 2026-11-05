@@ -443,7 +443,7 @@ describe('characterization — settleTerminalDraft (terminal-draft pass, erasure
 // ---------------------------------------------------------------------------
 
 type Prior = 'draft' | 'cancelled' | null;
-const gateIds = { tenantId: 'test-tenant', broadcastId: 'b-1', leg: 'live' as const };
+const gateIds = { tenantId: 'test-tenant', broadcastId: 'b-1', leg: 'import' as const };
 
 type ErasedExp =
   | { readonly r: 'cleared'; readonly draftOutcome: 'none' | 'deleted' | 'absent' | 'cancelled' }

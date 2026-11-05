@@ -4,22 +4,20 @@
  *
  * ## Why this exists
  *
- * `addContactsToAudience` is a serial `await` loop at a measured ~2.08 req/s
- * (`POST /contacts`, mean 481 ms — research § R9), so roughly 623 contacts is
- * all one 300 s function can drain. Everything this codebase grew to work
- * around that — the split threshold, per-batch manifests, one-wave dispatch,
- * cross-tick drift guards — exists only because the push is per-contact. The
- * import is a single multipart request, ~412 ms whether it carries one address
- * or fifty thousand, so size stops being an engineering constraint and becomes
- * a Resend plan limit.
+ * The legacy per-contact push was a serial `await` loop at a measured ~2.08
+ * req/s (`POST /contacts`, mean 481 ms — research § R9), so roughly 623
+ * contacts was all one 300 s function could drain. Everything this codebase
+ * grew to work around that — the split threshold, per-batch manifests,
+ * one-wave dispatch, cross-tick drift guards — existed only because the push
+ * was per-contact. The import is a single multipart request, ~412 ms whether
+ * it carries one address or fifty thousand, so size stops being an engineering
+ * constraint and becomes a Resend plan limit.
  *
- * ## Why it is a SEPARATE use case
+ * ## The only dispatch leg
  *
- * `dispatchScheduledBroadcast` is ~1,200 lines carrying orphan-audience reuse,
- * idempotency-conflict replay, the FR-021 retry budget and the batch hand-off.
- * Threading an `if (importEnabled)` through it would give every one of those
- * paths two shapes and make its 44-case suite the regression surface for both.
- * The cron picks one or the other by flag; neither knows the other exists.
+ * This began as a SEPARATE use case beside the legacy one, picked by the
+ * import-audience flag, so neither knew the other existed. Spec 140 s4 deleted
+ * the legacy leg and the flag: the dispatch cron drives only this.
  *
  * ## The two ticks
  *
@@ -251,7 +249,7 @@ export const MEMBER_FACING_FAILURE_REASONS = [
  * Round 4 L1 — the tokens a member-facing email may be asked to render.
  *
  * Exported as a TYPE because the legacy leg proved a `string` parameter is not
- * enough: `dispatchScheduledBroadcast` passed
+ * enough: the legacy dispatch use case passed
  * `retry_budget_exhausted_after_1h:${subKind}:${reason}` — a composite built for
  * the `failure_reason` column — straight into the email builder, where it is a
  * LOOKUP KEY. It matched nothing, fell to `generic`, and the member read
@@ -396,7 +394,7 @@ export interface ResolvedAudience {
  * comparing `e.kind` against ANY string literal compiles, so
  * `mapResolveError` matched `broadcast_audience_post_suppression_empty` — a
  * kind the resolver never returns, produced only by
- * `dispatchScheduledBroadcast` as its OUTPUT — and the resolver's real
+ * the legacy dispatch use case as its OUTPUT — and the resolver's real
  * `broadcast_empty_segment_blocked` fell through to `dispatch.server_error`.
  * The cron then classified an emptied audience as transient and re-claimed the
  * row every five minutes for ever, with no terminal state, no audit row and no
@@ -792,8 +790,9 @@ async function runLeasedTick(
   // sent to everyone again. So ask Resend — the verdicts and what each one
   // makes this tick do are `probeInheritedBroadcast`'s docblock.
   //
-  // Any inherited id is probed, including a LEGACY-leg row carried across a
-  // flag flip (its id from that leg's own pre-send attach, no import id): R5
+  // Any inherited id is probed, including a LEGACY-leg row carried across the
+  // spec 140 s4 deploy (its id from that leg's own pre-send attach, no import
+  // id): R5
   // gated such a row because this leg had no probe and its send was
   // unknowable here; with the probe it is knowable, so a carry-over the legacy
   // leg already sent is caught up instead of refused or re-sent. An EMPTY id
@@ -1029,9 +1028,9 @@ async function probeInheritedBroadcast(
 }
 
 /**
- * F119 PR-A — apply the send-time standing gate (`_dispatch-standing-gate.ts`,
- * shared with the legacy leg). `null` means "in good standing, carry on";
- * anything else is the tick's answer.
+ * F119 PR-A — apply the send-time standing gate (`_dispatch-standing-gate.ts`).
+ * The answers below are the gate's; `{ sendable }` / `{ stop }` at the end of
+ * this docblock is what this function returns.
  *
  * - `hold` (R1, a `suspended` membership) — `dispatch_held_member_suspended`:
  *   nothing sent, nobody told, no audit. Best-effort writes: the FR-021
@@ -1463,9 +1462,9 @@ async function restartAudienceBuild(
  * not_found "Audience not found"`, `POST /contacts/imports` `404 not_found
  * "Segment not found"` (both measured 2026-10-29). Neither call carries a
  * resource id into the adapter, so a 404 there classifies `permanent` with
- * `code: 'not_found'` (`classifyResendError` — the live legacy leg reads the
- * same throw and keeps its permanent arm; this reading is the import leg's
- * alone, at its one call site: `createBroadcast` in `confirmImport`, where the
+ * `code: 'not_found'` (`classifyResendError`; the legacy leg, deleted in spec
+ * 140 s4, kept its permanent arm). This reading is the tick's, at its one call
+ * site: `createBroadcast` in `confirmImport`, where the
  * audience came from an earlier tick). `http_404` is the adapter's fallback
  * code when Resend sends no `name`. (`createContactImport` always imports into
  * an audience this tick created, so its 404 keeps the permanent rule.)
@@ -1694,8 +1693,8 @@ function importReasonToFailureMetric(
 }
 
 /**
- * FR-021 / AS2 — the same 1-hour wall-clock budget the single-tick path enforces
- * (`dispatch-scheduled-broadcast.ts:77`).
+ * FR-021 / AS2 — the 1-hour wall-clock budget the single-tick legacy path
+ * enforced too (that path was deleted in spec 140 s4).
  *
  * **Round 3 finding 3-7 — this path had no budget at all.** The only time bound
  * on it was `IMPORT_STUCK_AFTER_MS`, and that is evaluated ONLY inside the
@@ -2313,12 +2312,12 @@ async function confirmImport(
       },
       'broadcasts.audience_import.membership_unverifiable',
     );
-    // Round 4 (reliability I-2, fourth strand) — the legacy leg emits this at
+    // Round 4 (reliability I-2, fourth strand) — the legacy leg emitted this at
     // its own unverifiable branch with a comment saying the catalogued alert at
     // `observability.md` § 22.3 (`drift_check_unverifiable > 1 / 1h`) needs a
     // data source. This leg had the log and not the metric, so that alert was
-    // blind here — and this is the branch a Resend blip lands in, on the leg
-    // that a flag flip makes live.
+    // blind here — and this is the branch a Resend blip lands in, on the only
+    // dispatch leg since spec 140 s4.
     broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
   }
 
@@ -2825,7 +2824,7 @@ async function advanceToSending(
   // `audience_import_completed_at IS NULL`.
   //
   // So an operator following the runbook's drain query saw ZERO rows in flight,
-  // flipped the flag off, and handed the row to `dispatchScheduledBroadcast` —
+  // flipped the flag off, and handed the row to the legacy leg —
   // which never reads `audience_import_*` but DOES reuse `resend_audience_id`.
   // That is the "deliver to a half-built audience" outcome the runbook warns
   // about, reached BY FOLLOWING the runbook.
@@ -3252,12 +3251,11 @@ async function failTerminally(
   // and the dispatch dashboard shows nothing happening while broadcasts die.
   //
   // Round 4 F6 — GATED on the audit event type, which is what the legacy leg
-  // does (`dispatch-scheduled-broadcast.ts`: `if (eventType ===
-  // 'broadcast_failed_to_dispatch')`). Emitting unconditionally counted a
-  // Resend 404 toward `broadcasts.failed_to_dispatch.count` on this leg while
-  // the other leg deliberately excludes it, so the § 22.3 alert on that
-  // series (>10% over send_started) changed meaning at a flag flip. A flag
-  // flip must not redefine an alert.
+  // did (`if (eventType === 'broadcast_failed_to_dispatch')`, until spec 140 s4
+  // deleted it). Emitting unconditionally counted a Resend 404 toward
+  // `broadcasts.failed_to_dispatch.count` on this leg while the other leg
+  // deliberately excluded it, so the § 22.3 alert on that series (>10% over
+  // send_started) would have changed meaning at the cut-over.
   if (auditEventType === 'broadcast_failed_to_dispatch') {
     broadcastsMetrics.failedToDispatchCount(
       deps.tenant.slug,
@@ -3388,7 +3386,7 @@ async function onResolveFailure(
   //     this repo IS a production deploy, so cold starts cluster exactly there)
   //     died on its FIRST `resolve.server_error`, with a member email and a
   //     paging metric, never having had a second attempt.
-  //  2. It forked the two legs. `dispatchScheduledBroadcast` deliberately does
+  //  2. It forked the two legs. The legacy leg deliberately did
   //     not budget resolve failures (`route.ts`: "the counter is the alarm"),
   //     so the same fault became terminal on one leg and retryable on the other
   //     — decided by a flag, which is what a flag flip must never change.

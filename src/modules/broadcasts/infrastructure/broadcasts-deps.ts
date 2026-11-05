@@ -26,7 +26,7 @@ import { eventAttendeesBridge } from './event-attendees-bridge';
 import { f7AuditAdapter } from './audit-adapter';
 import { broadcastsRateLimiter } from './rate-limiter';
 import { dompurifySanitizer } from './sanitizer/dompurify-sanitizer';
-import { legacyResendBroadcastsGateway, resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
+import { resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
 import { resendBroadcastsWebhookVerifier } from './resend/resend-broadcasts-webhook-verifier';
 import { makeDrizzleBroadcastDeliveriesRepo } from './db/drizzle-broadcast-deliveries-repo';
 import { unsubscribeTokenSigner } from './unsubscribe-token/hmac-signer';
@@ -61,7 +61,6 @@ import type { CancelBroadcastDeps } from '../application/use-cases/cancel-broadc
 import type { MarketingDirectoryPort } from '../application/ports/marketing-directory-port';
 import type { ProxySubmitBroadcastDeps } from '../application/use-cases/proxy-submit-broadcast';
 import type { ClearHaltDeps } from '../application/use-cases/clear-halt';
-import type { DispatchScheduledBroadcastDeps } from '../application/use-cases/dispatch-scheduled-broadcast';
 import type { PruneExpiredDraftsDeps } from '../application/use-cases/prune-expired-drafts';
 import type { SweepExpiredBroadcastsDeps } from '../application/use-cases/sweep-expired-broadcasts';
 import type { MarkOwnerImagesRemovedDeps } from '../application/use-cases/_mark-owner-images-removed';
@@ -367,92 +366,6 @@ export function makeClearHaltDeps(tenantId: string): ClearHaltDeps {
     membersBridge,
     audit: f7AuditAdapter,
     clock: systemClock,
-  };
-}
-
-/**
- * Cron worker composition root. Wires the live Resend Broadcasts SDK
- * adapter.
- *
- * `fromEmail` is sourced from `env.broadcasts.fromEmail` (zod-validated
- * at boot — refuses IANA reserved TLDs per review C1 — 2026-04-30) so
- * this factory cannot accidentally dispatch from a placeholder address.
- *
- * `tenantDisplayName` + `locale` are resolved per-call via the F7
- * route helpers (no per-tenant settings table for support email yet —
- * F12 scope). MVP: locale defaults to the static tenant default
- * resolved by `tenantDefaultLocaleFor(...)` below.
- *
- * `brandChrome` is NOT wired here: its adapter lives in `src/lib` (it reads
- * the invoicing logo too), so the cron route adds it and the type makes that
- * the route's obligation rather than an optional it can forget.
- */
-export async function makeDispatchScheduledBroadcastDeps(
-  tenantId: string,
-): Promise<Omit<DispatchScheduledBroadcastDeps, 'brandChrome'>> {
-  const tenant = asTenantContext(tenantId);
-  const { resolveTenantDisplayName } = await import(
-    '@/lib/broadcasts-route-helpers'
-  );
-  // Best-effort: a tenant-settings outage MUST NOT wedge the cron loop
-  // in `approved` indefinitely (the row would never reach the use-case
-  // body and so the `broadcast_failed_to_dispatch` audit would never
-  // fire). Fall back to the tenant id as a degraded display name so
-  // dispatch still proceeds with an observable signal.
-  let tenantDisplayName: string;
-  try {
-    tenantDisplayName = await resolveTenantDisplayName(tenantId);
-  } catch (e) {
-    logger.error(
-      // FINAL round H-3 sweep: this is a DB read, so the throw can be a
-      // `NeonDbError` carrying the statement and its bindings. `errKind` keeps
-      // the class and drops the provider's free text.
-      { err: errKind(e), tenantId },
-      'broadcast_dispatch_tenant_displayname_lookup_failed',
-    );
-    tenantDisplayName = tenantId;
-  }
-  return {
-    tenant,
-    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
-    // Spec 140 s2c — the orphaned Resend id record (migration 0325).
-    orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
-    // Spec 140 s2a review round 2 (CR#2): the legacy leg's createBroadcast
-    // retries a 5xx inside the budget. Deleted with the leg in slice 4.
-    broadcastsGateway: legacyResendBroadcastsGateway,
-    membersBridge,
-    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
-    eventAttendees: eventAttendeesBridge,
-    audienceMode: currentAudienceMode(),
-    audienceCeiling: currentAudienceCeiling(),
-    // Round 4 F13 — an orphaned comment was here, describing a DELIVERY bound
-    // that "hands a large audience to the batch path rather than pushing it and
-    // dying at `maxDuration`". `ca51f59a1` deleted the batch path and the
-    // `deliverablePerTick` dep it annotated; the comment stayed and drifted onto
-    // `audit:`, which it has nothing to do with. There is one ceiling now
-    // (`currentAudienceCeiling()`, above) and an audience above it is refused,
-    // not split.
-    audit: f7AuditAdapter,
-    clock: systemClock,
-    fromEmail: env.broadcasts.fromEmail,
-    tenantDisplayName,
-    locale: tenantDefaultLocaleFor(tenantId),
-    // Phase 8 Slice B (T171 / AS5) — used to compare originating
-    // member's CURRENT plan vs the snapshot at submit time, emitting
-    // `broadcast_sent_with_expired_member_plan` audit on mismatch.
-    plansBridge,
-    // Phase 8 Slice E (FR-021 / AS2) — used to enqueue the dispatch-
-    // failure transactional notification when the 1h retry budget is
-    // exhausted OR a permanent failure transitions the row to
-    // failed_to_dispatch. Routes through F4 outbox dispatcher's
-    // `broadcast_failed_to_dispatch_notification` render branch.
-    emailTransactional: emailTransactionalBridge,
-    // F119 PR-A — the send-time standing reads. The cron REPLACES
-    // `membersBridge` here with its per-tick memo (it does the same for the
-    // top-level bridge), so a tick reads the tenant's halt list once.
-    // `haltReadFresh` stays the RAW bridge (R2): a `halted` answer is re-read
-    // through it, uncached, before it becomes a permanent refusal.
-    sendStanding: { membersBridge, haltReadFresh: membersBridge, membershipAccess: membershipAccessBridge },
   };
 }
 
@@ -1135,7 +1048,7 @@ export function makeCountTemplateStartDeps(
  * `sendStanding.membersBridge` read the memo, so a tick reads the tenant's halt
  * list and each segment once; `haltReadFresh` stays the RAW bridge, uncached,
  * for the re-read before a permanent `halted` refusal (F119 PR-A, R2). Until
- * s4 the cron built the memo from the legacy maker's bridge and passed it in.
+ * s4 the cron built the memo from the deleted legacy maker's bridge.
  * `brandChrome` is left to the cron route, which composes it in `src/lib`.
  */
 export async function makeBuildAudienceTickDeps(
@@ -1149,12 +1062,16 @@ export async function makeBuildAudienceTickDeps(
 ): Promise<Omit<BuildAudienceTickDeps, 'brandChrome'>> {
   const tenant = asTenantContext(tenantId);
   const { resolveTenantDisplayName } = await import('@/lib/broadcasts-route-helpers');
+  // Best-effort: a tenant-settings outage MUST NOT wedge the cron loop in
+  // `approved`, and the display name is cosmetic. Fall back to the tenant id
+  // with an observable signal (the line the deleted legacy maker wrote, kept
+  // when spec 140 s4 removed that maker). A DB read can throw a `NeonDbError`
+  // carrying the statement and its bindings, so `errKind` keeps the class only.
   let tenantDisplayName: string;
   try {
     tenantDisplayName = await resolveTenantDisplayName(tenantId);
-  } catch {
-    // Same best-effort rule as the sibling maker: a tenant-settings outage must
-    // not wedge the cron loop, and the display name is cosmetic.
+  } catch (e) {
+    logger.error({ err: errKind(e), tenantId }, 'broadcast_dispatch_tenant_displayname_lookup_failed');
     tenantDisplayName = tenantId;
   }
 
@@ -1205,11 +1122,11 @@ export async function makeBuildAudienceTickDeps(
       // Pass the resolver's answer through WHOLE. This used to return only
       // `{recipients, estimatedCount}`, which is where `orphans` and
       // `droppedByPreference` were actually lost — the resolver computes both,
-      // the legacy dispatch logs both per broadcast, and `droppedByPreference`
+      // the tick logs both per broadcast, and `droppedByPreference`
       // exists because an earlier review round added it to answer a member
       // asking why their E-Blast reached 40 people instead of 55. Dropping two
       // fields at a composition boundary is invisible to a grep for the log
-      // name and to a diff of the two use cases.
+      // name.
       return ok({
         recipients: resolved.value.recipients as unknown as readonly string[],
         estimatedCount: resolved.value.estimatedCount,

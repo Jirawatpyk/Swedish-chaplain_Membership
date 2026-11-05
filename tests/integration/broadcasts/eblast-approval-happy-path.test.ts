@@ -6,8 +6,10 @@
  *   submit (member) → start a formatted version → save it → send it to the
  *   member → the member approves → marketing confirms the send time
  *
- * and then the row is DISPATCHED — the REAL `dispatchScheduledBroadcast`, with
- * only the Resend gateway faked, hands Resend the approved subject and body
+ * and then the row is DISPATCHED — the REAL `buildAudienceTick` over its two
+ * ticks (the only dispatch leg since spec 140 s4, which ported this case from
+ * the legacy leg), with only the Resend gateway faked, hands Resend the approved
+ * subject and body
  * (US1-AS6) — and `broadcasts.subject` / `body_html` /
  * `body_source` equal the approved version byte-for-byte (FR-012a: the
  * promotion is the only write of content after submit, and it copies from
@@ -41,32 +43,16 @@ import { saveFormattedVersion } from '@/modules/broadcasts/application/use-cases
 import { sendVersionToMember } from '@/modules/broadcasts/application/use-cases/approval/send-version-to-member';
 import { startFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/start-formatted-version';
 import { submitBroadcast } from '@/modules/broadcasts/application/use-cases/submit-broadcast';
-import { dispatchScheduledBroadcast } from '@/modules/broadcasts';
+import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import type {
   BroadcastsGatewayPort,
   CreateBroadcastInput,
 } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
-import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
-import { makeSubmitBroadcastDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
-import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
-import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
-import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
-import { emailTransactionalBridge } from '@/modules/broadcasts/infrastructure/email-transactional-bridge';
-import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
-import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
-import { plansBridge } from '@/modules/broadcasts/infrastructure/plans-bridge';
+import { makeBuildAudienceTickDeps, makeSubmitBroadcastDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import { broadcastMemberDecisions, broadcasts, broadcastVersions } from '@/modules/broadcasts/infrastructure/schema';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { seedPortalMemberWithContact, seedPortalPlan } from '../helpers/portal-seed';
-import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
-
-/**
- * F119 PR-A — the send-time standing reads, REAL on both halves (the F3 halt
- * list + the F8 access bridge): the seeded requesting member is neither halted
- * nor has a renewal cycle, so both answer "in good standing" and the send runs.
- */
-const LIVE_STANDING = { membersBridge, membershipAccess: membershipAccessBridge };
 
 const MARKETER = { userId: randomUUID(), email: 'marketing-happy@example.com', locale: 'en' as const };
 const APPROVED_SUBJECT = 'Autumn mixer — งานพบปะฤดูใบไม้ร่วง ✓';
@@ -193,27 +179,33 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
     // US1-AS6 — what DISPATCH hands Resend is the approved version. The cron's
     // eligibility SELECT is inline in `dispatch-scheduled/route.ts` (not
     // exported), so the row is checked against its two conditions and then
-    // driven through the REAL `dispatchScheduledBroadcast` — real repo, real
-    // members bridge (both seeded members), real audit — with only the Resend
-    // gateway faked. `htmlBody` is the use case's argument, BEFORE the adapter
-    // wraps the brand chrome.
+    // driven through the REAL `buildAudienceTick` (the only dispatch leg since
+    // spec 140 s4) on the REAL composition root (`makeBuildAudienceTickDeps`:
+    // real repo, real resolver over both seeded members, real audit) with only
+    // the Resend gateway faked, over its two ticks: tick 1 submits the import,
+    // tick 2 confirms it and sends. `htmlBody` is the use case's argument,
+    // BEFORE the adapter wraps the brand chrome.
     expect(row!.status).toBe('approved');
     expect(row!.scheduledFor!.getTime()).toBeLessThanOrEqual(Date.now());
     const created: CreateBroadcastInput[] = [];
-    let added = 0;
+    let imported = 0;
     let sends = 0;
+    const notUsed = (name: string) => async (): Promise<never> => {
+      throw new Error(`${name} is not used here`);
+    };
     const gateway: BroadcastsGatewayPort = {
       async createAudience() {
         return { audienceId: `aud-happy-${randomUUID().slice(0, 8)}` };
       },
-      async addContactsToAudience(_audienceId, contacts) {
-        added += contacts.length;
-      },
-      async createContactImport() {
-        throw new Error('not used on the primary_only leg');
+      async createContactImport(_audienceId, emails) {
+        imported = emails.length;
+        return { importId: `imp-happy-${randomUUID().slice(0, 8)}` };
       },
       async getContactImport() {
-        throw new Error('not used on the primary_only leg');
+        return { status: 'completed', counts: { total: imported, created: imported, updated: 0, skipped: 0, failed: 0 } };
+      },
+      async getAudienceContactCount() {
+        return { count: imported, complete: true };
       },
       async createBroadcast(input) {
         created.push(input);
@@ -222,48 +214,29 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
       async sendBroadcast() {
         sends += 1;
       },
-      async retrieveBroadcast() {
-        return { kind: 'not_found' as const };
-      },
-      async getAudienceContactCount() {
-        return { count: added, complete: true };
-      },
-      async removeContactFromAudience() {
-        return { kind: 'detached' as const };
-      },
-      async deleteContactGlobally() {},
-      async deleteAudience() {},
-      async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
-      async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
-      async deleteBroadcast() {},
-      async listAudiences() {
-        return { audiences: [], truncated: false };
-      },
+      retrieveBroadcast: notUsed('retrieveBroadcast'),
+      removeContactFromAudience: notUsed('removeContactFromAudience'),
+      deleteAudience: notUsed('deleteAudience'),
+      deleteBroadcastOnce: notUsed('deleteBroadcastOnce'),
+      retrieveBroadcastOnce: notUsed('retrieveBroadcastOnce'),
+      deleteBroadcast: notUsed('deleteBroadcast'),
+      listAudiences: notUsed('listAudiences'),
     };
-    const dispatched = await dispatchScheduledBroadcast(
-      {
-        tenant: tenant.ctx,
-        broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
-        orphans: makeDrizzleBroadcastOrphansRepo(tenant.ctx.slug),
-        audienceMode: 'primary_only' as const,
-        audienceCeiling: 5000,
-        broadcastsGateway: gateway,
-        membersBridge,
-        marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenant.ctx.slug),
-        eventAttendees: eventAttendeesStub,
-        audit: f7AuditAdapter,
-        clock: { now: () => new Date() },
-        fromEmail: 'noreply@test.invalid-but-test-only',
-        tenantDisplayName: 'Test Chamber',
-        locale: 'en' as const,
-        plansBridge,
-        emailTransactional: emailTransactionalBridge,
-        sendStanding: LIVE_STANDING,
-        brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
-      },
-      { broadcastId },
-    );
-    expect(dispatched.ok ? 'dispatched' : dispatched.error).toBe('dispatched');
+    const tick = async () =>
+      buildAudienceTick(
+        {
+          ...(await makeBuildAudienceTickDeps(tenant.ctx.slug, { tickStartedAt: Date.now() })),
+          broadcastsGateway: gateway,
+          brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
+        },
+        { broadcastId },
+      );
+    const first = await tick();
+    expect(first.ok ? first.value.kind : first.error).toBe('import_submitted');
+    expect(imported).toBeGreaterThan(0);
+    expect([created.length, sends]).toEqual([0, 0]);
+    const second = await tick();
+    expect(second.ok ? second.value.kind : second.error).toBe('sent');
     expect(created.map((c) => [c.subject, c.htmlBody])).toEqual([[APPROVED_SUBJECT, APPROVED_BODY]]);
     expect(sends).toBe(1);
     const [afterDispatch] = await runInTenant(tenant.ctx, (tx) => tx.select().from(broadcasts).where(eq(broadcasts.broadcastId, broadcastId)));

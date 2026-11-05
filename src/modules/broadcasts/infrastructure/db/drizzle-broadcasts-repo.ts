@@ -331,8 +331,8 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
  * `broadcast_failed_to_dispatch`, an append-only audit row and an email telling
  * the member their E-Blast did not go out". Read against the code:
  *
- *  1. It does not land there. `attachAudienceId` is called inside the try at
- *     `dispatch-scheduled-broadcast.ts:524`, whose catch is `:608` — a
+ *  1. It did not land there. `attachAudienceId` was called inside a try of
+ *     the legacy dispatch use case (deleted in spec 140 s4) whose catch was a
  *     different block from the one holding that branch. A round-4 reviewer
  *     proposed its remediation against the wrong catch arm on the strength of
  *     this sentence.
@@ -1356,7 +1356,7 @@ export function makeDrizzleBroadcastsRepo(
         //    typed errors and RETHROWS anything else, so `idsAttached.ok` was
         //    always true and the `sent_but_row_unattachable` critical log could
         //    never print. The cron counted `uncaught_error` instead.
-        //  - `dispatchScheduledBroadcast`'s `BroadcastNotFoundError` arm sat in
+        //  - the legacy leg's `BroadcastNotFoundError` arm sat in
         //    a catch nothing could reach it from.
         await throwConcurrentMutation(tx, tenantIdArg, broadcastId, lease);
       }
@@ -2345,9 +2345,9 @@ export function makeDrizzleBroadcastsRepo(
             WHEN cancellation_reason IN (${cascadeReasons}) THEN cancellation_reason
             ELSE NULL
           END,
-          -- failure_reason is set from the raw gateway error message
-          -- (dispatch-scheduled-broadcast.ts: shape.reason ?? e.message),
-          -- which can echo the broadcast's reply_to_email / from_name — the
+          -- failure_reason was set from the raw gateway error message
+          -- (the legacy dispatch leg, deleted in spec 140 s4: shape.reason ??
+          -- e.message), and rows it wrote can echo the broadcast's reply_to_email / from_name — the
           -- author's OWN PII, the same address the scrub redacts above on
           -- this row. NULL it too so no copy survives (2026-06-19
           -- /code-review #8). The migration-0224 GUC arm whitelists this

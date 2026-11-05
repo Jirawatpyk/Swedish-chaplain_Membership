@@ -199,7 +199,6 @@ function makeGateway(args: {
   const counter = { get retrieveCalls() { return retrieveCalls; } };
   const port: BroadcastsGatewayPort = {
     async createAudience() { throw new Error('not used'); },
-    async addContactsToAudience() { throw new Error('not used'); },
     // T086 — unused by this fixture; present so the stub still satisfies BroadcastsGatewayPort.
     async createContactImport() { throw new Error('not used'); },
     async getContactImport() { throw new Error('not used'); },
@@ -208,7 +207,6 @@ function makeGateway(args: {
     async getAudienceContactCount() { return { count: 0, complete: false }; },
     async removeContactFromAudience() {
       return { kind: 'detached' as const }; throw new Error('not used'); },
-    async deleteContactGlobally() { throw new Error('not used'); },
     async deleteAudience() { throw new Error('not used'); },
     async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
     async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
