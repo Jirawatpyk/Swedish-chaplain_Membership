@@ -96,7 +96,7 @@ export async function persistBroadcastIdBeforeSend(
      */
     readonly lease: LeaseToken | null;
     readonly fence?: { readonly expectedAudienceImportId: string; readonly replacesResendBroadcastId?: string };
-    readonly logPrefix: 'broadcasts.dispatch' | 'broadcasts.audience_import';
+    readonly logPrefix: 'broadcasts.audience_import';
     readonly logFields?: Readonly<Record<string, unknown>>;
   },
 ): Promise<PersistBroadcastIdRefusal | null> {

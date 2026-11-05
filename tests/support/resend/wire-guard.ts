@@ -7,7 +7,9 @@
  * the import's `on_conflict=upsert` preserves. The gateway detaches with the
  * segment-scoped `DELETE /contacts/{email}/segments/{id}` instead. Every test
  * stub of `fetch` under the Resend gateway or SDK goes through this, so a code
- * path that starts sending the global delete fails the suite.
+ * path that starts sending the global delete fails the suite. It is opt-in:
+ * a new test that stubs `fetch` directly instead of through `stubWire` or
+ * `stubResendFetch` is not guarded, so route every new Resend stub here.
  *
  * It RECORDS a violation and never throws: the SDK's `fetchRequest` catches a
  * throw from `fetch` and answers `application_error`, which a test would then

@@ -74,7 +74,7 @@ function harness(opts: Opts) {
       minted,
       lease: null,
       requestedByMemberId: MEMBER,
-      logPrefix: 'broadcasts.dispatch',
+      logPrefix: 'broadcasts.audience_import',
     });
   return { run, recorded, deletes };
 }
@@ -145,7 +145,7 @@ describe('spec 140 s2c — the persist helper records a leaked minted id', () =>
     const h = harness({ attach: 'cas_lost', reclaim: 'throws', recordThrows: true });
     const res = await h.run();
     expect(res).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' });
-    const line = error.mock.calls.find((c) => c[1] === 'broadcasts.dispatch.orphan_record_failed');
+    const line = error.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.orphan_record_failed');
     expect(line?.[0]).toMatchObject({
       tenantId: tenant.slug,
       broadcastId: BROADCAST_ID,

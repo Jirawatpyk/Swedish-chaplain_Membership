@@ -80,7 +80,7 @@ export function probedStatusOf(probe: RetrieveBroadcastOutcome | RetrieveBroadca
 export async function probeRefusedSend(
   gateway: Pick<BroadcastsGatewayPort, 'retrieveBroadcast'>,
   ids: { readonly tenantId: string; readonly broadcastId: string; readonly resendBroadcastId: string },
-  logPrefix: 'broadcasts.dispatch' | 'broadcasts.audience_import',
+  logPrefix: 'broadcasts.audience_import',
 ): Promise<RefusedSendVerdict> {
   let status: ProbedStatus;
   try {

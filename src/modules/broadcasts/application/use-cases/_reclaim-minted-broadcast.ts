@@ -41,7 +41,7 @@ export async function reclaimMintedBroadcast(
   ctx: {
     readonly why: 'attach_lost' | 'row_vanished' | 'persist_failed';
     readonly observedStatus?: string;
-    readonly logPrefix: 'broadcasts.dispatch' | 'broadcasts.audience_import';
+    readonly logPrefix: 'broadcasts.audience_import';
   },
 ): Promise<'reclaimed' | 'leaked'> {
   try {

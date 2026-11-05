@@ -152,13 +152,9 @@ export function currentAudienceMode(): AudienceMode {
  * decides the send. Every i18n string interpolates `{ceiling, number}`, so the
  * copy follows in all three locales with no key changes.
  *
- * Spec 140 s4 (DR3): it is `BROADCAST_AUDIENCE_CEILING`, default 900, and no
- * flag moves it. Until s4 it was a flag matrix (5,000; 50,000 with the import
- * and the 1:N flag both on; clamped to the serial push's 500 with the import
- * off). The import leg is now the only leg, and its time budgets were derived
- * at 900 recipients or fewer: the docblock on the variable in `env.ts` says
- * what raising it needs. `FEATURE_CONTACT_MARKETING_RECIPIENTS` keeps its
- * recipient-scope role (`currentAudienceMode()` above) and no ceiling role.
+ * Spec 140 s4 (DR3): it is `BROADCAST_AUDIENCE_CEILING` (default 900; the
+ * docblock on the variable in `env.ts` says what raising it needs), and no
+ * flag moves it.
  *
  * Read per call so this module holds no copy of its own; `env` memoises its
  * parse, so a change lands on the next deploy / cold start. Note this is the
