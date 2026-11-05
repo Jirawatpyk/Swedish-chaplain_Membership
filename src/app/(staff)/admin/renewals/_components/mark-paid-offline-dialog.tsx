@@ -215,6 +215,9 @@ export function MarkPaidOfflineDialog({
       if (!res.ok) {
         const err = await readError(res);
         if (onError(err)) return;
+        // #74 — bill exists and coverage overlap never reach here (both
+        // close the dialog above, linked or not); for those two the
+        // un-suffixed key is the description of the unlinked toast.
         const key = `markPaidOffline.error.${err.code}`;
         toast.error(t.has(key) ? t(key) : t('markPaidOffline.error.server_error'));
         return;
@@ -290,44 +293,56 @@ export function MarkPaidOfflineDialog({
             // failed. The admin must resume from the F4 invoice list —
             // surface the deep-link in the toast so they can act without a
             // support ticket. Dialog stays OPEN (nothing to refresh away).
-            toast.error(t('markPaidOffline.error.f4_orphan_invoice'), {
+            // #73 — a short title plus a description, so the copy does not
+            // wrap into a narrow column beside the action button.
+            // No duration: an error with a next step stays until dismissed
+            // (ux-standards § 4.2; the facade defaults errors to Infinity).
+            toast.error(t('markPaidOffline.error.f4_orphan_invoiceTitle'), {
+              // A fixed id: a repeat replaces this toast instead of stacking
+              // another one that stays until dismissed.
+              id: `mark-paid-orphan-${cycleId}`,
+              description: t('markPaidOffline.error.f4_orphan_invoiceDetail'),
               action: {
                 label: t('markPaidOffline.viewOrphanInvoice'),
                 onClick: () => {
                   router.push(orphanHref);
                 },
               },
-              duration: 30_000,
             });
             return true;
           }
           const existingBillHref = resolveExistingBillHref(err);
-          if (existingBillHref) {
-            // A live membership bill for this plan year already exists and
-            // NOTHING was minted. Point the operator at that invoice — the
-            // F4 record-payment dialog there runs the same on-paid
-            // callbacks, so it completes this cycle and opens the next
-            // one. Then close + refresh so the stale action is not
-            // re-clicked.
-            // #730 — a coverage overlap links its covering bill too, with its
-            // own copy: that bill may be another plan year or already paid, so
-            // "record the payment there" would be wrong for it.
-            toast.error(
-              t(
-                err.code === 'membership_coverage_overlap'
-                  ? 'markPaidOffline.error.membership_coverage_overlap'
-                  : 'markPaidOffline.error.membership_bill_already_exists',
-              ),
-              {
-                action: {
-                  label: t('markPaidOffline.viewExistingInvoice'),
-                  onClick: () => {
-                    router.push(existingBillHref);
-                  },
-                },
-                duration: 30_000,
-              },
-            );
+          if (
+            err.code === 'membership_bill_already_exists' ||
+            err.code === 'membership_coverage_overlap'
+          ) {
+            // NOTHING was minted. With a link, point the operator at the
+            // invoice — the F4 record-payment dialog there runs the same
+            // on-paid callbacks, so it completes this cycle. Then close +
+            // refresh so the stale action is not re-clicked.
+            // #730 — a coverage overlap links its covering bill, with its own
+            // copy: that bill may be another plan year or already paid.
+            // #74 — with no id (the covering-bill lookup failed), the copy
+            // points at the member's invoices and the dialog still closes:
+            // the refusal is permanent, so a retry can never pass.
+            const isOverlap = err.code === 'membership_coverage_overlap';
+            const base = isOverlap
+              ? 'markPaidOffline.error.membership_coverage_overlap'
+              : 'markPaidOffline.error.membership_bill_already_exists';
+            toast.error(t(`${base}Title`), {
+              id: `mark-paid-existing-bill-${cycleId}`,
+              description: t(existingBillHref ? `${base}Detail` : base),
+              ...(existingBillHref
+                ? {
+                    action: {
+                      label: t('markPaidOffline.viewExistingInvoice'),
+                      onClick: () => {
+                        router.push(existingBillHref);
+                      },
+                    },
+                  }
+                : {}),
+            });
             closeStale();
             return true;
           }
