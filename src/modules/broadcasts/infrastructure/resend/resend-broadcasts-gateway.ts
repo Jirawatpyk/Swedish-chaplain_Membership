@@ -744,7 +744,7 @@ export function createResendBroadcastsGateway({
       // one given, which is lowercase because the erasure capture is lowercase
       // and the only push, `createContactImport`, lowercases.
       try {
-        await boundedCall(
+        const absent = await boundedCall(
           async (signal) => {
             const sdk = client();
             const result = (await sdk.contacts.segments.remove({
@@ -752,6 +752,16 @@ export function createResendBroadcastsGateway({
               segmentId: audienceId,
             }, { signal })) as ResendSdkResponse<{ object?: string; deleted?: boolean }>;
             if (result.error) {
+              // A 404 → the contact was not in that segment, or the segment does
+              // not exist → nothing to detach. Since spec 140 s4 this fires: on
+              // this endpoint every no-op answered `404 not_found` (random
+              // segment, wrong case, non-member) and only a membership that
+              // existed answered `200 deleted:true` (MEASURED 5 Nov 2026,
+              // research.md slice 4 step 0 items 1 and 4). A 410 Gone means the
+              // same, as on the siblings `deleteAudience` / `deleteBroadcast`
+              // (PR #756 review round 1, code-review #4). An HTML 404 / 410 is not
+              // Resend's answer and stays retryable (`httpStatusOf`).
+              if (isProviderGone(statusAndNameOf(result.error))) return true;
               // Status and name only, never Resend's message: the thrown reason
               // reaches log lines, and a later wording change could put the
               // address into it (spec 140 s4 plan review). The step 0 404 bodies
@@ -770,19 +780,19 @@ export function createResendBroadcastsGateway({
                 reason: 'the segment detach answered without deleted: true',
               });
             }
+            return false;
           },
           { method: 'removeContactFromAudience', callTimeoutMs, retry: 'retryable' },
         );
+        if (absent) {
+          logger.info({ audienceId }, 'resend.broadcasts.contact_already_absent');
+          return { kind: 'already_absent' };
+        }
         logger.info({ audienceId }, 'resend.broadcasts.contact_detached');
         return { kind: 'detached' };
       } catch (e) {
-        // A 404 → the contact was not in that segment, or the segment does not
-        // exist → nothing to detach. Since spec 140 s4 this fires: on this
-        // endpoint every no-op answered `404 not_found` (random segment, wrong
-        // case, non-member) and only a membership that existed answered `200
-        // deleted:true` (MEASURED 5 Nov 2026, research.md slice 4 step 0 items 1
-        // and 4). An HTML 404 is not Resend's answer and stays retryable
-        // (`httpStatusOf`).
+        // A `resource_missing` throw (the classifier's reading of a not-found it
+        // did not see as a plain 404 / 410 above) is the same "nothing to detach".
         //
         // Round 2 R2-25 — this used to `return` here, indistinguishable from a real
         // detach. The caller counted both as removals, and that count became
