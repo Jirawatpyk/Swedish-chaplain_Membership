@@ -15,6 +15,8 @@
  * recorded; the `it.fails` case proves that the default `stubWire` fails the
  * test it ran in.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Resend } from 'resend';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -92,5 +94,49 @@ describe('the DR4 wire guard (spec 140 s4)', () => {
     const calls = stubWire(() => json(200, { object: 'contact_segment', deleted: true }));
     await new Resend('re_test').contacts.segments.remove({ email: 'x@resend.dev', segmentId: SEGMENT });
     expect(calls).toHaveLength(1);
+  });
+});
+
+/**
+ * PR #756 review round 1 (security L1) — the runtime guard above sees only what
+ * a test drives. This reads the gateway SOURCE, so an account-wide contact
+ * delete cannot ship on a path no test reaches: no `contacts.remove(` call, and
+ * no raw `fetch(` / `importFetch(` whose path is `/contacts/${…}` sent with
+ * `method: 'DELETE'`. The segment detach goes through the SDK
+ * (`contacts.segments.remove(`), which the positive controls require exactly
+ * once. `\s` spans `\r\n`, so the scan holds on a Windows CRLF checkout.
+ */
+describe('the DR4 source gate on the Resend gateway (spec 140 s4)', () => {
+  const GATEWAY = 'src/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway.ts';
+  // A raw call whose first argument holds `/contacts/${`, and the 300 characters
+  // after it (its init object), which must not carry a DELETE method.
+  const RAW_CONTACT_CALL = /\b(?:importFetch|fetch)\(\s*[`'"][^`'"]*\/contacts\/\$\{[\s\S]{0,300}/g;
+  const DELETE_METHOD = /method:\s*[`'"]delete[`'"]/i;
+  const rawContactDeletes = (source: string): string[] =>
+    [...source.matchAll(RAW_CONTACT_CALL)].map((m) => m[0]).filter((call) => DELETE_METHOD.test(call));
+
+  it('the gateway source holds no contacts.remove( and no raw DELETE /contacts/${…}', () => {
+    const source = readFileSync(join(process.cwd(), GATEWAY), 'utf-8');
+    // Positive controls: the file was read, and the detach is the SDK's.
+    expect(source.length).toBeGreaterThan(1000);
+    expect(source.split('contacts.segments.remove(')).toHaveLength(2);
+
+    expect(source).not.toMatch(/\bcontacts\.remove\(/);
+    expect(rawContactDeletes(source)).toEqual([]);
+  });
+
+  // The scan's own positive control: each forbidden shape is caught, CRLF included.
+  it.each([
+    ['an SDK account-wide delete', "await sdk.contacts.remove({ email });"],
+    ['a raw fetch, CRLF', "await fetch(`${BASE}/contacts/${email}`, {\r\n  method: 'DELETE',\r\n});"],
+    ['an importFetch, LF', "await importFetch(\n  `/contacts/${encodeURIComponent(email)}`,\n  { method: \"delete\" },\n);"],
+  ])('the scan catches %s', (_label, snippet) => {
+    expect(/\bcontacts\.remove\(/.test(snippet) || rawContactDeletes(snippet).length > 0).toBe(true);
+  });
+
+  it('the scan passes the segment detach and a contact GET', () => {
+    expect(rawContactDeletes("await sdk.contacts.segments.remove({ email, segmentId });")).toEqual([]);
+    expect(/\bcontacts\.remove\(/.test('sdk.contacts.segments.remove({ email, segmentId })')).toBe(false);
+    expect(rawContactDeletes('await fetch(`${BASE}/contacts/${email}`, { method: "GET" });')).toEqual([]);
   });
 });
