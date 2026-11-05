@@ -269,7 +269,7 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
     // WCAG 2.1.1 requires the Combobox to be operable via keyboard.
     // The Round 2 enterprise-ux-designer audit flagged that the
     // happy-path E2E test (above) only exercises mouse interaction.
-    // This test exercises Tab → Space-to-open → ArrowDown → Enter.
+    // This test exercises focus → ArrowDown-to-open → ArrowDown → Enter.
     await page.goto('/portal/sign-in');
     await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
     await page.getByRole('textbox', { name: 'Password' }).fill(MEMBER_PASSWORD!);
@@ -283,34 +283,26 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
 
     await page.goto('/portal/broadcasts/new');
 
-    // Focus the combobox trigger directly (matches real-user Tab
-    // sequence after the page header). Then open with Space + ArrowDown
-    // to the second option (skips Blank), Enter to select.
+    // Focus the combobox directly (matches the real-user Tab sequence
+    // after the page header). Since #667 it is AURA's editable Combobox:
+    // ArrowDown opens it on the first option (Blank); Space would type
+    // into the search and filter the list down to Blank.
     const picker = page.getByRole('combobox', {
       name: /Start from a template/i,
     });
     await picker.focus();
-    await page.keyboard.press('Space');
-    // R4.3 M-4 — fail-fast assertion: cmdk Combobox renders a Radix
-    // Popover containing a `<div role="listbox">` only AFTER Space
-    // opens it. Asserting visibility upfront converts an ArrowDown-
-    // sent-to-collapsed-trigger flake into a clear "popover didn't
-    // open" failure with a helpful stack.
+    await page.keyboard.press('ArrowDown');
+    // R4.3 M-4 — fail fast: assert the listbox opened, so a key sent to
+    // a closed combobox reads as "didn't open", not as a later miss.
     await expect(page.getByRole('listbox')).toBeVisible();
-    // cmdk Combobox: ArrowDown moves through options; Enter selects.
-    // Press TWICE so we land on the FIRST template row (index 1) and
-    // skip the "Blank" option at index 0.
-    //
-    // R6.5 L-6 — anchor each ArrowDown on the selection-state change
-    // (cmdk sets `data-selected="true"` on the active item). Pressing
-    // ArrowDown while the listbox is mid-reposition can drop the key
-    // on slow CI runners; the selection-anchor assertion serialises
-    // the key sequence against the DOM state instead of relying on
-    // raw key-press timing.
+    // R6.5 L-6 — anchor each key on the active-option change (the
+    // combobox's aria-activedescendant), not on key-press timing: one
+    // ArrowDown moves off Blank to the first template, then Enter.
+    await expect(picker).toHaveAttribute('aria-activedescendant', /.+/);
+    const firstActive = await picker.getAttribute('aria-activedescendant');
     await page.keyboard.press('ArrowDown');
-    await expect(page.locator('[cmdk-item][data-selected="true"]')).toBeVisible();
-    await page.keyboard.press('ArrowDown');
-    await expect(page.locator('[cmdk-item][data-selected="true"]')).toBeVisible();
+    await expect(picker).not.toHaveAttribute('aria-activedescendant', firstActive ?? '');
+    await expect(picker).toHaveAttribute('aria-activedescendant', /.+/);
     await page.keyboard.press('Enter');
 
     // F119 T140 (FR-046): no URL change any more — the choice re-seeds the
