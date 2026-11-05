@@ -450,6 +450,25 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     expect(row!.pdfDocKind).toBeNull();
   });
 
+  // #732 — with no deep link, the event is found by typing its name (the
+  // server search), not only from the newest 200 the page preloads.
+  test('no deep link: typing the event name finds it, and picking it lists its attendees', async ({
+    page,
+  }) => {
+    await page.goto('/admin/invoices/new');
+    const eventFee = page.getByRole('radio', { name: /Event fee/ });
+    await eventFee.waitFor({ state: 'visible', timeout: 60_000 });
+    await page.getByText('Event fee', { exact: true }).click();
+    const picker = page.locator('#eventId');
+    await picker.click();
+    await picker.fill('E2E 064 As-Paid');
+    await page.getByRole('option', { name: /E2E 064 As-Paid Event/ }).first().click();
+    await expect(picker).toHaveValue(/E2E 064 As-Paid Event/);
+    await expect(page.getByRole('button', { name: new RegExp(AS_PAID_ATTENDEES.paidTin) })).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
   test('as-paid form reflows at 320px in Swedish — no horizontal scroll on the form @a11y', async ({
     page,
   }) => {

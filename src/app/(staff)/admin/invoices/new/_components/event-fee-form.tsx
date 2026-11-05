@@ -93,6 +93,7 @@ import { AS_PAID_ERROR_CODES } from './as-paid-error-codes';
 import { isReadOnlyRefusal, readProblemCode } from '@/lib/http/read-only-refusal';
 import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from '../../_components/unknown-outcome';
 // Wave-4 S14 — shared client-safe Asia/Bangkok "today" helper.
+import { useEventSearch } from './use-event-search';
 import { bangkokTodayIso } from '@/lib/bangkok-today';
 import { formatSatangAmount } from '@/lib/format-thb';
 import { formatVatRateBps } from '@/lib/format-vat-rate';
@@ -515,15 +516,46 @@ export function EventFeeForm({
     setTodayBkk(today);
   }, []);
 
-  const eventOptions: ComboboxOption[] = useMemo(
-    () =>
-      events.map((e) => ({
-        value: e.eventId,
-        label: e.label,
-        ...(e.description ? { description: e.description } : {}),
-      })),
-    [events],
-  );
+  // #732 — typed text searches the server, so an event older than the
+  // preloaded 200 can be found. The picked event is remembered so its label
+  // survives when the results change.
+  const eventSearch = useEventSearch();
+  const [pickedEvent, setPickedEvent] = useState<EventOption | null>(null);
+  const eventOptions: ComboboxOption[] = useMemo(() => {
+    const { typed, results } = eventSearch;
+    let rows: readonly EventOption[];
+    if (typed === '') {
+      rows = events;
+    } else {
+      // Loaded events still match by label (their date too); the server adds
+      // older ones by name.
+      const needle = typed.toLocaleLowerCase();
+      const local = events.filter((e) => e.label.toLocaleLowerCase().includes(needle));
+      rows = [...local, ...results.filter((r) => !local.some((e) => e.eventId === r.eventId))];
+    }
+    const selected =
+      eventId === '' || rows.some((e) => e.eventId === eventId)
+        ? null
+        : (events.find((e) => e.eventId === eventId) ??
+          (pickedEvent?.eventId === eventId ? pickedEvent : null));
+    return (selected ? [selected, ...rows] : rows).map((e) => ({
+      value: e.eventId,
+      label: e.label,
+      ...(e.description ? { description: e.description } : {}),
+    }));
+  }, [events, eventSearch, eventId, pickedEvent]);
+
+  function eventPickerEmptyText(): string {
+    if (eventSearch.failed) return t('eventPicker.searchFailed');
+    return t('eventPicker.empty');
+  }
+
+  function pickEvent(next: string) {
+    const option =
+      events.find((e) => e.eventId === next) ?? eventSearch.results.find((e) => e.eventId === next) ?? null;
+    setPickedEvent(option);
+    handleEventChange(next);
+  }
 
   function handleEventChange(next: string) {
     setEventId(next);
@@ -972,9 +1004,14 @@ export function EventFeeForm({
           limit={Math.max(200, eventOptions.length)}
           touchHeight
           value={eventId || null}
-          onChange={(v) => handleEventChange(v ?? '')}
+          onChange={(v) => pickEvent(v ?? '')}
+          // #732 — with `onSearch` AURA stops filtering and shows the
+          // options as given (the memo above filters and adds results).
+          onSearch={eventSearch.onSearch}
+          loading={eventSearch.loading}
+          loadingText={t('eventPicker.searching')}
           placeholder={noEvents ? t('eventPicker.noEvents') : t('eventPicker.placeholder')}
-          emptyText={t('eventPicker.empty')}
+          emptyText={eventPickerEmptyText()}
           disabled={noEvents}
         />
 
