@@ -2188,7 +2188,7 @@ These are the spec's open questions (spec :160–162; research Q4, Q7). Each ans
 - **Verify.** The maintainer runs `/verify` on :3400 using the sink only:
   - DT1 name length on a draft created by the import leg;
   - DT4 detach of a `+` / uppercase contact;
-  - DT5 truncated listing (forced with a short deadline through the route);
+  - DT5: the reclaim route answers 200 with `truncated` and `deferredDeletes` present (truncation itself is proved by tests, never forced through the route; plan review M2);
   - a wrong Bearer → 401.
 - **Merge.** On the maintainer's word only.
 
@@ -2296,6 +2296,10 @@ DT1 + DT2 (with the reason copy) → DT3 + the status readers → DT4 → DT5 �
 - **Legacy-leg effects the plan did not name.** The inherited probe: a locked GET now retries and ends `gateway_retryable{locked}` (it was a fail-closed refuse); a quota 429 now refuses fail-closed (it was retryable). The import leg's own probe is pinned separately. The legacy Step 1b gate is now positive (`draft` / `cancelled` continue, anything else refuses), so `failed` can never fold to `not_found` at Step 1c; quota rows carry phase `permanent_failure_429`.
 - **Outside the dispatch legs.** Every `retry: 'retryable'` gateway method now retries `locked` and ends a quota 429 after one attempt: `removeContactFromAudience` (the live erasure adapter), `deleteAudience`, `deleteBroadcast`, `getAudienceContactCount`, `addContactsToAudience`, `listAudiences`. The erasure adapter counts any throw as failed whatever its kind (`subprocessor-erasure-adapter.ts`), so a quota 429 there still leaves the erasure for the re-drive; a lock that clears is now `detached`. pdpa reviews this.
 - Metric: `broadcasts_dispatch_budget_exhausted_total{sub_kind}` gains `locked`; quota moves from `app_error` to `resend_429`.
+
+#### Build notes, DT4 + DT5 (5 Nov 2026)
+- DT4: `assertSegmentId` (case-insensitive UUID, no trim) runs after `assertNonEmpty` in `removeContactFromAudience` only; a refused id is a failed pair in the adapter, so the erasure reads failed/partial and is re-driven. The runbook now tells a DSR answer to cite `resend_contacts_removed_count` as detach requests Resend accepted (pdpa checks the wording); the 2026-09-10 "structurally 0" box holds only if Resend answers 404 for an address it never held, which is unmeasured.
+- DT5: `RECLAIM_DEADLINE_MARGIN_MS` = 30 s lives in the use case (Next rejects unknown route exports); `deadlineAt` = start + 300 s − 30 s. Reclaim is the only `listAudiences` caller. New counter `broadcasts_audience_reclaim_truncated_total{tenant, stage}` with a § 22.3 alarm and cron-jobs runbook rows. A run deletes less, never more.
 
 #### Housekeeping
 - Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
