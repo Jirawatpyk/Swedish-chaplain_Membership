@@ -219,6 +219,89 @@ describe('EventFeeForm — a deep-linked event outside the newest 200 (#54)', ()
   });
 });
 
+describe('EventFeeForm — the event picker searches the server (#732)', () => {
+  // useTransition + fetch need real timers (this file's default is fake).
+  beforeEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useFakeTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const picker = enMessages.admin.invoices.eventFeeForm.eventPicker as Record<string, string>;
+  const oldEvent = { eventId: 'ev-old', name: 'Old Breakfast', startDate: '2025-03-04T02:00:00.000Z' };
+
+  /** The list search answers `search`; the attendee route answers `rows`. */
+  function stubFetch(search: (url: URL) => Response) {
+    const fn = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = new URL(String(input), 'https://app.test');
+      if (url.pathname === '/api/admin/events') return search(url);
+      if (url.pathname.startsWith('/api/admin/events/')) {
+        return new Response(JSON.stringify({ registrations: [matchedRegistration] }), { status: 200 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fn);
+    return fn;
+  }
+  const listOf = (items: unknown[]) =>
+    new Response(JSON.stringify({ items, pagination: { page: 1, pageSize: 25, totalCount: items.length } }), {
+      status: 200,
+    });
+  const searchCalls = (fn: ReturnType<typeof stubFetch>) =>
+    fn.mock.calls.map((c) => new URL(String(c[0]), 'https://app.test')).filter((u) => u.pathname === '/api/admin/events');
+
+  function typeInPicker(text: string): HTMLInputElement {
+    const input = document.getElementById('eventId') as HTMLInputElement;
+    fireEvent.click(input);
+    fireEvent.change(input, { target: { value: text } });
+    return input;
+  }
+
+  it('typing searches once after the debounce, and an event outside the loaded list can be picked', async () => {
+    const fn = stubFetch(() => listOf([oldEvent]));
+    renderForm();
+    typeInPicker('Old');
+    const option = await screen.findByRole('option', { name: /Old Breakfast \(2025-03-04\)/ });
+    const calls = searchCalls(fn);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.searchParams.get('q')).toBe('Old');
+    expect(calls[0]?.searchParams.get('pageSize')).toBe('25');
+    fireEvent.click(option);
+    expect(document.getElementById('eventId')).toHaveValue('Old Breakfast (2025-03-04)');
+    expect(await screen.findByRole('button', { name: /Alice \(member\)/ })).toBeInTheDocument();
+    expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/admin/events/ev-old'))).toBe(true);
+  });
+
+  it('shows the searching text while the request runs', async () => {
+    let release: (r: Response) => void = () => {};
+    stubFetch(() => new Promise<Response>((r) => (release = r)) as unknown as Response);
+    renderForm();
+    typeInPicker('Old');
+    expect(await screen.findByText(picker.searching ?? '<missing eventPicker.searching>')).toBeInTheDocument();
+    release(listOf([]));
+  });
+
+  it('no match shows the empty text; a failed search shows the failed text', async () => {
+    stubFetch(() => listOf([]));
+    const { unmount } = renderForm();
+    typeInPicker('Nothing');
+    expect(await screen.findByText(picker.empty ?? '')).toBeInTheDocument();
+    unmount();
+    vi.unstubAllGlobals();
+    stubFetch(() => new Response('{}', { status: 500 }));
+    renderForm();
+    typeInPicker('Nothing');
+    expect(await screen.findByText(picker.searchFailed ?? '<missing eventPicker.searchFailed>')).toBeInTheDocument();
+  });
+
+  it('a loaded event still matches by its date while the server finds nothing', async () => {
+    stubFetch(() => listOf([]));
+    renderForm();
+    typeInPicker('2026-06');
+    expect(await screen.findByRole('option', { name: /Annual Gala \(2026-06-01\)/ })).toBeInTheDocument();
+  });
+});
+
 describe('resolveDocType (pure helper)', () => {
   const anyRow = {
     registrationId: 'r-1',
