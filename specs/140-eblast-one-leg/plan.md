@@ -2136,6 +2136,67 @@ The run used :3400 against Neon dev, tenant swecham, with the import flag OFF. R
   - The line had no message, so no `Failed query: select … params: probe.person@example.test`: the email appeared 0 times, and `Failed query`, `params:` and `select ` appeared 0 times.
 - **Teardown:** clean. The Resend audience was deleted, leaving only `General`. 42 orphan rows and 3 members were deleted. The probe spec was removed and :3400 was stopped.
 
+### Slice 3 — build plan (DT1–DT5; agreed 5 Nov 2026)
+
+#### Context
+s1, s2a, s2b, s2c and s2d of spec 140 have merged; the latest is s2d, #741 `70adc41a4`.
+
+Slice 3 is US3 of `specs/140-eblast-one-leg/spec.md`:125–138. It makes the import leg read Resend's answers correctly before s4 retires the legacy leg and the import leg becomes the only one. Two of the items are spec ship-blockers:
+- the unbounded broadcast name (spec :56);
+- a contact remove without a segment id, which deletes the contact account-wide (spec :57).
+
+**Size L.** Erasure touches contact detach (PII), and the error classes feed the member-quota slot refund. **No migration is planned** (see Rotation).
+
+**Lesson from s2d, applied here:**
+- The scope is US3 plus the carries named for slice 3, and nothing else. #739, #740 and the s2d "#5" erased-flag idea stay out.
+- Reviews stop once no Medium remains. Leftover Lows that no live site reaches become follow-ups.
+
+#### Step 0: measurements first (Resend sink only, delivered@resend.dev; never /send or cancel)
+These are the spec's open questions (spec :160–162; research Q4, Q7). Each answer goes into `research.md` as MEASURED with its date before any code depends on it.
+1. **The `contacts.remove` encoding.** Create a sink segment and contact, then detach:
+   - a `+` address;
+   - an UPPERCASE address.
+
+   Record what the SDK sends and whether each one is detached while the contact still exists. Also confirm what a falsy segment id does, using a read-only reasoning trace of the SDK path. The account-wide delete is NOT executed.
+2. **DELETE on a `failed` broadcast.** Record the answer if a failed broadcast can be produced on the sink without sending. If it cannot, it stays UNMEASURED and the in-flight arm keeps `failed` undecided.
+3. **409 `resource_locked`.** Try to provoke it with two concurrent PATCH or DELETE calls on one sink draft. If it never occurs, record that, and the classifier still handles the documented code.
+
+#### Build (RED before GREEN per row; plan rows in `plan.md` before GREEN, with neighbours named)
+
+| Done-when | Change | Files |
+|---|---|---|
+| **DT1:** a 75-char subject → name ≤ 70 code points | The import leg builds its name through the existing `format/resend-dashboard-name.ts` cap (fix #117) instead of the raw template at `build-audience-tick.ts:~2275`, so one capping rule serves both legs | `build-audience-tick.ts`, `format/resend-dashboard-name.ts` |
+| **DT2:** a `canceled` inherited broadcast is refused terminally, never re-minted | `isDeadProbe` / `inheritedDead` (`:1185`, `:2257`) stop treating `cancelled` as re-mintable. A cancelled inherited id ends the row terminally (`failTerminally`, an existing reason or a new `IMPORT_FAILURE_REASONS` member; TS const, no enum). `not_found` / null is unchanged. The s2c orphan row for the cancelled id stays as it is | `build-audience-tick.ts` |
+| **DT3:** error classes | `classifyResendError` (`resend-broadcasts-gateway.ts:184`) keys on HTTP status, then on `name`: <br>• 409 `resource_locked` → `retryable` (a new subKind `locked`); <br>• 429 `daily_quota_exceeded` / `monthly_quota_exceeded` → `permanent` (code kept); <br>• 429 `rate_limit_exceeded` stays retryable. <br>The send path's "409 then 422 → sent, no failure write" is pinned: the replay arm (`:2356`) plus `probeRefusedSend` must not write a failure or release the quota slot | gateway, `build-audience-tick.ts` send arm, `_probe-refused-send.ts` |
+| **The status readers (carry a)** | Both readers share one `normaliseStatus` that maps `failed` → `failed` (not `unknown`) and `canceled` → `cancelled`. The inherited probe and `probeRefusedSend` read through `probedStatusOf`. The s2d classifier's `failed` row stays as it is unless step 0.2 measures something else | gateway, `build-audience-tick.ts:940-999`, `_probe-refused-send.ts` |
+| **DT4:** a `+` / uppercase address is detached and still exists | Per the step 0.1 measurement: encode or normalise the email the way the SDK path needs. Add a guard: `removeContactFromAudience` refuses a falsy or empty segment id **before** any call, which closes the account-wide delete ship-blocker | gateway `removeContactFromAudience` and any other `contacts.remove` caller |
+| **DT5:** `listAudiences` stops at a per-invocation time budget | The port gains `listAudiences({ deadlineAt })`. The gateway stops paging when the remaining time is less than one bounded call, and returns what it has plus `truncated: true`. `reclaim-orphaned-audiences.ts:170` passes its route's deadline and logs `truncated`. The page and cursor bounds stay | port, gateway, `reclaim-orphaned-audiences.ts`, its route |
+| **Rotation (Approach item 3)** | `findStuckErasuresInTx` (`drizzle-member-repo.ts:~711`) orders oldest first, so a permanently stuck head starves the rest. **No migration:** it orders by the latest `member_erasure_*` attempt in `audit_log` (the query already reads it), oldest attempt first. The plan reviewers confirm or reject this before GREEN | members repo, reconcile route |
+
+**Tests per row:**
+- unit tests (it.each for the classifier cells);
+- a contract case for the gateway classes and the remove guard;
+- an integration test for the rotation ordering;
+- the existing `dispatch-lease-budget` and `cleanup` tests stay green.
+
+#### Process
+- **Branch and worktree.** `140-eblast-one-leg-s3`, cut from origin/main. Reuse f142 by switching it to a new branch from origin/main, with a fresh `pnpm install`.
+- **Plan review.** `chamber-os-architect`, `pdpa-gdpr-compliance-officer` (DT4, rotation) and `reliability-guardian` read the plan before the build.
+- **Build.** One builder per part, in order: step 0, then DT1+DT2, DT3 + readers, DT4, DT5, rotation. Each brief names the plan section that holds the contract.
+- **Gates.** Run by the main session, one at a time in the foreground. Tests that read pino output log at `error`. Check `gh pr view --json mergeable` after every push and merge main before each review round.
+- **Reviews.** `/code-review high` plus security, pdpa, reliability and spec-compliance. Stop once no Medium remains. The cap is ≥ 2 full + ≤ 2 targeted.
+- **Verify.** The maintainer runs `/verify` on :3400 using the sink only:
+  - DT1 name length on a draft created by the import leg;
+  - DT4 detach of a `+` / uppercase contact;
+  - DT5 truncated listing (forced with a short deadline through the route);
+  - a wrong Bearer → 401.
+- **Merge.** On the maintainer's word only.
+
+#### Verification
+- `pnpm check`, contract, unit for broadcasts and members, and the integration files for the tick, reclaim and reconcile-erasures.
+- `/verify` as above.
+- Step 0's measurements are recorded in `research.md` with dates.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
