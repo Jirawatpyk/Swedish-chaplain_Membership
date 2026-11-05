@@ -358,8 +358,9 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
 6. **Check sub-processor propagation (US3-C).** The Resend audience-contact
    removal is **best-effort, non-blocking**. Watch the
    `member_subprocessor_erasure_total{resend_outcome}` alert (§ below). If it
-   fired `failed`/`partial` for this member, run the **manual remediation
-   procedure** (§ Sub-processor erasure propagation) within the H-1 window.
+   fired `failed`/`partial`/`not_attempted` for this member, run the **manual
+   remediation procedure** (§ Sub-processor erasure propagation) within the H-1
+   window.
 
 7. **Acknowledge the out-of-reach copies.** SEVEN copies cannot be erased by the
    controller and are accepted residuals (§ Documented residuals + the RoPA):
@@ -829,7 +830,9 @@ runbook.
 > `subprocessor_erasure_propagated` row with `resend_contacts_removed_count >= 1`;
 > on a re-drive that count is 0 because no detach request is sent for a sentinel
 > (a re-drive row written before spec 140 slice 3 may read above 0: those were
-> 200s for sentinel addresses, not removals).
+> 200s for sentinel addresses, not removals). Since spec 140 slice 3 review
+> round 2 (R2-A) such a re-drive row says `resend_outcome: 'not_attempted'`,
+> not `ok`.
 
 ### Alert
 
@@ -838,12 +841,23 @@ Page the DPO on:
 ```
 member_subprocessor_erasure_total{resend_outcome="failed"} > 0
 member_subprocessor_erasure_total{resend_outcome="partial"} > 0
+member_subprocessor_erasure_total{resend_outcome="not_attempted"} > 0
 ```
 
-`resend_outcome` is a bounded enum `{ok, partial, failed}`. `failed` = every
-captured pair failed to remove; `partial` = some removed, some failed. Both mean
-the data subject's email still sits in ≥1 Resend audience and a future broadcast
-could re-reach an erased member — a residual the DPO must close manually.
+`resend_outcome` is a bounded enum `{ok, partial, failed, not_attempted}`.
+`failed` = every captured pair failed to remove; `partial` = some removed, some
+failed. Both mean the data subject's email still sits in ≥1 Resend audience and
+a future broadcast could re-reach an erased member — a residual the DPO must
+close manually. `not_attempted` (spec 140 slice 3 review round 2, R2-A) = a pass
+whose every address was already a scrub sentinel (a re-drive after the scrub
+committed): no detach could be sent, and nothing in the row says whether the
+first pass's detach ran.
+
+**Re-drive echoes page too.** `reconcile-erasures` re-drives a member whose
+`member_erased` is withheld on every tick, and each re-drive writes another
+`not_attempted` row. Read the member's rows oldest first (the query in step 1)
+before acting; the bullet below says which `not_attempted` needs a Resend
+search.
 
 ### Manual remediation procedure
 
@@ -916,6 +930,20 @@ When the alert fires:
      even one with status 404) is read as transient on purpose, so a `failed`
      count can come from an edge problem, not a Resend outage; the contact is
      NOT known to be gone. Remediate it like any other failure.
+   - **`resend_outcome: 'not_attempted'`** (spec 140 slice 3 review round 2,
+     R2-A) — the pass found only scrub sentinels, so it sent no detach. Look at
+     the member's rows from the query above, oldest first:
+     - an **earlier** row exists (`ok`, `partial` or `failed`): that row is the
+       outcome (§ Security cond-3), and this `not_attempted` is a re-drive echo.
+       Act on the earlier row only; no Resend search is needed for the echo.
+     - `not_attempted` **is the earliest** row: the first pass committed the
+       scrub but never wrote its own propagation row (it crashed between the
+       scrub commit and the propagation, or its audit write failed: grep
+       `erase-member: subprocessor cascade audit failed` for the member). The
+       first pass's detach may never have run. Search the Resend dashboard
+       (Audiences / Segments, then Contacts) for the member's address from the
+       DSR intake record and detach it from every audience it is still in; the
+       database no longer holds the address.
    - **`erase-member: subprocessor Resend propagate deadline reached`** (warn;
      spec 140 s2a) — the erasure's cascade deadline left less than one 10 s
      request budget, so `untriedPairs` pairs were never sent to Resend and are
@@ -963,14 +991,18 @@ to the DPO before the window closes, do not let it lapse silently.
 ### Security cond-3 — the second `ok` audit is NOT proof of remediation
 
 If `eraseMember` is re-driven for an already-erased member (e.g. the US2d
-reconciler, or an admin retry), the in-tx capture now reads `[]` (the contacts
-are already `removed_at`-stamped → no live emails → no audience pairs). The
-cascade then writes a SECOND `subprocessor_erasure_propagated` row with
-`resend_outcome:'ok', resend_contacts_removed_count:0` and does **not** call
-Resend at all.
+reconciler, or an admin retry), the in-tx capture now reads `[]`: the
+contacts' addresses are already the scrub's sentinels
+(`erased+<contact_id>@erased.invalid`), and since spec 140 slice 3 (R1-D) the
+capture drops sentinels before pairing them with audiences. The cascade then
+writes a SECOND `subprocessor_erasure_propagated` row with 0/0/0 and does
+**not** call Resend at all. Since spec 140 slice 3 review round 2 (R2-A) that
+row says `resend_outcome: 'not_attempted'` (before it, `ok`, which read the same
+as "the member was in no audience").
 
-**This second `ok`/removed:0 row is a VACUOUS empty-set no-op.** It is NOT
-evidence that the Resend removal succeeded. The authoritative signal is the
+**This second row is an empty-set no-op.** It is NOT evidence that the Resend
+removal succeeded (an older second row reading `ok`/removed:0 is the same
+no-op). The authoritative signal is the
 **FIRST** pass's `resend_outcome` + the metric. An operator triaging the audit
 log MUST read the EARLIEST `subprocessor_erasure_propagated` row for a member
 (`ORDER BY occurred_at ASC`) and MUST NOT read a later `ok` as remediation of an
