@@ -232,6 +232,14 @@ export type EraseMemberMeta = {
   deadlineAt?: Date;
 };
 
+/**
+ * Spec 140 s3 review round 3 (code-review #2) — the most the earlier-propagation
+ * read (R2-A2) may take. It runs in front of the propagation, the one step a
+ * re-drive cannot repeat, so it is skipped when the deadline leaves less than
+ * this, and abandoned past it (the pooler can drop `statement_timeout`).
+ */
+export const PRIOR_PROPAGATION_READ_BUDGET_MS = 3_000;
+
 class EraseNotFoundError extends Error {
   constructor() {
     super('not_found');
@@ -824,12 +832,27 @@ export async function eraseMember(
   // commit, not inside the scrub tx: a failed statement there aborts the whole
   // transaction and rolls the erasure back, and this read must fail soft — a
   // failure counts as "no earlier row", toward paging.
+  // Round 3 (code-review #2): bounded by PRIOR_PROPAGATION_READ_BUDGET_MS and
+  // skipped when the deadline leaves less than that; a skip or a timeout also
+  // counts as "no earlier row".
   let priorPropagationRecorded = false;
-  if (addressesAlreadyScrubbed) {
+  const readFits =
+    meta.deadlineAt === undefined ||
+    meta.deadlineAt.getTime() - deps.clock.now().getTime() >= PRIOR_PROPAGATION_READ_BUDGET_MS;
+  if (addressesAlreadyScrubbed && readFits) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      priorPropagationRecorded = await runInTenant(deps.tenant, (tx) =>
-        deps.memberRepo.hasSubprocessorPropagationInTx(tx, deps.tenant.slug, memberId),
-      );
+      priorPropagationRecorded = await Promise.race([
+        runInTenant(deps.tenant, (tx) =>
+          deps.memberRepo.hasSubprocessorPropagationInTx(tx, deps.tenant.slug, memberId),
+        ),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('prior propagation read exceeded its budget')),
+            PRIOR_PROPAGATION_READ_BUDGET_MS,
+          );
+        }),
+      ]);
     } catch (readErr) {
       logger.warn(
         {
@@ -841,6 +864,8 @@ export async function eraseMember(
         },
         'erase-member: prior subprocessor propagation read failed',
       );
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
     }
   }
   try {
