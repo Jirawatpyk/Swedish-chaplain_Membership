@@ -1835,11 +1835,12 @@ async function onGatewayFailure(
       // page-on-call series — attributing an unclassified fault to a real
       // transport class is the `?? 'admin'` shape in a metric dimension.
       //
-      // Unreachable today (`GatewayThrowable` requires `subKind` on retryable),
-      // but `viaGateway` narrows against four hardcoded literals and maps
-      // anything else to `undefined`, so a FIFTH sub-kind would land here with
-      // no compiler signal. `'unclassified'` makes that visible on the
-      // dashboard instead of hiding it inside `api`.
+      // Unreachable today (`GatewayThrowable` requires `subKind` on retryable).
+      // `viaGateway` narrows through `retryableSubKind`, whose one list is
+      // checked both ways against `GatewayRetryableSubKind` (spec 140 s3 R1-J),
+      // so a new port sub-kind fails to compile there; a thrown string outside
+      // the union maps to `undefined`, and `'unclassified'` makes that visible
+      // on the dashboard instead of hiding it inside `api`.
       failure.subKind ?? 'unclassified',
     );
   }

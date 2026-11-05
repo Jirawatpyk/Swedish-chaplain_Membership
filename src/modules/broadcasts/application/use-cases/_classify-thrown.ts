@@ -73,15 +73,37 @@ export function isRetryableThrow(kind: string): boolean {
  * PR-E's whole-branch review. `dispatch_budget_exhausted` pages on-call, so a
  * fault nobody classified must not arrive labelled as a real transport class —
  * and the old `as … ?? 'api'` cast also let a FIFTH string through to the
- * metric raw. Narrowed against the same four literals as `viaGateway` in
- * `build-audience-tick.ts` (which falls back to `undefined`, not this).
+ * metric raw. `viaGateway` in `build-audience-tick.ts` reads this too (and
+ * maps `unclassified` to `undefined`).
+ *
+ * Spec 140 s3 review round 1 (R1-J) — narrowed against ONE list, checked both
+ * ways against the port's `GatewayRetryableSubKind`: `satisfies` refuses a
+ * value the union lacks, and `_everySubKindListed` fails to compile when the
+ * union gains a member the list lacks. It used to compare hand-written
+ * literals, so a new sub-kind landed in `unclassified` with no compiler signal.
  */
 export type RetryableSubKind = GatewayRetryableSubKind | 'unclassified';
 
+export const GATEWAY_RETRYABLE_SUB_KINDS = [
+  'network',
+  'timeout',
+  'server_5xx',
+  'api',
+  'locked',
+] as const satisfies readonly GatewayRetryableSubKind[];
+
+type UnlistedSubKind = Exclude<GatewayRetryableSubKind, (typeof GATEWAY_RETRYABLE_SUB_KINDS)[number]>;
+const _everySubKindListed: [UnlistedSubKind] extends [never] ? true : UnlistedSubKind = true;
+void _everySubKindListed;
+
+const GATEWAY_RETRYABLE_SUB_KIND_SET: ReadonlySet<string> = new Set(GATEWAY_RETRYABLE_SUB_KINDS);
+
+function isGatewayRetryableSubKind(sub: string | undefined): sub is GatewayRetryableSubKind {
+  return sub !== undefined && GATEWAY_RETRYABLE_SUB_KIND_SET.has(sub);
+}
+
 export function retryableSubKind(sub: string | undefined): RetryableSubKind {
-  return sub === 'network' || sub === 'timeout' || sub === 'server_5xx' || sub === 'api' || sub === 'locked'
-    ? sub
-    : 'unclassified';
+  return isGatewayRetryableSubKind(sub) ? sub : 'unclassified';
 }
 
 /**
