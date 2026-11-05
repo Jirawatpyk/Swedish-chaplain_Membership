@@ -67,6 +67,7 @@ import {
   isF7ImportAudienceEnabled,
   buildAudienceTick,
   makeBuildAudienceTickDeps,
+  currentAudienceCeiling,
 } from '@/modules/broadcasts';
 import { brandChromePort } from '@/lib/broadcast-brand-deps';
 import { runInTenant } from '@/lib/db';
@@ -102,8 +103,8 @@ export const dynamic = 'force-dynamic';
 // `ca51f59a1` DELETED on this branch — there is no batch path; an audience above
 // `currentAudienceCeiling()` is refused, not split.
 //
-// `audience-ceiling.ts` names this exact drift as the reason the derivation lives
-// in ONE place (`research.md` § R9, the CORRECTED block). It took three passes to
+// The former `audience-ceiling.ts` (deleted in spec 140 s4) named this exact drift
+// as the reason the derivation lives in ONE place (`research.md` § R9, the CORRECTED block). It took three passes to
 // remove: round 4 deleted the derived figure and left the premise sentence, which
 // then contradicted its own correction three lines below it.
 export const maxDuration = 300;
@@ -172,10 +173,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   //
   // With the batch path deleted there is no sibling cron to partition
   // against: this is the only claimant of `approved` rows. Size is bounded
-  // where it belongs instead — with the import ON one call carries any
-  // audience, and with it OFF `currentAudienceCeiling()` clamps to what the
-  // serial push can drain, so an oversized audience is refused at submit
-  // rather than claimed and stranded.
+  // where it belongs instead: `currentAudienceCeiling()` (spec 140 s4:
+  // `BROADCAST_AUDIENCE_CEILING`, default 900) refuses an oversized audience at
+  // submit rather than letting it be claimed and stranded.
   // T087 — with the import flag ON the import leg (`buildAudienceTick`) works
   // the rows; OFF, the legacy leg. Read once per tick: it routes the rows below
   // and (spec 140 s2a review round 1, code-review #3) narrows the due scan.
@@ -674,8 +674,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // Spec 140 s4 (security L7) — the ceiling this tick enforced, logged once per
+    // tick. Not a summary bucket: the body and the span attributes stay counts.
     logger.info(
-      { tenantId: tenant.slug, ...summary },
+      { tenantId: tenant.slug, audienceCeiling: currentAudienceCeiling(), ...summary },
       'cron.broadcasts.dispatch.tick_complete',
     );
     // Round 2 R2-15 — the span carried only `processed` + `succeeded`, so the

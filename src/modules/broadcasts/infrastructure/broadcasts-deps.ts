@@ -37,11 +37,6 @@ import type { BroadcastApprovalCounter } from '../application/ports/broadcast-ap
 import type { ClockPort } from '../application/ports/clock-port';
 import type { AudienceMode } from '../domain/audience-mode';
 import type { ResolveSegmentDeps } from '../application/use-cases/resolve-segment-recipients';
-import {
-  audienceCeiling,
-  DELIVERABLE_RECIPIENTS_PER_TICK,
-} from '../domain/audience-ceiling';
-import { isF7ImportAudienceEnabled } from './feature-flags';
 import { err, ok } from '@/lib/result';
 import { recipientSegmentFromPersisted } from '../domain/recipient-segment';
 import { asEmailLower, unsafeBrandEmailLower } from '../domain/value-objects/email-lower';
@@ -152,101 +147,28 @@ export function currentAudienceMode(): AudienceMode {
 }
 
 /**
- * 108 PR-C T085 (FR-042) — the CONFIGURED ceiling, i.e. what the flags say the
- * system would accept. Since T095 (2026-09-08) it is no longer what any caller
- * compares against: they all read `currentAudienceCeiling()` below.
+ * The ONE audience ceiling (FR-041 / FR-042): every call site — the compose
+ * count, submit and the import leg's dispatch resolve — compares against this
+ * function, so the estimate a member sees at compose is the number that
+ * decides the send. Every i18n string interpolates `{ceiling, number}`, so the
+ * copy follows in all three locales with no key changes.
  *
- * It has **no reader outside this file** — the two batch crons that used to
- * read it were deleted in `ca51f59a1`. It is kept and exported anyway because
- * its test pins it as a column distinct from the enforced value; see the
- * docblock on `currentAudienceCeiling()` for why collapsing them would make
- * the clamp assertions vacuous.
+ * Spec 140 s4 (DR3): it is `BROADCAST_AUDIENCE_CEILING`, default 900, and no
+ * flag moves it. Until s4 it was a flag matrix (5,000; 50,000 with the import
+ * and the 1:N flag both on; clamped to the serial push's 500 with the import
+ * off). The import leg is now the only leg, and its time budgets were derived
+ * at 900 recipients or fewer: the docblock on the variable in `env.ts` says
+ * what raising it needs. `FEATURE_CONTACT_MARKETING_RECIPIENTS` keeps its
+ * recipient-scope role (`currentAudienceMode()` above) and no ceiling role.
  *
- * Value: 5,000 unless BOTH `FEATURE_F7_IMPORT_AUDIENCE` AND the 1:N audience
- * flag are ON, then 50,000. Read per call, so a flag flip takes effect on the
- * next request/tick.
- *
- * Round 3 finding 3-4 — this said "the F7.1a batching path", naming
- * `FEATURE_F71A_US1_PAGINATION`. That WAS the gate until `ca51f59a1` deleted
- * the batch path; the code below has read `isF7ImportAudienceEnabled()` since,
- * and the prose did not follow. A live-Neon test restated the same stale rule
- * and was RED under the dev/prod flag configuration.
- *
- * Review H-2 (2026-09-07): the wide ceiling was raised FOR the 1:N audience,
- * so it moves WITH `FEATURE_CONTACT_MARKETING_RECIPIENTS`. Gating on the
- * batching flag alone would have changed prod on deploy with the 108 flag
- * OFF — `FEATURE_F71A_US1_PAGINATION` is already ON there — accepting
- * audiences of 5,001–50,000 that the pre-branch `AUDIENCE_HARD_CAP` refused,
- * opening the never-exercised split/batch path, and changing every compose
- * page's copy to "up to 50,000". With the 108 flag OFF this is byte-for-byte
- * the old 5,000. Pinned by `broadcasts-deps-audience.test.ts` against an
- * explicit flag matrix (never against itself).
- */
-export function configuredAudienceCeiling(): number {
-  return audienceCeiling(
-    isF7ImportAudienceEnabled() && env.features.contactMarketingRecipients,
-  );
-}
-
-/**
- * The ceiling every SINGLE-TICK call site actually compares against.
- *
- * T095 (2026-09-08) separated two numbers that had been conflated.
- * `configuredAudienceCeiling()` is the flag decision — 5,000, or 50,000 when
- * the batching path and the 1:N audience are both on — and it stays pinned on
- * its own so an inverted flag expression still fails a test (the H-2 guard
- * above). `DELIVERABLE_RECIPIENTS_PER_TICK` is the measured bound of the
- * serial Resend push (derivation: `research.md` § R9, CORRECTED block).
- *
- * They were never the same number, and the gap was the bug: a broadcast
- * between the two passed submit and then could not be delivered by any path,
- * sitting in `approved` until `broadcasts_approved_overdue_count` noticed
- * about ninety minutes later.
- *
- * **The clamp is conditional on the IMPORT flag, and it is a tightening.**
- * Phase 9b's split/batch model is gone — `ca51f59a1` deleted both crons and
- * `SPLIT_THRESHOLD_RECIPIENTS` with them. What replaced it inverts the
- * argument: the serial per-contact loop is the thing with a per-tick capacity,
- * and the import removes it, because one multipart upload carries the whole
- * CSV in a single size-independent call.
- *
- *   - import OFF (today's default, and prod's rollback position) → the legacy
- *     loop runs, so the measured single-tick bound is real and this clamps to
- *     it. Above ~500 the answer is a refusal at submit.
- *   - import ON  → no per-tick capacity to clamp against; accept what the
- *     flags configure. A growing chamber's headcount is then a Resend plan
- *     decision, not a code change.
- *
- * **STATE THE DELTA AGAINST `origin/main`, NOT AGAINST THIS BRANCH.** `main`
- * has no clamp at all — `currentAudienceCeiling()` there is a bare
- * `audienceCeiling(...)`. So on merge, with the import flag absent and
- * therefore false, the accepted ceiling moves **5,000 → 500, unflagged**.
- * That is deliberate and recorded with its reasoning in
- * `specs/108-contact-recipient-rules/reviews/cutover.md` § 5: audiences of
- * 501–5,000 are accepted today and *already fail silently*, because 300 s of
- * the serial loop cannot drain them (measured 2.08 req/s ⇒ ~623/tick). The
- * refusal replaces a silent non-delivery with a legible error. Do not "restore"
- * 5,000 to avoid a behaviour change without reading § 5 first.
- *
- * `configuredAudienceCeiling()` stays exported on its own even though nothing
- * outside this file reads it any more. That is not dead code kept by accident:
- * `broadcasts-deps-audience.test.ts` asserts `configured` and `enforced` as
- * SEPARATE columns, and rows where they differ (5,000 vs 500) are what keep an
- * inverted flag expression failing. Collapse them and the clamp assertions go
- * vacuously green — the H-2 guard above.
- *
- * FR-042 still holds: every call site — compose count, submit, dispatch —
- * compares against this one function, and every i18n string interpolates
- * `{ceiling, number}`, so the copy follows in all three locales with no key
- * changes.
- *
- * Note this is the ACCEPT bound only, and the estimate that routed a row was
- * frozen at submit, so it can be days stale by the time a tick reads it.
+ * Read per call so this module holds no copy of its own; `env` memoises its
+ * parse, so a change lands on the next deploy / cold start. Note this is the
+ * ACCEPT bound only, and the estimate that routed a row was frozen at submit,
+ * so it can be days stale by the time a tick reads it: lowering the value
+ * fails an `approved` row above it at its next tick.
  */
 export function currentAudienceCeiling(): number {
-  return isF7ImportAudienceEnabled()
-    ? configuredAudienceCeiling()
-    : Math.min(configuredAudienceCeiling(), DELIVERABLE_RECIPIENTS_PER_TICK);
+  return env.broadcasts.audienceCeiling;
 }
 
 /**

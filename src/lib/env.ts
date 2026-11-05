@@ -519,6 +519,24 @@ const schema = z.object({
     .optional()
     .or(z.literal('').transform(() => undefined)),
 
+  // Spec 140 s4 (DR3) — the ONE E-Blast audience ceiling, compared at count,
+  // submit and dispatch (FR-042), so the number a member sees at compose is
+  // the number that decides the send. No flag moves it. Default 900.
+  //
+  // The import leg's time budgets were derived at 900 recipients or fewer:
+  // the lease budget (`DB_AND_RESOLVE_MS` in `_dispatch-lease.ts`) and the
+  // 30 s `IMPORT_CALL_TIMEOUT_MS` on the Contacts-Import POST. A value above
+  // about 1,000 needs a Resend plan upgrade first (the Free plan holds 1,000
+  // contacts team-wide, and every imported address stays, so the count
+  // accumulates) plus a fresh measurement of the import timing and of the
+  // resolve budget. Without both, a larger E-Blast ends `failed_to_dispatch`
+  // with a reason and a member notice rather than sending.
+  //
+  // The upper bound is the DB CHECK `broadcasts_estimated_recipient_cap`
+  // (0..50000). Lowering the value fails an `approved` row above it at its
+  // next tick.
+  BROADCAST_AUDIENCE_CEILING: z.coerce.number().int().min(1).max(50000).default(900),
+
   // Kill-switch for F7 Email Broadcast. When FALSE every
   // `/api/broadcasts/**` and `/api/admin/broadcasts/**` route returns
   // 503 `feature_disabled` via the kill-switch helper (T031). Default
@@ -671,12 +689,9 @@ const schema = z.object({
   // member to every eligible contact of every active member (US3, FR-020).
   // Read in ONE module: `src/modules/broadcasts/infrastructure/broadcasts-deps.ts`
   // maps it to `ResolveSegmentDeps.audienceMode` ('primary_only' |
-  // 'all_contacts') AND — review H-2 — gates the audience ceiling with
-  // FEATURE_F7_IMPORT_AUDIENCE (50,000 only when BOTH are on, else 5,000;
-  // round 3 finding 3-4 — this named FEATURE_F71A_US1_PAGINATION, which was
-  // the gate until `ca51f59a1` deleted the batch path it belonged to),
-  // so Domain and Application never see the env. A flip therefore also moves
-  // the accepted audience size and the compose-page copy. Default
+  // 'all_contacts'), so Domain and Application never see the env. It no
+  // longer moves the audience ceiling: since spec 140 s4 that is
+  // BROADCAST_AUDIENCE_CEILING alone, whatever this flag says. Default
   // FALSE — ships dark; the operator flips it only after the FR-027a
   // pre-flight review on /admin/marketing/audience (tasks T093/T094).
   // Flag-off is the rollback for the WIDENING (quickstart § Rollback matrix);
@@ -1304,6 +1319,8 @@ export const env = {
     privacyContactEmail:
       raw.TENANT_PRIVACY_CONTACT_EMAIL ??
       (raw.BROADCASTS_FROM_EMAIL.match(/<([^>]+)>\s*$/)?.[1] ?? raw.BROADCASTS_FROM_EMAIL).trim(),
+    // Spec 140 s4 (DR3) — read by `currentAudienceCeiling()` only.
+    audienceCeiling: raw.BROADCAST_AUDIENCE_CEILING,
   },
 
   // F8 Renewal Tracking + Smart Reminders. F8 reuses F1+F4 transactional

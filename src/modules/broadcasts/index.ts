@@ -306,18 +306,12 @@ export {
 
 // --- F9 cross-module read (dashboard needs-attention, FR-002/AS-2) -------
 export { makeBroadcastApprovalCounter } from './infrastructure/broadcasts-deps';
-// 108 PR-C — the flag-derived resolver leg, read in the composition root only.
+// 108 PR-C — the flag-derived resolver leg; spec 140 s4 — the env ceiling.
 export {
   currentAudienceMode,
-  configuredAudienceCeiling,
   currentAudienceCeiling,
   makeResolveSegmentDeps,
 } from './infrastructure/broadcasts-deps';
-// 108 PR-C T085 — the one ceiling (Domain) + the split threshold it bounds.
-export {
-  audienceCeiling,
-  DELIVERABLE_RECIPIENTS_PER_TICK,
-} from './domain/audience-ceiling';
 export type { BroadcastApprovalCounter, MarketingQueueCounts } from './application/ports/broadcast-approval-counter';
 // F119 T116 / T117 / T119 — the staff dashboard (contracts/dashboard-and-notifications.md § 1):
 // per-stage counts, batched delivery results, time in stage and the stalled flag.

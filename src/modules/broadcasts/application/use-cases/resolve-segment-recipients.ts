@@ -138,8 +138,8 @@ export interface ResolveSegmentDeps {
    */
   readonly audienceMode: AudienceMode;
   /**
-   * 108 PR-C T085 (FR-041 / FR-042) — the ONE ceiling,
-   * `audienceCeiling(batchingEnabled)` from `domain/audience-ceiling.ts`,
+   * 108 PR-C T085 (FR-041 / FR-042) — the ONE ceiling (spec 140 s4:
+   * `BROADCAST_AUDIENCE_CEILING`, read by `currentAudienceCeiling()`),
    * passed in by the composition root so count, submit and dispatch compare
    * against the same number and the refusal echoes it. Never truncate to it.
    */

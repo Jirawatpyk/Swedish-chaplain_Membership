@@ -347,10 +347,10 @@ export const broadcasts = pgTable(
     ),
 
     // FR-007 (F71A US1 amendment 2026-05-19): estimated_recipient_count
-    // ≤ 50,000. F7 MVP 5k cap raised to 50k via migration 0171.
-    // Application-layer T061 flag gate enforces tenant-effective cap:
-    // when F71A US1 OFF, submit-broadcast use-case rejects >5k via
-    // broadcast_audience_too_large; when ON, 50k applies.
+    // ≤ 50,000. F7 MVP 5k cap raised to 50k via migration 0171. This is the
+    // outer bound only: the enforced ceiling is `BROADCAST_AUDIENCE_CEILING`
+    // (default 900, at most 50,000; spec 140 s4), refused above it at count,
+    // submit and dispatch with broadcast_audience_too_large.
     check(
       'broadcasts_estimated_recipient_cap',
       sql`${table.estimatedRecipientCount} BETWEEN 0 AND 50000`,
