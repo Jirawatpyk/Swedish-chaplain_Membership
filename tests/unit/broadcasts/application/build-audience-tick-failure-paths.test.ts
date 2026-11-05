@@ -285,7 +285,9 @@ function makeDeps(opts: {
      */
     | 'broadcast_dispatch_failure_notif_skipped_no_email'
     /** F119 PR-A R4 — the standing refusal's own row, the SECOND insert of the terminal tx. */
-    | 'broadcast_member_halted_pending_review';
+    | 'broadcast_member_halted_pending_review'
+    /** PR #756 review round 1 — the unverifiable count's row, written before the send. */
+    | 'broadcast_resend_drift_check_unverifiable';
   /**
    * Round 4 T4/M12 — a WIRING bug rather than a storage hiccup. The use case
    * rethrows `AuditPortInvariantError` out of its fail-soft envelope on purpose;
@@ -1709,6 +1711,85 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     // data source on the import leg — the one a flag flip makes live, and the
     // branch a Resend blip lands in. The legacy leg has emitted it all along.
     expect(unverifiableSpy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * PR #756 review round 1 (code-review #1) — the deleted legacy leg also wrote
+   * `broadcast_resend_drift_check_unverifiable` when the count call FAILED, and
+   * the import tick is the only leg since spec 140 s4. Without the row the one
+   * check that can see a carried-over contact fails without a durable record. The
+   * legacy payload's five keys (plus the import id), and `errorReason` a bounded
+   * class, never the provider's text.
+   */
+  it('a failed audience count writes broadcast_resend_drift_check_unverifiable, then still sends once', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['getAudienceContactCount'] = async () => {
+      throw gatewayThrow('retryable', 'resend 503 for a@example.com');
+    };
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    const rows = rec.audits.filter((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable');
+    expect(rows).toHaveLength(1);
+    expect(Object.keys(rows[0]!.payload).sort()).toEqual([
+      'broadcastId',
+      'errorReason',
+      'expectedRecipientCount',
+      'importId',
+      'resendAudienceId',
+      'resendBroadcastId',
+    ]);
+    expect(rows[0]!.payload).toMatchObject({
+      broadcastId: BROADCAST_ID,
+      resendAudienceId: 'aud-1',
+      resendBroadcastId: null,
+      expectedRecipientCount: RECIPIENTS.length,
+      importId: 'imp-1',
+    });
+    expect(rows[0]!.actorUserId).toBe('system:cron');
+    expect(JSON.stringify(rows[0]!.payload)).not.toContain('a@example.com');
+    expect(JSON.stringify(rows[0]!.payload)).not.toContain('resend 503');
+    // Its own tenant-bound transaction, never the null tx (RLS writes nothing there).
+    expect(rows[0]!.txId).toBeDefined();
+  });
+
+  it('a lost unverifiable row (audit INSERT fails) does not block or double the send', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      auditThrowsOn: 'broadcast_resend_drift_check_unverifiable',
+    });
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['getAudienceContactCount'] = async () => {
+      throw gatewayThrow('retryable', 'resend 503');
+    };
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_send_started');
+  });
+
+  // The legacy leg drew this line itself: a page it could not finish reading is
+  // not a FAILURE, so it got the metric and the warn but no append-only row.
+  it('a count Resend could not finish reading raises the metric but writes no unverifiable row', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      audienceContactCount: RECIPIENTS.length - 1,
+      audienceCountComplete: false,
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.sends).toHaveLength(1);
+    expect(rec.audits.map((a) => a.eventType)).not.toContain('broadcast_resend_drift_check_unverifiable');
   });
 
   /**
