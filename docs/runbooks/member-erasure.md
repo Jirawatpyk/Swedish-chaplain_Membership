@@ -804,10 +804,18 @@ runbook.
 > `contacts` (`erase-member.ts:441`) — and `scrubPiiForMemberInTx`
 > (`erase-member.ts:527`, same tx, 86 lines later) replaces every one of those
 > addresses with a stable per-`contact_id` **sentinel**. A US2d re-drive re-enters
-> the same tx and re-reads sentinels, so arm 2 now happily pairs the member's live
-> audiences with addresses that were never in them: every `DELETE` misses and is
-> counted `already_absent`, never `removed`. Removal on a re-drive is 0, exactly as
-> it was before B-1. `erase-member.ts:1068-1071` has said so all along.
+> the same tx and re-reads sentinels, and arm 2 paired the member's live audiences
+> with addresses that were never in them. This box used to say every such `DELETE`
+> misses and is counted `already_absent`. It was not: Resend answers 200
+> `deleted: true` to any segment-contact DELETE (MEASURED 5 Nov 2026), so each one
+> was counted **`removed`** — the spec 140 DT4 re-verify saw a second erase record
+> `resend_contacts_removed_count: 2` for contacts already gone.
+>
+> **Since spec 140 slice 3 (review round 1, R1-D)** the capture drops every address
+> on the sentinel domain (`isErasedSentinelEmail`, `erasure-sentinels.ts`) before it
+> pairs anything, so a re-drive sends **no** detach request at all and its row
+> records 0 removed, 0 already absent and 0 failed. That 0 is now literal: nothing
+> was asked of Resend. Removal on a re-drive is still nothing, as before B-1.
 >
 > **What B-1 actually bought** — worth keeping, just not this: on the FIRST pass the
 > addresses are still real, so arm 2 no longer skips an audience merely because a
@@ -819,7 +827,9 @@ runbook.
 > deletes the audience at Resend after the `AUDIENCE_CLEANUP_GRACE_MS` (1 hour) grace on a terminal broadcast, and
 > after that there is nothing left to detach. Do NOT wait for a second
 > `subprocessor_erasure_propagated` row with `resend_contacts_removed_count >= 1`;
-> on a re-drive that count is structurally 0.
+> on a re-drive that count is 0 because no detach request is sent for a sentinel
+> (a re-drive row written before spec 140 slice 3 may read above 0: those were
+> 200s for sentinel addresses, not removals).
 
 ### Alert
 
@@ -954,8 +964,11 @@ sign-off, plan-review 2026-06-20):
    *For one day (2026-09-09/10) this entry read "~~Best-effort-ONCE~~ **NARROWED**"
    and claimed a US2d re-drive performs a real detach. It does not — see the
    correction box in § Audit + metric above. The re-drive's input addresses have
-   already been replaced by sentinels in the first pass, so its removal count is
-   structurally 0. This sign-off was never actually narrowed, and re-narrowing it
+   already been replaced by sentinels in the first pass, and since spec 140
+   slice 3 (R1-D) the capture drops sentinels, so a re-drive sends no detach
+   request and its removal count is 0 because nothing was asked (before that, the
+   sentinel DELETEs were answered 200 and miscounted as removals). This sign-off
+   was never actually narrowed, and re-narrowing it
    requires capturing the removal inputs OUTSIDE the erasing tx — a code change,
    not a documentation change.*
 

@@ -19,17 +19,14 @@
  *      the `member_subprocessor_erasure_total` metric) but does NOT flip
  *      `allCascadesClean`.
  *
- *      **Round 4 B-1 — the residual this used to describe has NARROWED.** It
- *      said "the captured inputs do not survive a US2d re-drive, so retrying
- *      would re-capture an empty set". That was true only because arm 1 of the
- *      derivation matches on `broadcast_deliveries.recipient_email_lower` (which
- *      the tombstone redacts) and R2-3's `NOT EXISTS` had switched arm 2 off for
- *      any broadcast holding a delivery row. With that clause removed, arm 2
- *      still finds the member's still-LIVE audiences, so a re-drive DOES retry
- *      the detach — see the RE-DRIVE scenario in
- *      `erase-member-subprocessor-cascade.test.ts`. What remains is narrower: the
- *      audience must not yet have been cleaned up. The DPO runbook (US3-E) owns
- *      that.
+ *      The captured inputs do not survive a US2d re-drive: the first pass
+ *      replaces every contact address with a scrub sentinel, so the re-drive
+ *      has no real address to detach (best-effort-ONCE). Round 4's B-1 read the
+ *      re-drive's sentinel detach as a retry; spec 140 s3 review round 1 (R1-D)
+ *      drops sentinels from the capture, so a re-drive sends no detach and
+ *      records 0 — see the RE-DRIVE scenario in
+ *      `erase-member-subprocessor-cascade.test.ts`. A failed first-pass detach
+ *      is finished by hand; the DPO runbook (US3-E) owns that.
  *
  * This test drives the PRODUCTION composition root `buildEraseMemberDeps(ctx)`
  * — the REAL `f7BroadcastsAudienceDerivationAdapter` (in-tx SELECT against live

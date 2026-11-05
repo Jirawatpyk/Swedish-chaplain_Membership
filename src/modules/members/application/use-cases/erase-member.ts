@@ -54,6 +54,7 @@ import type {
   SubprocessorErasurePort,
   SubprocessorErasurePropagatedAudit,
 } from '../ports/subprocessor-erasure-port';
+import { isErasedSentinelEmail } from '../../domain/erasure-sentinels';
 
 /**
  * COMP-1 US3-A — the Art.12 identity-verification METHOD (how identity was
@@ -547,11 +548,23 @@ export async function eraseMember(
       // re-drivable while contacts are still live) beats silently
       // under-propagating. Once captured, the external removal's inputs don't
       // survive a re-drive, so it is genuinely best-effort.
+      //
+      // Spec 140 s3 review round 1 (R1-D) — the scrub's sentinels are dropped
+      // HERE, from the detach input only (the redactions below keep the whole
+      // set). A re-drive reads only sentinels (`erased+<contact_id>@erased.invalid`
+      // — the first pass replaced every address), and the derivation paired
+      // them with the member's live audiences: Resend answers 200 to any
+      // segment-contact DELETE, so the record counted removals of an address
+      // that was never there. Filtered in members, not in the broadcasts repo:
+      // the sentinel shape is this module's fact (`erasure-sentinels.ts`), and
+      // the port already reads an empty set as no pairs, so the repo stays a
+      // generic address match.
+      const detachEmails = tombstoneEmails.filter((e) => !isErasedSentinelEmail(e));
       capturedSubprocessorPairs =
         await deps.broadcastsAudienceDerivation.listMemberAudienceContactsInTx(
           tx,
           deps.tenant.slug,
-          tombstoneEmails,
+          detachEmails,
           detachAsOf,
         );
 
