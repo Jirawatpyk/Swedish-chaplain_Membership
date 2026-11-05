@@ -356,11 +356,13 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    will be minimised at the boundary.
 
 6. **Check sub-processor propagation (US3-C).** The Resend audience-contact
-   removal is **best-effort, non-blocking**. Watch the
-   `member_subprocessor_erasure_total{resend_outcome}` alert (§ below). If it
-   fired `failed`/`partial`/`not_attempted` for this member, run the **manual
-   remediation procedure** (§ Sub-processor erasure propagation) within the H-1
-   window.
+   removal is **best-effort, non-blocking**. Open the member's card in
+   `/admin/compliance/erasure-log`: if its Resend outcome reads `failed`,
+   `partial` or `not_attempted`, run the **manual remediation procedure**
+   (§ Sub-processor erasure propagation) within the H-1 window. The
+   `member_subprocessor_erasure_total{resend_outcome}` alert (§ below) is the
+   designated page, but no alert backend is wired yet (`docs/observability.md`
+   § 21), so the card is the operative control.
 
 7. **Acknowledge the out-of-reach copies.** SEVEN copies cannot be erased by the
    controller and are accepted residuals (§ Documented residuals + the RoPA):
@@ -837,7 +839,9 @@ runbook.
 
 ### Alert
 
-Page the DPO on:
+Designated to page the DPO (no alert backend is wired yet, `docs/observability.md`
+§ 21; until it is, the erasure-log evidence card and step 6 are the operative
+control) on:
 
 ```
 member_subprocessor_erasure_total{resend_outcome="failed"} > 0
@@ -945,7 +949,13 @@ When the alert fires:
      on that row instead). The first pass's detach may never have run. Search
      the Resend dashboard (Audiences / Segments, then Contacts) for the member's
      address from the DSR intake record and detach it from every audience it is
-     still in; the database no longer holds the address.
+     still in; the database no longer holds the address. This dashboard search
+     is the primary step: Vercel keeps runtime logs for one day and no drain is
+     wired (`docs/observability.md`), so the two greps above help only within
+     24 hours. A `not_attempted` row followed within seconds by an `ok` or
+     `partial` row for the same member is a reconciler re-drive that overlapped
+     the first pass (no lock spans the detach): the later row is the first
+     pass's outcome, and the `not_attempted` one needs no action.
    - **`resend_outcome: 'already_propagated'`** (R2-A2) — an echo of an earlier
      row for the same member: no action for this row. Act on the earliest row
      (§ Security cond-3).

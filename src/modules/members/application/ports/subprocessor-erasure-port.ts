@@ -34,8 +34,10 @@ import type { SubprocessorAudienceContact } from './broadcasts-audience-derivati
  * the member was in no audience.
  *   - `not_attempted` (spec 140 s3 review round 2, R2-A): no earlier
  *     `subprocessor_erasure_propagated` row for the member in this tenant. The
- *     first pass's detach may never have run, so it pages like `failed`
- *     (runbook `member-erasure.md`).
+ *     first pass's detach may never have run, so it is treated like `failed`:
+ *     designated to page, and shown on the erasure-log evidence card, which is
+ *     the operative control while no alert backend is wired (runbook
+ *     `member-erasure.md`).
  *   - `already_propagated` (R2-A2): an earlier row exists, and that row is the
  *     outcome; this one is a re-drive's echo of it and does not page. The row
  *     is still written (DT6's rotation keys on its timestamp).
