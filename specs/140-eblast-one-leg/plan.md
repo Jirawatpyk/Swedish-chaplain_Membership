@@ -2254,7 +2254,7 @@ This section supersedes the build table above wherever the two disagree. The bui
 - Residual (Evidence): non-`resource_locked` 409s still reach the legacy replay arm, which is unreachable in practice because Resend ignores the Idempotency-Key on broadcasts.
 
 #### DT4 — contact detach (architect M4, pdpa M-1, reliability L1)
-- The guard exists: `assertNonEmpty({ audienceId, email })` (`gateway:726`, spec 141). Slice 3 **pins** it with a contract case and does **not** tighten it to a UUID shape: the only caller (`subprocessor-erasure-adapter.ts:146`) runs on every erasure on both legs, dev holds 1 stored audience id (UUID-shaped), and prod cannot be read (D-034). A stricter refusal on a GDPR path waits for a follow-up issue carrying the prod query the maintainer would run.
+- The guard exists: `assertNonEmpty({ audienceId, email })` (`gateway:726`, spec 141). Slice 3 **pins** it with a contract case and **tightens it to a UUID shape** (lowercase hex 8-4-4-4-12; a non-UUID id is a permanent refusal before any call). Evidence: a one-off read-only prod count the maintainer ordered on 5 Nov 2026 found 0 `broadcasts` rows (0 with an audience id, 0 non-UUID); dev holds 1, UUID-shaped; every segment id Resend returned in the step 0 probes was a UUID. The only caller is `subprocessor-erasure-adapter.ts:146`.
 - No encoding or lowercasing (step 0.1: the unencoded `+` is read literally, matching is case-insensitive). An MSW contract case pins the exact URL sent, so an SDK upgrade that starts encoding is caught.
 - The DT4 test asserts `detached`, never `already_absent` (step 0 item 2, reworded per reliability M7). The over-report is stated in `docs/runbooks/member-erasure.md`; the rotation note goes in the same runbook.
 
@@ -2283,6 +2283,12 @@ DT1 + DT2 (with the reason copy) → DT3 + the status readers → DT4 → DT5 �
 - DT2's EN key lands in the same GREEN as the reason, so `check:i18n` never sees a missing key.
 - Exhaustive switches extended here use `void _exhaustive; return <safe>`.
 - **Reviews** add `i18n-translation-reviewer` and `enterprise-ux-designer` for the new member email copy.
+
+#### Build notes, DT1 + DT2 (5 Nov 2026)
+- DT2 is decided inside `applySendStanding` on the send and hold arms (the amended Where above); `eblast-send-time-standing.test.ts` passes on dev (25/25), :869 included.
+- The `dead_broadcast_replaced` write inside `if (inheritedDead)` was removed: it fired only for `cancelled`, which `inheritedDead` no longer admits. The reasons in `orphaned-resend-id.ts` and the `dead_broadcast_kept` writer stay.
+- New on the hold path: a suspended member whose broadcast was cancelled at Resend now gets the "did not go out" email (a hold used to tell nobody). This follows the notify decision; the reviewers check it.
+- Now unreachable from the tick: `isDeadProbe` true, `restartAudienceBuild`'s `bidIsDead: true` branch, and the `cancelled` argument to `selfHealMissingAudience`. Left in place; s4 may remove them.
 
 #### Housekeeping
 - Step 0.1's sink contacts were deleted with their audience (`General` alone remains).
