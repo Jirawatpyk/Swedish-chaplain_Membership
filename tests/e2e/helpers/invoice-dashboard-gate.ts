@@ -11,13 +11,16 @@ const NOT_FOUND_TITLES: readonly string[] = [en, th, sv].map((m) => m.admin.notF
  *
  * A 404 is not enough to tell: the route has a `loading.tsx` and no
  * `not-found.tsx`, so its `notFound()` streams the admin shell's
- * "Page not available" page with HTTP 200. The skip guard read only the
- * status, never fired, and the specs failed instead of skipping (R136).
- * So this also reads the page's one visible h1.
+ * "Page not available" page with HTTP 200, and the skip guard that read
+ * only the status never fired (R136). Nor is the first h1: the loading
+ * skeleton already shows the dashboard's own title before the stream
+ * swaps in the not-found page. So this waits for whichever settles — the
+ * dashboard's tiles or the not-found heading — and reports which.
  */
 export async function invoiceDashboardIsOff(page: Page, response: Response | null): Promise<boolean> {
   if (response?.status() === 404) return true;
-  const h1 = page.locator('h1:visible');
-  await expect(h1).toBeVisible();
-  return NOT_FOUND_TITLES.includes((await h1.innerText()).trim());
+  const notFound = page.getByRole('heading', { level: 1 }).filter({ hasText: new RegExp(`^(${NOT_FOUND_TITLES.join('|')})$`) });
+  const served = page.getByTestId('dashboard-tiles');
+  await expect(served.or(notFound)).toBeVisible({ timeout: 30_000 });
+  return notFound.isVisible();
 }
