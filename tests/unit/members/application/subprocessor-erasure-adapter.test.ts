@@ -36,10 +36,16 @@ const { removeContactFromAudience } = vi.hoisted(() => ({
 }));
 // Partial mock — the adapter only reads `resendBroadcastsGateway` from the F7
 // barrel; exposing just that export avoids pulling the whole broadcasts graph.
-vi.mock('@/modules/broadcasts', () => ({
-  resendBroadcastsGateway: { removeContactFromAudience },
-  RESEND_CALL_TIMEOUT_MS: 10_000,
-}));
+vi.mock('@/modules/broadcasts', async () => {
+  const port = await vi.importActual<
+    typeof import('@/modules/broadcasts/application/ports/broadcasts-gateway-port')
+  >('@/modules/broadcasts/application/ports/broadcasts-gateway-port');
+  return {
+    resendBroadcastsGateway: { removeContactFromAudience },
+    RESEND_CALL_TIMEOUT_MS: 10_000,
+    oneCallFitsBefore: port.oneCallFitsBefore,
+  };
+});
 
 import {
   subprocessorErasureAdapter,
@@ -56,6 +62,8 @@ function inputWith(
     audienceContacts,
     tenantSlug: 'test-tenant',
     requestId: 'req-99',
+    addressesAlreadyScrubbed: false,
+    priorPropagationRecorded: false,
   };
 }
 
@@ -76,6 +84,35 @@ describe('subprocessorErasureAdapter', () => {
     });
     expect(removeContactFromAudience).not.toHaveBeenCalled();
   });
+
+  // Spec 140 s3 review rounds 2 (R2-A, R2-A2) — no pairs because the scrub
+  // already ran (a re-drive) is not "nothing to detach". With no earlier
+  // propagation row the first pass's detach may never have run: `not_attempted`,
+  // which pages like `failed`. With one, this row is an echo of it:
+  // `already_propagated`, which does not page.
+  it.each([
+    [false, false, 'ok'],
+    [true, false, 'not_attempted'],
+    [true, true, 'already_propagated'],
+  ] as const)(
+    'no pairs, addressesAlreadyScrubbed %s, priorPropagationRecorded %s → %s/0/0/0, gateway NOT called',
+    async (addressesAlreadyScrubbed, priorPropagationRecorded, resendOutcome) => {
+      const result = await subprocessorErasureAdapter.propagate({
+        ...inputWith([]),
+        addressesAlreadyScrubbed,
+        priorPropagationRecorded,
+      });
+
+      expect(result).toEqual({
+        resendOutcome,
+        resendContactsRemoved: 0,
+        resendContactsAlreadyAbsent: 0,
+        resendContactsFailed: 0,
+        stripeOutcome: 'ok',
+      });
+      expect(removeContactFromAudience).not.toHaveBeenCalled();
+    },
+  );
 
   /**
    * Round 2 R2-25 — this case was named **"404 counts as removed — gateway

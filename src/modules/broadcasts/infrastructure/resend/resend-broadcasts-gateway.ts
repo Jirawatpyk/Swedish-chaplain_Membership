@@ -33,6 +33,8 @@ import type { RemoveContactOutcome } from '@/modules/broadcasts/application/port
 import {
   IMPORT_CALL_TIMEOUT_MS,
   RESEND_CALL_TIMEOUT_MS,
+  RESEND_QUOTA_EXCEEDED_CODES,
+  oneCallFitsBefore,
 } from '../../application/ports/broadcasts-gateway-port';
 import type {
   AudienceContact,
@@ -44,13 +46,15 @@ import type {
   RetrievedBroadcastResource,
   RetrieveBroadcastOnceOutcome,
   RetrieveBroadcastOutcome,
-  ResendAudienceSummary,
+  ListAudiencesInput,
+  ListAudiencesResult,
 } from '../../application/ports/broadcasts-gateway-port';
 import { env } from '@/lib/env';
 import { RESEND_API_BASE_URL } from '@/lib/resend-api-base-url';
 import { getResendBroadcastsClient } from './resend-broadcasts-client';
 import { renderBroadcastHtml } from './email-template';
 import { extractBareEmail, stripAngleBrackets } from './bare-email';
+import { MAX_RESEND_BROADCAST_NAME_CP } from '@/modules/broadcasts/application/format/resend-dashboard-name';
 
 const RETRY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
 
@@ -150,6 +154,51 @@ function assertNonEmpty(values: Readonly<Record<string, string>>): void {
 }
 
 /**
+ * Spec 140 slice 3 (DT4) — the second layer on the contact detach: a segment id
+ * Resend minted is a UUID (every id it returned in the step 0 probes, research.md
+ * slice 3; prod held 0 `broadcasts` rows and dev 1, UUID-shaped, on 5 Nov 2026),
+ * so anything else is refused before any call, in `assertNonEmpty`'s shape with
+ * its own code. Case-insensitive: Resend answers lowercase, and an uppercased id
+ * names the same segment in the path. No trim: a padded id would reach the path
+ * as is. Run after `assertNonEmpty`, so a blank id still answers
+ * `empty_identifier`. Applied to `removeContactFromAudience` only.
+ */
+const RESEND_SEGMENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function assertSegmentId(values: Readonly<Record<string, string>>): void {
+  for (const [field, value] of Object.entries(values)) {
+    if (!RESEND_SEGMENT_ID_PATTERN.test(value)) {
+      throw new GatewayThrowable({
+        kind: 'permanent',
+        code: 'invalid_identifier',
+        reason: `${field} is not a Resend segment id`,
+      });
+    }
+  }
+}
+
+/**
+ * Spec 140 s3 review round 1 (R1-K) — the email half of the detach guard. The
+ * SDK puts the address into the URL path unencoded, so `/`, `?`, `#`, `%` or
+ * `\` would end, re-route or (a `%2f`) be decoded into the path. Refused before
+ * any call, permanent `invalid_identifier`, with a message that never carries
+ * the address. `/ ? # \` fail every address validator here; `%` passes the
+ * members `asEmail` pattern, so such an address, if one was ever pushed, is
+ * detached by hand (`docs/runbooks/member-erasure.md` § Manual remediation).
+ */
+const PATH_UNSAFE_EMAIL_CHARS = /[/?#%\\]/;
+
+function assertPathSafeEmail(email: string): void {
+  if (PATH_UNSAFE_EMAIL_CHARS.test(email)) {
+    throw new GatewayThrowable({
+      kind: 'permanent',
+      code: 'invalid_identifier',
+      reason: 'email contains a character that is not safe in a URL path',
+    });
+  }
+}
+
+/**
  * The HTTP status the gateway acts on, read as resend@4.8 read it (spec 141,
  * the maintainer's option A, 30 Oct 2026).
  *
@@ -206,6 +255,13 @@ function classifyResendError(
       reason,
     });
   }
+  if (status === 429 && err?.name !== undefined && RESEND_QUOTA_EXCEEDED_CODES.includes(err.name)) {
+    // Spec 140 slice 3 (DT3) — the account's sending QUOTA, not its rate: a
+    // DOCUMENTED 429 that does not clear inside a call, nor inside FR-021's
+    // hour (a daily quota may reset inside it; the spec chose permanent). The
+    // name is kept as the code, which the failure metric maps to `resend_429`.
+    return new GatewayThrowable({ kind: 'permanent', reason, code });
+  }
   if (status === 429) {
     // Resend's account rate limit — measured at 10 req/s, not the 2 this
     // said before T095 (2026-09-08). The request is fine —
@@ -218,6 +274,13 @@ function classifyResendError(
       subKind: 'api',
       reason,
     });
+  }
+  if (status === 409 && err?.name === 'resource_locked') {
+    // Spec 140 slice 3 (DT3) — another request is updating the resource; this
+    // one was not refused, so it is retried (inside one call's budget; a create
+    // retries a 429 only, `isRateLimited`). Every other 409 keeps the
+    // idempotency reading below.
+    return new GatewayThrowable({ kind: 'retryable', subKind: 'locked', reason });
   }
   if (status === 409) {
     return new GatewayThrowable({
@@ -347,8 +410,10 @@ export interface ResendBroadcastsGatewayOptions {
    * The budget of one request, its retries and backoff included. Default
    * {@link RESEND_CALL_TIMEOUT_MS}; tests pass 50 ms. A port call that makes
    * several requests (`addContactsToAudience` per contact, `listAudiences` per
-   * page) has this budget PER REQUEST, so it can run N x C (a per-invocation
-   * budget is spec 140 slice 2b's).
+   * page) has this budget PER REQUEST, so it can run N x C. The per-invocation
+   * budgets: the import leg's tick (spec 140 slice 2b) and `listAudiences`'
+   * caller `deadlineAt` (slice 3, DT5); `addContactsToAudience` is legacy-only
+   * and goes with that leg in slice 4.
    */
   readonly callTimeoutMs?: number;
   /**
@@ -446,7 +511,10 @@ export function createResendBroadcastsGateway({
           async (signal) => {
             const sdk = client();
             const result = (await sdk.contacts.create({
-              email: c.emailLower,
+              // Spec 140 s3 review round 1 (R1-A) — lowercased, as the import
+              // CSV is: Resend matches contacts case-sensitively and the erasure
+              // detach sends lowercase (`EmailLower` is a brand, not a check).
+              email: c.emailLower.toLowerCase(),
               audienceId,
               ...(c.firstName !== undefined && { firstName: c.firstName }),
               ...(c.lastName !== undefined && { lastName: c.lastName }),
@@ -473,6 +541,17 @@ export function createResendBroadcastsGateway({
       input: CreateBroadcastInput,
     ): Promise<{ readonly broadcastId: string }> {
       assertNonEmpty({ audienceId: input.audienceId });
+      // Spec 140 DT1 — the second layer: Resend refuses a `name` over 70 code
+      // points, and that refusal ends the E-Blast. The callers cap it
+      // (`resendDashboardName`); a caller that does not is refused here,
+      // before any request, in the same permanent shape as `assertNonEmpty`.
+      if ([...input.broadcastNameForResendDashboard].length > MAX_RESEND_BROADCAST_NAME_CP) {
+        throw new GatewayThrowable({
+          kind: 'permanent',
+          code: 'broadcast_name_too_long',
+          reason: `broadcast name exceeds ${MAX_RESEND_BROADCAST_NAME_CP} code points`,
+        });
+      }
       return boundedCall(
         async (signal) => {
           const sdk = client();
@@ -724,6 +803,15 @@ export function createResendBroadcastsGateway({
       email: string,
     ): Promise<RemoveContactOutcome> {
       assertNonEmpty({ audienceId, email });
+      assertSegmentId({ audienceId });
+      assertPathSafeEmail(email);
+      // The email goes to the SDK as given: it puts it in the path unencoded,
+      // and Resend reads a `+` literally and matches the address
+      // case-SENSITIVELY (MEASURED 5 Nov 2026, spec 140 DT4 and the s3 Verify),
+      // answering 200 to any segment-contact DELETE. So it is neither encoded
+      // nor re-cased here: the address sent is the one given, which is
+      // lowercase because the erasure capture is lowercase and every push
+      // (`addContactsToAudience`, `createContactImport`) lowercases.
       try {
         await boundedCall(
           async (signal) => {
@@ -814,7 +902,7 @@ export function createResendBroadcastsGateway({
       }
     },
 
-    async listAudiences(): Promise<ReadonlyArray<ResendAudienceSummary>> {
+    async listAudiences({ deadlineAt }: ListAudiencesInput): Promise<ListAudiencesResult> {
       // Spec 141: on resend@6.35 `audiences.list` is the paginated
       // `GET /segments`, so follow `has_more` (cursor = the last id) instead of
       // reading page 1 only — reclaim-orphaned-audiences must see EVERY audience.
@@ -822,10 +910,18 @@ export function createResendBroadcastsGateway({
       const byId = new Map<string, { id: string; name: string; created_at: string }>();
       const seenCursors = new Set<string>();
       let after: string | undefined;
-      let truncated = false;
+      let truncatedBy: 'deadline' | 'max_pages' | 'empty_page' | 'repeated_cursor' | null = null;
       for (let page = 0; ; page += 1) {
         if (page === LIST_AUDIENCES_MAX_PAGES) {
-          truncated = true;
+          truncatedBy = 'max_pages';
+          break;
+        }
+        // Spec 140 DT5 — the caller's per-invocation budget: a page starts only
+        // while one bounded call still fits before `deadlineAt`, so the listing
+        // ends inside it (the page bound above stays as the runaway stop). The
+        // use case's delete chunks judge with the same rule (R1-H).
+        if (!oneCallFitsBefore(deadlineAt, Date.now(), callTimeoutMs)) {
+          truncatedBy = 'deadline';
           break;
         }
         const result = await boundedCall(
@@ -852,26 +948,30 @@ export function createResendBroadcastsGateway({
         if (result?.has_more !== true) break;
         // `has_more` with an empty page leaves no cursor to follow: the list is cut.
         if (last === undefined) {
-          truncated = true;
+          truncatedBy = 'empty_page';
           break;
         }
         // A cursor seen before would page forever over the same rows.
         if (seenCursors.has(last.id)) {
-          truncated = true;
+          truncatedBy = 'repeated_cursor';
           break;
         }
         seenCursors.add(last.id);
         after = last.id;
       }
       const rows = [...byId.values()];
+      const truncated = truncatedBy !== null;
       if (truncated) {
         // Reclaim then sees fewer audiences than exist: it deletes less, never
         // more, but say so rather than pass a cut list off as the whole.
-        logger.warn({ audienceCount: rows.length }, 'resend.broadcasts.audiences_list_truncated');
+        logger.warn({ audienceCount: rows.length, truncatedBy }, 'resend.broadcasts.audiences_list_truncated');
       }
-      logger.info({ audienceCount: rows.length }, 'resend.broadcasts.audiences_listed');
+      logger.info({ audienceCount: rows.length, truncated }, 'resend.broadcasts.audiences_listed');
       // Parse at the adapter boundary so callers work with Date, not raw strings.
-      return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at) }));
+      return {
+        audiences: rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at) })),
+        truncated,
+      };
     },
 
     async deleteAudience(audienceId: string): Promise<void> {
@@ -1069,7 +1169,19 @@ export function createResendBroadcastsGateway({
               message: `${unsafe.length} recipient address(es) contain CSV control characters`,
             });
           }
-          const csv = ['email', ...emails].join('\n') + '\n';
+          // Spec 140 s3 Verify finding — Resend matches a segment contact by its
+          // exact case (MEASURED 5 Nov 2026: `DELIVERED.x@` and `delivered.x@`
+          // are two contacts, and a DELETE with the other case answers 200
+          // `deleted: true` while removing nothing). The erasure detach sends the
+          // lowercased address, so a mixed-case push would leave an erased
+          // member in a live segment while the Art. 30 record says detached.
+          // `EmailLower` is a brand, not a check (see above), so each address is
+          // lowercased here (spec 140 s3 review round 1, R1-A; it was refused,
+          // which failed the whole E-Blast for an address every producer
+          // already lowercases). Not de-duplicated: two addresses that collide
+          // once lowercased make Resend's count differ from the resolved count,
+          // and the completion rule refuses the send.
+          const csv = ['email', ...emails.map((e) => e.toLowerCase())].join('\n') + '\n';
           const form = new FormData();
           form.append('file', new Blob([csv], { type: 'text/csv' }), 'audience.csv');
           form.append('column_map', JSON.stringify({ email: 'email' }));

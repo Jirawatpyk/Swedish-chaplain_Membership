@@ -237,7 +237,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
       async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
       async deleteBroadcast() {},
       async listAudiences() {
-        return [];
+        return { audiences: [], truncated: false };
       },
     };
     const dispatched = await dispatchScheduledBroadcast(

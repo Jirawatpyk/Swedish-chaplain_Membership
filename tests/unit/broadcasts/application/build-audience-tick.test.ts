@@ -40,6 +40,8 @@ interface Recorder {
   readonly deletedAudiences: string[];
   readonly importsSubmitted: Array<{ audienceId: string; emails: readonly string[] }>;
   readonly broadcastsCreated: string[];
+  /** Spec 140 DT1 — the `name` each `createBroadcast` was given. */
+  readonly broadcastNames: string[];
   readonly sends: string[];
   readonly attachedImports: string[];
   readonly completions: number[];
@@ -86,12 +88,15 @@ function makeDeps(opts: {
     failed: number;
   };
   readonly resolveFails?: 'too_large' | 'empty';
+  /** The row's subject; default `Hello`. */
+  readonly subject?: string;
 }): { deps: DepsWithEveryPort; rec: Recorder } {
   const rec: Recorder = {
     createdAudiences: [],
     deletedAudiences: [],
     importsSubmitted: [],
     broadcastsCreated: [],
+    broadcastNames: [],
     sends: [],
     attachedImports: [],
     completions: [],
@@ -104,7 +109,7 @@ function makeDeps(opts: {
     broadcastId: BROADCAST_ID,
     tenantId: tenant.slug,
     status: 'approved' as const,
-    subject: 'Hello',
+    subject: opts.subject ?? 'Hello',
     bodyHtml: '<p>hi</p>',
     fromName: 'SweCham',
     replyToEmail: 'reply@example.com',
@@ -262,8 +267,9 @@ function makeDeps(opts: {
               { total: RECIPIENTS.length, created: RECIPIENTS.length, updated: 0, skipped: 0, failed: 0 },
           };
         },
-        async createBroadcast(args: { audienceId: string }) {
+        async createBroadcast(args: { audienceId: string; broadcastNameForResendDashboard: string }) {
           rec.broadcastsCreated.push(args.audienceId);
+          rec.broadcastNames.push(args.broadcastNameForResendDashboard);
           return { broadcastId: 'rb-1' };
         },
         /**
@@ -549,6 +555,29 @@ describe('buildAudienceTick — the two happy ticks (T087)', () => {
     // anywhere in the repo: all three existing spies are on tests that EXPECT the
     // unverifiable branch.
     expect(unverifiableSpy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Spec 140 DT1 — Resend caps the broadcast `name` at 70 code points; a longer
+   * one is refused and the E-Blast fails. The legacy leg caps it through
+   * `resendDashboardName`; this leg built the raw `tenant — subject` template.
+   */
+  it('tick 2 with a 75-character subject → the Resend broadcast name is at most 70 code points', async () => {
+    const subject = 'S'.repeat(75);
+    const { deps, rec } = makeDeps({
+      audienceImportId: 'imp-1',
+      audienceImportSubmittedAt: new Date(NOW.getTime() - 60_000),
+      resendAudienceId: 'aud-existing',
+      subject,
+    });
+
+    const result = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(result.ok ? result.value.kind : result.error).toBe('sent');
+    expect(rec.broadcastNames).toHaveLength(1);
+    const name = rec.broadcastNames[0]!;
+    expect([...name].length).toBeLessThanOrEqual(70);
+    expect(name.startsWith('Test Chamber — S')).toBe(true);
   });
 });
 

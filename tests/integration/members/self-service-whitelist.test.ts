@@ -125,6 +125,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     // COMP-1 US2d (reconciler candidate) — interface compliance stub.
     findStuckErasuresInTx: async () => [],
     countStuckErasuresInTx: async () => 0,
+    hasSubprocessorPropagationInTx: async () => false,
     findErasedIdsInTx: async () => ({
       ok: true as const,
       value: new Set<MemberId>(),

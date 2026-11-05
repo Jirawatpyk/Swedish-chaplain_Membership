@@ -80,6 +80,7 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
     findErasedAtByIdInTx: vi.fn(),
     findStuckErasuresInTx: vi.fn(),
     countStuckErasuresInTx: vi.fn(),
+    hasSubprocessorPropagationInTx: vi.fn(),
     findErasedIdsInTx: vi.fn(async () => ({
       ok: true as const,
       value: new Set<MemberId>(),

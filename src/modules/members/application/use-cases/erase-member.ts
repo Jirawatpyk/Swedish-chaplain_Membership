@@ -54,6 +54,7 @@ import type {
   SubprocessorErasurePort,
   SubprocessorErasurePropagatedAudit,
 } from '../ports/subprocessor-erasure-port';
+import { isErasedSentinelEmail } from '../../domain/erasure-sentinels';
 
 /**
  * COMP-1 US3-A — the Art.12 identity-verification METHOD (how identity was
@@ -231,6 +232,14 @@ export type EraseMemberMeta = {
   deadlineAt?: Date;
 };
 
+/**
+ * Spec 140 s3 review round 3 (code-review #2) — the most the earlier-propagation
+ * read (R2-A2) may take. It runs in front of the propagation, the one step a
+ * re-drive cannot repeat, so it is skipped when the deadline leaves less than
+ * this, and abandoned past it (the pooler can drop `statement_timeout`).
+ */
+export const PRIOR_PROPAGATION_READ_BUDGET_MS = 3_000;
+
 class EraseNotFoundError extends Error {
   constructor() {
     super('not_found');
@@ -384,6 +393,10 @@ export async function eraseMember(
     readonly audienceId: string;
     readonly email: string;
   }> = [];
+  // Spec 140 s3 review round 2 (R2-A) — the member held addresses and every one
+  // was already a scrub sentinel: an earlier pass committed the scrub, so an
+  // empty capture here is `not_attempted`, never `ok`.
+  let addressesAlreadyScrubbed = false;
   // Spec 140 s2d (#736b) — the DETACH instant: read just before the scrub tx
   // starts (not the pre-flight `now` above), and handed to broadcasts as the
   // `asOf` its leaked-audience cap judges the stuck rule at. Broadcasts' pass
@@ -547,11 +560,24 @@ export async function eraseMember(
       // re-drivable while contacts are still live) beats silently
       // under-propagating. Once captured, the external removal's inputs don't
       // survive a re-drive, so it is genuinely best-effort.
+      //
+      // Spec 140 s3 review round 1 (R1-D) — the scrub's sentinels are dropped
+      // HERE, from the detach input only (the redactions below keep the whole
+      // set). A re-drive reads only sentinels (`erased+<contact_id>@erased.invalid`
+      // — the first pass replaced every address), and the derivation paired
+      // them with the member's live audiences: Resend answers 200 to any
+      // segment-contact DELETE, so the record counted removals of an address
+      // that was never there. Filtered in members, not in the broadcasts repo:
+      // the sentinel shape is this module's fact (`erasure-sentinels.ts`), and
+      // the port already reads an empty set as no pairs, so the repo stays a
+      // generic address match.
+      const detachEmails = tombstoneEmails.filter((e) => !isErasedSentinelEmail(e));
+      addressesAlreadyScrubbed = tombstoneEmails.length > 0 && detachEmails.length === 0;
       capturedSubprocessorPairs =
         await deps.broadcastsAudienceDerivation.listMemberAudienceContactsInTx(
           tx,
           deps.tenant.slug,
-          tombstoneEmails,
+          detachEmails,
           detachAsOf,
         );
 
@@ -798,19 +824,84 @@ export async function eraseMember(
   // `member_erased`, and it is the one step a re-drive cannot repeat — so
   // the broadcasts cascade's terminal pass, bounded by the route's deadline,
   // can never leave it starved of the function's remaining time.
+  //
+  // Spec 140 s3 review round 2 (R2-A2) — on a re-drive whose addresses were
+  // all sentinels, ask whether an earlier pass already wrote its propagation
+  // row: if so this pass's empty capture is an echo (`already_propagated`, no
+  // page); if not, `not_attempted` (pages). Its own short tx after the scrub
+  // commit, not inside the scrub tx: a failed statement there aborts the whole
+  // transaction and rolls the erasure back, and this read must fail soft — a
+  // failure counts as "no earlier row", toward paging.
+  // Round 3 (code-review #2): bounded by PRIOR_PROPAGATION_READ_BUDGET_MS and
+  // skipped when the deadline leaves less than that; a skip or a timeout also
+  // counts as "no earlier row".
+  let priorPropagationRecorded = false;
+  const readFits =
+    meta.deadlineAt === undefined ||
+    // Round 5 (code-review #9): the read's budget and one more for the audit
+    // write that must follow it.
+    meta.deadlineAt.getTime() - deps.clock.now().getTime() >= 2 * PRIOR_PROPAGATION_READ_BUDGET_MS;
+  // Round 4 (code-review #2): a skip and a timeout each log a `reason`, so a
+  // `not_attempted` row they cause can be told from a real "no earlier row".
+  if (addressesAlreadyScrubbed && !readFits) {
+    logger.warn(
+      { memberId, requestId: meta.requestId, cascade: 'subprocessor_erasure', reason: 'deadline' },
+      'erase-member: prior subprocessor propagation read skipped',
+    );
+  }
+  if (addressesAlreadyScrubbed && readFits) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    try {
+      priorPropagationRecorded = await Promise.race([
+        runInTenant(deps.tenant, (tx) =>
+          deps.memberRepo.hasSubprocessorPropagationInTx(
+            tx,
+            deps.tenant.slug,
+            memberId,
+            PRIOR_PROPAGATION_READ_BUDGET_MS,
+          ),
+        ),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            timedOut = true;
+            reject(new Error('prior propagation read exceeded its budget'));
+          }, PRIOR_PROPAGATION_READ_BUDGET_MS);
+        }),
+      ]);
+    } catch (readErr) {
+      logger.warn(
+        {
+          err: errKind(readErr),
+          code: pgErrorCode(readErr),
+          memberId,
+          requestId: meta.requestId,
+          cascade: 'subprocessor_erasure',
+          // Round 5 (code-review #5): the database's own cancel is a timeout too.
+          reason: timedOut || pgErrorCode(readErr) === '57014' ? 'timeout' : 'error',
+        },
+        'erase-member: prior subprocessor propagation read failed',
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   try {
     const sub = await deps.subprocessorErasure.propagate({
       memberId,
       reason,
       audienceContacts: capturedSubprocessorPairs,
+      addressesAlreadyScrubbed,
+      priorPropagationRecorded,
       tenantSlug: deps.tenant.slug,
       requestId: meta.requestId,
       // Spec 140 s2a review round 1 (pdpa H-1): the same cascade deadline, so
       // the propagation's audit row is written inside the route's maxDuration.
       ...(meta.deadlineAt !== undefined ? { deadlineAt: meta.deadlineAt } : {}),
     });
-    // Emit the metric for EVERY outcome (ok/partial/failed) so a partial/failed
-    // is never silently lost (it pages the DPO runbook).
+    // Emit the metric for EVERY outcome (ok/partial/failed/not_attempted/
+    // already_propagated) so a partial/failed/not_attempted is never silently
+    // lost (it pages the DPO runbook; already_propagated does not).
     erasureMetrics.subprocessorErasure(sub.resendOutcome, deps.tenant.slug);
     await runInTenant(deps.tenant, async (tx) => {
       const done = await deps.audit.recordInTx(tx, deps.tenant, {

@@ -96,6 +96,12 @@ interface BroadcastFailedCopy {
    * cannot submit until the chamber has resolved it with them.
    */
   readonly reassuranceStanding: string;
+  /**
+   * Spec 140 s3 review round 1 (R1-E) — the quota line for a member whose
+   * membership is suspended (the import leg's hold arm): a new E-Blast can be
+   * submitted once it is active again, not now.
+   */
+  readonly reassuranceHeld: string;
   readonly ctaRescheduleLabel: string;
   readonly footerSignOff: string;
 }
@@ -266,6 +272,8 @@ export interface BuildBroadcastFailedToDispatchEmailInput {
   readonly scheduledFor: string;
   readonly reason: string;
   readonly locale: BroadcastNotificationLocale;
+  /** Spec 140 s3 review round 1 (R1-E) — `'held'`: the membership is suspended. */
+  readonly memberStanding?: 'held';
 }
 
 export function buildBroadcastFailedToDispatchEmail(
@@ -280,7 +288,14 @@ export function buildBroadcastFailedToDispatchEmail(
   // Staff review 2026-09-07 (Pass 4, 🟡-1): translate the token, never print it.
   const reasonText = copy.failureReason[input.reason] ?? copy.failureReason['generic'] ?? '';
   const reasonLine = fillTemplate(copy.failureReasonLabel, { reason: reasonText });
-  const reassurance = STANDING_FAILURE_REASONS.has(input.reason) ? copy.reassuranceStanding : copy.reassurance;
+  // Spec 140 s3 review round 1 (R1-E) — the carried standing decides first: a
+  // suspended member must not be told to submit a new E-Blast straight away.
+  const reassurance =
+    input.memberStanding === 'held'
+      ? copy.reassuranceHeld
+      : STANDING_FAILURE_REASONS.has(input.reason)
+        ? copy.reassuranceStanding
+        : copy.reassurance;
   const ctaUrl = broadcastDetailUrl(input.broadcastId);
   // Round 4 L8 — `body2` is GONE, along with the allowlist that gated it.
   //

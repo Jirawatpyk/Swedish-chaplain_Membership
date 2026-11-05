@@ -493,6 +493,7 @@
           "complete": "Slutförd",
           "halfRun": "Pågår",
           "overdue": "Försenad",
+          "resendActionNeeded": "Åtgärd krävs i Resend",
           "elapsedDays": "{count, plural, one {# dag} other {# dagar}}",
           "elapsedHours": "{count, plural, one {# timme} other {# timmar}}",
           "elapsedMinutes": "{count, plural, one {# minut} other {# minuter}}"
@@ -518,10 +519,12 @@
           "sessionsRevoked": "Återkallade sessioner",
           "invitationsRevoked": "Återkallade inbjudningar",
           "resendOutcome": "Resultat",
-          "contactsDetached": "Kontakter borttagna från målgrupp",
+          "contactsDetached": "Borttagningsbegäranden som Resend godtog",
           "contactsAlreadyAbsent": "Redan borta från målgrupp",
           "contactsFailed": "Misslyckade kontakter",
-          "countsNote": "Varje kontakt räknas en gång. Ange antalet borttagna; addera inte antalet redan borta till det."
+          "countsNote": "Varje kontakt räknas en gång. Resend godtar en borttagningsbegäran oavsett om adressen fanns i målgruppen, så den första siffran kan omfatta adresser som redan var borta. Ange den som det antal borttagningsbegäranden Resend godtog; addera inte antalet redan borta till den.",
+          "notAttemptedNote": "Inte försökt: medlemmens adresser hade redan rensats i en tidigare körning, så den här körningen kunde inte skicka någon borttagningsbegäran, och den första körningens borttagning kan ha uteblivit. Sök efter medlemmens adress från DSR-ärendet i Resends instrumentpanel och ta bort den manuellt.",
+          "detachFailedNote": "Borttagningen slutfördes inte för varje målgrupp: adressen kan fortfarande finnas i en Resend-målgrupp. Sök efter medlemmens adress från DSR-registreringen i Resends instrumentpanel och ta bort den manuellt."
         },
         "documentKind": {
           "invoice": "Faktura",
@@ -3891,6 +3894,7 @@
           "counts_incoherent": "Kontaktimportens antal gick inte ihop, så utskicket stoppades.",
           "count_mismatch": "Antalet importerade mottagare stämde inte med målgruppen vid utskickstillfället.",
           "provider_failed": "Resend rapporterade att kontaktimporten misslyckades.",
+          "provider_cancelled": "Resend-utskicket för detta utskick avbröts utanför Chamber-OS (till exempel i Resends instrumentpanel) innan det skickades. Ett avbrutet utskick kan inte skickas, så inget gick iväg. Medlemmen kan skicka in ett nytt utskick; om medlemskapet är pausat kan medlemmen göra det när det har återaktiverats. Om ingen i ert team avbröt det, kontrollera vem som har åtkomst till Resend-kontot.",
           "gateway_permanent": "Resend avvisade begäran (ett permanent fel). Kontrollera Resend-kontot och planens gränser.",
           "gateway_unknown": "Ett oväntat fel uppstod när utskicket förbereddes. Se Livscykelstidslinje nedan; om orsaken fortfarande är oklar, kontakta systemadministratören och ange detta utskicks ID.",
           "malformed_segment": "Den sparade målgruppen för detta utskick är ofullständig (en målgrupp per medlemskategori utan valda kategorier).",
@@ -8432,6 +8436,7 @@
         "retry_budget_exhausted": "vår e-postleverantör var oåtkomlig i mer än en timme, så vi slutade försöka i stället för att skicka vid en oväntad tidpunkt",
         "count_mismatch": "mottagarlistan ändrades medan utskicket förbereddes, så vi stoppade det i stället för att skicka till en annan grupp än den du godkände",
         "provider_failed": "vår e-postleverantör kunde inte förbereda mottagarlistan",
+        "provider_cancelled": "utskicket avbröts hos vår e-postleverantör innan något gick iväg, så inget skickades",
         "gateway_permanent": "vår e-postleverantör avvisade begäran – din kammaradministratör behöver kontrollera kontot",
         "gateway_unknown": "ett oväntat problem uppstod när utskicket förbereddes",
         "audience_import_stuck": "det tog för lång tid att förbereda mottagarlistan, så vi avbröt i stället för att skicka vid en oväntad tidpunkt",
@@ -8441,6 +8446,7 @@
       },
       "reassurance": "Utskicket har inte dragits från din årliga kvot – platsen har frigjorts. Det kan inte skickas på nytt; skicka in ett nytt utskick om du vill skicka innehållet.",
       "reassuranceStanding": "Utskicket har inte dragits från din årliga kvot – platsen har frigjorts. När handelskammaren har löst detta med dig kan du skicka in innehållet igen som ett nytt utskick.",
+      "reassuranceHeld": "Utskicket har inte dragits från din årliga kvot – platsen har frigjorts. Ditt medlemskap är för närvarande pausat; när det är aktivt igen kan du skicka in innehållet som ett nytt utskick.",
       "ctaRescheduleLabel": "Öppna utskicksdetaljer",
       "footerSignOff": "Om du behöver hjälp, vänligen kontakta din kammaradministratör."
     },

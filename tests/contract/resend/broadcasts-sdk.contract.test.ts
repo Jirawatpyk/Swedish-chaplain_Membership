@@ -21,9 +21,20 @@ vi.hoisted(() => {
   delete process.env['RESEND_USER_AGENT'];
 });
 import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
-import type { CreateBroadcastInput } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import {
+  RESEND_CALL_TIMEOUT_MS,
+  type CreateBroadcastInput,
+} from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { logger } from '@/lib/logger';
 import { json, stubWire, type WireCall } from './_wire';
+
+// Spec 140 DT4 — `removeContactFromAudience` refuses an audience id that is not
+// UUID-shaped, so its cases use a real-shaped id (every segment id Resend has
+// returned is one, research.md slice 3 step 0).
+const AUD = '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19';
+
+/** Spec 140 DT5 — a `listAudiences` deadline no page in these cases comes near. */
+const farDeadline = () => new Date(Date.now() + 10 * 60_000);
 
 const compact = (calls: readonly WireCall[]) =>
   calls.map((c) => {
@@ -96,6 +107,32 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
         },
       ]
     `);
+  });
+
+  // Spec 140 s3 review round 1 (R1-A) — Resend matches a segment contact by its
+  // exact case (MEASURED 5 Nov 2026), and the erasure detach sends the address
+  // lowercase. So both push paths send `toLowerCase()` of each address: the one
+  // the detach will send.
+  it('addContactsToAudience sends a mixed-case address lowercased', async () => {
+    const calls = stubWire(() => json(201, { object: 'contact', id: 'c_1' }));
+    await resendBroadcastsGateway.addContactsToAudience('aud_1', [{ emailLower: 'Mixed.Case@Example.com' }]);
+    expect(calls.map((c) => (c.body as { email?: string }).email)).toEqual(['mixed.case@example.com']);
+  });
+
+  it('createContactImport puts each address in the CSV lowercased', async () => {
+    const csvs: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const file = (init?.body as FormData).get('file') as Blob;
+        csvs.push(await file.text());
+        return json(200, { object: 'contact_import', id: 'imp_1' });
+      }),
+    );
+    await expect(
+      resendBroadcastsGateway.createContactImport(AUD, ['a@example.com', 'Mixed.Case@Example.com']),
+    ).resolves.toEqual({ importId: 'imp_1' });
+    expect(csvs).toEqual(['email\na@example.com\nmixed.case@example.com\n']);
   });
 
   it('createBroadcast', async () => {
@@ -210,7 +247,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
 
   it('removeContactFromAudience', async () => {
     const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
-    await expect(resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@example.com')).resolves.toMatchInlineSnapshot(`
+    await expect(resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')).resolves.toMatchInlineSnapshot(`
       {
         "kind": "detached",
       }
@@ -223,24 +260,54 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
           "contentType": "application/json",
           "idempotencyKey": null,
           "method": "DELETE",
-          "url": "https://api.resend.com/audiences/aud_1/contacts/a@example.com",
+          "url": "https://api.resend.com/audiences/0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19/contacts/a@example.com",
         },
       ]
     `);
+  });
+
+  // Spec 140 DT4 (research.md slice 3 step 0.1, MEASURED 5 Nov 2026): the SDK
+  // puts the email in the path unencoded and as given; Resend reads the `+`
+  // literally and matches the address case-SENSITIVELY, answering 200
+  // `{deleted:true}` whether or not that exact address was in the segment, while
+  // the contact itself survives. So the gateway neither encodes nor re-cases it:
+  // the address it is given is lowercase because the erasure capture is
+  // lowercase and every push lowercases. An SDK bump that starts encoding turns
+  // this red.
+  it.each([
+    ['a + address', 'delivered+x@resend.dev'],
+    ['an uppercase address', 'DELIVERED.UP@resend.dev'],
+  ])('removeContactFromAudience sends %s literally and reads 200 as detached', async (_label, email) => {
+    const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
+    await expect(resendBroadcastsGateway.removeContactFromAudience(AUD, email)).resolves.toEqual({ kind: 'detached' });
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `DELETE https://api.resend.com/audiences/${AUD}/contacts/${email}`,
+    ]);
+  });
+
+  it('removeContactFromAudience accepts an uppercase-hex UUID (matched case-insensitively)', async () => {
+    const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
+    await expect(resendBroadcastsGateway.removeContactFromAudience(AUD.toUpperCase(), 'a@example.com')).resolves.toEqual({
+      kind: 'detached',
+    });
+    expect(calls).toHaveLength(1);
   });
 
   it('listAudiences', async () => {
     const calls = stubWire(() =>
       json(200, { object: 'list', data: [{ id: 'aud_1', name: 'probe', created_at: '2026-10-30T00:00:00Z' }] }),
     );
-    await expect(resendBroadcastsGateway.listAudiences()).resolves.toMatchInlineSnapshot(`
-      [
-        {
-          "createdAt": 2026-10-30T00:00:00.000Z,
-          "id": "aud_1",
-          "name": "probe",
-        },
-      ]
+    await expect(resendBroadcastsGateway.listAudiences({ deadlineAt: farDeadline() })).resolves.toMatchInlineSnapshot(`
+      {
+        "audiences": [
+          {
+            "createdAt": 2026-10-30T00:00:00.000Z,
+            "id": "aud_1",
+            "name": "probe",
+          },
+        ],
+        "truncated": false,
+      }
     `);
     expect(calls).toMatchInlineSnapshot(`
       [
@@ -264,8 +331,9 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
         ? json(200, { object: 'list', has_more: true, data: [{ id: 'aud_1', name: 'a', created_at: '2026-10-30T00:00:00Z' }] })
         : json(200, { object: 'list', has_more: false, data: [{ id: 'aud_2', name: 'b', created_at: '2026-10-30T00:00:00Z' }] }),
     );
-    const rows = await resendBroadcastsGateway.listAudiences();
-    expect({ ids: rows.map((r) => r.id), urls: calls.map((c) => c.url) }).toEqual({
+    const { audiences: rows, truncated } = await resendBroadcastsGateway.listAudiences({ deadlineAt: farDeadline() });
+    expect({ ids: rows.map((r) => r.id), urls: calls.map((c) => c.url), truncated }).toEqual({
+      truncated: false,
       ids: ['aud_1', 'aud_2'],
       urls: ['https://api.resend.com/segments?limit=100', 'https://api.resend.com/segments?limit=100&after=aud_1'],
     });
@@ -275,20 +343,67 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     const calls = stubWire(() =>
       json(200, { object: 'list', has_more: true, data: [{ id: 'aud_1', name: 'a', created_at: '2026-10-30T00:00:00Z' }] }),
     );
-    const rows = await resendBroadcastsGateway.listAudiences();
-    expect({ ids: rows.map((r) => r.id), pages: calls.length }).toEqual({ ids: ['aud_1'], pages: 2 });
+    const { audiences: rows, truncated } = await resendBroadcastsGateway.listAudiences({ deadlineAt: farDeadline() });
+    expect({ ids: rows.map((r) => r.id), pages: calls.length, truncated }).toEqual({
+      ids: ['aud_1'],
+      pages: 2,
+      truncated: true,
+    });
   });
 
-  it('listAudiences: an empty page that still says has_more is logged as truncated', async () => {
+  it('listAudiences: an empty page that still says has_more is truncated, and logged', async () => {
     const warn = vi.spyOn(logger, 'warn');
     stubWire((n) =>
       n === 1
         ? json(200, { object: 'list', has_more: true, data: [{ id: 'aud_1', name: 'a', created_at: '2026-10-30T00:00:00Z' }] })
         : json(200, { object: 'list', has_more: true, data: [] }),
     );
-    await resendBroadcastsGateway.listAudiences();
+    await expect(resendBroadcastsGateway.listAudiences({ deadlineAt: farDeadline() })).resolves.toMatchObject({
+      truncated: true,
+    });
     expect(warn.mock.calls.map((c) => c[1])).toContain('resend.broadcasts.audiences_list_truncated');
     warn.mockRestore();
+  });
+
+  // Spec 140 DT5 — a per-invocation budget: the gateway starts a page only
+  // while one bounded call (`callTimeoutMs`, RESEND_CALL_TIMEOUT_MS = 10 s here)
+  // still fits before the caller's deadline, and says the list is cut. The
+  // budget is read from `Date.now()`, so the test moves that clock by hand
+  // (`AbortSignal.timeout` runs on real timers, which fake timers cannot drive).
+  describe("listAudiences stops at the caller's deadline (spec 140 DT5)", () => {
+    const page = (id: string) =>
+      json(200, { object: 'list', has_more: true, data: [{ id, name: id, created_at: '2026-10-30T00:00:00Z' }] });
+
+    it('a deadline less than one call away sends no request and answers truncated', async () => {
+      const calls = stubWire(() => page('aud_1'));
+      await expect(
+        resendBroadcastsGateway.listAudiences({ deadlineAt: new Date(Date.now() + RESEND_CALL_TIMEOUT_MS - 1) }),
+      ).resolves.toEqual({ audiences: [], truncated: true });
+      expect(calls).toHaveLength(0);
+    });
+
+    it('paging stops once less than one call is left, keeping the pages read', async () => {
+      const realNow = Date.now.bind(Date);
+      let elapsed = 0;
+      const now = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + elapsed);
+      try {
+        const deadlineAt = new Date(Date.now() + 25_000);
+        // Each page "takes" 8 s: page 1 starts with 25 s left, page 2 with 17 s,
+        // and a third would start with 9 s, under one 10 s call.
+        const calls = stubWire((n) => {
+          elapsed += 8_000;
+          return page(`aud_${n}`);
+        });
+        const result = await resendBroadcastsGateway.listAudiences({ deadlineAt });
+        expect({ ids: result.audiences.map((a) => a.id), truncated: result.truncated, pages: calls.length }).toEqual({
+          ids: ['aud_1', 'aud_2'],
+          truncated: true,
+          pages: 2,
+        });
+      } finally {
+        now.mockRestore();
+      }
+    });
   });
 
   it('addContactsToAudience with no contacts is a no-op, even for a blank id (no request)', async () => {
@@ -465,7 +580,12 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
   describe('an empty id never reaches the SDK', () => {
     it.each([
       ['removeContactFromAudience, empty audience', () => resendBroadcastsGateway.removeContactFromAudience('', 'a@example.com')],
-      ['removeContactFromAudience, empty email', () => resendBroadcastsGateway.removeContactFromAudience('aud_1', '')],
+      ['removeContactFromAudience, whitespace audience', () => resendBroadcastsGateway.removeContactFromAudience('  ', 'a@example.com')],
+      ['removeContactFromAudience, null audience', () =>
+        resendBroadcastsGateway.removeContactFromAudience(null as unknown as string, 'a@example.com')],
+      ['removeContactFromAudience, undefined audience', () =>
+        resendBroadcastsGateway.removeContactFromAudience(undefined as unknown as string, 'a@example.com')],
+      ['removeContactFromAudience, empty email', () => resendBroadcastsGateway.removeContactFromAudience(AUD, '')],
       ['addContactsToAudience', () => resendBroadcastsGateway.addContactsToAudience('', [{ emailLower: 'a@example.com' }])],
       ['getAudienceContactCount', () => resendBroadcastsGateway.getAudienceContactCount('')],
       ['deleteAudience', () => resendBroadcastsGateway.deleteAudience('')],
@@ -488,10 +608,50 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       ['createContactImport', () => resendBroadcastsGateway.createContactImport('', ['a@example.com'])],
       ['getContactImport', () => resendBroadcastsGateway.getContactImport('')],
       ['a null email from a nullable column', () =>
-        resendBroadcastsGateway.removeContactFromAudience('aud_1', null as unknown as string)],
+        resendBroadcastsGateway.removeContactFromAudience(AUD, null as unknown as string)],
     ])('%s', async (_name, run) => {
       const calls = stubWire(() => json(200, { object: 'list', has_more: false, data: [] }));
       await expect(run()).rejects.toMatchObject({ kind: 'permanent', code: 'empty_identifier' });
+      expect(calls).toHaveLength(0);
+    });
+
+    // Spec 140 DT4 — a non-blank audience id that is not UUID-shaped is refused
+    // too, with its own code: no request, so never `DELETE /contacts/{email}`.
+    it.each([
+      ['a legacy-looking id', 'aud_1'],
+      ['a UUID with surrounding spaces', ` ${AUD} `],
+      ['a UUID missing a group', '0f8e7d6c-5b4a-4392-6e5d4c3b2a19'],
+      ['a UUID with a non-hex digit', '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a1g'],
+      ['a path segment', `${AUD}/contacts`],
+    ])('removeContactFromAudience refuses %s as invalid_identifier, with no request', async (_name, audienceId) => {
+      const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
+      const thrown = await resendBroadcastsGateway.removeContactFromAudience(audienceId, 'a@example.com').then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(thrown).toMatchObject({ name: 'GatewayThrowable', kind: 'permanent', code: 'invalid_identifier' });
+      // Spec 140 s3 review round 1 — the message reaches log lines: no id in it.
+      expect((thrown as Error).message).not.toContain(audienceId.trim());
+      expect(calls).toHaveLength(0);
+    });
+
+    // Spec 140 s3 review round 1 (R1-K) — the SDK puts the email in the URL path
+    // unencoded, so a character that ends or re-routes the path is refused
+    // before any request, with a message that never carries the address.
+    it.each([
+      ['a slash', 'a/b@example.com'],
+      ['a question mark', 'a?b@example.com'],
+      ['a hash', 'a#b@example.com'],
+      ['a percent sign', 'a%2fb@example.com'],
+      ['a backslash', 'a\\b@example.com'],
+    ])('removeContactFromAudience refuses an email with %s as invalid_identifier, with no request', async (_name, email) => {
+      const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
+      const thrown = await resendBroadcastsGateway.removeContactFromAudience(AUD, email).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(thrown).toMatchObject({ name: 'GatewayThrowable', kind: 'permanent', code: 'invalid_identifier' });
+      expect((thrown as Error).message).not.toContain(email);
       expect(calls).toHaveLength(0);
     });
 
@@ -502,6 +662,43 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       const calls = stubWire(() => json(200, { object: 'list', data: [] }));
       await expect(run()).resolves.toEqual({ kind: 'other' });
       expect(calls).toHaveLength(0);
+    });
+  });
+
+  // Spec 140 DT1 — Resend refuses a broadcast `name` over 70 code points. The
+  // callers cap it (`resendDashboardName`); the gateway refuses a longer one
+  // before any request, so a caller that forgets cannot reach Resend with it.
+  describe('createBroadcast refuses a name over 70 code points, with no request', () => {
+    const create = (name: string) =>
+      resendBroadcastsGateway.createBroadcast({
+        audienceId: 'aud_1',
+        subject: 'Hello',
+        htmlBody: '<p>hi</p>',
+        fromName: 'SweCham',
+        fromEmail: 'noreply@example.com',
+        replyToEmail: 'office@example.com',
+        broadcastNameForResendDashboard: name,
+        tenantDisplayName: 'SweCham',
+        locale: 'en',
+      });
+
+    it('71 code points → permanent broadcast_name_too_long, nothing sent', async () => {
+      const calls = stubWire(() => json(201, { id: 'bc_1' }));
+      const name = 'ก'.repeat(71);
+      const thrown = await create(name).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(thrown).toMatchObject({ kind: 'permanent', code: 'broadcast_name_too_long' });
+      // Spec 140 s3 review round 1 — the message reaches log lines: no name in it.
+      expect((thrown as Error).message).not.toContain(name);
+      expect(calls).toHaveLength(0);
+    });
+
+    it('70 code points, each two UTF-16 units → sent (counted by code point, not .length)', async () => {
+      const calls = stubWire(() => json(201, { id: 'bc_1' }));
+      await expect(create('😀'.repeat(70))).resolves.toEqual({ broadcastId: 'bc_1' });
+      expect(calls).toHaveLength(1);
     });
   });
 
@@ -556,7 +753,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       ['deleteAudience, HTML 404', 404, () => resendBroadcastsGateway.deleteAudience('aud_1'), 4],
       ['deleteBroadcast, HTML 410', 410, () => resendBroadcastsGateway.deleteBroadcast('bc_1'), 4],
       ['removeContactFromAudience, HTML 404 (the erasure path)', 404, () =>
-        resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@example.com'), 4],
+        resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com'), 4],
       ['addContactsToAudience, HTML 404', 404, () =>
         resendBroadcastsGateway.addContactsToAudience('aud_1', [{ emailLower: 'a@example.com' }]), 4],
       ['sendBroadcast, HTML 409', 409, () => resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'), 4],
@@ -618,7 +815,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
 
     it('removeContactFromAudience, a real JSON 404 is still already absent', async () => {
       stubWire(() => json(404, { statusCode: 404, name: 'not_found', message: 'Contact not found' }));
-      await expect(resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@example.com')).resolves.toEqual({
+      await expect(resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')).resolves.toEqual({
         kind: 'already_absent',
       });
     });
@@ -668,8 +865,8 @@ describe('Broadcasts gateway bounded calls on the wire (spec 140 s2a)', () => {
     ['sendBroadcast', () => resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1')],
     ['getAudienceContactCount', () => resendBroadcastsGateway.getAudienceContactCount('aud_1')],
     ['retrieveBroadcast', () => resendBroadcastsGateway.retrieveBroadcast('bc_1')],
-    ['removeContactFromAudience', () => resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@example.com')],
-    ['listAudiences', () => resendBroadcastsGateway.listAudiences()],
+    ['removeContactFromAudience', () => resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')],
+    ['listAudiences', () => resendBroadcastsGateway.listAudiences({ deadlineAt: farDeadline() })],
     ['deleteAudience', () => resendBroadcastsGateway.deleteAudience('aud_1')],
     ['deleteBroadcast', () => resendBroadcastsGateway.deleteBroadcast('bc_1')],
   ])('%s: the signal reaches fetch', async (_name, run) => {
@@ -678,5 +875,147 @@ describe('Broadcasts gateway bounded calls on the wire (spec 140 s2a)', () => {
     const inits = fetchInits();
     expect(inits.length).toBeGreaterThan(0);
     expect(inits.every((i) => i?.signal instanceof AbortSignal)).toBe(true);
+  });
+});
+
+/**
+ * Spec 140 slice 3, DT3 — the Resend error classes, keyed on the HTTP status
+ * and then on Resend's `name` (both DOCUMENTED; 409 `resource_locked` was not
+ * reproducible on the sink, research.md step 0.3):
+ *   - 409 `resource_locked` → retryable / `locked` (another request is updating
+ *     the resource; nothing was refused); any other 409 keeps
+ *     `idempotency_conflict`;
+ *   - 429 `daily_quota_exceeded` / `monthly_quota_exceeded` → permanent (it does
+ *     not clear inside a call, nor inside FR-021's hour), the code kept;
+ *   - 429 `rate_limit_exceeded`, or a 429 with no name → retryable / `api`.
+ * The raw once readers keep 409 → `other` (undecided), outside DT3.
+ */
+describe('DT3 — Resend error classes (spec 140 slice 3)', () => {
+  const locked = () =>
+    json(409, { statusCode: 409, name: 'resource_locked', message: 'Another request is already updating this resource' });
+  const refused422 = () =>
+    json(422, { statusCode: 422, name: 'validation_error', message: 'Only draft broadcasts can be sent or scheduled' });
+  const settle = (p: Promise<unknown>) =>
+    p.then(
+      () => ({ outcome: 'resolved', subKind: null, code: null }),
+      (e: { kind?: string; subKind?: string; code?: string }) => ({
+        outcome: e.kind ?? 'threw',
+        subKind: e.subKind ?? null,
+        code: e.code ?? null,
+      }),
+    );
+  const createInput = {
+    audienceId: 'aud_1',
+    subject: 'Hello',
+    htmlBody: '<p>hi</p>',
+    fromName: 'SweCham',
+    fromEmail: 'noreply@example.com',
+    replyToEmail: 'office@example.com',
+    broadcastNameForResendDashboard: 'SweCham — Hello',
+    tenantDisplayName: 'SweCham',
+    locale: 'en',
+  } satisfies CreateBroadcastInput;
+
+  it('sendBroadcast: a 409 resource_locked is retried, and a retry that lands resolves', async () => {
+    vi.useFakeTimers();
+    const calls = stubWire((n) => (n === 1 ? locked() : json(200, { id: 'bc_1' })));
+    const done = settle(resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'));
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'resolved', subKind: null, code: null, attempts: 2 });
+  });
+
+  // The send arm's "409 then 422": the 422 is permanent and leaves the bounded
+  // call at once; the caller probes it (`probeRefusedSend`) before believing it.
+  it('sendBroadcast: 409 resource_locked, then 422 → the 422 is thrown permanent out of the bounded call', async () => {
+    vi.useFakeTimers();
+    const calls = stubWire((n) => (n === 1 ? locked() : refused422()));
+    const done = settle(resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'));
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ ...(await done), attempts: calls.length }).toEqual({
+      outcome: 'permanent',
+      subKind: null,
+      code: 'validation_error',
+      attempts: 2,
+    });
+  });
+
+  it.each([
+    ['retrieveBroadcast', () => resendBroadcastsGateway.retrieveBroadcast('bc_1')],
+    ['deleteBroadcast', () => resendBroadcastsGateway.deleteBroadcast('bc_1')],
+    ['sendBroadcast', () => resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1')],
+  ])('%s: a 409 resource_locked that never clears is retryable / locked, inside the call budget', async (_name, run) => {
+    vi.useFakeTimers();
+    const calls = stubWire(locked);
+    const done = settle(run() as Promise<unknown>);
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'retryable', subKind: 'locked', code: null, attempts: 4 });
+  });
+
+  it('createBroadcast: a 409 resource_locked is retryable / locked, one request (a create retries a 429 only)', async () => {
+    vi.useFakeTimers();
+    const calls = stubWire(locked);
+    const done = settle(resendBroadcastsGateway.createBroadcast(createInput));
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'retryable', subKind: 'locked', code: null, attempts: 1 });
+  });
+
+  it.each(['daily_quota_exceeded', 'monthly_quota_exceeded'])(
+    'sendBroadcast: a 429 %s is permanent with its code, one request',
+    async (name) => {
+      vi.useFakeTimers();
+      const calls = stubWire(() => json(429, { statusCode: 429, name, message: 'quota reached' }));
+      const done = settle(resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'));
+      await vi.advanceTimersByTimeAsync(40_000);
+      expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'permanent', subKind: null, code: name, attempts: 1 });
+    },
+  );
+
+  // `throwImportError` goes through `classifyResendError`, so the import calls inherit DT3.
+  it.each(['daily_quota_exceeded', 'monthly_quota_exceeded'])(
+    'createContactImport: a 429 %s is permanent with its code, one request',
+    async (name) => {
+      vi.useFakeTimers();
+      const calls = stubWire(() => json(429, { statusCode: 429, name, message: 'quota reached' }));
+      const done = settle(resendBroadcastsGateway.createContactImport('aud_1', ['a@example.com']));
+      await vi.advanceTimersByTimeAsync(40_000);
+      expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'permanent', subKind: null, code: name, attempts: 1 });
+    },
+  );
+
+  it.each([
+    ['rate_limit_exceeded', { statusCode: 429, name: 'rate_limit_exceeded', message: 'Too many requests' }],
+    ['with no name', { statusCode: 429, message: 'Too many requests' }],
+    ['with a name this build does not know', { statusCode: 429, name: 'some_new_limit', message: 'Slow down' }],
+  ])('retrieveBroadcast: a 429 %s stays retryable / api', async (_label, body) => {
+    vi.useFakeTimers();
+    const calls = stubWire(() => json(429, body));
+    const done = settle(resendBroadcastsGateway.retrieveBroadcast('bc_1'));
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'retryable', subKind: 'api', code: null, attempts: 4 });
+  });
+
+  it('sendBroadcast: any other 409 keeps idempotency_conflict, one request', async () => {
+    vi.useFakeTimers();
+    const calls = stubWire(() =>
+      json(409, { statusCode: 409, name: 'invalid_idempotent_request', message: 'Same key, different payload' }),
+    );
+    const done = settle(resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'));
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ ...(await done), attempts: calls.length }).toEqual({
+      outcome: 'idempotency_conflict',
+      subKind: null,
+      code: null,
+      attempts: 1,
+    });
+  });
+
+  // Deliberately outside DT3: under the erasure cascade's row lock a 409 decides
+  // nothing, so the raw readers keep it `other` (undecided). Do not "fix" it.
+  it.each([
+    ['deleteBroadcastOnce', () => resendBroadcastsGateway.deleteBroadcastOnce('bc_1')],
+    ['retrieveBroadcastOnce', () => resendBroadcastsGateway.retrieveBroadcastOnce('bc_1')],
+  ])('%s: a JSON 409 resource_locked stays other', async (_name, run) => {
+    stubWire(locked);
+    await expect(run()).resolves.toEqual({ kind: 'other' });
   });
 });

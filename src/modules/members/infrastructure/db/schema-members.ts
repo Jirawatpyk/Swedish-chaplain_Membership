@@ -278,9 +278,10 @@ export const members = pgTable(
       .on(table.tenantId, table.memberId)
       .where(sql`broadcasts_acknowledged_at IS NULL`),
     // COMP-1 US2d — reconciler sweep candidate index (delivered in migration
-    // 0226). `findStuckErasuresInTx` selects `erased_at IS NOT NULL` and orders
-    // `erased_at ASC` (oldest-erasure-first, nearest the Art.12 deadline). The
-    // partial WHERE keeps it sparse over only the erased rows.
+    // 0226). `findStuckErasuresInTx` selects `erased_at IS NOT NULL`; since spec
+    // 140 DT6 it orders by the latest propagation attempt, `erased_at` only as
+    // the fallback, so this index serves the filter, not the sort. The partial
+    // WHERE keeps it sparse over only the erased rows.
     index('members_erased_at_idx')
       .on(table.erasedAt)
       .where(sql`erased_at IS NOT NULL`),

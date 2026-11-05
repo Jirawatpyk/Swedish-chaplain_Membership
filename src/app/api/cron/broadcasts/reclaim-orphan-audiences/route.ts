@@ -26,12 +26,20 @@
  * so cron-job.org does NOT retry-storm a dark-launch period.
  *
  * Mirrors `cleanup-audiences/route.ts` structurally.
+ *
+ * Spec 140 slice 3 (DT5): a function budget of `maxDuration` = 300 s, and one
+ * deadline inside it (start + maxDuration − `RECLAIM_DEADLINE_MARGIN_MS`) that
+ * covers the Resend listing and the delete chunks. A run cut by it answers 200
+ * with `truncated` / `deferredDeletes`. Nothing resumes: the next daily run
+ * lists again from page one, and the deferred orphans are found and deleted
+ * then. The deadline is the route's own; no request field can move it.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 
 import {
   reclaimOrphanedAudiences,
   makeReclaimOrphanedAudiencesDeps,
+  RECLAIM_DEADLINE_MARGIN_MS,
 } from '@/modules/broadcasts';
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
@@ -60,6 +68,9 @@ const LIMIT = 200;
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// Spec 140 slice 3 (DT5) — the run's budget; the use case's deadline sits
+// RECLAIM_DEADLINE_MARGIN_MS inside it.
+export const maxDuration = 300;
 
 // Vercel-native Cron invokes each scheduled path with a GET; this handler's
 // Bearer-gated logic lives in POST. Alias GET → POST so one handler serves
@@ -69,6 +80,7 @@ export const dynamic = 'force-dynamic';
 export const GET = POST;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const startedAt = Date.now();
   if (!verifyCronBearer(request.headers.get('authorization'), env.cron.secret)) {
     return NextResponse.json(
       { error: { code: 'unauthorized' } },
@@ -100,6 +112,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const result = await reclaimOrphanedAudiences(deps, {
     graceMs: GRACE_MS,
     limit: LIMIT,
+    deadlineAt: new Date(startedAt + maxDuration * 1000 - RECLAIM_DEADLINE_MARGIN_MS),
   });
 
   if (!result.ok) {
@@ -116,15 +129,35 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { scanned, orphaned, deleted, failed, skippedLastAudience, skippedNonMatching } = result.value;
+  const {
+    scanned,
+    orphaned,
+    deleted,
+    failed,
+    skippedLastAudience,
+    skippedNonMatching,
+    truncated,
+    deferredDeletes,
+  } = result.value;
 
   logger.info(
-    { tenantId: tenant.slug, scanned, orphaned, deleted, failed, skippedLastAudience, skippedNonMatching },
+    {
+      tenantId: tenant.slug,
+      scanned,
+      orphaned,
+      deleted,
+      failed,
+      skippedLastAudience,
+      skippedNonMatching,
+      truncated,
+      deferredDeletes,
+      durationMs: Date.now() - startedAt,
+    },
     'cron.broadcasts.reclaim_orphan_audiences.tick_complete',
   );
 
   return NextResponse.json(
-    { scanned, orphaned, deleted, failed, skippedLastAudience, skippedNonMatching },
+    { scanned, orphaned, deleted, failed, skippedLastAudience, skippedNonMatching, truncated, deferredDeletes },
     { status: 200 },
   );
 }

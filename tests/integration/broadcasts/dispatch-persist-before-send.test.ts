@@ -132,7 +132,7 @@ function makeGateway(tracker: Tracker): BroadcastsGatewayPort {
       tracker.deleteBroadcastCalls.push(id);
     },
     async listAudiences() {
-      return [];
+      return { audiences: [], truncated: false };
     },
   };
 }

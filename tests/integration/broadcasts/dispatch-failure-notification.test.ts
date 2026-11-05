@@ -99,7 +99,7 @@ function makeRetryableGateway(): BroadcastsGatewayPort {
     async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
     async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
     async deleteBroadcast() {},
-    async listAudiences() { return []; },
+    async listAudiences() { return { audiences: [], truncated: false }; },
   };
 }
 

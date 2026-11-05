@@ -228,8 +228,10 @@ function num(payload: Record<string, unknown> | null, key: string): number | nul
  * Rows arrive newest-first, but a member can carry MULTIPLE rows of a type and
  * the FIRST one is authoritative, never a later re-drive:
  *  - `subprocessor_erasure_propagated`: a re-drive after a first-pass `failed`
- *    emits a 2nd VACUOUS `{ok, removed:0}` (US3-C runbook cond-3) — reading the
- *    latest `ok` would MASK the original `failed` on the very page built to
+ *    emits a 2nd row for a pass that could send nothing (since spec 140 s3:
+ *    `already_propagated`; `not_attempted` only when its check of the earlier
+ *    row was skipped, timed out or failed; before s3, a vacuous `ok`) — reading
+ *    the latest would MASK the original `failed` on the very page built to
  *    surface it. Pick the earliest = the real first-pass outcome.
  *  - `member_erasure_requested`: concurrent requests — the EARLIEST timestamp
  *    wins the Art.12(3)/PDPA 30-day clock (the conservative direction; erase-member.ts).

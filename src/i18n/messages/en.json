@@ -493,6 +493,7 @@
           "complete": "Complete",
           "halfRun": "In progress",
           "overdue": "Overdue",
+          "resendActionNeeded": "Action needed in Resend",
           "elapsedDays": "{count, plural, one {# day} other {# days}}",
           "elapsedHours": "{count, plural, one {# hour} other {# hours}}",
           "elapsedMinutes": "{count, plural, one {# minute} other {# minutes}}"
@@ -518,10 +519,12 @@
           "sessionsRevoked": "Sessions revoked",
           "invitationsRevoked": "Invitations revoked",
           "resendOutcome": "Outcome",
-          "contactsDetached": "Contacts detached from audience",
+          "contactsDetached": "Detach requests accepted by Resend",
           "contactsAlreadyAbsent": "Already absent from audience",
           "contactsFailed": "Contacts failed",
-          "countsNote": "Each contact is counted once. Cite the detached figure; do not add the already-absent figure to it."
+          "countsNote": "Each contact is counted once. Resend accepts a detach request whether or not the address was in the audience, so the first figure may include addresses that were already absent. Cite it as detach requests Resend accepted; do not add the already-absent figure to it.",
+          "notAttemptedNote": "Not attempted: the member's addresses were already scrubbed by an earlier pass, so this pass could send no detach request, and the first pass's detach may never have run. Search the Resend dashboard for the member's address from the DSR intake record and detach it by hand.",
+          "detachFailedNote": "The detach did not finish for every audience: the address may still be in a Resend audience. Search the Resend dashboard for the member's address from the DSR intake record and detach it by hand."
         },
         "documentKind": {
           "invoice": "Invoice",
@@ -3891,6 +3894,7 @@
           "counts_incoherent": "The contact import's counts did not add up, so the send was stopped.",
           "count_mismatch": "The imported recipient count did not match the audience resolved at send time.",
           "provider_failed": "Resend reported the contact import as failed.",
+          "provider_cancelled": "This E-Blast's broadcast was cancelled at Resend, outside Chamber-OS (for example in the Resend dashboard), before it was sent. A cancelled broadcast cannot be sent, so nothing went out. The member can submit a new E-Blast; if their membership is suspended, they can do so once it is reactivated. If no one on your team cancelled it, check who has access to the Resend account.",
           "gateway_permanent": "Resend refused the request (a permanent error). Check the Resend account and its plan limits.",
           "gateway_unknown": "An unexpected error occurred while preparing the send. See the Lifecycle timeline below; if the cause is still unclear, contact your system administrator with this E-Blast's ID.",
           "malformed_segment": "The saved audience for this E-Blast is incomplete (a category audience with no categories selected).",
@@ -8432,6 +8436,7 @@
         "retry_budget_exhausted": "our email provider was unreachable for over an hour, so we stopped retrying rather than send at an unexpected time",
         "count_mismatch": "the recipient list changed while the broadcast was being prepared, so we stopped rather than send it to a different group from the one you approved",
         "provider_failed": "our email provider could not prepare the recipient list",
+        "provider_cancelled": "the send was cancelled at our email provider before anything went out, so nothing was sent",
         "gateway_permanent": "our email provider refused the request — your chamber administrator needs to check the account",
         "gateway_unknown": "an unexpected problem occurred while preparing the send",
         "audience_import_stuck": "preparing the recipient list took too long, so we stopped rather than send at an unexpected time",
@@ -8441,6 +8446,7 @@
       },
       "reassurance": "This E-Blast did not count against your annual allowance — the slot has been released. It cannot be sent again as it is; to send this content, please submit a new E-Blast.",
       "reassuranceStanding": "This E-Blast did not count against your annual allowance — the slot has been released. Once the chamber has resolved this with you, you can submit the content again as a new E-Blast.",
+      "reassuranceHeld": "This E-Blast did not count against your annual allowance — the slot has been released. Your membership is currently suspended; once it is active again, you can submit the content again as a new E-Blast.",
       "ctaRescheduleLabel": "Open broadcast detail",
       "footerSignOff": "If you need help, please contact your chamber administrator."
     },

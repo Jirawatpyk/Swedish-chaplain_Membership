@@ -1013,6 +1013,16 @@ naming convention `broadcast-{tenantSlug}-{uuid}` (optional `-batch-N` suffix),
 cross-checks extracted broadcast IDs against the DB, and deletes audiences with
 no live DB row. **No DB write on success** — there is no row to stamp.
 
+**Time budget (spec 140 slice 3, DT5).** The route's `maxDuration` is 300 s, and
+one deadline inside it (start + 300 s − `RECLAIM_DEADLINE_MARGIN_MS`, 30 s) covers
+both the Resend listing and the delete chunks: a page or a chunk of 5 deletes
+starts only while one bounded call (`RESEND_CALL_TIMEOUT_MS`, 10 s) still fits. A
+run cut by it answers 200 with `truncated: true` (the listing was cut) and/or
+`deferredDeletes > 0` (orphans not reached), counts
+`broadcasts_audience_reclaim_truncated_total{stage}`. Nothing resumes: the next
+daily run lists again from page one and finds the deferred orphans then. It
+deletes less, never more.
+
 ### Setup steps (one-time)
 
 1. Sign in to https://cron-job.org with the SweCham ops account.
@@ -1045,6 +1055,8 @@ no live DB row. **No DB write on success** — there is no row to stamp.
 | 200 + `orphaned: 0` | No orphaned audiences found this tick | None — expected steady state |
 | 200 + `deleted > 0` | Orphaned audiences reclaimed | None — expected after a broadcast row hard-delete |
 | 200 + `failed > 0` | Some deletes failed (Resend gateway blip) | Inspect Vercel logs `broadcasts.audience_reclaim.delete_failed`; next tick retries automatically |
+| 200 + `truncated: true` | The Resend listing was cut (the deadline, the 50-page bound, a `has_more` page with no rows or a repeated cursor; `resend.broadcasts.audiences_list_truncated` logs `truncatedBy`). Audiences past the cut were not seen | None for one run. On 2 consecutive days (the `broadcasts_audience_reclaim_truncated_total` alarm, `stage="listing"`): check Resend's latency and the account's segment count in the dashboard |
+| 200 + `deferredDeletes > 0` | The deadline came before every orphan was deleted (`broadcasts.audience_reclaim.deadline_reached`); the rest wait for the next daily run | None for one run. On 2 consecutive days (`stage="deletes"`): Resend deletes are slow; delete the remaining `broadcast-{tenantSlug}-…` segments by hand in the Resend dashboard if the Free-plan segment limit is near |
 | 200 + `skippedNonMatching > 0` | Resend audiences not matching this tenant's naming convention (e.g. `General`, another tenant) | None — expected; these are intentionally ignored |
 | 200 + `{ skipped: true, reason: 'feature_disabled' }` | `FEATURE_F7_BROADCASTS=false` (kill-switch) | Expected during dark-launch; do nothing |
 | 401 | Bearer token mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org header |

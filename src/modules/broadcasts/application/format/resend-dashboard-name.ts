@@ -6,7 +6,7 @@
 // (~53 cp for TSCC), so prefix + ` — ` + a 60-cp subject overflowed and EVERY
 // dispatch failed. Preserve the existing 60-cp subject slice, then cap the whole
 // label to 70 code points (Unicode-safe via spread; trailing subject truncated).
-const MAX_RESEND_BROADCAST_NAME_CP = 70;
+export const MAX_RESEND_BROADCAST_NAME_CP = 70;
 const MAX_SUBJECT_CP = 60;
 
 export function resendDashboardName(fromName: string, subject: string): string {

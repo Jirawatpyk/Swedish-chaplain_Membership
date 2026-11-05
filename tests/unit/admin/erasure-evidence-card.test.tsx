@@ -40,6 +40,34 @@ describe('EvidenceCard', () => {
     expect(details!.hasAttribute('open')).toBe(false);
   });
 
+  // Spec 140 s3 final Verify finding — a complete erasure whose Resend outcome
+  // needs the DPO (partial / failed / not_attempted) read only "Complete" on the
+  // collapsed card. It now flags the Resend action on the summary and opens.
+  it.each(['partial', 'failed', 'not_attempted'] as const)(
+    'a complete card whose Resend outcome is %s flags the action and opens',
+    (resendOutcome) => {
+      const { container } = renderCard(
+        baseRow({ subprocessorOutcome: { resendOutcome, contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+      );
+      const summary = container.querySelector('details[data-evidence] > summary')!;
+      expect(summary.textContent).toContain('Action needed in Resend');
+      expect(container.querySelector('details[data-evidence]')!.hasAttribute('open')).toBe(true);
+      // The status reads first, then the flag (DOM order = reading order).
+      expect(summary.textContent!.indexOf('Complete')).toBeLessThan(summary.textContent!.indexOf('Action needed in Resend'));
+      if (resendOutcome !== 'not_attempted') {
+        expect(container.textContent).toContain('The detach did not finish for every audience');
+      }
+    },
+  );
+
+  it.each(['ok', 'already_propagated'] as const)('a complete card whose Resend outcome is %s stays quiet and collapsed', (resendOutcome) => {
+    const { container } = renderCard(
+      baseRow({ subprocessorOutcome: { resendOutcome, contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+    );
+    expect(container.querySelector('details[data-evidence] > summary')!.textContent).not.toContain('Action needed in Resend');
+    expect(container.querySelector('details[data-evidence]')!.hasAttribute('open')).toBe(false);
+  });
+
   it('an OVERDUE card is open by default', () => {
     const { container } = renderCard(baseRow({ halfRun: true, isOverdue: true, completedAt: null }));
     expect(container.querySelector('details[data-evidence]')!.hasAttribute('open')).toBe(true);
@@ -50,6 +78,34 @@ describe('EvidenceCard', () => {
     const summary = container.querySelector('summary')!;
     expect(summary.querySelector('h2')).not.toBeNull();
     expect(summary.hasAttribute('aria-expanded')).toBe(false);
+  });
+
+  // Spec 140 s3 review round 1 (R1-I) — Resend answers 200 to a detach of an
+  // address that was not in the segment, so the figure is the requests Resend
+  // accepted, not memberships that existed; the note says it may include
+  // addresses that were already absent.
+  it('labels the detach figure as requests Resend accepted, and notes it may include absent addresses', () => {
+    renderCard(
+      baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 2, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+    );
+    expect(screen.getByText('Detach requests accepted by Resend')).toBeInTheDocument();
+    expect(screen.getByText(/may include addresses that were already absent/i)).toBeInTheDocument();
+  });
+
+  // Spec 140 s3 review round 2 (R2-A) — a `not_attempted` row is a re-drive that
+  // met only scrub sentinels. Its zeros are not "nothing to detach", so the card
+  // says what the DPO must do instead of letting 0/0/0 read as done.
+  it('explains a not_attempted outcome and sends the DPO to Resend; an ok outcome has no such note', () => {
+    const note = /not attempted: the member's addresses were already scrubbed/i;
+    renderCard(
+      baseRow({ subprocessorOutcome: { resendOutcome: 'not_attempted', contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+    );
+    expect(screen.getByText(note)).toBeInTheDocument();
+    cleanup();
+    renderCard(
+      baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 0, contactsAlreadyAbsent: 0, contactsFailed: 0 } }),
+    );
+    expect(screen.queryByText(note)).toBeNull();
   });
 
   it('degrades to the raw value instead of throwing when memberNumber is DB-invalid (0)', () => {

@@ -205,8 +205,8 @@ describe('MemberRepo.scrubPiiInTx', () => {
     // Art.12/§33 date-of-erasure is the FIRST instant, and
     // member-erasure-evidence-reads.ts paginates keyset on this column (a
     // drifting erased_at silently skips/duplicates a re-driven member between
-    // "load more" fetches) and findStuckErasuresInTx ORDER BYs it (a drift
-    // re-sorts the row to the back of the reconciler queue each tick). Every PII
+    // "load more" fetches) and findStuckErasuresInTx falls back to it when a
+    // member has no propagation attempt (a drift re-sorts that row each tick). Every PII
     // column, by contrast, stays UNCONDITIONAL so the re-drive defensively
     // re-applies anonymisation — proved here by `updated_at` advancing to the
     // 2nd instant (the row was genuinely re-written, not skipped).

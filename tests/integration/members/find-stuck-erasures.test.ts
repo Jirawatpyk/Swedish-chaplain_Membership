@@ -29,6 +29,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { asMemberId, type MemberId } from '@/modules/members';
 import { drizzleMemberRepo } from '@/modules/members/infrastructure/db/drizzle-member-repo';
@@ -277,5 +278,33 @@ describe('MemberRepo.countStuckErasuresInTx — live Neon', () => {
     // Agrees with the candidate query it counts.
     const listedA = await runInTenant(tenantA.ctx, (tx) => drizzleMemberRepo.findStuckErasuresInTx(tx, tenantA.ctx.slug, 50));
     expect(listedA).toHaveLength(countA);
+  });
+});
+
+// Spec 140 s3 review round 4 (code-review #1) — the re-drive's earlier-propagation
+// read is bounded by the database, not only by the caller's race: a race stops
+// the wait, but a query the pooler let run without `statement_timeout` keeps its
+// pooled connection. `SET LOCAL` survives a transaction pooler and ends with the
+// read's own transaction.
+describe('MemberRepo.hasSubprocessorPropagationInTx — live Neon', () => {
+  let tenant: TestTenant;
+
+  beforeAll(async () => {
+    tenant = await createTestTenant('test-swecham');
+  });
+
+  afterAll(async () => {
+    await tenant?.cleanup().catch(() => {});
+  });
+
+  it('sets the caller\'s statement_timeout for the rest of its transaction', async () => {
+    const setting = await runInTenant(tenant.ctx, async (tx) => {
+      await drizzleMemberRepo.hasSubprocessorPropagationInTx(tx, tenant.ctx.slug, asMemberId(randomUUID()), 1500);
+      const rows = (await tx.execute(sql`SELECT current_setting('statement_timeout') AS v`)) as unknown as Array<{
+        v: string;
+      }>;
+      return rows[0]?.v;
+    });
+    expect(setting).toBe('1500ms');
   });
 });

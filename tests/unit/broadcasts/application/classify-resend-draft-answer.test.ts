@@ -19,7 +19,7 @@ import {
   classifyResendDraftAnswer,
   type ResendDraftPolicy,
 } from '@/modules/broadcasts/application/use-cases/_classify-resend-draft-answer';
-import { probedStatusOf } from '@/modules/broadcasts/application/use-cases/_probe-refused-send';
+import { isHandedStatus, probedStatusOf } from '@/modules/broadcasts/application/use-cases/_probe-refused-send';
 
 type D = 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other';
 type G = 'not_found' | 'draft' | 'queued' | 'sending' | 'sent' | 'cancelled' | 'failed' | 'unknown' | 'retryable' | 'other';
@@ -158,5 +158,23 @@ describe('probedStatusOf', () => {
     [probeOf('other'), 'other'],
   ] as const)('%j → %s', (p, want) => {
     expect(probedStatusOf(p as never)).toBe(want);
+  });
+
+  // Spec 140 slice 3 (the status readers, option a) — the same reader takes the
+  // bounded `retrieveBroadcast` outcome too, so every probe reads one shape and
+  // a `failed` there (were the union ever widened) is named, not folded.
+  it.each([
+    [{ kind: 'present', resource: { id: 'rb-1', status: 'draft', sentAt: null } }, 'draft'],
+    [{ kind: 'present', resource: { id: 'rb-1', status: 'sent', sentAt: SENT_AT } }, 'sent'],
+    [{ kind: 'present', resource: { id: 'rb-1', status: 'failed', sentAt: null } }, 'failed'],
+    [{ kind: 'not_found' }, 'not_found'],
+  ] as const)('retrieveBroadcast outcome %j → %s', (p, want) => {
+    expect(probedStatusOf(p as never)).toBe(want);
+  });
+});
+
+describe('isHandedStatus', () => {
+  it('failed is not handed — Resend never delivered it (MEASURED 2026-10-29)', () => {
+    expect(isHandedStatus('failed')).toBe(false);
   });
 });

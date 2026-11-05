@@ -54,6 +54,7 @@ function stubDeps(): BulkActionDeps {
     findErasedAtByIdInTx: vi.fn(),
     findStuckErasuresInTx: vi.fn(),
     countStuckErasuresInTx: vi.fn(),
+    hasSubprocessorPropagationInTx: vi.fn(),
     findErasedIdsInTx: vi.fn(
       async (): ReturnType<BulkActionDeps['memberRepo']['findErasedIdsInTx']> => ({
         ok: true as const,

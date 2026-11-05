@@ -159,6 +159,7 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
       findErasedAtById: [CTX, 'member-1'],
       findStuckErasuresInTx: [tx, T, 10],
       countStuckErasuresInTx: [tx, T],
+      hasSubprocessorPropagationInTx: [tx, T, 'member-1', 3000],
       findManyByIdsInTx: [tx, T, ['member-1']],
       enrolAutoInvoiceInTx: [tx, T, ['member-1'], NOW],
       findErasedIdsInTx: [tx, T, ['member-1']],
@@ -192,6 +193,9 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
     });
     expect(silent).toEqual([]);
     expect(byMethod.size).toBeGreaterThanOrEqual(36);
+    // Spec 140 s3 round 5 (code-review #6): the gate skips this method's
+    // `SET LOCAL statement_timeout`, so its own fenced SELECT must still be recorded.
+    expect(byMethod.get('hasSubprocessorPropagationInTx')?.some((st) => /audit_log/.test(st.sql))).toBe(true);
     expect(violationsOf(rec.statements)).toEqual([]);
   });
 

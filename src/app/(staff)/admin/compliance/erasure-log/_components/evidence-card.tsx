@@ -59,6 +59,12 @@ export function EvidenceCard({
   const t = useTranslations('admin.compliance.erasureLog');
   const headingId = `erasure-${row.memberId}`;
   const isComplete = !row.halfRun;
+  // Spec 140 s3 final Verify finding: a complete erasure whose Resend outcome
+  // still needs the DPO is flagged on the summary and opens, so "Complete" alone
+  // never hides it on a collapsed card.
+  const resendNeedsAction =
+    row.subprocessorOutcome !== null &&
+    ['partial', 'failed', 'not_attempted'].includes(row.subprocessorOutcome.resendOutcome);
   const fmtDate = (d: Date | null) => (d ? fmt.format(d) : DASH);
   const fmtBool = (b: boolean | null) => (b === null ? DASH : b ? t('value.yes') : t('value.no'));
   const fmtText = (s: string | null) => (s && s.trim() !== '' ? s : DASH);
@@ -77,8 +83,8 @@ export function EvidenceCard({
 
   return (
     <Card className={cn('overflow-hidden p-0', row.isOverdue && 'border-[var(--aura-border-danger)]')}>
-      <details data-evidence open={!isComplete} className="group">
-        <summary className="flex cursor-pointer list-none items-start justify-between gap-[var(--aura-space-3)] px-[var(--aura-space-5)] py-[var(--aura-space-4)] group-open:border-b group-open:border-[var(--aura-border-default)] [&::-webkit-details-marker]:hidden [&::marker]:content-['']">
+      <details data-evidence open={!isComplete || resendNeedsAction} className="group">
+        <summary className="flex flex-wrap cursor-pointer list-none items-start justify-between gap-[var(--aura-space-3)] px-[var(--aura-space-5)] py-[var(--aura-space-4)] group-open:border-b group-open:border-[var(--aura-border-default)] [&::-webkit-details-marker]:hidden [&::marker]:content-['']">
           <div className="flex min-w-0 items-start gap-[var(--aura-space-3)]">
             <ChevronDownIcon
               aria-hidden
@@ -91,9 +97,17 @@ export function EvidenceCard({
               <p className="text-sm text-[var(--aura-fg-secondary)]">{t('erasedAt', { at: fmtDate(row.erasedAt) })}</p>
             </div>
           </div>
-          <StatusPill tone={statusTone} data-tone={statusTone} className="shrink-0">
-            {statusLabel}
-          </StatusPill>
+          {/* The pill comes first in the DOM so a screen reader hears the status, then the flag. */}
+          <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-[var(--aura-space-2)]">
+            <StatusPill tone={statusTone} data-tone={statusTone} className="shrink-0">
+              {statusLabel}
+            </StatusPill>
+            {resendNeedsAction ? (
+              <Badge tone="warning" data-testid="erasure-resend-action">
+                {t('status.resendActionNeeded')}
+              </Badge>
+            ) : null}
+          </div>
         </summary>
 
         {/* Board `Admin-erasure-log`: the sections are ruled off from one another. */}
@@ -200,9 +214,12 @@ export function EvidenceCard({
                   that incremented for every detach the processor acknowledged,
                   404s included. A DPO citing this card in a DSR answer was
                   asserting removals that had not happened (Art. 12(3)). The
-                  counter now counts only real detaches, and the label says
-                  "detached", which is what the call does — the contact record
-                  itself survives at the processor (residual 8a).
+                  counter now leaves out the 404s, but Resend also answers 200 to
+                  a detach of an address that was not in the segment (MEASURED
+                  5 Nov 2026), so the figure is the detach requests Resend
+                  accepted, which may include absent addresses (spec 140 s3
+                  R1-I; the countsNote below says so). The contact record itself
+                  survives at the processor (residual 8a).
                 */}
                 <Field label={t('fields.contactsDetached')}>
                   {row.subprocessorOutcome.contactsRemoved}
@@ -241,6 +258,22 @@ export function EvidenceCard({
               <p className="text-xs text-[var(--aura-fg-secondary)]">
                 {t('fields.countsNote')}
               </p>
+              {/*
+                Spec 140 s3 review round 2 (R2-A) — `not_attempted` is a re-drive
+                that met only scrub sentinels: its zeros are not "nothing to
+                detach". The raw token stays in the field above (the DPO matches
+                it to the audit row); this says what to do about it.
+              */}
+              {row.subprocessorOutcome.resendOutcome === 'not_attempted' ? (
+                <p className="text-xs text-[var(--aura-fg-secondary)]">
+                  {t('fields.notAttemptedNote')}
+                </p>
+              ) : row.subprocessorOutcome.resendOutcome === 'partial' ||
+                row.subprocessorOutcome.resendOutcome === 'failed' ? (
+                <p className="text-xs text-[var(--aura-fg-secondary)]">
+                  {t('fields.detachFailedNote')}
+                </p>
+              ) : null}
               </>
             ) : (
               <p className="text-sm text-[var(--aura-fg-secondary)]">{t('subprocessorNone')}</p>

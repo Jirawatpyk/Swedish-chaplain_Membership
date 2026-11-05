@@ -566,7 +566,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 // Resend's own response text, so `reason`/`*.reason` redacts it
                 // and the line printed `[REDACTED]`; `subKind` already carries
                 // the classification an operator acts on (network / timeout /
-                // server_5xx / api), so nothing readable is lost.
+                // server_5xx / api / locked), so nothing readable is lost.
                 subKind: result.error.subKind,
               },
               'cron.broadcasts.dispatch.retryable',

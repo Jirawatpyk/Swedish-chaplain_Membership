@@ -14,6 +14,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   eraseMember,
+  PRIOR_PROPAGATION_READ_BUDGET_MS,
   type EraseMemberInput,
 } from '@/modules/members/application/use-cases/erase-member';
 import { asMemberId } from '@/modules/members';
@@ -784,6 +785,195 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(res.ok).toBe(true);
     expect(derive).toHaveBeenCalledTimes(1);
     expect((derive.mock.calls[0] as unknown[])[3]).toEqual(new Date('2026-06-16T00:00:00.000Z'));
+  });
+
+  // Spec 140 s3 review round 1 (R1-D) — a re-drive reads the contacts' scrub
+  // sentinels (`erased+<contact_id>@erased.invalid`), never the real address.
+  // Paired with the member's audiences they drove a detach of an address that
+  // was never in them, which Resend answers 200 and the record counted as
+  // removed. The detach derivation gets no sentinel; the tombstones keep the
+  // whole set.
+  it('hands the detach derivation no erasure-sentinel address (R1-D)', async () => {
+    const deps = buildEraseDeps();
+    deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [
+      'live@x.io',
+      'erased+11111111-1111-4111-8111-111111111111@erased.invalid',
+      'erased+22222222-2222-4222-8222-222222222222@ERASED.INVALID',
+    ]);
+    const derive = vi.fn(async () => [] as Array<{ audienceId: string; email: string }>);
+    deps.broadcastsAudienceDerivation.listMemberAudienceContactsInTx = derive as never;
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    expect((derive.mock.calls[0] as unknown[])[2]).toEqual(['live@x.io']);
+  });
+
+  // Spec 140 s3 review round 2 (R2-A) — after R1-D a re-drive whose addresses
+  // are all sentinels captures no pair, which read as `ok` 0/0/0, the same row
+  // as "the member was in no audience". If the first pass crashed after the
+  // scrub commit and before its propagation, that `ok` was the only row while
+  // the real address could still be in a segment. The use case tells the
+  // adapter the addresses were already scrubbed, so it records `not_attempted`.
+  it('tells the propagation the addresses were already scrubbed when every one is a sentinel (R2-A)', async () => {
+    const deps = buildEraseDeps();
+    deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [
+      'erased+11111111-1111-4111-8111-111111111111@erased.invalid',
+    ]);
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+      expect.objectContaining({ audienceContacts: [], addressesAlreadyScrubbed: true }),
+    );
+  });
+
+  it('a first pass with real addresses and no audience is not "already scrubbed" (R2-A)', async () => {
+    const deps = buildEraseDeps();
+    deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => ['live@x.io']);
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+      expect.objectContaining({ audienceContacts: [], addressesAlreadyScrubbed: false }),
+    );
+  });
+
+  // Spec 140 s3 review round 2 (R2-A2) — a re-drive whose first pass already
+  // wrote a propagation row is an echo (`already_propagated`, no page); one
+  // with no earlier row is `not_attempted` (pages). The use case reads it only
+  // when the addresses were already scrubbed, and a failed read counts as "no
+  // earlier row", toward paging.
+  describe('the earlier-propagation read (R2-A2)', () => {
+    const SENTINEL = 'erased+11111111-1111-4111-8111-111111111111@erased.invalid';
+
+    it.each([
+      ['an earlier row exists', async (): Promise<boolean> => true, true],
+      ['no earlier row', async (): Promise<boolean> => false, false],
+      ['the read fails', async (): Promise<boolean> => { throw new Error('read failed'); }, false],
+    ] as const)('%s → passes the matching priorPropagationRecorded', async (_label, read, expected) => {
+      const deps = buildEraseDeps();
+      deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
+      deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(read);
+      const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      expect(res.ok).toBe(true);
+      expect(deps.memberRepo.hasSubprocessorPropagationInTx).toHaveBeenCalledWith(
+        expect.anything(),
+        't-1',
+        'm-1',
+        PRIOR_PROPAGATION_READ_BUDGET_MS,
+      );
+      expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+        expect.objectContaining({ addressesAlreadyScrubbed: true, priorPropagationRecorded: expected }),
+      );
+    });
+
+    // Spec 140 s3 review round 3 (code-review #2) — the read sits in front of
+    // the propagation, the one step a re-drive cannot repeat, so it must never
+    // spend the time that step needs: it is skipped when the deadline leaves no
+    // room for it, and abandoned when it outlasts its own budget. Either way it
+    // counts as "no earlier row", toward paging.
+    it('is skipped when the deadline leaves no room for it', async () => {
+      const deps = buildEraseDeps();
+      deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
+      deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(async () => true);
+      // Round 5 (code-review #9): the read reserves a second budget for the audit write after it.
+      const deadlineAt = new Date(deps.clock.now().getTime() + 2 * PRIOR_PROPAGATION_READ_BUDGET_MS - 1);
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      try {
+        const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, { ...META, deadlineAt }, deps);
+        expect(res.ok).toBe(true);
+        expect(deps.memberRepo.hasSubprocessorPropagationInTx).not.toHaveBeenCalled();
+        expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+          expect.objectContaining({ addressesAlreadyScrubbed: true, priorPropagationRecorded: false }),
+        );
+        // Round 4 (code-review #2): a skip says so, so its not_attempted row can be told
+        // from a real "no earlier row".
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ memberId: 'm-1', reason: 'deadline' }),
+          'erase-member: prior subprocessor propagation read skipped',
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('runs when the deadline leaves its budget and the audit write\'s', async () => {
+      const deps = buildEraseDeps();
+      deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
+      deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(async () => true);
+      const deadlineAt = new Date(deps.clock.now().getTime() + 2 * PRIOR_PROPAGATION_READ_BUDGET_MS);
+      const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, { ...META, deadlineAt }, deps);
+      expect(res.ok).toBe(true);
+      expect(deps.memberRepo.hasSubprocessorPropagationInTx).toHaveBeenCalled();
+      expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+        expect.objectContaining({ priorPropagationRecorded: true }),
+      );
+    });
+
+    it('is abandoned when it outlasts its budget', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      try {
+        const deps = buildEraseDeps();
+        deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
+        deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(() => new Promise<boolean>(() => {}));
+        const pending = eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+        await vi.advanceTimersByTimeAsync(PRIOR_PROPAGATION_READ_BUDGET_MS + 1);
+        const res = await pending;
+        expect(res.ok).toBe(true);
+        expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+          expect.objectContaining({ addressesAlreadyScrubbed: true, priorPropagationRecorded: false }),
+        );
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ memberId: 'm-1', reason: 'timeout' }),
+          'erase-member: prior subprocessor propagation read failed',
+        );
+      } finally {
+        warnSpy.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it('a database cancel (57014) logs as a timeout too', async () => {
+      const deps = buildEraseDeps();
+      deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
+      deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(async () => {
+        throw Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' });
+      });
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      try {
+        const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+        expect(res.ok).toBe(true);
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ memberId: 'm-1', reason: 'timeout' }),
+          'erase-member: prior subprocessor propagation read failed',
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('clears its timer when the read answers in time', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const deps = buildEraseDeps();
+        deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => [SENTINEL]);
+        deps.memberRepo.hasSubprocessorPropagationInTx = vi.fn(async () => true);
+        const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+        expect(res.ok).toBe(true);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('is not read on a first pass with real addresses', async () => {
+      const deps = buildEraseDeps();
+      deps.contactRepo.listTombstoneEmailsForMemberInTx = vi.fn(async () => ['live@x.io']);
+      const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      expect(res.ok).toBe(true);
+      expect(deps.memberRepo.hasSubprocessorPropagationInTx).not.toHaveBeenCalled();
+      expect(deps.subprocessorErasure.propagate).toHaveBeenCalledWith(
+        expect.objectContaining({ addressesAlreadyScrubbed: false, priorPropagationRecorded: false }),
+      );
+    });
   });
 
   it('a subprocessor audit-emit failure is NON-BLOCKING — member_erased still emitted (US3-C)', async () => {
