@@ -21,7 +21,7 @@
  *      `initiated_at` = now − 25 h (past the sweep's 24 h floor), for 100 THB.
  *      Nothing was ever sent to Stripe for it, so a sweep run lists the PI's
  *      refunds, finds none, and closes the row `failed`
- *      (`cause: 'no_processor_refund'`).
+ *      (`failure_reason_code = 'no_processor_refund'`, on the row and in the `refund_failed` audit).
  *
  * DEV ONLY. It refuses unless ALL of:
  *   - `DATABASE_URL` passes `assertDbHostNotBlocklisted` (TEST_DB_HOST_BLOCKLIST);
