@@ -818,6 +818,7 @@ describe('DT3 — Resend error classes (spec 140 slice 3)', () => {
   it.each([
     ['rate_limit_exceeded', { statusCode: 429, name: 'rate_limit_exceeded', message: 'Too many requests' }],
     ['with no name', { statusCode: 429, message: 'Too many requests' }],
+    ['with a name this build does not know', { statusCode: 429, name: 'some_new_limit', message: 'Slow down' }],
   ])('retrieveBroadcast: a 429 %s stays retryable / api', async (_label, body) => {
     vi.useFakeTimers();
     const calls = stubWire(() => json(429, body));
