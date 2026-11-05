@@ -202,6 +202,27 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect(buildAudienceTickMock).not.toHaveBeenCalled();
   });
 
+  // PR #756 review round 1 (code-review #3) — the maker does a dynamic import, a
+  // tenant display-name read and a memo per call: an empty tick builds none of
+  // it, and keeps its metric, its body and its tick_complete line.
+  it('a tick with no due rows builds no import deps', async () => {
+    vi.mocked(logger.info).mockClear();
+    runInTenantMock.mockImplementation(async (_ctx, fn) => fn({ execute: async () => [] }));
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['processed']).toBe(0);
+    expect(buildDepsArgs).toHaveLength(0);
+    expect(buildAudienceTickMock).not.toHaveBeenCalled();
+    expect(cronSkippedCountSpy).toHaveBeenCalledWith('test-tenant', 'no_due_rows');
+    const completes = vi
+      .mocked(logger.info)
+      .mock.calls.filter(([, msg]) => msg === 'cron.broadcasts.dispatch.tick_complete');
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.[0]).toMatchObject({ tenantId: 'test-tenant', audienceCeiling: 777, processed: 0 });
+  });
+
   // Spec 140 s4 (security L7) — the effective ceiling is logged once per tick,
   // on the tick_complete line only: not a summary bucket, so neither the JSON
   // body nor the `cron.<key>` span attributes carry it.
@@ -453,6 +474,36 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
       expect.objectContaining({ broadcastId: BROADCAST_ID, errorKind: 'a_kind_no_switch_has_ever_heard_of' }),
       'cron.broadcasts.dispatch.unknown_error_kind',
     );
+  });
+
+  // PR #756 review round 1 (rel L3) — the success chain ended in a bare `else`
+  // that counted ANY other kind `import_pending`. It is an exhaustive switch now,
+  // so a success kind no arm knows pages like an unknown error kind does.
+  it('an unrouted SUCCESS kind reaches unknown_error and pages, not import_pending', async () => {
+    oneRow();
+    buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'a_success_no_switch_has_heard_of' } });
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['unknown_error']).toBe(1);
+    expect(body['import_pending']).toBe(0);
+    expect(cronUnknownErrorCountSpy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+      expect.objectContaining({ broadcastId: BROADCAST_ID, outcomeKind: 'a_success_no_switch_has_heard_of' }),
+      'cron.broadcasts.dispatch.unknown_outcome_kind',
+    );
+  });
+
+  it('an import_pending outcome is counted import_pending', async () => {
+    oneRow();
+    buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'import_pending', importId: 'imp-1' } });
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['import_pending']).toBe(1);
+    expect(body['unknown_error']).toBe(0);
   });
 });
 
