@@ -154,7 +154,12 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    Resend outcome only); fix the cause (the API key, Resend's status), and the
    next re-drive finishes. From spec 140 slice 3, the reconciler's queue rotates
    by each member's latest `subprocessor_erasure_propagated` attempt, oldest
-   first, so one stuck member no longer holds the others back.
+   first, so one stuck member no longer holds the others back. Two cases still
+   do not rotate: a member whose re-drive fails before its scrub commits, or
+   exits early, writes no new attempt; and the attempt row is written
+   best-effort, so a lost write leaves the member where it was. If
+   `members_erasure_stuck_count` stays flat while one member id repeats in the
+   tick log, that member is one of these cases: fix its cause first.
 
    **A row the cascade cannot settle — manual recovery.** When Resend's
    answers decide nothing (a 403 whose probe says `draft`, `not_found`,
