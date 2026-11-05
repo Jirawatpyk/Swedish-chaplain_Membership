@@ -355,3 +355,21 @@ The Resend MCP is connected to the same account as `RESEND_BROADCASTS_API_KEY`: 
 - **Open measurements, sink address only, slice 3:**
   - the `contacts.remove` email encoding, with a `+` address and an uppercase address;
   - whether 409 `resource_locked` occurs (Q7 above).
+
+## Addendum — slice 3 step 0 measurements (5 Nov 2026)
+
+All on the shared Resend account with the app's broadcasts key, on throwaway audiences at the sink domain (`@resend.dev`). Nothing was sent or scheduled, and every audience and contact created was deleted afterwards (`General` alone remains).
+
+1. **`contacts.remove` with a `+` address and an UPPERCASE address — MEASURED.**
+   - **What was sent.** The SDK (resend 6.35.0, `contacts.remove({ audienceId, email })`) sends `DELETE /audiences/{audienceId}/contacts/{email}` with the email **unencoded** in the path. The probe sent exactly that.
+   - **Results.** For `delivered+s3probe@resend.dev` and `DELIVERED.S3UP@resend.dev`:
+     - each DELETE answered `200 {"deleted":true}`;
+     - the audience listed 0 contacts afterwards;
+     - `GET /contacts/{email}` still answered 200 for both, so the contact itself still exists.
+   - **Conclusions.** The unencoded `+` is read literally. Resend stores the email as given (uppercase kept) and matches it case-insensitively: a DELETE with the lowercase, encoded form also answered 200.
+   - **DT4's behaviour therefore holds today.** The code needs no encoding change; it needs a pinned test.
+2. **A DELETE of a contact that is not in the audience also answers `200 {"deleted":true}` — MEASURED.** This was the lowercase repeat, after the contact had already been removed. So `removeContactFromAudience`'s `already_absent` branch (it expects a 404) never fires for that case, and an absent contact is counted `detached`. The direction is safe: it over-reports a detach, never an absence.
+3. **A falsy segment id — traced, not executed.** With `!payload.audienceId`, the SDK sends `DELETE /contacts/{email}`, which deletes the contact account-wide (`dist/index.mjs:679`). The gateway's `assertNonEmpty({ audienceId, email })` (`isBlankId`: non-string or blank after trim) refuses this before any call, as a permanent `empty_identifier`. The ship-blocker in spec :57 is therefore already guarded at the gateway, and slice 3 pins it with a test. A grep for other `contacts.remove` callers outside the gateway finds none.
+4. **409 `resource_locked` — not observed (MEASURED).** Two concurrent PATCHes on one draft, twice, then PATCH + DELETE together: all answered 200. The draft was then gone (a later DELETE answered 404). The documented code is still classified (DT3), but it is not reproducible on this account.
+5. **DELETE on a `failed` broadcast — UNMEASURED.** A broadcast reaches `failed` only after a send or schedule, which the probe rules forbid. The in-flight arm keeps `failed` undecided, as before.
+
