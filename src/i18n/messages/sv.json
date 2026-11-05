@@ -518,10 +518,10 @@
           "sessionsRevoked": "Återkallade sessioner",
           "invitationsRevoked": "Återkallade inbjudningar",
           "resendOutcome": "Resultat",
-          "contactsDetached": "Kontakter borttagna från målgrupp",
+          "contactsDetached": "Borttagningsbegäranden som Resend godtog",
           "contactsAlreadyAbsent": "Redan borta från målgrupp",
           "contactsFailed": "Misslyckade kontakter",
-          "countsNote": "Varje kontakt räknas en gång. Ange antalet borttagna; addera inte antalet redan borta till det."
+          "countsNote": "Varje kontakt räknas en gång. Resend godtar en borttagningsbegäran oavsett om adressen fanns i målgruppen, så den första siffran kan omfatta adresser som redan var borta. Ange den som borttagningsbegäranden som Resend godtog; addera inte antalet redan borta till det."
         },
         "documentKind": {
           "invoice": "Faktura",

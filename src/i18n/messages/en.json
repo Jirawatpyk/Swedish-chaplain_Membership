@@ -518,10 +518,10 @@
           "sessionsRevoked": "Sessions revoked",
           "invitationsRevoked": "Invitations revoked",
           "resendOutcome": "Outcome",
-          "contactsDetached": "Contacts detached from audience",
+          "contactsDetached": "Detach requests accepted by Resend",
           "contactsAlreadyAbsent": "Already absent from audience",
           "contactsFailed": "Contacts failed",
-          "countsNote": "Each contact is counted once. Cite the detached figure; do not add the already-absent figure to it."
+          "countsNote": "Each contact is counted once. Resend accepts a detach request whether or not the address was in the audience, so the first figure may include addresses that were already absent. Cite it as detach requests Resend accepted; do not add the already-absent figure to it."
         },
         "documentKind": {
           "invoice": "Invoice",
