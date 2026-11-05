@@ -126,6 +126,12 @@ export function errorResponse(
 }
 
 /**
+ * #731 — a closed snake_case code; the closed `reason` unions at each use case
+ * are the real guarantee, this is the second wall.
+ */
+const REASON_CODE = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
  * PCI / log-hygiene telemetry extractor for use-case error results
  *
  * Replaces the ternary-chain copy that appeared verbatim in 3 routes
@@ -140,7 +146,8 @@ export function errorResponse(
  *   - `processorErrorKind` — bounded discriminator for log payload
  *     (`undefined` on error codes other than `processor_unavailable`,
  *     and on cancel-payment's variant which lacks the `kind` field)
- *   - `processorErrorReason` — the use case's `reason`, verbatim. A
+ *   - `processorErrorReason` — the use case's `reason`, only when it is a
+ *     snake_case code (≤ 64 chars; anything else is dropped, #731). A
  *     closed-union literal for initiate-payment, and the `kind` for
  *     cancel-payment, so those routes may log it. issue-refund's `reason`
  *     IS Stripe's raw message (an idempotency error repeats the key): the
@@ -167,8 +174,13 @@ export function buildUseCaseErrorTelemetry(error: {
     isProcessorUnavailable && typeof error.kind === 'string'
       ? error.kind
       : undefined;
+  // #731 (task 53) — the logger redacts by key name only, so the reason is
+  // logged only when it is a closed snake_case code. A free-text processor
+  // message (which can echo user-submitted values) is dropped.
   const processorErrorReason =
-    isProcessorUnavailable && typeof error.reason === 'string'
+    isProcessorUnavailable &&
+    typeof error.reason === 'string' &&
+    REASON_CODE.test(error.reason)
       ? error.reason
       : undefined;
   const retryAfterSeconds =

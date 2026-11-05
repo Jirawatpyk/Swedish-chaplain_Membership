@@ -8,6 +8,7 @@ import type {
   AuditPort,
   ClockPort,
   PaymentsRepo,
+  ProcessorGatewayError,
   ProcessorGatewayPort,
   TenantPaymentSettingsRepo,
 } from '../ports';
@@ -46,7 +47,9 @@ export type CancelPaymentError =
       // cancel `processor_unavailable` — wrong for permanent
       // failures.
       readonly kind: 'retryable' | 'permanent';
-      readonly reason: string;
+      // #731 — a CLOSED union, never Stripe's free-text message: the route
+      // logs it as `processorErrorReason`.
+      readonly reason: ProcessorGatewayError['kind'] | 'tenant_settings_missing';
     };
 
 export interface CancelPaymentDeps {

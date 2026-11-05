@@ -211,7 +211,11 @@ export type InitiatePaymentError =
         // Cross-method-skip: Stripe cancel returned a transient error;
         // we abort without DB write to avoid the DB-canceled vs
         // Stripe-pending drift the sweep cron is not designed to detect.
-        | 'cross_method_cancel_retryable';
+        | 'cross_method_cancel_retryable'
+        // #731 — Stripe refused the cancel for any other reason (e.g. a
+        // `processing` PI). The PI may still charge,
+        // so the switch aborts with no DB write (fail closed).
+        | 'cross_method_cancel_refused';
     };
 
 export interface InitiatePaymentDeps {
@@ -610,15 +614,52 @@ async function initiatePaymentBody(
           reason: 'cross_method_cancel_retryable',
         });
       }
-      // Cancel outcome is now safe to mark on the DB row. Either
-      // (a) Stripe confirmed the cancel, or (b) Stripe returned a
-      // permanent non-succeeded error (already-canceled / not-found
-      // / etc.) — both leave Stripe in a terminal-non-succeeded
-      // state from our perspective, so the local row CAN be
-      // marked canceled. The audit `cancel_outcome` discriminator
-      // distinguishes the two paths for forensics.
-      const cancelOutcome: 'stripe_confirmed' | 'stripe_error_bypassed' =
-        cancelResult.ok ? 'stripe_confirmed' : 'stripe_error_bypassed';
+      // #731 (task 52) — fail closed. Only two outcomes prove the old PI can
+      // never charge: (a) Stripe confirmed the cancel, or (b) the PI does not
+      // exist at Stripe. Any other permanent error — a PI Stripe refused to
+      // cancel, typically `processing` (`payment_intent_not_cancelable`), an auth or
+      // config error, … — may leave a PI that still charges the member, and a
+      // late `payment_intent.succeeded` on a `canceled` row is a silent no-op
+      // in confirm-payment. So abort with no DB write. The pending row stays
+      // as it is: the Stripe webhook (`succeeded` / `payment_failed` /
+      // `canceled`) resolves it, and the stale-pending gauge alerts if none
+      // arrives. There is no sweep for pending rows on a payable invoice.
+      const refuse = (
+        kind: 'permanent' | 'retryable',
+        reason: 'cross_method_cancel_refused' | 'cross_method_cancel_retryable' | 'cross_method_pi_already_succeeded',
+      ) => err<InitiatePaymentError>({ code: 'processor_unavailable', kind, reason });
+      let cancelOutcome: 'stripe_confirmed' | 'stripe_pi_missing' = 'stripe_confirmed';
+      if (!cancelResult.ok) {
+        const cancel404 =
+          cancelResult.error.kind === 'permanent' &&
+          cancelResult.error.code === 'resource_missing';
+        if (!cancel404) return refuse('permanent', 'cross_method_cancel_refused');
+        // #731 M1 — Stripe can answer 404 for a just-created PI (read lag,
+        // fix/068), and the cancel call does not retry. Confirm with the
+        // retrieve, which does, and act on what it finds.
+        const confirm = await deps.processorGateway.retrievePaymentIntent(
+          pending.processorPaymentIntentId,
+          settings.processorAccountId,
+        );
+        if (confirm.ok) {
+          const status = confirm.value.status;
+          if (status === 'succeeded') return refuse('permanent', 'cross_method_pi_already_succeeded');
+          if (status === 'processing') return refuse('permanent', 'cross_method_cancel_refused');
+          // Still cancelable: the 404 was read lag, a retry's cancel lands.
+          if (status !== 'canceled') return refuse('retryable', 'cross_method_cancel_retryable');
+          // `canceled` at Stripe: safe to mark the row canceled.
+        } else if (
+          confirm.error.kind === 'permanent' &&
+          confirm.error.code === 'resource_missing'
+        ) {
+          // A second 404, after the retrieve's own retries: the PI is gone.
+          // Known limit: both calls use the tenant's CURRENT Stripe account;
+          // a PI created on a previous account would also read as missing.
+          cancelOutcome = 'stripe_pi_missing';
+        } else {
+          return refuse('retryable', 'cross_method_cancel_retryable');
+        }
+      }
 
       await deps.paymentsRepo.updateStatus(tx, {
         paymentId: pending.id,

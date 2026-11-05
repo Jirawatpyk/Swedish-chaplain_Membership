@@ -581,7 +581,19 @@ export const stripeGateway: ProcessorGatewayPort = {
               reason: 'PI is succeeded; cannot be canceled',
             });
           }
-          // Other terminal states (requires_capture, etc.) — fall through.
+          // #731 (task 52) — any other status Stripe refused to cancel
+          // (typically `processing`) is NOT terminal: the PI can still be
+          // charged. Name it explicitly so no caller reads the generic
+          // permanent mapping as "safe to mark canceled".
+          logger.warn(
+            { stripeAccount, paymentIntentId, stripeStatus: pi.status },
+            'stripe-gateway: cancelPaymentIntent rejected — PI not cancelable in its state',
+          );
+          return err({
+            kind: 'permanent',
+            code: 'payment_intent_not_cancelable',
+            reason: `PI is ${pi.status}; cannot be canceled`,
+          });
         } catch (retrieveErr) {
           // F5R1-E6 — retrieve disambiguation failed. Pre-fix this was
           // a bare `catch {}` with no log, falling through to

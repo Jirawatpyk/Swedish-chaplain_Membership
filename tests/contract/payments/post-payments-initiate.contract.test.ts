@@ -541,6 +541,7 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
       'retrieved_client_secret_null',
       'cross_method_pi_already_succeeded',
       'cross_method_cancel_retryable',
+      'cross_method_cancel_refused',
     ];
 
     for (const call of initiateLogs) {
