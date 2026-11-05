@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
+import th from '@/i18n/messages/th.json';
+import sv from '@/i18n/messages/sv.json';
 
 vi.mock('@/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
@@ -54,6 +56,22 @@ describe('<ResendInvoiceButton layout="compact">', () => {
       fireEvent.click(button);
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['en', en],
+    ['th', th],
+    ['sv', sv],
+  ] as const)('%s — the full button\'s name starts with its visible text (WCAG 2.5.3 Label in Name)', (locale, messages) => {
+    render(
+      <NextIntlClientProvider locale={locale} messages={messages}>
+        <ResendInvoiceButton invoiceId="inv-1" documentNumber="SC-2026-000123" layout="full" />
+      </NextIntlClientProvider>,
+    );
+    const visible = messages.portal.invoices.actions.emailCopy;
+    const button = screen.getByRole('button', { name: /SC-2026-000123/ });
+    expect(button).toHaveTextContent(visible);
+    expect(button.getAttribute('aria-label')?.startsWith(visible)).toBe(true);
   });
 
   it('the full form (detail page) shows the 5-minute cooldown as aria-disabled too', async () => {

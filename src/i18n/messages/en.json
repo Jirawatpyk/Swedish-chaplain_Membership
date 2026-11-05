@@ -6777,7 +6777,7 @@
         "receiptFailedSupport": "Receipt on the way — we're resolving it",
         "viewDetail": "View invoice",
         "emailCopy": "Email me a copy",
-        "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file",
+        "emailCopyAria": "Email me a copy of invoice {number}",
         "moreActions": "More actions for {number}",
         "menuDownloadInvoice": "Download invoice (PDF)",
         "emailCopySent": "Just sent"
