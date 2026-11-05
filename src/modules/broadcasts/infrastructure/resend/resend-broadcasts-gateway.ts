@@ -2,8 +2,10 @@
  * T104 — Resend Broadcasts gateway adapter (F7 US2).
  *
  * Concrete `BroadcastsGatewayPort` impl wrapping Resend SDK Broadcasts
- * surface (`audiences.create`, the Contacts-Import endpoint,
- * `broadcasts.create`, `broadcasts.send`, `broadcasts.get`).
+ * surface (`segments.*`, the Contacts-Import endpoint,
+ * `contacts.segments.remove`, `broadcasts.create`, `broadcasts.send`,
+ * `broadcasts.get`). Spec 140 s4 moved the SDK calls to the Segments names;
+ * the port methods and the `resend_audience_id` columns keep "audience".
  *
  * Error classification (thrown shapes per port docstring):
  *   - 5xx / network / timeout → `{kind: 'retryable', reason}`
@@ -129,11 +131,13 @@ export class GatewayThrowable extends Error {
 
 /**
  * Spec 141 review — refuse an empty identifier before the SDK sees it. On
- * resend@6.35 a falsy `audienceId` is dropped from the path, so
- * `contacts.remove` becomes `DELETE /contacts/{email}` (an ACCOUNT-WIDE delete
- * shared by every tenant) and `contacts.list` becomes `GET /contacts`. Every
- * method that takes an id or an email runs this first; a `null` from a
- * nullable column is refused the same way, as a `GatewayThrowable`.
+ * resend@6.35 a falsy segment id is dropped from the path, so `contacts.list`
+ * becomes `GET /contacts` (the whole account, shared by every tenant); the old
+ * detach, `contacts.remove`, became `DELETE /contacts/{email}`, an ACCOUNT-WIDE
+ * delete, which is why spec 140 s4 moved it to `contacts.segments.remove` and
+ * the DR4 contract guard fails any such request. Every method that takes an id
+ * or an email runs this first; a `null` from a nullable column is refused the
+ * same way, as a `GatewayThrowable`.
  */
 function isBlankId(value: unknown): boolean {
   return typeof value !== 'string' || value.trim() === '';
@@ -159,7 +163,10 @@ function assertNonEmpty(values: Readonly<Record<string, string>>): void {
  * its own code. Case-insensitive: Resend answers lowercase, and an uppercased id
  * names the same segment in the path. No trim: a padded id would reach the path
  * as is. Run after `assertNonEmpty`, so a blank id still answers
- * `empty_identifier`. Applied to `removeContactFromAudience` only.
+ * `empty_identifier`. Applied to every call that puts a segment id into the
+ * path (spec 140 s4 plan review, sec L5): `removeContactFromAudience`,
+ * `getAudienceContactCount` (`contacts.list`) and `deleteAudience`
+ * (`segments.remove` / `segments.get`).
  */
 const RESEND_SEGMENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -226,6 +233,19 @@ function httpStatusOf(err: ResendErrorShape | undefined | null): number {
 function isProviderGone(err: ResendErrorShape | undefined | null): boolean {
   const status = httpStatusOf(err);
   return status === 404 || status === 410;
+}
+
+/**
+ * Spec 140 s4 plan review — the classification's inputs without Resend's
+ * `message`, for a call whose path carries an email address: the message
+ * becomes the thrown `reason`, which reaches log lines. An absent field stays
+ * absent, so `httpStatusOf` reads the shape exactly as before.
+ */
+function statusAndNameOf(err: ResendErrorShape): ResendErrorShape {
+  return {
+    ...(err.statusCode !== undefined && { statusCode: err.statusCode }),
+    ...(err.name !== undefined && { name: err.name }),
+  };
 }
 
 function classifyResendError(
@@ -428,7 +448,7 @@ export function createResendBroadcastsGateway({
       return boundedCall(
         async (signal) => {
           const sdk = client();
-          const result = (await sdk.audiences.create({ name }, { signal })) as ResendSdkResponse<{
+          const result = (await sdk.segments.create({ name }, { signal })) as ResendSdkResponse<{
             id: string;
           }>;
           if (result.error || !result.data?.id) {
@@ -481,7 +501,7 @@ export function createResendBroadcastsGateway({
           // failed_to_dispatch). `extractBareEmail` only sanitises the address.
           const safeFromName = stripAngleBrackets(input.fromName);
           const result = (await sdk.broadcasts.create({
-            audienceId: input.audienceId,
+            segmentId: input.audienceId,
             from: `${safeFromName} <${bareFromEmail}>`,
             subject: input.subject,
             html: wrappedHtml,
@@ -590,7 +610,8 @@ export function createResendBroadcastsGateway({
       // so `has_more` is read off the runtime shape; 6.35 declares it, and the
       // read is unchanged. On 6.35 this call goes to `/segments/{id}/contacts`:
       // MEASURED 2026-10-30 with 110 contacts, both paths return all 110 with
-      // `has_more: false` (spec 141). Narrowed with `=== false`, so
+      // `has_more: false` (spec 141); spec 140 s4 passes `segmentId`, the same
+      // path (step 0 item 2). Narrowed with `=== false`, so
       // that a missing field reads as "not complete": an absent signal must not be
       // reported as a verified-complete count. Because the field is undeclared, a
       // provider rename cannot fail the build — only this narrowing direction
@@ -603,10 +624,11 @@ export function createResendBroadcastsGateway({
       // covered. If Resend ever changes that, the throw reaches the caller's
       // unverifiable arm, which is where "we could not count" already goes.
       assertNonEmpty({ audienceId });
+      assertSegmentId({ audienceId });
       return await boundedCall(
         async (signal) => {
           const sdk = client();
-          const result = (await sdk.contacts.list({ audienceId }, { signal })) as ResendSdkResponse<{
+          const result = (await sdk.contacts.list({ segmentId: audienceId }, { signal })) as ResendSdkResponse<{
             data: ReadonlyArray<unknown>;
             has_more?: boolean;
           }>;
@@ -712,23 +734,41 @@ export function createResendBroadcastsGateway({
       assertNonEmpty({ audienceId, email });
       assertSegmentId({ audienceId });
       assertPathSafeEmail(email);
+      // Spec 140 s4 — the segment-scoped detach, `contacts.segments.remove`
+      // (`DELETE /contacts/{email}/segments/{id}`), never `contacts.remove`,
+      // whose id-less form is the account-wide `DELETE /contacts/{email}` (DR4).
       // The email goes to the SDK as given: it puts it in the path unencoded,
       // and Resend reads a `+` literally and matches the address
-      // case-SENSITIVELY (MEASURED 5 Nov 2026, spec 140 DT4 and the s3 Verify),
-      // answering 200 to any segment-contact DELETE. So it is neither encoded
-      // nor re-cased here: the address sent is the one given, which is
-      // lowercase because the erasure capture is lowercase and the only push,
-      // `createContactImport`, lowercases.
+      // case-SENSITIVELY (MEASURED 5 Nov 2026, research.md slice 4 step 0 item
+      // 1). So it is neither encoded nor re-cased here: the address sent is the
+      // one given, which is lowercase because the erasure capture is lowercase
+      // and the only push, `createContactImport`, lowercases.
       try {
         await boundedCall(
           async (signal) => {
             const sdk = client();
-            const result = (await sdk.contacts.remove({
-              audienceId,
+            const result = (await sdk.contacts.segments.remove({
               email,
-            }, { signal })) as ResendSdkResponse<{ deleted: boolean }>;
+              segmentId: audienceId,
+            }, { signal })) as ResendSdkResponse<{ object?: string; deleted?: boolean }>;
             if (result.error) {
-              throw classifyResendError(result.error ?? undefined, 'audience', audienceId);
+              // Status and name only, never Resend's message: the thrown reason
+              // reaches log lines, and a later wording change could put the
+              // address into it (spec 140 s4 plan review). The step 0 404 bodies
+              // carried none.
+              throw classifyResendError(statusAndNameOf(result.error), 'audience', audienceId);
+            }
+            // `detached` becomes a removal in an append-only Art. 30 record, so
+            // it needs Resend's own `deleted: true` (MEASURED: `200
+            // {"object":"contact_segment","deleted":true}`). A 200 without it
+            // was never seen; it is not read as a detach. Permanent, so the
+            // erasure record counts it failed and the runbook remediates it.
+            if (result.data?.deleted !== true) {
+              throw new GatewayThrowable({
+                kind: 'permanent',
+                code: 'detach_unconfirmed',
+                reason: 'the segment detach answered without deleted: true',
+              });
             }
           },
           { method: 'removeContactFromAudience', callTimeoutMs, retry: 'retryable' },
@@ -736,7 +776,13 @@ export function createResendBroadcastsGateway({
         logger.info({ audienceId }, 'resend.broadcasts.contact_detached');
         return { kind: 'detached' };
       } catch (e) {
-        // A 404 → the contact/audience is already gone → nothing to detach.
+        // A 404 → the contact was not in that segment, or the segment does not
+        // exist → nothing to detach. Since spec 140 s4 this fires: on this
+        // endpoint every no-op answered `404 not_found` (random segment, wrong
+        // case, non-member) and only a membership that existed answered `200
+        // deleted:true` (MEASURED 5 Nov 2026, research.md slice 4 step 0 items 1
+        // and 4). An HTML 404 is not Resend's answer and stays retryable
+        // (`httpStatusOf`).
         //
         // Round 2 R2-25 — this used to `return` here, indistinguishable from a real
         // detach. The caller counted both as removals, and that count became
@@ -753,8 +799,9 @@ export function createResendBroadcastsGateway({
     },
 
     async listAudiences({ deadlineAt }: ListAudiencesInput): Promise<ListAudiencesResult> {
-      // Spec 141: on resend@6.35 `audiences.list` is the paginated
-      // `GET /segments`, so follow `has_more` (cursor = the last id) instead of
+      // Spec 141: on resend@6.35 `segments.list` (spec 140 s4; `audiences` is
+      // its alias) is the paginated `GET /segments`, so follow `has_more`
+      // (cursor = the last id) instead of
       // reading page 1 only — reclaim-orphaned-audiences must see EVERY audience.
       // Each page is its own `boundedCall`, so a retry never re-reads earlier pages.
       const byId = new Map<string, { id: string; name: string; created_at: string }>();
@@ -777,7 +824,7 @@ export function createResendBroadcastsGateway({
         const result = await boundedCall(
           async (signal) => {
             const sdk = client();
-            const res = (await sdk.audiences.list({
+            const res = (await sdk.segments.list({
               limit: LIST_AUDIENCES_PAGE_SIZE,
               ...(after !== undefined && { after }),
             }, { signal })) as ResendSdkResponse<{
@@ -826,10 +873,11 @@ export function createResendBroadcastsGateway({
 
     async deleteAudience(audienceId: string): Promise<void> {
       assertNonEmpty({ audienceId });
+      assertSegmentId({ audienceId });
       await boundedCall(
         async (signal) => {
           const sdk = client();
-          const result = (await sdk.audiences.remove(audienceId, { signal })) as ResendSdkResponse<{
+          const result = (await sdk.segments.remove(audienceId, { signal })) as ResendSdkResponse<{
             deleted: boolean;
             id: string;
             object: string;
@@ -856,7 +904,7 @@ export function createResendBroadcastsGateway({
             if (httpStatusOf(result.error) === 403) {
               let probe: ResendSdkResponse<{ id: string }> | null = null;
               try {
-                probe = (await sdk.audiences.get(audienceId, { signal })) as ResendSdkResponse<{ id: string }>;
+                probe = (await sdk.segments.get(audienceId, { signal })) as ResendSdkResponse<{ id: string }>;
               } catch {
                 throw refused;
               }

@@ -5,17 +5,21 @@
 // during the 2026-06-21 go-live verification, so a gateway test that builds an
 // over-long name or a double-wrapped `from` FAILS here exactly as it would in
 // production. Limits are pinned to observed Resend errors; see the design spec.
+//
+// Spec 140 s4 — it models the Segments surface the gateway calls (`segments.*`,
+// `broadcasts.create({ segmentId })`, `contacts.segments.remove`); the
+// deprecated `audiences` alias and `audienceId` are not modelled.
 const MAX_NAME_CP = 70;
 
 type ResendResult<T> = { data: T | null; error: { statusCode: number; message: string; name: string } | null };
 
 export interface ResendBroadcastsClientLike {
   readonly broadcasts: {
-    create(args: { audienceId: string; from: string; subject: string; html: string; replyTo: string; name: string }): Promise<ResendResult<{ id: string }>>;
+    create(args: { segmentId: string; from: string; subject: string; html: string; replyTo: string; name: string }): Promise<ResendResult<{ id: string }>>;
     send(id: string, opts?: unknown): Promise<ResendResult<{ id: string }>>;
     get(id: string): Promise<ResendResult<{ id: string }>>;
   };
-  readonly audiences: {
+  readonly segments: {
     create(args: { name: string }): Promise<ResendResult<{ id: string }>>;
     remove(id: string): Promise<ResendResult<{ deleted: boolean; id: string; object: string }>>;
     list(): Promise<ResendResult<{ object: 'list'; data: Array<{ id: string; name: string; created_at: string }> }>>;
@@ -23,28 +27,29 @@ export interface ResendBroadcastsClientLike {
   readonly contacts: {
     remove(args: unknown): Promise<ResendResult<{ deleted: boolean }>>;
     list(args: unknown): Promise<ResendResult<{ data: unknown[] }>>;
+    readonly segments: {
+      remove(args: { email: string; segmentId: string }): Promise<ResendResult<{ object: 'contact_segment'; deleted: boolean }>>;
+    };
   };
 }
 
 export function createResendContractFake(opts: {
   audienceLimit?: number;
   /**
-   * When `true`, `contacts.remove({ audienceId, email })` returns a 404
-   * (`resource_missing`) for an audienceId that was NEVER created OR has
-   * already been deleted via `audiences.remove`. This models real Resend
-   * behaviour after an ephemeral audience is cleaned up (PR-2): the contact
-   * can no longer be removed because its audience is gone, and the gateway's
-   * `removeContactFromAudience` 404-tolerance path must treat that as "already
-   * erased". Default `false` preserves the original always-success behaviour
-   * for the existing gateway/contract consumers (PR-1) — only the
-   * erasure-after-cleanup integration test opts in.
+   * When `true`, `contacts.segments.remove({ email, segmentId })` returns a 404
+   * (`not_found`) for a segmentId that was NEVER created OR has already been
+   * deleted via `segments.remove`. Resend answers exactly that for a random
+   * segment (MEASURED 5 Nov 2026, research.md slice 4 step 0 item 1), and the
+   * gateway's `removeContactFromAudience` reads it as `already_absent`.
+   * Default `false` keeps the always-success detach for the other consumers;
+   * only the erasure-after-cleanup integration test opts in.
    */
-  contactsRemove404OnDeletedAudience?: boolean;
+  detach404OnUnknownSegment?: boolean;
 } = {}): {
   client: ResendBroadcastsClientLike;
   createdAudienceCount: () => number;
   /**
-   * The audience ids created via `audiences.create`, in creation order.
+   * The audience ids created via `segments.create`, in creation order.
    * Unlike `createdAudienceIds` (which is mutated on remove), this list is
    * append-only so the cross-member isolation test can assert the COUNT and
    * IDENTITY of audiences created across a dispatch run even if some were
@@ -55,8 +60,7 @@ export function createResendContractFake(opts: {
   lastCreatedBroadcastHtml: () => string | null;
 } {
   const audienceLimit = opts.audienceLimit ?? Number.POSITIVE_INFINITY;
-  const remove404OnDeletedAudience =
-    opts.contactsRemove404OnDeletedAudience ?? false;
+  const detach404OnUnknownSegment = opts.detach404OnUnknownSegment ?? false;
   let audienceCount = 0;
   const createdAudienceIds = new Set<string>();
   // Append-only creation log (never mutated on remove) — distinct from the
@@ -107,7 +111,7 @@ export function createResendContractFake(opts: {
       async send(id) { return { data: { id }, error: null }; },
       async get(_id) { return { data: null, error: { statusCode: 404, message: 'not found', name: 'not_found' } }; },
     },
-    audiences: {
+    segments: {
       async create(args) {
         if (audienceCount >= audienceLimit) {
           const limitLabel = Number.isFinite(audienceLimit) ? String(audienceLimit) : '3';
@@ -144,25 +148,26 @@ export function createResendContractFake(opts: {
     // Spec 140 s4 — no `contacts.create`: its only caller, the legacy
     // per-contact push, was deleted with the legacy dispatch leg.
     contacts: {
-      async remove(args: unknown) {
-        const a = (args ?? {}) as { audienceId?: unknown; email?: unknown };
-        // Opt-in only: model a deleted/never-created audience as a 404 so the
-        // erasure-after-cleanup test exercises the gateway's
-        // `removeContactFromAudience` `resource_missing` 404-tolerance path.
-        if (
-          remove404OnDeletedAudience &&
-          typeof a.audienceId === 'string' &&
-          !createdAudienceIds.has(a.audienceId)
-        ) {
-          return {
-            data: null,
-            error: { statusCode: 404, message: 'Audience not found', name: 'not_found' },
-          };
-        }
-        // Default (back-compat): succeed.
+      async remove() {
+        // Spec 140 s4 — the gateway no longer calls it: it detaches through
+        // `contacts.segments.remove`.
         return { data: { deleted: true }, error: null };
       },
       async list() { return { data: { data: [] }, error: null }; },
+      segments: {
+        async remove(args) {
+          // Opt-in only: model a deleted/never-created segment as Resend's 404,
+          // so the erasure-after-cleanup test exercises the gateway's
+          // `already_absent` arm.
+          if (detach404OnUnknownSegment && !createdAudienceIds.has(args.segmentId)) {
+            return {
+              data: null,
+              error: { statusCode: 404, message: 'Audience not found', name: 'not_found' },
+            };
+          }
+          return { data: { object: 'contact_segment' as const, deleted: true }, error: null };
+        },
+      },
     },
   };
   return {

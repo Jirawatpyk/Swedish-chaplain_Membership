@@ -388,7 +388,7 @@ export interface BroadcastsGatewayPort {
 
   /**
    * Detach a contact from ONE audience. A 404 (contact or audience already
-   * absent) resolves (idempotent); a 5xx / network error throws a retryable
+   * absent) resolves as `already_absent`; a 5xx / network error throws a retryable
    * GatewayThrowable so the caller can classify it as a propagation failure.
    *
    * ⚠️ This does NOT satisfy GDPR Art. 17, and its provider response says
@@ -414,9 +414,15 @@ export interface BroadcastsGatewayPort {
    *
    * Spec 140 slice 3 (DT4): a blank `audienceId` throws a permanent
    * `empty_identifier`, and one that is not UUID-shaped a permanent
-   * `invalid_identifier`, before any request. `detached` means Resend answered
-   * 200, which it also answers for a contact that was not in the segment
-   * (MEASURED 5 Nov 2026), so it can include one already absent.
+   * `invalid_identifier`, before any request.
+   *
+   * Spec 140 slice 4: the wire is the segment-scoped
+   * `DELETE /contacts/{email}/segments/{id}`. `detached` means Resend answered
+   * `200 deleted:true`, which it does only for a membership that existed;
+   * `already_absent` means it answered 404, which it does for a random segment,
+   * the wrong case and a non-member (MEASURED 5 Nov 2026, research.md slice 4
+   * step 0 items 1 and 4). A 200 without `deleted: true` throws a permanent
+   * `detach_unconfirmed`, so it is never counted as a removal.
    */
   removeContactFromAudience(
     audienceId: string,
