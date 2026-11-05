@@ -100,33 +100,40 @@ describe('EvidenceCard', () => {
     renderCard(
       baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 1, contactsFailed: 0, detachWire: 'segments' } }),
     );
-    expect(screen.getByText(/counts memberships Resend confirmed it removed/i)).toBeInTheDocument();
-    expect(screen.getByText(/no membership in that segment for the address in lowercase/i)).toBeInTheDocument();
+    // PR #756 review round 2 — the final copy: a minimum, cite the first figure,
+    // and the other-letter-case copy the detach cannot reach.
+    expect(screen.getByText(/counts segment entries Resend confirmed it removed\. It is a minimum/i)).toBeInTheDocument();
+    expect(screen.getByText(/stored in another letter case is not covered/i)).toBeInTheDocument();
     expect(screen.queryByText(/may include addresses that were already absent/i)).toBeNull();
+    expect(screen.queryByText(/^Earlier record/)).toBeNull();
   });
 
   // The figure's LABEL follows the wire too: on a segment-wire record it is a
   // count of removed memberships, not of accepted requests.
-  it('a segment-wire record labels the first figure as memberships removed; an older record keeps the requests label', () => {
+  it('a segment-wire record labels both figures by the segment wire; an older record keeps the older labels', () => {
     renderCard(
       baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: 'segments' } }),
     );
-    expect(screen.getByText('Memberships removed at Resend')).toBeInTheDocument();
+    expect(screen.getByText('Removed from Resend segments')).toBeInTheDocument();
+    expect(screen.getByText('Not in the Resend segment')).toBeInTheDocument();
     expect(screen.queryByText('Detach requests accepted by Resend')).toBeNull();
+    expect(screen.queryByText('Already absent from audience')).toBeNull();
     cleanup();
     renderCard(
       baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: null } }),
     );
     expect(screen.getByText('Detach requests accepted by Resend')).toBeInTheDocument();
-    expect(screen.queryByText('Memberships removed at Resend')).toBeNull();
+    expect(screen.getByText('Already absent from audience')).toBeInTheDocument();
+    expect(screen.queryByText('Removed from Resend segments')).toBeNull();
+    expect(screen.queryByText('Not in the Resend segment')).toBeNull();
   });
 
   it('a record without the wire marker shows the note for older records, marked as such', () => {
     renderCard(
       baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: null } }),
     );
-    expect(screen.getByText(/^For records written before the Segments detach: /)).toBeInTheDocument();
-    expect(screen.queryByText(/counts memberships Resend confirmed it removed/i)).toBeNull();
+    expect(screen.getByText(/^Earlier record \(older Resend detach method\): each contact is counted once\./)).toBeInTheDocument();
+    expect(screen.queryByText(/counts segment entries Resend confirmed it removed/i)).toBeNull();
   });
 
   // Spec 140 s3 review round 2 (R2-A) — a `not_attempted` row is a re-drive that

@@ -244,7 +244,13 @@ export function EvidenceCard({
                   zero. An em-dash says the same thing on the surface where the
                   DSR answer is actually composed.
                 */}
-                <Field label={t('fields.contactsAlreadyAbsent')}>
+                <Field
+                  label={
+                    row.subprocessorOutcome.detachWire === 'segments'
+                      ? t('fields.contactsAlreadyAbsentSegments')
+                      : t('fields.contactsAlreadyAbsent')
+                  }
+                >
                   {row.subprocessorOutcome.contactsAlreadyAbsent ?? DASH}
                 </Field>
                 <Field label={t('fields.contactsFailed')}>
