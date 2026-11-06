@@ -472,7 +472,7 @@ No new cascade decision cell: M-NEW-1 is a pre-Resend guard; the pause adds a wa
 | DA2 reclaim | **Not reachable live:** the cron skips any segment younger than `GRACE_MS` (24 h), and Resend's `created_at` cannot be backdated. Probe: a fresh `broadcast-<slug>-<uuid>` segment → `scanned: 3, orphaned: 0`, and no audit row was added. The attributed arm, the unattributed arm and the counter are pinned by the unit tests. |
 | Probe | A wrong Bearer on dispatch-scheduled → 401. |
 | Labels | `/admin/audit` as super-admin shows both labels in EN, TH and SV (the TH wording after i18n round 1, `bae8a188f`), with no MISSING_MESSAGE. The viewer is scoped to `swecham`, so the labels were read from its event-type filter, not from the test tenant's rows. |
-| Log | The dev log has no level 40 or level 50 line during the run. |
+| Log | *Corrected on 6 Nov 2026 (re-Verify):* the first grep looked for JSON `"level":50` / `40`, and the dev log is pino-pretty, so it matched nothing and proved nothing. A re-read of that log finds one ERROR `broadcasts.audience_import.failed` (`member_halted`, the halted row this run made on purpose) and one WARN `dispatch_failure_email.skipped_no_primary_contact` for the same row. It has no `audience_audit_lost`, `audit_invariant` or lock-timeout line. |
 
 **Teardown:** the tenant and its rows were removed (0 `broadcasts` rows). Resend: the three segments and the three sink contacts were deleted (contacts by id). The account is back to 22 contacts with only `General`. A side finding: the Free plan's 3-segment cap was reached while seeding (`validation_error` "Your plan includes 3 segments"), as `.claude/rules/modules/broadcasts.md` records.
 
@@ -545,6 +545,20 @@ Verdicts:
 | CR3 #2: cleanup has no deadline | **Accepted**: bounded at 150 s, as in CR2 #2 |
 | CR3 #4: a lock timeout counts on the same series as a real loss | **Accepted**: the row may be missing. The WARN versus ERROR line tells them apart |
 | CR3 #6 / #7 / #8: three copies of the audit envelope, the dedupe pattern and the payload literal | **Listed (Low)**: a shared helper is a follow-up candidate |
+
+**Re-Verify on the final head:** the maintainer's `/verify`, 6 Nov 2026, on `4eddf9b61`, after review rounds 1–3. Run on :3401, Neon dev, the live Resend account, sink addresses only. The re-run covers the paths the review fixes touched: the restart and the cleanup with the dedupe lock (`lock_timeout`), and the invariant and lock-timeout log arms. Result: **PASS**.
+
+| Done-when / item | Evidence |
+|---|---|
+| DA1 | Throwaway tenant `test-f54103d1`, 3 sink members, one approved E-Blast due now. Tick 1 → `import_submitted: 1`. Exactly one `broadcast_audience_disclosed` row, with `recipient_count: 3`, `related_member_id` = the requester, `system:cron`, retention 5, and no `@` |
+| DA2 restart | Row B2 (approved, holding a real segment, no import id). Tick → `audience_restarted: 1`; exactly one `broadcast_audience_deleted` with `reason: stale_audience` (row B2, the requester); the segment answers 404 at Resend. The next tick ran a fresh tick 1: a new disclosed row (new segment, count 3), and still one deleted row for the old segment (count = 1) |
+| DA2 cleanup | Terminal row C, INSERTed with `updated_at` 2 h ago and holding row A's real segment. `cleanup-audiences` → `deleted: 1`; one deleted row with `reason: terminal_cleanup` (row C, the requester); the segment answers 404; `audience_deleted_at` is set |
+| Probe | A wrong Bearer → 401 |
+| Log (read as pino-pretty) | One ERROR `broadcasts.audience_import.failed` (`gateway_permanent`) and its WARN `skipped_no_primary_contact`, both for the setup row below. No `audience_audit_lost`, `audit_invariant` or `audience_audit_lock_timeout` line |
+
+**Setup slip in the run (not the code):** the shell redirect created the signal file `B` empty before the id was written. The harness read it in that gap, and inserted row B with `resend_audience_id = ''`. That row ended `failed_to_dispatch` / `gateway_permanent`; nothing reached Resend for it, and its segment was then used by row B2. Unplanned probe: a row holding an empty segment id fails permanently at the gateway, with no import and no audit row.
+
+**Teardown:** the tenant and its rows were removed (0 `broadcasts` rows). At Resend, every segment created was deleted, and the 3 sink contacts were deleted by id. The account is back at 22 contacts, with only `General`.
 
 **Dev litter:** each run of `audience-audit-rows` leaves `audit_log` rows with the summary `spec 139 s2 fixture`, some with `tenant_id IS NULL` (`audit_log` is append-only).
 
