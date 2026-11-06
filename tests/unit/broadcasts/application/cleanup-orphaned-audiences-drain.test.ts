@@ -80,7 +80,7 @@ interface Opts {
   /** What that read throws (default: a plain Error with a driver-like message). */
   readonly erasedPathError?: unknown;
   /** The audience pass's candidates (terminal rows still holding an audience). */
-  readonly terminal?: ReadonlyArray<{ broadcastId: string; resendAudienceId: string }>;
+  readonly terminal?: ReadonlyArray<{ broadcastId: string; resendAudienceId: string; requestedByMemberId: string }>;
   readonly terminalListThrows?: boolean;
   /** ms the clock advances on every Resend call. */
   readonly stepMs?: number;
@@ -92,6 +92,7 @@ function harness(opts: Opts) {
   const attempted: string[] = [];
   const calls: string[] = [];
   const listLimits: number[] = [];
+  const audited: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
   /** Spec 140 s2d (#736a) — every read of the erased-requester path, in order. */
   const erasedPath: string[] = [];
   const bridgeCalls: string[][] = [];
@@ -120,6 +121,16 @@ function harness(opts: Opts) {
         return fn(null);
       },
       async markAudienceDeletedInTx() {},
+      // Spec 139 s2 review round 1 (code-review #7) - the dedupe the terminal
+      // pass reads before its row; without it the row is a silent lost record.
+      async hasAudienceDeletedAuditInTx() {
+        return false;
+      },
+    },
+    audit: {
+      async emit(_tx: unknown, e: { eventType: string; payload: Record<string, unknown> }) {
+        audited.push({ eventType: e.eventType, payload: e.payload });
+      },
     },
     orphans: {
       async listDrainableOrphans(limit: number, cutoff: Date) {
@@ -199,7 +210,7 @@ function harness(opts: Opts) {
     },
   };
   const run = () => cleanupOrphanedAudiences(deps as never, { graceMs: GRACE_MS, limit: 50 });
-  return { run, settled, attempted, calls, listLimits, peak: () => peak, erasedPath, bridgeCalls, readOrder };
+  return { run, settled, attempted, calls, listLimits, peak: () => peak, erasedPath, bridgeCalls, readOrder, audited };
 }
 
 let warn: ReturnType<typeof vi.spyOn>;
@@ -346,10 +357,23 @@ describe('spec 140 s2c — the orphan drain in cleanup-audiences (DL6)', () => {
   });
 
   it('log hygiene — the audience pass logs err: errKind(e) + tenantId, never the message; its list failure answers the class', async () => {
-    const h = harness({ orphans: [], terminal: [{ broadcastId: 'bc-1', resendAudienceId: 'aud-t1' }], deleteAudienceThrows: new Set(['aud-t1']) });
+    const h = harness({
+      orphans: [],
+      terminal: [{ broadcastId: 'bc-1', resendAudienceId: 'aud-t1', requestedByMemberId: 'm-requester' }],
+      deleteAudienceThrows: new Set(['aud-t1']),
+    });
     await h.run();
     const line = warn.mock.calls.find((c) => c[1] === 'broadcasts.audience_cleanup.delete_failed');
     expect(line?.[0]).toEqual({ tenantId: tenant.slug, broadcastId: 'bc-1', err: 'unknown' });
+    // Spec 139 s2 review round 1 (code-review #7) - the row before the delete
+    // is written, not lost (the harness used to lack the audit stubs).
+    expect(h.audited).toEqual([
+      {
+        eventType: 'broadcast_audience_deleted',
+        payload: expect.objectContaining({ broadcast_id: 'bc-1', related_member_id: 'm-requester', reason: 'terminal_cleanup' }),
+      },
+    ]);
+    expect(error.mock.calls.filter((c) => c[1] === 'broadcasts.audience_cleanup.audience_audit_lost')).toEqual([]);
     const failed = await harness({ orphans: [], terminalListThrows: true }).run();
     expect(failed.ok ? null : failed.error).toMatchObject({ kind: 'cleanup.server_error', errClass: 'Error' });
   });
