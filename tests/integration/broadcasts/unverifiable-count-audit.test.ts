@@ -143,7 +143,9 @@ describe('PR #756 round 2 — the unverifiable-count audit row after a send (liv
       .where(
         and(
           eq(auditLog.tenantId, tenant.ctx.slug),
-          eq(auditLog.eventType, 'broadcast_resend_drift_check_unverifiable'),
+          // A DB_ONLY_AUDIT_EVENT_TYPES value: the auth pgEnum tuple does not list
+          // it, so the literal is cast (the value is in the live enum).
+          eq(auditLog.eventType, 'broadcast_resend_drift_check_unverifiable' as never),
           sql`${auditLog.payload}->>'broadcastId' = ${id}`,
         ),
       );
