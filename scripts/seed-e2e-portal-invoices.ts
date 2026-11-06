@@ -505,9 +505,18 @@ async function seedInvoicesIfMissing(
         // still there is left as it is (`uploadPdf` does not overwrite). No DB
         // write, so the row's stored sha256 may then differ from the new bytes
         // — fine for dev fixture data, never for a real tax document.
-        if (await anyBlobMissing([found.pdfBlobKey, found.receiptPdfBlobKey])) {
+        const rowKeys = [found.pdfBlobKey, found.receiptPdfBlobKey];
+        if (await anyBlobMissing(rowKeys)) {
           await renderFixturePdfs(ctx, s);
-          console.log(`  re-uploaded missing PDF for ${s.number}`);
+          // The re-upload goes to today's deterministic keys; a row written
+          // under an older key shape would still miss. Say so, don't hide it.
+          if (await anyBlobMissing(rowKeys)) {
+            console.warn(
+              `  ${s.number}: PDF still missing after re-upload — the row's key differs from today's; delete the fixture (scripts/cleanup-e2e-seed.ts) and re-run`,
+            );
+          } else {
+            console.log(`  re-uploaded missing PDF for ${s.number}`);
+          }
         }
         continue;
       }
