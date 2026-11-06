@@ -64,7 +64,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS audit_log_audience_deleted_once
   WHERE event_type = 'broadcast_audience_deleted';
 ```
 - **NULL tenants:** a NULL `tenant_id` never conflicts, which is standard unique-index semantics. These are test fixtures only, because the product always writes a tenant.
-- **Build:** non-CONCURRENTLY inside the migration tx, as 0021 does. The dev build time is measured and recorded here.
+- **Build:** non-CONCURRENTLY inside the migration tx, as 0021 does. The dev build time, measured: `pnpm db:migrate` took 14.69 s against 14.05 s for a no-op run (about 0.6 s, noisy). A full seq scan of dev `audit_log` (912,160 rows) takes 162–175 ms, and the index is 32 kB. Prod (7,359 rows, 3 MB) builds in milliseconds.
 - **Rollout:** the migration is unflagged. `vercel-build` migrates before the code serves.
 - **Rollback:** reverting the code is safe, because a plain `emit` is not used for this event after the change. Dropping the index takes a forward migration.
 

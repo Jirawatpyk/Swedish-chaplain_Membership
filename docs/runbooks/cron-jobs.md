@@ -1032,11 +1032,10 @@ no live DB row. **No DB write on success** — there is no row to stamp.
 
 **Time budget (spec 140 slice 3, DT5).** The route's `maxDuration` is 300 s, and
 one deadline inside it (start + 300 s − `RECLAIM_DEADLINE_MARGIN_MS`, 30 s) covers
-both the Resend listing and the delete chunks: a page starts only while one bounded
-call (`RESEND_CALL_TIMEOUT_MS`, 10 s) still fits, and a chunk of 5 deletes only while
-one call plus the audit row's INSERT wait (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, 5 s; spec 142)
-still fits. A
-run cut by it answers 200 with `truncated: true` (the listing was cut) and/or
+both the Resend listing and the delete chunks. A page starts only while one bounded
+call (`RESEND_CALL_TIMEOUT_MS`, 10 s) still fits; a chunk of 5 deletes starts only
+while `RECLAIM_CHUNK_BUDGET_MS` (one call plus the audit row's INSERT wait,
+`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` 5 s; spec 142) still fits. A run cut by it answers 200 with `truncated: true` (the listing was cut) and/or
 `deferredDeletes > 0` (orphans not reached), counts
 `broadcasts_audience_reclaim_truncated_total{stage}`. Nothing resumes: the next
 daily run lists again from page one and finds the deferred orphans then. It

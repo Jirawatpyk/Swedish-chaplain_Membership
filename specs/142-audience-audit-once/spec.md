@@ -41,7 +41,7 @@ The same slice left three near-copies of the "write an audit row before an irrev
   - *Amended at plan review, 6 Nov 2026:* an `INSERT … ON CONFLICT` still waits on an uncommitted insert of the same key. So `emitOnce` keeps `SET LOCAL lock_timeout` at `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s), and a timeout still logs the WARN `*.audience_audit_lock_timeout`.
   - Removed:
     - the advisory lock and its `broadcasts-audience-audit:` namespace;
-    - reclaim's deadline charge for the audit wait (`RECLAIM_DEADLINE_MARGIN_MS` covers the DB work);
+    - ~~reclaim's deadline charge for the audit wait~~ *kept (review round 3, code-review #3): a delete chunk starts only while `RECLAIM_CHUNK_BUDGET_MS` = `RESEND_CALL_TIMEOUT_MS` + `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` still fits before the deadline, because the INSERT can still wait 5 s;*
     - the `_dispatch-lease.ts` "outside W_max" entry, replaced by a note on the INSERT wait.
 
   Kept:
