@@ -209,7 +209,7 @@ export async function recordAudienceDeleted(
   );
 }
 
-/** The orphan reclaim's ports: the lockless dedupe read and the disclosure read too. */
+/** The orphan reclaim's ports: the disclosure read and the lockless existence read too. */
 export interface ReclaimAudienceAuditDeps extends AudienceDeleteAuditDeps {
   readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'hasAudienceDeletedAuditInTx' | 'findAudienceDisclosureInTx'>;
 }
@@ -218,26 +218,28 @@ export interface ReclaimAudienceAuditDeps extends AudienceDeleteAuditDeps {
  * DA2 (pdpa M-3) — the orphan reclaim is about to delete a segment named for
  * this tenant. Only a segment this tenant DISCLOSED gets a deleted row
  * (`reason: 'orphan_reclaim'`), with the disclosure's broadcast and
- * requester; the dedupe read, the disclosure read and `emitOnce` share one tx,
- * the dedupe read first, so a segment that already has this tenant's deleted
- * row is skipped (no row, no WARN) whether or not it was disclosed. Any other
- * segment with
- * no disclosed row was never filled by this deployment (one created before
- * spec 139 s2, or by the attach-failed reclaim): no row, the WARN
- * `broadcasts.audience_reclaim.delete_unattributed` (`deleteReason`, never
- * `reason`: the logger redacts that key) and its counter. The delete runs
- * either way. Never throws, except an adapter invariant error.
+ * requester. The disclosure read comes first, in the row's tx (review round 1,
+ * code-review #5):
+ *   - found: `emitOnce`. False (the key already has its row) is a skip, with
+ *     no WARN and no count. `emitOnce` is the tx's last statement, so its
+ *     `SET LOCAL lock_timeout` bounds its own INSERT only.
+ *   - not found: the lockless existence read. A segment already recorded as
+ *     deleted (e.g. cleanup's row for a pre-s2 segment whose delete keeps
+ *     failing) is a skip, with no WARN. Any other was never filled by this
+ *     deployment (one created before spec 139 s2, or by the attach-failed
+ *     reclaim): no row, the WARN
+ *     `broadcasts.audience_reclaim.delete_unattributed` (`deleteReason`, never
+ *     `reason`: the logger redacts that key) and its counter.
+ * The delete runs either way. Never throws, except an adapter invariant error.
  *
- * Spec 142: the dedupe read is lockless, so it no longer orders the reclaim
- * against another writer of the row. A row that lands between that read and
- * the INSERT makes `emitOnce` answer false: a skip, with no unattributed WARN
- * and no count. The worst case is one false unattributed WARN (a row written
- * after the disclosure read found nothing), which needs cleanup to act on a
- * live row while the reclaim acts on a gone one. A lock timeout on the INSERT
- * (55P03) writes no row and no unattributed WARN on this run, only the
- * `audience_audit_lock_timeout` WARN and its counter, which are then the only
- * trace of that delete. The delete runs; if it fails, the next daily run lists
- * the segment again and retries the row.
+ * Spec 142: the existence read is lockless, so it does not order the reclaim
+ * against another writer of the row. The worst case is one false unattributed
+ * WARN (a row written after that read found nothing), which needs cleanup to
+ * act on a live row while the reclaim acts on a gone one. A lock timeout on
+ * the INSERT (55P03) writes no row and no unattributed WARN on this run, only
+ * the `audience_audit_lock_timeout` WARN and its counter, which are then the
+ * only trace of that delete. The delete runs; if it fails, the next daily run
+ * lists the segment again and retries the row.
  *
  * Review round 3 (code-review #5): `segmentNameBroadcastId` is the id parsed
  * from the segment name. It goes on the lost, lock-timeout and invariant lines
@@ -255,12 +257,13 @@ export async function recordReclaimedAudienceDeleted(
     'broadcasts.audience_reclaim',
     { broadcastId: null, resendAudienceId, segmentNameBroadcastId },
     async (tx) => {
-      // The dedupe read first: a segment already recorded as deleted (e.g.
-      // cleanup's row for a segment whose delete keeps failing) is not
-      // unattributed.
-      if (await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, resendAudienceId)) return 'skip';
       const disclosed = await deps.broadcastsRepo.findAudienceDisclosureInTx(tx, deps.tenant.slug, resendAudienceId);
-      if (disclosed === null) return 'unattributed';
+      if (disclosed === null) {
+        // Not disclosed here: a segment already recorded as deleted is not
+        // unattributed.
+        const recorded = await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, resendAudienceId);
+        return recorded ? 'skip' : 'unattributed';
+      }
       const wrote = await deps.audit.emitOnce(
         tx,
         audienceDeletedInput(deps.tenant, {
