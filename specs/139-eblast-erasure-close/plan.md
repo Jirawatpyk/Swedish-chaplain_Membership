@@ -248,6 +248,9 @@ e2e: none (cron and erasure server paths only; no UI).
 | cleanup, terminal row past the grace | deleted `terminal_cleanup` with the requester | unit |
 | reclaim, disclosed row found | deleted `orphan_reclaim` with its `related_member_id` | unit (stub `referencedAudienceIdsForBroadcasts` explicitly) |
 | reclaim, no disclosed row | none; warn + counter; the delete still runs | unit |
+| reclaim, segment already has a deleted row (review round 1, code-review #3) | none, no warn, no counter (the dedupe runs before the disclosure read); the delete still runs | unit `reclaim-orphaned-audiences.test.ts` "a segment already recorded as deleted is neither re-recorded nor reported unattributed" |
+| the dedupe's advisory lock held by another tx for more than 5 s (review round 1, code-review #4 / reliability LOW-3) | `lock_timeout` (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`) → the lost-record arm: ERROR + `auditEmitFailed`, the call proceeds | integration `audience-audit-rows.test.ts` "a read behind a held lock fails with a lock timeout" |
+| cron item, adapter invariant error (review round 1, reliability LOW-2) | ERROR `broadcasts.audience_cleanup.audit_invariant` / `broadcasts.audience_reclaim.audit_invariant`, no delete, counted `failed` | unit, both cron files |
 | another tenant's row, or a NULL-tenant row with the same payload | not seen | integration cross-tenant |
 | a new `deleteAudience(` / `createContactImport(` call site | the source scan fails | unit source scan (positive control) |
 
@@ -466,6 +469,35 @@ No new cascade decision cell: M-NEW-1 is a pre-Resend guard; the pause adds a wa
 | Log | The dev log has no level 40 or level 50 line during the run. |
 
 **Teardown:** the tenant and its rows were removed (0 `broadcasts` rows). Resend: the three segments and the three sink contacts were deleted (contacts by id). The account is back to 22 contacts with only `General`. A side finding: the Free plan's 3-segment cap was reached while seeding (`validation_error` "Your plan includes 3 segments"), as `.claude/rules/modules/broadcasts.md` records.
+
+**Review round 1 (6 Nov 2026, on `9c0634790`..`bae8a188f`):**
+
+Verdicts:
+- `/code-review high 763`: 10 candidates; none is High or Medium once checked against the code.
+- pdpa-gdpr: APPROVE WITH CONDITIONS, Low only.
+- drizzle-migration: MERGEABLE, 3 Low.
+- reliability-guardian: MERGEABLE, Low only.
+- i18n: ship, with one TH wording fix.
+
+| Finding | Disposition |
+|---|---|
+| CR #3: reclaim reported a segment already recorded as deleted as unattributed, on every run | **Fixed** (`362852a6f` → `05f52ce19`): the dedupe runs first. State-table row added |
+| CR #4 / rel LOW-3: the audit tx before a bounded Resend call had no bound on its lock wait | **Fixed** (`cab29b031` → `74608f18e`): `SET LOCAL lock_timeout` at `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) before the advisory lock. A timeout is a lost row and the call proceeds. State-table row added. Remaining bound: a row can add up to 5 s before its call, which the cron and tick deadline checks do not count (before this fix the wait had no bound) |
+| rel LOW-2: an adapter invariant error in a cron item logged as the WARN `delete_failed` | **Fixed** (`dd7701766` → `e38f6e566`): it now logs the ERROR `*.audit_invariant`. State-table row added |
+| CR #7: the drain harness's `as never` deps ran the lost-record branch silently | **Fixed** (`1342d2673`): stubs added; the log-hygiene case asserts the row. A grep of `tests/` found no other harness with the gap |
+| CR #2: the rule and the port comment said "after its lease gate, and deduped" | **Kept as built; wording fixed** (`850bae908`). The disclosed row sits after the last lease-fenced step and before the import's own gate, so that gate stays the last read before the POST (architect HIGH). It needs no dedupe: a row holding a segment restarts, so one segment reaches the import once. The broadcasts rule now says so. A gate that stops the call leaves the row as a request (state table) |
+| migration LOW-1 / LOW-2: untyped payload keys; the `findAudienceDisclosureInTx` docblock | **Fixed** (`9afc7f9c5`, `850bae908`) |
+| rel NIT: a test name still said "no audit" | **Fixed** (`f3005b5ab`) |
+| i18n: the two TH labels read as a polite "please send" | **Fixed** (`bae8a188f`): "ส่งคำขอเปิดเผยรายชื่อผู้รับต่อ Resend" / "ส่งคำขอลบกลุ่ม (segment) ใน Resend". Copy only, under D-023: the label coverage test checks that a label exists, not its wording |
+| pdpa L-1 / L-2, rel LOW-1: the RoPA's attempt cases, the NOT MEASURED premise, write-time timestamps | **Fixed** (`93a4611c5`) |
+| pdpa L-3: `operational-state.md` | **After merge**: editing it now would conflict with #761. The "Also updated" line above means post-merge |
+| CR #1: a tenant-binding refusal (a plain `Error`) is treated as a lost row | **Low, unreachable; documented**: `withTx` always binds through `runInTenant` (same disposition as spec 140 s4 CR4 #7) |
+| CR #5: a restart writes a deleted row for a segment never disclosed | **Accepted**: it over-records a request, which is the safe direction (pdpa INFO) |
+| CR #6: a partial unique index instead of lock + EXISTS | **Listed**: the module's convention is the lock pattern (evidence, unverifiable, audience). The index is a follow-up candidate |
+| CR #8: `emit` rather than `emitTyped` | **Listed (Low)**: the payload is typed by `F7AuditPayloadShapes[E]` inside `writeAudienceRow` |
+| CR #9: the deleted payload is built twice | **Listed (Low)** |
+| CR #10: the tenant probe runs twice in the reclaim tx | **Listed (Low)**: daily cron only |
+| migration LOW-3: the reads use single-column indexes | **Listed**: about one row per broadcast. Revisit if the reclaim volume grows |
 
 **Dev litter:** each run of `audience-audit-rows` leaves `audit_log` rows with the summary `spec 139 s2 fixture`, some with `tenant_id IS NULL` (`audit_log` is append-only).
 

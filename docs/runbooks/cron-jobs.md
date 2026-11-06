@@ -887,7 +887,8 @@ polish iteration but is intentionally not part of F7 MVP.
 `broadcast_audience_deleted` row (`reason: 'terminal_cleanup'`, the row's requester as `related_member_id`;
 once per segment, deduped). It records the request, not the result. A lost row logs
 `broadcasts.audience_cleanup.audience_audit_lost` (ERROR) and counts `broadcasts_audit_emit_failed_total`;
-the delete still runs. An adapter invariant error makes no delete and counts the item `failed`.
+the delete still runs. An adapter invariant error makes no delete, counts the item `failed` and logs the ERROR
+`broadcasts.audience_cleanup.audit_invariant`. A wait over 5 s on the row's lock is a lost row; the delete runs.
 
 Periodic housekeeping cron that **deletes the ephemeral per-broadcast Resend
 audiences** created during dispatch for broadcasts that have reached a
@@ -988,7 +989,8 @@ Per tenant, inside `cleanupOrphanedAudiences`:
 filed under a guessed tenant), the WARN `broadcasts.audience_reclaim.delete_unattributed`
 (`deleteReason: 'never_disclosed'`) and `broadcasts_audience_reclaim_delete_unattributed_total{tenant}`; the
 delete still runs. A segment from before spec 139 s2, or one another deployment on the same Resend team
-created under the same slug, lands in the not-found arm.
+created under the same slug, lands in the not-found arm. A segment that already has a deleted row writes nothing more
+and is not reported. An adapter invariant error logs the ERROR `broadcasts.audience_reclaim.audit_invariant`.
 
 Daily safety-net cron that **reclaims orphaned Resend audiences** — audiences
 that exist in the Resend account but whose corresponding local broadcast row
