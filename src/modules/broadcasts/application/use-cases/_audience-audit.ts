@@ -6,7 +6,10 @@
  * (tick 1, before `createContactImport`); `broadcast_audience_deleted` records
  * the delete of a segment that may hold recipients, once per segment (deduped
  * on `resend_audience_id` under the repo's advisory lock, in the same tx as
- * the insert; the first `reason` wins).
+ * the insert; the first `reason` wins). The orphan reclaim writes its deleted
+ * row only when this tenant's disclosed row names the segment, copying that
+ * row's broadcast and requester (pdpa M-3: never filed under a guessed tenant
+ * or member); otherwise a WARN and a counter.
  *
  * Every row is written BEFORE its Resend call, in its own tenant-bound
  * `withTx` (never a null tx: that would take a pool connection with no
@@ -168,4 +171,57 @@ export async function recordAudienceDeleted(
             actor_role: 'system',
           },
   );
+}
+
+/** The orphan reclaim's ports: the disclosure read too. */
+export interface ReclaimAudienceAuditDeps extends AudienceAuditDeps {
+  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'hasAudienceDeletedAuditInTx' | 'findAudienceDisclosureInTx'>;
+}
+
+/**
+ * DA2 (pdpa M-3) — the orphan reclaim is about to delete a segment named for
+ * this tenant. Only a segment this tenant DISCLOSED gets a deleted row
+ * (`reason: 'orphan_reclaim'`), with the disclosure's broadcast and
+ * requester; the read, the dedupe and the insert share one tx. A segment with
+ * no disclosed row was never filled by this deployment (one created before
+ * spec 139 s2, or by the attach-failed reclaim): no row, the WARN
+ * `broadcasts.audience_reclaim.delete_unattributed` (`deleteReason`, never
+ * `reason`: the logger redacts that key) and its counter. The delete runs
+ * either way. Never throws, except an adapter invariant error.
+ */
+export async function recordReclaimedAudienceDeleted(
+  deps: ReclaimAudienceAuditDeps,
+  resendAudienceId: string,
+): Promise<void> {
+  let unattributed = false;
+  await writeAudienceRow(
+    deps,
+    'broadcast_audience_deleted',
+    'broadcasts.audience_reclaim',
+    { broadcastId: null, resendAudienceId },
+    (p) => `Broadcast ${p.broadcast_id}: Resend segment removal requested (${p.reason})`,
+    async (tx) => {
+      unattributed = false;
+      const disclosed = await deps.broadcastsRepo.findAudienceDisclosureInTx(tx, deps.tenant.slug, resendAudienceId);
+      if (disclosed === null) {
+        unattributed = true;
+        return null;
+      }
+      if (await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, resendAudienceId)) return null;
+      return {
+        broadcast_id: disclosed.broadcastId,
+        related_member_id: disclosed.relatedMemberId,
+        resend_audience_id: resendAudienceId,
+        reason: 'orphan_reclaim',
+        leg: 'import',
+        actor_role: 'system',
+      };
+    },
+  );
+  if (!unattributed) return;
+  logger.warn(
+    { tenantId: deps.tenant.slug, resendAudienceId, deleteReason: 'never_disclosed' },
+    'broadcasts.audience_reclaim.delete_unattributed',
+  );
+  broadcastsMetrics.audienceReclaimDeleteUnattributed(deps.tenant.slug);
 }

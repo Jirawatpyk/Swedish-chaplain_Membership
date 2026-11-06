@@ -38,6 +38,13 @@
  *     are `deferredDeletes`. Nothing is resumed: the next daily run lists again
  *     from page one, and the deferred orphans are found and deleted then. A cut
  *     run is counted on `broadcasts_audience_reclaim_truncated_total{stage}`.
+ *   - Spec 139 s2 (DA2, pdpa M-3): before each delete, the
+ *     `broadcast_audience_deleted` row (`reason: 'orphan_reclaim'`), written
+ *     only when this tenant's `broadcast_audience_disclosed` row names the
+ *     segment, with that row's broadcast and requester; otherwise a WARN
+ *     (`delete_unattributed`) and `broadcasts_audience_reclaim_delete_unattributed_total`.
+ *     A storage failure is logged and counted and the delete goes ahead; an
+ *     adapter invariant error stops that orphan's delete (counted `failed`).
  *   - Per-item try/catch: a single delete failure does NOT abort the batch.
  *     "Cannot delete last audience" (Resend 403 validation) is treated as a
  *     benign skip rather than a failure — the audience cannot be removed while
@@ -70,8 +77,10 @@ import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
 import { broadcastsMetrics } from '@/lib/metrics';
 import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore, type BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
+import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
+import { recordReclaimedAudienceDeleted } from './_audience-audit';
 import { classifyThrown, isRetryableThrow } from './_classify-thrown';
 
 // ---------------------------------------------------------------------------
@@ -83,6 +92,12 @@ export interface ReclaimOrphanedAudiencesDeps {
   readonly broadcastsRepo: BroadcastsRepo;
   readonly broadcastsGateway: BroadcastsGatewayPort;
   readonly clock: ClockPort;
+  /**
+   * Spec 139 s2 (DA2) — REQUIRED: the `broadcast_audience_deleted` row is
+   * written before a disclosed segment's delete. A composition that forgot it
+   * would delete with no record, silently.
+   */
+  readonly audit: Pick<AuditPort, 'emit'>;
 }
 
 export interface ReclaimOrphanedAudiencesInput {
@@ -343,6 +358,9 @@ export async function reclaimOrphanedAudiences(
 
   async function handleOne(orphan: { audienceId: string; broadcastId: BroadcastId }): Promise<void> {
     try {
+      // Spec 139 s2 (DA2) — the Art. 30 row, before the delete. An adapter
+      // invariant error throws into the catch below: no delete, `failed`.
+      await recordReclaimedAudienceDeleted(deps, orphan.audienceId);
       await deps.broadcastsGateway.deleteAudience(orphan.audienceId);
       deleted++;
     } catch (e) {

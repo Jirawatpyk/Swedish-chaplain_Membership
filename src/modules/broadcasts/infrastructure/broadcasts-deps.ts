@@ -812,6 +812,8 @@ import type { ReclaimOrphanedAudiencesDeps } from '../application/use-cases/recl
  * Deps: tenant context + `broadcastsRepo` (existingBroadcastIds) +
  * `broadcastsGateway` (listAudiences + deleteAudience) + `clock` (grace cutoff).
  * Mirrors `makeCleanupOrphanedAudiencesDeps` — same adapters, same dep set.
+ * Spec 139 s2 — plus the F7 audit adapter (the row before a disclosed
+ * segment's delete).
  */
 export function makeReclaimOrphanedAudiencesDeps(
   tenantId: string,
@@ -822,6 +824,7 @@ export function makeReclaimOrphanedAudiencesDeps(
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     broadcastsGateway: resendBroadcastsGateway,
     clock: systemClock,
+    audit: f7AuditAdapter,
   };
 }
 

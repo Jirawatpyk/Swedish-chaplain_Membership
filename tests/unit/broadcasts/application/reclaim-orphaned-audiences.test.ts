@@ -54,6 +54,12 @@ const WITHIN_GRACE_DATE = new Date(FROZEN_NOW.getTime() - 30 * 60 * 1000);
 const TENANT_SLUG = 'swecham';
 const tenant = asTenantContext(TENANT_SLUG);
 const clock = { now: (): Date => FROZEN_NOW };
+/**
+ * Spec 139 s2 — the audit dep. These cases' repo finds no disclosed row, so no
+ * row is ever written (the delete is unattributed); the spec 139 cells at the
+ * end drive the row.
+ */
+const NO_AUDIT = { async emit() {} };
 /** Spec 140 DT5 — a deadline none of the legacy cases comes near. */
 const FAR_DEADLINE = new Date(FROZEN_NOW.getTime() + 60 * 60 * 1000);
 
@@ -246,7 +252,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_A is NOT in DB
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -276,7 +282,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set([asBroadcastId(UUID_B)]) });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -304,7 +310,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -326,7 +332,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -347,7 +353,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -374,7 +380,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -394,7 +400,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -421,7 +427,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_C not in DB, but still within grace
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -460,7 +466,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // neither UUID in DB
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -488,7 +494,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -514,7 +520,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ failed: 0, skippedLastAudience: 1 });
@@ -531,7 +537,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ failed: 0, skippedLastAudience: 1 });
@@ -551,7 +557,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ failed: 1, skippedLastAudience: 0 });
@@ -571,7 +577,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]), shouldThrow: true });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -605,7 +611,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_B NOT in DB → orphan
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -622,7 +628,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -649,7 +655,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_A not in DB
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -677,7 +683,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 2, deadlineAt: FAR_DEADLINE },
     );
 
@@ -712,7 +718,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     const gateway = makeGateway({ audiences: [] });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(gateway.listInputs).toEqual([{ deadlineAt: FAR_DEADLINE }]);
@@ -723,7 +729,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     const gateway = makeGateway({ audiences: [{ id: 'aud-gen', name: 'General', createdAt: PAST_GRACE_DATE }], listTruncated: true });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ scanned: 1, orphaned: 0, truncated: true, deferredDeletes: 0 });
@@ -735,7 +741,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     const gateway = makeGateway({ audiences: orphanAudiences([UUID_A]), listTruncated: true });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ orphaned: 1, deleted: 1, truncated: true, deferredDeletes: 0 });
@@ -758,7 +764,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock: movingClock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock: movingClock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt },
     );
     expect(result.ok && result.value).toEqual({
@@ -779,7 +785,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     const gateway = makeGateway({ audiences: orphanAudiences([UUID_A, UUID_B]) });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS - 1) },
     );
     expect(result.ok && result.value).toMatchObject({ orphaned: 2, deleted: 0, deferredDeletes: 2 });
@@ -791,7 +797,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     const gateway = makeGateway({ audiences: orphanAudiences([UUID_A]) });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(counted).not.toHaveBeenCalled();
@@ -860,7 +866,7 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     };
     const run = () =>
       reclaimOrphanedAudiences(
-        { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit } as never,
+        { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit },
         { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
       );
     return { run, events, rows, gateway };
