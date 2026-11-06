@@ -98,39 +98,51 @@ describe('the DR4 wire guard (spec 140 s4)', () => {
 });
 
 /**
- * PR #756 review rounds 1 and 2 (security L1, M1) — the runtime guard above sees
- * only what a test drives. This reads the SOURCE of every file under `src/` that
- * imports `resend`, so an account-wide contact delete cannot ship on a path no
- * test reaches. Structural, not method-aware: it forbids
+ * PR #756 review rounds 1 to 3 (security L1, M1; code-review #7) — the runtime
+ * guard above sees only what a test drives. This reads SOURCE, so an
+ * account-wide contact delete cannot ship on a path no test reaches.
+ * Structural, not method-aware:
  *
- *   - any raw `fetch(` / `importFetch(` / `.delete(` call whose path literal
- *     holds `/contacts/${`, whatever method it sends (`/contacts/imports` and
+ *   - over EVERY file under `src/`: the SDK's `contacts.remove(` in every
+ *     spelling the pattern can see (`contacts.remove (`, `contacts?.remove(`,
+ *     `contacts ["remove"]`, `contacts?.['remove']`);
+ *   - over every file that imports `resend`, `resend-broadcasts-client` or
+ *     `resend-api-base-url` (the files that can reach the Resend API): any raw
+ *     `fetch(` / `importFetch(` / `.delete(` / `['delete'](` call, with or
+ *     without a type argument, whose path literal holds `/contacts/${`,
+ *     whatever method it sends (`/contacts/imports` and
  *     `/contacts/imports/${id}` never contain `/contacts/${`, so they pass);
- *   - any string literal ending in `/contacts/` that is concatenated (`+`);
- *   - the SDK's `contacts.remove(` in every spelling the pattern can see
- *     (`contacts.remove (`, `contacts?.remove(`, `contacts ["remove"]`).
+ *     and any string literal ending in `/contacts/` that is concatenated (`+`).
  *
  * The segment detach goes through `contacts.segments.remove(`, which the
  * positive controls require exactly once in the gateway.
  *
  * STILL OUT OF REACH of a source scan, stated rather than implied: a
- * destructured method (`const { remove } = sdk.contacts; remove(...)`), a path
+ * destructured method (`const { remove } = sdk.contacts; remove(...)`), an
+ * aliased contacts object (`const c = sdk.contacts; c.remove(...)`), a path
  * held in a variable (`const p = '/contacts/' + e; fetch(p)` passes the concat
  * pattern only if the literal and the `+` sit together, and `fetch(p)` alone
- * says nothing), a path built by `[...].join('/')` or a helper, and a file that
- * reaches Resend without importing `resend` (a raw fetch to `api.resend.com`).
- * Those are the runtime wire guard's layer (`tests/support/resend/wire-guard.ts`):
- * every stubbed Resend `fetch` records a `DELETE /contacts/{email}` and fails the
- * test that sent it. `\s` spans `\r\n`, so the scan holds on a CRLF checkout.
+ * says nothing), a `new URL(...)` argument, a path built by `[...].join('/')` or
+ * a helper, and a file that reaches Resend without importing any of the three
+ * modules above (a raw fetch to `api.resend.com`). The runtime wire guard
+ * (`tests/support/resend/wire-guard.ts`) covers only part of that: it fails a
+ * `DELETE /contacts/{email}` on a path a test drives with a stubbed `fetch`, and
+ * sees nothing a test never runs. `\s` spans `\r\n`, so the scan holds on a CRLF
+ * checkout.
  */
-describe('the DR4 source gate on every file that imports resend (spec 140 s4)', () => {
+describe('the DR4 source gate on src (spec 140 s4)', () => {
   const GATEWAY = join('src', 'modules', 'broadcasts', 'infrastructure', 'resend', 'resend-broadcasts-gateway.ts');
-  const RAW_CONTACT_PATH = /(?:importFetch|fetch|\.delete)\s*\(\s*[`'"][^`'"]*\/contacts\/\$\{/;
+  const RAW_CONTACT_PATH =
+    /(?:importFetch|fetch|\.delete|\[\s*['"`]delete['"`]\s*\])\s*(?:<[^()]*?>)?\s*\(\s*[`'"][^`'"]*\/contacts\/\$\{/;
   const CONCAT_CONTACT_PATH = /[`'"][^`'"\r\n]*\/contacts\/[`'"]\s*\+/;
-  const SDK_CONTACT_REMOVE = /\bcontacts\s*\??\.\s*remove\s*\(|\bcontacts\s*\[\s*['"`]remove/;
-  const IMPORTS_RESEND = /\bfrom\s+['"]resend['"]|\brequire\(\s*['"]resend['"]\s*\)/;
+  const SDK_CONTACT_REMOVE = /\bcontacts\s*\??\.\s*remove\s*\(|\bcontacts\s*(?:\?\.\s*)?\[\s*['"`]remove/;
+  /** The files that can reach the Resend API: they import the SDK, its client or its base URL. */
+  const REACHES_RESEND =
+    /\bfrom\s+['"](?:resend|[^'"]*\/resend-broadcasts-client|[^'"]*\/resend-api-base-url)['"]|\brequire\(\s*['"]resend['"]\s*\)/;
+  const forbiddenRaw = (source: string): string[] =>
+    [RAW_CONTACT_PATH, CONCAT_CONTACT_PATH].filter((p) => p.test(source)).map(String);
   const forbidden = (source: string): string[] =>
-    [RAW_CONTACT_PATH, CONCAT_CONTACT_PATH, SDK_CONTACT_REMOVE].filter((p) => p.test(source)).map(String);
+    [...forbiddenRaw(source), ...(SDK_CONTACT_REMOVE.test(source) ? [String(SDK_CONTACT_REMOVE)] : [])];
 
   function sourceFiles(dir: string): string[] {
     const out: string[] = [];
@@ -142,22 +154,25 @@ describe('the DR4 source gate on every file that imports resend (spec 140 s4)', 
     return out;
   }
 
-  it('no file under src/ that imports resend holds a forbidden contact-delete form', () => {
-    const files = sourceFiles(join(process.cwd(), 'src'))
-      .map((path) => ({ path, source: readFileSync(path, 'utf-8') }))
-      .filter((f) => IMPORTS_RESEND.test(f.source));
-    // Positive controls: at least one file was read, the gateway is among them,
-    // and the detach there is the SDK's segment call, exactly once.
-    expect(files.length).toBeGreaterThanOrEqual(1);
-    const gateway = files.find((f) => f.path.endsWith(GATEWAY));
-    expect(gateway, 'the gateway imports resend and is scanned').toBeDefined();
+  it('no file under src/ holds the SDK contacts.remove, and no Resend-reaching file a raw contact delete', () => {
+    const all = sourceFiles(join(process.cwd(), 'src')).map((path) => ({ path, source: readFileSync(path, 'utf-8') }));
+    const reaching = all.filter((f) => REACHES_RESEND.test(f.source));
+    // Positive controls: the whole tree was read, the Resend-reaching set holds
+    // the gateway and the broadcasts client, and the detach in the gateway is the
+    // SDK's segment call, exactly once.
+    expect(all.length).toBeGreaterThan(100);
+    const gateway = reaching.find((f) => f.path.endsWith(GATEWAY));
+    expect(gateway, 'the gateway reaches Resend and is scanned').toBeDefined();
+    expect(reaching.some((f) => f.path.endsWith(join('resend', 'resend-broadcasts-client.ts')))).toBe(true);
     expect(gateway!.source.length).toBeGreaterThan(1000);
     expect(gateway!.source.split('contacts.segments.remove(')).toHaveLength(2);
 
-    const offenders = files
-      .map((f) => ({ path: f.path, hits: forbidden(f.source) }))
+    const sdkOffenders = all.filter((f) => SDK_CONTACT_REMOVE.test(f.source)).map((f) => f.path);
+    expect(sdkOffenders).toEqual([]);
+    const rawOffenders = reaching
+      .map((f) => ({ path: f.path, hits: forbiddenRaw(f.source) }))
       .filter((f) => f.hits.length > 0);
-    expect(offenders).toEqual([]);
+    expect(rawOffenders).toEqual([]);
   });
 
   // The scan's own positive control: each forbidden shape it can see is caught,
