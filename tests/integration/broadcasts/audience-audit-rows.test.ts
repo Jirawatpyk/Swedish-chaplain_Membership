@@ -26,6 +26,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { db, runInTenant } from '@/lib/db';
+import { errLogFields } from '@/lib/log-id';
 import { ok } from '@/lib/result';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { asBroadcastId } from '@/modules/broadcasts';
@@ -177,10 +178,13 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
 
     // Review round 1 (code-review #4, reliability LOW-3) — the read runs before
     // a bounded Resend call, so its lock wait is bounded too (lock_timeout 5 s).
-    // A 55P03 is a plain driver error, not an adapter invariant one, so the
-    // site logs and counts a lost row and the call goes ahead. Raced against
-    // 10 s: the dev branch has statement_timeout = 0, so an unbounded wait HANGS.
-    it('a read behind a held lock fails with a lock timeout (a lost row, not an invariant error)', async () => {
+    // A 55P03 is a plain driver error, not an adapter invariant one. Review
+    // round 2 (code-review #1/#4): the row helper reads it with `errLogFields`
+    // as `code: '55P03'` (the WARN `audience_audit_lock_timeout`, counted, the
+    // call goes ahead), so this pins that the REAL error carries it. Raced
+    // against 30 s (review round 2, code-review #8: well above the 5 s server
+    // bound): the dev branch has statement_timeout = 0, so an unbounded wait HANGS.
+    it('a read behind a held lock fails with a lock timeout (55P03, not an invariant error)', async () => {
       const audienceId = randomUUID();
       const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
       let release!: () => void;
@@ -193,19 +197,24 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
         await released;
       });
       await locked;
+      let guard: ReturnType<typeof setTimeout> | undefined;
       try {
         const outcome = await Promise.race([
           deletedSeen(tenantA, audienceId).then(
             (v) => ({ kind: 'resolved' as const, v }),
             (e: unknown) => ({ kind: 'rejected' as const, e }),
           ),
-          new Promise<{ kind: 'hung' }>((r) => setTimeout(() => r({ kind: 'hung' }), 10_000)),
+          new Promise<{ kind: 'hung' }>((r) => {
+            guard = setTimeout(() => r({ kind: 'hung' }), 30_000);
+          }),
         ]);
         expect(outcome.kind).toBe('rejected');
         const e = (outcome as { e?: unknown }).e;
         expect(JSON.stringify(e, Object.getOwnPropertyNames(e as object)) + String((e as { cause?: unknown })?.cause)).toMatch(/55P03|lock timeout/i);
+        expect(errLogFields(e).code).toBe('55P03');
         expect(isAdapterInvariantError(e)).toBe(false);
       } finally {
+        clearTimeout(guard);
         release();
         await holder;
       }
