@@ -58,6 +58,7 @@ E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright
 ```
 - Run one spec file and one project per process, on both `chromium` and `mobile-chrome`.
 - Read `error-context.md` before the next run wipes it.
+- **The dev log is pino-pretty, not JSON** (`[time] ERROR: <msg>` with colour codes). A grep for `"level":50` matches nothing. Strip ANSI and grep the level word: `sed 's/\x1b\[[0-9;]*m//g' dev.log | grep -E "WARN|ERROR"`. Any log grep cited as evidence needs a positive control: the same grep must find a line you know is there (e.g. `INFO:`). A signal file a probe harness polls is written atomically (`echo x > f.tmp && mv f.tmp f`); a shell redirect creates it empty first.
 - A red is real only if it also fails solo, on a cold server. If it is also red on `main`, report it as pre-existing, with that evidence.
 
 **`/verify` drives every changed screen, route or cron** (run by the maintainer, `feature-flow` § 6) in the browser, including one wrong-input probe (an invalid value, a missing field, a role that must be refused).

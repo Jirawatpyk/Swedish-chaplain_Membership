@@ -593,6 +593,12 @@ function makeDeps(opts: {
               a.payload['resendBroadcastId'] === resendBroadcastId,
           );
         },
+        // Spec 139 s2 — the deleted-row dedupe, read over this recorder.
+        async hasAudienceDeletedAuditInTx(_tx: unknown, _t: unknown, audienceId: unknown) {
+          return rec.audits.some(
+            (a) => a.eventType === 'broadcast_audience_deleted' && a.payload['resend_audience_id'] === audienceId,
+          );
+        },
         async releaseDispatchLease() { return true; },
         async lockForUpdate() {
           rec.rowLocks += 1;
@@ -914,7 +920,9 @@ describe('buildAudienceTick — a retryable gateway failure stays retryable', ()
 
     expect(res.ok).toBe(false);
     expect(rec.transitions).toEqual([]);
-    expect(rec.audits).toEqual([]);
+    // Spec 139 s2 (DA1) — only the disclosure row, written before the import
+    // (it records the request); no failure row.
+    expect(rec.audits.map((a) => a.eventType)).toEqual(['broadcast_audience_disclosed']);
     expect(rec.memberEmails).toEqual([]);
   });
 
@@ -2182,7 +2190,11 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
         (res.error as { observedStatus?: string }).observedStatus,
       ).toBe('sending');
       expect(rec.transitions).toHaveLength(0);
-      expect(rec.audits).toHaveLength(0);
+      // Spec 139 s2 (DA1) — the disclosure row is written after the segment
+      // attach and before the import, so only a lost import attach has one.
+      expect(rec.audits.map((a) => a.eventType)).toEqual(
+        method === 'attachAudienceImport' ? ['broadcast_audience_disclosed'] : [],
+      );
       expect(rec.memberEmails).toHaveLength(0);
     });
 
@@ -2817,7 +2829,7 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
   it.each([
     ['tick 1 (no import yet)', {}, []],
     ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }, ['deleteAudience']],
-  ] as const)('%s, a SUSPENDED member → held: ok, no transition, no audit, no email, nothing sent', async (_label, row, calls) => {
+  ] as const)('%s, a SUSPENDED member → held: ok, no transition, only the segment deleted row, no email, nothing sent', async (_label, row, calls) => {
     const heldSpy = vi.spyOn(broadcastsMetrics, 'dispatchStandingHeldTotal');
     const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
     const { deps, rec } = makeDeps({ ...row, standing: { access: 'suspended' } });
@@ -2826,7 +2838,10 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
 
     expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
     expect(rec.transitions).toEqual([]);
-    expect(rec.audits).toEqual([]);
+    // Spec 139 s2 (DA2) - tick 2's segment delete is the one row (tick 1 has no segment).
+    expect(rec.audits.map((a) => [a.eventType, a.payload['reason']])).toEqual(
+      calls.length === 0 ? [] : [['broadcast_audience_deleted', 'hold']],
+    );
     expect(rec.memberEmails).toEqual([]);
     expect(rec.gatewayCalls).toEqual(calls);
     expect(rec.sends).toEqual([]);
@@ -3482,7 +3497,10 @@ describe('buildAudienceTick — FR-021 budget anchors on the first failure (F119
     expect(rec.retryClears).toEqual([callsBeforeReset]);
     expect(rec.retryStamps).toEqual([]);
     expect(rec.transitions).toEqual([]);
-    expect(rec.audits).toEqual([]);
+    // Spec 139 s2 (DA2) - tick 2's segment delete is the one row (tick 1 has no segment).
+    expect(rec.audits.map((a) => [a.eventType, a.payload['reason']])).toEqual(
+      calls.length === 0 ? [] : [['broadcast_audience_deleted', 'hold']],
+    );
     expect(rec.memberEmails).toEqual([]);
     expect(rec.gatewayCalls).toEqual(calls);
   });
@@ -4213,7 +4231,8 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
     expect(rec.audiencesDeleted).toEqual(['aud-1']);
     expect(rec.sends).toEqual([]);
     expect(rec.transitions).toEqual([]);
-    expect(rec.audits).toEqual([]);
+    // Spec 139 s2 (DA2) - the teardown's segment delete is the one row.
+    expect(rec.audits.map((a) => [a.eventType, a.payload['reason']])).toEqual([['broadcast_audience_deleted', 'audience_missing']]);
     expect(rec.memberEmails).toEqual([]);
     expect(failedSpy).not.toHaveBeenCalled();
     expect(warnSpy.mock.calls.some((c) => c[1] === 'broadcasts.audience_import.audience_missing_restarted')).toBe(true);

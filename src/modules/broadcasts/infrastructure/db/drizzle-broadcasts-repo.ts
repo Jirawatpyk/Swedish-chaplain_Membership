@@ -60,6 +60,7 @@ import {
   orphanStuckCutoff,
 } from '../../domain/value-objects/orphaned-resend-id';
 import { orphanStuckSql } from './_orphan-stuck-sql';
+import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, AUDIENCE_AUDIT_PAYLOAD_KEYS, AuditPortInvariantError } from '../../application/ports/audit-port';
 import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
@@ -153,7 +154,19 @@ export function reduceDeliveryAggregateRows(
  *
  * For defence-in-depth security, the chamber_app role + RLS+FORCE
  * policies on the underlying tables are the actual enforcement layer.
+ *
+ * A refusal is a plain `Error` (so `errKind` logs `Error` at every site, as
+ * before) recorded in `tenantBindingRefusals`, so a caller can tell it from a
+ * driver error on the probe itself.
  */
+const tenantBindingRefusals = new WeakSet<Error>();
+
+function tenantBindingRefusal(message: string): Error {
+  const e = new Error(message);
+  tenantBindingRefusals.add(e);
+  return e;
+}
+
 export async function assertTenantBoundTx(
   tx: TenantTx,
   expectedTenantId: string,
@@ -164,14 +177,36 @@ export async function assertTenantBoundTx(
   )) as unknown as Array<{ current_tenant: string | null }>;
   const currentTenant = probe[0]?.current_tenant ?? null;
   if (currentTenant === null || currentTenant.length === 0) {
-    throw new Error(
+    throw tenantBindingRefusal(
       `${callerName}: tx is NOT inside a runInTenant scope (app.current_tenant is unset). Refusing to mutate without tenant binding.`,
     );
   }
   if (currentTenant !== expectedTenantId) {
-    throw new Error(
+    throw tenantBindingRefusal(
       `${callerName}: tx tenant mismatch — repo bound to "${expectedTenantId}" but tx carries "${currentTenant}". Refusing to write to a different tenant's namespace.`,
     );
+  }
+}
+
+/**
+ * Spec 139 s2, review round 3 (code-review #1) — `assertTenantBoundTx` for the
+ * two audience audit reads, whose refusal is an `AuditPortInvariantError`: the
+ * row helper then fails closed (ERROR `*.audit_invariant`, rethrown, no Resend
+ * call) instead of reading a wiring bug as a lost row and making the call. A
+ * driver error on the probe stays as it is (a lost row, per `_audience-audit`).
+ * The message keeps the original text (tenant slugs only, no PII).
+ */
+async function assertAudienceAuditTenantBoundTx(
+  tx: TenantTx,
+  expectedTenantId: string,
+  callerName: string,
+  eventType: 'broadcast_audience_deleted' | 'broadcast_audience_disclosed',
+): Promise<void> {
+  try {
+    await assertTenantBoundTx(tx, expectedTenantId, callerName);
+  } catch (e) {
+    if (e instanceof Error && tenantBindingRefusals.has(e)) throw new AuditPortInvariantError(eventType, e.message);
+    throw e;
   }
 }
 
@@ -1793,6 +1828,67 @@ export function makeDrizzleBroadcastsRepo(
       return rows[0]?.found === true || rows[0]?.found === 't';
     },
 
+    /**
+     * See the port docblock. The `broadcasts-audience-audit:` lock key is
+     * disjoint from the row lock's `broadcasts:` and from the evidence and
+     * unverifiable locks. `tenant_id = ${tenantIdArg}` is load-bearing (the
+     * `audit_log` policy also admits `tenant_id IS NULL` rows). The payload key
+     * is the one the emit writes (`AUDIENCE_AUDIT_PAYLOAD_KEYS`). Read once
+     * per segment delete, so no index is claimed for it.
+     *
+     * Review round 1 (code-review #4, reliability LOW-3): the lock wait is
+     * bounded by `SET LOCAL lock_timeout` (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`),
+     * because the read runs before a bounded Resend call and the Neon pooler
+     * can drop `statement_timeout`. A 55P03 is a plain driver error, so the
+     * site logs the WARN `audience_audit_lock_timeout` and counts a possibly
+     * missing row (review round 2), and the call goes ahead. The bound holds
+     * for the rest of the row's tx (the disclosure read and the insert).
+     */
+    async hasAudienceDeletedAuditInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string): Promise<boolean> {
+      const tx = txUnknown as TenantTx;
+      await assertAudienceAuditTenantBoundTx(tx, ctx.slug, 'hasAudienceDeletedAuditInTx', 'broadcast_audience_deleted');
+      await setLocalLockTimeout(tx, AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, 'hasAudienceDeletedAuditInTx');
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-audience-audit:' || ${tenantIdArg} || ':' || ${resendAudienceId}, 0))`,
+      );
+      const rows = (await tx.execute(sql`
+        SELECT EXISTS (
+          SELECT 1
+          FROM audit_log
+          WHERE tenant_id = ${tenantIdArg}
+            AND event_type = 'broadcast_audience_deleted'
+            AND payload->>${AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId}::text = ${resendAudienceId}::text
+        ) AS found
+      `)) as unknown as Array<{ found: boolean | 't' | 'f' }>;
+      return rows[0]?.found === true || rows[0]?.found === 't';
+    },
+
+    /**
+     * See the port docblock. Tenant-fenced as `hasAudienceDeletedAuditInTx`
+     * (`assertTenantBoundTx` and the explicit `tenant_id` predicate), but it
+     * takes no lock: disclosed rows are append-only, and the dedupe read that
+     * runs before it in the same tx (the reclaim's order) holds the lock.
+     */
+    async findAudienceDisclosureInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string) {
+      const tx = txUnknown as TenantTx;
+      await assertAudienceAuditTenantBoundTx(tx, ctx.slug, 'findAudienceDisclosureInTx', 'broadcast_audience_disclosed');
+      const keys = AUDIENCE_AUDIT_PAYLOAD_KEYS;
+      const rows = (await tx.execute(sql`
+        SELECT payload->>${keys.broadcastId}::text AS broadcast_id,
+               payload->>${keys.relatedMemberId}::text AS related_member_id
+        FROM audit_log
+        WHERE tenant_id = ${tenantIdArg}
+          AND event_type = 'broadcast_audience_disclosed'
+          AND payload->>${keys.resendAudienceId}::text = ${resendAudienceId}::text
+          AND payload->>${keys.broadcastId}::text IS NOT NULL
+          AND payload->>${keys.relatedMemberId}::text IS NOT NULL
+        ORDER BY timestamp ASC
+        LIMIT 1
+      `)) as unknown as Array<{ broadcast_id: string; related_member_id: string }>;
+      const row = rows[0];
+      return row === undefined ? null : { broadcastId: row.broadcast_id, relatedMemberId: row.related_member_id };
+    },
+
     async markAudienceImportCompleted(
       txUnknown,
       tenantIdArg: TenantSlug,
@@ -2867,7 +2963,9 @@ export function makeDrizzleBroadcastsRepo(
         -- later, at its own instant: a row that turns stuck in between (its
         -- age, or attempts a concurrent drain adds) can miss the detach past
         -- the cap and then be released by pass (b). RoPA 8d residual 6 names
-        -- it; the address is still removed when the drain deletes the audience.
+        -- it. On the one-leg code a leaked audience never held recipients:
+        -- its only writer is the attach-failed reclaim, which runs before any
+        -- import (spec 139 s2).
         SELECT DISTINCT o.resource_id AS audience_id,
                         e.email AS email
         FROM (
@@ -2909,7 +3007,7 @@ export function makeDrizzleBroadcastsRepo(
           sql`, `,
         );
         const rows = (await tx.execute(sql`
-          SELECT broadcast_id, resend_audience_id
+          SELECT broadcast_id, resend_audience_id, requested_by_member_id
           FROM broadcasts
           WHERE tenant_id = ${tenantIdArg}
             AND status::text IN (${terminalStatusList})
@@ -2921,10 +3019,12 @@ export function makeDrizzleBroadcastsRepo(
         `)) as unknown as Array<{
           broadcast_id: string;
           resend_audience_id: string;
+          requested_by_member_id: string;
         }>;
         return rows.map((r) => ({
           broadcastId: r.broadcast_id,
           resendAudienceId: r.resend_audience_id,
+          requestedByMemberId: r.requested_by_member_id,
         }));
       });
     },

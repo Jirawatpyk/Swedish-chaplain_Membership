@@ -783,6 +783,7 @@ import type { CleanupOrphanedAudiencesDeps } from '../application/use-cases/clea
  * Mirrors `makeReconcileStuckSendingDeps` — same adapters, leaner dep set.
  * Spec 140 s2c — plus the orphan record the drain settles and the members
  * bridge's erased read (an erased requester's young row skips the grace).
+ * Spec 139 s2 — plus the F7 audit adapter (the row before each delete).
  */
 export function makeCleanupOrphanedAudiencesDeps(
   tenantId: string,
@@ -795,6 +796,7 @@ export function makeCleanupOrphanedAudiencesDeps(
     clock: systemClock,
     orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
     membersBridge,
+    audit: f7AuditAdapter,
   };
 }
 
@@ -810,6 +812,8 @@ import type { ReclaimOrphanedAudiencesDeps } from '../application/use-cases/recl
  * Deps: tenant context + `broadcastsRepo` (existingBroadcastIds) +
  * `broadcastsGateway` (listAudiences + deleteAudience) + `clock` (grace cutoff).
  * Mirrors `makeCleanupOrphanedAudiencesDeps` — same adapters, same dep set.
+ * Spec 139 s2 — plus the F7 audit adapter (the row before a disclosed
+ * segment's delete).
  */
 export function makeReclaimOrphanedAudiencesDeps(
   tenantId: string,
@@ -820,6 +824,7 @@ export function makeReclaimOrphanedAudiencesDeps(
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     broadcastsGateway: resendBroadcastsGateway,
     clock: systemClock,
+    audit: f7AuditAdapter,
   };
 }
 

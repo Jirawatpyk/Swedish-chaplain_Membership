@@ -7,7 +7,7 @@
  * payload silently fell back to `Record<string, unknown>` for events
  * not in `F7AuditPayloadShapes`. Now the constraint forces a
  * deliberate choice: untyped events MUST go through `emit`; only the
- * events with declared payload shapes (28 since the 0310 retention sweep) are eligible for `emitTyped`.
+ * events with declared payload shapes (30 since spec 139 s2's two audience rows) are eligible for `emitTyped`.
  *
  * This file does not run any runtime assertions — the `@ts-expect-error`
  * markers + the structural assignment tests are the lock. If a future
@@ -98,7 +98,7 @@ describe('AuditPort.emitTyped<E> generic constraint — R6.7 M-12', () => {
     expect(true).toBe(true);
   });
 
-  it('F7AuditPayloadShapes covers exactly the 28 declared events', () => {
+  it('F7AuditPayloadShapes covers exactly the 30 declared events', () => {
     // Lock the documented count so a future addition surfaces here for
     // review. The list used to be typed `ReadonlyArray<keyof …>`, which a
     // SUBSET satisfies — it read 12 while the map held 13. `_allDeclared`
@@ -138,9 +138,13 @@ describe('AuditPort.emitTyped<E> generic constraint — R6.7 M-12', () => {
       'broadcast_approval_expired',
       // F7 retention sweep (migration 0310) — the counts-only run row
       'broadcast_retention_swept',
+      // Spec 139 s2 (migration 0327) — the import tick's disclosure row
+      'broadcast_audience_disclosed',
+      // Spec 139 s2 (migration 0327) — the segment delete row
+      'broadcast_audience_deleted',
     ] as const satisfies ReadonlyArray<_Keys>;
     const _allDeclared: [Exclude<_Keys, (typeof declared)[number]>] extends [never] ? true : never = true;
     void _allDeclared;
-    expect(declared.length).toBe(28);
+    expect(declared.length).toBe(30);
   });
 });
