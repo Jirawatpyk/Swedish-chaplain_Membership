@@ -182,7 +182,7 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     // round 2 (code-review #1/#4): the row helper reads it with `errLogFields`
     // as `code: '55P03'` (the WARN `audience_audit_lock_timeout`, counted, the
     // call goes ahead), so this pins that the REAL error carries it. Raced
-    // against 30 s (review round 2, code-review #8: well above the 5 s server
+    // against 20 s (review round 2, code-review #8: well above the 5 s server
     // bound): the dev branch has statement_timeout = 0, so an unbounded wait HANGS.
     it('a read behind a held lock fails with a lock timeout (55P03, not an invariant error)', async () => {
       const audienceId = randomUUID();
@@ -205,7 +205,7 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
             (e: unknown) => ({ kind: 'rejected' as const, e }),
           ),
           new Promise<{ kind: 'hung' }>((r) => {
-            guard = setTimeout(() => r({ kind: 'hung' }), 30_000);
+            guard = setTimeout(() => r({ kind: 'hung' }), 20_000);
           }),
         ]);
         expect(outcome.kind).toBe('rejected');
