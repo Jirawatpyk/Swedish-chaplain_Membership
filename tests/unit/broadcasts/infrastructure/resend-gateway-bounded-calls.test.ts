@@ -222,7 +222,7 @@ describe('CR#1 — a create retries a 429 but not a 5xx or a timeout', () => {
     json(429, { statusCode: 429, name: 'rate_limit_exceeded', message: 'Too many requests' });
 
   it.each(CREATES)('%s: a create retries a 429 but not a 5xx or a timeout', async (_name, run) => {
-    handler = async (call) => (call === 1 ? rateLimited() : json(201, { object: 'x', id: 'x_1' }));
+    handler = async (call) => (call === 1 ? rateLimited() : json(201, { object: 'x', id: '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19' }));
     const after429 = await settleWithin(run(createResendBroadcastsGateway()), 2_500);
     expect({ settled: 'value' in (after429.settled as object), requests: requests.length }).toEqual({
       settled: true,

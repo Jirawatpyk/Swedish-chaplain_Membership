@@ -164,11 +164,20 @@ function assertNonEmpty(values: Readonly<Record<string, string>>): void {
  * names the same segment in the path. No trim: a padded id would reach the path
  * as is. Run after `assertNonEmpty`, so a blank id still answers
  * `empty_identifier`. Applied to every call that puts a segment id into the
- * path (spec 140 s4 plan review, sec L5): `removeContactFromAudience`,
- * `getAudienceContactCount` (`contacts.list`) and `deleteAudience`
- * (`segments.remove` / `segments.get`).
+ * path (spec 140 s4 plan review, sec L5): `removeContactFromAudience` and
+ * `getAudienceContactCount` (`contacts.list`), and to the id `createAudience`
+ * gets back from Resend before it is returned and persisted (PR #756 review
+ * round 3, reliability L3).
+ *
+ * `deleteAudience` (`segments.remove` / `segments.get`) differs, exactly so
+ * (PR #756 review rounds 2 and 3): an id with NO UUID anywhere in it (dev litter
+ * such as `aud_fake_N`, `aud-legacy-…`) names no segment Resend could hold, so the
+ * delete resolves as already gone with no request; an id that CONTAINS a UUID
+ * (a real id padded, prefixed or wrapped in a path) is refused as here, loudly.
  */
 const RESEND_SEGMENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A UUID anywhere in a string — `deleteAudience`'s decorated-real-id test. */
+const CONTAINS_UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 function assertSegmentId(values: Readonly<Record<string, string>>): void {
   for (const [field, value] of Object.entries(values)) {
@@ -454,6 +463,9 @@ export function createResendBroadcastsGateway({
           if (result.error || !result.data?.id) {
             throw classifyResendError(result.error ?? undefined, 'audience');
           }
+          // Fail loud before a non-UUID id is persisted: every later call that
+          // puts it into a path would refuse it (round 3, reliability L3).
+          assertSegmentId({ audienceId: result.data.id });
           logger.info(
             { audienceId: result.data.id },
             'resend.broadcasts.audience_created',
@@ -873,20 +885,22 @@ export function createResendBroadcastsGateway({
 
     async deleteAudience(audienceId: string): Promise<void> {
       assertNonEmpty({ audienceId });
-      // PR #756 review round 2 (code-review #3) — an id that is not UUID-shaped
-      // names no segment Resend could hold (every id it returns is a UUID), so
-      // the delete's goal is already met: resolve as gone with NO request, rather
-      // than a permanent `invalid_identifier` the cleanup cron would re-fail every
-      // tick (dev litter such as `aud_fake_N`). The warn names the id's class,
-      // never the id. The detach and the count still refuse such an id
-      // (`assertSegmentId`): an id-less call there is account-wide.
-      if (!RESEND_SEGMENT_ID_PATTERN.test(audienceId)) {
+      // PR #756 review rounds 2 and 3 (code-review #3, #5, #6) — an id with NO
+      // UUID in it at all names no segment Resend could hold (every id it returns
+      // is a UUID), so the delete's goal is already met: resolve as gone with NO
+      // request, rather than a permanent `invalid_identifier` the cleanup cron
+      // would re-fail every tick (dev litter such as `aud_fake_N`). The warn
+      // names the id's class, never the id. An id that CONTAINS a UUID (a real
+      // id padded, prefixed or wrapped) falls to `assertSegmentId` below and is
+      // refused loudly. The detach and the count refuse every non-UUID id.
+      if (!CONTAINS_UUID_PATTERN.test(audienceId)) {
         logger.warn(
           { idClass: audienceId.startsWith('aud_') ? 'aud_prefixed' : 'not_a_segment_id' },
           'resend.broadcasts.audience_id_not_a_segment',
         );
         return;
       }
+      assertSegmentId({ audienceId });
       await boundedCall(
         async (signal) => {
           const sdk = client();
