@@ -84,6 +84,11 @@ a processor under contract.
   - `hold`, `stale_audience` and `audience_missing`: the import tick's restart;
   - `terminal_cleanup`: the `cleanup-audiences` cron;
   - `orphan_reclaim`: the reclaim cron. It writes the row only when this tenant's disclosed row names the segment. Otherwise it writes no row, so no row is ever filed under a guessed tenant. Instead, the WARN `broadcasts.audience_reclaim.delete_unattributed` and `broadcasts_audience_reclaim_delete_unattributed_total` record the case.
+- **If the row cannot be stored**, the delete still runs, and one of two things is logged:
+  - a storage failure: the ERROR `*.audience_audit_lost`, counted in `broadcasts_audit_emit_failed_total`;
+  - a wait over `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on the segment's dedupe lock: the WARN `*.audience_audit_lock_timeout`, counted in the same counter. Here the row may exist, because the transaction holding the lock may be writing it. For the reclaim cron this WARN is the only trace of that delete: on that run it writes no row and no unattributed WARN.
+
+  The removal rows are therefore not a complete list of removals.
 - **It records the request.** The result is in `broadcasts.audience_deleted_at` or in the orphan table.
 - **Contacts survive:** removing a segment detaches its contacts and does not delete them (residual 8a).
 

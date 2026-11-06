@@ -992,7 +992,11 @@ filed under a guessed tenant), the WARN `broadcasts.audience_reclaim.delete_unat
 (`deleteReason: 'never_disclosed'`) and `broadcasts_audience_reclaim_delete_unattributed_total{tenant}`; the
 delete still runs. A segment from before spec 139 s2, or one another deployment on the same Resend team
 created under the same slug, lands in the not-found arm. A segment that already has a deleted row writes nothing more
-and is not reported. An adapter invariant error logs the ERROR `broadcasts.audience_reclaim.audit_invariant`.
+and is not reported. An adapter invariant error logs the ERROR `broadcasts.audience_reclaim.audit_invariant`. A row that cannot be stored
+logs the ERROR `broadcasts.audience_reclaim.audience_audit_lost`; a wait over `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on
+the segment's `broadcasts-audience-audit:` lock logs the WARN `broadcasts.audience_reclaim.audience_audit_lock_timeout`.
+Both are counted in `broadcasts_audit_emit_failed_total`, and the delete runs. A lock-timeout WARN is the only trace
+of that delete: the run writes no row and no unattributed WARN for it.
 
 Daily safety-net cron that **reclaims orphaned Resend audiences** — audiences
 that exist in the Resend account but whose corresponding local broadcast row
