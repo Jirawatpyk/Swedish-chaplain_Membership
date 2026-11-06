@@ -92,23 +92,26 @@ describe('MemberInvoicesTable (T556)', () => {
   it('a grid with the board columns, the figures as given', () => {
     render(<MemberInvoicesTable rows={[issued, paid]} labels={labels} canMutate />);
     const grid = screen.getByRole('grid', { name: labels.caption });
-    // PR P — the status pill sits under the number in the table, so the card
-    // holds every column at 1280. The card-only Number/Status columns (the
-    // phone card's title and pill) are AURA 5.85 `grid: false`: drawn with
+    // Status is its own column, as the board draws it, whenever the table is
+    // wide enough (AURA `hideBelow` reads the table's width). Below that the
+    // column drops and the pill shows under the number instead, so the card
+    // still fits the 655px main column at 1280 (PR P). The card-only Number
+    // column (the phone card's title) is AURA 5.85 `grid: false`: drawn with
     // `data-grid="off"`, which AURA's stylesheet hides in the grid (jsdom
-    // applies no CSS, so the test leaves them out by that marker).
+    // applies no CSS, so the test leaves it out by that marker).
     const allHeaders = within(grid).getAllByRole('columnheader');
-    expect(allHeaders.filter((h) => h.getAttribute('data-grid') === 'off').map((h) => h.textContent?.trim())).toEqual([
-      'Number',
-      'Status',
-    ]);
-    const headers = allHeaders.filter((h) => h.getAttribute('data-grid') !== 'off').map((h) => h.textContent?.trim());
-    expect(headers.slice(0, 6)).toEqual(['Number', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
-    expect(headers.filter((h) => h === 'Number')).toHaveLength(1);
-    expect(headers).not.toContain('Status');
-    const firstCell = within(grid).getAllByRole('row')[1]!.querySelector<HTMLElement>('[role=gridcell]')!;
-    expect(firstCell).toHaveTextContent('SC-2026-000123');
-    expect(within(firstCell).getByText(issued.statusLabel)).toBeInTheDocument();
+    expect(allHeaders.filter((h) => h.getAttribute('data-grid') === 'off').map((h) => h.textContent?.trim())).toEqual(['Number']);
+    const visible = allHeaders.filter((h) => h.getAttribute('data-grid') !== 'off');
+    const headers = visible.map((h) => h.textContent?.trim());
+    expect(headers.slice(0, 7)).toEqual(['Number', 'Status', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
+    expect(visible[1]).toHaveAttribute('data-hide');
+    const cells = within(grid).getAllByRole('row')[1]!.querySelectorAll<HTMLElement>('[role=gridcell]');
+    expect(cells[0]).toHaveTextContent('SC-2026-000123');
+    expect(cells[1]).toHaveTextContent(issued.statusLabel);
+    // The stacked pill under the number is the narrow-table fallback only.
+    const stacked = within(cells[0]!).getByText(issued.statusLabel).closest('[data-stacked-status]');
+    expect(stacked).toHaveClass('@min-[760px]:hidden');
+    expect(grid.closest('.\\@container')).not.toBeNull();
     expect(grid).toHaveTextContent('SC-2026-000123');
     expect(grid).toHaveTextContent('38,520.00 THB');
     // The board prints "Not paid yet" in the Paid column (G-U7P: words, not a dash).

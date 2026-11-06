@@ -73,6 +73,9 @@ function menuItems(row: MemberInvoiceRow, labels: MemberInvoicesTableLabels, can
   return items;
 }
 
+/** Table width (px) from which Status is its own column; matches the stacked pill's `@min-[760px]:hidden`. */
+const STATUS_COLUMN_FROM = 760;
+
 export function MemberInvoicesTable({
   rows,
   labels,
@@ -85,9 +88,14 @@ export function MemberInvoicesTable({
   // Memoised: a fresh `columns` array on every render remounts each cell, and
   // the row menu closed on the same click that opened it (R18).
   const columns: DataTableColumn<MemberInvoiceRow>[] = useMemo(() => [
-    // PR P — in the table the status pill sits under the number, so the card
-    // in the member page's main column (655px at 1280) holds every column
-    // without scrolling; the phone card keeps its own title and pill slots.
+    // Status is its own column, as the board draws it, once the table is
+    // STATUS_COLUMN_FROM px wide (AURA `hideBelow` reads the table's width).
+    // Narrower — the 655px main column at 1280 — the column drops and the pill
+    // shows under the number instead, so every other column still fits
+    // (PR P). The stacked pill follows the wrapper's width (`@container`),
+    // which is never wider than the table, so at worst both show for a few
+    // pixels and the status is never missing. The phone card keeps its own
+    // title and pill slots.
     {
       key: 'number',
       label: labels.number,
@@ -95,9 +103,18 @@ export function MemberInvoicesTable({
       render: (row) => (
         <span className="flex flex-col items-start gap-1">
           <span className="font-mono">{row.number}</span>
-          <StatusPill tone={invoiceStatusTone(row.status)}>{row.statusLabel}</StatusPill>
+          <span data-stacked-status="" className="@min-[760px]:hidden">
+            <StatusPill tone={invoiceStatusTone(row.status)}>{row.statusLabel}</StatusPill>
+          </span>
         </span>
       ),
+    },
+    {
+      key: 'status',
+      label: labels.status,
+      hideBelow: STATUS_COLUMN_FROM,
+      card: 'pill',
+      render: (row) => <StatusPill tone={invoiceStatusTone(row.status)}>{row.statusLabel}</StatusPill>,
     },
     // The phone board's card shows Due, Total and Remaining only.
     { key: 'issued', label: labels.issued, width: 120, hideBelow: 'lg', card: 'hide' },
@@ -138,32 +155,29 @@ export function MemberInvoicesTable({
         );
       },
     },
-    // Card-only columns (AURA 5.85 #198 `grid: false`): the phone card's
-    // title and pill; never drawn in the grid. Stand-in until AURA #200: they
-    // sit LAST because AURA still counts grid:false columns in the grid's
+    // Card-only column (AURA 5.85 #198 `grid: false`): the phone card's
+    // title; never drawn in the grid. Stand-in until AURA #200: it sits LAST
+    // because AURA still counts grid:false columns in the grid's
     // aria-colcount and each cell's aria-colindex, so placed before the
-    // visible columns they opened a gap (1, then 4).
+    // visible columns it opened a gap.
     { key: 'cardNumber', label: labels.number, mono: true, card: 'title', grid: false, render: (row) => row.number },
-    {
-      key: 'status',
-      label: labels.status,
-      card: 'pill',
-      grid: false,
-      render: (row) => <StatusPill tone={invoiceStatusTone(row.status)}>{row.statusLabel}</StatusPill>,
-    },
   ], [labels, canMutate]);
 
   return (
-    <DataTable<MemberInvoiceRow>
-      label={labels.caption}
-      rows={rows as MemberInvoiceRow[]}
-      columns={columns}
-      rowKey="invoiceId"
-      manual
-      rowHeight="auto"
-      stackBelow={640}
-      // Edge to edge inside the Invoices card, as every list table is.
-      bleed
-    />
+    // The query container for the stacked status pill. No padding, frame or
+    // clipping, so the table still bleeds to the card's edges.
+    <div className="@container">
+      <DataTable<MemberInvoiceRow>
+        label={labels.caption}
+        rows={rows as MemberInvoiceRow[]}
+        columns={columns}
+        rowKey="invoiceId"
+        manual
+        rowHeight="auto"
+        stackBelow={640}
+        // Edge to edge inside the Invoices card, as every list table is.
+        bleed
+      />
+    </div>
   );
 }
