@@ -17,8 +17,9 @@
  * Every row is written BEFORE its Resend call, in its own tenant-bound
  * `withTx` (never a null tx: that would take a pool connection with no
  * `app.current_tenant`, where RLS writes nothing), so it records a request,
- * not its outcome. On failure (the pre-send unverifiable row's pattern, spec
- * 140 s4):
+ * not its outcome. The envelope is `writePreCallAuditRow` (spec 142 AO4,
+ * shared with the pre-send unverifiable row); this file supplies its log
+ * lines. On failure:
  *   - an adapter invariant error (`isAdapterInvariantError`: a wiring bug) is
  *     logged at ERROR with `severity: 'critical'` (`<prefix>.audit_invariant`)
  *     and RETHROWN, so the call is never made (review round 2, code-review #5:
@@ -49,7 +50,7 @@ import type { TenantContext } from '@/modules/tenants';
 
 import type { AudienceDeletedEmitInput, AudienceDeleteReason, AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
-import { isAdapterInvariantError } from './_safe-audit-emit';
+import { writePreCallAuditRow, type PreCallAuditRowDeps } from './_pre-call-audit-row';
 
 /** The ports the disclosed row needs. */
 export interface AudienceAuditDeps {
@@ -83,11 +84,12 @@ const LOCK_NOT_AVAILABLE = '55P03';
 type NoRow = 'skip' | 'unattributed';
 
 /**
- * Write one row in its own tx. `write` runs inside that tx and answers whether
- * it wrote, or why it did not. Answers what happened.
+ * Write one audience row through the shared envelope, with this file's log
+ * lines. `write` runs inside the row's tx and answers whether it wrote, or why
+ * it did not. Answers what happened.
  */
 async function writeAudienceRow(
-  deps: { readonly tenant: TenantContext; readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx'> },
+  deps: PreCallAuditRowDeps,
   eventType: AudienceEventType,
   logPrefix: AudienceAuditLogPrefix,
   ids: {
@@ -98,33 +100,24 @@ async function writeAudienceRow(
   },
   write: (tx: unknown) => Promise<'written' | NoRow>,
 ): Promise<'written' | NoRow | 'lost'> {
-  let result: 'written' | NoRow;
-  try {
-    result = await deps.broadcastsRepo.withTx(write);
-  } catch (e) {
-    const where = {
-      tenantId: deps.tenant.slug,
-      broadcastId: ids.broadcastId,
-      resendAudienceId: ids.resendAudienceId,
-      ...(ids.segmentNameBroadcastId === undefined ? {} : { segmentNameBroadcastId: ids.segmentNameBroadcastId }),
-      eventType,
-    };
-    // A wiring bug fails closed: nothing has been sent or deleted yet.
-    if (isAdapterInvariantError(e)) {
-      logger.error({ ...where, err: errKind(e), severity: 'critical' }, `${logPrefix}.audit_invariant`);
-      throw e;
-    }
-    const fields = errLogFields(e);
-    if (fields.code === LOCK_NOT_AVAILABLE) {
-      logger.warn({ ...where, ...fields }, `${logPrefix}.audience_audit_lock_timeout`);
-    } else {
-      logger.error({ ...where, ...fields, severity: 'critical' }, `${logPrefix}.audience_audit_lost`);
-    }
-    broadcastsMetrics.auditEmitFailed(eventType, deps.tenant.slug);
-    return 'lost';
-  }
-  if (result === 'written') broadcastsMetrics.auditEmitCount(deps.tenant.slug, eventType);
-  return result;
+  const where = {
+    tenantId: deps.tenant.slug,
+    broadcastId: ids.broadcastId,
+    resendAudienceId: ids.resendAudienceId,
+    ...(ids.segmentNameBroadcastId === undefined ? {} : { segmentNameBroadcastId: ids.segmentNameBroadcastId }),
+    eventType,
+  };
+  return writePreCallAuditRow(deps, eventType, write, {
+    onInvariant: (e) => logger.error({ ...where, err: errKind(e), severity: 'critical' }, `${logPrefix}.audit_invariant`),
+    onLost: (e) => {
+      const fields = errLogFields(e);
+      if (fields.code === LOCK_NOT_AVAILABLE) {
+        logger.warn({ ...where, ...fields }, `${logPrefix}.audience_audit_lock_timeout`);
+      } else {
+        logger.error({ ...where, ...fields, severity: 'critical' }, `${logPrefix}.audience_audit_lost`);
+      }
+    },
+  });
 }
 
 /**
