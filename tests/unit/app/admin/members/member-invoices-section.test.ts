@@ -61,6 +61,19 @@ describe('MemberInvoicesSection money form (T556)', () => {
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/^Invoices$/);
     expect(screen.getByRole('link', { name: /New invoice/ })).toHaveClass('aura-btn--primary');
   });
+
+  it('drops its own frame below 640px, so the stacked invoice cards are not cards in a card', async () => {
+    const { render } = await import('@testing-library/react');
+    const { MemberInvoicesCard } = await import(
+      '@/app/(staff)/admin/members/[memberId]/_components/member-invoices-section'
+    );
+    const { container } = render(
+      (await MemberInvoicesCard({ memberId: 'm-1', total: 3, rows: [], canMutate: true, hasFilter: false, showFilters: false })) as ReactElement,
+    );
+    const card = container.querySelector('section[aria-labelledby="member-invoices-heading"]');
+    expect(card).toHaveClass('aura-card', 'aura-card--flush-below-sm');
+    expect(card).toHaveClass('max-sm:p-0');
+  });
 });
 
 // Financial-integrity review M1 — `issued` is the only unpaid state

@@ -227,10 +227,15 @@ export async function MemberInvoicesCard({
 
   // Spec 122 US5b-1 — an AURA Card as the `Admin-member-detail` board draws
   // it: the title with the count and "New invoice", the filters, then the
-  // table (cards on a phone) or an empty state.
+  // table (cards on a phone) or an empty state. Below 640px the rows are
+  // cards of their own, so this card drops its frame and padding there
+  // (`flushBelow`, as the portal invoices list and change requests do):
+  // never cards in a card.
   return (
     <Card
       as="section"
+      flushBelow="sm"
+      className="max-sm:p-0"
       title={t('title')}
       titleId="member-invoices-heading"
       headingLevel={2}
