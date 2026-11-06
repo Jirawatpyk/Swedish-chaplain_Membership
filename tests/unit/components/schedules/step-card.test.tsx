@@ -289,4 +289,10 @@ describe('StepCard on AURA Card (PR Q)', () => {
     // Round 2 — our wrapper keeps the page's line-height under AURA's 1.7 card body.
     expect(heading.parentElement?.parentElement).toHaveClass('leading-normal');
   });
+
+  it('keeps the 16px step padding the board draws, not AURA Card\'s 24px (parity item 4)', () => {
+    renderCard();
+    const card = screen.getByRole('heading', { level: 3 }).closest('.aura-card');
+    expect(card).toHaveClass('[--aura-card-padding:var(--aura-space-4)]');
+  });
 });

@@ -315,7 +315,9 @@ export function StepCard({
     // on `as="div"` that puts `aria-labelledby` on a generic element (stand-in
     // until AURA #199). AURA's card body sets line-height 1.7; `leading-normal`
     // keeps the page's 1.5 that this content inherited (review round 2).
-    <Card as="div">
+    // The step keeps the board's 16px padding through AURA's own card
+    // padding token, not its 24px default (PR Q parity item 4).
+    <Card as="div" className="[--aura-card-padding:var(--aura-space-4)]">
       <div className="flex flex-col gap-[var(--aura-space-3)] leading-normal">
         <div className="flex flex-wrap items-center justify-between gap-[var(--aura-space-2)]">
           {/* The timing in plain language, not "T-30". */}
