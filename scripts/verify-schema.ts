@@ -264,6 +264,16 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'broadcast_audience_disclosed') AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'broadcast_audience_deleted')`,
       },
       {
+        // Spec 142 (mig 0328) — the arbiter of `f7AuditAdapter.emitOnce`'s
+        // `ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE
+        // event_type = 'broadcast_audience_deleted'`. Without it that INSERT
+        // fails with 42P10, so every segment removal loses its row. Asserted by
+        // its definition as `pg_get_indexdef` renders it on dev after the apply
+        // (unique, the key and the partial predicate), not by its name.
+        name: 'audit_log_audience_deleted_once partial unique index on (tenant_id, payload->>resend_audience_id) (mig 0328)',
+        query: `SELECT 1 AS hit FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'audit_log' AND indexname = 'audit_log_audience_deleted_once' AND indexdef LIKE 'CREATE UNIQUE INDEX%' AND indexdef LIKE '%(tenant_id, ((payload ->> ''resend_audience_id''::text))) WHERE (event_type = ''broadcast_audience_deleted''::audit_event_type)'`,
+      },
+      {
         // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure
         // indexes. The tax-point one is asserted by its expression: an index
         // of that name on another expression would silently stop matching
