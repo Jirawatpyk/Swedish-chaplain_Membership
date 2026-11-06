@@ -19,7 +19,7 @@
  * role=radio element itself.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import fc from 'fast-check';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
@@ -356,6 +356,9 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     fireEvent.click(await screen.findByRole('option', { name: /Old Breakfast/ }));
     const input = document.getElementById('eventId') as HTMLInputElement;
     fireEvent.blur(input);
+    // AURA's Combobox closes its list on a setTimeout(0) after blur; let that close land
+    // before reopening, or a slow run (coverage) closes the reopened list under the asserts.
+    await act(() => new Promise((r) => setTimeout(r, 0)));
     fireEvent.focus(input);
     fireEvent.click(input);
     fireEvent.keyDown(input, { key: 'ArrowDown' });
