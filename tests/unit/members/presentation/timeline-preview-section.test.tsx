@@ -163,7 +163,14 @@ describe('<TimelinePreviewSection> on AURA (spec 122 US3)', () => {
     expect(h2).toHaveTextContent(en.admin.members.detail.sectionLinks.timeline);
     const link = card.querySelector('a[href="/admin/members/m1/timeline"]')!;
     expect(link).toHaveTextContent(en.admin.members.detail.timelinePreview.viewAll);
-    expect(link).toHaveClass('aura-btn', 'aura-btn--ghost');
+    // The card's links read as one style (the board): the accent text link
+    // with an arrow that "View renewal" and "Details" use, at the card's foot
+    // as the board draws it, not a ghost button in the header.
+    expect(link).not.toHaveClass('aura-btn');
+    expect(link).toHaveClass('text-[var(--aura-fg-accent)]', 'font-medium');
+    expect(link.querySelector('svg')).not.toBeNull();
+    expect(link.closest('header, .aura-card__head, .aura-card__actions')).toBeNull();
+    expect(card.lastElementChild?.contains(link)).toBe(true);
   });
 });
 
