@@ -163,7 +163,7 @@ test.describe('F7 US6 — scheduled-send via cron (T166)', () => {
 
     // Step 5 — verify the broadcast moved off 'approved'. With a real
     // Resend test-mode key the row reaches 'sending'; without one,
-    // the dispatch is gateway_retryable and the row stays 'approved'
+    // the tick answers a retryable error and the row stays 'approved'
     // (legitimate behaviour for the test environment — ASSERT either).
     const detailResp = await page.evaluate(
       async (id) => {

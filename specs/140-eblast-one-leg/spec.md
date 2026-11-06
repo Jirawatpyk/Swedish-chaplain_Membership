@@ -141,7 +141,7 @@ As the chamber, an E-Blast is built and sent by one cron invocation at a time. A
 
 **Done when:**
 - **DR1.** `rg FEATURE_F7_IMPORT_AUDIENCE src scripts tests .env.example` prints nothing.
-- **DR2.** On the branch's :3400 server, with the flag absent and the sink address only, an approved E-Blast goes `approved → sending → sent` over two cron ticks.
+- **DR2.** On the branch's own server (:3400, or :3401 when another session holds it), with the flag absent and the sink address only, an approved E-Blast goes `approved → sending` over two cron ticks, and `sending → sent` through Resend's delivery webhooks. (Amended at slice 4 review round 1: the cron never writes `sent`.)
 - **DR3.** A segment of 901 recipients is refused at submit, with the ceiling message in EN, TH and SV.
 - **DR4.** The broadcasts contract suite passes. It fails on any `DELETE /contacts/{email}`, so an account-wide contact delete cannot ship.
 

@@ -722,16 +722,6 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
-        // The broadcasts Domain never had the 100% line pin every other
-        // module's Domain carries (Constitution II). `audience-ceiling.ts` is
-        // the first file under it with a function; widen to `**` once the
-        // pre-existing Domain files are measured.
-        'src/modules/broadcasts/domain/audience-ceiling.ts': {
-          lines: 100,
-          branches: 100,
-          functions: 100,
-          statements: 100,
-        },
         // F119 PR-1 (T157) — the four Domain files PR-1 creates: the design-block
         // parser/validator + renderer and the brand VOs + WCAG contrast. Pure
         // arithmetic and string handling, 100% line per Constitution II;

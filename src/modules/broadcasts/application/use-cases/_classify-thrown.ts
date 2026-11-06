@@ -5,7 +5,8 @@
  * Application layer never imports from Infrastructure (Constitution
  * Principle III).
  *
- * Extracted from `dispatch-scheduled-broadcast.ts` in 108 Phase 9 so
+ * Extracted from the legacy dispatch use case (deleted in spec 140 s4) in
+ * 108 Phase 9 so
  * `build-audience-tick.ts` classifies throws the SAME way. It previously had no
  * `catch` at all — 0 against the legacy path's 18 — so every Resend error
  * reached the cron as `uncaught_error`, the bucket reserved for programming
@@ -109,7 +110,7 @@ export function retryableSubKind(sub: string | undefined): RetryableSubKind {
 /**
  * Spec 140 slice 3 (DT3) — a `permanent` throw whose code is Resend's sending
  * quota (a 429 `daily_quota_exceeded` / `monthly_quota_exceeded`; the adapter
- * keeps the name as the code). Both legs count it `resend_429`: without this
+ * keeps the name as the code). The tick counts it `resend_429`: without this
  * it reached the `app_error` bucket the dispatch alert reads.
  */
 export function isQuotaExceededCode(code: string | undefined): boolean {

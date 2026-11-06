@@ -21,6 +21,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
+import { stubResendFetch } from '../../../support/resend/wire-guard';
 import { logger } from '@/lib/logger';
 
 const BROADCAST_ID = 'bc_11111111-2222-4333-8444-555555555555';
@@ -35,18 +36,15 @@ interface Captured {
 const captured: Captured[] = [];
 
 function stubFetch(respond: () => Response | Promise<Response>): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      captured.push({
-        url: String(input),
-        method: init?.method ?? 'GET',
-        authorization: new Headers(init?.headers ?? {}).get('authorization'),
-        hasSignal: init?.signal instanceof AbortSignal,
-      });
-      return respond();
-    }),
-  );
+  stubResendFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+    captured.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      authorization: new Headers(init?.headers ?? {}).get('authorization'),
+      hasSignal: init?.signal instanceof AbortSignal,
+    });
+    return respond();
+  });
 }
 
 const deleteOnce = (id: string) => resendBroadcastsGateway.deleteBroadcastOnce(id);

@@ -185,6 +185,8 @@ describe('getErasureEvidenceLog', () => {
       // different statement from "none were already absent".
       contactsAlreadyAbsent: null,
       contactsFailed: 0,
+      // pdpa M-1 — no `resend_detach_wire` key: a row from before the segment wire.
+      detachWire: null,
     });
     // flags
     expect(row.halfRun).toBe(false);
@@ -420,6 +422,7 @@ describe('getErasureEvidenceLog', () => {
       contactsRemoved: 0,
       contactsAlreadyAbsent: null,
       contactsFailed: 2,
+      detachWire: null,
     });
     // The earliest request wins the Art.12 clock (40d ago) → overdue (half-run: no member_erased).
     expect(row.requestedAt?.toISOString()).toBe(isoMinus(FORTY_DAYS_MS));
@@ -475,6 +478,7 @@ describe('getErasureEvidenceLog', () => {
       contactsRemoved: 0,
       contactsAlreadyAbsent: null,
       contactsFailed: 0,
+      detachWire: null,
     });
   });
 
@@ -830,5 +834,46 @@ describe('getErasureEvidenceLog — triage (summary / sort / filter / search / c
     const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW, displayCap: 2 });
     expect(out.capped).toBe(true);
     expect(out.loadedCount).toBe(2);
+  });
+});
+
+// PR #756 review round 1 (pdpa M-1) — the card explains the counts by the wire
+// that wrote them, read from the record: `'segments'` only for that exact value;
+// a missing key (a row from before spec 140 s4) or anything else reads `null`,
+// the older records' explanation, never a guess at the newer one.
+describe('getErasureEvidenceLog — the detach wire of the subprocessor row', () => {
+  it.each([
+    ['segments', 'segments'],
+    ['audiences', null],
+    [7, null],
+  ] as const)('resend_detach_wire %j reads detachWire %j', async (wire, expected) => {
+    const memberId = 'm-wire';
+    const deps = makeDeps({
+      rows: [erasedRow(memberId, 9)],
+      linkedByMember: { [memberId]: [] },
+      evidenceByMember: {
+        [memberId]: [
+          {
+            id: 'ev-sub-wire',
+            eventType: 'subprocessor_erasure_propagated',
+            occurredAtIso: NOW.toISOString(),
+            actorUserId: 'admin-1',
+            targetUserId: null,
+            payload: {
+              member_id: memberId,
+              resend_outcome: 'ok',
+              resend_contacts_removed_count: 1,
+              resend_contacts_already_absent_count: 1,
+              resend_contacts_failed_count: 0,
+              resend_detach_wire: wire,
+            },
+          },
+        ],
+      },
+    });
+
+    const { rows } = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
+
+    expect(rows[0]!.subprocessorOutcome?.detachWire).toBe(expected);
   });
 });

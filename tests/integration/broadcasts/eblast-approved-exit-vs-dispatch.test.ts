@@ -2,8 +2,9 @@
  * F119 T166 R-H1 — an exit from `approved` against the lock-free dispatch leg,
  * on LIVE Postgres (Neon `dev`), through the real repo and the real use cases.
  *
- * `dispatchScheduledBroadcast` locks the row in Step 1 and COMMITS, then calls
- * Resend with no lock held. F119 added three NON-terminal exits from
+ * The dispatch tick (`buildAudienceTick`; the legacy leg this file first drove
+ * was deleted in spec 140 s4) locks the row in Step 1 and COMMITS, then calls
+ * Resend with no row lock held. F119 added three NON-terminal exits from
  * `approved` — the member's withdrawal, `confirmSchedule`'s cancel, and the
  * voiding start of a new working copy — plus the re-time `approved →
  * approved`. Before this fix none of them looked at what the dispatcher had
@@ -28,6 +29,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, runInTenant } from '@/lib/db';
+import { ok } from '@/lib/result';
 import {
   makeConfirmScheduleDeps,
   makeRecordMemberDecisionDeps,
@@ -38,7 +40,6 @@ import {
   asBroadcastVersionId,
   cancelBroadcast,
   cancelInFlightBroadcastsForMember,
-  dispatchScheduledBroadcast,
   makeCancelBroadcastDeps,
   makeCancelInFlightBroadcastsForMemberDeps,
 } from '@/modules/broadcasts';
@@ -46,14 +47,13 @@ import { asMemberId } from '@/modules/members';
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
 import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
 import { startFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/start-formatted-version';
+import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
-import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
 import { emailTransactionalBridge } from '@/modules/broadcasts/infrastructure/email-transactional-bridge';
-import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
 import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
 import { plansBridge } from '@/modules/broadcasts/infrastructure/plans-bridge';
 import { broadcasts, broadcastVersions, type NewBroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
@@ -68,7 +68,7 @@ import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/memb
  * list + the F8 access bridge): the seeded requesting member is neither halted
  * nor has a renewal cycle, so both answer "in good standing" and the send runs.
  */
-const LIVE_STANDING = { membersBridge, membershipAccess: membershipAccessBridge };
+const LIVE_STANDING = { membersBridge, haltReadFresh: membersBridge, membershipAccess: membershipAccessBridge };
 
 const MARKETER = randomUUID();
 const SUBMITTED_AT = new Date('2026-09-20T08:00:00.000Z');
@@ -158,7 +158,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
 
   describe('(b) once the dispatcher has handed the row over, every exit from approved refuses sending_started', () => {
     it.each([
-      { leg: 'legacy leg — resend_broadcast_id set', ids: { resendAudienceId: 'aud-exit-1', resendBroadcastId: `rb-exit-${randomUUID().slice(0, 8)}` } },
+      { leg: 'resend_broadcast_id set (a pre-send persist, or a row the deleted legacy leg left)', ids: { resendAudienceId: 'aud-exit-1', resendBroadcastId: `rb-exit-${randomUUID().slice(0, 8)}` } },
       { leg: 'import leg — audience_import_id set', ids: { resendAudienceId: 'aud-exit-2', audienceImportId: `imp-exit-${randomUUID().slice(0, 8)}`, audienceImportSubmittedAt: new Date() } },
     ])('$leg: withdraw, cancel, re-time, a new working copy and a member or staff cancel are all refused; the row is untouched', async ({ ids }) => {
       const { id, v1 } = await seedApprovedRound(ids);
@@ -238,101 +238,87 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
       expect(await readRow(id)).toMatchObject({ resendAudienceId: null, resendBroadcastId: null, audienceImportId: null });
     });
 
-    it('the race end to end: a withdrawal lands while the dispatcher is minting — nothing is sent, the minted resource is reclaimed, and no id is left for the next round to inherit', async () => {
+    // Spec 140 s4 — ported from the deleted legacy leg to the import tick. Its
+    // mint-before-attach window is tick 1's `createAudience` (on tick 2 the row
+    // already carries `audience_import_id`, so every exit refuses — case (b)).
+    it('the race end to end: a withdrawal lands while the tick is creating its audience — nothing is imported or sent, the audience is reclaimed, and no id is left for the next round to inherit', async () => {
       const { id, v1 } = await seedApprovedRound();
-      const calls = { send: 0, deleted: [] as string[], withdrawal: null as unknown };
+      const calls = { imports: 0, send: 0, deletedAudiences: [] as string[], withdrawal: null as unknown };
+      const createdAudience = `aud-race-${randomUUID().slice(0, 8)}`;
+      const notUsed = (name: string) => async (): Promise<never> => {
+        throw new Error(`${name} is not used here`);
+      };
       const gateway: BroadcastsGatewayPort = {
         async createAudience() {
-          return { audienceId: `aud-race-${randomUUID().slice(0, 8)}` };
-        },
-        async addContactsToAudience() {},
-        async createContactImport() {
-          throw new Error('not used');
-        },
-        async getContactImport() {
-          throw new Error('not used');
-        },
-        async createBroadcast() {
-          // The member withdraws WHILE the dispatcher is inside Resend — after
-          // Step 1's lock committed, before the id is attached.
+          // The member withdraws WHILE the tick is inside Resend — after Step 1's
+          // lock committed, before the audience id is attached.
           calls.withdrawal = await withdraw(id, v1);
-          return { broadcastId: `rb-race-${randomUUID().slice(0, 8)}` };
+          return { audienceId: createdAudience };
+        },
+        async createContactImport() {
+          calls.imports += 1;
+          return { importId: `imp-race-${randomUUID().slice(0, 8)}` };
         },
         async sendBroadcast() {
           calls.send += 1;
         },
-        async retrieveBroadcast() {
-          return { kind: 'not_found' as const };
+        async deleteAudience(audienceId) {
+          calls.deletedAudiences.push(audienceId);
         },
-        async getAudienceContactCount() {
-          return { count: 1, complete: true };
-        },
-        async removeContactFromAudience() {
-          return { kind: 'detached' as const };
-        },
-        async deleteContactGlobally() {},
-        async deleteAudience() {},
-        async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
-        async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
-        async deleteBroadcast(resourceId) {
-          calls.deleted.push(resourceId);
-        },
-        async listAudiences() {
-          return { audiences: [], truncated: false };
-        },
-      };
-      const stubMembersBridge = {
-        ...membersBridge,
-        async getMemberPrimaryContact() {
-          return 'sender@test-tenant.example' as never;
-        },
-        async getMembersBySegment() {
-          return [
-            {
-              memberId: 'm-1',
-              displayName: 'Recipient Co',
-              primaryContactEmail: 'recipient@test-tenant.example' as never,
-              tierCode: null,
-              broadcastsHaltedUntilAdminReview: false,
-            },
-          ];
-        },
+        getContactImport: notUsed('getContactImport'),
+        createBroadcast: notUsed('createBroadcast'),
+        retrieveBroadcast: notUsed('retrieveBroadcast'),
+        getAudienceContactCount: notUsed('getAudienceContactCount'),
+        removeContactFromAudience: notUsed('removeContactFromAudience'),
+        deleteBroadcastOnce: notUsed('deleteBroadcastOnce'),
+        retrieveBroadcastOnce: notUsed('retrieveBroadcastOnce'),
+        deleteBroadcast: notUsed('deleteBroadcast'),
+        listAudiences: notUsed('listAudiences'),
       };
 
-      const result = await dispatchScheduledBroadcast(
+      const result = await buildAudienceTick(
         {
           tenant: tenant.ctx,
           broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
           orphans: makeDrizzleBroadcastOrphansRepo(tenant.ctx.slug),
-          audienceMode: 'primary_only' as const,
-          audienceCeiling: 5000,
           broadcastsGateway: gateway,
-          membersBridge: stubMembersBridge,
-          marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenant.ctx.slug),
-          eventAttendees: eventAttendeesStub,
+          brandChrome: NO_BRAND_CHROME,
           audit: f7AuditAdapter,
           clock: { now: () => new Date() },
+          tickBudget: { tickStartedAt: Date.now() },
           fromEmail: 'noreply@test.invalid-but-test-only',
           tenantDisplayName: 'Test Chamber',
           locale: 'en' as const,
-          plansBridge,
+          resolveRecipients: async () =>
+            ok({ recipients: ['recipient@test-tenant.example'], estimatedCount: 1, orphans: [], droppedByPreference: 0 }),
+          membersBridge: { ...membersBridge, getMemberPrimaryContact: async () => 'sender@test-tenant.example' as never },
           emailTransactional: emailTransactionalBridge,
+          plansBridge,
           sendStanding: LIVE_STANDING,
-          brandChrome: NO_BRAND_CHROME,
         },
         { broadcastId: asBroadcastId(id) },
       );
 
       // The withdrawal itself succeeded: nothing had been handed over yet.
       expect((calls.withdrawal as { ok: boolean }).ok).toBe(true);
-      // The dispatcher lost the CAS: no send, its own mint reclaimed.
-      expect(result.ok ? 'dispatched' : result.error).toEqual({
+      // The tick lost the race: the withdrawal's status change cleared its
+      // dispatch lease (spec 140 s2b, A3), so the fenced attach reads
+      // `lease_lost` — a concurrent skip. No import, no send, its own audience
+      // deleted.
+      expect(result.ok ? result.value : result.error).toEqual({
         kind: 'broadcast_invalid_state_transition',
-        observedStatus: 'changes_requested',
+        observedStatus: 'lease_lost',
+        rowStatus: 'changes_requested',
       });
-      expect(calls.send).toBe(0);
-      expect(calls.deleted).toHaveLength(1);
-      expect(await readRow(id)).toMatchObject({ status: 'changes_requested', resendBroadcastId: null, approvedVersionId: null });
+      expect([calls.imports, calls.send]).toEqual([0, 0]);
+      expect(calls.deletedAudiences).toEqual([createdAudience]);
+      expect(await readRow(id)).toMatchObject({
+        status: 'changes_requested',
+        resendAudienceId: null,
+        resendBroadcastId: null,
+        audienceImportId: null,
+        approvedVersionId: null,
+      });
     });
   });
 

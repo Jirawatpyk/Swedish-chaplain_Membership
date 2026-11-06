@@ -5,8 +5,9 @@
  * `LEASE_TTL_MS`, re-checks it before every irreversible Resend call with
  * `CALL_HEADROOM_MS` (`IMPORT_HEADROOM_MS` before the import POST) of lease
  * left, and releases it at the end. The import leg starts no row after
- * `ROW_START_CUTOFF_MS` into its invocation (DL9; review round 1 CR#5: the
- * legacy leg has no cutoff — its per-contact push is not in `W_MAX_MS`).
+ * `ROW_START_CUTOFF_MS` into its invocation (DL9; review round 1 CR#5). The
+ * legacy leg, whose per-contact push was never in `W_MAX_MS`, was deleted in
+ * spec 140 s4.
  *
  * Every literal below is pinned to its derivation by
  * `tests/unit/broadcasts/application/dispatch-lease-budget.test.ts`, which
@@ -74,6 +75,11 @@ export const TICK1_BOUNDED_CALLS = 5;
  * - ESTIMATE: ~15 statements × ~220 ms ≈ 3.3 s.
  * Together that is under 8 s, so 15 s keeps about 2× headroom. The prod p99 is
  * SLO-F7-013 (`broadcasts_recipient_count_ms`).
+ *
+ * PR #756 review round 3 — counted in the ~15 statements: on a failed audience
+ * count, the unverifiable row's own short tx (an `EXISTS` read on `audit_log`
+ * plus one INSERT), between the send's lease check and `/send`. It runs at most
+ * once per tick and spends part of M's post-call slack, not a Resend call.
  */
 export const DB_AND_RESOLVE_MS = 15_000;
 

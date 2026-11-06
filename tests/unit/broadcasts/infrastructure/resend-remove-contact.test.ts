@@ -2,16 +2,23 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const removeMock = vi.fn();
 const removeAudMock = vi.fn();
+const getAudMock = vi.fn();
+// Spec 140 s4 — the detach is `contacts.segments.remove`; the account-wide
+// `contacts.remove` must never be reached, so it throws here.
+const accountWideRemove = vi.fn(() => {
+  throw new Error('contacts.remove is the account-wide DELETE /contacts/{email}');
+});
 vi.mock('@/modules/broadcasts/infrastructure/resend/resend-broadcasts-client', () => ({
   getResendBroadcastsClient: () => ({
-    contacts: { remove: removeMock },
-    audiences: { remove: removeAudMock },
+    contacts: { remove: accountWideRemove, segments: { remove: removeMock } },
+    segments: { remove: removeAudMock, get: getAudMock },
   }),
 }));
 
 import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
 
-// Spec 140 DT4 — the remove guard refuses an audience id that is not UUID-shaped.
+// Spec 140 DT4 — the remove guard refuses an audience id that is not UUID-shaped
+// (and, since s4, so does `deleteAudience`).
 const AUD = '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19';
 
 describe('resendBroadcastsGateway.removeContactFromAudience', () => {
@@ -24,15 +31,16 @@ describe('resendBroadcastsGateway.removeContactFromAudience', () => {
    * card labelled "Contacts removed".
    */
   it('answers `detached` on a successful removal', async () => {
-    removeMock.mockResolvedValue({ data: { deleted: true }, error: null });
+    removeMock.mockResolvedValue({ data: { object: 'contact_segment', deleted: true }, error: null });
     await expect(
       resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@x.io'),
     ).resolves.toEqual({ kind: 'detached' });
-    expect(removeMock).toHaveBeenCalledWith({ audienceId: AUD, email: 'a@x.io' }, { signal: expect.any(AbortSignal) });
+    expect(removeMock).toHaveBeenCalledWith({ email: 'a@x.io', segmentId: AUD }, { signal: expect.any(AbortSignal) });
+    expect(accountWideRemove).not.toHaveBeenCalled();
   });
 
   it('answers `already_absent` on a 404 — still a success, but NOT a removal', async () => {
-    removeMock.mockResolvedValue({ data: null, error: { statusCode: 404, message: 'not found' } });
+    removeMock.mockResolvedValue({ data: null, error: { statusCode: 404, name: 'not_found', message: 'Contact not found' } });
     await expect(
       resendBroadcastsGateway.removeContactFromAudience(AUD, 'gone@x.io'),
     ).resolves.toEqual({ kind: 'already_absent' });
@@ -55,14 +63,14 @@ describe('resendBroadcastsGateway.deleteAudience', () => {
   beforeEach(() => removeAudMock.mockReset());
 
   it('deleteAudience resolves on success', async () => {
-    removeAudMock.mockResolvedValue({ data: { deleted: true, id: 'aud_1', object: 'audience' }, error: null });
-    await expect(resendBroadcastsGateway.deleteAudience('aud_1')).resolves.toBeUndefined();
-    expect(removeAudMock).toHaveBeenCalledWith('aud_1', { signal: expect.any(AbortSignal) });
+    removeAudMock.mockResolvedValue({ data: { deleted: true, id: AUD, object: 'segment' }, error: null });
+    await expect(resendBroadcastsGateway.deleteAudience(AUD)).resolves.toBeUndefined();
+    expect(removeAudMock).toHaveBeenCalledWith(AUD, { signal: expect.any(AbortSignal) });
   });
 
   it('deleteAudience treats 404 (already gone) as success', async () => {
     removeAudMock.mockResolvedValue({ data: null, error: { statusCode: 404, message: 'not found' } });
-    await expect(resendBroadcastsGateway.deleteAudience('gone')).resolves.toBeUndefined();
+    await expect(resendBroadcastsGateway.deleteAudience(AUD)).resolves.toBeUndefined();
   });
 
   it('deleteAudience treats 410 Gone as already-absent (Finding H)', async () => {
@@ -71,14 +79,14 @@ describe('resendBroadcastsGateway.deleteAudience', () => {
     // early-return like 404. Single call (no retry) proves it is NOT treated
     // as retryable either.
     removeAudMock.mockResolvedValue({ data: null, error: { statusCode: 410, message: 'gone' } });
-    await expect(resendBroadcastsGateway.deleteAudience('gone-410')).resolves.toBeUndefined();
+    await expect(resendBroadcastsGateway.deleteAudience(AUD)).resolves.toBeUndefined();
     expect(removeAudMock).toHaveBeenCalledTimes(1);
   });
 
   it('deleteAudience throws retryable on 5xx', async () => {
     vi.useFakeTimers();
     removeAudMock.mockResolvedValue({ data: null, error: { statusCode: 503, message: 'down' } });
-    const p = resendBroadcastsGateway.deleteAudience('aud_1');
+    const p = resendBroadcastsGateway.deleteAudience(AUD);
     const a = expect(p).rejects.toMatchObject({ name: 'GatewayThrowable', kind: 'retryable' });
     await vi.runAllTimersAsync(); await a; vi.useRealTimers();
   });

@@ -10,13 +10,14 @@
  * it. (Sibling symptom of the repo's fake-timer trap: a 30 s timeout is the
  * harness, not the component.)
  *
- * These two calls replace the per-contact push. `addContactsToAudience` is a
- * serial `await` loop at a measured ~2.08 req/s, so ~623 contacts is all one
- * 300 s function can drain; `POST /contacts/imports` takes the whole list in
- * one multipart request in ~412 ms **regardless of size** (T145, 2026-09-08).
- * Every mechanism this codebase grew to work around the loop — split
- * thresholds, per-batch manifests, one-wave dispatch, cross-tick drift guards
- * — exists only because the push was per-contact.
+ * These two calls replaced the per-contact push (deleted with the legacy
+ * dispatch leg in spec 140 s4). That push was a serial `await` loop at a
+ * measured ~2.08 req/s, so ~623 contacts was all one 300 s function could
+ * drain; `POST /contacts/imports` takes the whole list in one multipart request
+ * in ~412 ms **regardless of size** (T145, 2026-09-08). Every mechanism this
+ * codebase grew to work around the loop — split thresholds, per-batch
+ * manifests, one-wave dispatch, cross-tick drift guards — existed only because
+ * the push was per-contact.
  *
  * The SDK (`resend@4.8`) has no `contacts.imports`, so the adapter issues a raw
  * multipart `fetch`. That makes the REQUEST SHAPE the contract, and this file
@@ -40,6 +41,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
+import { stubResendFetch } from '../../../support/resend/wire-guard';
 
 const AUDIENCE_ID = '11111111-2222-4333-8444-555555555555';
 
@@ -70,35 +72,32 @@ function jsonResponse(status: number, body: unknown): Response {
 
 /** Records what the adapter actually put on the wire, then answers `respond`. */
 function stubFetch(respond: (call: number) => Response): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const fields: Record<string, string> = {};
-      let fileText = '';
-      let fileFieldName: string | null = null;
-      let fileName: string | null = null;
-      if (init?.body instanceof FormData) {
-        for (const [k, v] of init.body.entries()) {
-          if (v instanceof Blob) {
-            fileText = await v.text();
-            fileFieldName = k;
-            fileName = v instanceof File ? v.name : null;
-          } else fields[k] = String(v);
-        }
+  stubResendFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const fields: Record<string, string> = {};
+    let fileText = '';
+    let fileFieldName: string | null = null;
+    let fileName: string | null = null;
+    if (init?.body instanceof FormData) {
+      for (const [k, v] of init.body.entries()) {
+        if (v instanceof Blob) {
+          fileText = await v.text();
+          fileFieldName = k;
+          fileName = v instanceof File ? v.name : null;
+        } else fields[k] = String(v);
       }
-      const headers = new Headers(init?.headers ?? {});
-      captured.push({
-        url: String(input),
-        method: init?.method ?? 'GET',
-        authorization: headers.get('authorization'),
-        fields,
-        fileText,
-        fileFieldName,
-        fileName,
-      });
-      return respond(captured.length);
-    }),
-  );
+    }
+    const headers = new Headers(init?.headers ?? {});
+    captured.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      authorization: headers.get('authorization'),
+      fields,
+      fileText,
+      fileFieldName,
+      fileName,
+    });
+    return respond(captured.length);
+  });
 }
 
 beforeEach(() => {

@@ -3,8 +3,9 @@
  *
  * `build-audience-tick.test.ts` next door covers the completion rule. This file
  * covers what happens when something goes wrong, because the review found that
- * `buildAudienceTick` had been written as a clean sibling of
- * `dispatchScheduledBroadcast` and had dropped four things the older path
+ * `buildAudienceTick` had been written as a clean sibling of the legacy
+ * dispatch use case (deleted in spec 140 s4) and had dropped four things the
+ * older path
  * accumulated over five review rounds: the terminal transition on a resolver
  * refusal, the FR-021 member notification, the `failureReason` write, and any
  * `catch` at all around the gateway.
@@ -119,6 +120,7 @@ interface Recorder {
     payload: Record<string, unknown>;
     txId?: number | undefined;
     actorUserId?: string | undefined;
+    summary?: string | undefined;
   }>;
   readonly memberEmails: Array<{ templateKey: string; reason: unknown }>;
   readonly sends: string[];
@@ -284,7 +286,9 @@ function makeDeps(opts: {
      */
     | 'broadcast_dispatch_failure_notif_skipped_no_email'
     /** F119 PR-A R4 — the standing refusal's own row, the SECOND insert of the terminal tx. */
-    | 'broadcast_member_halted_pending_review';
+    | 'broadcast_member_halted_pending_review'
+    /** PR #756 review round 1 — the unverifiable count's row, written before the send. */
+    | 'broadcast_resend_drift_check_unverifiable';
   /**
    * Round 4 T4/M12 — a WIRING bug rather than a storage hiccup. The use case
    * rethrows `AuditPortInvariantError` out of its fail-soft envelope on purpose;
@@ -470,8 +474,8 @@ function makeDeps(opts: {
     if (opts.resolveFails === 'empty') {
       // Round 3 finding 3-2 — the kind the RESOLVER actually returns
       // (`resolve-segment-recipients.ts:422`). This stub said
-      // `broadcast_audience_post_suppression_empty`, which only
-      // `dispatchScheduledBroadcast` produces, as its OUTPUT. So every "empty
+      // `broadcast_audience_post_suppression_empty`, which only the legacy
+      // dispatch use case produced, as its OUTPUT. So every "empty
       // audience" case in this file exercised dead code and passed green while
       // the real kind fell through to `dispatch.server_error`.
       return err({
@@ -576,6 +580,19 @@ function makeDeps(opts: {
         // Spec 140 s2b — the dispatch lease: claimed, always held, released.
         async claimDispatchLease() { return 'lease-token-test'; },
         async checkDispatchLease() { return 'held' as const; },
+        // PR #756 review round 3 — the unverifiable row's per-broadcast dedupe,
+        // read over what this recorder holds (a second tick seeds it with the
+        // first tick's rows).
+        // Round 4: keyed on (broadcastId, resendBroadcastId), so a re-minted draft
+        // gets its own row.
+        async hasUnverifiableCountAuditInTx(_tx: unknown, _t: unknown, id: unknown, resendBroadcastId: unknown) {
+          return rec.audits.some(
+            (a) =>
+              a.eventType === 'broadcast_resend_drift_check_unverifiable' &&
+              a.payload['broadcastId'] === id &&
+              a.payload['resendBroadcastId'] === resendBroadcastId,
+          );
+        },
         async releaseDispatchLease() { return true; },
         async lockForUpdate() {
           rec.rowLocks += 1;
@@ -782,7 +799,7 @@ function makeDeps(opts: {
         },
       },
       audit: {
-        async emit(tx: unknown, e: { eventType: string; payload: Record<string, unknown>; actorUserId?: string }) {
+        async emit(tx: unknown, e: { eventType: string; payload: Record<string, unknown>; actorUserId?: string; summary?: string }) {
           // Round 3 finding 3-8 — a failing audit INSERT. In production this
           // aborts the surrounding transaction (25P02), which is why WHICH tx it
           // runs in decides what survives.
@@ -797,6 +814,7 @@ function makeDeps(opts: {
             payload: e.payload,
             txId: (tx as { txId?: number } | null)?.txId,
             actorUserId: e.actorUserId,
+            summary: e.summary,
           });
         },
       },
@@ -1248,8 +1266,8 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
    * createdAt`, not from the first failure, so an `approved` row already an hour
    * past its epoch — a paused cron, a late approval, a flag enabled
    * retroactively — died on its FIRST transient DB error, never having been
-   * retried once. It also forked the legs: `dispatchScheduledBroadcast` does not
-   * budget resolve failures, so a flag flip changed whether the same fault was
+   * retried once. It also forked the legs: the legacy leg did not budget
+   * resolve failures, so a flag flip changed whether the same fault was
    * terminal.
    *
    * So the resolve-side budget is gone and this case now pins the behaviour that
@@ -1708,6 +1726,292 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     // data source on the import leg — the one a flag flip makes live, and the
     // branch a Resend blip lands in. The legacy leg has emitted it all along.
     expect(unverifiableSpy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * PR #756 review round 1 (code-review #1) — the deleted legacy leg also wrote
+   * `broadcast_resend_drift_check_unverifiable` when the count call FAILED, and
+   * the import tick is the only leg since spec 140 s4. Without the row the one
+   * check that can see a carried-over contact fails without a durable record. The
+   * legacy payload's five keys (plus the import id), and `errorReason` a bounded
+   * class, never the provider's text.
+   */
+  it('a failed audience count writes broadcast_resend_drift_check_unverifiable, then still sends once', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['getAudienceContactCount'] = async () => {
+      throw gatewayThrow('retryable', 'resend 503 for a@example.com');
+    };
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    const rows = rec.audits.filter((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable');
+    expect(rows).toHaveLength(1);
+    expect(Object.keys(rows[0]!.payload).sort()).toEqual([
+      'broadcastId',
+      'errorReason',
+      'expectedRecipientCount',
+      'importId',
+      'resendAudienceId',
+      'resendBroadcastId',
+    ]);
+    expect(rows[0]!.payload).toMatchObject({
+      broadcastId: BROADCAST_ID,
+      resendAudienceId: 'aud-1',
+      // Written before the send (round 3), it names the broadcast resource that
+      // attempt was about to send, which is the one sent.
+      resendBroadcastId: rec.sends[0],
+      expectedRecipientCount: RECIPIENTS.length,
+      importId: 'imp-1',
+    });
+    expect(rows[0]!.actorUserId).toBe('system:cron');
+    expect(JSON.stringify(rows[0]!.payload)).not.toContain('a@example.com');
+    expect(JSON.stringify(rows[0]!.payload)).not.toContain('resend 503');
+    // Its own tenant-bound transaction, never the null tx (RLS writes nothing there).
+    expect(rows[0]!.txId).toBeDefined();
+  });
+
+  it('a lost unverifiable row (audit INSERT fails) does not block or double the send', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      auditThrowsOn: 'broadcast_resend_drift_check_unverifiable',
+    });
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['getAudienceContactCount'] = async () => {
+      throw gatewayThrow('retryable', 'resend 503');
+    };
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_send_started');
+  });
+
+  // PR #756 review round 2 (security L2) — `errorReason` is a CLOSED code: the
+  // transport sub-kind on a retryable failure, an allowlisted classifier kind
+  // otherwise. Never the throw's text, which can carry an address.
+  it.each([
+    { label: 'a retryable failure', thrown: gatewayThrow('retryable', 'resend 503 for a@example.com', { subKind: 'server_5xx' }), expected: 'server_5xx' },
+    { label: 'a permanent failure', thrown: gatewayThrow('permanent', 'text a@example.com'), expected: 'permanent' },
+    { label: 'a kind outside the allowlist', thrown: gatewayThrow('a@example.com', 'text a@example.com'), expected: 'other' },
+  ])('$label writes errorReason $expected and no provider text', async ({ thrown, expected }) => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['getAudienceContactCount'] = async () => {
+      throw thrown;
+    };
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const row = rec.audits.find((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable');
+    expect(row?.payload['errorReason']).toBe(expected);
+    expect(JSON.stringify(row?.payload)).not.toContain('example.com');
+  });
+
+  // PR #756 review round 3 — the row is written BEFORE `/send`, after the
+  // send's lease gate, once per broadcast (the first failed attempt): a kill
+  // after the send can no longer lose it, a send the tick did not make is never
+  // recorded as its own, and overlapping or repeated ticks write one row.
+  const failCount = (deps: unknown): void => {
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['getAudienceContactCount'] = async () => {
+      throw gatewayThrow('retryable', 'resend 503');
+    };
+  };
+
+  it('(c) a failed count and a retryable send failure still write ONE row, worded as an attempt', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'retryable', subKind: 'server_5xx' },
+    });
+    failCount(deps);
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    const rows = rec.audits.filter((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.summary).toMatch(/membership check could not be read on a dispatch attempt/);
+    expect(rows[0]!.summary).not.toMatch(/sent without/);
+  });
+
+  it('(e) a failed count and a send that went out write exactly one row, before the send', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    failCount(deps);
+    let rowsAtSend = -1;
+    const gw = (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway;
+    const send = gw['sendBroadcast'] as (...a: unknown[]) => Promise<unknown>;
+    gw['sendBroadcast'] = async (...a: unknown[]) => {
+      rowsAtSend = rec.audits.filter((x) => x.eventType === 'broadcast_resend_drift_check_unverifiable').length;
+      return send(...a);
+    };
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    expect(rowsAtSend).toBe(1);
+    expect(rec.audits.filter((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable')).toHaveLength(1);
+  });
+
+  it('(a) a count that fails on two ticks writes exactly one row for the broadcast', async () => {
+    const opts = {
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast' as const, kind: 'retryable', subKind: 'server_5xx' },
+    };
+    const first = makeDeps(opts);
+    failCount(first.deps);
+    await buildAudienceTick(first.deps as never, { broadcastId: BROADCAST_ID });
+    const second = makeDeps(opts);
+    second.rec.audits.push(...first.rec.audits);
+    failCount(second.deps);
+
+    await buildAudienceTick(second.deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(second.rec.audits.filter((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable')).toHaveLength(1);
+  });
+
+  it('(b) a lease lost before the send writes no row and sends nothing', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'present', status: 'draft' },
+    });
+    failCount(deps);
+    (deps as { broadcastsRepo: Record<string, unknown> }).broadcastsRepo['checkDispatchLease'] = async () => 'lost' as const;
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.sends).toHaveLength(0);
+    expect(rec.audits.map((a) => a.eventType)).not.toContain('broadcast_resend_drift_check_unverifiable');
+  });
+
+  // PR #756 round 4 — the dedupe key is (broadcastId, resendBroadcastId): a draft
+  // re-minted after a restart is a different attempt and gets its own row,
+  // naming its own resources. The same draft on two ticks stays one row (a).
+  it('a count failing on two attempts with different drafts writes one row per draft', async () => {
+    const first = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      resendBroadcastId: 'rb-draft-1',
+      probe: { kind: 'present', status: 'draft' },
+      throwOn: { method: 'sendBroadcast', kind: 'retryable', subKind: 'server_5xx' },
+    });
+    failCount(first.deps);
+    await buildAudienceTick(first.deps as never, { broadcastId: BROADCAST_ID });
+    const second = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      resendBroadcastId: 'rb-draft-2',
+      probe: { kind: 'present', status: 'draft' },
+      throwOn: { method: 'sendBroadcast', kind: 'retryable', subKind: 'server_5xx' },
+    });
+    second.rec.audits.push(...first.rec.audits);
+    failCount(second.deps);
+
+    await buildAudienceTick(second.deps as never, { broadcastId: BROADCAST_ID });
+
+    const rows = second.rec.audits.filter((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable');
+    expect(rows.map((r) => r.payload['resendBroadcastId'])).toEqual(['rb-draft-1', 'rb-draft-2']);
+  });
+
+  // Round 4 — the row's own tx runs between the send's lease gate and `/send`,
+  // so a row actually written re-runs the gate: a lease lost in that window
+  // sends nothing.
+  it('a lease lost between the unverifiable row and the send sends nothing', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    failCount(deps);
+    (deps as { broadcastsRepo: Record<string, unknown> }).broadcastsRepo['checkDispatchLease'] = async () =>
+      rec.audits.some((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable') ? ('lost' as const) : ('held' as const);
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.audits.filter((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable')).toHaveLength(1);
+    expect(rec.sends).toHaveLength(0);
+  });
+
+  // Round 5 — the gate re-runs whenever the row's tx ran, written or not: a
+  // dedupe read that fails (a storage error, the send goes ahead) still spent
+  // time after the first gate, and a lease lost meanwhile must send nothing.
+  it('a failed dedupe read with the lease lost meanwhile sends nothing', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    failCount(deps);
+    let readFailed = false;
+    const repo = (deps as { broadcastsRepo: Record<string, unknown> }).broadcastsRepo;
+    repo['hasUnverifiableCountAuditInTx'] = async () => {
+      readFailed = true;
+      throw new Error('08006 connection failure');
+    };
+    repo['checkDispatchLease'] = async () => (readFailed ? ('lost' as const) : ('held' as const));
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(readFailed).toBe(true);
+    expect(rec.sends).toHaveLength(0);
+  });
+
+  // Round 4 — the adapter's own invariants arrive as a plain Error prefixed
+  // `f7AuditAdapter:` (`isAdapterInvariantError`), not only as
+  // `AuditPortInvariantError`. Either fails closed before the send.
+  it('an f7AuditAdapter-prefixed invariant on the unverifiable row is thrown before any send', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    failCount(deps);
+    const audit = (deps as { audit: { emit: (tx: unknown, e: { eventType: string }) => Promise<void> } }).audit;
+    const emit = audit.emit.bind(audit);
+    audit.emit = async (tx, e) => {
+      if (e.eventType === 'broadcast_resend_drift_check_unverifiable') {
+        throw new Error('f7AuditAdapter: tx is not bound to the tenant');
+      }
+      return emit(tx, e);
+    };
+
+    await expect(buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID })).rejects.toThrow(/^f7AuditAdapter:/);
+
+    expect(rec.sends).toHaveLength(0);
+  });
+
+  // Spec L-1 / reliability L4 — before the send, nothing has gone out, so a
+  // wiring bug fails closed: thrown, no `/send`, the row left `approved`.
+  it('(d) an AuditPortInvariantError on the unverifiable row is thrown before any send', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      auditThrowsOn: 'broadcast_resend_drift_check_unverifiable',
+      auditThrowKind: 'invariant',
+    });
+    failCount(deps);
+
+    await expect(buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID })).rejects.toBeInstanceOf(AuditPortInvariantError);
+
+    expect(rec.sends).toHaveLength(0);
+    expect(rec.transitions.map((t) => t.status)).not.toContain('sending');
+  });
+
+  // The legacy leg drew this line itself: a page it could not finish reading is
+  // not a FAILURE, so it got the metric and the warn but no append-only row.
+  it('a count Resend could not finish reading raises the metric but writes no unverifiable row', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      audienceContactCount: RECIPIENTS.length - 1,
+      audienceCountComplete: false,
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.sends).toHaveLength(1);
+    expect(rec.audits.map((a) => a.eventType)).not.toContain('broadcast_resend_drift_check_unverifiable');
   });
 
   /**
@@ -3985,6 +4289,63 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
     expect(rec.audiencesDeleted).toEqual([]);
     expect(rec.releases).toEqual([]);
     expect(rec.importsSubmitted).toEqual([]);
+  });
+
+  /**
+   * Spec 140 s4 (plan review, row 7) — a row the deleted legacy leg left behind
+   * at deploy: `approved`, good standing, carrying that leg's
+   * `resend_audience_id` (its own audience, filled by the per-contact push) and
+   * possibly its pre-send `resend_broadcast_id`, but no import columns. The
+   * import tick must not reuse that audience, whose contacts may be stale: it
+   * finishes the teardown and the next tick runs a fresh tick 1. This describes
+   * behaviour that already exists (the stale-audience path), so it passed the
+   * first time it ran; it is the characterisation the deletion relies on.
+   */
+  describe('a row the legacy leg left behind at deploy (spec 140 s4)', () => {
+    it('audience id only → audience_restarted: the audience is deleted (no broadcast to probe or delete), the column released, nothing imported', async () => {
+      const { deps, rec } = makeDeps({ resendAudienceId: 'aud-legacy', audienceImportId: null, audienceImportSubmittedAt: null });
+
+      const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+      expect(res).toEqual({ ok: true, value: { kind: 'audience_restarted' } });
+      expect(rec.gatewayCalls).toEqual(['deleteAudience']);
+      expect(rec.audiencesDeleted).toEqual(['aud-legacy']);
+      expect(rec.broadcastsDeleted).toEqual([]);
+      expect(rec.releases).toEqual([
+        { method: 'releaseResendAudience', expected: { resendAudienceId: 'aud-legacy', resendBroadcastId: null }, afterGatewayCalls: 1 },
+      ]);
+      expect(rec.importsSubmitted).toEqual([]);
+      expect(rec.sends).toEqual([]);
+      expect(rec.transitions).toEqual([]);
+    });
+
+    it('audience id + a draft broadcast id → audience_restarted: probed draft, the draft deleted, then the audience, then both columns released', async () => {
+      const { deps, rec } = makeDeps({
+        resendAudienceId: 'aud-legacy',
+        resendBroadcastId: 'rb-legacy',
+        audienceImportId: null,
+        audienceImportSubmittedAt: null,
+        probe: { kind: 'present', status: 'draft' },
+      });
+
+      const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+      expect(res).toEqual({ ok: true, value: { kind: 'audience_restarted' } });
+      expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcast', 'deleteAudience']);
+      expect(rec.broadcastsDeleted).toEqual(['rb-legacy']);
+      expect(rec.audiencesDeleted).toEqual(['aud-legacy']);
+      // No import columns, so no claim: straight to the deletes, then ONE release.
+      expect(rec.releases).toEqual([
+        {
+          method: 'releaseResendAudience',
+          expected: { resendAudienceId: 'aud-legacy', resendBroadcastId: 'rb-legacy' },
+          afterGatewayCalls: 3,
+        },
+      ]);
+      expect(rec.importsSubmitted).toEqual([]);
+      expect(rec.sends).toEqual([]);
+      expect(rec.transitions).toEqual([]);
+    });
   });
 
   it('that teardown with a NOT-FOUND broadcast id (re-probed) whose delete is REFUSED → it stops: contradictory evidence, both kept', async () => {

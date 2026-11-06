@@ -3,9 +3,11 @@
  * Spec 141 RS1 — every SDK-backed call the Broadcasts gateway makes, on the
  * wire, through the REAL `resend` SDK against a stubbed `fetch`: method, URL,
  * Idempotency-Key and JSON body, and how the reply is read. The raw-fetch
- * calls (`*Once`, contact imports, the global contact delete) bypass the SDK
- * and keep their own tests. Written on resend 4.8 (green by design); a bump
- * that changes any of these requests or readings turns it red.
+ * calls (`*Once`, contact imports) bypass the SDK and keep their own tests.
+ * Written on resend 4.8 (green by design); a bump that changes any of these
+ * requests or readings turns it red. Spec 140 s4 moved the calls to the
+ * Segments names (`segments.*`, `segmentId`, `contacts.segments.remove`); the
+ * URLs below are the ones step 0 measured (research.md, slice 4 addendum).
  *
  * The broadcast HTML is the chamber-branded wrapper (pinned by its own
  * baseline tests), so it is recorded here by length and a short hash only.
@@ -32,6 +34,8 @@ import { json, stubWire, type WireCall } from './_wire';
 // UUID-shaped, so its cases use a real-shaped id (every segment id Resend has
 // returned is one, research.md slice 3 step 0).
 const AUD = '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19';
+/** A second segment id, for the cases that read an already-deleted segment. */
+const AUD_GONE = '7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d';
 
 /** Spec 140 DT5 — a `listAudiences` deadline no page in these cases comes near. */
 const farDeadline = () => new Date(Date.now() + 10 * 60_000);
@@ -55,8 +59,8 @@ afterEach(() => {
 
 describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
   it('createAudience', async () => {
-    const calls = stubWire(() => json(201, { object: 'audience', id: 'aud_1', name: 'probe' }));
-    await expect(resendBroadcastsGateway.createAudience('probe')).resolves.toEqual({ audienceId: 'aud_1' });
+    const calls = stubWire(() => json(201, { object: 'audience', id: AUD, name: 'probe' }));
+    await expect(resendBroadcastsGateway.createAudience('probe')).resolves.toEqual({ audienceId: AUD });
     expect(calls).toMatchInlineSnapshot(`
       [
         {
@@ -73,62 +77,18 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     `);
   });
 
-  it('addContactsToAudience (one contact per call)', async () => {
-    const calls = stubWire(() => json(201, { object: 'contact', id: 'c_1' }));
-    await resendBroadcastsGateway.addContactsToAudience('aud_1', [
-      { emailLower: 'a@example.com', firstName: 'Ann', lastName: 'Lee' },
-      { emailLower: 'b@example.com' },
-    ]);
-    expect(calls).toMatchInlineSnapshot(`
-      [
-        {
-          "bearer": true,
-          "body": {
-            "email": "a@example.com",
-            "first_name": "Ann",
-            "last_name": "Lee",
-            "unsubscribed": false,
-          },
-          "contentType": "application/json",
-          "idempotencyKey": null,
-          "method": "POST",
-          "url": "https://api.resend.com/audiences/aud_1/contacts",
-        },
-        {
-          "bearer": true,
-          "body": {
-            "email": "b@example.com",
-            "unsubscribed": false,
-          },
-          "contentType": "application/json",
-          "idempotencyKey": null,
-          "method": "POST",
-          "url": "https://api.resend.com/audiences/aud_1/contacts",
-        },
-      ]
-    `);
-  });
-
   // Spec 140 s3 review round 1 (R1-A) — Resend matches a segment contact by its
   // exact case (MEASURED 5 Nov 2026), and the erasure detach sends the address
-  // lowercase. So both push paths send `toLowerCase()` of each address: the one
-  // the detach will send.
-  it('addContactsToAudience sends a mixed-case address lowercased', async () => {
-    const calls = stubWire(() => json(201, { object: 'contact', id: 'c_1' }));
-    await resendBroadcastsGateway.addContactsToAudience('aud_1', [{ emailLower: 'Mixed.Case@Example.com' }]);
-    expect(calls.map((c) => (c.body as { email?: string }).email)).toEqual(['mixed.case@example.com']);
-  });
-
+  // lowercase. So the import sends `toLowerCase()` of each address: the one the
+  // detach will send. (The per-contact push, the other path, went with the legacy
+  // leg in spec 140 s4.)
   it('createContactImport puts each address in the CSV lowercased', async () => {
     const csvs: string[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-        const file = (init?.body as FormData).get('file') as Blob;
-        csvs.push(await file.text());
-        return json(200, { object: 'contact_import', id: 'imp_1' });
-      }),
-    );
+    stubWire(async (_n, _input, init) => {
+      const file = (init?.body as FormData).get('file') as Blob;
+      csvs.push(await file.text());
+      return json(200, { object: 'contact_import', id: 'imp_1' });
+    });
     await expect(
       resendBroadcastsGateway.createContactImport(AUD, ['a@example.com', 'Mixed.Case@Example.com']),
     ).resolves.toEqual({ importId: 'imp_1' });
@@ -155,11 +115,11 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
         {
           "bearer": true,
           "body": {
-            "audience_id": "aud_1",
             "from": "SweCham <noreply@example.com>",
             "html": "<2019 chars 2af02727f09c>",
             "name": "SweCham — Hello",
             "reply_to": "office@example.com",
+            "segment_id": "aud_1",
             "subject": "Hello",
           },
           "contentType": "application/json",
@@ -225,7 +185,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
 
   it('getAudienceContactCount reads data length and has_more', async () => {
     const calls = stubWire(() => json(200, { object: 'list', has_more: false, data: [{ id: 'c_1' }, { id: 'c_2' }] }));
-    await expect(resendBroadcastsGateway.getAudienceContactCount('aud_1')).resolves.toMatchInlineSnapshot(`
+    await expect(resendBroadcastsGateway.getAudienceContactCount(AUD)).resolves.toMatchInlineSnapshot(`
       {
         "complete": true,
         "count": 2,
@@ -239,14 +199,17 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
           "contentType": "application/json",
           "idempotencyKey": null,
           "method": "GET",
-          "url": "https://api.resend.com/segments/aud_1/contacts",
+          "url": "https://api.resend.com/segments/0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19/contacts",
         },
       ]
     `);
   });
 
+  // Spec 140 s4 — the detach is `contacts.segments.remove`, the segment-scoped
+  // `DELETE /contacts/{email}/segments/{id}` (research.md slice 4 step 0 item 1,
+  // MEASURED 5 Nov 2026: `200 {"object":"contact_segment","deleted":true}`).
   it('removeContactFromAudience', async () => {
-    const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
+    const calls = stubWire(() => json(200, { object: 'contact_segment', deleted: true }));
     await expect(resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')).resolves.toMatchInlineSnapshot(`
       {
         "kind": "detached",
@@ -260,37 +223,96 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
           "contentType": "application/json",
           "idempotencyKey": null,
           "method": "DELETE",
-          "url": "https://api.resend.com/audiences/0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19/contacts/a@example.com",
+          "url": "https://api.resend.com/contacts/a@example.com/segments/0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19",
         },
       ]
     `);
   });
 
-  // Spec 140 DT4 (research.md slice 3 step 0.1, MEASURED 5 Nov 2026): the SDK
+  // Spec 140 s4 (research.md slice 4 step 0 item 1, MEASURED 5 Nov 2026): the SDK
   // puts the email in the path unencoded and as given; Resend reads the `+`
-  // literally and matches the address case-SENSITIVELY, answering 200
-  // `{deleted:true}` whether or not that exact address was in the segment, while
-  // the contact itself survives. So the gateway neither encodes nor re-cases it:
-  // the address it is given is lowercase because the erasure capture is
-  // lowercase and every push lowercases. An SDK bump that starts encoding turns
-  // this red.
+  // literally and matches the address case-SENSITIVELY, and the contact itself
+  // survives the detach. So the gateway neither encodes nor re-cases it: the
+  // address it is given is lowercase because the erasure capture is lowercase
+  // and the import lowercases. An SDK bump that starts encoding turns this red.
   it.each([
     ['a + address', 'delivered+x@resend.dev'],
     ['an uppercase address', 'DELIVERED.UP@resend.dev'],
-  ])('removeContactFromAudience sends %s literally and reads 200 as detached', async (_label, email) => {
-    const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
+  ])('removeContactFromAudience sends %s literally and reads 200 deleted:true as detached', async (_label, email) => {
+    const calls = stubWire(() => json(200, { object: 'contact_segment', deleted: true }));
     await expect(resendBroadcastsGateway.removeContactFromAudience(AUD, email)).resolves.toEqual({ kind: 'detached' });
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-      `DELETE https://api.resend.com/audiences/${AUD}/contacts/${email}`,
+      `DELETE https://api.resend.com/contacts/${email}/segments/${AUD}`,
     ]);
   });
 
   it('removeContactFromAudience accepts an uppercase-hex UUID (matched case-insensitively)', async () => {
-    const calls = stubWire(() => json(200, { object: 'contact', deleted: true }));
+    const calls = stubWire(() => json(200, { object: 'contact_segment', deleted: true }));
     await expect(resendBroadcastsGateway.removeContactFromAudience(AUD.toUpperCase(), 'a@example.com')).resolves.toEqual({
       kind: 'detached',
     });
     expect(calls).toHaveLength(1);
+  });
+
+  // Spec 140 s4 (research.md slice 4 step 0 items 1 and 4, MEASURED 5 Nov 2026):
+  // on this endpoint every no-op answered `404 not_found`, and only a membership
+  // that existed answered `200 deleted:true`. So a 404 is `already_absent`, which
+  // the erasure record counts apart from a detach. The bodies are the measured ones.
+  it.each([
+    ['a random segment', 'Audience not found'],
+    ['the wrong case of a stored address', 'Contact not found'],
+    ['a contact in no segment (a non-member)', "Audience not found in contact's audience list"],
+  ])('removeContactFromAudience reads a 404 for %s as already_absent, one request', async (_label, message) => {
+    const calls = stubWire(() => json(404, { statusCode: 404, name: 'not_found', message }));
+    await expect(resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')).resolves.toEqual({
+      kind: 'already_absent',
+    });
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `DELETE https://api.resend.com/contacts/a@example.com/segments/${AUD}`,
+    ]);
+  });
+
+  // PR #756 review round 1 (code-review #4) — a 410 Gone is "already gone" as a
+  // 404 is, on this call as on its siblings `deleteAudience` / `deleteBroadcast`
+  // (`isProviderGone`). Read as `permanent`, the erasure record would count a
+  // member's detach FAILED and send an operator to remediate a no-op.
+  it('removeContactFromAudience reads a JSON 410 Gone as already_absent, one request', async () => {
+    const calls = stubWire(() => json(410, { statusCode: 410, name: 'gone', message: 'Segment gone' }));
+    await expect(resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')).resolves.toEqual({
+      kind: 'already_absent',
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  // Spec 140 s4 — `detached` reaches an append-only Art. 30 record as a removal,
+  // so it needs Resend's own `deleted: true`. Never measured, so read
+  // conservatively: a 200 without it is not a detach. It is a permanent failure
+  // the erasure record counts as failed (remediated by hand), never a removal.
+  it.each([
+    ['deleted: false', { object: 'contact_segment', deleted: false }],
+    ['no deleted field', { object: 'contact_segment' }],
+  ])('removeContactFromAudience: a 200 with %s is not a detach (permanent, one request)', async (_label, body) => {
+    const calls = stubWire(() => json(200, body));
+    await expect(resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')).rejects.toMatchObject({
+      name: 'GatewayThrowable',
+      kind: 'permanent',
+      code: 'detach_unconfirmed',
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  // Spec 140 s4 plan review — the detach passes Resend's status and name only
+  // into the classification, never its message: the thrown reason reaches log
+  // lines, and a later wording change could put the address into it.
+  it('removeContactFromAudience: a Resend error message carrying the address never reaches the thrown reason', async () => {
+    stubWire(() => json(422, { statusCode: 422, name: 'validation_error', message: 'Invalid contact a@example.com' }));
+    const thrown = await resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com').then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(thrown).toMatchObject({ name: 'GatewayThrowable', kind: 'permanent', code: 'validation_error' });
+    expect((thrown as Error).message).not.toContain('a@example.com');
+    expect(JSON.stringify(thrown)).not.toContain('a@example.com');
   });
 
   it('listAudiences', async () => {
@@ -406,18 +428,12 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     });
   });
 
-  it('addContactsToAudience with no contacts is a no-op, even for a blank id (no request)', async () => {
-    const calls = stubWire(() => json(201, { object: 'contact', id: 'c_1' }));
-    await expect(resendBroadcastsGateway.addContactsToAudience('', [])).resolves.toBeUndefined();
-    expect(calls).toHaveLength(0);
-  });
-
   it('deleteAudience, and a 404 counts as already gone', async () => {
     const calls = stubWire((n) =>
-      n === 1 ? json(200, { object: 'audience', id: 'aud_1', deleted: true }) : json(404, { statusCode: 404, name: 'not_found', message: 'Audience not found' }),
+      n === 1 ? json(200, { object: 'segment', id: AUD, deleted: true }) : json(404, { statusCode: 404, name: 'not_found', message: 'Audience not found' }),
     );
-    await resendBroadcastsGateway.deleteAudience('aud_1');
-    await resendBroadcastsGateway.deleteAudience('aud_gone');
+    await resendBroadcastsGateway.deleteAudience(AUD);
+    await resendBroadcastsGateway.deleteAudience(AUD_GONE);
     expect(calls).toMatchInlineSnapshot(`
       [
         {
@@ -426,7 +442,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
           "contentType": "application/json",
           "idempotencyKey": null,
           "method": "DELETE",
-          "url": "https://api.resend.com/segments/aud_1",
+          "url": "https://api.resend.com/segments/0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19",
         },
         {
           "bearer": true,
@@ -434,7 +450,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
           "contentType": "application/json",
           "idempotencyKey": null,
           "method": "DELETE",
-          "url": "https://api.resend.com/segments/aud_gone",
+          "url": "https://api.resend.com/segments/7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d",
         },
       ]
     `);
@@ -457,13 +473,13 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       const calls = stubWire((n) =>
         n === 1 ? lastAudience() : json(404, { statusCode: 404, name: 'not_found', message: 'Segment not found' }),
       );
-      await expect(resendBroadcastsGateway.deleteAudience('aud_gone')).resolves.toBeUndefined();
+      await expect(resendBroadcastsGateway.deleteAudience(AUD_GONE)).resolves.toBeUndefined();
       expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-        'DELETE https://api.resend.com/segments/aud_gone',
-        'GET https://api.resend.com/segments/aud_gone',
+        `DELETE https://api.resend.com/segments/${AUD_GONE}`,
+        `GET https://api.resend.com/segments/${AUD_GONE}`,
       ]);
       expect(info).toHaveBeenCalledWith(
-        { audienceId: 'aud_gone', via: 'probe_after_403' },
+        { audienceId: AUD_GONE, via: 'probe_after_403' },
         'resend.broadcasts.audience_already_absent',
       );
       info.mockRestore();
@@ -471,9 +487,9 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
 
     it('a 403 whose probe finds the audience throws the DELETE classification (permanent), with no retry', async () => {
       const calls = stubWire((n) =>
-        n === 1 ? lastAudience() : json(200, { object: 'segment', id: 'aud_1', name: 'General' }),
+        n === 1 ? lastAudience() : json(200, { object: 'segment', id: AUD, name: 'General' }),
       );
-      await expect(resendBroadcastsGateway.deleteAudience('aud_1')).rejects.toMatchObject({
+      await expect(resendBroadcastsGateway.deleteAudience(AUD)).rejects.toMatchObject({
         name: 'GatewayThrowable',
         kind: 'permanent',
         code: 'validation_error',
@@ -485,7 +501,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       const calls = stubWire((n) =>
         n === 1 ? lastAudience() : json(503, { statusCode: 503, name: 'internal_server_error', message: 'down' }),
       );
-      await expect(resendBroadcastsGateway.deleteAudience('aud_1')).rejects.toMatchObject({
+      await expect(resendBroadcastsGateway.deleteAudience(AUD)).rejects.toMatchObject({
         name: 'GatewayThrowable',
         kind: 'permanent',
         code: 'validation_error',
@@ -494,26 +510,21 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     });
 
     it('a 403 whose probe throws (network) throws the DELETE classification', async () => {
-      let n = 0;
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async () => {
-          n += 1;
-          if (n === 1) return lastAudience();
-          throw new TypeError('fetch failed');
-        }),
-      );
-      await expect(resendBroadcastsGateway.deleteAudience('aud_1')).rejects.toMatchObject({
+      const calls = stubWire((n) => {
+        if (n === 1) return lastAudience();
+        throw new TypeError('fetch failed');
+      });
+      await expect(resendBroadcastsGateway.deleteAudience(AUD)).rejects.toMatchObject({
         name: 'GatewayThrowable',
         kind: 'permanent',
         code: 'validation_error',
       });
-      expect(n).toBe(2);
+      expect(calls).toHaveLength(2);
     });
 
     it('a 404 on the DELETE itself still needs no probe (one request)', async () => {
       const calls = stubWire(() => json(404, { statusCode: 404, name: 'not_found', message: 'Segment not found' }));
-      await expect(resendBroadcastsGateway.deleteAudience('aud_gone')).resolves.toBeUndefined();
+      await expect(resendBroadcastsGateway.deleteAudience(AUD_GONE)).resolves.toBeUndefined();
       expect(calls).toHaveLength(1);
     });
   });
@@ -572,11 +583,12 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     expect(calls).toHaveLength(1);
   });
 
-  // Review round 1 (spec 141): on 6.35 a falsy `audienceId` makes the SDK
-  // drop the audience from the path — `contacts.remove` becomes
-  // `DELETE /contacts/{email}`, an ACCOUNT-WIDE delete shared by every tenant,
-  // and `contacts.list` becomes `GET /contacts`. The gateway refuses an empty id
-  // (or an empty email) before any request.
+  // Review round 1 (spec 141): on 6.35 a falsy segment id makes the SDK drop it
+  // from the path — `contacts.list` becomes `GET /contacts`, the whole account,
+  // and the old `contacts.remove` became `DELETE /contacts/{email}`, an
+  // ACCOUNT-WIDE delete (spec 140 s4 moved the detach to
+  // `contacts.segments.remove`). The gateway refuses an empty id (or an empty
+  // email) before any request.
   describe('an empty id never reaches the SDK', () => {
     it.each([
       ['removeContactFromAudience, empty audience', () => resendBroadcastsGateway.removeContactFromAudience('', 'a@example.com')],
@@ -586,7 +598,6 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       ['removeContactFromAudience, undefined audience', () =>
         resendBroadcastsGateway.removeContactFromAudience(undefined as unknown as string, 'a@example.com')],
       ['removeContactFromAudience, empty email', () => resendBroadcastsGateway.removeContactFromAudience(AUD, '')],
-      ['addContactsToAudience', () => resendBroadcastsGateway.addContactsToAudience('', [{ emailLower: 'a@example.com' }])],
       ['getAudienceContactCount', () => resendBroadcastsGateway.getAudienceContactCount('')],
       ['deleteAudience', () => resendBroadcastsGateway.deleteAudience('')],
       ['createBroadcast', () =>
@@ -604,7 +615,6 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       ['sendBroadcast', () => resendBroadcastsGateway.sendBroadcast('', 'idem-key-1')],
       ['retrieveBroadcast', () => resendBroadcastsGateway.retrieveBroadcast('')],
       ['deleteBroadcast', () => resendBroadcastsGateway.deleteBroadcast('')],
-      ['deleteContactGlobally', () => resendBroadcastsGateway.deleteContactGlobally('')],
       ['createContactImport', () => resendBroadcastsGateway.createContactImport('', ['a@example.com'])],
       ['getContactImport', () => resendBroadcastsGateway.getContactImport('')],
       ['a null email from a nullable column', () =>
@@ -633,6 +643,95 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       // Spec 140 s3 review round 1 — the message reaches log lines: no id in it.
       expect((thrown as Error).message).not.toContain(audienceId.trim());
       expect(calls).toHaveLength(0);
+    });
+
+    // Spec 140 s4 plan review (sec L5) — the same guard on the two other calls
+    // that put a segment id into the path: a falsy id makes `contacts.list` list
+    // the WHOLE account (`GET /contacts`), and `segments.remove` / `segments.get`
+    // put the id into the path unencoded.
+    it.each([
+      ['getAudienceContactCount, a legacy-looking id', () => resendBroadcastsGateway.getAudienceContactCount('aud_1')],
+      ['getAudienceContactCount, a path segment', () => resendBroadcastsGateway.getAudienceContactCount(`${AUD}/x`)],
+    ])('%s is refused as invalid_identifier, with no request', async (_name, run) => {
+      const calls = stubWire(() => json(200, { object: 'list', has_more: false, data: [] }));
+      await expect((run as () => Promise<unknown>)()).rejects.toMatchObject({
+        name: 'GatewayThrowable',
+        kind: 'permanent',
+        code: 'invalid_identifier',
+      });
+      expect(calls).toHaveLength(0);
+    });
+
+    // PR #756 review rounds 2 and 3 (code-review #3, #5, #6) — `deleteAudience`
+    // on an id with NO UUID in it at all: no such segment can exist at Resend
+    // (every id it returns is a UUID), so the delete's goal is met. It resolves as
+    // already gone with NO request and a warn naming the id's class, never the id,
+    // instead of a permanent `invalid_identifier` the cleanup cron would hit every
+    // tick forever (dev litter such as `aud_fake_N`, `aud-legacy-…`). The detach
+    // and the count keep refusing above: an id-less call there is account-wide.
+    it.each([
+      ['a legacy-looking id', 'aud_1', 'aud_prefixed'],
+      ['old fake-gateway litter', 'aud_fake_3', 'aud_prefixed'],
+      ['old legacy-row litter', 'aud-legacy-7', 'not_a_segment_id'],
+    ])('deleteAudience on %s resolves as already gone, with no request', async (_name, audienceId, idClass) => {
+      const warn = vi.spyOn(logger, 'warn');
+      const calls = stubWire(() => json(200, { deleted: true }));
+      await expect(resendBroadcastsGateway.deleteAudience(audienceId)).resolves.toBeUndefined();
+      expect(calls).toHaveLength(0);
+      const line = warn.mock.calls.find((c) => c[1] === 'resend.broadcasts.audience_id_not_a_segment');
+      expect(line?.[0]).toEqual({ idClass });
+      warn.mockRestore();
+    });
+
+    // Round 3 (code-review #5, #6) — an id that CONTAINS a UUID is a real segment
+    // id decorated or padded somewhere upstream: that is a bug to see, not litter
+    // to wave through, so it stays a loud permanent `invalid_identifier`.
+    it.each([
+      ['a path segment around a real id', `../contacts/${AUD}`],
+      ['a padded real id', ` ${AUD} `],
+      ['a prefixed real id', `aud_${AUD}`],
+      // Round 4 — the `aud-${uuid}` fixture shape (`aud-live-<uuid>` in the
+      // integration suites): a UUID is in it, so it is refused, deliberately.
+      ['the aud-live-<uuid> fixture shape', `aud-live-${AUD}`],
+    ])('deleteAudience on %s is refused as invalid_identifier, with no request', async (_name, audienceId) => {
+      const calls = stubWire(() => json(200, { deleted: true }));
+      await expect(resendBroadcastsGateway.deleteAudience(audienceId)).rejects.toMatchObject({
+        name: 'GatewayThrowable',
+        kind: 'permanent',
+        code: 'invalid_identifier',
+      });
+      expect(calls).toHaveLength(0);
+    });
+
+    // Round 3 (reliability L3) — the id Resend RETURNED from a create is checked
+    // too, before it is returned and persisted: a non-UUID id would otherwise be
+    // stored and later refused by every call that puts it in a path.
+    it('createAudience refuses a non-UUID id in Resend\u2019s answer as invalid_identifier, after a warn naming its class', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+      stubWire(() => json(201, { object: 'audience', id: 'aud_1', name: 'probe' }));
+      await expect(resendBroadcastsGateway.createAudience('probe')).rejects.toMatchObject({
+        name: 'GatewayThrowable',
+        kind: 'permanent',
+        code: 'invalid_identifier',
+      });
+      // Rounds 4 and 5 — a warn BEFORE the throw, with the id's class and the id
+      // itself: a segment id is not personal data (`audience_created` logs it),
+      // and an operator needs it to delete the segment Resend created by hand.
+      const line = warn.mock.calls.find((c) => c[1] === 'resend.broadcasts.created_audience_id_not_a_segment');
+      expect(line?.[0]).toEqual({ idClass: 'aud_prefixed', audienceId: 'aud_1' });
+      warn.mockRestore();
+    });
+
+    // Round 5 — a non-string id in the answer is the same classified refusal, not
+    // a TypeError the retry wrapper would read as transient.
+    it('createAudience refuses a non-string id in Resend\u2019s answer as invalid_identifier', async () => {
+      const calls = stubWire(() => json(201, { object: 'audience', id: 12345, name: 'probe' }));
+      await expect(resendBroadcastsGateway.createAudience('probe')).rejects.toMatchObject({
+        name: 'GatewayThrowable',
+        kind: 'permanent',
+        code: 'invalid_identifier',
+      });
+      expect(calls).toHaveLength(1);
     });
 
     // Spec 140 s3 review round 1 (R1-K) — the SDK puts the email in the URL path
@@ -704,9 +803,9 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
 
   it('a network failure that never clears is retryable, tagged network', async () => {
     vi.useFakeTimers();
-    vi.stubGlobal('fetch', vi.fn(async () => {
+    stubWire(() => {
       throw new TypeError('fetch failed');
-    }));
+    });
     const done = resendBroadcastsGateway.createAudience('probe').then(
       () => null,
       (e: { kind?: string; subKind?: string }) => ({ kind: e.kind, subKind: e.subKind }),
@@ -719,18 +818,13 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
   // failure is pinned on a DELETE.
   it('a network failure is retryable (network)', async () => {
     vi.useFakeTimers();
-    let n = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        n += 1;
-        if (n === 1) throw new TypeError('fetch failed');
-        return json(200, { object: 'segment', id: 'aud_net', deleted: true });
-      }),
-    );
-    const done = resendBroadcastsGateway.deleteAudience('aud_net');
+    const calls = stubWire((n) => {
+      if (n === 1) throw new TypeError('fetch failed');
+      return json(200, { object: 'segment', id: AUD, deleted: true });
+    });
+    const done = resendBroadcastsGateway.deleteAudience(AUD);
     await vi.advanceTimersByTimeAsync(40_000);
-    expect({ value: await done, attempts: n }).toMatchInlineSnapshot(`
+    expect({ value: await done, attempts: calls.length }).toMatchInlineSnapshot(`
       {
         "attempts": 2,
         "value": undefined,
@@ -750,12 +844,12 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       new Response(`<html>${status}</html>`, { status, headers: { 'content-type': 'text/html' } });
     it.each([
       ['retrieveBroadcast, HTML 404', 404, () => resendBroadcastsGateway.retrieveBroadcast('bc_1'), 4],
-      ['deleteAudience, HTML 404', 404, () => resendBroadcastsGateway.deleteAudience('aud_1'), 4],
+      ['deleteAudience, HTML 404', 404, () => resendBroadcastsGateway.deleteAudience(AUD), 4],
       ['deleteBroadcast, HTML 410', 410, () => resendBroadcastsGateway.deleteBroadcast('bc_1'), 4],
       ['removeContactFromAudience, HTML 404 (the erasure path)', 404, () =>
         resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com'), 4],
-      ['addContactsToAudience, HTML 404', 404, () =>
-        resendBroadcastsGateway.addContactsToAudience('aud_1', [{ emailLower: 'a@example.com' }]), 4],
+      ['removeContactFromAudience, HTML 410 (the erasure path)', 410, () =>
+        resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com'), 4],
       ['sendBroadcast, HTML 409', 409, () => resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'), 4],
       ['createAudience, HTML 413', 413, () => resendBroadcastsGateway.createAudience('probe'), 1],
       ['createAudience, HTML 429', 429, () => resendBroadcastsGateway.createAudience('probe'), 1],
@@ -790,27 +884,12 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       stubWire(() => json(404, { statusCode: 404, name: 'not_found', message: 'Broadcast not found' }));
       await expect(run()).resolves.toEqual(expected);
     });
-    it('deleteContactGlobally, HTML 404 is retried, not gone', async () => {
-      vi.useFakeTimers();
-      const calls = stubWire(html(404));
-      const done = resendBroadcastsGateway.deleteContactGlobally('a@example.com').then(
-        () => ({ outcome: 'resolved' }),
-        (e: { kind?: string }) => ({ outcome: e.kind ?? 'threw' }),
-      );
-      await vi.advanceTimersByTimeAsync(40_000);
-      expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'retryable', attempts: 4 });
-    });
     it('createContactImport, a raw non-JSON 413 stays permanent (only 404 / 410 need Resend\'s JSON)', async () => {
       const calls = stubWire(html(413));
       await expect(resendBroadcastsGateway.createContactImport('aud_1', ['a@example.com'])).rejects.toMatchObject({
         kind: 'permanent',
       });
       expect(calls).toHaveLength(1);
-    });
-
-    it('deleteContactGlobally, a real JSON 404 is still gone', async () => {
-      stubWire(() => json(404, { statusCode: 404, name: 'not_found', message: 'Contact not found' }));
-      await expect(resendBroadcastsGateway.deleteContactGlobally('a@example.com')).resolves.toBeUndefined();
     });
 
     it('removeContactFromAudience, a real JSON 404 is still already absent', async () => {
@@ -860,14 +939,13 @@ describe('Broadcasts gateway bounded calls on the wire (spec 140 s2a)', () => {
 
   it.each([
     ['createAudience', () => resendBroadcastsGateway.createAudience('probe')],
-    ['addContactsToAudience', () => resendBroadcastsGateway.addContactsToAudience('aud_1', [{ emailLower: 'a@example.com' }])],
     ['createBroadcast', () => resendBroadcastsGateway.createBroadcast(input)],
     ['sendBroadcast', () => resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1')],
-    ['getAudienceContactCount', () => resendBroadcastsGateway.getAudienceContactCount('aud_1')],
+    ['getAudienceContactCount', () => resendBroadcastsGateway.getAudienceContactCount(AUD)],
     ['retrieveBroadcast', () => resendBroadcastsGateway.retrieveBroadcast('bc_1')],
     ['removeContactFromAudience', () => resendBroadcastsGateway.removeContactFromAudience(AUD, 'a@example.com')],
     ['listAudiences', () => resendBroadcastsGateway.listAudiences({ deadlineAt: farDeadline() })],
-    ['deleteAudience', () => resendBroadcastsGateway.deleteAudience('aud_1')],
+    ['deleteAudience', () => resendBroadcastsGateway.deleteAudience(AUD)],
     ['deleteBroadcast', () => resendBroadcastsGateway.deleteBroadcast('bc_1')],
   ])('%s: the signal reaches fetch', async (_name, run) => {
     stubWire(() => json(200, { object: 'list', id: 'x_1', has_more: false, data: [] }));

@@ -47,7 +47,7 @@ import type {
  * prefix fallback can be deleted in F7.2 once all consumers have
  * adopted the tagged class.
  */
-function isAdapterInvariantError(e: unknown): boolean {
+export function isAdapterInvariantError(e: unknown): boolean {
   if (e instanceof AuditPortInvariantError) return true;
   return (
     e instanceof Error &&

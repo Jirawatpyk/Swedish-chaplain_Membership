@@ -19,13 +19,14 @@ import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-uns
 import { rfc5321EmailValidator } from './email-validator/rfc5321-email-validator';
 import { eblastNotificationOutbox, emailTransactionalBridge } from './email-transactional-bridge';
 import { membersBridge } from './members-bridge';
+import { makeTickMemoizedMembersBridge } from './tick-memoized-members-bridge';
 import { membershipAccessBridge } from './membership-access-bridge';
 import { plansBridge } from './plans-bridge';
 import { eventAttendeesBridge } from './event-attendees-bridge';
 import { f7AuditAdapter } from './audit-adapter';
 import { broadcastsRateLimiter } from './rate-limiter';
 import { dompurifySanitizer } from './sanitizer/dompurify-sanitizer';
-import { legacyResendBroadcastsGateway, resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
+import { resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
 import { resendBroadcastsWebhookVerifier } from './resend/resend-broadcasts-webhook-verifier';
 import { makeDrizzleBroadcastDeliveriesRepo } from './db/drizzle-broadcast-deliveries-repo';
 import { unsubscribeTokenSigner } from './unsubscribe-token/hmac-signer';
@@ -37,11 +38,6 @@ import type { BroadcastApprovalCounter } from '../application/ports/broadcast-ap
 import type { ClockPort } from '../application/ports/clock-port';
 import type { AudienceMode } from '../domain/audience-mode';
 import type { ResolveSegmentDeps } from '../application/use-cases/resolve-segment-recipients';
-import {
-  audienceCeiling,
-  DELIVERABLE_RECIPIENTS_PER_TICK,
-} from '../domain/audience-ceiling';
-import { isF7ImportAudienceEnabled } from './feature-flags';
 import { err, ok } from '@/lib/result';
 import { recipientSegmentFromPersisted } from '../domain/recipient-segment';
 import { asEmailLower, unsafeBrandEmailLower } from '../domain/value-objects/email-lower';
@@ -49,7 +45,6 @@ import { asBroadcastId } from '../domain/broadcast';
 import { unsubscribeRecipient } from '../application/use-cases/unsubscribe-recipient';
 import { runInTenant } from '@/lib/db';
 import { resolveSegmentRecipients } from '../application/use-cases/resolve-segment-recipients';
-import type { MembersBridgePort } from '../application/ports/members-bridge-port';
 import type { BuildAudienceTickDeps } from '../application/use-cases/build-audience-tick';
 import type { TickBudget } from '../application/use-cases/_dispatch-lease';
 import type { Broadcast } from '../domain/broadcast';
@@ -66,7 +61,6 @@ import type { CancelBroadcastDeps } from '../application/use-cases/cancel-broadc
 import type { MarketingDirectoryPort } from '../application/ports/marketing-directory-port';
 import type { ProxySubmitBroadcastDeps } from '../application/use-cases/proxy-submit-broadcast';
 import type { ClearHaltDeps } from '../application/use-cases/clear-halt';
-import type { DispatchScheduledBroadcastDeps } from '../application/use-cases/dispatch-scheduled-broadcast';
 import type { PruneExpiredDraftsDeps } from '../application/use-cases/prune-expired-drafts';
 import type { SweepExpiredBroadcastsDeps } from '../application/use-cases/sweep-expired-broadcasts';
 import type { MarkOwnerImagesRemovedDeps } from '../application/use-cases/_mark-owner-images-removed';
@@ -152,101 +146,24 @@ export function currentAudienceMode(): AudienceMode {
 }
 
 /**
- * 108 PR-C T085 (FR-042) — the CONFIGURED ceiling, i.e. what the flags say the
- * system would accept. Since T095 (2026-09-08) it is no longer what any caller
- * compares against: they all read `currentAudienceCeiling()` below.
+ * The ONE audience ceiling (FR-041 / FR-042): every call site — the compose
+ * count, submit and the import leg's dispatch resolve — compares against this
+ * function, so the estimate a member sees at compose is the number that
+ * decides the send. Every i18n string interpolates `{ceiling, number}`, so the
+ * copy follows in all three locales with no key changes.
  *
- * It has **no reader outside this file** — the two batch crons that used to
- * read it were deleted in `ca51f59a1`. It is kept and exported anyway because
- * its test pins it as a column distinct from the enforced value; see the
- * docblock on `currentAudienceCeiling()` for why collapsing them would make
- * the clamp assertions vacuous.
+ * Spec 140 s4 (DR3): it is `BROADCAST_AUDIENCE_CEILING` (default 900; the
+ * docblock on the variable in `env.ts` says what raising it needs), and no
+ * flag moves it.
  *
- * Value: 5,000 unless BOTH `FEATURE_F7_IMPORT_AUDIENCE` AND the 1:N audience
- * flag are ON, then 50,000. Read per call, so a flag flip takes effect on the
- * next request/tick.
- *
- * Round 3 finding 3-4 — this said "the F7.1a batching path", naming
- * `FEATURE_F71A_US1_PAGINATION`. That WAS the gate until `ca51f59a1` deleted
- * the batch path; the code below has read `isF7ImportAudienceEnabled()` since,
- * and the prose did not follow. A live-Neon test restated the same stale rule
- * and was RED under the dev/prod flag configuration.
- *
- * Review H-2 (2026-09-07): the wide ceiling was raised FOR the 1:N audience,
- * so it moves WITH `FEATURE_CONTACT_MARKETING_RECIPIENTS`. Gating on the
- * batching flag alone would have changed prod on deploy with the 108 flag
- * OFF — `FEATURE_F71A_US1_PAGINATION` is already ON there — accepting
- * audiences of 5,001–50,000 that the pre-branch `AUDIENCE_HARD_CAP` refused,
- * opening the never-exercised split/batch path, and changing every compose
- * page's copy to "up to 50,000". With the 108 flag OFF this is byte-for-byte
- * the old 5,000. Pinned by `broadcasts-deps-audience.test.ts` against an
- * explicit flag matrix (never against itself).
- */
-export function configuredAudienceCeiling(): number {
-  return audienceCeiling(
-    isF7ImportAudienceEnabled() && env.features.contactMarketingRecipients,
-  );
-}
-
-/**
- * The ceiling every SINGLE-TICK call site actually compares against.
- *
- * T095 (2026-09-08) separated two numbers that had been conflated.
- * `configuredAudienceCeiling()` is the flag decision — 5,000, or 50,000 when
- * the batching path and the 1:N audience are both on — and it stays pinned on
- * its own so an inverted flag expression still fails a test (the H-2 guard
- * above). `DELIVERABLE_RECIPIENTS_PER_TICK` is the measured bound of the
- * serial Resend push (derivation: `research.md` § R9, CORRECTED block).
- *
- * They were never the same number, and the gap was the bug: a broadcast
- * between the two passed submit and then could not be delivered by any path,
- * sitting in `approved` until `broadcasts_approved_overdue_count` noticed
- * about ninety minutes later.
- *
- * **The clamp is conditional on the IMPORT flag, and it is a tightening.**
- * Phase 9b's split/batch model is gone — `ca51f59a1` deleted both crons and
- * `SPLIT_THRESHOLD_RECIPIENTS` with them. What replaced it inverts the
- * argument: the serial per-contact loop is the thing with a per-tick capacity,
- * and the import removes it, because one multipart upload carries the whole
- * CSV in a single size-independent call.
- *
- *   - import OFF (today's default, and prod's rollback position) → the legacy
- *     loop runs, so the measured single-tick bound is real and this clamps to
- *     it. Above ~500 the answer is a refusal at submit.
- *   - import ON  → no per-tick capacity to clamp against; accept what the
- *     flags configure. A growing chamber's headcount is then a Resend plan
- *     decision, not a code change.
- *
- * **STATE THE DELTA AGAINST `origin/main`, NOT AGAINST THIS BRANCH.** `main`
- * has no clamp at all — `currentAudienceCeiling()` there is a bare
- * `audienceCeiling(...)`. So on merge, with the import flag absent and
- * therefore false, the accepted ceiling moves **5,000 → 500, unflagged**.
- * That is deliberate and recorded with its reasoning in
- * `specs/108-contact-recipient-rules/reviews/cutover.md` § 5: audiences of
- * 501–5,000 are accepted today and *already fail silently*, because 300 s of
- * the serial loop cannot drain them (measured 2.08 req/s ⇒ ~623/tick). The
- * refusal replaces a silent non-delivery with a legible error. Do not "restore"
- * 5,000 to avoid a behaviour change without reading § 5 first.
- *
- * `configuredAudienceCeiling()` stays exported on its own even though nothing
- * outside this file reads it any more. That is not dead code kept by accident:
- * `broadcasts-deps-audience.test.ts` asserts `configured` and `enforced` as
- * SEPARATE columns, and rows where they differ (5,000 vs 500) are what keep an
- * inverted flag expression failing. Collapse them and the clamp assertions go
- * vacuously green — the H-2 guard above.
- *
- * FR-042 still holds: every call site — compose count, submit, dispatch —
- * compares against this one function, and every i18n string interpolates
- * `{ceiling, number}`, so the copy follows in all three locales with no key
- * changes.
- *
- * Note this is the ACCEPT bound only, and the estimate that routed a row was
- * frozen at submit, so it can be days stale by the time a tick reads it.
+ * Read per call so this module holds no copy of its own; `env` memoises its
+ * parse, so a change lands on the next deploy / cold start. Note this is the
+ * ACCEPT bound only, and the estimate that routed a row was frozen at submit,
+ * so it can be days stale by the time a tick reads it: lowering the value
+ * fails an `approved` row above it at its next tick.
  */
 export function currentAudienceCeiling(): number {
-  return isF7ImportAudienceEnabled()
-    ? configuredAudienceCeiling()
-    : Math.min(configuredAudienceCeiling(), DELIVERABLE_RECIPIENTS_PER_TICK);
+  return env.broadcasts.audienceCeiling;
 }
 
 /**
@@ -445,92 +362,6 @@ export function makeClearHaltDeps(tenantId: string): ClearHaltDeps {
     membersBridge,
     audit: f7AuditAdapter,
     clock: systemClock,
-  };
-}
-
-/**
- * Cron worker composition root. Wires the live Resend Broadcasts SDK
- * adapter.
- *
- * `fromEmail` is sourced from `env.broadcasts.fromEmail` (zod-validated
- * at boot — refuses IANA reserved TLDs per review C1 — 2026-04-30) so
- * this factory cannot accidentally dispatch from a placeholder address.
- *
- * `tenantDisplayName` + `locale` are resolved per-call via the F7
- * route helpers (no per-tenant settings table for support email yet —
- * F12 scope). MVP: locale defaults to the static tenant default
- * resolved by `tenantDefaultLocaleFor(...)` below.
- *
- * `brandChrome` is NOT wired here: its adapter lives in `src/lib` (it reads
- * the invoicing logo too), so the cron route adds it and the type makes that
- * the route's obligation rather than an optional it can forget.
- */
-export async function makeDispatchScheduledBroadcastDeps(
-  tenantId: string,
-): Promise<Omit<DispatchScheduledBroadcastDeps, 'brandChrome'>> {
-  const tenant = asTenantContext(tenantId);
-  const { resolveTenantDisplayName } = await import(
-    '@/lib/broadcasts-route-helpers'
-  );
-  // Best-effort: a tenant-settings outage MUST NOT wedge the cron loop
-  // in `approved` indefinitely (the row would never reach the use-case
-  // body and so the `broadcast_failed_to_dispatch` audit would never
-  // fire). Fall back to the tenant id as a degraded display name so
-  // dispatch still proceeds with an observable signal.
-  let tenantDisplayName: string;
-  try {
-    tenantDisplayName = await resolveTenantDisplayName(tenantId);
-  } catch (e) {
-    logger.error(
-      // FINAL round H-3 sweep: this is a DB read, so the throw can be a
-      // `NeonDbError` carrying the statement and its bindings. `errKind` keeps
-      // the class and drops the provider's free text.
-      { err: errKind(e), tenantId },
-      'broadcast_dispatch_tenant_displayname_lookup_failed',
-    );
-    tenantDisplayName = tenantId;
-  }
-  return {
-    tenant,
-    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
-    // Spec 140 s2c — the orphaned Resend id record (migration 0325).
-    orphans: makeDrizzleBroadcastOrphansRepo(tenantId),
-    // Spec 140 s2a review round 2 (CR#2): the legacy leg's createBroadcast
-    // retries a 5xx inside the budget. Deleted with the leg in slice 4.
-    broadcastsGateway: legacyResendBroadcastsGateway,
-    membersBridge,
-    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
-    eventAttendees: eventAttendeesBridge,
-    audienceMode: currentAudienceMode(),
-    audienceCeiling: currentAudienceCeiling(),
-    // Round 4 F13 — an orphaned comment was here, describing a DELIVERY bound
-    // that "hands a large audience to the batch path rather than pushing it and
-    // dying at `maxDuration`". `ca51f59a1` deleted the batch path and the
-    // `deliverablePerTick` dep it annotated; the comment stayed and drifted onto
-    // `audit:`, which it has nothing to do with. There is one ceiling now
-    // (`currentAudienceCeiling()`, above) and an audience above it is refused,
-    // not split.
-    audit: f7AuditAdapter,
-    clock: systemClock,
-    fromEmail: env.broadcasts.fromEmail,
-    tenantDisplayName,
-    locale: tenantDefaultLocaleFor(tenantId),
-    // Phase 8 Slice B (T171 / AS5) — used to compare originating
-    // member's CURRENT plan vs the snapshot at submit time, emitting
-    // `broadcast_sent_with_expired_member_plan` audit on mismatch.
-    plansBridge,
-    // Phase 8 Slice E (FR-021 / AS2) — used to enqueue the dispatch-
-    // failure transactional notification when the 1h retry budget is
-    // exhausted OR a permanent failure transitions the row to
-    // failed_to_dispatch. Routes through F4 outbox dispatcher's
-    // `broadcast_failed_to_dispatch_notification` render branch.
-    emailTransactional: emailTransactionalBridge,
-    // F119 PR-A — the send-time standing reads. The cron REPLACES
-    // `membersBridge` here with its per-tick memo (it does the same for the
-    // top-level bridge), so a tick reads the tenant's halt list once.
-    // `haltReadFresh` stays the RAW bridge (R2): a `halted` answer is re-read
-    // through it, uncached, before it becomes a permanent refusal.
-    sendStanding: { membersBridge, haltReadFresh: membersBridge, membershipAccess: membershipAccessBridge },
   };
 }
 
@@ -1207,14 +1038,17 @@ export function makeCountTemplateStartDeps(
  * ought to be readable in one screen. They are wired here, where every other
  * caller already wires them.
  *
- * The per-tick memo wrapper is applied by the CALLER (the cron builds one per
- * tick and shares it across broadcasts), so it is passed in rather than built
- * here — the same shape `makeDispatchScheduledBroadcastDeps` expects, and
- * `brandChrome` is left to the cron route for the same reason.
+ * Spec 140 s4 (row 2) — the per-tick memo is built HERE, from the raw module
+ * bridge: the cron calls this once per tick, so one call is one tick's cache,
+ * shared by every row the tick works. The resolver, `membersBridge` and
+ * `sendStanding.membersBridge` read the memo, so a tick reads the tenant's halt
+ * list and each segment once; `haltReadFresh` stays the RAW bridge, uncached,
+ * for the re-read before a permanent `halted` refusal (F119 PR-A, R2). Until
+ * s4 the cron built the memo from the deleted legacy maker's bridge.
+ * `brandChrome` is left to the cron route, which composes it in `src/lib`.
  */
 export async function makeBuildAudienceTickDeps(
   tenantId: string,
-  bridge: MembersBridgePort,
   /**
    * Spec 140 s2b (DL9; review round 1 CR#6) — REQUIRED: the cron route's own
    * entry instant and `maxDuration`. No default here, so the budget has one
@@ -1224,15 +1058,20 @@ export async function makeBuildAudienceTickDeps(
 ): Promise<Omit<BuildAudienceTickDeps, 'brandChrome'>> {
   const tenant = asTenantContext(tenantId);
   const { resolveTenantDisplayName } = await import('@/lib/broadcasts-route-helpers');
+  // Best-effort: a tenant-settings outage MUST NOT wedge the cron loop in
+  // `approved`, and the display name is cosmetic. Fall back to the tenant id
+  // with an observable signal (the line the deleted legacy maker wrote, kept
+  // when spec 140 s4 removed that maker). A DB read can throw a `NeonDbError`
+  // carrying the statement and its bindings, so `errKind` keeps the class only.
   let tenantDisplayName: string;
   try {
     tenantDisplayName = await resolveTenantDisplayName(tenantId);
-  } catch {
-    // Same best-effort rule as the sibling maker: a tenant-settings outage must
-    // not wedge the cron loop, and the display name is cosmetic.
+  } catch (e) {
+    logger.error({ err: errKind(e), tenantId }, 'broadcast_dispatch_tenant_displayname_lookup_failed');
     tenantDisplayName = tenantId;
   }
 
+  const bridge = makeTickMemoizedMembersBridge(membersBridge);
   const resolverDeps = {
     tenant,
     membersBridge: bridge,
@@ -1279,11 +1118,11 @@ export async function makeBuildAudienceTickDeps(
       // Pass the resolver's answer through WHOLE. This used to return only
       // `{recipients, estimatedCount}`, which is where `orphans` and
       // `droppedByPreference` were actually lost — the resolver computes both,
-      // the legacy dispatch logs both per broadcast, and `droppedByPreference`
+      // the tick logs both per broadcast, and `droppedByPreference`
       // exists because an earlier review round added it to answer a member
       // asking why their E-Blast reached 40 people instead of 55. Dropping two
       // fields at a composition boundary is invisible to a grep for the log
-      // name and to a diff of the two use cases.
+      // name.
       return ok({
         recipients: resolved.value.recipients as unknown as readonly string[],
         estimatedCount: resolved.value.estimatedCount,
@@ -1298,8 +1137,8 @@ export async function makeBuildAudienceTickDeps(
     membersBridge: bridge,
     emailTransactional: emailTransactionalBridge,
     plansBridge,
-    // F119 PR-A — the send-time standing reads, through the caller's per-tick
-    // memo (`bridge`), so a tick reads the tenant's halt list once; the
+    // F119 PR-A — the send-time standing reads, through this tick's memo
+    // (`bridge`), so a tick reads the tenant's halt list once; the
     // re-read before a permanent `halted` refusal goes to the RAW module
     // bridge, uncached (R2).
     sendStanding: { membersBridge: bridge, haltReadFresh: membersBridge, membershipAccess: membershipAccessBridge },

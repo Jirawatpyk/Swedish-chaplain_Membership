@@ -206,6 +206,9 @@ function makeRepo(opts: FixtureOpts): {
       async readAlreadySentEvidenceInTx() {
         return { broadcastRecorded: false, memberBroadcastCount: 0 };
       },
+      async hasUnverifiableCountAuditInTx() {
+        return false;
+      },
       async clearDispatchRetryClock() {},
       async listByTenantStatus() {
         return { rows: [], nextCursor: null };

@@ -73,7 +73,7 @@ import type { RemoveContactOutcome } from '@/modules/broadcasts/application/port
 // `makeDrizzleBroadcastsRepo`; the F7/F8 cancel cascades need the real exports).
 // `vi.hoisted` so the spy is initialised BEFORE the hoisted `vi.mock` factory
 // references it (the factory runs at the top of the module).
-const { removeContactFromAudienceSpy, deleteContactGloballySpy } = vi.hoisted(
+const { removeContactFromAudienceSpy } = vi.hoisted(
   () => ({
     // Round 4 T1 — was `Promise<void>` resolving `undefined`. `897dd73d7`
     // widened the port to `Promise<RemoveContactOutcome>` and the adapter now
@@ -84,22 +84,11 @@ const { removeContactFromAudienceSpy, deleteContactGloballySpy } = vi.hoisted(
     removeContactFromAudienceSpy: vi.fn<
       (audienceId: string, email: string) => Promise<RemoveContactOutcome>
     >(async () => ({ kind: 'detached' })),
-    /**
-     * Round 2 R2-18 — the U1 decision had NO regression guard, and the gap was
-     * not merely "untested": this factory spreads `...actual`, so
-     * `deleteContactGlobally` reached the REAL gateway. A future re-wiring that
-     * added the global delete to the erasure cascade would have issued a live
-     * `DELETE /contacts/{email}` against the SHARED production Resend account
-     * from the integration suite, and stayed green while doing it.
-     *
-     * Stubbed here so that cannot happen, and asserted never-called below so the
-     * decision recorded in `processing-records.md` residual 8a — detach, never
-     * global-delete, because one Resend account is shared across tenants — has a
-     * test that fails when someone reverses it.
-     */
-    deleteContactGloballySpy: vi.fn<(email: string) => Promise<void>>(
-      async () => {},
-    ),
+    // Round 2 R2-18 stubbed a global contact-delete spy here and asserted it
+    // never-called (residual 8a: detach, never global-delete, because one Resend
+    // account is shared across tenants). Spec 140 s4 removed that port method,
+    // so the type system now forbids the call; the wire-level guard against
+    // `DELETE /contacts/{email}` is the DR4 contract guard.
   }),
 );
 
@@ -110,7 +99,6 @@ vi.mock('@/modules/broadcasts', async (importOriginal) => {
     resendBroadcastsGateway: {
       ...actual.resendBroadcastsGateway,
       removeContactFromAudience: removeContactFromAudienceSpy,
-      deleteContactGlobally: deleteContactGloballySpy,
     },
   };
 });
@@ -451,14 +439,18 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
   it('1 — HAPPY CAPSTONE: a member in TWO audience-bearing broadcasts → both pairs removed, ONE audit (removed_count:2), member_erased + cascadesComplete:true', async () => {
     removeContactFromAudienceSpy.mockClear();
     removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
-    deleteContactGloballySpy.mockClear();
 
-    const { memberId, contactEmail } = await seedMember(tenant);
+    // PR #756 review round 1 (pdpa L-5) — a MIXED-CASE contact address, so the
+    // `toLowerCase()` half of the detach assertion below can fail: with an
+    // all-lowercase seed, sending the address as stored would pass it too. The
+    // delivery row stores it lowercase, as production writes it.
+    const { memberId, contactEmail } = await seedMember(tenant, `Erik.Cap-${randomUUID().slice(0, 8)}@Example.COM`);
+    expect(contactEmail).not.toBe(contactEmail.toLowerCase());
     const audienceA = `aud-cap-a-${randomUUID().slice(0, 8)}`;
     const audienceB = `aud-cap-b-${randomUUID().slice(0, 8)}`;
     // Two DISTINCT audience-bearing broadcasts the member received → two pairs.
-    await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceA);
-    await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceB);
+    await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail.toLowerCase(), audienceA);
+    await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail.toLowerCase(), audienceB);
 
     const requestId = `rq-erase-sub-cap-ok-${Date.now()}`;
     const deps = buildEraseMemberDeps(tenant.ctx);
@@ -479,8 +471,10 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
       .map((c) => c[0])
       .sort();
     expect(calledAudiences).toEqual([audienceA, audienceB].sort());
+    // The detach sends the captured address lowercase (Resend matches a
+    // segment contact case-sensitively, and the import pushed it lowercase).
     for (const call of removeContactFromAudienceSpy.mock.calls) {
-      expect(call[1]).toBe(contactEmail);
+      expect(call).toEqual([expect.any(String), contactEmail.toLowerCase()]);
     }
 
     // ── Round 2 R2-18 — the U1 decision, made enforceable ────────────────────
@@ -494,12 +488,8 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     // `processing-records.md` residual 8a; until now nothing failed if it was
     // reversed.
     //
-    // Note this assertion is only half the guard. The other half is that
-    // `deleteContactGlobally` is now STUBBED in the `vi.mock` factory above: it
-    // used to fall through `...actual` to the real gateway, so a re-wiring would
-    // have issued a live `DELETE /contacts/{email}` against the shared production
-    // account from this suite — and passed.
-    expect(deleteContactGloballySpy).not.toHaveBeenCalled();
+    // Spec 140 s4 — the port no longer has a global-delete method, so the
+    // reversal cannot compile; the positive half is the detach pairs above.
 
     // EXACTLY ONE subprocessor_erasure_propagated audit records ok + count 2.
     const subAudits = await rawSelectSubprocessorAudits(tenant.ctx.slug, memberId);
@@ -513,9 +503,12 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     expect(payload.resend_outcome).toBe('ok');
     expect(payload.resend_contacts_removed_count).toBe(2);
     expect(payload.resend_contacts_failed_count).toBe(0);
+    // pdpa M-1 — the evidence card reads the counts by the wire that wrote them.
+    expect((payload as { resend_detach_wire?: string }).resend_detach_wire).toBe('segments');
     expect(payload.stripe_outcome).toBe('ok');
     // No PII in the audit row (ids + outcomes only).
     expect(JSON.stringify(subAudits[0])).not.toContain(contactEmail);
+    expect(JSON.stringify(subAudits[0]).toLowerCase()).not.toContain(contactEmail.toLowerCase());
 
     // member_erased emitted (completion proof — cascadesComplete held).
     const erased = await rawSelectMemberErasedAudits(tenant.ctx.slug, memberId);
@@ -542,7 +535,6 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     removeContactFromAudienceSpy
       .mockResolvedValueOnce({ kind: 'detached' })
       .mockResolvedValueOnce({ kind: 'already_absent' });
-    deleteContactGloballySpy.mockClear();
 
     const { memberId, contactEmail } = await seedMember(tenant);
     const audienceA = `aud-mix-a-${randomUUID().slice(0, 8)}`;
@@ -565,7 +557,6 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     // still holds — no global delete on the shared Resend account.
     expect(result.value.cascadesComplete).toBe(true);
     expect(removeContactFromAudienceSpy).toHaveBeenCalledTimes(2);
-    expect(deleteContactGloballySpy).not.toHaveBeenCalled();
 
     const subAudits = await rawSelectSubprocessorAudits(tenant.ctx.slug, memberId);
     expect(subAudits).toHaveLength(1);
@@ -605,7 +596,6 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
   it('B-1 — every LIVE audience of this member is detached, delivered or not; nobody else is touched', async () => {
     removeContactFromAudienceSpy.mockClear();
     removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
-    deleteContactGloballySpy.mockClear();
 
     const { memberId, contactEmail } = await seedMember(tenant);
     // (a) the window the arm is FOR — audience pushed, nothing delivered.
@@ -665,7 +655,6 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     // address is transmitted. The erasure widens to the erased member's own
     // live audiences, never to other people's.
     expect(pairs.some((p) => p.endsWith(`|${otherRecipient}`))).toBe(false);
-    expect(deleteContactGloballySpy).not.toHaveBeenCalled();
 
     // Take this case's fixtures back out of the arm's scope. Cases in this file
     // SHARE one tenant, and within the never-delivered set the arm is
@@ -759,6 +748,8 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
       resend_contacts_removed_count: 0,
       resend_contacts_already_absent_count: 0,
       resend_contacts_failed_count: 0,
+      // pdpa M-1 — the re-drive's row names the detach wire too.
+      resend_detach_wire: 'segments',
     });
 
     // member_erased is emitted on EACH clean completing pass: the first pass was
@@ -796,6 +787,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
       resend_contacts_removed_count: 0,
       resend_contacts_already_absent_count: 0,
       resend_contacts_failed_count: 0,
+      resend_detach_wire: 'segments',
     });
   }, 120_000);
 

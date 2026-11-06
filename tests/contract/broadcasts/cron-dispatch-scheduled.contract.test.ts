@@ -15,8 +15,10 @@
  *     200, `retryable: 1`, `dispatchResolveFailedTotal(tenant)` observed once,
  *     the use case was called with the row's broadcast id.
  *
- * The per-broadcast behaviour itself is pinned in
- * `tests/unit/broadcasts/application/dispatch-scheduled-broadcast.test.ts`.
+ * Spec 140 s4 deleted the legacy dispatch leg and its import flag: the route
+ * drives `buildAudienceTick` alone, and this file keeps only its cases (the
+ * legacy-only ones went with the leg). The per-broadcast behaviour itself is
+ * pinned in `tests/unit/broadcasts/application/build-audience-tick*.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
@@ -29,16 +31,11 @@ const runInTenantMock = vi.fn();
 // (the pagination flag gates nothing since `ca51f59a1`), so this mock steers
 // nothing; it is fixture debris, not coverage.
 const isF71aUs1EnabledMock = vi.fn(() => true);
-const isF7ImportAudienceEnabledMock = vi.fn(() => false);
 const buildAudienceTickMock = vi.fn();
-const dispatchScheduledBroadcastMock = vi.fn();
 const dispatchResolveFailedTotalSpy = vi.fn();
 const cronSkippedCountSpy = vi.fn();
 const cronUnknownErrorCountSpy = vi.fn();
 const dispatchLeaseExpiringSpy = vi.fn();
-/** F119 PR-A — the members bridge the deps factory hands the route, and the F8 access port. */
-const STUB_BRIDGE = { kind: 'members-bridge-stub' } as const;
-const STUB_ACCESS = { kind: 'membership-access-stub' } as const;
 const buildDepsArgs: unknown[][] = [];
 /** Spec 140 s2a review round 3 — every `setAttribute` the route span receives. */
 const spanAttributes = new Map<string, unknown>();
@@ -98,28 +95,22 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
 });
 vi.mock('@/modules/broadcasts', () => ({
   asBroadcastId: (raw: string) => raw,
-  dispatchScheduledBroadcast: (...args: unknown[]) => dispatchScheduledBroadcastMock(...args),
-  makeDispatchScheduledBroadcastDeps: async () => ({
-    membersBridge: STUB_BRIDGE,
-    // F119 PR-A — the factory wires the RAW bridge; the route must swap in its
-    // memo for `membersBridge` and leave `haltReadFresh` raw (R2).
-    sendStanding: { membersBridge: STUB_BRIDGE, haltReadFresh: STUB_BRIDGE, membershipAccess: STUB_ACCESS },
-  }),
-  // A marker wrapper, not the identity: with `(inner) => inner` nothing here
-  // could tell whether the route passed the memo or the raw bridge on.
-  makeTickMemoizedMembersBridge: (inner: unknown) => ({ memoOf: inner }),
   // `SPLIT_THRESHOLD_RECIPIENTS` was mocked here for the Phase 9b claim
   // predicate. Both are gone: `ca51f59a1` deleted the batch crons and the
   // constant, and the route now references neither (`grep -c` = 0). Removed
   // rather than left as harmless padding — a fixture for a predicate that
   // cannot exist is how the assertion below went vacuous unnoticed.
   isF71aUs1Enabled: () => isF71aUs1EnabledMock(),
-  isF7ImportAudienceEnabled: () => isF7ImportAudienceEnabledMock(),
   buildAudienceTick: (...args: unknown[]) => buildAudienceTickMock(...args),
+  // Spec 140 s4 (security L7) — a distinctive value, so the log assertion
+  // below can only pass if the route read this function.
+  currentAudienceCeiling: () => 777,
   makeBuildAudienceTickDeps: async (...args: unknown[]) => {
     buildDepsArgs.push(args);
-    // Like the real maker: the tick budget (its third argument) rides the deps.
-    return { kind: 'build-deps-stub', tickBudget: args[2] };
+    // Like the real maker: the tick budget (its second argument, spec 140 s4)
+    // rides the deps. The maker builds its own members-bridge memo, so it takes
+    // no bridge; that wiring is pinned in `broadcasts-deps-audience.test.ts`.
+    return { kind: 'build-deps-stub', tickBudget: args[1] };
   },
 }));
 
@@ -134,14 +125,18 @@ function makeRequest(opts: { auth?: string }): NextRequest {
 
 const BROADCAST_ID = '33333333-3333-4333-8333-333333333333';
 
+function oneRow(): void {
+  runInTenantMock.mockImplementation(async (_ctx, fn) =>
+    fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+  );
+}
+
 beforeEach(() => {
   envMock.features.f7Broadcasts = true;
   envMock.flags.readOnlyMode = false;
   runInTenantMock.mockReset();
   isF71aUs1EnabledMock.mockReturnValue(true);
-  isF7ImportAudienceEnabledMock.mockReturnValue(false);
   buildAudienceTickMock.mockReset();
-  dispatchScheduledBroadcastMock.mockReset();
   dispatchResolveFailedTotalSpy.mockReset();
   cronSkippedCountSpy.mockReset();
   cronUnknownErrorCountSpy.mockReset();
@@ -159,7 +154,17 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect((await POST(makeRequest({}))).status).toBe(401);
     expect((await POST(makeRequest({ auth: 'Bearer wrong-secret' }))).status).toBe(401);
     expect(runInTenantMock).not.toHaveBeenCalled();
-    expect(dispatchScheduledBroadcastMock).not.toHaveBeenCalled();
+    expect(buildAudienceTickMock).not.toHaveBeenCalled();
+  });
+
+  // Spec 140 s4 (row 2) — the kill switch still runs before any deps are built.
+  it('the kill-switch arm builds no import deps', async () => {
+    envMock.features.f7Broadcasts = false;
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(await res.json()).toEqual({ skipped: true, reason: 'feature_disabled' });
+    expect(buildDepsArgs).toHaveLength(0);
+    expect(buildAudienceTickMock).not.toHaveBeenCalled();
   });
 
   it('F7 master flag off → 200 + skipped, no query', async () => {
@@ -178,7 +183,6 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'read_only_mode' });
     expect(runInTenantMock).not.toHaveBeenCalled();
-    expect(dispatchScheduledBroadcastMock).not.toHaveBeenCalled();
     expect(buildAudienceTickMock).not.toHaveBeenCalled();
   });
 
@@ -195,14 +199,51 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { processed?: number; skipped?: boolean };
     expect(body.processed ?? 0).toBe(0);
-    expect(dispatchScheduledBroadcastMock).not.toHaveBeenCalled();
+    expect(buildAudienceTickMock).not.toHaveBeenCalled();
+  });
+
+  // PR #756 review round 1 (code-review #3) — the maker does a dynamic import, a
+  // tenant display-name read and a memo per call: an empty tick builds none of
+  // it, and keeps its metric, its body and its tick_complete line.
+  it('a tick with no due rows builds no import deps', async () => {
+    vi.mocked(logger.info).mockClear();
+    runInTenantMock.mockImplementation(async (_ctx, fn) => fn({ execute: async () => [] }));
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['processed']).toBe(0);
+    expect(buildDepsArgs).toHaveLength(0);
+    expect(buildAudienceTickMock).not.toHaveBeenCalled();
+    expect(cronSkippedCountSpy).toHaveBeenCalledWith('test-tenant', 'no_due_rows');
+    const completes = vi
+      .mocked(logger.info)
+      .mock.calls.filter(([, msg]) => msg === 'cron.broadcasts.dispatch.tick_complete');
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.[0]).toMatchObject({ tenantId: 'test-tenant', audienceCeiling: 777, processed: 0 });
+  });
+
+  // Spec 140 s4 (security L7) — the effective ceiling is logged once per tick,
+  // on the tick_complete line only: not a summary bucket, so neither the JSON
+  // body nor the `cron.<key>` span attributes carry it.
+  it('tick_complete logs the effective audience ceiling once, outside the summary', async () => {
+    vi.mocked(logger.info).mockClear();
+    runInTenantMock.mockImplementation(async (_ctx, fn) => fn({ execute: async () => [] }));
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, unknown>;
+    const completes = vi
+      .mocked(logger.info)
+      .mock.calls.filter(([, msg]) => msg === 'cron.broadcasts.dispatch.tick_complete');
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.[0]).toMatchObject({ tenantId: 'test-tenant', audienceCeiling: 777 });
+    expect(body).not.toHaveProperty('audienceCeiling');
+    expect([...spanAttributes.keys()].some((k) => k.includes('audienceCeiling'))).toBe(false);
   });
 
   it('one eligible row answering dispatch.server_error → retryable:1, counted once, nothing else touched', async () => {
-    runInTenantMock.mockImplementation(async (_ctx, fn) =>
-      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
-    );
-    dispatchScheduledBroadcastMock.mockResolvedValue(
+    oneRow();
+    buildAudienceTickMock.mockResolvedValue(
       err({ kind: 'dispatch.server_error', message: 'recipient resolution unavailable', phase: 'resolve' }),
     );
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
@@ -215,18 +256,14 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect(body['permanent_failed']).toBe(0);
     expect(body['uncaught_error']).toBe(0);
 
-    expect(dispatchScheduledBroadcastMock).toHaveBeenCalledTimes(1);
-    // The ON direction pins that the legacy path is NOT taken; without its
-    // mirror here the routing was only half asserted, and a fault that ran BOTH
-    // paths in one tick would have passed. Both legs write to the same row.
-    expect(buildAudienceTickMock).not.toHaveBeenCalled();
-    const [, input] = dispatchScheduledBroadcastMock.mock.calls[0] as [unknown, { broadcastId: string }];
+    expect(buildAudienceTickMock).toHaveBeenCalledTimes(1);
+    const [, input] = buildAudienceTickMock.mock.calls[0] as [unknown, { broadcastId: string }];
     expect(input).toEqual({ broadcastId: BROADCAST_ID });
     // Review errors HIGH-4 — the alarm for a schedule slipping tick after tick.
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledTimes(1);
     // 2026-09-10 follow-up (5) — the PHASE label, by value. Without it the
-    // counter said "resolve failed" for a lock fault, a persist fault and the
-    // unknown-status refusal alike.
+    // counter said "resolve failed" for a persist fault and the unknown-status
+    // refusal alike.
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant', 'resolve');
   });
 
@@ -248,10 +285,7 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
    * the key would have un-redacted the address; the class is the bounded half.
    */
   it('Round 4 L3/L4 — the import arm logs a bounded errClass, and no free text reaches the log', async () => {
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
-    runInTenantMock.mockImplementation(async (_ctx, fn) =>
-      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
-    );
+    oneRow();
     buildAudienceTickMock.mockResolvedValue(
       err({
         kind: 'dispatch.server_error',
@@ -284,20 +318,11 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
   });
 
   /**
-   * T087 (108 US5) — with the import flag ON the cron routes to
-   * `buildAudienceTick` and `dispatchScheduledBroadcast` is never called.
-   *
-   * Two separate use cases rather than one with a branch inside: the
-   * single-tick path is ~1,200 lines of orphan reuse, idempotency replay,
-   * retry budget and batch hand-off, and giving all of it two shapes would
-   * make its suite the regression surface for both. The route is the ONLY
-   * place that knows both exist.
+   * T087 (108 US5) — the cron drives `buildAudienceTick`, the only dispatch leg
+   * since spec 140 s4. An import submitted is its own bucket.
    */
-  it('import flag ON → buildAudienceTick runs and the single-tick path does not', async () => {
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
-    runInTenantMock.mockImplementation(async (_ctx, fn) =>
-      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
-    );
+  it('one eligible row → buildAudienceTick runs; an import submitted counts import_submitted, not succeeded', async () => {
+    oneRow();
     buildAudienceTickMock.mockResolvedValue({
       ok: true,
       value: { kind: 'import_submitted', importId: 'imp-1', recipientCount: 3 },
@@ -308,7 +333,6 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect(res.status).toBe(200);
 
     expect(buildAudienceTickMock).toHaveBeenCalledTimes(1);
-    expect(dispatchScheduledBroadcastMock).not.toHaveBeenCalled();
     const body = (await res.json()) as Record<string, number>;
     expect(body['processed']).toBe(1);
     // An import submitted is neither a success nor a failure: nothing has been
@@ -318,12 +342,9 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect(body['succeeded']).toBe(0);
   });
 
-  it('import flag ON → the claim query has NO count bound, so a large audience reaches this cron', async () => {
+  it('the claim query has NO count bound, so a large audience reaches this cron', async () => {
     // With the import there is no per-tick capacity to partition around: one
-    // call carries the whole audience. Keeping the batching predicate would
-    // hand a >500 row to `split-large-broadcasts`, which would build manifests
-    // for a path that is no longer the one used.
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    // call carries the whole audience.
     const executed: unknown[] = [];
     runInTenantMock.mockImplementation(async (_ctx, fn) =>
       fn({
@@ -338,23 +359,25 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
 
     // POSITIVE CONTROL FIRST. The `not.toContain` below is asserting the
-    // absence of a predicate that no longer exists in ANY flag state, so on its
-    // own it also passes when `sqlTextOf` returns '' for an unrelated reason —
-    // a changed query shape, a different mock arg, a refactor of the helper.
-    // Anchor on clauses the claim query must keep, or this case proves nothing.
+    // absence of a predicate that no longer exists, so on its own it also
+    // passes when `sqlTextOf` returns '' for an unrelated reason — a changed
+    // query shape, a different mock arg, a refactor of the helper. Anchor on
+    // clauses the claim query must keep, or this case proves nothing.
     const claimSql = sqlTextOf(executed[0]);
     expect(claimSql).toContain("status = 'approved'");
     expect(claimSql).toContain('scheduled_for');
     expect(claimSql).toContain('FOR UPDATE SKIP LOCKED');
 
     expect(claimSql).not.toContain('estimated_recipient_count');
+    // Spec 140 s4 — and no import-row filter: the import tick works every
+    // approved row, including one it started (the legacy leg's DL7 skip went
+    // with that leg).
+    expect(claimSql).not.toContain('audience_import_id IS NULL');
+    expect(claimSql).not.toContain('audience_import_submitted_at IS NULL');
   });
 
-  it('import flag ON and the tick reports sent → counted as succeeded', async () => {
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
-    runInTenantMock.mockImplementation(async (_ctx, fn) =>
-      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
-    );
+  it('the tick reports sent → counted as succeeded', async () => {
+    oneRow();
     buildAudienceTickMock.mockResolvedValue({
       ok: true,
       value: { kind: 'sent', resendBroadcastId: 'rb-1', recipientCount: 3 },
@@ -366,15 +389,12 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect(body['succeeded']).toBe(1);
   });
 
-  it('import flag ON and the completion rule refuses → permanent_failed, not retryable', async () => {
+  it('the completion rule refuses → permanent_failed, not retryable', async () => {
     // A refused completion is terminal by design: every reason is a statement
     // about a job that has already finished, so re-polling produces the same
     // answer. Counting it retryable would hide it in a bucket that is expected
     // to clear on its own.
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
-    runInTenantMock.mockImplementation(async (_ctx, fn) =>
-      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
-    );
+    oneRow();
     buildAudienceTickMock.mockResolvedValue({
       ok: false,
       error: {
@@ -400,12 +420,9 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
    * `broadcast_invalid_state_transition` and `broadcast_not_found` both mean
    * "the row is no longer what the claim query saw": a cancel landed, another
    * worker won the transition, or an erasure cascade removed it. All three are
-   * NORMAL. Neither branch had an arm for either, so both fell to `default` →
+   * NORMAL. The switch had an arm for neither, so both fell to `default` →
    * `unknown_error` + `cronUnknownErrorCount`, which this route's own comment
-   * documents as the page-on-call enum-drift signal — and which
-   * `dispatch-scheduled-broadcast.ts:1076` explicitly says must NOT page
-   * ("do NOT page on-call (no actual failure)") in the very arm that produces
-   * the kind.
+   * documents as the page-on-call enum-drift signal.
    *
    * The precedent for the bucket is already in the codebase:
    * `metrics.ts:2544` names `concurrent_skip` an *expected race*, kept apart
@@ -418,11 +435,9 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     ['broadcast_invalid_state_transition', { kind: 'broadcast_invalid_state_transition', observedStatus: 'sending' }],
     ['broadcast_not_found', { kind: 'broadcast_not_found', broadcastId: BROADCAST_ID }],
   ] as const) {
-    it(`legacy branch: ${label} → concurrent_skip, NOT unknown_error, and does not page`, async () => {
-      runInTenantMock.mockImplementation(async (_ctx, fn) =>
-        fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
-      );
-      dispatchScheduledBroadcastMock.mockResolvedValue(err(error));
+    it(`${label} → concurrent_skip, NOT unknown_error, and does not page`, async () => {
+      oneRow();
+      buildAudienceTickMock.mockResolvedValue(err(error));
 
       const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
       const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
@@ -435,38 +450,19 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
       expect(body['permanent_failed']).toBe(0);
       expect(body['retryable']).toBe(0);
     });
-
-    it(`import branch: ${label} → concurrent_skip, NOT unknown_error, and does not page`, async () => {
-      isF7ImportAudienceEnabledMock.mockReturnValue(true);
-      runInTenantMock.mockImplementation(async (_ctx, fn) =>
-        fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
-      );
-      buildAudienceTickMock.mockResolvedValue(err(error));
-
-      const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
-      const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-      const body = (await res.json()) as Record<string, number>;
-      expect(body['concurrent_skip']).toBe(1);
-      expect(body['unknown_error']).toBe(0);
-      expect(cronUnknownErrorCountSpy).not.toHaveBeenCalled();
-      expect(body['permanent_failed']).toBe(0);
-      expect(body['retryable']).toBe(0);
-    });
   }
 
   /**
-   * Positive control for the four cases above: the `default` arm must STILL
-   * page for a kind nobody routed. Without this, deleting the switch and
-   * bucketing everything as `concurrent_skip` would pass every assertion in
-   * this block — the shape that made round 1's phantom-kind stubs green.
+   * Positive control for the cases above: the `default` arm must STILL page
+   * for a kind nobody routed. Without this, deleting the switch and bucketing
+   * everything as `concurrent_skip` would pass every assertion in this block —
+   * the shape that made round 1's phantom-kind stubs green. Spec 140 s4 made
+   * the switch exhaustive (`never`); at runtime a kind the type does not know
+   * still lands here and pages, never accepted silently.
    */
   it('an unrouted kind still reaches unknown_error and pages — the arms above are narrow, not a catch-all', async () => {
-    runInTenantMock.mockImplementation(async (_ctx, fn) =>
-      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
-    );
-    dispatchScheduledBroadcastMock.mockResolvedValue(
-      err({ kind: 'a_kind_no_switch_has_ever_heard_of' }),
-    );
+    oneRow();
+    buildAudienceTickMock.mockResolvedValue(err({ kind: 'a_kind_no_switch_has_ever_heard_of' }));
 
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
@@ -474,14 +470,47 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect(body['unknown_error']).toBe(1);
     expect(body['concurrent_skip']).toBe(0);
     expect(cronUnknownErrorCountSpy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+      expect.objectContaining({ broadcastId: BROADCAST_ID, errorKind: 'a_kind_no_switch_has_ever_heard_of' }),
+      'cron.broadcasts.dispatch.unknown_error_kind',
+    );
+  });
+
+  // PR #756 review round 1 (rel L3) — the success chain ended in a bare `else`
+  // that counted ANY other kind `import_pending`. It is an exhaustive switch now,
+  // so a success kind no arm knows pages like an unknown error kind does.
+  it('an unrouted SUCCESS kind reaches unknown_error and pages, not import_pending', async () => {
+    oneRow();
+    buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'a_success_no_switch_has_heard_of' } });
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['unknown_error']).toBe(1);
+    expect(body['import_pending']).toBe(0);
+    expect(cronUnknownErrorCountSpy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+      expect.objectContaining({ broadcastId: BROADCAST_ID, outcomeKind: 'a_success_no_switch_has_heard_of' }),
+      'cron.broadcasts.dispatch.unknown_outcome_kind',
+    );
+  });
+
+  it('an import_pending outcome is counted import_pending', async () => {
+    oneRow();
+    buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'import_pending', importId: 'imp-1' } });
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['import_pending']).toBe(1);
+    expect(body['unknown_error']).toBe(0);
   });
 });
 
 /**
  * Drizzle keeps a template's literal fragments in `queryChunks`. A chunk can
- * itself be a nested `SQL` (the flag-conditional predicate is one), so this
- * RECURSES — a flat map would silently miss exactly the fragment these cases
- * are about and report it as absent.
+ * itself be a nested `SQL`, so this RECURSES — a flat map would silently miss
+ * a nested fragment and report it as absent.
  */
 function sqlTextOf(q: unknown): string {
   const node = q as { queryChunks?: unknown[]; value?: unknown } | undefined;
@@ -500,21 +529,16 @@ function sqlTextOf(q: unknown): string {
  * must land in `permanent_failed` — never `unknown_error`, whose counter PAGES
  * on-call as enum drift. A failed standing read is transient: `retryable`, and
  * the resolve-failed counter labelled `standing` so the runbook opens the
- * member-standing reads rather than the F3 page walk. And both legs must read
- * the halt list through the tick's memo, or 50 rows cost 50 reads.
+ * member-standing reads rather than the F3 page walk.
  */
 describe('cron dispatch-scheduled — member standing at dispatch (F119 PR-A)', () => {
-  function oneRow(): void {
-    runInTenantMock.mockImplementation(async (_ctx, fn) =>
-      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
-    );
-  }
-
   it.each(['member_halted', 'member_not_in_good_standing'] as const)(
-    'legacy leg: a %s refusal → permanent_failed, NOT unknown_error, and does not page',
+    'a %s refusal → permanent_failed, NOT unknown_error, and does not page',
     async (reason) => {
       oneRow();
-      dispatchScheduledBroadcastMock.mockResolvedValue(err({ kind: 'broadcast_failed_to_dispatch', reason }));
+      buildAudienceTickMock.mockResolvedValue(
+        err({ kind: 'audience_import_failed', reason, importId: 'imp-1', observed: null, expected: null }),
+      );
 
       const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
       const body = (await (await POST(makeRequest({ auth: 'Bearer test-cron-secret' }))).json()) as Record<string, number>;
@@ -526,39 +550,15 @@ describe('cron dispatch-scheduled — member standing at dispatch (F119 PR-A)', 
     },
   );
 
-  it.each(['member_halted', 'member_not_in_good_standing'] as const)(
-    'import leg: a %s refusal → permanent_failed, NOT unknown_error, and does not page',
-    async (reason) => {
-      isF7ImportAudienceEnabledMock.mockReturnValue(true);
-      oneRow();
-      buildAudienceTickMock.mockResolvedValue(
-        err({ kind: 'audience_import_failed', reason, importId: 'imp-1', observed: null, expected: null }),
-      );
-
-      const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
-      const body = (await (await POST(makeRequest({ auth: 'Bearer test-cron-secret' }))).json()) as Record<string, number>;
-
-      expect(body['permanent_failed']).toBe(1);
-      expect(body['unknown_error']).toBe(0);
-      expect(cronUnknownErrorCountSpy).not.toHaveBeenCalled();
-    },
-  );
-
   /**
    * R1 — a `suspended` member's due E-Blast is HELD: an ok answer that sent
    * nothing. Its own `held` bucket — never `succeeded` (nothing was
    * delivered), never `unknown_error` (which pages), and no resolve-failed
    * counter (nothing failed).
    */
-  it.each([
-    ['legacy', false],
-    ['import', true],
-  ] as const)('%s leg: a HELD row → held:1, not succeeded, not unknown_error, no counter, no page', async (_leg, importOn) => {
-    isF7ImportAudienceEnabledMock.mockReturnValue(importOn);
+  it('a HELD row → held:1, not succeeded, not unknown_error, no counter, no page', async () => {
     oneRow();
-    const held = { ok: true, value: { kind: 'dispatch_held_member_suspended' } };
-    dispatchScheduledBroadcastMock.mockResolvedValue(held);
-    buildAudienceTickMock.mockResolvedValue(held);
+    buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
 
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     const body = (await (await POST(makeRequest({ auth: 'Bearer test-cron-secret' }))).json()) as Record<string, number>;
@@ -572,9 +572,9 @@ describe('cron dispatch-scheduled — member standing at dispatch (F119 PR-A)', 
     expect(cronUnknownErrorCountSpy).not.toHaveBeenCalled();
   });
 
-  it('legacy leg: a terminal write that did not commit → retryable, counted under phase `terminal_write`', async () => {
+  it('a terminal write that did not commit → retryable, counted under phase `terminal_write`', async () => {
     oneRow();
-    dispatchScheduledBroadcastMock.mockResolvedValue(
+    buildAudienceTickMock.mockResolvedValue(
       err({ kind: 'dispatch.server_error', message: 'terminal_write_failed', phase: 'terminal_write' }),
     );
 
@@ -588,7 +588,7 @@ describe('cron dispatch-scheduled — member standing at dispatch (F119 PR-A)', 
 
   it('a failed standing read → retryable, counted under phase `standing`', async () => {
     oneRow();
-    dispatchScheduledBroadcastMock.mockResolvedValue(
+    buildAudienceTickMock.mockResolvedValue(
       err({ kind: 'dispatch.server_error', message: 'member_standing_halt_read_failed', errClass: 'Error', phase: 'standing' }),
     );
 
@@ -600,99 +600,18 @@ describe('cron dispatch-scheduled — member standing at dispatch (F119 PR-A)', 
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant', 'standing');
   });
 
-  it('both legs read the halt list through the tick memo, not the raw bridge', async () => {
+  // Spec 140 s4 (row 2) — the route builds the tick's deps once, from the tick
+  // budget alone; the members-bridge memo is the maker's, pinned in
+  // `broadcasts-deps-audience.test.ts`.
+  it('the import deps are built once, from the tick budget alone, plus the brand chrome', async () => {
     oneRow();
-    dispatchScheduledBroadcastMock.mockResolvedValue(err({ kind: 'broadcast_failed_to_dispatch', reason: 'member_halted' }));
-    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
-    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-
-    const [legacyDeps] = dispatchScheduledBroadcastMock.mock.calls[0] as [
-      {
-        membersBridge: unknown;
-        sendStanding: { membersBridge: unknown; membershipAccess: unknown; haltReadFresh?: unknown };
-      },
-    ];
-    expect(legacyDeps.sendStanding.membersBridge).toEqual({ memoOf: STUB_BRIDGE });
-    // The SAME memo instance the resolver reads, so one tick = one cache.
-    expect(legacyDeps.sendStanding.membersBridge).toBe(legacyDeps.membersBridge);
-    expect(legacyDeps.sendStanding.membershipAccess).toBe(STUB_ACCESS);
-    // R2 — the re-read before a permanent refusal stays the RAW bridge: the
-    // route swaps the memo in for `membersBridge` only.
-    expect(legacyDeps.sendStanding.haltReadFresh).toBe(STUB_BRIDGE);
-
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
     buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'import_pending', importId: 'imp-1' } });
-    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    // The import maker wires `sendStanding` from the bridge it is handed.
-    expect(buildDepsArgs[0]?.[1]).toEqual({ memoOf: STUB_BRIDGE });
-  });
-});
-
-/**
- * Spec 140 s2a review round 1 (code-review #3, reliability M1) — with the
- * import flag OFF the legacy leg never works a row the import leg started
- * (DL7). The due scan leaves such rows out, so they cannot starve the
- * `LIMIT`; the use case keeps its own check as a backstop, and a backstop skip
- * is its own outcome, counted under `import_row_skipped` and logged at INFO —
- * never a `concurrent_skip` WARN.
- */
-describe('cron dispatch-scheduled — import rows with the import flag OFF (spec 140 s2a)', () => {
-  const captureScan = (): unknown[] => {
-    const executed: unknown[] = [];
-    runInTenantMock.mockImplementation(async (_ctx, fn) =>
-      fn({
-        execute: async (q: unknown) => {
-          executed.push(q);
-          return [];
-        },
-      }),
-    );
-    return executed;
-  };
-
-  it('flag OFF: the scan excludes import rows', async () => {
-    const executed = captureScan();
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    const scanSql = sqlTextOf(executed[0]);
-    // Positive control: the clauses the due scan always keeps.
-    expect(scanSql).toContain("status = 'approved'");
-    expect(scanSql).toContain('FOR UPDATE SKIP LOCKED');
-    expect(scanSql).toContain('audience_import_id IS NULL');
-    expect(scanSql).toContain('audience_import_submitted_at IS NULL');
-  });
-
-  it('flag ON: the scan keeps import rows (the import leg works them)', async () => {
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
-    const executed = captureScan();
-    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
-    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    const scanSql = sqlTextOf(executed[0]);
-    expect(scanSql).toContain("status = 'approved'");
-    expect(scanSql).not.toContain('audience_import_id IS NULL');
-  });
-
-  it('a backstop import-row skip is counted as import_row_skipped at info', async () => {
-    runInTenantMock.mockImplementation(async (_ctx, fn) =>
-      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
-    );
-    dispatchScheduledBroadcastMock.mockResolvedValue(err({ kind: 'import_row_skipped' }));
-
-    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
-    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    const body = (await res.json()) as Record<string, number>;
-    expect(body['import_row_skipped']).toBe(1);
-    expect(body['concurrent_skip']).toBe(0);
-    expect(body['unknown_error']).toBe(0);
-    expect(body['permanent_failed']).toBe(0);
-    expect(body['retryable']).toBe(0);
-    expect(cronUnknownErrorCountSpy).not.toHaveBeenCalled();
-    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-      { tenantId: 'test-tenant', broadcastId: BROADCAST_ID },
-      'cron.broadcasts.dispatch.import_row_skipped',
-    );
-    const warned = vi.mocked(logger.warn).mock.calls.map((c) => c[1]);
-    expect(warned).not.toContain('cron.broadcasts.dispatch.concurrent_skip');
+    expect(buildDepsArgs).toEqual([['test-tenant', { tickStartedAt: expect.any(Number) }]]);
+    const [importDeps] = buildAudienceTickMock.mock.calls[0] as [Record<string, unknown>];
+    expect(importDeps).toMatchObject({ kind: 'build-deps-stub' });
+    expect(importDeps['brandChrome']).toBeDefined();
   });
 });
 
@@ -700,14 +619,12 @@ describe('cron dispatch-scheduled — import rows with the import flag OFF (spec
  * Spec 140 s2a review round 3 (code-review #4, #5) — the route span carries
  * EVERY bucket the response summary counts, as `cron.<key>`: the attributes are
  * derived from the summary, so a new bucket cannot be left off the trace
- * (round 2 had to add `import_row_skipped` by hand).
+ * (round 2 had to add a bucket by hand).
  */
 describe('cron dispatch-scheduled — span attributes mirror the summary (spec 140 s2a)', () => {
-  it('every summary bucket, import_row_skipped included, is a cron.<key> span attribute', async () => {
-    runInTenantMock.mockImplementation(async (_ctx, fn) =>
-      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
-    );
-    dispatchScheduledBroadcastMock.mockResolvedValue(err({ kind: 'import_row_skipped' }));
+  it('every summary bucket is a cron.<key> span attribute', async () => {
+    oneRow();
+    buildAudienceTickMock.mockResolvedValue(err({ kind: 'broadcast_not_found', broadcastId: BROADCAST_ID }));
 
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
@@ -715,7 +632,9 @@ describe('cron dispatch-scheduled — span attributes mirror the summary (spec 1
     const buckets = Object.entries(body).filter(([, v]) => typeof v === 'number');
     // Positive control: the summary has its buckets, this one counted.
     expect(buckets.length).toBeGreaterThan(10);
-    expect(body['import_row_skipped']).toBe(1);
+    expect(body['concurrent_skip']).toBe(1);
+    // Spec 140 s4 — the legacy leg's bucket is gone with it.
+    expect(body).not.toHaveProperty('import_row_skipped');
     for (const [key, value] of buckets) {
       expect(spanAttributes.get(`cron.${key}`), `cron.${key}`).toBe(value);
     }
@@ -724,14 +643,12 @@ describe('cron dispatch-scheduled — span attributes mirror the summary (spec 1
 
 /**
  * Spec 140 s2b — the route and the dispatch lease.
- *   row 13 (A7) — the due scan leaves out a row whose lease is live, with the
- *            import flag ON and OFF (a held row must not take a `LIMIT` slot,
- *            and a dead holder's row waits out its lease, then is reclaimed);
- *            NOT inside `importRowsFilter`, which exists only flag OFF.
- *   DL9 — the import leg gets `{ tickStartedAt }` (the route's entry
- *            instant), and a row deferred past the cutoff
- *            is its own bucket on either leg — never `succeeded` or
- *            `import_pending`, which an ok kind would otherwise fall into.
+ *   row 13 (A7) — the due scan leaves out a row whose lease is live (a held row
+ *            must not take a `LIMIT` slot, and a dead holder's row waits out
+ *            its lease, then is reclaimed).
+ *   DL9 — the tick gets `{ tickStartedAt }` (the route's entry instant), and a
+ *            row deferred past the cutoff is its own bucket — never `succeeded`
+ *            or `import_pending`, which an ok kind would otherwise fall into.
  */
 describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => {
   const LEASE_EXCLUSION = '(dispatch_lease_token IS NULL OR dispatch_lease_expires_at < now())';
@@ -748,11 +665,7 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     return executed;
   };
 
-  it.each([
-    ['OFF', false],
-    ['ON', true],
-  ] as const)('row 13 — the scan excludes a live lease, import flag %s', async (_label, flag) => {
-    isF7ImportAudienceEnabledMock.mockReturnValue(flag);
+  it('row 13 — the scan excludes a live lease', async () => {
     const executed = captureScan();
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
@@ -763,19 +676,11 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     expect(scanSql).toContain(LEASE_EXCLUSION);
   });
 
-  // Review round 1 (CR#5) — the cutoff is the import leg's only: the legacy
-  // leg's per-contact push is not in W_max, so a cutoff there bounded nothing.
-  it('DL9 — the import leg receives the tick budget (the route entry instant); the legacy leg none', async () => {
+  it('DL9 — the tick receives the tick budget (the route entry instant)', async () => {
     captureScan([{ broadcast_id: BROADCAST_ID }]);
-    dispatchScheduledBroadcastMock.mockResolvedValue({ ok: true, value: { kind: 'sent' } });
+    buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
     const before = Date.now();
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
-    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    const [legacyDeps] = dispatchScheduledBroadcastMock.mock.calls[0] as [{ tickBudget?: unknown }];
-    expect(legacyDeps.tickBudget).toBeUndefined();
-
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
-    buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
     const [importDeps] = buildAudienceTickMock.mock.calls[0] as [{ tickBudget?: { tickStartedAt: number } }];
     // Review round 3 (CR#7) — the budget carries the entry instant only.
@@ -783,8 +688,7 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     expect(importDeps.tickBudget?.tickStartedAt).toBeGreaterThanOrEqual(before);
   });
 
-  it('DL9 — a row deferred past the cutoff on the import leg is counted deferred_past_cutoff, nothing else', async () => {
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+  it('DL9 — a row deferred past the cutoff is counted deferred_past_cutoff, nothing else', async () => {
     captureScan([{ broadcast_id: BROADCAST_ID }]);
     buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
@@ -802,13 +706,12 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
   // route passes (no `Date.now()` default in the maker, no second copy of
   // maxDuration): the maker hands it to the use case unchanged.
   it('the route passes its tick budget to the import deps maker', async () => {
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
     captureScan([{ broadcast_id: BROADCAST_ID }]);
     buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'import_pending', importId: 'imp-1' } });
     const before = Date.now();
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    const budget = buildDepsArgs[0]?.[2] as { tickStartedAt: number } | undefined;
+    const budget = buildDepsArgs[0]?.[1] as { tickStartedAt: number } | undefined;
     expect(budget?.tickStartedAt).toBeGreaterThanOrEqual(before);
     const [importDeps] = buildAudienceTickMock.mock.calls[0] as [{ tickBudget?: unknown }];
     expect(importDeps.tickBudget).toBe(budget);
@@ -817,7 +720,6 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
   // Review round 1 (CR#7) — past the cutoff no later row can start either, so
   // the route stops at the first deferral and counts every row it left.
   it('DL9 — the route stops scanning rows after the first deferred_past_cutoff and counts the rest deferred', async () => {
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
     captureScan([{ broadcast_id: BROADCAST_ID }, { broadcast_id: 'row-2' }, { broadcast_id: 'row-3' }]);
     buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
@@ -830,7 +732,6 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
 
   // Review round 2 (CR#5, spec L-d) — processed + deferred_past_cutoff = the rows reached.
   it('DL9 — one row runs and the rest defer: processed 1, deferred_past_cutoff 2', async () => {
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
     captureScan([{ broadcast_id: BROADCAST_ID }, { broadcast_id: 'row-2' }, { broadcast_id: 'row-3' }]);
     buildAudienceTickMock
       .mockResolvedValueOnce({ ok: true, value: { kind: 'sent' } })
@@ -848,7 +749,6 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
   // breach: its own bucket (and so its own span attribute), a WARN line and
   // `broadcasts_dispatch_lease_expiring_total`; never concurrent_skip or unknown_error.
   it('a lease_expiring outcome has its own bucket and WARN', async () => {
-    isF7ImportAudienceEnabledMock.mockReturnValue(true);
     captureScan([{ broadcast_id: BROADCAST_ID }]);
     dispatchLeaseExpiringSpy.mockReset();
     buildAudienceTickMock.mockResolvedValue(err({ kind: 'lease_expiring', step: 'sendBroadcast' }));

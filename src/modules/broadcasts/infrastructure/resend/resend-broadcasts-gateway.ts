@@ -2,8 +2,10 @@
  * T104 — Resend Broadcasts gateway adapter (F7 US2).
  *
  * Concrete `BroadcastsGatewayPort` impl wrapping Resend SDK Broadcasts
- * surface (`audiences.create`, `contacts.create`, `broadcasts.create`,
- * `broadcasts.send`, `broadcasts.get`).
+ * surface (`segments.*`, the Contacts-Import endpoint,
+ * `contacts.segments.remove`, `broadcasts.create`, `broadcasts.send`,
+ * `broadcasts.get`). Spec 140 s4 moved the SDK calls to the Segments names;
+ * the port methods and the `resend_audience_id` columns keep "audience".
  *
  * Error classification (thrown shapes per port docstring):
  *   - 5xx / network / timeout → `{kind: 'retryable', reason}`
@@ -14,13 +16,12 @@
  * Retry policy: 1/2/4/8/16s backoff (CHK020) on retryable errors only, inside
  * ONE budget per request (`callTimeoutMs`, default `RESEND_CALL_TIMEOUT_MS` =
  * 10 s; spec 140 s2a): a backoff is taken only while the budget left exceeds
- * it + 1 s, so a retried call gives up within 10 s, not ~31 s. On the
- * default instance the creates (`createAudience`, `createBroadcast`,
- * `createContactImport`) make ONE attempt unless Resend answered 429 (it
- * created nothing); `createContactImport`'s budget is `IMPORT_CALL_TIMEOUT_MS`
- * (30 s). The legacy instance (`legacyResendBroadcastsGateway`, the legacy
- * dispatch leg only, until slice 4) retries `createBroadcast` on any retryable
- * error inside the budget. Permanent errors throw immediately.
+ * it + 1 s, so a retried call gives up within 10 s, not ~31 s. The creates
+ * (`createAudience`, `createBroadcast`, `createContactImport`) make ONE
+ * attempt unless Resend answered 429 (it created nothing);
+ * `createContactImport`'s budget is `IMPORT_CALL_TIMEOUT_MS` (30 s). Spec 140
+ * s4 deleted the legacy instance whose `createBroadcast` retried any retryable
+ * error. Permanent errors throw immediately.
  *
  * Logging: pino with `redact` configured globally to drop request
  * bodies; only metadata (audienceId, broadcastId, recipientCount,
@@ -37,7 +38,6 @@ import {
   oneCallFitsBefore,
 } from '../../application/ports/broadcasts-gateway-port';
 import type {
-  AudienceContact,
   AudienceContactCount,
   BroadcastsGatewayPort,
   CreateBroadcastInput,
@@ -131,11 +131,13 @@ export class GatewayThrowable extends Error {
 
 /**
  * Spec 141 review — refuse an empty identifier before the SDK sees it. On
- * resend@6.35 a falsy `audienceId` is dropped from the path, so
- * `contacts.remove` becomes `DELETE /contacts/{email}` (an ACCOUNT-WIDE delete
- * shared by every tenant) and `contacts.list` becomes `GET /contacts`. Every
- * method that takes an id or an email runs this first; a `null` from a
- * nullable column is refused the same way, as a `GatewayThrowable`.
+ * resend@6.35 a falsy segment id is dropped from the path, so `contacts.list`
+ * becomes `GET /contacts` (the whole account, shared by every tenant); the old
+ * detach, `contacts.remove`, became `DELETE /contacts/{email}`, an ACCOUNT-WIDE
+ * delete, which is why spec 140 s4 moved it to `contacts.segments.remove` and
+ * the DR4 contract guard fails any such request. Every method that takes an id
+ * or an email runs this first; a `null` from a nullable column is refused the
+ * same way, as a `GatewayThrowable`.
  */
 function isBlankId(value: unknown): boolean {
   return typeof value !== 'string' || value.trim() === '';
@@ -161,9 +163,21 @@ function assertNonEmpty(values: Readonly<Record<string, string>>): void {
  * its own code. Case-insensitive: Resend answers lowercase, and an uppercased id
  * names the same segment in the path. No trim: a padded id would reach the path
  * as is. Run after `assertNonEmpty`, so a blank id still answers
- * `empty_identifier`. Applied to `removeContactFromAudience` only.
+ * `empty_identifier`. Applied to every call that puts a segment id into the
+ * path (spec 140 s4 plan review, sec L5): `removeContactFromAudience` and
+ * `getAudienceContactCount` (`contacts.list`), and to the id `createAudience`
+ * gets back from Resend before it is returned and persisted (PR #756 review
+ * round 3, reliability L3).
+ *
+ * `deleteAudience` (`segments.remove` / `segments.get`) differs, exactly so
+ * (PR #756 review rounds 2 and 3): an id with NO UUID anywhere in it (dev litter
+ * such as `aud_fake_N`, `aud-legacy-…`) names no segment Resend could hold, so the
+ * delete resolves as already gone with no request; an id that CONTAINS a UUID
+ * (a real id padded, prefixed or wrapped in a path) is refused as here, loudly.
  */
 const RESEND_SEGMENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A UUID anywhere in a string — `deleteAudience`'s decorated-real-id test. */
+const CONTAINS_UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 function assertSegmentId(values: Readonly<Record<string, string>>): void {
   for (const [field, value] of Object.entries(values)) {
@@ -228,6 +242,19 @@ function httpStatusOf(err: ResendErrorShape | undefined | null): number {
 function isProviderGone(err: ResendErrorShape | undefined | null): boolean {
   const status = httpStatusOf(err);
   return status === 404 || status === 410;
+}
+
+/**
+ * Spec 140 s4 plan review — the classification's inputs without Resend's
+ * `message`, for a call whose path carries an email address: the message
+ * becomes the thrown `reason`, which reaches log lines. An absent field stays
+ * absent, so `httpStatusOf` reads the shape exactly as before.
+ */
+function statusAndNameOf(err: ResendErrorShape): ResendErrorShape {
+  return {
+    ...(err.statusCode !== undefined && { statusCode: err.statusCode }),
+    ...(err.name !== undefined && { name: err.name }),
+  };
 }
 
 function classifyResendError(
@@ -325,14 +352,13 @@ function isRateLimited(e: unknown): boolean {
  * `statusCode: null`, and a raw `fetch` rejects with a `TimeoutError`, before
  * or mid-body.
  *
- * `retry: 'rate_limit'` (the creates, on the default instance) retries a 429
- * only: Resend refused the request for its rate and created nothing. Anything
- * else that may have reached Resend (a 5xx, a network failure, a timeout) is
- * one attempt, because a retried create that reached Resend mints a second
- * resource; a failed create waits for the next tick, inside the FR-021 hour
- * (review round 1, CR#1). `retry: 'retryable'` retries every retryable error;
- * the legacy instance uses it for `createBroadcast` (review round 2, CR#2,
- * until slice 4). A timeout is never retried: the signal is spent.
+ * `retry: 'rate_limit'` (the creates) retries a 429 only: Resend refused the
+ * request for its rate and created nothing. Anything else that may have
+ * reached Resend (a 5xx, a network failure, a timeout) is one attempt, because
+ * a retried create that reached Resend mints a second resource; a failed
+ * create waits for the next tick, inside the FR-021 hour (review round 1,
+ * CR#1). `retry: 'retryable'` retries every retryable error (the reads, the
+ * deletes and `/send`). A timeout is never retried: the signal is spent.
  */
 async function boundedCall<T>(
   op: (signal: AbortSignal) => Promise<T>,
@@ -409,11 +435,9 @@ export interface ResendBroadcastsGatewayOptions {
   /**
    * The budget of one request, its retries and backoff included. Default
    * {@link RESEND_CALL_TIMEOUT_MS}; tests pass 50 ms. A port call that makes
-   * several requests (`addContactsToAudience` per contact, `listAudiences` per
-   * page) has this budget PER REQUEST, so it can run N x C. The per-invocation
-   * budgets: the import leg's tick (spec 140 slice 2b) and `listAudiences`'
-   * caller `deadlineAt` (slice 3, DT5); `addContactsToAudience` is legacy-only
-   * and goes with that leg in slice 4.
+   * several requests (`listAudiences`, per page) has this budget PER REQUEST,
+   * so it can run N x C. The per-invocation budgets: the import leg's tick
+   * (spec 140 slice 2b) and `listAudiences`' caller `deadlineAt` (slice 3, DT5).
    */
   readonly callTimeoutMs?: number;
   /**
@@ -421,32 +445,50 @@ export interface ResendBroadcastsGatewayOptions {
    * (one attempt, a 429 aside). Default {@link IMPORT_CALL_TIMEOUT_MS}.
    */
   readonly importCallTimeoutMs?: number;
-  /**
-   * Spec 140 s2a review round 2 (CR#2, the maintainer's decision, 1 Nov 2026)
-   * — `createBroadcast`'s retry. Default `'rate_limit'`: one attempt, a 429
-   * retried. `'retryable'` (only {@link legacyResendBroadcastsGateway}) also
-   * retries a 5xx or a network failure inside the budget, as the legacy leg
-   * did before s2a.
-   */
-  readonly createBroadcastRetry?: 'retryable' | 'rate_limit';
 }
 
 /** Spec 140 s2a — a gateway whose every request is bounded by `callTimeoutMs`. */
 export function createResendBroadcastsGateway({
   callTimeoutMs = RESEND_CALL_TIMEOUT_MS,
   importCallTimeoutMs = IMPORT_CALL_TIMEOUT_MS,
-  createBroadcastRetry = 'rate_limit',
 }: ResendBroadcastsGatewayOptions = {}): BroadcastsGatewayPort {
   return {
     async createAudience(name: string): Promise<{ readonly audienceId: string }> {
       return boundedCall(
         async (signal) => {
           const sdk = client();
-          const result = (await sdk.audiences.create({ name }, { signal })) as ResendSdkResponse<{
+          const result = (await sdk.segments.create({ name }, { signal })) as ResendSdkResponse<{
             id: string;
           }>;
           if (result.error || !result.data?.id) {
             throw classifyResendError(result.error ?? undefined, 'audience');
+          }
+          // Fail loud before a non-UUID id is persisted: every later call that
+          // puts it into a path would refuse it (round 3, reliability L3). The
+          // warn comes first (rounds 4 and 5) with the id's class AND the id: a
+          // segment id is not personal data (`audience_created` logs it too), and
+          // Resend created a resource this call will not hand back, which an
+          // operator deletes by hand. A non-string id is the same refusal, never
+          // a TypeError the retry wrapper would read as transient.
+          const createdId: unknown = result.data.id;
+          if (typeof createdId !== 'string' || !RESEND_SEGMENT_ID_PATTERN.test(createdId)) {
+            logger.warn(
+              {
+                idClass:
+                  typeof createdId !== 'string'
+                    ? 'not_a_string'
+                    : createdId.startsWith('aud_')
+                      ? 'aud_prefixed'
+                      : 'not_a_segment_id',
+                audienceId: typeof createdId === 'string' ? createdId : String(createdId),
+              },
+              'resend.broadcasts.created_audience_id_not_a_segment',
+            );
+            throw new GatewayThrowable({
+              kind: 'permanent',
+              code: 'invalid_identifier',
+              reason: 'audienceId is not a Resend segment id',
+            });
           }
           logger.info(
             { audienceId: result.data.id },
@@ -455,85 +497,6 @@ export function createResendBroadcastsGateway({
           return { audienceId: result.data.id };
         },
         { method: 'createAudience', callTimeoutMs, retry: 'rate_limit' },
-      );
-    },
-
-    async addContactsToAudience(
-      audienceId: string,
-      contacts: ReadonlyArray<AudienceContact>,
-    ): Promise<void> {
-      if (contacts.length === 0) return;
-      assertNonEmpty({ audienceId });
-
-      // The Resend Contacts API is one-at-a-time (no bulk endpoint). The
-      // account limit is 10 req/s, NOT the 2 this comment used to claim
-      // (measured 2026-09-08, T095: `ratelimit-policy: 10;w=1` straight from
-      // the API's headers). But this loop is serial, so it can only reach
-      // `min(10, 1/RTT)` and the warm round trip is ~0.29 s — i.e. ~3.4 req/s,
-      // latency-bound. Two consequences worth knowing before you tune anything
-      // here: one tick drains ~1,000 contacts, not the ~3,000 the documented
-      // limit suggests; and on the `dispatch-scheduled` path the 429 backoff
-      // below never fires, because one serial loop at 3.45 req/s never
-      // approaches 10.
-      //
-      // That second point is path-specific — corrected 2026-09-08 after review.
-      // `dispatch-batches` drives this same method through
-      // `batch-dispatcher.ts`, which keeps up to `concurrencyCap` batches in
-      // flight (default 4). Four serial loops are ~13.8 req/s against a 10 req/s
-      // policy, so on THAT path 429s are expected and the backoff is load-bearing.
-      // Do not tune it away on the strength of the serial-path reasoning.
-      // See `specs/108-contact-recipient-rules/research.md` § R9 (T095 block).
-      //
-      // Wrap EACH single create in its own
-      // boundedCall (its own 10 s budget; spec 140 s2a) so that when Resend answers 429 (now classified retryable —
-      // see classifyResendError), the 1/2/4/8/16s backoff self-throttles just
-      // that ONE contact and retries it, WITHOUT re-creating the contacts that
-      // already succeeded. Previously the retry wrapped a whole 100-contact
-      // batch, so a mid-batch 429 re-ran the entire batch (duplicate creates)
-      // AND — before 429 was retryable — killed the broadcast outright
-      // (BUG-028).
-      //
-      // We deliberately do NOT add a fixed per-contact sleep: a blanket delay
-      // across a list bounded only by `audienceCeiling()` (5,000, or 50,000 once
-      // the 108 flag and batching are both on — `domain/audience-ceiling.ts`;
-      // the `AUDIENCE_HARD_CAP` this comment used to name was deleted by 108
-      // T085) would burn the whole dispatch-function time budget on sleeping and
-      // time the invocation out before it finishes. Reactive backoff only pays
-      // the cost when the limit is actually hit. Reliable delivery of very large
-      // audiences within a single invocation is what `createContactImport` below
-      // solves — one multipart upload instead of N requests — so this loop is the
-      // legacy path only, reached when `FEATURE_F7_IMPORT_AUDIENCE` is off. Its
-      // capacity is the reason `currentAudienceCeiling()` clamps in that state:
-      // measured 2.08 req/s ⇒ ~623 per 300 s tick ⇒ a 500 accept bound. Anything
-      // above that used to be accepted and never delivered.
-      for (const c of contacts) {
-        await boundedCall(
-          async (signal) => {
-            const sdk = client();
-            const result = (await sdk.contacts.create({
-              // Spec 140 s3 review round 1 (R1-A) — lowercased, as the import
-              // CSV is: Resend matches contacts case-sensitively and the erasure
-              // detach sends lowercase (`EmailLower` is a brand, not a check).
-              email: c.emailLower.toLowerCase(),
-              audienceId,
-              ...(c.firstName !== undefined && { firstName: c.firstName }),
-              ...(c.lastName !== undefined && { lastName: c.lastName }),
-              unsubscribed: false,
-            }, { signal })) as ResendSdkResponse<{ id: string }>;
-            if (result.error) {
-              throw classifyResendError(
-                result.error ?? undefined,
-                'audience',
-                audienceId,
-              );
-            }
-          },
-          { method: 'addContactsToAudience', callTimeoutMs, retry: 'retryable' },
-        );
-      }
-      logger.info(
-        { audienceId, recipientCount: contacts.length },
-        'resend.broadcasts.contacts_added',
       );
     },
 
@@ -574,7 +537,7 @@ export function createResendBroadcastsGateway({
           // failed_to_dispatch). `extractBareEmail` only sanitises the address.
           const safeFromName = stripAngleBrackets(input.fromName);
           const result = (await sdk.broadcasts.create({
-            audienceId: input.audienceId,
+            segmentId: input.audienceId,
             from: `${safeFromName} <${bareFromEmail}>`,
             subject: input.subject,
             html: wrappedHtml,
@@ -594,7 +557,7 @@ export function createResendBroadcastsGateway({
           );
           return { broadcastId: result.data.id };
         },
-        { method: 'createBroadcast', callTimeoutMs, retry: createBroadcastRetry },
+        { method: 'createBroadcast', callTimeoutMs, retry: 'rate_limit' },
       );
     },
 
@@ -638,15 +601,15 @@ export function createResendBroadcastsGateway({
           // Resend already accepted the send) is answered `422 validation_error
           // "Only draft broadcasts can be sent or scheduled"` whatever the key,
           // and Resend delivers once. That 422 is classified `permanent` below;
-          // both dispatch legs probe it (`_probe-refused-send.ts`) rather than
+          // the dispatch tick probes it (`_probe-refused-send.ts`) rather than
           // record a failure for mail that went out.
           //
           // What it does NOT close: `createBroadcast` carries no key at all, so
           // a re-entered tick that minted again would send a NEW resource, where
-          // no key can help. Neither leg relies on the key for that: both persist
-          // the minted id BEFORE this call (`attachBroadcastId`) and a re-entered
-          // tick probes it (`retrieveBroadcast`) and reuses it — S8, closed on
-          // the import leg in `build-audience-tick.ts`.
+          // no key can help. The tick does not rely on the key for that: it
+          // persists the minted id BEFORE this call (`attachBroadcastId`) and a
+          // re-entered tick probes it (`retrieveBroadcast`) and reuses it — S8,
+          // in `build-audience-tick.ts`.
           const result = (await sdk.post(`/broadcasts/${broadcastId}/send`, {}, {
             idempotencyKey,
             signal,
@@ -683,7 +646,8 @@ export function createResendBroadcastsGateway({
       // so `has_more` is read off the runtime shape; 6.35 declares it, and the
       // read is unchanged. On 6.35 this call goes to `/segments/{id}/contacts`:
       // MEASURED 2026-10-30 with 110 contacts, both paths return all 110 with
-      // `has_more: false` (spec 141). Narrowed with `=== false`, so
+      // `has_more: false` (spec 141); spec 140 s4 passes `segmentId`, the same
+      // path (step 0 item 2). Narrowed with `=== false`, so
       // that a missing field reads as "not complete": an absent signal must not be
       // reported as a verified-complete count. Because the field is undeclared, a
       // provider rename cannot fail the build — only this narrowing direction
@@ -696,10 +660,11 @@ export function createResendBroadcastsGateway({
       // covered. If Resend ever changes that, the throw reaches the caller's
       // unverifiable arm, which is where "we could not count" already goes.
       assertNonEmpty({ audienceId });
+      assertSegmentId({ audienceId });
       return await boundedCall(
         async (signal) => {
           const sdk = client();
-          const result = (await sdk.contacts.list({ audienceId }, { signal })) as ResendSdkResponse<{
+          const result = (await sdk.contacts.list({ segmentId: audienceId }, { signal })) as ResendSdkResponse<{
             data: ReadonlyArray<unknown>;
             has_more?: boolean;
           }>;
@@ -805,106 +770,74 @@ export function createResendBroadcastsGateway({
       assertNonEmpty({ audienceId, email });
       assertSegmentId({ audienceId });
       assertPathSafeEmail(email);
+      // Spec 140 s4 — the segment-scoped detach, `contacts.segments.remove`
+      // (`DELETE /contacts/{email}/segments/{id}`), never `contacts.remove`,
+      // whose id-less form is the account-wide `DELETE /contacts/{email}` (DR4).
       // The email goes to the SDK as given: it puts it in the path unencoded,
       // and Resend reads a `+` literally and matches the address
-      // case-SENSITIVELY (MEASURED 5 Nov 2026, spec 140 DT4 and the s3 Verify),
-      // answering 200 to any segment-contact DELETE. So it is neither encoded
-      // nor re-cased here: the address sent is the one given, which is
-      // lowercase because the erasure capture is lowercase and every push
-      // (`addContactsToAudience`, `createContactImport`) lowercases.
-      try {
-        await boundedCall(
-          async (signal) => {
-            const sdk = client();
-            const result = (await sdk.contacts.remove({
-              audienceId,
-              email,
-            }, { signal })) as ResendSdkResponse<{ deleted: boolean }>;
-            if (result.error) {
-              throw classifyResendError(result.error ?? undefined, 'audience', audienceId);
-            }
-          },
-          { method: 'removeContactFromAudience', callTimeoutMs, retry: 'retryable' },
-        );
-        logger.info({ audienceId }, 'resend.broadcasts.contact_detached');
-        return { kind: 'detached' };
-      } catch (e) {
-        // A 404 → the contact/audience is already gone → nothing to detach.
-        //
-        // Round 2 R2-25 — this used to `return` here, indistinguishable from a real
-        // detach. The caller counted both as removals, and that count became
-        // `resend_contacts_removed_count` in an append-only Art. 30 record shown to
-        // a DPO as "Contacts removed". Reporting a removal that did not happen is
-        // worse than reporting none: it is a false statement under Art. 12(3), and
-        // the register entry cannot be corrected once written.
-        if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
-          logger.info({ audienceId }, 'resend.broadcasts.contact_already_absent');
-          return { kind: 'already_absent' };
-        }
-        throw e;
+      // case-SENSITIVELY (MEASURED 5 Nov 2026, research.md slice 4 step 0 item
+      // 1). So it is neither encoded nor re-cased here: the address sent is the
+      // one given, which is lowercase because the erasure capture is lowercase
+      // and the only push, `createContactImport`, lowercases.
+      const absent = await boundedCall(
+        async (signal) => {
+          const sdk = client();
+          const result = (await sdk.contacts.segments.remove({
+            email,
+            segmentId: audienceId,
+          }, { signal })) as ResendSdkResponse<{ object?: string; deleted?: boolean }>;
+          if (result.error) {
+            // A 404 → the contact was not in that segment, or the segment does
+            // not exist → nothing to detach. Since spec 140 s4 this fires: on
+            // this endpoint every no-op answered `404 not_found` (random
+            // segment, wrong case, non-member) and only a membership that
+            // existed answered `200 deleted:true` (MEASURED 5 Nov 2026,
+            // research.md slice 4 step 0 items 1 and 4). A 410 Gone means the
+            // same, as on the siblings `deleteAudience` / `deleteBroadcast`
+            // (PR #756 review round 1, code-review #4). An HTML 404 / 410 is not
+            // Resend's answer and stays retryable (`httpStatusOf`).
+            if (isProviderGone(statusAndNameOf(result.error))) return true;
+            // Status and name only, never Resend's message: the thrown reason
+            // reaches log lines, and a later wording change could put the
+            // address into it (spec 140 s4 plan review). The step 0 404 bodies
+            // carried none.
+            throw classifyResendError(statusAndNameOf(result.error), 'audience', audienceId);
+          }
+          // `detached` becomes a removal in an append-only Art. 30 record, so
+          // it needs Resend's own `deleted: true` (MEASURED: `200
+          // {"object":"contact_segment","deleted":true}`). A 200 without it
+          // was never seen; it is not read as a detach. Permanent, so the
+          // erasure record counts it failed and the runbook remediates it.
+          if (result.data?.deleted !== true) {
+            throw new GatewayThrowable({
+              kind: 'permanent',
+              code: 'detach_unconfirmed',
+              reason: 'the segment detach answered without deleted: true',
+            });
+          }
+          return false;
+        },
+        { method: 'removeContactFromAudience', callTimeoutMs, retry: 'retryable' },
+      );
+      // Round 2 R2-25 — an absent contact is reported as `already_absent`, never
+      // as `detached`: the caller counts detaches into
+      // `resend_contacts_removed_count`, an append-only Art. 30 record shown to a
+      // DPO, and a removal that did not happen is a false statement under
+      // Art. 12(3). (PR #756 review round 2, code-review #6: the `resource_missing`
+      // catch that used to sit here was unreachable, since the classifier gives
+      // that kind only to a 404, which `isProviderGone` already answered.)
+      if (absent) {
+        logger.info({ audienceId }, 'resend.broadcasts.contact_already_absent');
+        return { kind: 'already_absent' };
       }
-    },
-
-    /**
-     * COMP-1 US3-C — the call that actually erases.
-     *
-     * `removeContactFromAudience` above answers `{"deleted": true}` and DETACHES:
-     * measured 2026-09-09, the audience-scoped read 404s afterwards while
-     * `GET /contacts/{email}` still returns the contact at 200. This endpoint's
-     * read-back is a real 404.
-     *
-     * The distinction matters because the erasure cascade was calling the wrong
-     * one and counting each call as a removal, so `resendOutcome: 'ok'` was
-     * reported for members whose addresses were still at the processor.
-     */
-    async deleteContactGlobally(email: string): Promise<void> {
-      assertNonEmpty({ email });
-      try {
-        await boundedCall(
-          async (signal) => {
-            const body = await importFetch(
-              `/contacts/${encodeURIComponent(email)}`,
-              { method: 'DELETE' },
-              signal,
-              // No resourceId: it would be the address, and that must not reach a
-              // classified error's `reason`, which is logged.
-            );
-            // The provider says `deleted: true` for a detach as well, so this is
-            // logged rather than trusted as proof. What makes this call correct is
-            // the endpoint, not the answer.
-            if ((body as { deleted?: unknown }).deleted !== true) {
-              logger.warn(
-                { deleted: (body as { deleted?: unknown }).deleted },
-                'resend.broadcasts.contact_delete_unexpected_body',
-              );
-            }
-          },
-          { method: 'deleteContactGlobally', callTimeoutMs, retry: 'retryable' },
-        );
-        // No email in the log line — forbidden-fields hygiene (FR-053a).
-        logger.info({}, 'resend.broadcasts.contact_deleted_globally');
-      } catch (e) {
-        // A 404 means the contact is already gone: the erasure goal is met.
-        if (e instanceof GatewayThrowable && e.kind === 'resource_missing') return;
-        // `resource_missing` needs a resourceId, and the only id available here is
-        // the address itself — which must not reach a classified error's `reason`,
-        // because that is logged. So a genuine 404 arrives as `permanent`, and its
-        // `code` carries the provider's `name`. Measured: Resend answers
-        // `{"statusCode":404,"name":"not_found"}`.
-        if (
-          e instanceof GatewayThrowable &&
-          e.kind === 'permanent' &&
-          e.code === 'not_found'
-        ) {
-          return;
-        }
-        throw e;
-      }
+      logger.info({ audienceId }, 'resend.broadcasts.contact_detached');
+      return { kind: 'detached' };
     },
 
     async listAudiences({ deadlineAt }: ListAudiencesInput): Promise<ListAudiencesResult> {
-      // Spec 141: on resend@6.35 `audiences.list` is the paginated
-      // `GET /segments`, so follow `has_more` (cursor = the last id) instead of
+      // Spec 141: on resend@6.35 `segments.list` (spec 140 s4; `audiences` is
+      // its alias) is the paginated `GET /segments`, so follow `has_more`
+      // (cursor = the last id) instead of
       // reading page 1 only — reclaim-orphaned-audiences must see EVERY audience.
       // Each page is its own `boundedCall`, so a retry never re-reads earlier pages.
       const byId = new Map<string, { id: string; name: string; created_at: string }>();
@@ -927,7 +860,7 @@ export function createResendBroadcastsGateway({
         const result = await boundedCall(
           async (signal) => {
             const sdk = client();
-            const res = (await sdk.audiences.list({
+            const res = (await sdk.segments.list({
               limit: LIST_AUDIENCES_PAGE_SIZE,
               ...(after !== undefined && { after }),
             }, { signal })) as ResendSdkResponse<{
@@ -976,10 +909,26 @@ export function createResendBroadcastsGateway({
 
     async deleteAudience(audienceId: string): Promise<void> {
       assertNonEmpty({ audienceId });
+      // PR #756 review rounds 2 and 3 (code-review #3, #5, #6) — an id with NO
+      // UUID in it at all names no segment Resend could hold (every id it returns
+      // is a UUID), so the delete's goal is already met: resolve as gone with NO
+      // request, rather than a permanent `invalid_identifier` the cleanup cron
+      // would re-fail every tick (dev litter such as `aud_fake_N`). The warn
+      // names the id's class, never the id. An id that CONTAINS a UUID (a real
+      // id padded, prefixed or wrapped) falls to `assertSegmentId` below and is
+      // refused loudly. The detach and the count refuse every non-UUID id.
+      if (!CONTAINS_UUID_PATTERN.test(audienceId)) {
+        logger.warn(
+          { idClass: audienceId.startsWith('aud_') ? 'aud_prefixed' : 'not_a_segment_id' },
+          'resend.broadcasts.audience_id_not_a_segment',
+        );
+        return;
+      }
+      assertSegmentId({ audienceId });
       await boundedCall(
         async (signal) => {
           const sdk = client();
-          const result = (await sdk.audiences.remove(audienceId, { signal })) as ResendSdkResponse<{
+          const result = (await sdk.segments.remove(audienceId, { signal })) as ResendSdkResponse<{
             deleted: boolean;
             id: string;
             object: string;
@@ -1006,7 +955,7 @@ export function createResendBroadcastsGateway({
             if (httpStatusOf(result.error) === 403) {
               let probe: ResendSdkResponse<{ id: string }> | null = null;
               try {
-                probe = (await sdk.audiences.get(audienceId, { signal })) as ResendSdkResponse<{ id: string }>;
+                probe = (await sdk.segments.get(audienceId, { signal })) as ResendSdkResponse<{ id: string }>;
               } catch {
                 throw refused;
               }
@@ -1096,9 +1045,9 @@ export function createResendBroadcastsGateway({
     /**
      * T086 — hand the WHOLE audience to Resend in one multipart request.
      *
-     * Replaces the `addContactsToAudience` loop, which is serial and therefore
-     * bounded by latency (~2.08 req/s measured, so ~623 contacts per 300 s
-     * function). This call is size-independent: ~412 ms for one address and the
+     * Replaced the per-contact push loop (deleted in spec 140 s4), which was
+     * serial and therefore bounded by latency (~2.08 req/s measured, so ~623
+     * contacts per 300 s function). This call is size-independent: ~412 ms for one address and the
      * same for thousands, because Resend processes the CSV asynchronously and
      * answers with a job id. `getContactImport` below is how we learn it landed.
      *
@@ -1476,9 +1425,9 @@ function normaliseStatus(
       //
       // `failed` and `scheduled` land here on purpose (both real — MEASURED
       // 2026-10-29: a `queued` broadcast whose audience is deleted turns
-      // `failed`, no mail). Both dispatch legs refuse an `unknown` probe
+      // `failed`, no mail). The dispatch tick refuses an `unknown` probe
       // (fail closed); see `RetrievedBroadcastResource['status']` for why
-      // they are not mapped, and the dispatch legs for the recovery.
+      // they are not mapped, and the dispatch tick for the recovery.
       logger.error(
         { rawStatus: raw },
         'resend.broadcasts.unknown_status',
@@ -1489,17 +1438,3 @@ function normaliseStatus(
 
 /** The production gateway: every call bounded by {@link RESEND_CALL_TIMEOUT_MS}. */
 export const resendBroadcastsGateway: BroadcastsGatewayPort = createResendBroadcastsGateway();
-
-/**
- * Spec 140 s2a review round 2 (CR#2, the maintainer's decision, 1 Nov 2026) —
- * the legacy dispatch leg's gateway: its `createBroadcast` retries a 5xx or a
- * network failure inside the 10 s budget, as before s2a, so one 5xx does not
- * end the tick and re-push every contact. Wired ONLY by
- * `makeDispatchScheduledBroadcastDeps`. Each failed attempt (5xx, network
- * failure, or one our timeout aborts) that did mint leaves a draft whose id we
- * never received, up to 4 per call (RoPA 8d). DELETED with the legacy leg in
- * slice 4.
- */
-export const legacyResendBroadcastsGateway: BroadcastsGatewayPort = createResendBroadcastsGateway({
-  createBroadcastRetry: 'retryable',
-});

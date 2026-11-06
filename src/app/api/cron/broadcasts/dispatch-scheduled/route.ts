@@ -12,43 +12,18 @@
  * 2026-05-01):
  *   - Eligible-row scan uses `FOR UPDATE SKIP LOCKED` to skip rows
  *     ALREADY held by another concurrent scan. **The row lock is
- *     released the moment `runInTenant` returns** (tx ends at line 69),
+ *     released the moment `runInTenant` returns** (the scan's own tx),
  *     so SKIP LOCKED only protects against two ticks racing to read the
  *     SAME eligibility batch — it does NOT protect the per-row dispatch
  *     window against another tick that arrives after this one's tx
  *     ended but before the dispatch use-case's own tx starts.
- *   - **Round 4, whole-branch review #3 — this paragraph said the legacy leg's
- *     per-row `pg_advisory_xact_lock` "closes the TOCTOU window", implying the
- *     gap below is import-leg-only. It does not, and the gap is not.** That lock
- *     is taken inside `lockForUpdate`'s transaction, and that transaction
- *     COMMITS before any gateway call — an advisory *xact* lock dies with its
- *     transaction, so nothing is held across `createAudience` /
- *     `addContactsToAudience` / `createBroadcast` / `sendBroadcast`. Holding one
- *     across a 300-second HTTP budget would be worse, which is why it is not
- *     done; but the honest description is that NEITHER leg is protected there.
- *     SKIP LOCKED is a defence against eligible-scan duplication, not the guard
- *     this claimed.
- *
- *     Concretely on the legacy leg: an admin cancel landing during the serial
- *     push (~72 s for 150 contacts) commits while the row is still `approved`,
- *     the send goes out, and Step 4's `applyTransition(from 'approved')` then
- *     matches 0 rows — rolling back `attachResendIds` with it. The row ends
- *     `cancelled` with `resend_broadcast_id` NULL, so every webhook 200-acks as
- *     `unknown_resend_broadcast_id`, bounces never reach suppression, and
- *     `reconcile-stuck-sending` cannot see it (the row is not `sending`).
- *     **CLOSED by F4 (PR #353).** `resend_broadcast_id` is persisted in its own
- *     tx before the send, so it survives the transition rollback a landing
- *     cancel causes, and the webhook can correlate. Note what that does NOT
- *     do: the mail still goes out if Resend accepted the send. What changed is
- *     that the row can afterwards say which resource sent it.
- *   - **On the IMPORT leg that lock does NOT span the send** (round 3 finding
- *     3-6). `buildAudienceTick`'s locking tx COMMITS before every gateway call,
- *     so the window covers a poll, a full re-resolve, `createBroadcast` and
- *     `sendBroadcast`. A cancel can land inside it. That path therefore persists
- *     the Resend ids in their own transaction BEFORE the status transition, so a
- *     lost race still leaves the webhooks resolvable. This paragraph claimed the
- *     lock "survives the entire dispatch tx" for both legs; it never did for
- *     that one.
+ *   - The per-row window is the dispatch lease's (spec 140 s2b,
+ *     `_dispatch-lease.ts`): `buildAudienceTick` claims the row with a fenced
+ *     lease, checks it before each irreversible Resend call, and persists the
+ *     Resend ids in their own transaction BEFORE the status transition (round 3
+ *     finding 3-6), so a cancel that lands mid-tick still leaves the webhooks
+ *     resolvable. No row lock spans a gateway call. (Spec 140 s4 deleted the
+ *     legacy serial-push leg this paragraph used to describe.)
  *
  * RLS context: the eligible scan runs with `runInTenant(tenant.slug)` so
  * RLS+FORCE policies apply (Constitution Principle I clause 1 — every
@@ -61,12 +36,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { sql } from 'drizzle-orm';
 import {
   asBroadcastId,
-  dispatchScheduledBroadcast,
-  makeDispatchScheduledBroadcastDeps,
-  makeTickMemoizedMembersBridge,
-  isF7ImportAudienceEnabled,
   buildAudienceTick,
   makeBuildAudienceTickDeps,
+  currentAudienceCeiling,
 } from '@/modules/broadcasts';
 import { brandChromePort } from '@/lib/broadcast-brand-deps';
 import { runInTenant } from '@/lib/db';
@@ -89,23 +61,11 @@ const MAX_PER_TICK = 50;
 // would silently break dispatch.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// BUG-028: give the audience sync the full function budget. Resend's Contacts
-// API is one-at-a-time; the account limit is 10 req/s (measured 2026-09-08,
-// T095), but the loop is serial, so throughput is `min(10, 1/RTT)` and RTT is
-// what binds: **0.481 s per `POST /contacts` ⇒ ~2.08 req/s ⇒ ~623 contacts in
-// this 300 s budget** (~63 s for 130 recipients, ~72 s for 150).
-//
-// Two numbers were struck here, both derived from a 0.29 s sample that had timed
-// `GET /audiences` instead of the `POST /contacts` the loop actually calls: a
-// "3.4 req/s" rate and the "~1,000 contacts per tick" that followed from it. A
-// third stale clause pointed at "the batched multi-tick model", which
-// `ca51f59a1` DELETED on this branch — there is no batch path; an audience above
-// `currentAudienceCeiling()` is refused, not split.
-//
-// `audience-ceiling.ts` names this exact drift as the reason the derivation lives
-// in ONE place (`research.md` § R9, the CORRECTED block). It took three passes to
-// remove: round 4 deleted the derived figure and left the premise sentence, which
-// then contradicted its own correction three lines below it.
+// The tick's budget is derived from this value in `_dispatch-lease.ts`
+// (`DISPATCH_MAX_DURATION_MS`, pinned to this literal by the budget test): the
+// lease TTL, the longest path W_max and the row-start cutoff. Change one, re-derive
+// the others there. (Spec 140 s4 deleted the serial per-contact push whose
+// throughput this comment used to derive.)
 export const maxDuration = 300;
 
 // Vercel-native Cron invokes each scheduled path with a GET; this handler's
@@ -166,38 +126,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const tenant = asTenantContext(tenantCtx.slug);
 
   // Eligible-row pick goes through `runInTenant` so RLS+FORCE applies
-  // (cron-system context). `FOR UPDATE SKIP LOCKED` prevents two ticks
-  // grabbing the same row — the second tick's transaction will skip
-  // any row whose advisory lock is held by an in-flight worker.
+  // (cron-system context). `FOR UPDATE SKIP LOCKED` keeps two concurrent scans
+  // off the same batch; the per-row exclusion is the dispatch lease.
   //
-  // With the batch path deleted there is no sibling cron to partition
-  // against: this is the only claimant of `approved` rows. Size is bounded
-  // where it belongs instead — with the import ON one call carries any
-  // audience, and with it OFF `currentAudienceCeiling()` clamps to what the
-  // serial push can drain, so an oversized audience is refused at submit
-  // rather than claimed and stranded.
-  // T087 — with the import flag ON the import leg (`buildAudienceTick`) works
-  // the rows; OFF, the legacy leg. Read once per tick: it routes the rows below
-  // and (spec 140 s2a review round 1, code-review #3) narrows the due scan.
-  const importEnabled = isF7ImportAudienceEnabled();
-  // Flag OFF: a row the import leg started (DL7) is never the legacy leg's, so
-  // the scan leaves it out rather than let it take a `LIMIT` slot every tick;
-  // the use case's own check is the backstop. Hoisted out of the template so
-  // the tenant-SQL shape scan reads the whole query (nested-template rule).
-  // Both predicates are kept on purpose: CHECK `broadcasts_audience_import_coherent`
-  // (read on dev 1 Nov 2026) is `(audience_import_id IS NULL) =
-  // (audience_import_submitted_at IS NULL)`, so either one alone is enough
-  // today; the redundant one costs nothing and is the path `/verify` drove
-  // (review round 2, CR#4).
+  // This is the only claimant of `approved` rows. Size is bounded where it
+  // belongs: `currentAudienceCeiling()` (spec 140 s4: `BROADCAST_AUDIENCE_CEILING`,
+  // default 900) refuses an oversized audience at submit rather than letting it
+  // be claimed and stranded.
   //
-  // Spec 140 s2b (row 13, A7) — and on EVERY flag state the scan leaves out a
-  // row whose dispatch lease is live, written inline below (not in this
-  // fragment, which exists only flag OFF): a row an import tick is working
-  // must not take a `LIMIT` slot, and a dead holder's row is picked up again
-  // once its lease expires (`LEASE_TTL_MS` after the claim, about two ticks).
-  const importRowsFilter = importEnabled
-    ? sql``
-    : sql`AND audience_import_id IS NULL AND audience_import_submitted_at IS NULL`;
+  // Spec 140 s2b (row 13, A7) — the scan leaves out a row whose dispatch lease
+  // is live: a row a tick is working must not take a `LIMIT` slot, and a dead
+  // holder's row is picked up again once its lease expires (`LEASE_TTL_MS` after
+  // the claim, about two ticks).
   let eligible: ReadonlyArray<{ broadcast_id: string }>;
   try {
     eligible = await runInTenant(tenant, async (tx) => {
@@ -209,7 +149,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           AND scheduled_for IS NOT NULL
           AND scheduled_for <= now()
           AND (dispatch_lease_token IS NULL OR dispatch_lease_expires_at < now())
-          ${importRowsFilter}
         ORDER BY scheduled_for ASC
         LIMIT ${MAX_PER_TICK}
         FOR UPDATE SKIP LOCKED
@@ -278,8 +217,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      *
      * Both kinds used to fall to `default` → `unknown_error` +
      * `cronUnknownErrorCount`, the page-on-call enum-drift signal — while the
-     * use case that produces one of them says in the same breath "do NOT page
-     * on-call (no actual failure)" (`dispatch-scheduled-broadcast.ts:1076`).
+     * use case that produced one of them said "do NOT page on-call (no actual
+     * failure)".
      *
      * Named after the existing `concurrent_skip` in the cascade-outcome metric
      * (`metrics.ts:2544`), which draws the same line for the same reason.
@@ -293,14 +232,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      * — so not `concurrent_skip`; WARN + `broadcasts_dispatch_lease_expiring_total`.
      */
     lease_expiring: 0,
-    /**
-     * Spec 140 s2a (DL7; review round 1, code-review #3) — the legacy leg's
-     * backstop met a row holding import columns and left it alone. Not a race
-     * and not a failure, so neither `concurrent_skip` nor a page: the row waits
-     * for the import flag to come back ON, or for staff to cancel it
-     * (`broadcast-audience-build.md`).
-     */
-    import_row_skipped: 0,
     unknown_error: 0,
     uncaught_error: 0,
   };
@@ -308,9 +239,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // T172 — emit no-due-rows skip when query returned an empty set so
   // the cron tick observability dashboard can distinguish "queue
   // empty" from "feature_disabled". (R6 W-P5: `advisory_lock_held`
-  // bucket removed — never emitted because FOR UPDATE SKIP LOCKED +
-  // advisory_xact_lock pattern means contested rows aren't returned to
-  // the scanner in the first place.)
+  // bucket removed — never emitted, because `FOR UPDATE SKIP LOCKED` keeps a
+  // contested row out of the scan and the dispatch lease keeps out a row a tick
+  // is working.)
   if (eligible.length === 0) {
     broadcastsMetrics.cronSkippedCount(tenant.slug, 'no_due_rows');
   }
@@ -321,7 +252,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // auto-instr) hang as children of this root.
   //
   // Round 5 R5-CRON-B — span lifecycle wrapped in try/finally so a
-  // synchronous throw from `makeDispatchScheduledBroadcastDeps` or
+  // synchronous throw from `makeBuildAudienceTickDeps` or
   // any code between span-create and `cronSpan.end()` (logger
   // formatter, etc.) does not leak the span and stall the trace
   // exporter.
@@ -340,297 +271,190 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       'cron.eligible_count': eligible.length,
     },
     async (cronSpan) => {
-    const baseDeps = await makeDispatchScheduledBroadcastDeps(tenant.slug);
-    // R6 staff-review W-P3 fix — per-tick memoization on segment
-    // resolution. Multiple `all_members` (or shared-tier) broadcasts
-    // in the same tick now share one F3 round-trip instead of
-    // re-fetching the same recipient list per broadcast. Cache scope
-    // = this cron-tick closure (fresh Map per tick).
-    const tickBridge = makeTickMemoizedMembersBridge(baseDeps.membersBridge);
-    const deps = {
-      ...baseDeps,
-      membersBridge: tickBridge,
-      // F119 PR-A — the send-time standing gate reads the halt list through
-      // the SAME tick memo, so up to MAX_PER_TICK broadcasts cost one read.
-      sendStanding: { ...baseDeps.sendStanding, membersBridge: tickBridge },
-      // F119 T031 (FR-041c) — brand chrome read live at dispatch, composed
-      // here (the seam lives in src/lib) so the delivered email carries the
-      // logo, colour and address the preview showed.
-      brandChrome: brandChromePort,
-    };
-    // T087 — with the import flag ON, the whole audience goes to Resend in ONE
-    // call and is confirmed on a later tick, so this cron drives
-    // `buildAudienceTick` instead of the serial single-tick push. Built once
-    // per tick like `deps`, and only when it will be used: the maker resolves
-    // the tenant display name, which is a DB read nobody should pay for on the
-    // flag-OFF path. (`importEnabled` is read once, above the due scan.)
-    const importDeps = importEnabled
-      ? {
-          ...(await makeBuildAudienceTickDeps(tenant.slug, deps.membersBridge, tickBudget)),
-          brandChrome: brandChromePort,
-          // Share the tick memo: several broadcasts on one segment resolve it
-          // once, exactly as the single-tick path does.
-          tenant: deps.tenant,
-        }
-      : null;
+    // The tick's deps, built once per tick: the maker builds this tick's
+    // members-bridge memo itself (R6 W-P3, spec 140 s4 row 2), so every row the
+    // tick works shares one segment read and one halt-list read.
+    //
+    // PR #756 review round 1 (code-review #3) — built at the FIRST row, so a tick
+    // with no due rows (most of them) skips the maker's dynamic import, its
+    // tenant display-name read and its memo. Before the per-row `try`, so a
+    // throw from the maker still fails the tick as before rather than being
+    // counted `uncaught_error` against a row.
+    //
+    // T087 — the whole audience goes to Resend in ONE import call and is
+    // confirmed on a later tick (`buildAudienceTick`, the only dispatch leg
+    // since spec 140 s4). F119 T031 (FR-041c) — brand chrome is read live at
+    // dispatch and composed here (the seam lives in src/lib) so the delivered
+    // email carries the logo, colour and address the preview showed.
+    let deps: Parameters<typeof buildAudienceTick>[0] | null = null;
 
     for (const [rowIndex, row] of eligible.entries()) {
+      deps ??= {
+        ...(await makeBuildAudienceTickDeps(tenant.slug, tickBudget)),
+        brandChrome: brandChromePort,
+      };
       // Review rounds 2–3 (CR#5, CR#8) — `processed` counts every row reached
       // except a deferred one, once, in the `finally` below (every `continue`,
       // the `break` and the catch pass through it): processed +
       // deferred_past_cutoff = the rows reached.
       let deferred = false;
       try {
-        if (importDeps !== null) {
-          const built = await buildAudienceTick(importDeps, {
-            broadcastId: asBroadcastId(row.broadcast_id),
-          });
-          if (built.ok) {
-            // Four distinct outcomes, counted apart. `import_submitted`,
-            // `import_pending` and a HOLD are NOT successes: nothing has been
-            // delivered, and folding them into `succeeded` would have the
-            // dashboard claim sends that have not happened.
-            // Spec 140 s2b (DL9; review round 1 CR#7) — past the cutoff no
-            // later row can start either: stop here and count every row left.
-            if (built.value.kind === 'deferred_past_cutoff') {
-              deferred = true;
-              summary.deferred_past_cutoff += eligible.length - rowIndex;
-              break;
-            }
-            if (built.value.kind === 'sent') summary.succeeded++;
-            else if (built.value.kind === 'import_submitted') summary.import_submitted++;
-            else if (built.value.kind === 'dispatch_held_member_suspended') summary.held++;
-            else if (built.value.kind === 'audience_restarted') summary.audience_restarted++;
-            else summary.import_pending++;
-            continue;
+        const built = await buildAudienceTick(deps, {
+          broadcastId: asBroadcastId(row.broadcast_id),
+        });
+        if (built.ok) {
+          // Four distinct outcomes, counted apart. `import_submitted`,
+          // `import_pending` and a HOLD are NOT successes: nothing has been
+          // delivered, and folding them into `succeeded` would have the
+          // dashboard claim sends that have not happened.
+          // Spec 140 s2b (DL9; review round 1 CR#7) — past the cutoff no
+          // later row can start either: stop here and count every row left.
+          if (built.value.kind === 'deferred_past_cutoff') {
+            deferred = true;
+            summary.deferred_past_cutoff += eligible.length - rowIndex;
+            break;
           }
-          switch (built.error.kind) {
-            case 'dispatch.server_error':
-              // Transient: the row stays `approved` and the next tick retries.
-              summary.retryable++;
-              broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug, built.error.phase);
-              // Round 4 L4 — this arm had NO log line, only the counter. That
-              // is the second half of round-3 finding 3-13, and the round-3
-              // ledger recorded 3-13 as fully CLOSED when only its first
-              // sentence was addressed (`review-20260909-092000.md:153` maps it
-              // to `aeb8d42ce`; line 114 of the same file proves the "half"
-              // notation was available and unused).
-              //
-              // The consequence: `broadcasts.dispatch_resolve_failed.total`
-              // alarms at >0 sustained 15 min and routes on-call to
-              // `broadcast-audience-build.md` § C, whose triage tree is F3
-              // pages / Neon / opt-out lookup — while the same counter also
-              // fires for every Resend 5xx/429. With no log line there was
-              // nothing on this leg to correct that reading. The legacy arm
-              // below has always had one.
-              logger.warn(
-                {
-                  tenantId: tenant.slug,
-                  broadcastId: row.broadcast_id,
-                  errClass: built.error.errClass ?? 'unclassified',
-                },
-                'cron.broadcasts.dispatch.server_error',
-              );
+          // PR #756 review round 1 (rel L3) — exhaustive, like the error switch
+          // below: a kind with no arm fails to compile, and at runtime it pages as
+          // `unknown_error` (`void`, never `return`, so it cannot fail open)
+          // instead of being counted `import_pending` by a bare `else`.
+          switch (built.value.kind) {
+            case 'sent':
+              summary.succeeded++;
               break;
-            case 'broadcast_resend_resource_missing':
-              // Round 4 F5 — its own bucket, matching the legacy arm below. The
-              // 404 path used to return `audience_import_failed`, so this counter
-              // was structurally 0 on the import leg and a trace read
-              // "permanent_failed=1, resource_missing=0" — finished, nothing to
-              // do — for the one failure whose docblock says an admin has to look
-              // at the Resend account.
-              //
-              // NOTE the arm is required, not cosmetic: without it the new kind
-              // falls to `default` → `unknown_error` + `cronUnknownErrorCount`,
-              // which is the enum-drift signal that PAGES on-call. Adding a kind
-              // to `BuildAudienceTickError` without an arm here trades a silent
-              // mis-bucket for a false page.
-              summary.resource_missing++;
-              logger.error(
-                {
-                  tenantId: tenant.slug,
-                  broadcastId: row.broadcast_id,
-                  resourceType: built.error.resourceType,
-                  resourceId: built.error.resourceId,
-                },
-                'cron.broadcasts.dispatch.resend_resource_missing',
-              );
+            case 'import_submitted':
+              summary.import_submitted++;
               break;
-            case 'audience_import_failed':
-            case 'audience_import_stuck':
-            case 'broadcast_audience_too_large':
-            case 'broadcast_audience_post_suppression_empty':
-              // Terminal by design — every one of these is a statement about a
-              // job that has already finished or an audience that cannot be
-              // sent, so re-polling produces the same answer. The use case has
-              // already moved the row to `failed_to_dispatch` and audited it.
-              summary.permanent_failed++;
+            case 'import_pending':
+              summary.import_pending++;
               break;
-            case 'lease_expiring':
-              summary.lease_expiring++;
-              broadcastsMetrics.dispatchLeaseExpiring(tenant.slug);
-              logger.warn(
-                { tenantId: tenant.slug, broadcastId: row.broadcast_id, step: built.error.step },
-                'cron.broadcasts.dispatch.lease_expiring',
-              );
+            case 'dispatch_held_member_suspended':
+              summary.held++;
               break;
-            case 'broadcast_invalid_state_transition':
-            case 'broadcast_not_found':
-              // See `summary.concurrent_skip` above. Logged at warn with the
-              // kind so the two stay distinguishable — `not_found` after an
-              // erasure cascade and `invalid_state_transition` after a cancel
-              // are the same bucket but not the same event.
-              summary.concurrent_skip++;
-              logger.warn(
-                {
-                  tenantId: tenant.slug,
-                  broadcastId: row.broadcast_id,
-                  errorKind: built.error.kind,
-                },
-                'cron.broadcasts.dispatch.concurrent_skip',
-              );
+            case 'audience_restarted':
+              summary.audience_restarted++;
               break;
-            default:
+            default: {
+              const _exhaustive: never = built.value;
+              void _exhaustive;
               summary.unknown_error++;
               broadcastsMetrics.cronUnknownErrorCount(tenant.slug);
               logger.error(
                 {
                   tenantId: tenant.slug,
                   broadcastId: row.broadcast_id,
-                  errorKind: (built.error as { kind?: string }).kind ?? 'unknown',
+                  outcomeKind: (built.value as { kind?: string }).kind ?? 'unknown',
                 },
-                'cron.broadcasts.dispatch.unknown_error_kind',
+                'cron.broadcasts.dispatch.unknown_outcome_kind',
               );
+            }
           }
           continue;
         }
-
-        const result = await dispatchScheduledBroadcast(deps, {
-          broadcastId: asBroadcastId(row.broadcast_id),
-        });
-        if (result.ok) {
-          // F119 PR-A R1 — a held row sent nothing; it is not a success.
-          if (result.value.kind === 'dispatch_held_member_suspended') summary.held++;
-          else summary.succeeded++;
-          continue;
-        }
-        switch (result.error.kind) {
+        switch (built.error.kind) {
           case 'dispatch.server_error':
-            // code-review #11 — a typed, TRANSIENT infra failure (members-bridge
-            // / Neon / RLS throw, mapped in dispatch-scheduled-broadcast.ts). The
-            // broadcast stays 'approved' for a clean next-tick retry — identical
-            // lifecycle to gateway_retryable. Bucket it as retryable (log-only, no
-            // counter) so it neither raises the page-now `uncaught_error` alert nor
-            // pollutes `unknown_error` (an enum-drift "should be 0" signal that
-            // would page on-call for a routine transient DB blip).
+            // Transient: the row stays `approved` and the next tick retries.
             summary.retryable++;
-            // Review 2026-09-07 (errors HIGH-4) — this was log-only: no
-            // counter, and no wall-clock budget on this path (that budget is
-            // the `gateway_retryable` branch's, FR-021), so a broadcast that
-            // could not build its audience slipped `scheduled_for` forever
-            // with nothing to alert on. The counter is the alarm; the row
-            // still stays `approved` for a clean next-tick retry.
+            broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug, built.error.phase);
+            // Round 4 L4 — this arm had NO log line, only the counter. That
+            // is the second half of round-3 finding 3-13, and the round-3
+            // ledger recorded 3-13 as fully CLOSED when only its first
+            // sentence was addressed (`review-20260909-092000.md:153` maps it
+            // to `aeb8d42ce`; line 114 of the same file proves the "half"
+            // notation was available and unused).
             //
-            // 2026-09-10 follow-up (5): labelled by `phase`, because this arm
-            // fires for four different faults and the counter's runbook
-            // described one of them.
-            broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug, result.error.phase);
+            // The consequence: `broadcasts.dispatch_resolve_failed.total`
+            // alarms at >0 sustained 15 min and routes on-call to
+            // `broadcast-audience-build.md` § C, whose triage tree is F3
+            // pages / Neon / opt-out lookup — while the same counter also
+            // fires for every Resend 5xx/429. With no log line there was
+            // nothing on this leg to correct that reading.
+            //
+            // Round 4 L3 — `errClass` is the bounded half of the error, never
+            // the free text: `reason` is a REDACT_PATH (`logger.ts`), because
+            // free text on this module can carry a Neon error's bound
+            // parameters, member addresses. `NeonDbError` (a DB blip),
+            // `TypeError` (our bug), a fetch error (the network).
             logger.warn(
               {
                 tenantId: tenant.slug,
                 broadcastId: row.broadcast_id,
-                phase: result.error.phase,
-                // Round 4 L3 — was `reason: result.error.message`, and `reason`
-                // is a REDACT_PATH (`logger.ts:332`), deliberately broad because
-                // free text on this module can carry a Neon error's bound
-                // parameters — member addresses. So this line printed
-                // `reason:"[REDACTED]"` and the leg that runs in production had
-                // NO diagnostic at all.
-                //
-                // Renaming the key would have un-redacted the free text, which
-                // is the wrong direction. `errClass` is the bounded half,
-                // carried from the resolver's catch: `NeonDbError` (a DB blip),
-                // `TypeError` (our bug), a fetch error (the network).
-                errClass: result.error.errClass ?? 'unclassified',
+                errClass: built.error.errClass ?? 'unclassified',
               },
               'cron.broadcasts.dispatch.server_error',
             );
             break;
-          case 'gateway_retryable':
-            summary.retryable++;
-            logger.warn(
-              {
-                tenantId: tenant.slug,
-                broadcastId: row.broadcast_id,
-                // Round 4 L3 — `reason: result.error.reason` removed. It is
-                // Resend's own response text, so `reason`/`*.reason` redacts it
-                // and the line printed `[REDACTED]`; `subKind` already carries
-                // the classification an operator acts on (network / timeout /
-                // server_5xx / api / locked), so nothing readable is lost.
-                subKind: result.error.subKind,
-              },
-              'cron.broadcasts.dispatch.retryable',
-            );
-            break;
           case 'broadcast_resend_resource_missing':
+            // Round 4 F5 — its own bucket. The 404 path used to return
+            // `audience_import_failed`, so this counter was structurally 0 on
+            // the import leg and a trace read "permanent_failed=1,
+            // resource_missing=0" — finished, nothing to do — for the one
+            // failure whose docblock says an admin has to look at the Resend
+            // account.
+            //
+            // NOTE the arm is required, not cosmetic: the switch is exhaustive
+            // over `BuildAudienceTickError`, so a new kind without an arm here
+            // fails to compile instead of falling to `unknown_error` +
+            // `cronUnknownErrorCount`, the enum-drift signal that PAGES on-call.
             summary.resource_missing++;
             logger.error(
               {
                 tenantId: tenant.slug,
                 broadcastId: row.broadcast_id,
-                resourceType: result.error.resourceType,
-                resourceId: result.error.resourceId,
+                resourceType: built.error.resourceType,
+                resourceId: built.error.resourceId,
               },
               'cron.broadcasts.dispatch.resend_resource_missing',
             );
             break;
-          case 'broadcast_failed_to_dispatch':
+          case 'audience_import_failed':
+          case 'audience_import_stuck':
+          case 'broadcast_audience_too_large':
           case 'broadcast_audience_post_suppression_empty':
+            // Terminal by design — every one of these is a statement about a
+            // job that has already finished or an audience that cannot be
+            // sent, so re-polling produces the same answer. The use case has
+            // already moved the row to `failed_to_dispatch` and audited it.
             summary.permanent_failed++;
             break;
-          case 'import_row_skipped':
-            summary.import_row_skipped++;
-            logger.info(
-              { tenantId: tenant.slug, broadcastId: row.broadcast_id },
-              'cron.broadcasts.dispatch.import_row_skipped',
+          case 'lease_expiring':
+            summary.lease_expiring++;
+            broadcastsMetrics.dispatchLeaseExpiring(tenant.slug);
+            logger.warn(
+              { tenantId: tenant.slug, broadcastId: row.broadcast_id, step: built.error.step },
+              'cron.broadcasts.dispatch.lease_expiring',
             );
             break;
           case 'broadcast_invalid_state_transition':
           case 'broadcast_not_found':
-            // Same bucket as the import branch above — and this is the leg that
-            // is LIVE at merge, so it is the half that mattered first. The G1
-            // arm in `dispatchScheduledBroadcast` has produced
-            // `broadcast_invalid_state_transition` since 2026-05-02 with a
-            // comment saying it must not page; this route sent it to
-            // `unknown_error` the whole time.
+            // See `summary.concurrent_skip` above. Logged at warn with the
+            // kind so the two stay distinguishable — `not_found` after an
+            // erasure cascade and `invalid_state_transition` after a cancel
+            // are the same bucket but not the same event.
             summary.concurrent_skip++;
             logger.warn(
               {
                 tenantId: tenant.slug,
                 broadcastId: row.broadcast_id,
-                errorKind: result.error.kind,
+                errorKind: built.error.kind,
               },
               'cron.broadcasts.dispatch.concurrent_skip',
             );
             break;
           default: {
-            // Round-4 HIGH-D + Round-5 R5-CRON — unknown error kind
-            // goes to the dedicated `unknown_error` counter AND emits
-            // a metric (R5-CRON-A) so dashboards alert on the right
-            // class without scraping JSON response bodies.
+            // Exhaustive: a kind with no arm above fails to compile. At runtime
+            // (a value the type does not know) it is counted as `unknown_error`
+            // and pages, never accepted silently (`void`, not `return`, so
+            // the arm cannot fail open).
+            const _exhaustive: never = built.error;
+            void _exhaustive;
             summary.unknown_error++;
             broadcastsMetrics.cronUnknownErrorCount(tenant.slug);
-            // Renamed off `errKind` — that name now belongs to the shared
-            // PII-safe helper imported at the top of this file, and a local
-            // shadowing it in one block while the catch below calls the import
-            // is a reading hazard, not a compile error.
-            const unroutedKind =
-              (result.error as { kind?: string }).kind ?? 'unknown';
             logger.error(
               {
                 tenantId: tenant.slug,
                 broadcastId: row.broadcast_id,
-                errorKind: unroutedKind,
+                errorKind: (built.error as { kind?: string }).kind ?? 'unknown',
               },
               'cron.broadcasts.dispatch.unknown_error_kind',
             );
@@ -674,8 +498,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // Spec 140 s4 (security L7) — the ceiling this tick enforced, logged once per
+    // tick. Not a summary bucket: the body and the span attributes stay counts.
     logger.info(
-      { tenantId: tenant.slug, ...summary },
+      { tenantId: tenant.slug, audienceCeiling: currentAudienceCeiling(), ...summary },
       'cron.broadcasts.dispatch.tick_complete',
     );
     // Round 2 R2-15 — the span carried only `processed` + `succeeded`, so the
@@ -686,8 +512,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     //
     // The span attributes are DERIVED from the summary: every bucket it counts
     // is `cron.<key>`, so the trace says WHICH outcome happened and a new bucket
-    // cannot be left off it (spec 140 s2a review round 3; round 2 had to add
-    // `import_row_skipped` by hand). `import_submitted` and `import_pending`
+    // cannot be left off it (spec 140 s2a review round 3; round 2 had to add a
+    // bucket by hand). `import_submitted` and `import_pending`
     // were the two that used to be invisible.
     for (const [key, value] of Object.entries(summary)) {
       if (typeof value === 'number') cronSpan.setAttribute(`cron.${key}`, value);

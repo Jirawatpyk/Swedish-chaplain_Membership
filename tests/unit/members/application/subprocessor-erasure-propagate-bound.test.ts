@@ -32,27 +32,26 @@ vi.mock('@/modules/broadcasts', async () => {
 });
 
 import { subprocessorErasureAdapter } from '@/modules/members/infrastructure/adapters/subprocessor-erasure-adapter';
+import { stubResendFetch } from '../../../support/resend/wire-guard';
 
-// Installed for the whole file and never removed, so nothing here reaches the
-// network: a hung request settles only when its signal aborts.
-vi.stubGlobal(
-  'fetch',
-  vi.fn(
-    (_input: RequestInfo | URL, init?: RequestInit) =>
-      new Promise<Response>((_resolve, reject) => {
-        const signal = init?.signal;
-        if (!signal) return;
-        if (signal.aborted) {
-          reject(signal.reason);
-          return;
-        }
-        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
-      }),
-  ),
-);
+// Installed before every case and never removed, so nothing here reaches the
+// network: a hung request settles only when its signal aborts. Spec 140 DR4: it
+// goes through the wire guard, so the erasure detach failing over to an
+// account-wide `DELETE /contacts/{email}` would fail the case.
+const hungFetch = (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+  new Promise<Response>((_resolve, reject) => {
+    const signal = init?.signal;
+    if (!signal) return;
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
 
 beforeEach(() => {
   vi.useRealTimers();
+  stubResendFetch(hungFetch);
 });
 
 describe('subprocessorErasureAdapter.propagate — bounded by the gateway (R3)', () => {

@@ -25,9 +25,9 @@
  * compiler refuses to build such a row.
  *
  * `submitBroadcast`, `approveBroadcast` (approve-as-submitted),
- * `confirmSchedule`'s promotion (`member_approved → approved`) and BOTH
- * dispatch legs (`dispatchScheduledBroadcast`, `buildAudienceTick`) all read
- * them through `readMemberSendStanding`, so the five cannot drift apart.
+ * `confirmSchedule`'s promotion (`member_approved → approved`) and the
+ * dispatch tick (`buildAudienceTick`; the legacy leg went in spec 140 s4) all
+ * read them through `readMemberSendStanding`, so they cannot drift apart.
  *
  * WHERE the gate runs — the three edges that make a row dispatchable, and
  * again at SEND time (F119 PR-A). An `approved` E-Blast scheduled days ahead

@@ -21,7 +21,6 @@ vi.hoisted(() => {
 });
 import {
   createResendBroadcastsGateway,
-  legacyResendBroadcastsGateway,
 } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
 import {
   IMPORT_CALL_TIMEOUT_MS,
@@ -29,26 +28,30 @@ import {
   type BroadcastsGatewayPort,
   type CreateBroadcastInput,
 } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import { stubResendFetch } from '../../../support/resend/wire-guard';
 
 type Handler = (call: number, init: RequestInit | undefined) => Promise<Response>;
 
 /**
- * Installed for the whole file and never removed: a call left running by a
+ * Installed before every case and never removed: a call left running by a
  * failing case (an unbounded retry loop sleeping 16 s) meets this, never the
- * network. Between cases the handler answers a transport failure.
+ * network. Between cases the handler answers a transport failure. Spec 140 DR4:
+ * it goes through the wire guard, so an account-wide `DELETE /contacts/{email}`
+ * fails the case that sent it (re-installed per case, because the guard's check
+ * belongs to one test).
  */
 const closed: Handler = async () => {
   throw new TypeError('fetch closed: the case that made this request has ended');
 };
 let handler: Handler = closed;
 let requests: Array<{ readonly url: string; readonly signal: AbortSignal | null }> = [];
-vi.stubGlobal(
-  'fetch',
-  vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    requests.push({ url: String(input), signal: init?.signal ?? null });
-    return handler(requests.length, init);
-  }),
-);
+const recordingFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  requests.push({ url: String(input), signal: init?.signal ?? null });
+  return handler(requests.length, init);
+};
+beforeEach(() => {
+  stubResendFetch(recordingFetch);
+});
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -119,15 +122,14 @@ type Run = (g: BroadcastsGatewayPort) => Promise<unknown>;
 /** Every port method that throws a classified error. */
 const THROWING: ReadonlyArray<readonly [string, Run]> = [
   ['createAudience', (g) => g.createAudience('probe')],
-  ['addContactsToAudience', (g) => g.addContactsToAudience('aud_1', [{ emailLower: 'a@example.com' }] as Parameters<BroadcastsGatewayPort['addContactsToAudience']>[1])],
   ['createBroadcast', (g) => g.createBroadcast(INPUT)],
   ['sendBroadcast', (g) => g.sendBroadcast('bc_1', 'idem-key-1')],
-  ['getAudienceContactCount', (g) => g.getAudienceContactCount('aud_1')],
+  // Spec 140 s4 — the two calls below refuse a non-UUID segment id with no request.
+  ['getAudienceContactCount', (g) => g.getAudienceContactCount('0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19')],
   ['retrieveBroadcast', (g) => g.retrieveBroadcast('bc_1')],
   ['removeContactFromAudience', (g) => g.removeContactFromAudience('0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19', 'a@example.com')],
-  ['deleteContactGlobally', (g) => g.deleteContactGlobally('a@example.com')],
   ['listAudiences', (g) => g.listAudiences({ deadlineAt: new Date(Date.now() + 60_000) })],
-  ['deleteAudience', (g) => g.deleteAudience('aud_1')],
+  ['deleteAudience', (g) => g.deleteAudience('0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19')],
   ['deleteBroadcast', (g) => g.deleteBroadcast('bc_1')],
   ['createContactImport', (g) => g.createContactImport('aud_1', ['a@example.com'])],
   ['getContactImport', (g) => g.getContactImport('imp_1')],
@@ -220,7 +222,7 @@ describe('CR#1 — a create retries a 429 but not a 5xx or a timeout', () => {
     json(429, { statusCode: 429, name: 'rate_limit_exceeded', message: 'Too many requests' });
 
   it.each(CREATES)('%s: a create retries a 429 but not a 5xx or a timeout', async (_name, run) => {
-    handler = async (call) => (call === 1 ? rateLimited() : json(201, { object: 'x', id: 'x_1' }));
+    handler = async (call) => (call === 1 ? rateLimited() : json(201, { object: 'x', id: '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19' }));
     const after429 = await settleWithin(run(createResendBroadcastsGateway()), 2_500);
     expect({ settled: 'value' in (after429.settled as object), requests: requests.length }).toEqual({
       settled: true,
@@ -302,36 +304,5 @@ describe('CR#3 — createContactImport has its own budget', () => {
     // Review round 4: it ends AT its 1 s budget, not merely inside the window, so a
     // doubled or summed budget (~2 s) is red.
     expect(early.elapsedMs + late.elapsedMs).toBeLessThan(1_800);
-  });
-});
-
-// Review round 2, CR#2 (maintainer decision, 1 Nov 2026): the legacy dispatch
-// leg's createBroadcast retries any retryable error inside the budget, as it
-// did before s2a. Only the legacy instance does; it is deleted with the leg in
-// slice 4.
-describe('CR#2 — the legacy instance retries a createBroadcast 5xx', () => {
-  it('the legacy instance retries a createBroadcast 5xx; the default instance does not', async () => {
-    handler = async (call) => (call === 1 ? server5xx() : json(201, { id: 'bc_1' }));
-    const legacy = await settleWithin(
-      createResendBroadcastsGateway({ createBroadcastRetry: 'retryable' }).createBroadcast(INPUT),
-      2_500,
-    );
-    expect({ settled: legacy.settled, requests: requests.length }).toEqual({
-      settled: { value: { broadcastId: 'bc_1' } },
-      requests: 2,
-    });
-
-    requests = [];
-    const byDefault = await settleWithin(createResendBroadcastsGateway().createBroadcast(INPUT), 2_500);
-    expect({ settled: byDefault.settled, requests: requests.length }).toEqual({
-      settled: { thrown: { kind: 'retryable', subKind: 'server_5xx' } },
-      requests: 1,
-    });
-  });
-
-  it('the exported legacy instance is the retrying one', async () => {
-    handler = async (call) => (call === 1 ? server5xx() : json(201, { id: 'bc_2' }));
-    const { settled } = await settleWithin(legacyResendBroadcastsGateway.createBroadcast(INPUT), 2_500);
-    expect({ settled, requests: requests.length }).toEqual({ settled: { value: { broadcastId: 'bc_2' } }, requests: 2 });
   });
 });

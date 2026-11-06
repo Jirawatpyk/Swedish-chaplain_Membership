@@ -25,8 +25,8 @@
  * audience is paired with ONE count, not N independently timed ones.
  *
  * F119 PR-A memoises `getMembersHaltedInTenant` too, in a fourth map keyed by
- * tenant slug. Both dispatch legs now read member standing for EVERY broadcast
- * they claim, and the halt list is one tenant-wide read, so without it a tick
+ * tenant slug. The dispatch tick reads member standing for EVERY broadcast
+ * it claims, and the halt list is one tenant-wide read, so without it a tick
  * of 50 rows re-read the same list 50 times. Only a SUCCESSFUL read is cached:
  * a throw propagates and the next broadcast reads again, because the standing
  * gate fails closed per broadcast and must not inherit another row's failure.

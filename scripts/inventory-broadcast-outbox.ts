@@ -1,38 +1,20 @@
 /**
  * 108 T094 — read-only outbox inventory: what is in flight, and how large.
  *
- * **RUN THIS BEFORE MERGING PHASE 9. A row above the bound WILL be refused.**
+ * **RUN THIS BEFORE LOWERING THE CEILING. A row above the bound WILL be refused.**
  *
- * Round 3 finding 3-11 — this header has now been wrong twice, in opposite
- * directions, and the second time it was marked "CORRECTED". Both versions
- * described a model that was not in the code:
+ * The bound is `currentAudienceCeiling()`, which since spec 140 s4 is
+ * `BROADCAST_AUDIENCE_CEILING` (default 900) and nothing else: no flag moves it.
+ * It is compared at count, submit AND dispatch. A broadcast sitting in
+ * `submitted` or `approved` was accepted under whatever ceiling was live at
+ * SUBMIT; its next dispatch tick compares it against the ceiling live THEN. So
+ * lowering the value, or deploying a change that does, can strand a row that
+ * was legal when submitted, and this script exists so the operator meets those
+ * rows before the deploy rather than after.
  *
- *   - the FIRST described an interim clamp that never merged;
- *   - the "CORRECTED" one described Phase 9b's split/batch model, which
- *     `ca51f59a1` DELETED on this same branch — 42 files, both crons, the
- *     manifests repo. It told the operator that rows above the bound are
- *     "SPLIT and delivered across ticks — no action needed", and named
- *     `FEATURE_F71A_US1_PAGINATION` as the ceiling knob after the gate had
- *     moved to `FEATURE_F7_IMPORT_AUDIENCE`.
- *
- * There is no split path. `currentAudienceCeiling()` is
- * `isF7ImportAudienceEnabled() ? configured : min(configured, 500)`, and
- * `FEATURE_F7_IMPORT_AUDIENCE` defaults FALSE — which is its state at merge.
- * So merging Phase 9 moves the ENFORCED ceiling from 5,000 to 500, unflagged,
- * and every in-flight row above 500 is refused terminally at its next tick.
- *
- * That refusal is deliberate (`reviews/cutover.md` § 5): 501–5,000 is accepted
- * today and ALREADY fails silently, because 300 s of the serial push drains
- * ~623. The refusal replaces a silent non-delivery with a legible error. But it
- * is still a refusal, and this script exists so the operator meets those rows
- * before the deploy rather than after.
- *
- * What it is for, stated once. `currentAudienceCeiling()` is compared at count,
- * submit AND dispatch. A broadcast sitting in `submitted` or `approved` was
- * accepted under whatever ceiling was live at SUBMIT; its next dispatch tick
- * compares it against the ceiling live THEN. Anything that lowers that number
- * can strand a row that was legal when submitted — this merge, or later turning
- * `FEATURE_CONTACT_MARKETING_RECIPIENTS` off (50,000 → 5,000).
+ * History, kept because this header was wrong twice before: 108 Phase 9 moved
+ * the enforced bound from 5,000 to 500 with the import flag off, and spec 140
+ * s4 moved it to 900 when the import leg became the only leg.
  *
  * PRIVACY: COUNTS and one broadcast id per offending row — never a subject, a
  * body, a recipient address or a member id (Constitution Principle I; the
@@ -56,7 +38,7 @@
  * "Accept the refusal" is not a quiet option: dispatch will transition the row
  * to a terminal `failed_to_dispatch`, write an audit row, and send the FR-021
  * failure notification to the member who submitted it
- * (`dispatch-scheduled-broadcast.ts`). The member finds out.
+ * (`failTerminally` in `build-audience-tick.ts`). The member finds out.
  */
 import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
@@ -100,24 +82,16 @@ interface OverRow {
 
 async function main(): Promise<void> {
   const tenantId = process.env.INVENTORY_TENANT_ID ?? 'swecham';
-  // Round 4 F12 — was the bare `DELIVERABLE_RECIPIENTS_PER_TICK` (500), which is
-  // correct for only ONE of the two flag states this file's own header describes.
-  // In the other ("turning FEATURE_CONTACT_MARKETING_RECIPIENTS off later narrows
-  // 50,000 to 5,000 the same way") the enforced ceiling is 5,000, and the script
-  // printed "ACTION REQUIRED … refused TERMINALLY" for every safe row between 501
-  // and 5,000 — telling an operator to cancel broadcasts that would have sent.
-  //
-  // `currentAudienceCeiling()` is what the send path itself compares against, so
-  // the script cannot disagree with it. Deliberately the real function rather
-  // than the same expression re-typed here: this constant's own header narrates
-  // two previous wrong versions of it, and both were copies drifting from their
-  // source.
+  // `currentAudienceCeiling()` is what the send path itself compares against,
+  // so the script cannot disagree with it. Deliberately the real function
+  // rather than the env value re-read here: this header narrates two earlier
+  // wrong versions of the bound, and both were copies drifting from source.
   const bound = currentAudienceCeiling();
 
   console.log('');
   console.log('=== 108 T094 — broadcast outbox inventory (read-only, counts only) ===');
   console.log(`tenant: ${tenantId}`);
-  console.log(`bound:  currentAudienceCeiling() = ${bound} (enforced, this flag state)`);
+  console.log(`bound:  currentAudienceCeiling() = ${bound} (BROADCAST_AUDIENCE_CEILING)`);
   console.log('');
 
   const { rows, over } = await runInTenant(asTenantContext(tenantId), async (tx) => {
@@ -181,7 +155,7 @@ async function main(): Promise<void> {
       'ACTION REQUIRED. These sit above the enforced ceiling AND the dispatch cron can still claim them, so each is refused TERMINALLY at its next tick: status `failed_to_dispatch`, an append-only audit row, and an FR-021 failure email to the member who submitted it. The member finds out. Decide per row BEFORE deploying: cancel it, or let it send under the current ceiling first.',
     );
     console.log(
-      `(Merging Phase 9 with FEATURE_F7_IMPORT_AUDIENCE unset — its default, and its state at merge — moves the enforced ceiling to ${bound}. Turning FEATURE_CONTACT_MARKETING_RECIPIENTS off later narrows 50,000 to 5,000 the same way.)`,
+      `(The enforced ceiling is BROADCAST_AUDIENCE_CEILING = ${bound} in the env this ran under. Run it again with the value you are about to deploy.)`,
     );
     for (const r of actionable) {
       console.log(`  ${r.broadcast_id}  status=${r.status}  estimated=${r.estimated_recipient_count}`);

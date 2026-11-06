@@ -331,13 +331,13 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
  * `broadcast_failed_to_dispatch`, an append-only audit row and an email telling
  * the member their E-Blast did not go out". Read against the code:
  *
- *  1. It does not land there. `attachAudienceId` is called inside the try at
- *     `dispatch-scheduled-broadcast.ts:524`, whose catch is `:608` — a
+ *  1. It did not land there. `attachAudienceId` was called inside a try of
+ *     the legacy dispatch use case (deleted in spec 140 s4) whose catch was a
  *     different block from the one holding that branch. A round-4 reviewer
  *     proposed its remediation against the wrong catch arm on the strength of
  *     this sentence.
- *  2. `db_write_after_resend_success` writes NO audit row and sends NO member
- *     email; it returns `gateway_retryable`.
+ *  2. `db_write_after_resend_success` wrote NO audit row and sent NO member
+ *     email; it returned `gateway_retryable`.
  *  3. The method this paragraph actually describes was `attachResendIds`, which
  *     round 3 did not change. It does now — see the call above.
  *
@@ -1373,7 +1373,7 @@ export function makeDrizzleBroadcastsRepo(
         //    typed errors and RETHROWS anything else, so `idsAttached.ok` was
         //    always true and the `sent_but_row_unattachable` critical log could
         //    never print. The cron counted `uncaught_error` instead.
-        //  - `dispatchScheduledBroadcast`'s `BroadcastNotFoundError` arm sat in
+        //  - the legacy leg's `BroadcastNotFoundError` arm sat in
         //    a catch nothing could reach it from.
         await throwConcurrentMutation(tx, tenantIdArg, broadcastId, lease);
       }
@@ -1767,6 +1767,30 @@ export function makeDrizzleBroadcastsRepo(
         broadcastRecorded: row?.broadcast_recorded === true || row?.broadcast_recorded === 't',
         memberBroadcastCount: Number(row?.member_count ?? 0),
       };
+    },
+
+    async hasUnverifiableCountAuditInTx(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+      resendBroadcastId: string,
+    ): Promise<boolean> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'hasUnverifiableCountAuditInTx');
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-unverifiable:' || ${tenantIdArg} || ':' || ${broadcastId as string}, 0))`,
+      );
+      const rows = (await tx.execute(sql`
+        SELECT EXISTS (
+          SELECT 1
+          FROM audit_log
+          WHERE tenant_id = ${tenantIdArg}
+            AND event_type = 'broadcast_resend_drift_check_unverifiable'
+            AND payload->>'broadcastId' = ${broadcastId as string}::text
+            AND payload->>'resendBroadcastId' = ${resendBroadcastId}::text
+        ) AS found
+      `)) as unknown as Array<{ found: boolean | 't' | 'f' }>;
+      return rows[0]?.found === true || rows[0]?.found === 't';
     },
 
     async markAudienceImportCompleted(
@@ -2362,9 +2386,9 @@ export function makeDrizzleBroadcastsRepo(
             WHEN cancellation_reason IN (${cascadeReasons}) THEN cancellation_reason
             ELSE NULL
           END,
-          -- failure_reason is set from the raw gateway error message
-          -- (dispatch-scheduled-broadcast.ts: shape.reason ?? e.message),
-          -- which can echo the broadcast's reply_to_email / from_name — the
+          -- failure_reason was set from the raw gateway error message
+          -- (the legacy dispatch leg, deleted in spec 140 s4: shape.reason ??
+          -- e.message), and rows it wrote can echo the broadcast's reply_to_email / from_name — the
           -- author's OWN PII, the same address the scrub redacts above on
           -- this row. NULL it too so no copy survives (2026-06-19
           -- /code-review #8). The migration-0224 GUC arm whitelists this
@@ -2638,7 +2662,9 @@ export function makeDrizzleBroadcastsRepo(
      * This arm first shipped without one, pairing every address with every live
      * audience, on the reasoning that a detach for an address that was never in
      * that audience 404s harmlessly. The 404 is harmless; **the request is not.**
-     * `DELETE /audiences/{id}/contacts/{email}` puts the address in the URL of a
+     * The detach (then `DELETE /audiences/{id}/contacts/{email}`, the old wire;
+     * since spec 140 s4 `DELETE /contacts/{email}/segments/{id}`, which answers
+     * 200 only for a membership that existed and 404 otherwise) puts the address in the URL of a
      * call to the marketing processor, so an address Resend had never seen is
      * transmitted to it — during, and because of, an erasure.
      *

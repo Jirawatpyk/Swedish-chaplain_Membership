@@ -96,6 +96,16 @@ export interface SubprocessorErasurePropagatedAudit {
   readonly resend_contacts_already_absent_count: number;
   readonly resend_contacts_failed_count: number;
   readonly stripe_outcome: 'ok';
+  /**
+   * PR #756 review round 1 (pdpa M-1) — which Resend detach wire wrote the
+   * counts. `'segments'` (`DELETE /contacts/{email}/segments/{id}`, spec 140 s4)
+   * answers 200 only for a membership that existed and 404 otherwise, so its
+   * "already absent" is Resend's own answer. A row WITHOUT the key predates s4:
+   * the old `/audiences` wire answered 200 for an address no longer in the
+   * audience (an address Resend never held is not measured), and the evidence
+   * card explains those counts differently. Every row written now carries it.
+   */
+  readonly resend_detach_wire: 'segments';
 }
 
 export interface SubprocessorErasureInput {

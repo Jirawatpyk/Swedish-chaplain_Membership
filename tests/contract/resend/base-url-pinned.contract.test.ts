@@ -61,7 +61,7 @@ describe('RESEND_BASE_URL cannot move any Resend client (spec 141)', () => {
   });
 
   it('the Broadcasts gateway', async () => {
-    const calls = stubWire(() => json(201, { object: 'audience', id: 'aud_1', name: 'probe' }));
+    const calls = stubWire(() => json(201, { object: 'audience', id: '0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19', name: 'probe' }));
     await resendBroadcastsGateway.createAudience('probe');
     expect(calls.map((c) => new URL(c.url).host)).toEqual(['api.resend.com']);
   });

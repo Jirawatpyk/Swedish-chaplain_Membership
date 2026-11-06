@@ -157,17 +157,12 @@ describe('renewals gateway on the wire (spec 141)', () => {
   // Added in review (recorded on 6.35, after the bump): the SDK turns a
   // thrown fetch into `statusCode: null`, which the gateway retries.
   it('reads a network failure as transient and retries it', async () => {
-    let n = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        n += 1;
-        if (n === 1) throw new TypeError('fetch failed');
-        return json(200, { id: 'msg-net' });
-      }),
-    );
+    const calls = stubWire((n) => {
+      if (n === 1) throw new TypeError('fetch failed');
+      return json(200, { id: 'msg-net' });
+    });
     const res = await resendTransactionalRenewalGateway.sendRenewalEmail(INPUT);
-    expect({ ok: res.ok, attempts: n }).toEqual({ ok: true, attempts: 2 });
+    expect({ ok: res.ok, attempts: calls.length }).toEqual({ ok: true, attempts: 2 });
   });
 
   it('reads a 500 as transient and retries it', async () => {

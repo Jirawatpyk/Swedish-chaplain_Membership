@@ -293,8 +293,8 @@ export async function reconcileStuckSending(
     // A concurrent transition OUT of 'sending' (a webhook or admin moved the
     // row first) makes markSent's guarded applyTransition return 0 rows →
     // BroadcastConcurrentMutationError. That's a benign race — the broadcast
-    // is no longer stuck — NOT a server error. Mirror the sibling guard in
-    // dispatch-scheduled-broadcast.ts so it doesn't surface as
+    // is no longer stuck — NOT a server error. Same rule as the dispatch
+    // tick's concurrent skip (`build-audience-tick.ts`), so it doesn't surface as
     // reconcile.server_error → HTTP 500 → cron-job.org retry-storm.
     if (e instanceof BroadcastConcurrentMutationError) {
       return ok({
