@@ -976,6 +976,9 @@ async function probeInheritedBroadcast(
   try {
     retrieved = await deps.broadcastsGateway.retrieveBroadcast(resendBroadcastId);
   } catch (e) {
+    // `instanceof` on purpose, unchanged: a prefixed adapter error is not
+    // escalated on the probe. (The pre-send unverifiable row uses the shared
+    // `isAdapterInvariantError`.)
     if (e instanceof AuditPortInvariantError) throw e;
     const shape = classifyThrown(e);
     if (isRetryableThrow(shape.kind)) {
@@ -2077,9 +2080,11 @@ function unverifiableErrorReason(failure: GatewayFailure): UnverifiableErrorReas
 
 /**
  * PR #756 review rounds 1 to 3 (code-review #1, #5; reliability L1) — the
- * `broadcast_resend_drift_check_unverifiable` row: a dispatch attempt went to
- * `/send` although its audience count call FAILED, so the one check that can see
- * a carried-over contact did not run. The deleted legacy leg wrote it on its own
+ * `broadcast_resend_drift_check_unverifiable` row: a dispatch attempt's audience
+ * count call FAILED, so the one check that can see a carried-over contact did
+ * not run. It records that failed count on the attempt, whether or not the
+ * attempt then sent (a send that fails, or a lease lost at the second gate,
+ * included). The deleted legacy leg wrote it on its own
  * count failure; this is the only leg since spec 140 s4. Same payload keys as the
  * legacy row plus the import id; ids, a count and a closed error code, no address
  * and no provider text (the row is append-only and shown on the audit viewer).
@@ -2112,8 +2117,9 @@ function unverifiableErrorReason(failure: GatewayFailure): UnverifiableErrorReas
  * closed and the row stays `approved`. (`broadcast_send_started`'s own rethrow
  * after the send is pre-existing and out of this change's scope.)
  *
- * Returns whether a row was written, so the caller re-runs the send's lease gate
- * (round 4): this tx ran between the gate and `/send`.
+ * The caller re-runs the send's lease gate after it, whether a row was written,
+ * deduped or the tx failed (rounds 4 and 5): this tx ran between the gate and
+ * `/send`.
  */
 async function recordUnverifiableCount(
   deps: LeasedTickDeps,
@@ -2125,7 +2131,7 @@ async function recordUnverifiableCount(
     readonly expectedRecipientCount: number;
     readonly errorReason: UnverifiableErrorReason;
   },
-): Promise<boolean> {
+): Promise<void> {
   const broadcastId = input.broadcastId as unknown as string;
   let written = false;
   try {
@@ -2159,7 +2165,6 @@ async function recordUnverifiableCount(
       });
     });
     if (written) broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_resend_drift_check_unverifiable');
-    return written;
   } catch (auditErr) {
     // Pre-send: a wiring bug fails closed (see the docblock).
     if (isAdapterInvariantError(auditErr)) throw auditErr;
@@ -2173,7 +2178,6 @@ async function recordUnverifiableCount(
       'broadcasts.audience_import.unverifiable_audit_emit_failed',
     );
     broadcastsMetrics.auditEmitFailed('broadcast_resend_drift_check_unverifiable', deps.tenant.slug);
-    return false;
   }
 }
 
@@ -2559,21 +2563,19 @@ async function confirmImport(
   // `_probe-refused-send.ts`), and the loser's 422 is probed below.
   const sendGated = await leaseGate(deps, input, 'sendBroadcast');
   if (sendGated !== null) return sendGated;
-  // PR #756 review rounds 3 and 4 — after the send's lease gate, before
-  // `/send`. A row actually written means a tx ran after the gate, so the gate
-  // runs again before the call (the gate-then-call invariant).
+  // PR #756 review rounds 3 to 5 — after the send's lease gate, before `/send`.
+  // The row's tx ran after the gate, so the gate runs again before the call
+  // (the gate-then-call invariant), whatever the tx did.
   if (countFailedReason !== null) {
-    const written = await recordUnverifiableCount(deps, input, {
+    await recordUnverifiableCount(deps, input, {
       resendAudienceId: audienceId,
       importId,
       resendBroadcastId,
       expectedRecipientCount: resolvedCount,
       errorReason: countFailedReason,
     });
-    if (written) {
-      const regated = await leaseGate(deps, input, 'sendBroadcast');
-      if (regated !== null) return regated;
-    }
+    const regated = await leaseGate(deps, input, 'sendBroadcast');
+    if (regated !== null) return regated;
   }
   const sent = await viaGateway(() =>
     deps.broadcastsGateway.sendBroadcast(
@@ -2945,7 +2947,9 @@ async function advanceToSending(
     broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_send_started');
   } catch (auditErr) {
     // A wiring bug must still surface — the fail-soft envelope is for transient
-    // storage hiccups (`_safe-audit-emit.ts` draws the same line).
+    // storage hiccups. Post-send, this keeps `instanceof` on purpose, unchanged:
+    // a prefixed adapter error is not escalated here. (The pre-send
+    // unverifiable row uses the shared `isAdapterInvariantError`.)
     if (auditErr instanceof AuditPortInvariantError) throw auditErr;
     logger.error(
       {

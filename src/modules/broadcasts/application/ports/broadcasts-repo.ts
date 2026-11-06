@@ -796,8 +796,10 @@ export interface BroadcastsRepo {
    * The read first takes a transaction-scoped advisory lock on (tenant,
    * broadcast) in the `broadcasts-unverifiable:` namespace, as
    * `readAlreadySentEvidenceInTx` does, so a check-then-insert on the same tx is
-   * serialised against any other writer of that broadcast's row (the dispatch
-   * lease already keeps a second tick out). Tenant-scoped by RLS AND an
+   * serialised against other CALLERS OF THIS METHOD for that broadcast (the
+   * dispatch lease already keeps a second tick out). The lock is per broadcast
+   * while the dedupe is per (broadcast, draft): a second draft waits on the
+   * first's tx, which is harmless at one short tx. Tenant-scoped by RLS AND an
    * explicit `tenant_id` predicate (`audit_log`'s policy also admits
    * `tenant_id IS NULL` rows).
    */

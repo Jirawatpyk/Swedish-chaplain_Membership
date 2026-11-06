@@ -465,15 +465,31 @@ export function createResendBroadcastsGateway({
           }
           // Fail loud before a non-UUID id is persisted: every later call that
           // puts it into a path would refuse it (round 3, reliability L3). The
-          // warn comes first and names the id's class, never the id (round 4):
-          // Resend created a resource this call will not hand back.
-          if (!RESEND_SEGMENT_ID_PATTERN.test(result.data.id)) {
+          // warn comes first (rounds 4 and 5) with the id's class AND the id: a
+          // segment id is not personal data (`audience_created` logs it too), and
+          // Resend created a resource this call will not hand back, which an
+          // operator deletes by hand. A non-string id is the same refusal, never
+          // a TypeError the retry wrapper would read as transient.
+          const createdId: unknown = result.data.id;
+          if (typeof createdId !== 'string' || !RESEND_SEGMENT_ID_PATTERN.test(createdId)) {
             logger.warn(
-              { idClass: result.data.id.startsWith('aud_') ? 'aud_prefixed' : 'not_a_segment_id' },
+              {
+                idClass:
+                  typeof createdId !== 'string'
+                    ? 'not_a_string'
+                    : createdId.startsWith('aud_')
+                      ? 'aud_prefixed'
+                      : 'not_a_segment_id',
+                audienceId: typeof createdId === 'string' ? createdId : String(createdId),
+              },
               'resend.broadcasts.created_audience_id_not_a_segment',
             );
+            throw new GatewayThrowable({
+              kind: 'permanent',
+              code: 'invalid_identifier',
+              reason: 'audienceId is not a Resend segment id',
+            });
           }
-          assertSegmentId({ audienceId: result.data.id });
           logger.info(
             { audienceId: result.data.id },
             'resend.broadcasts.audience_created',
