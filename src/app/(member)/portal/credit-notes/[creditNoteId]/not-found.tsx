@@ -14,11 +14,11 @@
  * Covered by `tests/e2e/smoke-404-status-contract.spec.ts`.
  */
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, FileQuestion } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, EmptyState, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, EmptyState, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 
 export default async function PortalCreditNoteNotFound(): Promise<React.ReactElement> {
   const t = await getTranslations('portal.creditNotes.detail');
@@ -34,13 +34,14 @@ export default async function PortalCreditNoteNotFound(): Promise<React.ReactEle
         <EmptyState
           bordered={false}
           headingLevel={false}
+          icon={<FileQuestion />}
           title={tErrors('notFound')}
           action={
             <Link
               href="/portal/invoices"
               className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
             >
-              <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
+              <Icon name={<ArrowLeft />} size={16} />
               {tInvoices('title')}
             </Link>
           }

@@ -278,5 +278,6 @@ describe('RecentExports card on AURA (PR Q)', () => {
     expect(card).toHaveClass('aura-card');
     expect(card).toHaveAttribute('aria-labelledby', 'recent-exports-heading');
     expect(screen.getByText('No exports yet.').closest('.aura-empty')).not.toHaveClass('is-bordered');
+    expect(screen.getByText('No exports yet.').closest('.aura-empty')).not.toHaveAttribute('role');
   });
 });

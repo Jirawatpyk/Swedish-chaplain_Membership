@@ -99,16 +99,6 @@ export function MemberInvoicesTable({
         </span>
       ),
     },
-    // Card-only columns (AURA 5.85 #198 `grid: false`): the phone card's
-    // title and pill; never drawn in the grid.
-    { key: 'cardNumber', label: labels.number, mono: true, card: 'title', grid: false, render: (row) => row.number },
-    {
-      key: 'status',
-      label: labels.status,
-      card: 'pill',
-      grid: false,
-      render: (row) => <StatusPill tone={invoiceStatusTone(row.status)}>{row.statusLabel}</StatusPill>,
-    },
     // The phone board's card shows Due, Total and Remaining only.
     { key: 'issued', label: labels.issued, width: 120, hideBelow: 'lg', card: 'hide' },
     { key: 'due', label: labels.due, width: 120 },
@@ -147,6 +137,19 @@ export function MemberInvoicesTable({
           />
         );
       },
+    },
+    // Card-only columns (AURA 5.85 #198 `grid: false`): the phone card's
+    // title and pill; never drawn in the grid. Stand-in until AURA #200: they
+    // sit LAST because AURA still counts grid:false columns in the grid's
+    // aria-colcount and each cell's aria-colindex, so placed before the
+    // visible columns they opened a gap (1, then 4).
+    { key: 'cardNumber', label: labels.number, mono: true, card: 'title', grid: false, render: (row) => row.number },
+    {
+      key: 'status',
+      label: labels.status,
+      card: 'pill',
+      grid: false,
+      render: (row) => <StatusPill tone={invoiceStatusTone(row.status)}>{row.statusLabel}</StatusPill>,
     },
   ], [labels, canMutate]);
 

@@ -40,7 +40,7 @@ import {
   XCircleIcon,
   XOctagonIcon,
 } from 'lucide-react';
-import { Badge, Card } from '@jirawatpyk/aura-react/server';
+import { Badge, Card, linkClass } from '@jirawatpyk/aura-react/server';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ErrorCardActions } from '@/components/shell/error-card-actions';
@@ -510,6 +510,7 @@ export async function PaymentTimeline({
         //       action had silently failed. Show a paid-manually copy instead so
         //       the bookkeeper sees the action took effect.
         <EmptyState
+          announce={false}
           icon={BanknoteIcon}
           bordered={false}
           title={invoicePaidAt !== null ? t('emptyPaidManual.title') : t('empty.title')}
@@ -519,7 +520,8 @@ export async function PaymentTimeline({
               <a
                 href={`/admin/invoices/${invoiceId}#record-payment`}
                 data-testid="empty-state-record-payment-link"
-                className="rounded-xs text-sm font-medium text-[var(--aura-fg-accent)] underline underline-offset-2"
+                // AURA's text link with its 44px touch target (WCAG 2.5.8; PR Q review).
+                className={linkClass({ touchHeight: true, className: 'text-sm font-medium' })}
               >
                 {t('empty.recordManualLink')}
               </a>

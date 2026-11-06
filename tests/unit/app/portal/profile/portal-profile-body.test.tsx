@@ -250,7 +250,9 @@ describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', (
     const html = renderToStaticMarkup(tree as ReactElement);
     expect(html).toContain('notLinked');
     // PR Q — AURA's EmptyState (neutral), not a hand-built paragraph.
-    expect(html).toContain('<div role="status" class="aura-empty is-bordered">');
+    // Round 1 — no live region (the old markup had none) and the user-x icon, not the inbox.
+    expect(html).toContain('<div class="aura-empty is-bordered">');
+    expect(html).toContain('lucide-user-x');
   });
 
   it('f9Dashboard:true — renders 4 <h2> sections including the Directory section', async () => {
@@ -270,6 +272,14 @@ describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', (
       // @ts-expect-error — restore
       envMod.env.features.f9Dashboard = false;
     }
+  });
+
+  it('a failed member read is an alert with a "Try again" link back to the profile (PR Q round 1b)', async () => {
+    getMemberMock.mockResolvedValueOnce({ ok: false, error: { type: 'server_error', message: 'boom' } });
+    const tree = await PortalProfileBody({ user: { id: 'user-a' } });
+    const html = renderToStaticMarkup(tree as ReactElement);
+    expect(html).toContain('<div role="alert"><div class="aura-empty is-bordered is-danger">');
+    expect(html).toMatch(/<a class="[^"]*aura-btn--touch[^"]*" href="\/portal\/profile">loadError\.retry<\/a>/);
   });
 
   it('isPrimary:false — Invite Colleague button is absent', async () => {

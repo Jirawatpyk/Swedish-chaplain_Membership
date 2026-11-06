@@ -87,6 +87,7 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
     expect(screen.getByText('No active renewal cycle')).toBeInTheDocument();
     // PR Q — AURA's small EmptyState inside the card.
     expect(screen.getByText('No active renewal cycle').closest('.aura-empty')).toHaveClass('is-sm');
+    expect(screen.getByText('No active renewal cycle').closest('.aura-empty')).not.toHaveAttribute('role');
     // No status badge in the empty state.
     expect(screen.queryByText('Awaiting payment')).not.toBeInTheDocument();
   });

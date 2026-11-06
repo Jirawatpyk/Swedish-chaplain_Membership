@@ -1,7 +1,10 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
+import Link from 'next/link';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { PageHeader } from '@/components/layout/page-header';
+import { sameUrlHref } from '@/lib/same-url-href';
 import { EmptyState } from '@/components/shell/empty-state';
 import { requireSession } from '@/lib/auth-session';
 import { env } from '@/lib/env';
@@ -58,14 +61,28 @@ export async function generateMetadata(): Promise<Metadata> {
  * repo's EMPTY-state sentinel, and this is an error (round 7, silent-failure
  * N4). A retry is a reload (server component), so the copy says so.
  */
-function loadFailed(title: string, message: string) {
+function loadFailed(title: string, message: string, retry?: { readonly href: string; readonly label: string }) {
   return (
     <FormContainer>
       <PageHeader title={title} />
       {/* PR Q — AURA's EmptyState in its danger tone; the alert role stays on
-          the wrapper (AURA's EmptyState takes no role of its own here). */}
+          the wrapper (AURA's EmptyState takes no role of its own here). A
+          failed read (round 1b) offers "Try again" on the same URL. */}
       <div role="alert">
-        <EmptyState title={message} tone="danger" announce={false} />
+        <EmptyState
+          title={message}
+          tone="danger"
+          announce={false}
+          {...(retry
+            ? {
+                action: (
+                  <Link href={retry.href} className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
+                    {retry.label}
+                  </Link>
+                ),
+              }
+            : {})}
+        />
       </div>
     </FormContainer>
   );
@@ -85,6 +102,11 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.edit');
   const tCr = await getTranslations('portal.changeRequests.form');
+  const tErrors = await getTranslations('errors');
+  const retry = async () => ({
+    href: sameUrlHref('/portal/edit', await searchParams),
+    label: tErrors('loadError.retry'),
+  });
 
   const tenant = resolveTenantFromRequest();
   const deps = buildMembersDeps(tenant);
@@ -102,8 +124,8 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
         'portal.edit.member_lookup_failed',
       );
     }
-    const message = memberResult.error.code === 'repo.not_found' ? t('notLinked') : t('loadError');
-    return loadFailed(t('pageTitle'), message);
+    if (memberResult.error.code === 'repo.not_found') return loadFailed(t('pageTitle'), t('notLinked'));
+    return loadFailed(t('pageTitle'), t('loadError'), await retry());
   }
 
   const member = memberResult.value;
@@ -117,7 +139,7 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
         'portal.edit.contacts_lookup_failed',
       );
     }
-    return loadFailed(t('pageTitle'), t('loadError'));
+    return loadFailed(t('pageTitle'), t('loadError'), await retry());
   }
 
   const ownContact = contactsResult.value.find(
@@ -138,7 +160,7 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
       { errorId: 'M114.portal.edit.gate_failed', err: errKind(e), tenantId: tenant.slug, userId: user.id },
       'portal.edit.gate_failed',
     );
-    return loadFailed(t('pageTitle'), t('loadError'));
+    return loadFailed(t('pageTitle'), t('loadError'), await retry());
   }
 
   if (gate === 'immediate') {
@@ -168,7 +190,7 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
       { errorId: 'M114.portal.edit.pending_read_failed', err: pendingRead.error.code, tenantId: tenant.slug, userId: user.id },
       'portal.edit.pending_read_failed',
     );
-    return loadFailed(t('pageTitle'), t('loadError'));
+    return loadFailed(t('pageTitle'), t('loadError'), await retry());
   }
   const pending: ChangeRequestView | null = pendingRead.value
     ? serialiseChangeRequestForPortal(pendingRead.value, {

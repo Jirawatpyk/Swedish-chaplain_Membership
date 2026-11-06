@@ -90,5 +90,8 @@ describe('LapsedTab empty bucket on AURA (PR Q)', () => {
     const state = screen.getByText(en.admin.renewals.table.noRows).closest('.aura-empty');
     expect(state).toHaveClass('is-sm');
     expect(state?.closest('td')).toHaveAttribute('colspan', '5');
+    // Round 1 — no live region, and no column pseudo-label on the stacked phone row.
+    expect(state).not.toHaveAttribute('role');
+    expect(state?.closest('td')).not.toHaveAttribute('data-label');
   });
 });

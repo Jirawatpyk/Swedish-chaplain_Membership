@@ -128,7 +128,7 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
     <Card title={t('title')} headingLevel={2}>
       {!hasData ? (
         // PR Q — AURA's EmptyState, small and frameless inside the chart card.
-        <EmptyState title={t('empty')} size="sm" bordered={false} />
+        <EmptyState title={t('empty')} size="sm" bordered={false} announce={false} />
       ) : (
         <>
           {/* Headline stat: the active-member total the bars sum to, at the

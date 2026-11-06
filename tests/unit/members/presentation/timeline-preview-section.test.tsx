@@ -170,9 +170,15 @@ describe('<TimelinePreviewSection> states on AURA EmptyState (PR Q)', () => {
 
   it('a failed read is the danger-tone EmptyState; an empty one the neutral EmptyState', async () => {
     timelineListMock.mockRejectedValue(new TypeError('bad'));
-    expect(await renderSection()).toMatch(/class="aura-empty is-danger"/);
+    const failed = await renderSection();
+    expect(failed).toContain('<div class="aura-empty is-danger">');
+    // Round 1b — announced as an alert, with "Try again" on the member page.
+    expect(failed).toContain('<div role="alert"><div class="aura-empty is-danger">');
+    expect(failed).toMatch(/<a class="[^"]*aura-btn--touch[^"]*" href="\/admin\/members\/m1">Try again<\/a>/);
     timelineListMock.mockResolvedValue({ ok: true, value: { events: [] } });
     const html = await renderSection();
-    expect(html).toMatch(/class="aura-empty"[^>]*>.*No recent activity yet/);
+    expect(html).toMatch(/<div class="aura-empty">.*No recent activity yet/);
+    // Round 1 — neither is a live region (the old markup had none).
+    expect(html).not.toContain('role="status"');
   });
 });

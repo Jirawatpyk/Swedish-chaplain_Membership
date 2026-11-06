@@ -232,5 +232,7 @@ describe('card and form skeleton frames on AURA tokens (PR Q)', () => {
     expect(root.className).toContain('border-[var(--aura-border-default)]');
     expect(root.className).toContain('bg-[var(--aura-bg-surface)]');
     expect(root.className).not.toMatch(/\bborder-border\b|\bbg-card\b|var\(--card-radius\)/);
+    // Round 1 — no shadow, as AURA's Card.
+    expect(root.className).not.toContain('--card-shadow');
   });
 });

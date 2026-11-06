@@ -130,6 +130,7 @@ export async function TimelinePreviewCard({
 }) {
   const t = await getTranslations('admin.members.detail');
   const tTimeline = await getTranslations('admin.members.timeline');
+  const tErrors = await getTranslations('errors');
   // Spec 122 US3: an AURA card — its h2 title (056 fix #1: reachable via SR
   // heading navigation under the page h1) and the "view all" link as its action.
   return (
@@ -148,9 +149,25 @@ export async function TimelinePreviewCard({
       {loadFailed ? (
         // PR Q — AURA's EmptyState, frameless inside the card: the danger tone
         // for a failed read, the neutral one for an empty timeline.
-        <EmptyState title={t('timelinePreview.loadFailed')} tone="danger" bordered={false} />
+        // Round 1b — announced as an alert, with "Try again" on the member page.
+        <div role="alert">
+          <EmptyState
+            title={t('timelinePreview.loadFailed')}
+            tone="danger"
+            bordered={false}
+            announce={false}
+            action={
+              <Link
+                href={`/admin/members/${memberId}`}
+                className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
+              >
+                {tErrors('loadError.retry')}
+              </Link>
+            }
+          />
+        </div>
       ) : events.length === 0 ? (
-        <EmptyState title={t('timelinePreview.empty')} bordered={false} />
+        <EmptyState title={t('timelinePreview.empty')} bordered={false} announce={false} />
       ) : (
         <ul className="flex flex-col gap-1" aria-label={tTimeline('subtitle')}>
           {events.map((ev) => (

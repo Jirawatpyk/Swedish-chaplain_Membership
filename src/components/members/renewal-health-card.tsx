@@ -118,7 +118,7 @@ export function RenewalHealthCard({
         </div>
       ) : status === null ? (
         // PR Q — AURA's EmptyState, small and frameless inside the card.
-        <EmptyState title={t('empty')} size="sm" bordered={false} />
+        <EmptyState title={t('empty')} size="sm" bordered={false} announce={false} />
       ) : (
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
           <div className="flex flex-col gap-1">

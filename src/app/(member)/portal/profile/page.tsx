@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
+import { UserX } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
+import Link from 'next/link';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
 import { renderPortalProfileView } from '@/components/members/portal-profile-view';
@@ -61,6 +64,7 @@ export async function PortalProfileBody({
   user: { id: string };
 }) {
   const t = await getTranslations('portal.profile');
+  const tErrors = await getTranslations('errors');
   // 059 / PR-A Task 3b — the ADMIN member-detail page already resolves
   // legal_entity_type through these same labels (resolveLegalEntityTypeLabel);
   // reused here rather than duplicated so a member sees IDENTICAL copy to
@@ -83,7 +87,7 @@ export async function PortalProfileBody({
     return (
       <DetailContainer>
         <PageHeader title={t('pageTitle')} />
-        <EmptyState title={t('notLinked')} />
+        <EmptyState icon={UserX} title={t('notLinked')} announce={false} />
       </DetailContainer>
     );
   }
@@ -104,7 +108,19 @@ export async function PortalProfileBody({
     return (
       <DetailContainer>
         <PageHeader title={t('pageTitle')} />
-        <EmptyState title={t('loadError')} tone="danger" />
+        {/* PR Q round 1b — a failed read is announced as an alert, with a retry. */}
+        <div role="alert">
+          <EmptyState
+            title={t('loadError')}
+            tone="danger"
+            announce={false}
+            action={
+              <Link href="/portal/profile" className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
+                {tErrors('loadError.retry')}
+              </Link>
+            }
+          />
+        </div>
       </DetailContainer>
     );
   }

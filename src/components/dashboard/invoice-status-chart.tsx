@@ -148,7 +148,7 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
       {!hasData ? (
         <>
           {/* PR Q — AURA's EmptyState, small and frameless inside the chart card. */}
-          <EmptyState title={t('empty')} size="sm" bordered={false} />
+          <EmptyState title={t('empty')} size="sm" bordered={false} announce={false} />
           {draftCaption}
         </>
       ) : (

@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
+import { Lock, UserX } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
+import Link from 'next/link';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
 import { requireSession } from '@/lib/auth-session';
@@ -38,6 +41,7 @@ export default async function PortalInvitePage() {
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.invite');
   const tHistory = await getTranslations('portal.changeRequests.history');
+  const tErrors = await getTranslations('errors');
 
   const tenant = resolveTenantFromRequest();
   const deps = buildMembersDeps(tenant);
@@ -48,7 +52,7 @@ export default async function PortalInvitePage() {
     return (
       <InviteFrame back={tHistory('backToProfile')}>
         <PageHeader title={t('pageTitle')} />
-        <EmptyState title={t('notLinked')} />
+        <EmptyState icon={UserX} title={t('notLinked')} announce={false} />
       </InviteFrame>
     );
   }
@@ -61,7 +65,19 @@ export default async function PortalInvitePage() {
     return (
       <InviteFrame back={tHistory('backToProfile')}>
         <PageHeader title={t('pageTitle')} />
-        <EmptyState title={t('loadError')} tone="danger" />
+        {/* PR Q round 1b — a failed read is announced as an alert, with a retry. */}
+        <div role="alert">
+          <EmptyState
+            title={t('loadError')}
+            tone="danger"
+            announce={false}
+            action={
+              <Link href="/portal/contacts/invite" className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
+                {tErrors('loadError.retry')}
+              </Link>
+            }
+          />
+        </div>
       </InviteFrame>
     );
   }
@@ -73,7 +89,7 @@ export default async function PortalInvitePage() {
     return (
       <InviteFrame back={tHistory('backToProfile')}>
         <PageHeader title={t('pageTitle')} />
-        <EmptyState title={t('notPrimary')} />
+        <EmptyState icon={Lock} title={t('notPrimary')} announce={false} />
       </InviteFrame>
     );
   }

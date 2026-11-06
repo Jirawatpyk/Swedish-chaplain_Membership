@@ -19,7 +19,7 @@
  * "HTTP status MUST be 404" contract. On AURA since spec 122 US8b (T827).
  */
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, FileQuestion } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -38,6 +38,7 @@ export default async function InvoiceNotFound(): Promise<React.ReactElement> {
         <EmptyState
           bordered={false}
           headingLevel={false}
+          icon={<FileQuestion />}
           title={tErrors('notFound')}
           action={
             <Link

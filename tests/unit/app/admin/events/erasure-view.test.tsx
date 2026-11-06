@@ -128,4 +128,9 @@ describe('erasure view — prompt and no-match on AURA EmptyState (PR Q)', () =>
     expect(empty).not.toHaveAttribute('role');
     expect(empty?.closest('.aura-card')).not.toBeNull();
   });
+
+  it('the idle prompt draws a search icon, not the empty inbox (round 1)', async () => {
+    await show(renderErasureBody({ searchedEmail: '', status: 'idle', truncated: false, rows: [] }));
+    expect(screen.getByText(er.emptyPrompt).closest('.aura-empty')?.querySelector('svg.lucide-search')).not.toBeNull();
+  });
 });

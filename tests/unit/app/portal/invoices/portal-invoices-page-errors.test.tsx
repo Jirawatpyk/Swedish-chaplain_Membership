@@ -302,15 +302,33 @@ describe('PortalInvoicesPage — states on AURA EmptyState (PR Q)', () => {
   it('a failed read is the danger-tone EmptyState inside the card', async () => {
     listInvoicesPagedMock.mockRejectedValue(new Error('NeonDbError'));
     const html = await renderPage();
-    expect(html).toContain('<div role="status" class="aura-empty is-danger">');
+    // Round 1 — not a live region: the old card had none (UX M1).
+    expect(html).toContain('<div class="aura-empty is-danger">');
+    expect(html).not.toMatch(/role="status" class="aura-empty/);
   });
 
-  it('not-linked and the empty list are the neutral EmptyState; the list one is no live region', async () => {
+  it('not-linked and the empty list are the neutral EmptyState, neither a live region', async () => {
     findByLinkedUserIdMock.mockResolvedValueOnce({ ok: false, error: { code: 'repo.not_found' } });
-    expect(await renderPage()).toContain('<div role="status" class="aura-empty">');
+    expect(await renderPage()).toContain('<div class="aura-empty">');
     listInvoicesPagedMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
     const list = await renderPage({ status: 'paid' });
     expect(list).toMatch(/<div class="aura-empty"><span class="aura-empty__icon"/);
     expect(list).not.toContain('is-danger');
+  });
+});
+
+describe('PortalInvoicesPage — a failed read is an alert with a retry (PR Q round 1b)', () => {
+  it('the list-read failure is role="alert" and "Try again" keeps the page’s query', async () => {
+    listInvoicesPagedMock.mockRejectedValue(new Error('NeonDbError'));
+    const html = await renderPage({ status: 'paid', q: 'acme' });
+    expect(html).toContain('<div role="alert"><div class="aura-empty is-danger">');
+    expect(html).toContain(`href="/portal/invoices?status=paid&amp;q=acme">${en.errors.loadError.retry}</a>`);
+  });
+
+  it('not-linked stays a quiet empty state with no retry', async () => {
+    findByLinkedUserIdMock.mockResolvedValueOnce({ ok: false, error: { code: 'repo.not_found' } });
+    const html = await renderPage();
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain(en.errors.loadError.retry);
   });
 });

@@ -167,4 +167,24 @@ describe('MemberInvoicesTable (T556)', () => {
     const total = within(container).getAllByText('38,520.00 THB')[0]!;
     expect(total.closest('[class*="max-[639px]:text-start"]')).toBeNull();
   });
+
+  // PR Q review round 1 (a11y) — AURA still counts `grid: false` columns in
+  // aria-colcount / aria-colindex (stand-in until AURA #200), so the card-only
+  // columns sit last: the grid's visible headers number 1..N with no gap.
+  it('the visible grid headers run aria-colindex 1..N with no gap', () => {
+    render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
+    const grid = screen.getByRole('grid', { name: labels.caption });
+    const visible = within(grid)
+      .getAllByRole('columnheader')
+      .filter((h) => h.getAttribute('data-grid') !== 'off')
+      .map((h) => Number(h.getAttribute('aria-colindex')));
+    expect(visible).toEqual(visible.map((_, i) => i + 1));
+  });
+
+  it('the phone card still takes the number as its title and the status as its pill', () => {
+    render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
+    const row = within(screen.getByRole('grid', { name: labels.caption })).getAllByRole('row')[1]!;
+    expect(row.querySelector('[data-card="title"]')).toHaveTextContent(issued.number);
+    expect(row.querySelector('[data-card="pill"]')).toHaveTextContent(issued.statusLabel);
+  });
 });

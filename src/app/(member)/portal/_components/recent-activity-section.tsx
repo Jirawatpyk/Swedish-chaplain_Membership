@@ -39,6 +39,7 @@ export async function RecentActivitySection({
   readonly memberId: string;
 }): Promise<React.JSX.Element> {
   const t = await getTranslations('portal.dashboard.activity');
+  const tErrors = await getTranslations('errors');
   const tenant = resolveTenantFromRequest();
   const h = await headers();
   const requestId = requestIdFromHeaders(h);
@@ -50,7 +51,7 @@ export async function RecentActivitySection({
   const ownContact = await resolveOwnContactId(deps.contactRepo, tenant, asMemberId(memberId), userId, requestId);
   if (!ownContact.ok) {
     logger.warn({ requestId, errKind: ownContact.error.code }, '[dashboard-recent-activity] own contact unresolved');
-    return unavailableCard(t('title'), t('loadFailed'));
+    return unavailableCard(t('title'), t('loadFailed'), tErrors('loadError.retry'));
   }
   const result = await timelineList(
     { memberId, limit: PREVIEW_LIMIT },
@@ -81,7 +82,7 @@ export async function RecentActivitySection({
       { requestId, errKind: errKind(rootCause(result.error)) },
       '[dashboard-recent-activity] timelineList failed',
     );
-    return unavailableCard(t('title'), t('loadFailed'));
+    return unavailableCard(t('title'), t('loadFailed'), tErrors('loadError.retry'));
   }
 
   const events = result.value.events
@@ -96,10 +97,11 @@ export async function RecentActivitySection({
         // activity.empty.title = "No activity yet" (nested key, existing G2 key);
         // PR Q — AURA's EmptyState, frameless inside the card, the CTA its action.
         <EmptyState
+          announce={false}
           title={t('empty.title')}
           bordered={false}
           action={
-            <Link href="/portal/benefits" className={buttonClass({ variant: 'secondary' })}>
+            <Link href="/portal/benefits" className={buttonClass({ variant: 'secondary', touchHeight: true })}>
               {t('emptyCta')}
             </Link>
           }
@@ -136,11 +138,24 @@ export function RecentActivitySkeleton(): React.JSX.Element {
 }
 
 /** The B2 "unavailable" state — one card for a failed list read and for an unresolved viewer contact. */
-function unavailableCard(title: string, body: string) {
+function unavailableCard(title: string, body: string, retryLabel: string) {
   return (
     <Card title={title} headingLevel={2}>
-      {/* PR Q — a failed read: AURA's EmptyState in its danger tone. */}
-      <EmptyState title={body} tone="danger" bordered={false} />
+      {/* PR Q — a failed read: AURA's EmptyState in its danger tone, announced
+          as an alert, and "Try again" reloads the dashboard (round 1b). */}
+      <div role="alert">
+        <EmptyState
+          title={body}
+          tone="danger"
+          bordered={false}
+          announce={false}
+          action={
+            <Link href="/portal" className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
+              {retryLabel}
+            </Link>
+          }
+        />
+      </div>
     </Card>
   );
 }

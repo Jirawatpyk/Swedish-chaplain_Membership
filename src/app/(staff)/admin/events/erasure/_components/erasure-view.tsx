@@ -12,7 +12,7 @@
  */
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { ArrowLeftIcon } from 'lucide-react';
+import { ArrowLeftIcon, SearchIcon } from 'lucide-react';
 import { Alert, Card } from '@jirawatpyk/aura-react/server';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -54,7 +54,7 @@ export async function renderErasureBody({ searchedEmail, status, truncated, rows
           {!searched ? (
             // PR Q — AURA's EmptyState, frameless inside the card. Not a live
             // region: the search panel's own status line announces the count.
-            <EmptyState title={t('emptyPrompt')} bordered={false} announce={false} />
+            <EmptyState icon={SearchIcon} title={t('emptyPrompt')} bordered={false} announce={false} />
           ) : status === 'error' ? (
             <Alert tone="danger" role="alert">
               {t('errorState')}

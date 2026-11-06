@@ -119,9 +119,9 @@ export function LapsedTab({ rows }: LapsedTabProps) {
         <TBody>
           {rows.length === 0 ? (
             <Tr>
-              <Td colSpan={5}>
+              <Td colSpan={5} label="">
                 {/* PR Q — AURA's EmptyState at the cell size. */}
-                <EmptyState title={tTable('noRows')} size="sm" bordered={false} />
+                <EmptyState title={tTable('noRows')} size="sm" bordered={false} announce={false} />
               </Td>
             </Tr>
           ) : (

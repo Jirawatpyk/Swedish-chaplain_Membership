@@ -140,7 +140,12 @@ describe('RecentActivitySection — states on AURA EmptyState (PR Q)', () => {
       ok: false,
       error: { type: 'server_error', message: 'boom', cause: new Error('NeonDbError') },
     });
-    expect(await renderSection()).toMatch(/class="aura-empty is-danger"/);
+    const html = await renderSection();
+    expect(html).toContain('<div class="aura-empty is-danger">');
+    expect(html).not.toContain('role="status"');
+    // Round 1b — announced as an alert, with "Try again" on the dashboard.
+    expect(html).toContain('<div role="alert"><div class="aura-empty is-danger">');
+    expect(html).toMatch(/<a class="[^"]*aura-btn--touch[^"]*" href="\/portal">Try again<\/a>/);
   });
 
   it('the empty read is the neutral EmptyState with the benefits CTA as its action', async () => {
@@ -148,5 +153,8 @@ describe('RecentActivitySection — states on AURA EmptyState (PR Q)', () => {
     const html = await renderSection();
     expect(html).toMatch(/class="aura-empty"/);
     expect(html).toMatch(/class="aura-empty__action"><a[^>]*href="\/portal\/benefits"/);
+    // Round 1 — no live region (the old markup had none); the CTA has its 44px target.
+    expect(html).toContain('<div class="aura-empty">');
+    expect(html).toMatch(/<a class="[^"]*aura-btn--touch[^"]*" href="\/portal\/benefits"/);
   });
 });

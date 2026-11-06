@@ -110,7 +110,11 @@ describe('portal segment not-found pages on AURA (PR Q)', () => {
     const card = screen.getByTestId(testId);
     expect(card).toHaveClass('aura-card');
     expect(card.querySelector('.aura-empty')).toHaveTextContent(enMessages.errors.notFound);
-    expect(screen.getByRole('link', { name: enMessages.portal.invoices.title })).toHaveAttribute('href', '/portal/invoices');
+    const back = screen.getByRole('link', { name: enMessages.portal.invoices.title });
+    expect(back).toHaveAttribute('href', '/portal/invoices');
+    // Round 1 — the file-question icon, and the back arrow through AURA's Icon as on its siblings.
+    expect(card.querySelector('.aura-empty__icon svg.lucide-file-question-mark')).not.toBeNull();
+    expect(back.querySelector('svg')?.closest('.aura-icon, .aura-icon--custom')).not.toBeNull();
   });
 
   it('the E-Blast not-found keeps its h2 inside AURA’s EmptyState in an AURA Card', async () => {

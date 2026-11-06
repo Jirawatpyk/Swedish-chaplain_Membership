@@ -22,7 +22,7 @@
  * Covered by `tests/e2e/smoke-404-status-contract.spec.ts`.
  */
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, FileQuestion } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -41,6 +41,7 @@ export default async function PortalInvoiceNotFound(): Promise<React.ReactElemen
         <EmptyState
           bordered={false}
           headingLevel={false}
+          icon={<FileQuestion />}
           title={tErrors('notFound')}
           action={
             <Link

@@ -76,5 +76,7 @@ describe('invoice not found', () => {
     expect(state).not.toBeNull();
     expect(state?.querySelector('p.aura-empty__title')).toHaveTextContent('notFound');
     expect(state?.querySelector(`.aura-empty__action a[href="${href}"]`)).toHaveClass('aura-btn');
+    // Round 1 — the file-question icon, as the E-Blast not-found, not the empty inbox.
+    expect(state?.querySelector('.aura-empty__icon svg.lucide-file-question-mark')).not.toBeNull();
   });
 });

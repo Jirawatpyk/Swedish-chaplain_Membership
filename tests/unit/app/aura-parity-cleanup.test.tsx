@@ -389,13 +389,17 @@ describe('PR Q — page-level states on the shared EmptyState (pages without a r
     expect(s).not.toMatch(/className="py-(12|\[var\(--aura-space-8\)\]) text-center"/);
   });
 
-  it('the invite page’s failed read takes the danger tone', () => {
-    expect(src('src/app/(member)/portal/contacts/invite/page.tsx')).toContain(`<EmptyState title={t('loadError')} tone="danger" />`);
+
+  it('round 1 — the invite page states are no live region (the old ones had none) and carry their own icons', () => {
+    const s = src('src/app/(member)/portal/contacts/invite/page.tsx');
+    expect(s.match(/<EmptyState\b[^>]*announce=\{false\}/g)).toHaveLength(3);
+    expect(s).toContain(`<EmptyState icon={UserX} title={t('notLinked')}`);
+    expect(s).toContain(`<EmptyState icon={Lock} title={t('notPrimary')}`);
   });
 
   it('the edit page keeps its alert role around the danger-tone EmptyState', () => {
     expect(src('src/app/(member)/portal/edit/page.tsx')).toMatch(
-      /<div role="alert">\s*<EmptyState title=\{message\} tone="danger" announce=\{false\} \/>/,
+      /<div role="alert">\s*<EmptyState\s+title=\{message\}\s+tone="danger"\s+announce=\{false\}/,
     );
   });
 
@@ -403,5 +407,21 @@ describe('PR Q — page-level states on the shared EmptyState (pages without a r
     expect(src('src/app/(staff)/admin/renewals/page.tsx')).toMatch(
       /<div role="status" aria-live="polite">\s*<EmptyState title=\{t\('error\.featureDisabled'\)\}/,
     );
+  });
+});
+
+describe('PR Q round 1b — failed reads on the render-less pages are alerts with a retry', () => {
+  it('the invite page’s failed read sits in role="alert" with a "Try again" link to the same page', () => {
+    expect(src('src/app/(member)/portal/contacts/invite/page.tsx')).toMatch(
+      /<div role="alert">\s*<EmptyState\s+title=\{t\('loadError'\)\}\s+tone="danger"\s+announce=\{false\}\s+action=\{\s*<Link href="\/portal\/contacts\/invite"[^>]*>\s*\{tErrors\('loadError\.retry'\)\}/,
+    );
+  });
+
+  it('every edit-page loadError offers the retry (same URL and query); notLinked does not', () => {
+    const s = src('src/app/(member)/portal/edit/page.tsx');
+    expect(s.match(/loadFailed\(t\('pageTitle'\), t\('loadError'\), await retry\(\)\)/g)).toHaveLength(4);
+    expect(s).not.toMatch(/loadFailed\(t\('pageTitle'\), t\('loadError'\)\)/);
+    expect(s).toContain("href: sameUrlHref('/portal/edit', await searchParams)");
+    expect(s.match(/loadFailed\(t\('pageTitle'\), t\('notLinked'\)\)/g)).toHaveLength(2);
   });
 });

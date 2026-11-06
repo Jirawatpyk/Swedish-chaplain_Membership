@@ -58,7 +58,7 @@ export function RecentExports({
     // and AURA's EmptyState, frameless inside it, for an empty list.
     <Card title={labels.heading} titleId="recent-exports-heading" headingLevel={2}>
       {rows.length === 0 ? (
-        <EmptyState title={labels.empty} bordered={false} />
+        <EmptyState title={labels.empty} bordered={false} announce={false} />
       ) : (
         <>
           <div className="max-sm:hidden">

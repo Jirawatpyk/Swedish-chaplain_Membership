@@ -308,6 +308,6 @@ describe('<InvoicesSummaryCard> — row layout + variant (090 UX findings #1/#3/
 describe('<InvoicesSummaryCard> — empty list on AURA (PR Q)', () => {
   it('is AURA’s frameless EmptyState inside the card', async () => {
     const html = await renderCardWith([]);
-    expect(html).toMatch(/<div role="status" class="aura-empty">.*<p class="aura-empty__title">/);
+    expect(html).toMatch(/<div class="aura-empty">.*<p class="aura-empty__title">/);
   });
 });
