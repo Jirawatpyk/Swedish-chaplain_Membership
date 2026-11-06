@@ -53,14 +53,15 @@ export const RESEND_CALL_TIMEOUT_MS = 10_000;
 
 /**
  * Spec 140 s3 review round 1 (R1-H) — the ONE deadline rule of the orphan
- * reclaim: a call starts only while one whole bounded call (`callBudgetMs`, the
- * gateway's per-call budget) still fits before `deadlineAt`. The use case's
- * delete chunks and the gateway's `listAudiences` pages both judge with it. The
- * use case passes `RESEND_CALL_TIMEOUT_MS` and its `ClockPort`; the gateway its
- * `callTimeoutMs` (default `RESEND_CALL_TIMEOUT_MS`) and `Date.now()`. In
- * production the two are the same value and the same clock (`systemClock` is
- * `new Date()`); only a test that builds the gateway with a shorter budget, or
- * injects a fixed clock, sees them differ.
+ * reclaim: a call starts only while its whole budget (`callBudgetMs`) still
+ * fits before `deadlineAt`. The use case's delete chunks and the gateway's
+ * `listAudiences` pages both judge with it, with different budgets: the
+ * gateway passes its `callTimeoutMs` (default `RESEND_CALL_TIMEOUT_MS`) and
+ * `Date.now()`; the reclaim's delete chunk passes `RECLAIM_CHUNK_BUDGET_MS`
+ * (`RESEND_CALL_TIMEOUT_MS` plus the audit row's INSERT wait,
+ * `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`; spec 142 review rounds 3-4) and its
+ * `ClockPort`. The two budgets are no longer the same value; the clocks are
+ * the same in production (`systemClock` is `new Date()`).
  */
 export function oneCallFitsBefore(deadlineAt: Date, nowMs: number, callBudgetMs: number): boolean {
   return deadlineAt.getTime() - nowMs >= callBudgetMs;

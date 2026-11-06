@@ -35,8 +35,9 @@
  *     (`RESEND_CALL_TIMEOUT_MS`; a chunk's deletes run in parallel, each with
  *     its 403 probe on the same signal) plus its audit row's INSERT wait
  *     (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`; spec 139 s2 review round 2, restored
- *     by spec 142 review round 3) still fits, judged by `oneCallFitsBefore`
- *     (review round 1, R1-H; the listing pages charge the call alone). The
+ *     by spec 142 review round 3) still fits (`RECLAIM_CHUNK_BUDGET_MS`), judged
+ *     by `oneCallFitsBefore` (review round 1, R1-H; the listing pages charge
+ *     the call alone). The
  *     audit row's other DB work is held by the route's
  *     `RECLAIM_DEADLINE_MARGIN_MS` — and the orphans not reached are
  *     `deferredDeletes`. Nothing is resumed: the next daily run lists again
@@ -147,6 +148,14 @@ export interface ReclaimOrphanedAudiencesInput {
  * not a worst case: a stalled read is not cut short here.
  */
 export const RECLAIM_DEADLINE_MARGIN_MS = 30_000;
+
+/**
+ * Spec 142 review round 4 (code-review #6) — what a delete chunk must still
+ * have before `deadlineAt` to start: one bounded Resend call plus its audit
+ * row's INSERT wait (review round 3, code-review #3). The listing's pages
+ * judge with `RESEND_CALL_TIMEOUT_MS` alone.
+ */
+export const RECLAIM_CHUNK_BUDGET_MS = RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS;
 
 export interface ReclaimOrphanedAudiencesOutput {
   /** Total Resend audiences returned by `listAudiences` (a minimum when `truncated`). */
@@ -428,13 +437,7 @@ export async function reclaimOrphanedAudiences(
     // audit row, whose INSERT can wait up to AUDIENCE_AUDIT_LOCK_TIMEOUT_MS on
     // another tx's uncommitted insert of the key: charge both. The row's other
     // DB work (the tenant probe and two reads) is RECLAIM_DEADLINE_MARGIN_MS's.
-    if (
-      !oneCallFitsBefore(
-        input.deadlineAt,
-        deps.clock.now().getTime(),
-        RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS,
-      )
-    ) {
+    if (!oneCallFitsBefore(input.deadlineAt, deps.clock.now().getTime(), RECLAIM_CHUNK_BUDGET_MS)) {
       deferredDeletes = orphans.length - i;
       broadcastsMetrics.audienceReclaimTruncated(deps.tenant.slug, 'deletes');
       logger.warn(
