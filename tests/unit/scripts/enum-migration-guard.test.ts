@@ -177,6 +177,9 @@ describe('findMissingEnumValues', () => {
           'webhook_unresolved_event_adopted',
           'credit_note_issue_replayed',
           'credit_note_attempt_abandoned',
+          // 0327 (spec 139 s2):
+          'broadcast_audience_disclosed',
+          'broadcast_audience_deleted',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
@@ -271,6 +274,9 @@ describe('findMissingEnumValues', () => {
           'webhook_unresolved_event_adopted',
           'credit_note_issue_replayed',
           'credit_note_attempt_abandoned',
+          // 0327 (spec 139 s2):
+          'broadcast_audience_disclosed',
+          'broadcast_audience_deleted',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
@@ -392,6 +398,9 @@ describe('findMissingEnumValues', () => {
           'webhook_unresolved_event_adopted',
           'credit_note_issue_replayed',
           'credit_note_attempt_abandoned',
+          // 0327 (spec 139 s2):
+          'broadcast_audience_disclosed',
+          'broadcast_audience_deleted',
         ],
       },
     ]);
