@@ -86,6 +86,57 @@ CREATE UNIQUE INDEX IF NOT EXISTS audit_log_audience_deleted_once
 
 **Cross-tenant:** the AO2 row above. **e2e:** none, because the change touches no UI.
 
+## Plan review fold-in (6 Nov 2026: drizzle-migration-reviewer, reliability-guardian)
+
+Where these points and the sections above disagree, these points win.
+
+**`emitOnce` (migration H1, reliability M2)**
+- **A literal conflict clause.** The `ON CONFLICT` target and `WHERE` are fixed SQL text, never parameters: `ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE event_type = 'broadcast_audience_deleted' DO NOTHING RETURNING 1`. With a parameter, as in `emit()`'s `${eventType}::audit_event_type` or the `${AUDIENCE_AUDIT_PAYLOAD_KEYS}` interpolation, Postgres cannot prove the predicate and answers 42P10. The `VALUES` row stays parameterised.
+- **Errors propagate.** Unlike the overdue adapter, `emitOnce` swallows nothing, so a lost row still reaches the helper's ERROR and counter.
+- **Refusals.** It refuses a null tx and a null `tenantId` (`AuditPortInvariantError`). In a unique index NULLs never conflict, so either would silently allow duplicates.
+- **The segment id is required by type.** The one deleted-row builder requires `resend_audience_id`, for the same reason.
+- **A tenant check at every site.** `assertAudienceAuditTenantBoundTx` runs at all three sites before `emitOnce`, either inside `emitOnce` or in the repo read; restart and cleanup used to get it from `hasAudienceDeletedAuditInTx`.
+
+**The wait is not gone (reliability M1)**
+- An `INSERT … ON CONFLICT` still waits on another transaction that holds an uncommitted insert of the same key. If that transaction commits, ours does nothing and answers false. If it rolls back, ours writes and answers true. "First reason wins" therefore still holds, and a rollback is handled correctly.
+- `emitOnce` keeps `SET LOCAL lock_timeout` at `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s; the pooler drops `statement_timeout`). The constant stays and so does its WARN arm (`*.audience_audit_lock_timeout`, 55P03). What goes is the advisory lock, the `EXISTS` read on restart and cleanup, and the lock namespace.
+- In practice the key holder's transaction is a single INSERT, so the wait is milliseconds.
+- **Reclaim's deadline charge is removed** (reliability L3). `RECLAIM_DEADLINE_MARGIN_MS` = 30 s already covers the DB work, and the Resend call is bounded by `RESEND_CALL_TIMEOUT_MS`. A comment beside the check (~:420) says so.
+- **Superseded:** § Approach's "the lock and all three additions can go", and AO3's removal of the `lock_timeout` and the WARN.
+
+**Migration 0328 (migration M2–M3, L5–L6; reliability M3, L4)**
+- **Lock timeout.** `SET LOCAL lock_timeout = '5s';--> statement-breakpoint` comes before the CREATE, and the old value is restored as the last statement (the 0325:96-99 pattern). A non-CONCURRENTLY build holds a SHARE lock, which blocks every audit INSERT, sign-in included. Do not copy 0021's header claim that it takes "ACCESS EXCLUSIVE".
+- **No CONCURRENTLY.** The repo has no precedent for it, and `run-migrations.ts` cannot run a statement outside the transaction.
+- **Build time.** Dev: heap 270 MB, about 860k rows, a full seq scan in 982 ms, so the build should take about 1–2 s. 0021's own rule says to go CONCURRENTLY outside the pipeline above 1M rows, so the prod row count (measured before merge) is recorded against it.
+- **The pre-check names the keys.** It filters `AND payload ? 'resend_audience_id' AND tenant_id IS NOT NULL`, collects `string_agg(tenant_id || '/' || (payload->>'resend_audience_id'), ', ')` into a variable, and raises `'0328: duplicate keys: %'`. Neither value is a forbidden log field.
+- **`--> statement-breakpoint`** follows `END $$;`.
+- **Journal:** idx 329, `when` 1798546100000. Re-check before merge.
+- **`db:verify` canary:** take the `LIKE` text from `pg_get_indexdef` on dev after the apply, not from the file, and require `CREATE UNIQUE INDEX%` with its `WHERE`. Add a positive control.
+- **Not touched:** `enum-migration-guard`.
+- **RLS:** checked and passing. One `FOR ALL` policy with identical `USING` and `WITH CHECK`; `DO NOTHING` checks only the new row; the tenant is in the key. No grant change is needed.
+
+**The shared helper (reliability L1)**
+- `recordUnverifiableCount` differs from `writeAudienceRow`, and its differences survive:
+  - on an invariant error it rethrows without logging;
+  - its lost-row log is `broadcasts.audience_import.unverifiable_audit_emit_failed` with `{ err: errKind(e), tenantId, broadcastId, importId }`, and no severity or eventType;
+  - its dedupe uses its own lock;
+  - the caller's re-gate stays outside the helper and runs on every outcome.
+- The helper therefore takes a caller-supplied `onLost` / `onInvariant` log hook. AO4's "its unit cells pass unchanged" stands only if those differences are kept.
+
+**Reclaim (reliability L2)**
+- `emitOnce` answering false maps to `'skip'`: no unattributed WARN and no `auditEmitCount`.
+- The lockless `EXISTS` read before the disclosure read no longer orders reclaim against cleanup. The worst case is one false WARN, because cleanup acts on a live row and reclaim on a gone one. The docblock says so.
+
+**Added test cells**
+- two concurrent `emitOnce` where the first rolls back → the second writes (true);
+- an adapter error → the ERROR `audience_audit_lost`, not a skip;
+- tenant B's row does not block tenant A;
+- the pre-check does not raise on rows whose key is NULL;
+- the source scan pins the deleted-row writers to `emitOnce`;
+- `emitOnce` with a null tenant or a null tx → `AuditPortInvariantError`.
+
+Kept unchanged: the reclaim skip cell, the cross-tenant fail-closed cell, every `recordUnverifiableCount` cell, and the hold cell (`eblast-send-time-standing.test.ts:504-568`).
+
 ## Constitution Check
 - **I Privacy & Security:**
   - the index key includes the tenant;
