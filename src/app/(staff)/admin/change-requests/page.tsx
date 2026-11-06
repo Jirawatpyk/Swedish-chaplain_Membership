@@ -220,6 +220,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
 
   return renderChangeRequestQueueView({
     items: page.items,
+    statusInCards: state !== 'pending',
     hasMore: page.nextCursor !== null,
     nextHref,
     firstHref,
@@ -254,6 +255,7 @@ export async function renderChangeRequestQueueView({
   filtered,
   memberCompany,
   timeZone,
+  statusInCards = true,
 }: {
   readonly items: readonly ChangeRequestQueueItem[];
   readonly hasMore: boolean;
@@ -266,6 +268,8 @@ export async function renderChangeRequestQueueView({
   /** `?memberId=`'s company, for its chip in the filter bar. */
   readonly memberCompany: string | null;
   readonly timeZone: string;
+  /** false on the pending view, where every phone card would say "Awaiting decision". */
+  readonly statusInCards?: boolean;
 }) {
   const t = await getTranslations('admin.changeRequests.queue');
   return (
@@ -303,7 +307,7 @@ export async function renderChangeRequestQueueView({
               </div>
             )
           ) : (
-            <ChangeRequestQueueTable items={items} />
+            <ChangeRequestQueueTable items={items} statusInCards={statusInCards} />
           )}
           {/* Spec 122: AURA cursor Pagination — a forward-only keyset, so
               there is no Previous (AURA 5.84 #197 showPrevious); First (PR #757 review) is the way back

@@ -991,6 +991,8 @@ export default async function AuraAdminPreviewPage({
       <StaffFrame path="/admin/change-requests">
         {await renderChangeRequestQueueView({
           items: empty ? [] : QUEUE,
+          // The pending view, as the board: no Status field on a phone card.
+          statusInCards: false,
           hasMore: false,
           nextHref: null,
           pendingSummary: empty ? null : { count: 3, oldestDays: 6 },
