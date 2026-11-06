@@ -5,10 +5,13 @@
  * then rethrown, never counted as lost), and a lost row (the caller's hook,
  * counted, answered `'lost'` so the call goes ahead).
  *
- * The callers' own cells pin their log lines through it:
- * `build-audience-tick-audience-audit.test.ts`, `cleanup-orphaned-audiences.test.ts`,
- * `reclaim-orphaned-audiences.test.ts` (the audience rows) and the
- * unverifiable-count cells of `build-audience-tick-failure-paths.test.ts`.
+ * The callers' own cells pin their log lines through it. The audience rows:
+ * `build-audience-tick-audience-audit.test.ts`, `cleanup-orphaned-audiences.test.ts`
+ * and `reclaim-orphaned-audiences.test.ts`. The unverifiable-count row, in
+ * `build-audience-tick-failure-paths.test.ts`: "a lost unverifiable row …"
+ * pins its ERROR `broadcasts.audience_import.unverifiable_audit_emit_failed`
+ * and the failed-emit counter, and "(d) an AuditPortInvariantError on the
+ * unverifiable row …" pins that the invariant arm logs no ERROR.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 

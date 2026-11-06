@@ -1795,7 +1795,13 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(rows[0]!.txId).toBeDefined();
   });
 
+  // Review round 1 (reliability L1) — the lost row keeps its spec 140 s4 line
+  // through the shared envelope: this exact name and these fields, no severity
+  // or eventType, and the failed-emit counter.
   it('a lost unverifiable row (audit INSERT fails) does not block or double the send', async () => {
+    const { logger } = await import('@/lib/logger');
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
     const { deps, rec } = makeDeps({
       ...POLLING,
       audienceImportSubmittedAt: NOW,
@@ -1812,6 +1818,10 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(res.ok).toBe(true);
     expect(rec.sends).toHaveLength(1);
     expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_send_started');
+    expect(errorSpy.mock.calls.filter((c) => c[1] === 'broadcasts.audience_import.unverifiable_audit_emit_failed').map((c) => c[0])).toEqual([
+      { err: 'Error', tenantId: tenant.slug, broadcastId: BROADCAST_ID, importId: POLLING.audienceImportId },
+    ]);
+    expect(failed).toHaveBeenCalledWith('broadcast_resend_drift_check_unverifiable', tenant.slug);
   });
 
   // PR #756 review round 2 (security L2) — `errorReason` is a CLOSED code: the
@@ -2005,6 +2015,8 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
   // Spec L-1 / reliability L4 — before the send, nothing has gone out, so a
   // wiring bug fails closed: thrown, no `/send`, the row left `approved`.
   it('(d) an AuditPortInvariantError on the unverifiable row is thrown before any send', async () => {
+    const { logger } = await import('@/lib/logger');
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
     const { deps, rec } = makeDeps({
       ...POLLING,
       audienceImportSubmittedAt: NOW,
@@ -2017,6 +2029,8 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
 
     expect(rec.sends).toHaveLength(0);
     expect(rec.transitions.map((t) => t.status)).not.toContain('sending');
+    // Review round 1 (reliability L1): rethrown with no line of its own.
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
   // The legacy leg drew this line itself: a page it could not finish reading is
