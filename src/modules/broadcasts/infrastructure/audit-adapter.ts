@@ -15,7 +15,9 @@
  *     caller logs + continues — does NOT 5xx the request.
  *
  * Spec 142: `emitOnce` (the `broadcast_audience_deleted` row) takes no null tx;
- * it refuses one with `AuditPortInvariantError`.
+ * it refuses one with `AuditPortInvariantError`. It is that row's only writer:
+ * `emit`, `emitTyped` and the multi-row methods refuse the event before any
+ * write (review round 1, code-review #3), so no path bypasses the index.
  */
 import { sql } from 'drizzle-orm';
 import {
@@ -37,6 +39,7 @@ export type F7AuditAdapter = AuditPort & AudienceDeletedAuditPort;
 
 export const f7AuditAdapter: F7AuditAdapter = {
   async emit(txUnknown: unknown, event: AuditEmitInput): Promise<void> {
+    refuseAudienceDeletedRow(event.eventType);
     // Mutation-path invariant: a non-null tx MUST carry a non-null
     // tenantId. RLS is bound on the tx's connection — emitting an
     // audit row with tenant_id=NULL inside a tenant-bound tx would
@@ -169,11 +172,25 @@ export const f7AuditAdapter: F7AuditAdapter = {
 };
 
 /**
+ * Spec 142 (review round 1, code-review #3) — `broadcast_audience_deleted` is
+ * written only through `emitOnce`, whose `ON CONFLICT` is the dedupe. A plain
+ * INSERT of it bypasses that dedupe: a second row meets the index as a 23505,
+ * which the row helper logs as a lost row. So every other method refuses it
+ * before any write; `emitTyped` reaches this through `emit`.
+ */
+function refuseAudienceDeletedRow(eventType: AuditEmitInput['eventType']): void {
+  if (eventType === 'broadcast_audience_deleted') {
+    throw new AuditPortInvariantError(eventType, 'written only through emitOnce (migration 0328).');
+  }
+}
+
+/**
  * ROUND-2 R-M6 — the multi-row INSERT behind `emitMany` / `emitManyTyped`.
  */
 async function insertAuditRows(txUnknown: unknown, events: readonly AuditEmitInput[]): Promise<void> {
   if (events.length === 0) return;
   for (const event of events) {
+    refuseAudienceDeletedRow(event.eventType);
     if (txUnknown !== null && event.tenantId === null) {
       throw new AuditPortInvariantError(
         event.eventType,
