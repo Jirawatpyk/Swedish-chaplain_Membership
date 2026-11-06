@@ -74,6 +74,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS "audit_log_audience_deleted_once"
 -- rendering difference is not a definition difference. The values are what
 -- dev's pg_index row answers after the apply. A missing index raises too; the
 -- message names every field that differed. One SELECT INTO reads the catalog.
+-- Review round 4 (code-review #3): it is also a btree, with no INCLUDE columns
+-- (indnatts = 2), not deferrable (indimmediate), each key under collation 0 or
+-- the database default and a default operator class; v_bad_coll and v_bad_opc
+-- name the keys that are not (NULL when none). Dev answers btree, 2, true,
+-- default/default and text_ops/text_ops.
 DO $$
 DECLARE
   v_idx oid;
@@ -84,15 +89,33 @@ DECLARE
   v_key1 text;
   v_key2 text;
   v_pred text;
+  v_am text;
+  v_att_count integer;
+  v_immediate boolean;
+  v_bad_coll text;
+  v_bad_opc text;
   differs text[] := ARRAY[]::text[];
 BEGIN
   SELECT i.indexrelid, tn.nspname || '.' || t.relname, i.indisunique, i.indisvalid, i.indnkeyatts,
          pg_get_indexdef(i.indexrelid, 1, true), pg_get_indexdef(i.indexrelid, 2, true),
-         pg_get_expr(i.indpred, i.indrelid, true)
-    INTO v_idx, v_tbl, v_is_unique, v_is_valid, v_key_count, v_key1, v_key2, v_pred
+         pg_get_expr(i.indpred, i.indrelid, true), am.amname, i.indnatts, i.indimmediate,
+         (SELECT string_agg('key ' || k.n || ' ' || coalesce(co.collname::text, k.o::text), ', ' ORDER BY k.n)
+            FROM unnest(i.indcollation) WITH ORDINALITY k(o, n)
+            LEFT JOIN pg_collation co ON co.oid = k.o
+           WHERE k.o <> 0
+             AND k.o IS DISTINCT FROM (SELECT d.oid FROM pg_collation d
+                                        WHERE d.collname = 'default'
+                                          AND d.collnamespace = 'pg_catalog'::regnamespace)),
+         (SELECT string_agg('key ' || k.n || ' ' || coalesce(opc.opcname::text, k.o::text), ', ' ORDER BY k.n)
+            FROM unnest(i.indclass) WITH ORDINALITY k(o, n)
+            LEFT JOIN pg_opclass opc ON opc.oid = k.o
+           WHERE opc.opcdefault IS NOT TRUE)
+    INTO v_idx, v_tbl, v_is_unique, v_is_valid, v_key_count, v_key1, v_key2, v_pred,
+         v_am, v_att_count, v_immediate, v_bad_coll, v_bad_opc
     FROM pg_index i
     JOIN pg_class c ON c.oid = i.indexrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_am am ON am.oid = c.relam
     JOIN pg_class t ON t.oid = i.indrelid
     JOIN pg_namespace tn ON tn.oid = t.relnamespace
    WHERE n.nspname = 'public' AND c.relname = 'audit_log_audience_deleted_once';
@@ -121,6 +144,21 @@ BEGIN
     IF regexp_replace(replace(v_pred, 'public.audit_event_type', 'audit_event_type'), '[[:space:]()]', '', 'g')
        IS DISTINCT FROM 'event_type=''broadcast_audience_deleted''::audit_event_type' THEN
       differs := differs || ('predicate ' || coalesce(v_pred, '(none)'));
+    END IF;
+    IF v_am IS DISTINCT FROM 'btree' THEN
+      differs := differs || ('access method ' || coalesce(v_am, '(none)'));
+    END IF;
+    IF v_att_count IS DISTINCT FROM 2 THEN
+      differs := differs || ('indnatts ' || coalesce(v_att_count::text, '(none)'));
+    END IF;
+    IF v_immediate IS NOT TRUE THEN
+      differs := differs || 'indimmediate false'::text;
+    END IF;
+    IF v_bad_coll IS NOT NULL THEN
+      differs := differs || ('collation ' || v_bad_coll);
+    END IF;
+    IF v_bad_opc IS NOT NULL THEN
+      differs := differs || ('operator class ' || v_bad_opc);
     END IF;
   END IF;
   IF cardinality(differs) > 0 THEN

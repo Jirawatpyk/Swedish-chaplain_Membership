@@ -273,9 +273,11 @@ async function main(): Promise<void> {
         // is not used for ON CONFLICT inference), two key columns, the key and
         // the partial predicate (whitespace, parentheses and the enum type's
         // schema qualifier stripped). `[[:space:]()]`, not `\s`: a backslash
-        // escape in this template literal would be lost.
+        // escape in this template literal would be lost. Round 4 (code-review
+        // #3): a btree, no INCLUDE columns, not deferrable, each key under
+        // collation 0 or the database default and a default operator class.
         name: 'audit_log_audience_deleted_once valid partial unique index on (tenant_id, payload->>resend_audience_id) (mig 0328)',
-        query: `SELECT 1 AS hit FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_class t ON t.oid = i.indrelid WHERE c.relname = 'audit_log_audience_deleted_once' AND c.relnamespace = 'public'::regnamespace AND t.relname = 'audit_log' AND t.relnamespace = 'public'::regnamespace AND i.indisunique AND i.indisvalid AND i.indnkeyatts = 2 AND pg_get_indexdef(i.indexrelid, 1, true) = 'tenant_id' AND regexp_replace(pg_get_indexdef(i.indexrelid, 2, true), '[[:space:]()]', '', 'g') = 'payload->>''resend_audience_id''::text' AND regexp_replace(replace(pg_get_expr(i.indpred, i.indrelid, true), 'public.audit_event_type', 'audit_event_type'), '[[:space:]()]', '', 'g') = 'event_type=''broadcast_audience_deleted''::audit_event_type'`,
+        query: `SELECT 1 AS hit FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_am am ON am.oid = c.relam JOIN pg_class t ON t.oid = i.indrelid WHERE c.relname = 'audit_log_audience_deleted_once' AND c.relnamespace = 'public'::regnamespace AND t.relname = 'audit_log' AND t.relnamespace = 'public'::regnamespace AND am.amname = 'btree' AND i.indisunique AND i.indisvalid AND i.indimmediate AND i.indnkeyatts = 2 AND i.indnatts = 2 AND NOT EXISTS (SELECT 1 FROM unnest(i.indcollation) k(o) WHERE k.o <> 0 AND k.o IS DISTINCT FROM (SELECT d.oid FROM pg_collation d WHERE d.collname = 'default' AND d.collnamespace = 'pg_catalog'::regnamespace)) AND NOT EXISTS (SELECT 1 FROM unnest(i.indclass) k(o) LEFT JOIN pg_opclass opc ON opc.oid = k.o WHERE opc.opcdefault IS NOT TRUE) AND pg_get_indexdef(i.indexrelid, 1, true) = 'tenant_id' AND regexp_replace(pg_get_indexdef(i.indexrelid, 2, true), '[[:space:]()]', '', 'g') = 'payload->>''resend_audience_id''::text' AND regexp_replace(replace(pg_get_expr(i.indpred, i.indrelid, true), 'public.audit_event_type', 'audit_event_type'), '[[:space:]()]', '', 'g') = 'event_type=''broadcast_audience_deleted''::audit_event_type'`,
       },
       {
         // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure
