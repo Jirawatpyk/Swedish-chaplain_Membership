@@ -140,8 +140,12 @@ export interface ReclaimOrphanedAudiencesInput {
  * code-review #4) each orphan's audit-row DB work before its delete: the
  * tenant probe, the disclosure and existence reads, and an INSERT that can
  * wait up to `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on another tx's
- * uncommitted insert of the key. So the last chunk can overrun `deadlineAt` by
- * up to that wait plus its DB time; both fit inside the 30 s.
+ * uncommitted insert of the key. Only that INSERT wait is bounded (by
+ * `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`). The tenant probe and the two reads have no
+ * statement bound, because the pooler drops `statement_timeout` (review
+ * round 2, code-review #5). So the last chunk can overrun `deadlineAt` by up
+ * to that wait plus its DB time, and the 30 s covers that DB time's typical
+ * cost, not a worst case: a stalled read is not cut short here.
  */
 export const RECLAIM_DEADLINE_MARGIN_MS = 30_000;
 
