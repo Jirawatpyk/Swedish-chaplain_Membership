@@ -833,7 +833,7 @@ runbook.
 > the same tx and re-reads sentinels, and arm 2 paired the member's live audiences
 > with addresses that were never in them. This box used to say every such `DELETE`
 > misses and is counted `already_absent`. It was not: on the old `/audiences` wire
-> (before spec 140 s4) Resend answered 200 `deleted: true` to any segment-contact DELETE (MEASURED 5 Nov 2026), so each one
+> (before spec 140 s4) Resend answered 200 `deleted: true` for a contact that was no longer in the audience (MEASURED 5 Nov 2026; an address it never held is not measured), so each one
 > was counted **`removed`** — the spec 140 DT4 re-verify saw a second erase record
 > `resend_contacts_removed_count: 2` for contacts already gone.
 >

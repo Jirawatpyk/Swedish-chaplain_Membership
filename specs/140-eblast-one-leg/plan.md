@@ -2737,6 +2737,33 @@ Run after review rounds 1–2, which changed the DR2 path (spec-compliance r2 M-
 - `… shows the Segments counts note …` → `Unable to find … /stored in another letter case is not removed/i`
 - `… shows the note for older records, marked as such` → `Unable to find … /accepted a detach request for an address that was no longer in the audience/`
 
+### Slice 4 — review round 4, targeted, the last under the cap (`/code-review high d865e039e..9e909bc32`: 9 candidates, unverified, graded below; reliability MERGEABLE: 5 LOW; pdpa APPROVE: 2 LOW; i18n fix-then-ship: 1 fix, 2 suggestions; 6 Nov 2026) — cap reached
+
+No reviewer raised a Medium. Each code-review candidate was checked against the code and the dev data before grading. **The maintainer's call at the cap (6 Nov 2026):** fix the small set, then take one short look at the fix range. The fixes are `5388a2731` … `2959e373a`.
+
+| Candidate | Verified grade | Disposition |
+|---|---|---|
+| CR4 #1: `deleteAudience` refuses decorated fixture ids such as `aud-live-<uuid>` | **Low, theoretical.** Dev holds 0 live rows and 0 unsettled orphans with a non-UUID or decorated audience id (read-only count, 6 Nov 2026), because the integration tests clean up | **Kept as round 3 built it.** The `aud-live-<uuid>` shape is pinned as a deliberately refused case (`d0acb09f6`) |
+| CR4 #2 / rel L4: `createAudience` leaks the segment on a non-UUID answer, with no trace | Low, hypothetical (Resend returns UUIDs) | **Fixed** (`d0acb09f6`, `778e0ca17`): a warn with `idClass` before the refusal |
+| CR4 #3: the dedupe keyed on `broadcastId` alone, so a re-minted draft's attempt names the earlier draft | **Low–Medium, reachable** through the restart, self-heal and dead-id paths | **Fixed** (`5388a2731`, `41fb62368`): the dedupe key is (`broadcastId`, `resendBroadcastId`), one row per draft |
+| CR4 #4 / rel L3: the audit tx sits between the lease gate and `/send` | Low (a 422 and the probe cover a late send) | **Fixed:** the lease gate is re-run after a row was written |
+| CR4 #5: invariant detection used `instanceof` only | Low. The tick's other emits use the same check (`:978`, `:2917`) | **Fixed:** the shared `isAdapterInvariantError` |
+| CR4 #6 / rel L2: no serialisation on the check-then-insert | Low (the lease already serialises) | **Fixed:** `pg_advisory_xact_lock` in a `broadcasts-unverifiable:` namespace, the shape `readAlreadySentEvidenceInTx` uses. Its evidence is the live-Neon run; no unit test pins the SQL |
+| CR4 #7: a tenant-binding failure on the dedupe read is swallowed | **Low, unreachable.** `assertTenantBoundTx` throws a plain Error, and `withTx` always binds through `runInTenant` | **Documented** in the recorder docblock |
+| CR4 #8: the DR4 gate misses a dynamic import and a barrel re-export | Low | **Fixed (docblock):** both are named out of reach (`27f6a4104`) |
+| CR4 #9 / rel L5: stale comments | Low | **Fixed** |
+| rel L1: a storage failure on the pre-send write leaves that draft with no row | Low | **Accepted.** The ERROR log `unverifiable_audit_emit_failed` and the `auditEmitFailed` metric are the record; the send continues by design |
+| pdpa L-1 / i18n r4: the date clause, and Swedish gender | Low | **Fixed** (`2959e373a`): "dispatched on or before 5 Nov 2026" in all three; SV "ett E-Blast"; TH "รายชื่อผู้รับ E-Blast"; the older note body in the plural (EN, SV) |
+| pdpa L-2: runbook `member-erasure.md` overclaimed the old wire | Low | **Fixed:** the measured wording |
+
+**Found while fixing:** the live two-tick case in `unverifiable-count-audit` passed for the wrong reason. Its second tick stopped at the inherited-id probe, which the fake did not answer, so it never reached the dedupe. Now the fake answers `draft`, and the case asserts that both ticks sent the same draft and that one row names it (`41fb62368`).
+
+**Round 4 card failing runs** (D-023; the round 4 copy against the round 3 copy):
+- `… Segments counts note …` → `Unable to find … /an E-Blast dispatched on or before 5 Nov 2026/`
+- `… note for older records …` → `Unable to find … /accepted detach requests even for addresses that were no longer in the audience/`
+
+**Retro:** two triggers fired: a gate checked less than it claimed, and a fix was reversed by the next round. The line is in `docs/retro.md`. The change is a broadcasts-rule bullet, "Gates and audit rows for Resend calls".
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
