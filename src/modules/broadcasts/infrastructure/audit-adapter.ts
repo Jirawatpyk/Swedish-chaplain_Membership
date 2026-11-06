@@ -13,6 +13,9 @@
  *     read-path probe audits (cross-tenant) where the outer path is
  *     read-only. Trail is best-effort: if the standalone INSERT fails,
  *     caller logs + continues — does NOT 5xx the request.
+ *
+ * Spec 142: `emitOnce` (the `broadcast_audience_deleted` row) takes no null tx;
+ * it refuses one with `AuditPortInvariantError`.
  */
 import { sql } from 'drizzle-orm';
 import {

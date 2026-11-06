@@ -72,9 +72,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS audit_log_audience_deleted_once
 
 | Done-when line | Test that goes red first (file, name) | Level |
 |---|---|---|
-| AO1: the index exists | `scripts/verify-schema.ts` canary; `audience-audit-rows.test.ts` "a second deleted row for the same tenant and segment is refused by the index" (a raw second INSERT → 23505) | integration |
+| AO1: the index exists | `scripts/verify-schema.ts` canary; `audience-audit-rows.test.ts` "a second deleted row for the same tenant and segment is refused by the index (23505)" (a raw second INSERT, rolled back) | integration |
 | AO1: the pre-check | `audience-audit-rows.test.ts` or a migration test: the pre-check SQL raises on a seeded duplicate in a rolled-back tx | integration |
-| AO2: `emitOnce` writes once | `audience-audit-rows.test.ts` "emitOnce answers true, then false, and leaves one row"; "two concurrent emitOnce for one segment leave one row" (replaces the held-lock and lock-timeout cells) | integration |
+| AO2: `emitOnce` writes once | `audience-audit-rows.test.ts` "f7AuditAdapter.emitOnce > answers true, then false, and leaves one row"; "two concurrent emitOnce for one segment leave one row: the second waits, then answers false"; "an INSERT behind a held insert of the key fails with a lock timeout (55P03, not an invariant error)" (these replace the held-lock and lock-timeout cells) | integration |
 | AO2: other tenants | the same file, cross-tenant: tenant B's row for the same segment id does not block tenant A's (the key includes the tenant) | integration |
 | AO3: restart, cleanup and reclaim write through `emitOnce`, with no lock | the unit files of the three sites: the call order shows `emitOnce` and no `hasAudienceDeletedAuditInTx` in restart/cleanup; reclaim reads the lockless check, then the disclosure, then `emitOnce` | unit |
 | AO3: reclaim skips a recorded segment with no unattributed WARN | the existing reclaim cell, kept | unit |
