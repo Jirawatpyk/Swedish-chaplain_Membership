@@ -35,10 +35,12 @@ The same slice left three near-copies of the "write an audit row before an irrev
   - Before it builds, a `DO $$` pre-check raises if any duplicate key exists, and names the keys.
   - `db:verify` checks that the index exists.
 - **AO2.** `AuditPort.emitOnce` exists for the deleted row only. It runs `INSERT … ON CONFLICT … DO NOTHING RETURNING 1` and answers whether a row was written. A second write for the same tenant and segment answers false and writes nothing.
-- **AO3.** The restart, cleanup and reclaim sites write the deleted row through `emitOnce`, with no advisory lock and no `lock_timeout`. Removed:
-  - `setLocalLockTimeout` on this path, `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` and the WARN `*.audience_audit_lock_timeout`;
-  - reclaim's deadline charge for the audit wait;
-  - the `_dispatch-lease.ts` "outside W_max" entry for it.
+- **AO3.** The restart, cleanup and reclaim sites write the deleted row through `emitOnce`, with no advisory lock and no `EXISTS` dedupe read on restart and cleanup.
+  - *Amended at plan review, 6 Nov 2026:* an `INSERT … ON CONFLICT` still waits on an uncommitted insert of the same key. So `emitOnce` keeps `SET LOCAL lock_timeout` at `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s), and a timeout still logs the WARN `*.audience_audit_lock_timeout`.
+  - Removed:
+    - the advisory lock and its `broadcasts-audience-audit:` namespace;
+    - reclaim's deadline charge for the audit wait (`RECLAIM_DEADLINE_MARGIN_MS` covers the DB work);
+    - the `_dispatch-lease.ts` "outside W_max" entry, replaced by a note on the INSERT wait.
 
   Kept:
   - Reclaim still skips a segment that already has a deleted row without reporting it unattributed, through a lockless read.
@@ -49,7 +51,7 @@ The same slice left three near-copies of the "write an audit row before an irrev
   - `observability.md` § 22.1 / § 22.3 and `cron-jobs.md` are updated;
   - the spec 139 plan rows that describe the lock are marked superseded by 142.
 
-  Every syntactic form of `lock_timeout`, `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, `audience_audit_lock_timeout` and `broadcasts-audience-audit:` is gone from `src`, `tests` and `docs`, or is marked historical.
+  Every syntactic form of `broadcasts-audience-audit:` and of the advisory-lock dedupe is gone from `src`, `tests` and `docs`, or is marked historical. The lock-timeout wording is rewritten to name the INSERT wait, not the advisory lock.
 - **AO6.** The hold path runs against live Resend in the maintainer's `/verify`:
   - one tick on a suspended member's row at tick 2 answers `held`;
   - the segment is gone at Resend, and exactly one `broadcast_audience_deleted` row has `reason: 'hold'`;
