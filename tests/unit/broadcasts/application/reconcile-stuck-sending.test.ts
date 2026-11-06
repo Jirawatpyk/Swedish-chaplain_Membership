@@ -154,6 +154,9 @@ function makeBroadcastsRepo(args: {
     async readAlreadySentEvidenceInTx() {
       return { broadcastRecorded: false, memberBroadcastCount: 0 };
     },
+    async hasUnverifiableCountAuditInTx() {
+      return false;
+    },
     async clearDispatchRetryClock() {},
     async listByTenantStatus() { return { rows: [], nextCursor: null }; },
     async countForMemberQuota() { return { submittedOrApproved: 0, sent: 0 }; },

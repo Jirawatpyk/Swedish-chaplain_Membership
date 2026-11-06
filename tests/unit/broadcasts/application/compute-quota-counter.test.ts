@@ -105,6 +105,9 @@ function makeBroadcastsRepo({
     async readAlreadySentEvidenceInTx() {
       return { broadcastRecorded: false, memberBroadcastCount: 0 };
     },
+    async hasUnverifiableCountAuditInTx() {
+      return false;
+    },
     async clearDispatchRetryClock() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
