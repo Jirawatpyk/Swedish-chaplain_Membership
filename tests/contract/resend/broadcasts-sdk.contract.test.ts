@@ -59,8 +59,8 @@ afterEach(() => {
 
 describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
   it('createAudience', async () => {
-    const calls = stubWire(() => json(201, { object: 'audience', id: 'aud_1', name: 'probe' }));
-    await expect(resendBroadcastsGateway.createAudience('probe')).resolves.toEqual({ audienceId: 'aud_1' });
+    const calls = stubWire(() => json(201, { object: 'audience', id: AUD, name: 'probe' }));
+    await expect(resendBroadcastsGateway.createAudience('probe')).resolves.toEqual({ audienceId: AUD });
     expect(calls).toMatchInlineSnapshot(`
       [
         {
@@ -662,17 +662,17 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       expect(calls).toHaveLength(0);
     });
 
-    // PR #756 review round 2 (code-review #3) — `deleteAudience` on an id that is
-    // not UUID-shaped: no such segment can exist at Resend (every id it returns
-    // is a UUID), so the delete's goal is met. It resolves as already gone with NO
-    // request and a warn naming the id's class, never the id, instead of a
-    // permanent `invalid_identifier` the cleanup cron would hit every tick
-    // forever (dev litter such as `aud_fake_N`). The detach and the count keep
-    // refusing above: an id-less call there is account-wide.
+    // PR #756 review rounds 2 and 3 (code-review #3, #5, #6) — `deleteAudience`
+    // on an id with NO UUID in it at all: no such segment can exist at Resend
+    // (every id it returns is a UUID), so the delete's goal is met. It resolves as
+    // already gone with NO request and a warn naming the id's class, never the id,
+    // instead of a permanent `invalid_identifier` the cleanup cron would hit every
+    // tick forever (dev litter such as `aud_fake_N`, `aud-legacy-…`). The detach
+    // and the count keep refusing above: an id-less call there is account-wide.
     it.each([
       ['a legacy-looking id', 'aud_1', 'aud_prefixed'],
       ['old fake-gateway litter', 'aud_fake_3', 'aud_prefixed'],
-      ['a path segment', `../contacts/${AUD}`, 'not_a_segment_id'],
+      ['old legacy-row litter', 'aud-legacy-7', 'not_a_segment_id'],
     ])('deleteAudience on %s resolves as already gone, with no request', async (_name, audienceId, idClass) => {
       const warn = vi.spyOn(logger, 'warn');
       const calls = stubWire(() => json(200, { deleted: true }));
@@ -681,6 +681,35 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       const line = warn.mock.calls.find((c) => c[1] === 'resend.broadcasts.audience_id_not_a_segment');
       expect(line?.[0]).toEqual({ idClass });
       warn.mockRestore();
+    });
+
+    // Round 3 (code-review #5, #6) — an id that CONTAINS a UUID is a real segment
+    // id decorated or padded somewhere upstream: that is a bug to see, not litter
+    // to wave through, so it stays a loud permanent `invalid_identifier`.
+    it.each([
+      ['a path segment around a real id', `../contacts/${AUD}`],
+      ['a padded real id', ` ${AUD} `],
+      ['a prefixed real id', `aud_${AUD}`],
+    ])('deleteAudience on %s is refused as invalid_identifier, with no request', async (_name, audienceId) => {
+      const calls = stubWire(() => json(200, { deleted: true }));
+      await expect(resendBroadcastsGateway.deleteAudience(audienceId)).rejects.toMatchObject({
+        name: 'GatewayThrowable',
+        kind: 'permanent',
+        code: 'invalid_identifier',
+      });
+      expect(calls).toHaveLength(0);
+    });
+
+    // Round 3 (reliability L3) — the id Resend RETURNED from a create is checked
+    // too, before it is returned and persisted: a non-UUID id would otherwise be
+    // stored and later refused by every call that puts it in a path.
+    it('createAudience refuses a non-UUID id in Resend\u2019s answer as invalid_identifier', async () => {
+      stubWire(() => json(201, { object: 'audience', id: 'aud_1', name: 'probe' }));
+      await expect(resendBroadcastsGateway.createAudience('probe')).rejects.toMatchObject({
+        name: 'GatewayThrowable',
+        kind: 'permanent',
+        code: 'invalid_identifier',
+      });
     });
 
     // Spec 140 s3 review round 1 (R1-K) — the SDK puts the email in the URL path
