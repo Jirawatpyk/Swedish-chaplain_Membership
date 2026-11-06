@@ -949,4 +949,16 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     expect(result.ok && result.value).toMatchObject({ deleted: 0, failed: 1 });
     expect(h.gateway.deleteCalls).toEqual([]);
   });
+
+  // Review round 1 (reliability LOW-2) — a wiring bug is an ERROR, not the WARN of a failed delete.
+  it('an adapter invariant error logs ERROR audit_invariant (ids, err, critical), not the delete_failed WARN', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' }, auditThrows: 'invariant' });
+    await h.run();
+    expect(error.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audit_invariant').map((c) => c[0])).toEqual([
+      { tenantId: TENANT_SLUG, audienceId: AUDIENCE, broadcastId: UUID_A, err: 'AuditPortInvariantError', severity: 'critical' },
+    ]);
+    expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_failed')).toEqual([]);
+  });
 });
