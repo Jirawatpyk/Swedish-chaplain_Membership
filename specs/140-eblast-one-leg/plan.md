@@ -2764,6 +2764,17 @@ No reviewer raised a Medium. Each code-review candidate was checked against the 
 
 **Retro:** two triggers fired: a gate checked less than it claimed, and a fix was reversed by the next round. The line is in `docs/retro.md`. The change is a broadcasts-rule bullet, "Gates and audit rows for Resend calls".
 
+### Slice 4 — a look at the round 4 fixes past the cap (the maintainer's call; `/code-review high 9e909bc32..cb7619a67`: 9, all Low; reliability MERGEABLE: 4 LOW; 6 Nov 2026)
+
+All Low, fixed in `6d7c7282d`, `e081491ce` and `24f74f57d`. That fix delta is **not reviewed**, which is past the cap by design.
+- The send's lease gate re-runs whenever the unverifiable tx ran: on a write, on a dedupe, and on a failure.
+- `createAudience` type-checks Resend's id before reading it, and logs the bad id so a leaked segment can be deleted by hand. A segment id is not personal data.
+- The comments of the `send_started` and probe catches say they keep `instanceof` on purpose; their behaviour is unchanged.
+- The recorder's and the port's docblocks are exact: the row records a failed count on an attempt, and the lock is per broadcast while the dedupe is per draft.
+- A dynamic import and a barrel re-export are pinned as importer-filter escapes.
+- The harness dedupe double compares strictly.
+- The broadcasts rule now states exactly what the gate covers, and asks that a new spelling class get its pattern and catch case together.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
