@@ -14,6 +14,11 @@
  *     Resend's own post-send processing).
  *   - For each candidate: calls `gateway.deleteAudience` (best-effort; 404
  *     resolves — already gone; 5xx / network throws `GatewayThrowable`).
+ *     Spec 139 s2 (DA2) — first its `broadcast_audience_deleted` row
+ *     (`reason: 'terminal_cleanup'`, the row's requester), deduped per segment
+ *     (a restart may have written it already). A storage failure is logged
+ *     and counted and the delete goes ahead; an adapter invariant error stops
+ *     that candidate's delete (counted `failed`, logged by class).
  *   - On success: stamps `audience_deleted_at` via `markAudienceDeletedInTx`
  *     inside a per-item `broadcastsRepo.withTx(fn)` so the mark is
  *     tenant-scoped (RLS via the `withTx` Drizzle adapter's `runInTenant`
@@ -82,11 +87,13 @@ import { pgErrorCode, pgErrorMeta } from '@/lib/db-errors';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 
+import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastOrphansRepo, OrphanedResendIdRef } from '../ports/broadcast-orphans-repo';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
+import { recordAudienceDeleted } from './_audience-audit';
 import { settleOrphanAtResend } from './_settle-orphan-at-resend';
 
 // Review round 2 (code-review #8) — the grace lives with the other orphan
@@ -138,7 +145,16 @@ export const ORPHAN_ERASED_REQUESTER_CAP = 50;
 
 export interface CleanupOrphanedAudiencesDeps {
   readonly tenant: TenantContext;
-  readonly broadcastsRepo: Pick<BroadcastsRepo, 'listTerminalBroadcastsWithLiveAudience' | 'withTx' | 'markAudienceDeletedInTx'>;
+  readonly broadcastsRepo: Pick<
+    BroadcastsRepo,
+    'listTerminalBroadcastsWithLiveAudience' | 'withTx' | 'markAudienceDeletedInTx' | 'hasAudienceDeletedAuditInTx'
+  >;
+  /**
+   * Spec 139 s2 (DA2) — REQUIRED: the `broadcast_audience_deleted` row is
+   * written before each delete. A composition that forgot it would delete
+   * segments with no record, silently.
+   */
+  readonly audit: Pick<AuditPort, 'emit'>;
   readonly broadcastsGateway: Pick<BroadcastsGatewayPort, 'deleteAudience' | 'deleteBroadcastOnce' | 'retrieveBroadcastOnce'>;
   readonly clock: ClockPort;
   /** Spec 140 s2c — the orphaned Resend id record the drain settles. */
@@ -257,7 +273,7 @@ export async function cleanupOrphanedAudiences(
   // never from `new Date()` directly (deterministic unit testing).
   const graceCutoff = new Date(startedAtMs - input.graceMs);
 
-  let candidates: ReadonlyArray<{ broadcastId: string; resendAudienceId: string }>;
+  let candidates: ReadonlyArray<{ broadcastId: string; resendAudienceId: string; requestedByMemberId: string }>;
   try {
     candidates = await deps.broadcastsRepo.listTerminalBroadcastsWithLiveAudience(
       tenantId,
@@ -287,8 +303,22 @@ export async function cleanupOrphanedAudiences(
   async function handleOne(candidate: {
     broadcastId: string;
     resendAudienceId: string;
+    requestedByMemberId: string;
   }): Promise<void> {
     try {
+      // 0. Spec 139 s2 (DA2) — the Art. 30 row, before the delete. An adapter
+      //    invariant error throws into the catch below: no delete, `failed`.
+      await recordAudienceDeleted(
+        deps,
+        {
+          broadcastId: candidate.broadcastId,
+          relatedMemberId: candidate.requestedByMemberId,
+          resendAudienceId: candidate.resendAudienceId,
+          reason: 'terminal_cleanup',
+        },
+        'broadcasts.audience_cleanup',
+      );
+
       // 1. Delete the Resend audience. 404/410 → resolves (already gone);
       //    5xx / network → throws GatewayThrowable (caught below).
       await deps.broadcastsGateway.deleteAudience(candidate.resendAudienceId);

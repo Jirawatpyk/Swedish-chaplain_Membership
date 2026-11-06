@@ -48,6 +48,8 @@ const NO_DRAIN_DEPS = {
   },
   // Spec 140 s2d (#736a) — ids in, ids out.
   membersBridge: { async filterErasedMemberIds() { return []; } },
+  // Spec 139 s2 — the deleted row before each delete; its cells are at the end.
+  audit: { async emit() {} },
 };
 const NO_ORPHAN_RUN = { listed: 0, settled: 0, undecided: 0, waiting: 0, deferred: 0, listFailed: false, erasedReadFailed: false, erasedShareFull: false };
 
@@ -129,7 +131,8 @@ function makeRepo(opts: {
     async listTerminalBroadcastsWithLiveAudience(tenantId, graceCutoff, limit) {
       listCalls.push({ tenantId, graceCutoff, limit });
       if (opts.shouldThrowOnList) throw new Error('Neon: connection lost');
-      return [...opts.candidates];
+      // Spec 139 s2 — the row's requester rides along (the deleted row names it).
+      return opts.candidates.map((c) => ({ requestedByMemberId: 'm-1', ...c }));
     },
     async markAudienceDeletedInTx(_tx, broadcastId) {
       markCalls.push(broadcastId);
@@ -398,7 +401,7 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
   function harness(opts: { readonly alreadyDeleted?: boolean; readonly auditThrows?: 'storage' | 'invariant' } = {}) {
     const events: string[] = [];
     const rows: Array<{ eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }> = [];
-    const repo = makeRepo({ candidates: [candidate] as never });
+    const repo = makeRepo({ candidates: [candidate] });
     repo.port.hasAudienceDeletedAuditInTx = async (_tx, _t, audienceId) => {
       events.push(`dedupe:${audienceId}`);
       return opts.alreadyDeleted === true;
@@ -422,7 +425,7 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
     };
     const run = () =>
       cleanupOrphanedAudiences(
-        { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, ...NO_DRAIN_DEPS, audit } as never,
+        { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, ...NO_DRAIN_DEPS, audit },
         { graceMs: GRACE_MS, limit: 50 },
       );
     return { run, events, rows, repo, gateway };

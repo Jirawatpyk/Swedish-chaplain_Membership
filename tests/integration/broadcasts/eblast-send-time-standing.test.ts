@@ -675,7 +675,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       new Date(Date.now() + 3_600_000),
       500,
     );
-    expect(candidates).toContainEqual({ broadcastId: row.broadcastId, resendAudienceId: audienceId });
+    expect(candidates).toContainEqual({ broadcastId: row.broadcastId, resendAudienceId: audienceId, requestedByMemberId: memberId });
   });
 
   // ---- Spec 139 DE1 — an ERASED member's E-Blast is refused at send time ----
@@ -786,7 +786,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       new Date(Date.now() + 3_600_000),
       500,
     );
-    expect(candidates).toContainEqual({ broadcastId: row.broadcastId, resendAudienceId: audienceId });
+    expect(candidates).toContainEqual({ broadcastId: row.broadcastId, resendAudienceId: audienceId, requestedByMemberId: memberId });
   });
 
   it('import leg, an ERASED member whose inherited id the probe calls cancelled → a 403 on the DELETE is not a stall: a cancelled broadcast can never be sent, so it is refused', async () => {

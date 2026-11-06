@@ -1350,12 +1350,17 @@ export interface BroadcastsRepo {
    * Tenant-scoped via `WHERE tenant_id = $1` + RLS+FORCE on `broadcasts`.
    * Does NOT use `runInTenant` (read-only, no RLS manipulation needed —
    * the Drizzle adapter runs its own `runInTenant` internally).
+   *
+   * Spec 139 s2 — with the row's requester (`requested_by_member_id`, NOT
+   * NULL), which the cleanup's `broadcast_audience_deleted` row names.
    */
   listTerminalBroadcastsWithLiveAudience(
     tenantId: TenantSlug,
     graceCutoff: Date,
     limit: number,
-  ): Promise<ReadonlyArray<{ readonly broadcastId: string; readonly resendAudienceId: string }>>;
+  ): Promise<
+    ReadonlyArray<{ readonly broadcastId: string; readonly resendAudienceId: string; readonly requestedByMemberId: string }>
+  >;
 
   /**
    * PR-2 Task 2 — Audience cleanup: stamp `audience_deleted_at = now()` on

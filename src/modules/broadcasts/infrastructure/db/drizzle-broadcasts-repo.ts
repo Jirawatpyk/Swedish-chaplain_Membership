@@ -2957,7 +2957,7 @@ export function makeDrizzleBroadcastsRepo(
           sql`, `,
         );
         const rows = (await tx.execute(sql`
-          SELECT broadcast_id, resend_audience_id
+          SELECT broadcast_id, resend_audience_id, requested_by_member_id
           FROM broadcasts
           WHERE tenant_id = ${tenantIdArg}
             AND status::text IN (${terminalStatusList})
@@ -2969,10 +2969,12 @@ export function makeDrizzleBroadcastsRepo(
         `)) as unknown as Array<{
           broadcast_id: string;
           resend_audience_id: string;
+          requested_by_member_id: string;
         }>;
         return rows.map((r) => ({
           broadcastId: r.broadcast_id,
           resendAudienceId: r.resend_audience_id,
+          requestedByMemberId: r.requested_by_member_id,
         }));
       });
     },
