@@ -200,6 +200,12 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
     async hasUnverifiableCountAuditInTx() {
       return false;
     },
+    async hasAudienceDeletedAuditInTx() {
+      return false;
+    },
+    async findAudienceDisclosureInTx() {
+      return null;
+    },
     async clearDispatchRetryClock() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };

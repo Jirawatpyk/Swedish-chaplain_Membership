@@ -102,6 +102,7 @@ import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import type { ResolvedOrphan, ResolveSegmentError } from './resolve-segment-recipients';
 import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
+import { recordAudienceDeleted, recordAudienceDisclosed } from './_audience-audit';
 
 /**
  * FR-044 (f). Measured from the SUBMIT, not from `scheduled_for`: a broadcast
@@ -1249,13 +1250,14 @@ async function applySendStanding(
 
 /**
  * The three Resend-side ids a restart reads off the row (the broadcast id RAW —
- * `''` included). It carried the requester too, for the `dead_broadcast_kept`
- * orphan row the restart wrote until spec 140 s4.
+ * `''` included), and the requester its `broadcast_audience_deleted` row names
+ * (spec 139 s2).
  */
 interface RowIds {
   readonly audienceId: string | null;
   readonly importId: string | null;
   readonly resendBroadcastId: string | null;
+  readonly requestedByMemberId: string;
 }
 
 function rowIds(broadcast: Broadcast): RowIds {
@@ -1263,6 +1265,7 @@ function rowIds(broadcast: Broadcast): RowIds {
     audienceId: broadcast.resendAudienceId ?? null,
     importId: broadcast.audienceImportId,
     resendBroadcastId: broadcast.resendBroadcastId ?? null,
+    requestedByMemberId: broadcast.requestedByMemberId,
   };
 }
 
@@ -1323,7 +1326,10 @@ function recordOrphan(
  *   3. Delete the audience (404 = gone, fine) — on the audience-missing path
  *      too: a 404 that did not mean "gone" must not leave member emails in an
  *      audience no row points at. FAILS → stop; the column still points at it,
- *      so erasure and `cleanup-audiences` see it.
+ *      so erasure and `cleanup-audiences` see it. Spec 139 s2 (DA2): first the
+ *      `broadcast_audience_deleted` row (`why` is its `reason`), deduped per
+ *      segment, BEFORE the delete's lease gate, which is its re-gate; a gate
+ *      that then stops the delete leaves the row (it records the request).
  *   4. RELEASE (`releaseResendAudience`, own tx) — NULL the audience and the
  *      broadcast id together, a CAS on both and on "no import".
  *
@@ -1335,7 +1341,9 @@ function recordOrphan(
  * 404s and finds the row re-read without its import (`confirmImport`), a
  * concurrent skip. Sibling sends AFTER the delete never reach Resend: a 404.
  *
- * Never throws for a step: each failure is logged by class and answered.
+ * Never throws for a step: each failure is logged by class and answered. The
+ * one exception is an adapter invariant error from the step-3 audit row (a
+ * wiring bug), which rethrows before the delete, as the pre-send rows do.
  */
 /**
  * Why an audience build is being torn down. `stale_audience`: tick 1 found a
@@ -1426,7 +1434,18 @@ async function restartAudienceBuild(
       return failed('delete_broadcast', e);
     }
   }
-  // 3. The audience.
+  // 3. The audience. Spec 139 s2 (DA2) — its Art. 30 row first, so the gate
+  // below (the re-gate) is still the last read before the DELETE.
+  await recordAudienceDeleted(
+    deps,
+    {
+      broadcastId: ids.broadcastId,
+      relatedMemberId: row.requestedByMemberId,
+      resendAudienceId: audienceId,
+      reason: why,
+    },
+    'broadcasts.audience_import',
+  );
   const stopped = await leaseGateStep('delete_audience');
   if (stopped !== null) return stopped;
   try {
@@ -1996,6 +2015,21 @@ async function submitImport(
       return err(attached.error);
     }
   }
+
+  // Spec 139 s2 (DA1) — the Art. 30 row for the recipient list, written now:
+  // after the segment id is on the row and BEFORE the import's lease gate, so
+  // that gate stays the last read before the POST (the import keeps its
+  // headroom) and a tick killed after the POST cannot erase the record. No
+  // dedupe: a row that already holds a segment is restarted (`stale_audience`
+  // above), so one segment id never reaches the import twice. A tick that stops
+  // at the gate below leaves the row, which records the request; the next
+  // tick's `stale_audience` restart deletes that segment (and records it).
+  await recordAudienceDisclosed(deps, {
+    broadcastId: input.broadcastId as unknown as string,
+    relatedMemberId: broadcast.requestedByMemberId,
+    resendAudienceId: audienceId,
+    recipientCount: resolved.value.recipients.length,
+  });
 
   // S48 — time the one call the whole design rests on. Nothing measured it
   // before, so neither the ~412 ms it is sized against nor the 30-minute stuck

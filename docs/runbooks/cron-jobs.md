@@ -883,6 +883,15 @@ polish iteration but is intentionally not part of F7 MVP.
 
 ## F7 — broadcasts/cleanup-audiences (NEW — PR-2 defect #5)
 
+**Art. 30 row (spec 139 slice 2):** before each `deleteAudience`, the cron writes one
+`broadcast_audience_deleted` row (`reason: 'terminal_cleanup'`, the row's requester as `related_member_id`;
+once per segment, deduped). It records the request, not the result. A lost row logs
+`broadcasts.audience_cleanup.audience_audit_lost` (ERROR) and counts `broadcasts_audit_emit_failed_total`;
+the delete still runs. An adapter invariant error makes no delete, counts the item `failed` and logs the ERROR
+`broadcasts.audience_cleanup.audit_invariant`. A wait over `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on the segment's
+`broadcasts-audience-audit:` advisory lock logs the WARN `broadcasts.audience_cleanup.audience_audit_lock_timeout`
+(the row may be missing); the delete runs.
+
 Periodic housekeeping cron that **deletes the ephemeral per-broadcast Resend
 audiences** created during dispatch for broadcasts that have reached a
 terminal status (`sent` / `cancelled` / `failed_to_dispatch` / `rejected` /
@@ -975,6 +984,19 @@ Per tenant, inside `cleanupOrphanedAudiences`:
 `src/app/api/cron/broadcasts/cleanup-audiences/route.ts`
 
 ## F7 — broadcasts/reclaim-orphan-audiences (NEW — PR-2 Task 4, defect #5 companion)
+
+**Art. 30 row (spec 139 slice 2):** before each `deleteAudience`, the cron reads this tenant's
+`broadcast_audience_disclosed` row for the segment. Found: it writes one `broadcast_audience_deleted` row
+(`reason: 'orphan_reclaim'`, that row's broadcast and requester; once per segment). Not found: no row (never
+filed under a guessed tenant), the WARN `broadcasts.audience_reclaim.delete_unattributed`
+(`deleteReason: 'never_disclosed'`) and `broadcasts_audience_reclaim_delete_unattributed_total{tenant}`; the
+delete still runs. A segment from before spec 139 s2, or one another deployment on the same Resend team
+created under the same slug, lands in the not-found arm. A segment that already has a deleted row writes nothing more
+and is not reported. An adapter invariant error logs the ERROR `broadcasts.audience_reclaim.audit_invariant`. A row that cannot be stored
+logs the ERROR `broadcasts.audience_reclaim.audience_audit_lost`; a wait over `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on
+the segment's `broadcasts-audience-audit:` lock logs the WARN `broadcasts.audience_reclaim.audience_audit_lock_timeout`.
+Both are counted in `broadcasts_audit_emit_failed_total`, and the delete runs. A lock-timeout WARN is the only trace
+of that delete: the run writes no row and no unattributed WARN for it.
 
 Daily safety-net cron that **reclaims orphaned Resend audiences** — audiences
 that exist in the Resend account but whose corresponding local broadcast row

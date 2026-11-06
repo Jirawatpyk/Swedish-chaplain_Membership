@@ -474,6 +474,11 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     whose address is unusable, so it could not be recorded; NULL tenant,
   //     tenant-scoped address hash only. 5y retention. ---
   'broadcast_unsubscribe_unattributed',
+  // --- Spec 139 s2 (migration 0327) — the Art. 30 records of the import leg's
+  //     Resend calls: a recipient list handed to a segment, and a segment
+  //     delete, each written BEFORE the call (ids and a count only). 5y. ---
+  'broadcast_audience_disclosed',
+  'broadcast_audience_deleted',
   // --- 059-membership-suspension Task 13 (migration 0247) — F8 →F4
   //     `InvoiceDueBridge` credit-window guard. Emitted by
   //     `lapseCyclesOnGraceExpiry` when a member past the grace window

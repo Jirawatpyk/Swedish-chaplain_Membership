@@ -1,7 +1,7 @@
 # 139 — An erased member's E-Blast never goes out, and the Resend disclosure is audited
 
 **Size**: L (`docs/workflow.md` § Sizes: PII / GDPR erasure, a cross-module read members → broadcasts, a migration in slice 2).
-**Status**: slice 1 built and reviewed in three rounds (PR #698); slice 2 not started. Plan agreed by the maintainer on 30 Oct 2026.
+**Status**: slice 1 merged (PR #698). Slice 2 started on 6 Nov 2026, after spec 140 made the import leg the only one (D-042); US2 below is amended to the sites on that code. Plan agreed by the maintainer on 30 Oct 2026; slice 2's placement re-decided on 6 Nov 2026 (US2).
 **Source**: spec 138 § "Moved out: erasure" and D-038. `FEATURE_F7_IMPORT_AUDIENCE` may be set only after slice 1 of this spec (and spec 140) have merged.
 
 ## Why
@@ -68,16 +68,31 @@ As the chamber, when a member is erased under GDPR Art. 17 / PDPA § 33, none of
 
 ### US2 — Every disclosure of a recipient list to Resend, and every audience delete, has an Art. 30 record (slice 2; does not gate the flip)
 
+**Amended 6 Nov 2026 (slice 2 start).** Spec 140 slice 4 deleted the legacy leg, so its two sites are gone. The maintainer decided on 6 Nov 2026 that both rows are written BEFORE the Resend call, following the broadcasts rule "Gates and audit rows for Resend calls": a function killed after the call must not be able to erase the record. This supersedes the original "written after Resend returns the id" and the payload `outcome`, so a row records a request, not its result.
+
 **Done when:**
-- **DA1.** `broadcast_audience_disclosed` is written once a Resend audience holding recipients exists:
-  - legacy leg: `createAudience` plus the contacts push;
-  - import leg: tick 1's `createAudience` plus `createContactImport`.
-- **DA2.** `broadcast_audience_deleted` is written at every audience delete: the hold or restart teardown, the legacy dispatch cleanup, `cleanup-orphaned-audiences` and `reclaim-orphaned-audiences`.
-- **DA3.** Both rows carry ids and counts only, never an address.
-  - Actor `system:cron` (or the sweep's existing actor); `actor_role: 'system'`; `related_member_id`.
-  - Retention as for other F7 rows (5 years).
-  - A failed audit write is logged and counted. It never rolls back a disclosure that already happened.
-- **DA4.** Migration 0322 adds both values to `audit_event_type` (idempotent), following every step of the `add-audit-event` skill.
+- **DA1.** `broadcast_audience_disclosed` is written before the recipient list goes to Resend. The site is tick 1 of the import leg (`buildAudienceTick` → `submitImport`): after the segment id is attached to the row, and before the import's lease gate and `createContactImport`. It carries the recipient count. A refused, failed or timed-out import still has its row, because the row records the request.
+- **DA2.** `broadcast_audience_deleted` is written before each delete of a segment that may hold recipients, once per segment:
+  - **The restart teardown** (`restartAudienceBuild`: `hold`, `stale_audience`, `audience_missing`): written before its lease gate.
+  - **`cleanup-orphaned-audiences`** (`terminal_cleanup`): written from our own row.
+  - **`reclaim-orphaned-audiences`** (`orphan_reclaim`): written only when a `broadcast_audience_disclosed` row of this tenant names the segment, and it takes that row's `related_member_id`. Without such a row, this deployment never filled the segment: no row is written, only a warn and a counter (pdpa M-1: never filed under a guessed tenant).
+  - **Exempt, with no row:**
+    - `reclaimUnattachedAudience`: the reclaim of a segment created on this tick whose attach failed;
+    - `_settle-orphan-at-resend.ts`: the orphan drain and erasure settle of `audience_leaked` segments.
+
+    These segments are created before any import, so they never held recipients; the only writer of an audience orphan is `reclaimUnattachedAudience`. This also keeps spec 140 slice 2c's ruling that a drain deletion writes no audit row.
+  - A source scan pins the audited and the exempt call sites.
+- **DA3.** Both rows carry ids and counts only, never an address or a hash:
+  - `broadcast_id`, `related_member_id` (the requester), `resend_audience_id`;
+  - `recipient_count` (disclosed only) and `reason` (deleted only);
+  - `leg: 'import'` and `actor_role: 'system'`.
+
+  Other properties:
+  - The actor is `system:cron`.
+  - Retention is as for other F7 rows (5 years).
+  - A failed audit write is logged at error level and counted (`broadcasts_audit_emit_failed_total`), and the Resend call still proceeds. So a missing row is not proof that nothing was disclosed.
+  - An adapter invariant error stops the call.
+- **DA4.** Migration 0327 (0322 was taken by spec 140's dispatch lease) adds both values to `audit_event_type` (idempotent), following every step of the `add-audit-event` skill.
 - **DA5.** The RoPA F7 section names these rows as the evidence for disclosure and deletion.
 
 ## Out of scope
