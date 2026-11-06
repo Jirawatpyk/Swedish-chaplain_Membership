@@ -22,6 +22,8 @@
  * class as `already-sent-evidence.test.ts`, summary `spec 139 s2 fixture`).
  */
 import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -218,6 +220,104 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
         release();
         await holder;
       }
+    });
+  });
+
+  // Spec 142 (AO1) — migration 0328's partial unique index and its pre-check.
+  // Every duplicate attempt runs in a tx that is rolled back, so no run (a RED
+  // one included) leaves a second row for one key on the dev branch.
+  describe('spec 142 AO1 — migration 0328 (audit_log_audience_deleted_once)', () => {
+    const MIGRATION = join(process.cwd(), 'drizzle', 'migrations', '0328_audit_log_audience_deleted_once.sql');
+    const ROLLBACK = new Error('rollback');
+
+    /** Run `fn` on the owner connection and roll it back; answers what `fn` answered. */
+    async function rolledBack<T>(fn: (tx: { execute: typeof db.execute }) => Promise<T>): Promise<T> {
+      let out!: T;
+      await db
+        .transaction(async (tx) => {
+          out = await fn(tx as unknown as { execute: typeof db.execute });
+          throw ROLLBACK;
+        })
+        .catch((e: unknown) => {
+          if (e !== ROLLBACK) throw e;
+        });
+      return out;
+    }
+
+    /** The migration's `DO $$` pre-check, verbatim from the file. */
+    function preCheckSql(): string {
+      const block = readFileSync(MIGRATION, 'utf8')
+        .split('--> statement-breakpoint')
+        .find((s) => s.includes('DO $$'));
+      expect(block).toBeDefined();
+      return block!;
+    }
+
+    /** `rows` into a temp `audit_log` that shadows the real one (pg_temp is searched first), then the pre-check. */
+    async function preCheckOver(rows: ReadonlyArray<{ tenant: string | null; payload: Record<string, unknown> }>) {
+      return rolledBack(async (tx) => {
+        await tx.execute(sql`CREATE TEMP TABLE audit_log (LIKE public.audit_log INCLUDING DEFAULTS) ON COMMIT DROP`);
+        for (const r of rows) {
+          await tx.execute(sql`
+            INSERT INTO audit_log (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
+            VALUES ('broadcast_audience_deleted'::audit_event_type, 'system:cron', 'spec 142 fixture', 'no-request-id',
+                    ${JSON.stringify(r.payload)}::jsonb, ${r.tenant}, 5)
+          `);
+        }
+        return tx.execute(sql.raw(preCheckSql())).then(
+          () => null,
+          (e: unknown) => e,
+        );
+      });
+    }
+
+    it('a second deleted row for the same tenant and segment is refused by the index (23505)', async () => {
+      const audienceId = randomUUID();
+      const second = await rolledBack(async (tx) => {
+        const insert = () =>
+          tx.execute(sql`
+            INSERT INTO audit_log (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
+            VALUES ('broadcast_audience_deleted'::audit_event_type, 'system:cron', 'spec 142 fixture', 'no-request-id',
+                    ${JSON.stringify(deletedPayload(audienceId, randomUUID(), randomUUID()))}::jsonb, ${tenantA.ctx.slug}, 5)
+          `);
+        await insert();
+        return insert().then(
+          () => null,
+          (e: unknown) => e,
+        );
+      });
+      expect(second).not.toBeNull();
+      expect(errLogFields(second).code).toBe('23505');
+    });
+
+    it('the pre-check raises on a duplicate key and names it as tenant/segment', async () => {
+      expect(existsSync(MIGRATION)).toBe(true);
+      const audienceId = randomUUID();
+      const payload = deletedPayload(audienceId, randomUUID(), randomUUID());
+      const e = await preCheckOver([
+        { tenant: tenantA.ctx.slug, payload },
+        { tenant: tenantA.ctx.slug, payload },
+      ]);
+      expect(e).not.toBeNull();
+      const cause = (e as { cause?: { message?: string } }).cause;
+      expect(String(cause?.message ?? (e as Error).message)).toContain(`0328: duplicate keys: ${tenantA.ctx.slug}/${audienceId}`);
+    });
+
+    it('the pre-check does not raise on rows whose key is NULL (no tenant, no segment key, a JSON null)', async () => {
+      expect(existsSync(MIGRATION)).toBe(true);
+      const audienceId = randomUUID();
+      const payload = deletedPayload(audienceId, randomUUID(), randomUUID());
+      const { resend_audience_id: _drop, ...noKey } = payload;
+      const jsonNull = { ...payload, resend_audience_id: null };
+      const e = await preCheckOver([
+        { tenant: null, payload },
+        { tenant: null, payload },
+        { tenant: tenantA.ctx.slug, payload: noKey },
+        { tenant: tenantA.ctx.slug, payload: noKey },
+        { tenant: tenantA.ctx.slug, payload: jsonNull },
+        { tenant: tenantA.ctx.slug, payload: jsonNull },
+      ]);
+      expect(e).toBeNull();
     });
   });
 
