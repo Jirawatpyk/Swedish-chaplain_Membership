@@ -264,6 +264,9 @@ e2e: none (cron and erasure server paths only; no UI).
 | DA2 sweeps | `cleanup-orphaned-audiences.test.ts`, `reclaim-orphaned-audiences.test.ts` | unit |
 | DA2 sites pinned | new `tests/unit/broadcasts/application/audience-audit-sites.test.ts` | unit |
 | dedupe, tenant fence, no `@` in the payload | new `tests/integration/broadcasts/audience-audit-rows.test.ts`; `tests/integration/audit/completeness.test.ts` | integration |
+| reclaim dedupes before the disclosure read (review round 1) | `reclaim-orphaned-audiences.test.ts` "a segment already recorded as deleted is neither re-recorded nor reported unattributed" | unit |
+| the dedupe's lock wait is bounded at 5 s (review round 1) | `audience-audit-rows.test.ts` "a read behind a held lock fails with a lock timeout (a lost row, not an invariant error)" | integration |
+| a cron item's adapter invariant error logs ERROR `*.audit_invariant` (review round 1) | `cleanup-orphaned-audiences.test.ts`, `reclaim-orphaned-audiences.test.ts` "an adapter invariant error logs ERROR audit_invariant …" | unit |
 
 **Docs (DA5; pdpa H-1, architect M):**
 - **RoPA F7:** carries the pdpa wording: the rows are requests, not outcomes; a failed store is logged and counted; contacts are detached, not deleted.
@@ -498,6 +501,22 @@ Verdicts:
 | CR #9: the deleted payload is built twice | **Listed (Low)** |
 | CR #10: the tenant probe runs twice in the reclaim tx | **Listed (Low)**: daily cron only |
 | migration LOW-3: the reads use single-column indexes | **Listed**: about one row per broadcast. Revisit if the reclaim volume grows |
+
+**Gates after round 1:**
+- **On `4a3597a44`:**
+  - `pnpm check`: exit 0 (red-first: 34 commits).
+  - Unit (broadcasts, broadcast, the enum guard and label coverage): 3924/3924.
+  - Contract: 3094 passed + 2 todo.
+  - Integration by path, each exit 0: audience-audit-rows 11, audience-cleanup 5, orphan-drain 1.
+- **Then:** merged `origin/main` (`ee1f69982`, a changelog conflict; both sides kept).
+
+**Review round 2** (targeted, on `93a4611c5..4a3597a44`; reliability-guardian, spec-compliance-auditor, `/code-review high`):
+- **reliability:** MERGEABLE. LOW-1: two crons that wait more than 5 s on one segment's lock log a critical `audience_audit_lost` though the winner may have written the row. The chance is low, because the lock is held for milliseconds. **Listed:** the runbook line in `cron-jobs.md` says a lock-wait lost row is possible.
+- **spec-compliance:** DA1, DA3, DA4 and DA5 MET. DA2 PARTIAL on evidence only.
+  - **M1:** `74608f18e` (`lock_timeout`) is on the restart and cleanup path that Verify drove. **Closed by a short `/verify` on the final head** (below).
+  - **M2:** the test plan lacked the round 1 rows. **Fixed** above.
+  - **L1:** the full-path lock-timeout case is pinned at unit level only. **Listed.**
+  - **L2:** the source scan attributes a call inside an arrow function to the enclosing `function`. **Fixed:** it is named in `OUT_OF_REACH`.
 
 **Dev litter:** each run of `audience-audit-rows` leaves `audit_log` rows with the summary `spec 139 s2 fixture`, some with `tenant_id IS NULL` (`audit_log` is append-only).
 
