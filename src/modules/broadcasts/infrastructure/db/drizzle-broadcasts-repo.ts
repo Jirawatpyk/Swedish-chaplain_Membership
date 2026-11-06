@@ -60,7 +60,7 @@ import {
   orphanStuckCutoff,
 } from '../../domain/value-objects/orphaned-resend-id';
 import { orphanStuckSql } from './_orphan-stuck-sql';
-import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, AUDIENCE_AUDIT_PAYLOAD_KEYS } from '../../application/ports/audit-port';
+import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, AUDIENCE_AUDIT_PAYLOAD_KEYS, AuditPortInvariantError } from '../../application/ports/audit-port';
 import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
@@ -154,7 +154,12 @@ export function reduceDeliveryAggregateRows(
  *
  * For defence-in-depth security, the chamber_app role + RLS+FORCE
  * policies on the underlying tables are the actual enforcement layer.
+ *
+ * A refusal is a `TenantBindingRefusalError` (still an `Error`, same message),
+ * so a caller can tell it from a driver error on the probe itself.
  */
+class TenantBindingRefusalError extends Error {}
+
 export async function assertTenantBoundTx(
   tx: TenantTx,
   expectedTenantId: string,
@@ -165,14 +170,36 @@ export async function assertTenantBoundTx(
   )) as unknown as Array<{ current_tenant: string | null }>;
   const currentTenant = probe[0]?.current_tenant ?? null;
   if (currentTenant === null || currentTenant.length === 0) {
-    throw new Error(
+    throw new TenantBindingRefusalError(
       `${callerName}: tx is NOT inside a runInTenant scope (app.current_tenant is unset). Refusing to mutate without tenant binding.`,
     );
   }
   if (currentTenant !== expectedTenantId) {
-    throw new Error(
+    throw new TenantBindingRefusalError(
       `${callerName}: tx tenant mismatch — repo bound to "${expectedTenantId}" but tx carries "${currentTenant}". Refusing to write to a different tenant's namespace.`,
     );
+  }
+}
+
+/**
+ * Spec 139 s2, review round 3 (code-review #1) — `assertTenantBoundTx` for the
+ * two audience audit reads, whose refusal is an `AuditPortInvariantError`: the
+ * row helper then fails closed (ERROR `*.audit_invariant`, rethrown, no Resend
+ * call) instead of reading a wiring bug as a lost row and making the call. A
+ * driver error on the probe stays as it is (a lost row, per `_audience-audit`).
+ * The message keeps the original text (tenant slugs only, no PII).
+ */
+async function assertAudienceAuditTenantBoundTx(
+  tx: TenantTx,
+  expectedTenantId: string,
+  callerName: string,
+  eventType: 'broadcast_audience_deleted' | 'broadcast_audience_disclosed',
+): Promise<void> {
+  try {
+    await assertTenantBoundTx(tx, expectedTenantId, callerName);
+  } catch (e) {
+    if (e instanceof TenantBindingRefusalError) throw new AuditPortInvariantError(eventType, e.message);
+    throw e;
   }
 }
 
@@ -1812,7 +1839,7 @@ export function makeDrizzleBroadcastsRepo(
      */
     async hasAudienceDeletedAuditInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string): Promise<boolean> {
       const tx = txUnknown as TenantTx;
-      await assertTenantBoundTx(tx, ctx.slug, 'hasAudienceDeletedAuditInTx');
+      await assertAudienceAuditTenantBoundTx(tx, ctx.slug, 'hasAudienceDeletedAuditInTx', 'broadcast_audience_deleted');
       await setLocalLockTimeout(tx, AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, 'hasAudienceDeletedAuditInTx');
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-audience-audit:' || ${tenantIdArg} || ':' || ${resendAudienceId}, 0))`,
@@ -1837,7 +1864,7 @@ export function makeDrizzleBroadcastsRepo(
      */
     async findAudienceDisclosureInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string) {
       const tx = txUnknown as TenantTx;
-      await assertTenantBoundTx(tx, ctx.slug, 'findAudienceDisclosureInTx');
+      await assertAudienceAuditTenantBoundTx(tx, ctx.slug, 'findAudienceDisclosureInTx', 'broadcast_audience_disclosed');
       const keys = AUDIENCE_AUDIT_PAYLOAD_KEYS;
       const rows = (await tx.execute(sql`
         SELECT payload->>${keys.broadcastId}::text AS broadcast_id,

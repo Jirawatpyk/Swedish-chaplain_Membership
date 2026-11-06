@@ -829,8 +829,15 @@ export interface BroadcastsRepo {
    * row lock's `broadcasts:` and the evidence locks), so two sites'
    * check-then-insert on one segment is serialised. Tenant-scoped by RLS AND
    * an explicit `tenant_id` predicate (`audit_log`'s policy also admits
-   * `tenant_id IS NULL` rows); `assertTenantBoundTx` refuses a tx bound to
-   * another tenant.
+   * `tenant_id IS NULL` rows); a tx bound to another tenant (or to none) is
+   * refused with an `AuditPortInvariantError` (review round 3), so the row
+   * helper fails closed and the Resend call is never made.
+   *
+   * Ordering contract (review round 3): this is NOT a pure read. It sets
+   * `SET LOCAL lock_timeout` (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, for the rest of
+   * the tx) and takes the per-segment advisory lock, held to the end of the tx.
+   * A caller that writes a deleted row calls it FIRST, in the same tx as any
+   * {@link findAudienceDisclosureInTx} read and the insert.
    */
   hasAudienceDeletedAuditInTx(tx: unknown, tenantId: TenantSlug, resendAudienceId: string): Promise<boolean>;
 
@@ -840,7 +847,13 @@ export interface BroadcastsRepo {
    * writes its deleted row only when one exists, copying its broadcast and its
    * requester (`related_member_id`): without one, this deployment never filled
    * the segment, and the row is never filed under a guessed tenant or member.
-   * Tenant-scoped exactly as {@link hasAudienceDeletedAuditInTx}.
+   * Tenant-scoped exactly as {@link hasAudienceDeletedAuditInTx}, with the same
+   * `AuditPortInvariantError` refusal of a tx bound to another tenant.
+   *
+   * Ordering contract (review round 3): it takes NO lock and sets no
+   * `lock_timeout`. It relies on {@link hasAudienceDeletedAuditInTx} having run
+   * first in the same tx (the per-segment lock is then held, and the bound
+   * applies); disclosed rows are append-only, so the read itself needs none.
    */
   findAudienceDisclosureInTx(
     tx: unknown,
