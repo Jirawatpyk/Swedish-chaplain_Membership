@@ -4,7 +4,7 @@ Spec: `specs/142-audience-audit-once/spec.md` · Size: M · Agreed by the user o
 
 ## Approach
 
-A partial unique index on `audit_log` replaces the advisory lock and `EXISTS` dedupe of `broadcast_audience_deleted`. The deleted row is written through a new `emitOnce` (since review round 1 on the narrow port `AudienceDeletedAuditPort`, not `AuditPort`), an `INSERT … ON CONFLICT … DO NOTHING RETURNING 1` like the invoicing overdue adapter's. It answers whether it wrote. With the database as the arbiter, three things that existed only to bound or route the lock wait go:
+A partial unique index on `audit_log` replaces the advisory lock and `EXISTS` dedupe of `broadcast_audience_deleted`. The deleted row is written through a new `emitOnce` (since review round 1 on the narrow port `AudienceDeletedAuditPort`, not `AuditPort`), an `INSERT … ON CONFLICT … DO NOTHING RETURNING 1` like the invoicing overdue adapter's. It answers whether it wrote. *Superseded in part at plan review (see § Plan review fold-in): the 5 s `lock_timeout` and its WARN arm stay and now bound the INSERT wait; only the advisory lock, its `EXISTS` read and reclaim's deadline charge go.* With the database as the arbiter, three things that existed only to bound or route the lock wait go:
 - the 5 s `lock_timeout`;
 - the WARN arm for a timed-out wait;
 - reclaim's deadline charge for that wait.
