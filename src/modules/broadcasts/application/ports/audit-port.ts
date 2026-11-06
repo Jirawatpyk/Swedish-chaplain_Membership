@@ -1,7 +1,7 @@
 /**
  * T028 — `AuditPort` Application port (F7 MVP) + T031 F7.1a extension.
  *
- * 69 live audit event types (55 before F119) as a const tuple + discriminated union for
+ * 70 live audit event types (55 before F119) as a const tuple + discriminated union for
  * compile-time safety on emit sites. Mirror of F4 audit-port pattern,
  * but ALL F7 events default to **5-year retention** (no tax-document
  * overlap; F7 is operational + marketing-objection + privacy events).
@@ -49,10 +49,12 @@
  *     (one counts-only row per tenant per daily run).
  *   - F7 unattributed opt-out (migration 0312): 1 event —
  *     `broadcast_unsubscribe_unattributed`.
- *   = 77 declared, minus the 8 RETIRED events kept only in
+ *   - Spec 139 s2 (migration 0327): 1 event — `broadcast_audience_disclosed`
+ *     (the import tick's Art. 30 row for a recipient list handed to Resend).
+ *   = 78 declared, minus the 8 RETIRED events kept only in
  *   `RETIRED_F7_AUDIT_EVENT_TYPES` (the 6 batch events, and the 2 the legacy
- *   dispatch leg alone emitted until spec 140 s4) = **69 live** (this tuple).
- *   Static-assert below (`extends 69`) is the source of truth; the header summary is
+ *   dispatch leg alone emitted until spec 140 s4) = **70 live** (this tuple).
+ *   Static-assert below (`extends 70`) is the source of truth; the header summary is
  *   informational only and should be re-derived when the assert changes. R4.3 M-8 fixed
  *   the "10" → "11" double-count drift that R3.5 M-8 missed.
  *
@@ -235,17 +237,26 @@ export const F7_AUDIT_EVENT_TYPES = [
   // address only as the tenant-scoped hash. Staff apply it by hand
   // (runbook broadcast-manual-unsubscribe.md).
   'broadcast_unsubscribe_unattributed',
+
+  // --- Spec 139 s2 (migration 0327) — the import leg's Art. 30 rows --------
+  // Written BEFORE the Resend call, after its lease gate, so a row records a
+  // request, not its outcome (a function killed after the call cannot erase
+  // it). Ids and a count only, never an address or a hash; the requester as
+  // snake_case `related_member_id` (the Art. 15 export key; a system row is
+  // not the member's own activity, so never `member_id`).
+  'broadcast_audience_disclosed',
 ] as const;
 
 /**
- * Static assertion: the tuple length is 69. The authoritative per-category
- * breakdown is the file-header taxonomy above (it nets to 69 live); this
+ * Static assertion: the tuple length is 70. The authoritative per-category
+ * breakdown is the file-header taxonomy above (it nets to 70 live); this
  * assert is the enforced source of truth. If a spec amendment adds/removes
  * an event, update the tuple, this literal, and the header taxonomy —
  * TypeScript errors here ("Type '69' is not assignable to type '70'") if
  * the count drifts. (F119 T022: 55 → 59; T050: 59 → 69; the 0310 retention
  * sweep: 69 → 70; 0312 unattributed opt-out: 70 → 71; PR #756 review round 1,
- * the legacy leg's two orphans retired: 71 → 69.)
+ * the legacy leg's two orphans retired: 71 → 69; spec 139 s2, the disclosure
+ * row: 69 → 70.)
  *
  * (The previous inline arithmetic here was dropped — it double-counted
  * `broadcast_image_unsafe`, which is already inside the "11 F7.1a
@@ -297,7 +308,7 @@ export const RETIRED_F7_AUDIT_EVENT_TYPES = [
 export type RetiredF7AuditEventType =
   (typeof RETIRED_F7_AUDIT_EVENT_TYPES)[number];
 
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 69
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 70
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
@@ -717,6 +728,32 @@ export interface F7AuditPayloadShapes {
     readonly newest_anchor: string | null;
     readonly actor_role: 'system';
   };
+  // Spec 139 s2 (DA1, DA3) — the import tick hands the recipient list to a
+  // Resend segment (tick 1, before `createContactImport`). The keys the
+  // repo's SQL reads are `AUDIENCE_AUDIT_PAYLOAD_KEYS`.
+  readonly broadcast_audience_disclosed: AudienceAuditCommon & {
+    readonly recipient_count: number;
+  };
+}
+
+/**
+ * Spec 139 s2 — the payload keys the audience rows' emit sites write and the
+ * repo's `audit_log` reads match on (`findAudienceDisclosureInTx`), shared so
+ * the two cannot drift apart.
+ */
+export const AUDIENCE_AUDIT_PAYLOAD_KEYS = {
+  broadcastId: 'broadcast_id',
+  relatedMemberId: 'related_member_id',
+  resendAudienceId: 'resend_audience_id',
+} as const;
+
+/** Spec 139 s2 (DA3) — the fields both audience rows carry. */
+export interface AudienceAuditCommon {
+  readonly broadcast_id: string;
+  readonly related_member_id: string;
+  readonly resend_audience_id: string;
+  readonly leg: 'import';
+  readonly actor_role: 'system';
 }
 
 /** The fields the three approval-lifecycle rows share (T130). */
@@ -855,7 +892,7 @@ export interface AuditPort {
    * same `vi.fn()` so behaviour mirrors).
    *
    * R6.7 M12 — generic constraint tightened from `F7AuditEventType`
-   * (all 71 events) to `keyof F7AuditPayloadShapes` (28 typed events since the 0310 retention sweep).
+   * (all 71 events) to `keyof F7AuditPayloadShapes` (29 typed events since spec 139 s2's disclosure row).
    * Pre-R6.7 a call site could pass `emitTyped(tx, { eventType:
    * 'broadcast_drafted', payload: { whatever } })` and the payload
    * silently fell back to `Record<string, unknown>` via a now-retired

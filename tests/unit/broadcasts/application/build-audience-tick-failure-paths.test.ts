@@ -914,7 +914,9 @@ describe('buildAudienceTick — a retryable gateway failure stays retryable', ()
 
     expect(res.ok).toBe(false);
     expect(rec.transitions).toEqual([]);
-    expect(rec.audits).toEqual([]);
+    // Spec 139 s2 (DA1) — only the disclosure row, written before the import
+    // (it records the request); no failure row.
+    expect(rec.audits.map((a) => a.eventType)).toEqual(['broadcast_audience_disclosed']);
     expect(rec.memberEmails).toEqual([]);
   });
 
@@ -2182,7 +2184,11 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
         (res.error as { observedStatus?: string }).observedStatus,
       ).toBe('sending');
       expect(rec.transitions).toHaveLength(0);
-      expect(rec.audits).toHaveLength(0);
+      // Spec 139 s2 (DA1) — the disclosure row is written after the segment
+      // attach and before the import, so only a lost import attach has one.
+      expect(rec.audits.map((a) => a.eventType)).toEqual(
+        method === 'attachAudienceImport' ? ['broadcast_audience_disclosed'] : [],
+      );
       expect(rec.memberEmails).toHaveLength(0);
     });
 

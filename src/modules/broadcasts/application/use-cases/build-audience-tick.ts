@@ -102,6 +102,7 @@ import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import type { ResolvedOrphan, ResolveSegmentError } from './resolve-segment-recipients';
 import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
+import { recordAudienceDisclosed } from './_audience-audit';
 
 /**
  * FR-044 (f). Measured from the SUBMIT, not from `scheduled_for`: a broadcast
@@ -1996,6 +1997,21 @@ async function submitImport(
       return err(attached.error);
     }
   }
+
+  // Spec 139 s2 (DA1) — the Art. 30 row for the recipient list, written now:
+  // after the segment id is on the row and BEFORE the import's lease gate, so
+  // that gate stays the last read before the POST (the import keeps its
+  // headroom) and a tick killed after the POST cannot erase the record. No
+  // dedupe: a row that already holds a segment is restarted (`stale_audience`
+  // above), so one segment id never reaches the import twice. A tick that stops
+  // at the gate below leaves the row, which records the request; the next
+  // tick's `stale_audience` restart deletes that segment (and records it).
+  await recordAudienceDisclosed(deps, {
+    broadcastId: input.broadcastId as unknown as string,
+    relatedMemberId: broadcast.requestedByMemberId,
+    resendAudienceId: audienceId,
+    recipientCount: resolved.value.recipients.length,
+  });
 
   // S48 — time the one call the whole design rests on. Nothing measured it
   // before, so neither the ~412 ms it is sized against nor the 30-minute stuck
