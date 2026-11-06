@@ -1,5 +1,5 @@
 /**
- * PR #756 review round 2 — the post-send `broadcast_resend_drift_check_unverifiable`
+ * PR #756 review rounds 2 and 3 — the `broadcast_resend_drift_check_unverifiable`
  * row on live Postgres (Neon `dev`). The maintainer's /verify could not force a
  * failed audience count on the Resend sink, so until this file the row had only
  * unit evidence.
@@ -17,10 +17,13 @@
  *     (the audience query has its own suites);
  *   - `brandChrome`, a no-brand stub.
  *
- * Case 1: exactly one row, naming the sent broadcast id, `errorReason:
- * 'server_5xx'`, no address in the payload; the row reaches `sending`; one
- * `/send`. Case 2: the send failed, so nothing was sent unverified and there is
- * no row.
+ * Since round 3 the row is written BEFORE `/send`, once per broadcast (the
+ * first failed attempt), with the real `EXISTS` dedupe read on `audit_log`:
+ *
+ *   - case 1: the send goes out → one row naming the id that was sent,
+ *     `errorReason: 'server_5xx'`, no provider text; the row reaches `sending`;
+ *   - case 2: the send fails retryably → still one row (the attempt happened);
+ *   - case 3: two ticks whose counts both fail → one row.
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
@@ -175,11 +178,13 @@ describe('PR #756 round 2 — the unverifiable-count audit row after a send (liv
       errorReason: 'server_5xx',
       expectedRecipientCount: RECIPIENTS.length,
     });
+    // The exact provider text, never a bare '503': that is a random UUID's hex
+    // about 2 % of the time (round 3, reliability M).
+    expect(JSON.stringify(rows[0]!.payload)).not.toContain('resend 503 for unverifiable-a@example.com');
     expect(JSON.stringify(rows[0]!.payload)).not.toContain('example.com');
-    expect(JSON.stringify(rows[0]!.payload)).not.toContain('503');
   });
 
-  it('a failed count and a send that failed retryably → no row, the row still approved', async () => {
+  it('a failed count and a send that failed retryably → one row (the attempt), the row still approved', async () => {
     const id = await seedTick2Row();
     const gw = fakeGateway('retryable');
 
@@ -187,7 +192,19 @@ describe('PR #756 round 2 — the unverifiable-count audit row after a send (liv
 
     expect(r.ok).toBe(false);
     expect(gw.sends).toHaveLength(1);
-    expect(await unverifiableRows(id)).toHaveLength(0);
+    const rows = await unverifiableRows(id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.payload).toMatchObject({ errorReason: 'server_5xx', resendBroadcastId: gw.sends[0] });
+    expect(rows[0]!.summary).toMatch(/membership check could not be read on a dispatch attempt/);
     expect((await readRow(id)).status).toBe('approved');
+  });
+
+  it('two ticks whose counts both fail → one row for the broadcast', async () => {
+    const id = await seedTick2Row();
+
+    await tick(id, fakeGateway('retryable').port);
+    await tick(id, fakeGateway('retryable').port);
+
+    expect(await unverifiableRows(id)).toHaveLength(1);
   });
 });
