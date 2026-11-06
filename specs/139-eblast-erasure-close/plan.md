@@ -201,7 +201,7 @@ e2e: none (cron and erasure server paths only; no UI).
   - It needs no dedupe. A row that already holds an audience goes to restart (`stale_audience`), so one segment id never reaches the import twice.
   - If a tick is killed between the row and the POST, the next tick deletes that segment and replaces it, and the replacement gets a new disclosure row.
 - **`broadcast_audience_deleted`**
-  - It is deduped on `resend_audience_id`, under the advisory lock `broadcasts-audience-audit:<tenant>:<audienceId>`. The first `reason` wins. Accepted consequence: a `hold` row whose gate then stopped the delete keeps `reason: 'hold'`, even after cleanup really deletes the segment.
+  - *Superseded by spec 142 (migration 0328): the dedupe is the unique index `audit_log_audience_deleted_once` and `INSERT … ON CONFLICT DO NOTHING`; the advisory lock is gone.* It is deduped on `resend_audience_id`, under the advisory lock `broadcasts-audience-audit:<tenant>:<audienceId>`. The first `reason` wins. Accepted consequence: a `hold` row whose gate then stopped the delete keeps `reason: 'hold'`, even after cleanup really deletes the segment.
   - **Restart:** it is written before `leaseGateStep('delete_audience')`, which becomes its re-gate.
   - **Cleanup:** it is written before `deleteAudience`, with the row's `requestedByMemberId`. `listTerminalBroadcastsWithLiveAudience` is widened to return that column, which is NOT NULL.
   - **Reclaim (pdpa M-3):** it is written before `deleteAudience`, but only when `findAudienceDisclosureInTx` finds this tenant's disclosed row for the segment, and it copies that row's `related_member_id`. With no such row, nothing is written. Instead:

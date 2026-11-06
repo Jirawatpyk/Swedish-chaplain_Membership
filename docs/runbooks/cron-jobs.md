@@ -888,9 +888,10 @@ polish iteration but is intentionally not part of F7 MVP.
 once per segment, deduped). It records the request, not the result. A lost row logs
 `broadcasts.audience_cleanup.audience_audit_lost` (ERROR) and counts `broadcasts_audit_emit_failed_total`;
 the delete still runs. An adapter invariant error makes no delete, counts the item `failed` and logs the ERROR
-`broadcasts.audience_cleanup.audit_invariant`. A wait over `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on the segment's
-`broadcasts-audience-audit:` advisory lock logs the WARN `broadcasts.audience_cleanup.audience_audit_lock_timeout`
-(the row may be missing); the delete runs.
+`broadcasts.audience_cleanup.audit_invariant`. The row is written by `INSERT … ON CONFLICT DO NOTHING` on the unique
+index `audit_log_audience_deleted_once` (spec 142, migration 0328), so a second write for the segment writes nothing. A
+wait over `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on another transaction's uncommitted insert of the same key logs the
+WARN `broadcasts.audience_cleanup.audience_audit_lock_timeout` (the row may be missing); the delete runs.
 
 Periodic housekeeping cron that **deletes the ephemeral per-broadcast Resend
 audiences** created during dispatch for broadcasts that have reached a
@@ -994,7 +995,8 @@ delete still runs. A segment from before spec 139 s2, or one another deployment 
 created under the same slug, lands in the not-found arm. A segment that already has a deleted row writes nothing more
 and is not reported. An adapter invariant error logs the ERROR `broadcasts.audience_reclaim.audit_invariant`. A row that cannot be stored
 logs the ERROR `broadcasts.audience_reclaim.audience_audit_lost`; a wait over `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on
-the segment's `broadcasts-audience-audit:` lock logs the WARN `broadcasts.audience_reclaim.audience_audit_lock_timeout`.
+another transaction's uncommitted insert of the same key (the unique index of spec 142) logs the WARN
+`broadcasts.audience_reclaim.audience_audit_lock_timeout`.
 Both are counted in `broadcasts_audit_emit_failed_total`, and the delete runs. A lock-timeout WARN is the only trace
 of that delete: the run writes no row and no unattributed WARN for it.
 

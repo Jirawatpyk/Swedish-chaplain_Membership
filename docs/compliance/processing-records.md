@@ -79,14 +79,14 @@ a processor under contract.
 - **If the row cannot be stored**, the import still proceeds. The failure is logged at error level (`broadcasts.audience_import.audience_audit_lost`) and counted (`broadcasts_audit_emit_failed_total`). No alert backend is wired, so a missing row is not proof that nothing was disclosed.
 
 **Removal rows.** Each removal of a Resend segment that may hold recipients is recorded by a `broadcast_audience_deleted` row.
-- **When it is written:** before the delete call, once per segment. If a segment is removed more than once, the first `reason` is kept.
+- **When it is written:** before the delete call, once per segment. If a segment is removed more than once, the first `reason` is kept. Since spec 142 the database enforces the once-per-segment rule: a partial unique index `audit_log_audience_deleted_once` on (tenant, segment) for this event (migration 0328), with the row written by `INSERT … ON CONFLICT DO NOTHING`.
 - **The reasons:**
   - `hold`, `stale_audience` and `audience_missing`: the import tick's restart;
   - `terminal_cleanup`: the `cleanup-audiences` cron;
   - `orphan_reclaim`: the reclaim cron. It writes the row only when this tenant's disclosed row names the segment. Otherwise it writes no row, so no row is ever filed under a guessed tenant. Instead, the WARN `broadcasts.audience_reclaim.delete_unattributed` and `broadcasts_audience_reclaim_delete_unattributed_total` record the case.
 - **If the row cannot be stored**, the delete still runs, and one of two things is logged:
   - a storage failure: the ERROR `*.audience_audit_lost`, counted in `broadcasts_audit_emit_failed_total`;
-  - a wait over `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on the segment's dedupe lock: the WARN `*.audience_audit_lock_timeout`, counted in the same counter. Here the row may exist, because the transaction holding the lock may be writing it. For the reclaim cron this WARN is the only trace of that delete: on that run it writes no row and no unattributed WARN.
+  - a wait over `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on another transaction's uncommitted insert of the same (tenant, segment) key: the WARN `*.audience_audit_lock_timeout`, counted in the same counter. The row may exist, because that transaction may commit it. For the reclaim cron this WARN is the only trace of that delete: on that run it writes no row and no unattributed WARN. Since spec 142 this wait is on the index, not on an advisory lock.
 
   The removal rows are therefore not a complete list of removals.
 - **It records the request.** The result is in `broadcasts.audience_deleted_at` or in the orphan table.

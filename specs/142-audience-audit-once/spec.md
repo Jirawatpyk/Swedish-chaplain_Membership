@@ -17,7 +17,9 @@ The same slice left three near-copies of the "write an audit row before an irrev
 
 ## Premises (checked 6 Nov 2026)
 
-- **Usage.** Prod `audit_log` held 0 `broadcast_audience_deleted` rows: no E-Blast has run since 0327, prod has 0 `broadcasts` rows, and a read-only count at 12:00 UTC on 6 Nov 2026 found 0 audience orphans. The prod `audit_log` row count and the duplicate check are taken before merge, read-only, on the maintainer's order.
+- **Usage.** Prod `audit_log` held 0 `broadcast_audience_deleted` rows: no E-Blast has run since 0327, prod has 0 `broadcasts` rows, and a read-only count at 12:00 UTC on 6 Nov 2026 found 0 audience orphans. **MEASURED, read-only, on the maintainer's order** (host `ep-bold-block`, `transaction_read_only = on`, 6 Nov 2026 16:43 UTC):
+  - prod `audit_log` holds 7,359 rows in a 3 MB heap, far below 0021's 1M-row threshold for building outside the pipeline;
+  - 0 rows are `broadcast_audience_deleted`, so there are no duplicate keys.
 - **Dev before cleanup.** Dev `audit_log` held 912,103 rows, 104 of them `broadcast_audience_deleted` (14 with a NULL tenant). One key had two rows: tenant `test-swecham-73d5fae7`, segment `9dd78c02…`, both rows with summary `spec 139 s2 fixture`. They were raw INSERTs by `tests/integration/broadcasts/audience-audit-rows.test.ts`, not rows the product wrote.
 - **Dev cleanup.** With the maintainer's yes on 6 Nov 2026, the later of the two rows (`7db7cd75…`) was deleted once, by hand, on dev only. The `audit_log_no_delete` trigger was disabled for that one statement and re-enabled in the same transaction (`tgenabled = 'O'` after). 0 duplicate keys remain.
 - **The shared `ci` Neon branch** may hold the same fixture litter. If it does, the migration's pre-check stops loudly in CI, and the maintainer is asked before that branch is touched.

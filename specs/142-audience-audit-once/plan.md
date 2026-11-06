@@ -79,7 +79,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS audit_log_audience_deleted_once
 | AO3: restart, cleanup and reclaim write through `emitOnce`, with no lock | the unit files of the three sites: the call order shows `emitOnce` and no `hasAudienceDeletedAuditInTx` in restart/cleanup; reclaim reads the lockless check, then the disclosure, then `emitOnce` | unit |
 | AO3: reclaim skips a recorded segment with no unattributed WARN | the existing reclaim cell, kept | unit |
 | AO3: a tenant-binding refusal still fails closed | the existing integration cross-tenant cell, kept | integration |
-| AO3: the lock-timeout arms are gone | the lock-timeout unit cells are deleted; the source scan is updated | unit |
+| AO3: the lock-timeout arms now bound the INSERT wait (plan review fold-in) | *Superseded:* the cells were not deleted; they moved onto the INSERT wait. Live-Neon: `audience-audit-rows.test.ts` 55P03 cell (waits about 5.5 s). The old reclaim deadline-charge cell is deleted, and a budget cell (a chunk starts when exactly one Resend call fits) replaces it. The source scan pins the writers to `emitOnce` | unit + integration |
 | AO4: one helper | `recordUnverifiableCount`'s unit and integration cells pass unchanged through the helper; a helper unit test covers invariant rethrow, lost row (ERROR + `auditEmitFailed`, the call proceeds), and written (`auditEmitCount`) | unit + integration |
 | AO5: the docs | the grep in spec AO5 returns nothing outside history markers | gate (grep in the PR) |
 | AO6: hold on live Resend | the maintainer's `/verify` | verify |
