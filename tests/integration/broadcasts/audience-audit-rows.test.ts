@@ -203,7 +203,7 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
   ] as const)("cross-tenant: %s with a tx bound to tenant B refuses tenant A's read", async (_label, call) => {
     const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
     const slug = tenantA.ctx.slug as never;
-    await expect(runInTenant(asTenantContext(tenantB.ctx.slug), (tx) => call(repo, tx, slug))).rejects.toThrow(/tx tenant mismatch/);
+    await expect(runInTenant(asTenantContext(tenantB.ctx.slug), (tx): Promise<unknown> => call(repo, tx, slug))).rejects.toThrow(/tx tenant mismatch/);
   });
 
   describe('DA1 / DA2 through the real composition root', () => {
