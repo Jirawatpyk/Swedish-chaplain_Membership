@@ -15,8 +15,9 @@
 -- test fixtures only.
 --
 -- The pre-check refuses the deploy, naming the keys, if any duplicate key
--- already exists. The one dev duplicate (a spec 139 s2 test fixture) was
--- removed by hand on 6 Nov 2026 (spec 142 § Premises). The migration deletes
+-- already exists (`->>` is NULL for a missing key, so no `?` test is
+-- needed). The one dev duplicate (a spec 139 s2 test fixture) was removed by
+-- hand on 6 Nov 2026 (spec 142 § Premises). The migration deletes
 -- nothing: audit_log is append-only, and this file also runs on prod.
 --
 -- Build: non-CONCURRENTLY, inside the migrate transaction (the 0021 shape;
@@ -46,7 +47,6 @@ BEGIN
     FROM audit_log
     WHERE event_type = 'broadcast_audience_deleted'
       AND tenant_id IS NOT NULL
-      AND payload ? 'resend_audience_id'
       AND (payload->>'resend_audience_id') IS NOT NULL
     GROUP BY tenant_id, payload->>'resend_audience_id'
     HAVING count(*) > 1
@@ -56,7 +56,9 @@ BEGIN
   END IF;
 END $$;--> statement-breakpoint
 
-CREATE UNIQUE INDEX IF NOT EXISTS "audit_log_audience_deleted_once"
+-- No IF NOT EXISTS: an index of another definition under this name must fail
+-- the migration, not pass it with a NOTICE (review round 1, code-review #8).
+CREATE UNIQUE INDEX "audit_log_audience_deleted_once"
   ON "audit_log" ("tenant_id", ("payload"->>'resend_audience_id'))
   WHERE "event_type" = 'broadcast_audience_deleted';--> statement-breakpoint
 
