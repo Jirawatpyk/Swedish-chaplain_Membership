@@ -772,7 +772,7 @@ export const AUDIENCE_AUDIT_PAYLOAD_KEYS = {
   broadcastId: 'broadcast_id',
   relatedMemberId: 'related_member_id',
   resendAudienceId: 'resend_audience_id',
-} as const;
+} as const satisfies Record<string, keyof AudienceAuditCommon>;
 
 /** Spec 139 s2 (DA3) — the fields both audience rows carry. */
 export interface AudienceAuditCommon {
