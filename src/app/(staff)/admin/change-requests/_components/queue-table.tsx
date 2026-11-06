@@ -42,8 +42,15 @@ function waitingParts(seconds: number): { days: number; hours: number } {
 
 export async function ChangeRequestQueueTable({
   items,
+  statusInCards = true,
 }: {
   readonly items: readonly ChangeRequestQueueItem[];
+  /**
+   * false on the pending view: every row there is "Awaiting decision", so the
+   * phone card leaves the Status field out (the mobile board draws none). The
+   * grid keeps the column. Decided and withdrawn views mix outcomes and keep it.
+   */
+  readonly statusInCards?: boolean;
 }) {
   const t = await getTranslations('admin.changeRequests.queue');
   const tReview = await getTranslations('admin.changeRequests.review');
@@ -105,7 +112,11 @@ export async function ChangeRequestQueueTable({
                   ) : null}
                 </span>
               </Td>
-              <Td label={t('columns.status')}>
+              <Td
+                label={t('columns.status')}
+                // AURA app content: Status leaves the stacked card on the pending view
+                {...(statusInCards ? {} : { className: '@max-[640px]/aura-tbl:hidden' })}
+              >
                 <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="staff" />
                 {r.decidedAt && item.row.decidedBy ? (
                   <div className="mt-1 text-xs text-[var(--aura-fg-secondary)]">

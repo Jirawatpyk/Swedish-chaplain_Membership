@@ -1,7 +1,11 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
+import { UserX } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { EmptyState } from '@/components/shell/empty-state';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { renderPortalProfileView } from '@/components/members/portal-profile-view';
 import { resolveLegalEntityTypeLabel } from '@/components/members/resolve-legal-entity-type-label';
 import { safeExternalHref } from '@/lib/safe-url';
@@ -82,9 +86,7 @@ export async function PortalProfileBody({
     return (
       <DetailContainer>
         <PageHeader title={t('pageTitle')} />
-        <div className="py-12 text-center">
-          <p className="text-body text-muted-foreground">{t('notLinked')}</p>
-        </div>
+        <EmptyState icon={UserX} title={t('notLinkedTitle')} description={t('notLinked')} announce={false} />
       </DetailContainer>
     );
   }
@@ -105,9 +107,11 @@ export async function PortalProfileBody({
     return (
       <DetailContainer>
         <PageHeader title={t('pageTitle')} />
-        <div className="py-12 text-center">
-          <p className="text-body text-muted-foreground">{t('loadError')}</p>
-        </div>
+        {/* PR Q review round 2 — the shared LoadErrorCard (alert, danger tone,
+            icon) with a "Try again" that refreshes in place. */}
+        <LoadErrorCard message={t('loadError')}>
+          <RefreshPageButton label={(await getTranslations('errors'))('loadError.retry')} />
+        </LoadErrorCard>
       </DetailContainer>
     );
   }

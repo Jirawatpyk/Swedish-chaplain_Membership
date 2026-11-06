@@ -37,6 +37,7 @@ import type { InvoiceStatusBucket, InvoiceStatusDistribution } from '@/modules/i
 import { CHART_HERO_GROUP, CHART_HERO_ROW, CHART_HERO_VALUE_NOWRAP } from './chart-card-type';
 import { formatWrapping } from './format-wrapping';
 import { ChartDataTable } from './chart-data-table';
+import { EmptyState } from '@/components/shell/empty-state';
 import { formatSharePercentages } from '@/lib/allocate-percentages';
 
 export interface InvoiceStatusChartProps {
@@ -146,7 +147,8 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
     <Card title={t('title')} {...(hasData ? { description: t('basisCaption') } : {})} headingLevel={2}>
       {!hasData ? (
         <>
-          <p className="aura-text-body text-[var(--aura-fg-secondary)]">{t('empty')}</p>
+          {/* PR Q — AURA's EmptyState, small and frameless inside the chart card. */}
+          <EmptyState title={t('empty')} size="sm" bordered={false} announce={false} />
           {draftCaption}
         </>
       ) : (

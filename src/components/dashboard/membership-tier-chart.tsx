@@ -39,6 +39,7 @@ import { Card } from '@jirawatpyk/aura-react';
 import { CHART_HERO_GROUP, CHART_HERO_ROW, CHART_HERO_VALUE } from './chart-card-type';
 import type { TierDistributionSlice } from '@/modules/insights';
 import { ChartDataTable } from './chart-data-table';
+import { EmptyState } from '@/components/shell/empty-state';
 
 /** One visual row: `displayLabel` is the (possibly translated) tier name,
  * `barLabel` the pre-formatted "count (pct%)" end label. */
@@ -126,7 +127,8 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
   return (
     <Card title={t('title')} headingLevel={2}>
       {!hasData ? (
-        <p className="aura-text-body text-[var(--aura-fg-secondary)]">{t('empty')}</p>
+        // PR Q — AURA's EmptyState, small and frameless inside the chart card.
+        <EmptyState title={t('empty')} size="sm" bordered={false} announce={false} />
       ) : (
         <>
           {/* Headline stat: the active-member total the bars sum to, at the

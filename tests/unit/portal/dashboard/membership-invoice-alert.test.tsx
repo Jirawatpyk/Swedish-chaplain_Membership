@@ -67,6 +67,16 @@ describe('<MembershipInvoiceAlert>', () => {
     expect(screen.getByRole('link', { name: /Pay now/ })).toHaveAttribute('href', '/portal/invoices/inv-1?pay=1');
   });
 
+  it('Pay now is a normal-size button on a phone, like every other Alert action (the boards Home-mobile / Invoices-mobile)', () => {
+    show('both');
+    const link = screen.getByRole('link', { name: /Pay now/ });
+    expect(link.className).not.toMatch(/max-sm:w-full/);
+    expect(link).toHaveClass('aura-btn', 'aura-btn--primary');
+    // The board's arrow leads the label.
+    expect(link.firstElementChild?.querySelector('svg') ?? link.firstElementChild).not.toBeNull();
+    expect(link.firstElementChild?.textContent).toBe('');
+  });
+
   it('names only the enabled method', () => {
     show('promptpay');
     expect(screen.getByText(/Pay online by PromptPay\.$/)).toBeInTheDocument();

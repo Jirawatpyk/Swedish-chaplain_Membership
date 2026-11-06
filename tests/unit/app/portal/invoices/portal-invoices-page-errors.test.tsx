@@ -51,6 +51,10 @@ function makeRealTranslator(ns: string) {
 // --- mocks ----------------------------------------------------------------
 
 const warnSpy = vi.fn();
+// PR Q review round 2 — a failed read renders RefreshPageButton (router.refresh()).
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { warn: (...args: unknown[]) => warnSpy(...args) },
 }));
@@ -132,6 +136,7 @@ describe('PortalInvoicesPage — member lookup error vs not-linked (finding I5)'
     findByLinkedUserIdMock.mockResolvedValue({ ok: false, error: { code: 'repo.not_found' } });
     const html = await renderPage();
     expect(html).toContain(en.portal.invoices.notLinked);
+    expect(html).toContain(en.portal.invoices.notLinkedTitle);
     expect(warnSpy).not.toHaveBeenCalled();
     // Must NOT show the loadFailed error copy for a genuine no-link.
     expect(html).not.toContain('load your invoices right now');
@@ -252,9 +257,17 @@ describe('PortalInvoicesPage — empty vs no-match empty-state copy', () => {
     expect(html).not.toContain('MISSING_KEY:');
   });
 
+  it('below 1024px the list card drops its padding as well as its frame, so the row cards line up with the banner', async () => {
+    const html = await renderPage();
+    // AURA `flushBelow` drops border, surface and shadow but keeps padding
+    // (its docs), so the cards sat 17px inside the alert above them at 390.
+    expect(html).toMatch(/class="[^"]*aura-card--flush-below-lg[^"]*max-lg:border-0 max-lg:p-0/);
+  });
+
   it('no filter + zero rows → empty copy (NOT the no-match copy)', async () => {
     const html = await renderPage();
     expect(html).toContain(en.portal.invoices.empty);
+    expect(html).toContain(en.portal.invoices.emptyBody);
     expect(html).not.toContain(en.portal.invoices.filters.noMatch);
     expect(html).not.toContain('MISSING_KEY:');
   });
@@ -295,5 +308,44 @@ describe('PortalInvoicesPage — one clock for the overdue filter', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('PortalInvoicesPage — states on AURA EmptyState (PR Q)', () => {
+  it('a failed read is the danger-tone EmptyState inside the card', async () => {
+    listInvoicesPagedMock.mockRejectedValue(new Error('NeonDbError'));
+    const html = await renderPage();
+    // Round 2 — the shared LoadErrorCard, bare (small) inside the card.
+    expect(html).toContain('class="aura-empty is-sm is-danger"');
+    expect(html).not.toMatch(/role="status"[^>]*class="aura-empty/);
+  });
+
+  it('not-linked and the empty list are the neutral EmptyState, neither a live region', async () => {
+    findByLinkedUserIdMock.mockResolvedValueOnce({ ok: false, error: { code: 'repo.not_found' } });
+    expect(await renderPage()).toContain('<div class="aura-empty">');
+    listInvoicesPagedMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+    const list = await renderPage({ status: 'paid' });
+    expect(list).toMatch(/<div class="aura-empty"><span class="aura-empty__icon"/);
+    expect(list).not.toContain('is-danger');
+  });
+});
+
+describe('PortalInvoicesPage — a failed read is an alert with a retry (PR Q rounds 1b + 2)', () => {
+  it.each([
+    ['member lookup', () => findByLinkedUserIdMock.mockResolvedValueOnce({ ok: false, error: { code: 'repo.unexpected' } })],
+    ['list read', () => listInvoicesPagedMock.mockRejectedValue(new Error('NeonDbError'))],
+  ])('a failed %s is LoadErrorCard’s alert with a "Try again" refresh button, not a link', async (_, fail) => {
+    fail();
+    const html = await renderPage({ status: 'paid', q: 'acme' });
+    expect(html).toMatch(/<div role="alert" aria-live="assertive" class="aura-empty[^"]*is-danger"/);
+    expect(html).toMatch(new RegExp(`<button[^>]*type="button"[^>]*>.*${en.errors.loadError.retry}.*</button>`));
+    expect(html).not.toMatch(new RegExp(`<a [^>]*>${en.errors.loadError.retry}</a>`));
+  });
+
+  it('not-linked stays a quiet empty state with no retry', async () => {
+    findByLinkedUserIdMock.mockResolvedValueOnce({ ok: false, error: { code: 'repo.not_found' } });
+    const html = await renderPage();
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain(en.errors.loadError.retry);
   });
 });

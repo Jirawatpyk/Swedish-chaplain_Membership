@@ -227,7 +227,9 @@ export async function MemberInvoicesCard({
 
   // Spec 122 US5b-1 — an AURA Card as the `Admin-member-detail` board draws
   // it: the title with the count and "New invoice", the filters, then the
-  // table (cards on a phone) or an empty state.
+  // table or an empty state. The card keeps its frame on a phone like every
+  // other section on this page (PR Q, the maintainer); the table draws its
+  // stacked rows as a divided list inside it, so there are no cards in a card.
   return (
     <Card
       as="section"

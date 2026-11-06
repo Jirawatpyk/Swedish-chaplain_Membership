@@ -144,6 +144,16 @@ describe('ContactBlock — compact on a phone (122 US5b-1)', () => {
     expect(emailLabel.className).toContain('max-sm:sr-only');
   });
 
+  it('on a phone email and phone sit together as one group (no field padding or row gap between them)', () => {
+    // Before: each field's py-2 plus the list's row gap put 32px between the
+    // email and phone links at 390, so they read as two sections.
+    const el = html({ contact });
+    const field = (label: string) => [...el.querySelectorAll('dt')].find((d) => d.textContent === label)!.parentElement!;
+    expect(field(en.fields.email)).toHaveClass('max-sm:py-0');
+    expect(field(en.fields.phone)).toHaveClass('max-sm:py-0');
+    expect(field(en.fields.email).parentElement).toHaveClass('max-sm:gap-y-0');
+  });
+
   it('on a phone the actions follow the details (the ⋯ sits top right)', () => {
     const el = html({ contact });
     const actions = el.querySelector('[data-testid="contact-actions"]')!.parentElement!;

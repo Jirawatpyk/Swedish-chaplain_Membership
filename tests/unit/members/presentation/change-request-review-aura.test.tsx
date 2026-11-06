@@ -100,6 +100,32 @@ describe('change-request review on AURA (T508)', () => {
     expect(within(row).getByText(REVIEW.willReject)).toBeInTheDocument();
   });
 
+  it('the phone card keeps the state words at its foot, as both boards draw them', () => {
+    renderClient();
+    const row = document.querySelector('[data-field-key="phone"]') as HTMLElement;
+    // Boards `Admin-change-request` and `Admin-change-request-mobile` both print
+    // "Will be approved" / "Will be rejected" (12px, secondary); never hidden on a phone.
+    expect(within(row).getByText(REVIEW.willApprove)).not.toHaveClass('max-sm:hidden');
+  });
+
+  it('on a phone the field cards are a plain list 12px apart, not one framed box (board)', () => {
+    renderClient();
+    const list = screen.getByTestId('change-request-decision-table');
+    // Board `Admin-change-request-mobile`: <ul> flex column, gap 12px, no
+    // frame; the frame and row dividers are the desktop table's only.
+    expect(list).toHaveClass('flex', 'flex-col', 'gap-3');
+    expect(list.className.split(' ')).not.toContain('divide-y');
+    expect(list.className.split(' ')).toContain('sm:divide-y');
+  });
+
+  it('from 640px the rows are divided inside the card with no frame of their own (board, no table in a card)', () => {
+    renderClient();
+    const classes = screen.getByTestId('change-request-decision-table').className.split(' ');
+    for (const cls of ['sm:border', 'sm:rounded-[var(--aura-radius-md)]', 'sm:bg-[var(--aura-bg-surface)]']) {
+      expect(classes).not.toContain(cls);
+    }
+  });
+
   it('a contact-removed row is reachable but inert and explained', () => {
     renderClient();
     const email = screen.getByRole('checkbox', { name: approveName(roleLabel) });
@@ -157,5 +183,16 @@ describe('change-request review — board content (US5a parity)', () => {
     const row = document.querySelector('[data-field-key="phone"]') as HTMLElement;
     expect(row.querySelector('[data-value="current"]')).toHaveClass('text-[var(--aura-fg-secondary)]');
     expect(row.querySelector('[data-value="proposed"]')).toHaveClass('font-semibold');
+  });
+});
+
+describe('change-request review card on AURA (PR Q)', () => {
+  it('is one AURA Card (a div) that drops its frame below 640px', () => {
+    renderClient();
+    const card = screen.getByRole('heading', { level: 2, name: enMessages.admin.changeRequests.decision.fieldsHeading }).closest('.aura-card');
+    expect(card).toHaveClass('aura-card--flush-below-sm');
+    expect(card?.tagName).toBe('DIV');
+    // Round 2 — our wrapper keeps the page's line-height under AURA's 1.7 card body.
+    expect(card?.querySelector('.aura-card__body > .leading-normal')).not.toBeNull();
   });
 });

@@ -45,6 +45,10 @@ function makeRealTranslator(ns: string) {
 // --- mocks ----------------------------------------------------------------
 
 const errorSpy = vi.fn();
+// PR Q review round 2 — a failed read renders RefreshPageButton (router.refresh()).
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { error: (...args: unknown[]) => errorSpy(...args) },
 }));
@@ -159,6 +163,34 @@ describe('<TimelinePreviewSection> on AURA (spec 122 US3)', () => {
     expect(h2).toHaveTextContent(en.admin.members.detail.sectionLinks.timeline);
     const link = card.querySelector('a[href="/admin/members/m1/timeline"]')!;
     expect(link).toHaveTextContent(en.admin.members.detail.timelinePreview.viewAll);
-    expect(link).toHaveClass('aura-btn', 'aura-btn--ghost');
+    // The card's links read as one style (the board): the accent text link
+    // with an arrow that "View renewal" and "Details" use, at the card's foot
+    // as the board draws it, not a ghost button in the header.
+    expect(link).not.toHaveClass('aura-btn');
+    expect(link).toHaveClass('text-[var(--aura-fg-accent)]', 'font-medium');
+    expect(link.querySelector('svg')).not.toBeNull();
+    expect(link.closest('header, .aura-card__head, .aura-card__actions')).toBeNull();
+    expect(card.lastElementChild?.contains(link)).toBe(true);
+  });
+});
+
+describe('<TimelinePreviewSection> states on AURA EmptyState (PR Q)', () => {
+  beforeEach(() => {
+    timelineListMock.mockReset();
+  });
+
+  it('a failed read is the danger-tone EmptyState; an empty one the neutral EmptyState', async () => {
+    timelineListMock.mockRejectedValue(new TypeError('bad'));
+    const failed = await renderSection();
+    // Round 2 — LoadErrorCard's alert (bare inside the card) with a refresh
+    // button, so the member page keeps its invoice filters in the query.
+    expect(failed).toMatch(/<div role="alert" aria-live="assertive" class="aura-empty is-sm is-danger"/);
+    expect(failed).toMatch(/<button[^>]*type="button"[^>]*>.*Try again.*<\/button>/);
+    expect(failed).not.toContain('href="/admin/members/m1"');
+    timelineListMock.mockResolvedValue({ ok: true, value: { events: [] } });
+    const html = await renderSection();
+    expect(html).toMatch(/<div class="aura-empty">.*No recent activity yet/);
+    // Round 1 — neither is a live region (the old markup had none).
+    expect(html).not.toContain('role="status"');
   });
 });

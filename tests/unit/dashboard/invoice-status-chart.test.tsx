@@ -352,3 +352,14 @@ describe('InvoiceStatusChart', () => {
   });
 });
 
+
+describe('InvoiceStatusChart empty state on AURA (PR Q)', () => {
+  it('is AURA’s small, frameless EmptyState inside the chart card', () => {
+    renderChart({ buckets: [], draftCount: 0 });
+    const state = screen.getByText('No issued invoices yet.').closest('.aura-empty');
+    expect(state).toHaveClass('is-sm');
+    expect(state).not.toHaveClass('is-bordered');
+    expect(state).not.toHaveAttribute('role');
+    expect(state?.closest('.aura-card')).not.toBeNull();
+  });
+});

@@ -29,7 +29,7 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { ArrowRightIcon } from 'lucide-react';
-import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { SectionCardSkeleton } from './section-card-skeleton';
 import { logger } from '@/lib/logger';
 import { canPerform } from '@/lib/rbac';
@@ -40,6 +40,9 @@ import { timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { TimelineEventItem } from '@/components/members/timeline-event-item';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { RefreshPageButton } from '@/components/shell/refresh-page-button';
+import { EmptyState } from '@/components/shell/empty-state';
 import type { Role } from '@/modules/auth';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
 
@@ -129,29 +132,28 @@ export async function TimelinePreviewCard({
 }) {
   const t = await getTranslations('admin.members.detail');
   const tTimeline = await getTranslations('admin.members.timeline');
+  // The errors translator is read only when the timeline failed to load.
+  const retryLabel = loadFailed ? (await getTranslations('errors'))('loadError.retry') : '';
   // Spec 122 US3: an AURA card — its h2 title (056 fix #1: reachable via SR
-  // heading navigation under the page h1) and the "view all" link as its action.
+  // heading navigation under the page h1) and the "view all" link at its foot.
   return (
     <Card
       // The board's "Timeline", the name its "On this page" link uses.
       title={t('sectionLinks.timeline')}
       titleId="member-timeline-preview-heading"
       headingLevel={2}
-      actions={
-        <Link href={`/admin/members/${memberId}/timeline`} className={buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true })}>
-          {t('timelinePreview.viewAll')}
-          <ArrowRightIcon className="size-4" aria-hidden="true" />
-        </Link>
-      }
     >
       {loadFailed ? (
-        <div className="py-6 text-center">
-          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('timelinePreview.loadFailed')}</p>
-        </div>
+        // PR Q — a failed read is the LoadErrorCard below; an empty timeline is
+        // AURA's neutral EmptyState, frameless inside the card.
+        // Review round 2 — the shared LoadErrorCard, bare inside the card,
+        // with a "Try again" that refreshes in place (the page keeps its
+        // invoice filters in the query).
+        <LoadErrorCard card={false} message={t('timelinePreview.loadFailed')}>
+          <RefreshPageButton label={retryLabel} />
+        </LoadErrorCard>
       ) : events.length === 0 ? (
-        <div className="py-6 text-center">
-          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('timelinePreview.empty')}</p>
-        </div>
+        <EmptyState title={t('timelinePreview.empty')} bordered={false} announce={false} />
       ) : (
         <ul className="flex flex-col gap-1" aria-label={tTimeline('subtitle')}>
           {events.map((ev) => (
@@ -161,6 +163,16 @@ export async function TimelinePreviewCard({
           ))}
         </ul>
       )}
+      {/* At the card's foot and in the accent text-link style that "View
+          renewal" and "Details" use on this page, as the board draws all
+          three (it was a ghost button in the header). */}
+      <Link
+        href={`/admin/members/${memberId}/timeline`}
+        className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+      >
+        {t('timelinePreview.viewAll')}
+        <ArrowRightIcon className="size-4" aria-hidden="true" />
+      </Link>
     </Card>
   );
 }
@@ -171,5 +183,5 @@ export async function TimelinePreviewCard({
  * spec 122 US5b-1).
  */
 export function TimelinePreviewSkeleton() {
-  return <SectionCardSkeleton rows={PREVIEW_LIMIT} action />;
+  return <SectionCardSkeleton rows={PREVIEW_LIMIT} />;
 }

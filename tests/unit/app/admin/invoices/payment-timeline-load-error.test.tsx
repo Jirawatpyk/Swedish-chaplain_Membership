@@ -195,6 +195,14 @@ describe('PaymentTimeline — activity read failure renders an inline error with
     const html = await renderTimeline();
 
     expect(html).toContain(timelineEn.empty.title);
+    // PR Q — AURA's frameless EmptyState: the title, then the body as its text.
+    expect(html).toContain(
+      `<p class="aura-empty__title">${timelineEn.empty.title}</p><p class="aura-empty__text">`,
+    );
+    // Round 1 — no live region (the old markup had none).
+    expect(html).toMatch(/<div class="aura-empty"><span class="aura-empty__icon"/);
+    // Round 1 — the record-manually link is AURA's text link with its 44px target.
+    expect(html).toMatch(/<a href="[^"]*#record-payment" data-testid="empty-state-record-payment-link" class="[^"]*aura-link--touch/);
     expect(html).not.toContain(LOAD_FAILED);
     expect(errorSpy).not.toHaveBeenCalled();
   });

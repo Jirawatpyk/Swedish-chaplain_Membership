@@ -7,6 +7,7 @@
  */
 import { Card } from '@jirawatpyk/aura-react/server';
 import { ActivityFeedRefresh } from './activity-feed-refresh';
+import { EmptyState } from '@/components/shell/empty-state';
 
 export interface ActivityFeedEntry {
   readonly id: string;
@@ -49,7 +50,7 @@ export function ActivityFeed({
       actions={<ActivityFeedRefresh refreshLabel={refreshLabel} refreshedLabel={refreshedLabel} />}
     >
       {items.length === 0 ? (
-        <p className="aura-text-body text-[var(--aura-fg-secondary)]">{emptyLabel}</p>
+        <EmptyState title={emptyLabel} size="sm" bordered={false} announce={false} />
       ) : (
         <ul className="grid gap-[var(--aura-space-2)] aura-text-body">
           {items.map((item) => (

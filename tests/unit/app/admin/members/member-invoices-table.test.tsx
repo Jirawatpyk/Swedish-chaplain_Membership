@@ -10,6 +10,8 @@
  *   saying why (the tooltip before) — never a dead link.
  * - The figures are the server's: the table prints what it is given.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemberInvoicesTable, type MemberInvoiceRow } from '@/app/(staff)/admin/members/[memberId]/_components/member-invoices-table';
@@ -18,7 +20,7 @@ import { MemberInvoicesTable, type MemberInvoiceRow } from '@/app/(staff)/admin/
 // (`getBoundingClientRect().width` in a layout effect, then a ResizeObserver),
 // and a 0px box reads as a phone. Give every box a desktop 1280px width and a
 // ResizeObserver that reports it, so the table renders as a browser at 1280
-// does: not stacked, and the card-only columns removed by their `hideBelow`.
+// does: not stacked (the card-only columns are `grid: false`, see below).
 const DESKTOP_WIDTH = 1280;
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
@@ -92,16 +94,27 @@ describe('MemberInvoicesTable (T556)', () => {
   it('a grid with the board columns, the figures as given', () => {
     render(<MemberInvoicesTable rows={[issued, paid]} labels={labels} canMutate />);
     const grid = screen.getByRole('grid', { name: labels.caption });
-    const headers = within(grid).getAllByRole('columnheader').map((h) => h.textContent?.trim());
-    // PR P — the status pill sits under the number in the table, so the card
-    // holds every column at 1280; the card-only Number/Status columns (the
-    // phone card's title and pill) are not rendered at this width.
-    expect(headers.slice(0, 6)).toEqual(['Number', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
-    expect(headers.filter((h) => h === 'Number')).toHaveLength(1);
-    expect(headers).not.toContain('Status');
-    const firstCell = within(grid).getAllByRole('row')[1]!.querySelector<HTMLElement>('[role=gridcell]')!;
-    expect(firstCell).toHaveTextContent('SC-2026-000123');
-    expect(within(firstCell).getByText(issued.statusLabel)).toBeInTheDocument();
+    // Status is its own column, as the board draws it, whenever the table is
+    // wide enough (AURA `hideBelow` reads the table's width). Below that the
+    // column drops and the pill shows under the number instead, so the card
+    // still fits the 655px main column at 1280 (PR P). The card-only Number
+    // column (the phone card's title) is AURA 5.85 `grid: false`: drawn with
+    // `data-grid="off"`, which AURA's stylesheet hides in the grid (jsdom
+    // applies no CSS, so the test leaves it out by that marker).
+    const allHeaders = within(grid).getAllByRole('columnheader');
+    expect(allHeaders.filter((h) => h.getAttribute('data-grid') === 'off').map((h) => h.textContent?.trim())).toEqual(['Number']);
+    const visible = allHeaders.filter((h) => h.getAttribute('data-grid') !== 'off');
+    const headers = visible.map((h) => h.textContent?.trim());
+    expect(headers.slice(0, 7)).toEqual(['Number', 'Status', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
+    expect(visible[1]).toHaveAttribute('data-hide');
+    const cells = within(grid).getAllByRole('row')[1]!.querySelectorAll<HTMLElement>('[role=gridcell]');
+    expect(cells[0]).toHaveTextContent('SC-2026-000123');
+    expect(cells[1]).toHaveTextContent(issued.statusLabel);
+    // The stacked pill under the number is the narrow-table fallback only.
+    const stacked = within(cells[0]!).getByText(issued.statusLabel).closest('[data-stacked-status]');
+    // Named container: AURA nests its own (very wide) query containers.
+    expect(stacked).toHaveClass('@min-[712px]/invoices:hidden');
+    expect(grid.closest('.\\@container\\/invoices')).not.toBeNull();
     expect(grid).toHaveTextContent('SC-2026-000123');
     expect(grid).toHaveTextContent('38,520.00 THB');
     // The board prints "Not paid yet" in the Paid column (G-U7P: words, not a dash).
@@ -159,5 +172,37 @@ describe('MemberInvoicesTable (T556)', () => {
     const { container } = render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
     const total = within(container).getAllByText('38,520.00 THB')[0]!;
     expect(total.closest('[class*="max-[639px]:text-start"]')).toBeNull();
+  });
+
+  // PR Q review round 1 (a11y) — AURA still counts `grid: false` columns in
+  // aria-colcount / aria-colindex (stand-in until AURA #200), so the card-only
+  // columns sit last: the grid's visible headers number 1..N with no gap.
+  it('the visible grid headers run aria-colindex 1..N with no gap', () => {
+    render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
+    const grid = screen.getByRole('grid', { name: labels.caption });
+    const visible = within(grid)
+      .getAllByRole('columnheader')
+      .filter((h) => h.getAttribute('data-grid') !== 'off')
+      .map((h) => Number(h.getAttribute('aria-colindex')));
+    expect(visible).toEqual(visible.map((_, i) => i + 1));
+  });
+
+  it('on a phone the rows are a divided list inside the Invoices card, not framed cards of their own', () => {
+    render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
+    const wrapper = screen.getByRole('grid').closest<HTMLElement>('.\\@container\\/invoices')!;
+    // The divided-list rule lives in globals.css on this class (AURA #204).
+    expect(wrapper).toHaveClass('member-invoices-list');
+    const css = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8');
+    expect(css).toMatch(/@container invoices \(width < 592px\)\s*\{\s*\.member-invoices-list \.aura-table__row \{[^}]*border-width: 0 0 1px;[^}]*border-radius: 0;/);
+    // AURA pulls the ⋯ 8px into the row's side padding; with no padding it
+    // would overhang the card by 8px (R143b), so the stand-in zeroes it.
+    expect(css).toMatch(/\.member-invoices-list \.aura-table__td\[data-card='actions'\] \{ margin-inline-end: 0; \}/);
+  });
+
+  it('the phone card still takes the number as its title and the status as its pill', () => {
+    render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
+    const row = within(screen.getByRole('grid', { name: labels.caption })).getAllByRole('row')[1]!;
+    expect(row.querySelector('[data-card="title"]')).toHaveTextContent(issued.number);
+    expect(row.querySelector('[data-card="pill"]')).toHaveTextContent(issued.statusLabel);
   });
 });

@@ -61,6 +61,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import {
+  Card,
   Combobox,
   IconButton,
   NumberField,
@@ -309,140 +310,149 @@ export function StepCard({
   ];
 
   return (
-    <div className="flex flex-col gap-[var(--aura-space-3)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-[var(--aura-space-4)]">
-      <div className="flex flex-wrap items-center justify-between gap-[var(--aura-space-2)]">
-        {/* The timing in plain language, not "T-30". */}
-        <h3 id={headingId} className="m-0 text-sm font-semibold text-[var(--aura-fg-primary)]">
-          {timingSentence(step.offset_days, t)}
-        </h3>
-        <div className="flex items-center gap-[var(--aura-space-1)]">
-          <IconButton
-            ref={upRef}
-            icon="arrow-up"
-            label={t('actions.moveUp')}
-            aria-describedby={headingId}
-            touchHeight
-            disabled={readOnly || index === 0}
-            onClick={() => {
-              lastMove.current = 'up';
-              onMoveUp();
-            }}
-          />
-          <IconButton
-            ref={downRef}
-            icon="arrow-down"
-            label={t('actions.moveDown')}
-            aria-describedby={headingId}
-            touchHeight
-            disabled={readOnly || index === total - 1}
-            onClick={() => {
-              lastMove.current = 'down';
-              onMoveDown();
-            }}
-          />
-          <IconButton
-            icon="trash-2"
-            tone="danger"
-            label={t('actions.removeStep')}
-            aria-describedby={headingId}
-            touchHeight
-            disabled={readOnly}
-            onClick={onRemove}
-          />
+    // PR Q — AURA's Card (as a div: the h3 inside heads the step), its padding
+    // and frame in place of the hand-drawn ones. Not Card `title` + `titleId`:
+    // on `as="div"` that puts `aria-labelledby` on a generic element (stand-in
+    // until AURA #199). AURA's card body sets line-height 1.7; `leading-normal`
+    // keeps the page's 1.5 that this content inherited (review round 2).
+    // The step keeps the board's 16px padding through AURA's own card
+    // padding token, not its 24px default (PR Q parity item 4).
+    <Card as="div" className="[--aura-card-padding:var(--aura-space-4)]">
+      <div className="flex flex-col gap-[var(--aura-space-3)] leading-normal">
+        <div className="flex flex-wrap items-center justify-between gap-[var(--aura-space-2)]">
+          {/* The timing in plain language, not "T-30". */}
+          <h3 id={headingId} className="m-0 text-sm font-semibold text-[var(--aura-fg-primary)]">
+            {timingSentence(step.offset_days, t)}
+          </h3>
+          <div className="flex items-center gap-[var(--aura-space-1)]">
+            <IconButton
+              ref={upRef}
+              icon="arrow-up"
+              label={t('actions.moveUp')}
+              aria-describedby={headingId}
+              touchHeight
+              disabled={readOnly || index === 0}
+              onClick={() => {
+                lastMove.current = 'up';
+                onMoveUp();
+              }}
+            />
+            <IconButton
+              ref={downRef}
+              icon="arrow-down"
+              label={t('actions.moveDown')}
+              aria-describedby={headingId}
+              touchHeight
+              disabled={readOnly || index === total - 1}
+              onClick={() => {
+                lastMove.current = 'down';
+                onMoveDown();
+              }}
+            />
+            <IconButton
+              icon="trash-2"
+              tone="danger"
+              label={t('actions.removeStep')}
+              aria-describedby={headingId}
+              touchHeight
+              disabled={readOnly}
+              onClick={onRemove}
+            />
+          </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 gap-[var(--aura-space-3)] sm:grid-cols-2 sm:items-start">
-        <RadioGroup
-          id={`channel-${idPrefix}`}
-          label={t('stepCard.channelLabel')}
-          orientation="horizontal"
-          options={[
-            { value: 'email', label: t('stepCard.channel.email') },
-            { value: 'task', label: t('stepCard.channel.task') },
-          ]}
-          value={step.channel}
-          disabled={readOnly}
-          onChange={(v) => handleChannelChange(v as EditorStep['channel'])}
-        />
-        <Select
-          id={`timing-${idPrefix}`}
-          label={t('stepCard.timing.label')}
-          value={timingValue}
-          options={timingOptions}
-          disabled={readOnly}
-          onChange={(e) => handleTimingSelect(e.target.value)}
-        />
-      </div>
-
-      {showCustomTiming ? (
         <div className="grid grid-cols-1 gap-[var(--aura-space-3)] sm:grid-cols-2 sm:items-start">
-          <NumberField
-            touchHeight
-            id={`custom-days-${idPrefix}`}
-            label={t('stepCard.timing.customDaysLabel')}
-            min={0}
-            max={OFFSET_MAX}
-            step={1}
-            value={customDaysMagnitude}
-            disabled={readOnly}
-            onChange={(n) => applyCustomDays(clampMagnitude(n ?? 0), customBefore)}
-          />
           <RadioGroup
-            id={`direction-${idPrefix}`}
-            label={t('stepCard.timing.direction.label')}
+            id={`channel-${idPrefix}`}
+            label={t('stepCard.channelLabel')}
             orientation="horizontal"
             options={[
-              { value: 'before', label: t('stepCard.timing.direction.before') },
-              { value: 'after', label: t('stepCard.timing.direction.after') },
+              { value: 'email', label: t('stepCard.channel.email') },
+              { value: 'task', label: t('stepCard.channel.task') },
             ]}
-            value={customBefore ? 'before' : 'after'}
+            value={step.channel}
             disabled={readOnly}
-            onChange={(v) => applyCustomDays(customDaysMagnitude, v === 'before')}
-          />
-        </div>
-      ) : null}
-
-      {step.channel === 'email' ? (
-        <EmailPreview tierBucket={tierBucket} offsetDays={step.offset_days} />
-      ) : (
-        <div className="grid grid-cols-1 gap-[var(--aura-space-3)] sm:grid-cols-2 sm:items-start">
-          {/* The known catalogue is suggestions only: many more real task
-              types exist, so a typed type is kept (`allowCustomValue`), and
-              the hint says so. */}
-          <Combobox
-            touchHeight
-            id={`task-type-${idPrefix}`}
-            label={t('stepCard.taskType.label')}
-            hint={t('stepCard.taskType.hint')}
-            options={taskTypeOptions}
-            value={step.task_type ?? 'phone_call'}
-            onChange={(v) => {
-              if (v) handleTaskTypeChange(v);
-            }}
-            emptyText={t('stepCard.taskType.emptyMessage')}
-            clearable={false}
-            disabled={readOnly}
-            allowCustomValue
+            onChange={(v) => handleChannelChange(v as EditorStep['channel'])}
           />
           <Select
-            id={`assignee-${idPrefix}`}
-            label={t('stepCard.assigneeLabel')}
-            value={step.assignee_role ?? 'admin'}
-            options={(['admin', 'manager', 'executive_director'] as const).map((role) => ({
-              value: role,
-              label: t(`stepCard.assigneeRole.${role}`),
-            }))}
+            id={`timing-${idPrefix}`}
+            label={t('stepCard.timing.label')}
+            value={timingValue}
+            options={timingOptions}
             disabled={readOnly}
-            onChange={(e) =>
-              onChange({
-                ...step,
-                assignee_role: e.target.value as Exclude<EditorStep['assignee_role'], undefined>,
-              })
-            }
+            onChange={(e) => handleTimingSelect(e.target.value)}
           />
         </div>
-      )}
-    </div>
+
+        {showCustomTiming ? (
+          <div className="grid grid-cols-1 gap-[var(--aura-space-3)] sm:grid-cols-2 sm:items-start">
+            <NumberField
+              touchHeight
+              id={`custom-days-${idPrefix}`}
+              label={t('stepCard.timing.customDaysLabel')}
+              min={0}
+              max={OFFSET_MAX}
+              step={1}
+              value={customDaysMagnitude}
+              disabled={readOnly}
+              onChange={(n) => applyCustomDays(clampMagnitude(n ?? 0), customBefore)}
+            />
+            <RadioGroup
+              id={`direction-${idPrefix}`}
+              label={t('stepCard.timing.direction.label')}
+              orientation="horizontal"
+              options={[
+                { value: 'before', label: t('stepCard.timing.direction.before') },
+                { value: 'after', label: t('stepCard.timing.direction.after') },
+              ]}
+              value={customBefore ? 'before' : 'after'}
+              disabled={readOnly}
+              onChange={(v) => applyCustomDays(customDaysMagnitude, v === 'before')}
+            />
+          </div>
+        ) : null}
+
+        {step.channel === 'email' ? (
+          <EmailPreview tierBucket={tierBucket} offsetDays={step.offset_days} />
+        ) : (
+          <div className="grid grid-cols-1 gap-[var(--aura-space-3)] sm:grid-cols-2 sm:items-start">
+            {/* The known catalogue is suggestions only: many more real task
+                types exist, so a typed type is kept (`allowCustomValue`), and
+                the hint says so. */}
+            <Combobox
+              touchHeight
+              id={`task-type-${idPrefix}`}
+              label={t('stepCard.taskType.label')}
+              hint={t('stepCard.taskType.hint')}
+              options={taskTypeOptions}
+              value={step.task_type ?? 'phone_call'}
+              onChange={(v) => {
+                if (v) handleTaskTypeChange(v);
+              }}
+              emptyText={t('stepCard.taskType.emptyMessage')}
+              clearable={false}
+              disabled={readOnly}
+              allowCustomValue
+            />
+            <Select
+              id={`assignee-${idPrefix}`}
+              label={t('stepCard.assigneeLabel')}
+              value={step.assignee_role ?? 'admin'}
+              options={(['admin', 'manager', 'executive_director'] as const).map((role) => ({
+                value: role,
+                label: t(`stepCard.assigneeRole.${role}`),
+              }))}
+              disabled={readOnly}
+              onChange={(e) =>
+                onChange({
+                  ...step,
+                  assignee_role: e.target.value as Exclude<EditorStep['assignee_role'], undefined>,
+                })
+              }
+            />
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }

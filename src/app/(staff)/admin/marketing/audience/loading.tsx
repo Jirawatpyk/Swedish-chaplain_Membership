@@ -22,7 +22,7 @@ export default async function Loading() {
         subtitle={t('subtitle')}
         actions={<SkeletonBlock className="h-11 w-72 sm:h-9" />}
       />
-      <Card flushBelow="sm" className="max-sm:p-0">
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
         <div className="flex flex-col gap-4">
           <AudienceFiltersSkeleton />
           <AudienceTableSkeleton />

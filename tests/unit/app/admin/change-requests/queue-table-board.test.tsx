@@ -106,6 +106,19 @@ describe('change-request queue as on the board (US5a)', () => {
     expect(cells.every((c) => !c.className.includes('aura-tbl:col-'))).toBe(true);
   });
 
+  it('on the pending view the phone card leaves out Status (every card would repeat "Awaiting decision"), as the mobile board draws it', async () => {
+    // Member, Submitted by, Fields, Submitted, Waiting, Status, Actions.
+    const statusCell = (cells: HTMLElement[]) => cells[5]!;
+    const { unmount } = render(await ChangeRequestQueueTable({ items: [item], statusInCards: false }));
+    const pendingCell = statusCell(within(screen.getByTestId('queue-row')).getAllByRole('cell'));
+    expect(pendingCell).toHaveClass('@max-[640px]/aura-tbl:hidden');
+    unmount();
+    // Decided and withdrawn views mix outcomes, so the card keeps the row.
+    render(await ChangeRequestQueueTable({ items: [item], statusInCards: true }));
+    const mixedCell = statusCell(within(screen.getByTestId('queue-row')).getAllByRole('cell'));
+    expect(mixedCell).not.toHaveClass('@max-[640px]/aura-tbl:hidden');
+  });
+
   it('draws each phone card apart and framed with AURA’s own cards, Review at touch height (AURA #85, #100)', async () => {
     render(await ChangeRequestQueueTable({ items: [item] }));
     expect(screen.getByTestId('queue-table')).toHaveClass('aura-tbl--cards');

@@ -43,6 +43,10 @@ function makeRealTranslator(ns: string) {
 // --- mocks ----------------------------------------------------------------
 
 const warnSpy = vi.fn();
+// PR Q review round 2 — a failed read renders RefreshPageButton (router.refresh()).
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { warn: (...args: unknown[]) => warnSpy(...args) },
 }));
@@ -127,5 +131,33 @@ describe('<RecentActivitySection> — failure path (finding B2)', () => {
     expect(warnSpy).not.toHaveBeenCalled();
     // Empty success → the "No activity yet" empty state, never loadFailed.
     expect(html).toContain('No activity yet');
+  });
+});
+
+describe('RecentActivitySection — states on AURA EmptyState (PR Q)', () => {
+  beforeEach(() => {
+    timelineListMock.mockReset();
+  });
+
+  it('a failed read is the danger-tone EmptyState', async () => {
+    timelineListMock.mockResolvedValue({
+      ok: false,
+      error: { type: 'server_error', message: 'boom', cause: new Error('NeonDbError') },
+    });
+    const html = await renderSection();
+    expect(html).not.toContain('role="status"');
+    // Round 2 — LoadErrorCard's alert (bare inside the card) with a refresh button.
+    expect(html).toMatch(/<div role="alert" aria-live="assertive" class="aura-empty is-sm is-danger"/);
+    expect(html).toMatch(/<button[^>]*type="button"[^>]*>.*Try again.*<\/button>/);
+  });
+
+  it('the empty read is the neutral EmptyState with the benefits CTA as its action', async () => {
+    timelineListMock.mockResolvedValue({ ok: true, value: { events: [] } });
+    const html = await renderSection();
+    expect(html).toMatch(/class="aura-empty"/);
+    expect(html).toMatch(/class="aura-empty__action"><a[^>]*href="\/portal\/benefits"/);
+    // Round 1 — no live region (the old markup had none); the CTA has its 44px target.
+    expect(html).toContain('<div class="aura-empty">');
+    expect(html).toMatch(/<a class="[^"]*aura-btn--touch[^"]*" href="\/portal\/benefits"/);
   });
 });

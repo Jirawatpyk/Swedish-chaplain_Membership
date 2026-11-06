@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { requireSession } from '@/lib/auth-session';
 import { env } from '@/lib/env';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -57,13 +59,16 @@ export async function generateMetadata(): Promise<Metadata> {
  * repo's EMPTY-state sentinel, and this is an error (round 7, silent-failure
  * N4). A retry is a reload (server component), so the copy says so.
  */
-function loadFailed(title: string, message: string) {
+function loadFailed(title: string, message: string, retryLabel?: string) {
   return (
     <FormContainer>
       <PageHeader title={title} />
-      <div role="alert" className="py-12 text-center">
-        <p className="text-body">{message}</p>
-      </div>
+      {/* PR Q review round 2 — the shared LoadErrorCard (its alert role, danger
+          tone and icon). A failed read offers "Try again", which refreshes in
+          place and keeps the URL and its query. */}
+      <LoadErrorCard message={message}>
+        {retryLabel ? <RefreshPageButton label={retryLabel} /> : null}
+      </LoadErrorCard>
     </FormContainer>
   );
 }
@@ -82,6 +87,8 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.edit');
   const tCr = await getTranslations('portal.changeRequests.form');
+  // The errors translator is read only on a failed-read path.
+  const retryLabel = async (): Promise<string> => (await getTranslations('errors'))('loadError.retry');
 
   const tenant = resolveTenantFromRequest();
   const deps = buildMembersDeps(tenant);
@@ -99,8 +106,8 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
         'portal.edit.member_lookup_failed',
       );
     }
-    const message = memberResult.error.code === 'repo.not_found' ? t('notLinked') : t('loadError');
-    return loadFailed(t('pageTitle'), message);
+    if (memberResult.error.code === 'repo.not_found') return loadFailed(t('pageTitle'), t('notLinked'));
+    return loadFailed(t('pageTitle'), t('loadError'), await retryLabel());
   }
 
   const member = memberResult.value;
@@ -114,7 +121,7 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
         'portal.edit.contacts_lookup_failed',
       );
     }
-    return loadFailed(t('pageTitle'), t('loadError'));
+    return loadFailed(t('pageTitle'), t('loadError'), await retryLabel());
   }
 
   const ownContact = contactsResult.value.find(
@@ -135,7 +142,7 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
       { errorId: 'M114.portal.edit.gate_failed', err: errKind(e), tenantId: tenant.slug, userId: user.id },
       'portal.edit.gate_failed',
     );
-    return loadFailed(t('pageTitle'), t('loadError'));
+    return loadFailed(t('pageTitle'), t('loadError'), await retryLabel());
   }
 
   if (gate === 'immediate') {
@@ -165,7 +172,7 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
       { errorId: 'M114.portal.edit.pending_read_failed', err: pendingRead.error.code, tenantId: tenant.slug, userId: user.id },
       'portal.edit.pending_read_failed',
     );
-    return loadFailed(t('pageTitle'), t('loadError'));
+    return loadFailed(t('pageTitle'), t('loadError'), await retryLabel());
   }
   const pending: ChangeRequestView | null = pendingRead.value
     ? serialiseChangeRequestForPortal(pendingRead.value, {

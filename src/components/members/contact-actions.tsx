@@ -113,23 +113,20 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
 
       {!isPrimary && (
         <>
-          <Button
-            variant="secondary"
-            size="sm"
-            touchHeight
-            icon={<StarIcon />}
-            onClick={() => setPromoteOpen(true)}
-          >
-            {t('promote')}
-            <span className="sr-only">{`, ${contactName}`}</span>
-          </Button>
-          {/* On a phone the ⋯ sits at the contact row's top right, beside the
-              name (board `Admin-member-detail-mobile`); the row is `relative`. */}
+          {/* One rule for every contact (PR Q): Edit is the visible button, in
+              the same place on each; the rarer role change and removal sit in
+              ⋯. On a phone the ⋯ sits at the contact row's top right, beside
+              the name (board `Admin-member-detail-mobile`); the row is
+              `relative`. */}
           <span className="max-sm:absolute max-sm:end-0 max-sm:top-0">
             <DropdownMenu
               label={t('moreActions', { name: contactName })}
               trigger={<IconButton icon="ellipsis" size="sm" touchHeight label={t('moreActions', { name: contactName })} />}
-              items={[{ label: t('remove'), icon: 'trash-2', tone: 'danger', onSelect: () => setRemoveOpen(true) }]}
+              items={[
+                { label: t('promote'), icon: <StarIcon />, onSelect: () => setPromoteOpen(true) },
+                { separator: true },
+                { label: t('remove'), icon: 'trash-2', tone: 'danger', onSelect: () => setRemoveOpen(true) },
+              ]}
             />
           </span>
 

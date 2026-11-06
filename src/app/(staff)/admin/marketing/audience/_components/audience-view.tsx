@@ -59,7 +59,7 @@ export async function AudienceFrame({
       />
       {/* Below 640px the contacts are cards of their own, so the frame and
           its padding drop away (AURA `flushBelow`), as the phone board draws it. */}
-      <Card flushBelow="sm" className="max-sm:p-0">
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
         {/* From 640px the count (the results' own line, which streams in after
             the filters) sits at the end of the filter row at every width, as
             the result count does on Members: the filter bar takes the width

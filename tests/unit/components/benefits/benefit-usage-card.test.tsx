@@ -153,6 +153,19 @@ describe('<BenefitUsageCard>', () => {
     expect(link).toHaveAttribute('href', '/admin/members/m1/benefits');
   });
 
+  it('staff compact: "View benefits" is the accent text link with an arrow at the card foot, as on the member page\'s other cards', () => {
+    const { container } = renderCard({ variant: 'staff', compact: true, previewHref: '/admin/members/m1/benefits' });
+    const link = screen.getByRole('link', { name: enMessages.benefits.card.staffPreviewLink });
+    expect(link).toHaveTextContent('View benefits');
+    expect(link).toHaveAttribute('href', '/admin/members/m1/benefits');
+    expect(link.querySelector('svg')).not.toBeNull();
+    // Not in the card header (that slot is for actions such as buttons) and
+    // not AURA's bordered, right-aligned footer: the end of the card body.
+    expect(link.closest('.aura-card__head, .aura-card__actions, .aura-card__foot, header')).toBeNull();
+    const card = container.querySelector('.aura-card')!;
+    expect(card.lastElementChild?.contains(link)).toBe(true);
+  });
+
   it('compact: hides the active-benefits badge section (summary stays tight)', () => {
     renderCard({ compact: true, active: [{ key: 'directory_listing' }] });
     expect(screen.queryByText('Directory E-Book listing')).not.toBeInTheDocument();

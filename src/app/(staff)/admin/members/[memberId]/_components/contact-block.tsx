@@ -326,9 +326,13 @@ export function ContactBlock({
           </div>
         )}
       </div>
-      <dl className="grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2">
+      {/* On a phone email and phone sit together as one group, as the mobile
+          board draws them: no field padding or row gap between the two links
+          (each keeps its tap target). */}
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-1 max-sm:gap-y-0 sm:grid-cols-2">
         <DetailField
           label={t('fields.email')}
+          className="max-sm:py-0"
           labelClassName="max-sm:sr-only"
           value={null}
           extra={
@@ -342,6 +346,7 @@ export function ContactBlock({
         />
         <DetailField
           label={t('fields.phone')}
+          className="max-sm:py-0"
           labelClassName="max-sm:sr-only"
           value={null}
           extra={

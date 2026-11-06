@@ -28,7 +28,9 @@ export function UsersListBody({ users, total, page, pageSize, currentUserId, cap
     <div className="flex flex-col gap-[var(--aura-space-4)]">
       <UsersFilters resultCount={total} />
       <UserListTable users={users} currentUserId={currentUserId} capabilities={capabilities} now={now} />
-      <TablePagination page={page} pageSize={pageSize} total={total} />
+      {/* No pager under an empty list: the EmptyState already says so, and
+          its "No records" line would say it twice (PR Q parity). */}
+      {total > 0 ? <TablePagination page={page} pageSize={pageSize} total={total} /> : null}
     </div>
   );
 }

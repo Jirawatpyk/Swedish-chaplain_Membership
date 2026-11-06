@@ -34,6 +34,7 @@ const messages = {
           empty: {
             none: 'This event has no registered attendees yet.',
             allErased: 'All attendees have been erased.',
+            allErasedTitle: 'No attendees to invoice',
           },
         },
       },
@@ -150,6 +151,8 @@ describe('<EventAttendeePicker>', () => {
       rows: [row({ isPseudonymised: true }), row({ isPseudonymised: true })],
     });
     expect(screen.getByText('All attendees have been erased.')).toBeInTheDocument();
+    // Parity item 2 — a short title, the sentence as the description.
+    expect(screen.getByText('No attendees to invoice').closest('.aura-empty')).not.toBeNull();
   });
 
   it('renders a pseudonymised row as a non-actionable aria-disabled button with the reason in its accessible name (B1)', () => {
@@ -193,5 +196,29 @@ describe('<EventAttendeePickerSkeleton>', () => {
     // The shared pulse block, never the legacy kit's skeleton.
     expect(skeleton.querySelector('[data-slot="skeleton"]')).toBeNull();
     expect(skeleton.querySelectorAll('[data-slot="skeleton-block"], .aura-skeleton').length).toBeGreaterThan(0);
+  });
+});
+
+describe('AttendeeList empty states on AURA (PR Q)', () => {
+  it('"none" and "allErased" are AURA’s small bordered EmptyState', () => {
+    const { unmount } = renderPicker({ rows: [] });
+    expect(screen.getByText('This event has no registered attendees yet.').closest('.aura-empty')).toHaveClass(
+      'is-sm',
+      'is-bordered',
+    );
+    unmount();
+    renderPicker({ rows: [row({ isPseudonymised: true })] });
+    expect(screen.getByText('All attendees have been erased.').closest('.aura-empty')).toHaveClass('is-sm');
+  });
+
+  it('round 2 — announces (the event switch is client-side, no other live region) and draws the users icon', () => {
+    const { unmount } = renderPicker({ rows: [] });
+    const none = screen.getByText('This event has no registered attendees yet.').closest('.aura-empty');
+    expect(none).toHaveAttribute('role', 'status');
+    expect(none?.querySelector('svg.lucide-users')).not.toBeNull();
+    unmount();
+    renderPicker({ rows: [row({ isPseudonymised: true })] });
+    const erased = screen.getByText('All attendees have been erased.').closest('.aura-empty');
+    expect(erased?.querySelector('svg.lucide-users')).not.toBeNull();
   });
 });
