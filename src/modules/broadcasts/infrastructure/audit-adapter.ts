@@ -22,6 +22,7 @@ import {
   AUDIENCE_AUDIT_LOCK_TIMEOUT_MS,
   AuditPortInvariantError,
   f7RetentionFor,
+  type AudienceDeletedAuditPort,
   type AudienceDeletedEmitInput,
   type AuditEmitInput,
   type AuditPort,
@@ -31,7 +32,10 @@ import {
 import { db, type TenantTx } from '@/lib/db';
 import { assertAudienceAuditTenantBoundTx, setLocalLockTimeout } from './db/drizzle-broadcasts-repo';
 
-export const f7AuditAdapter: AuditPort = {
+/** Spec 142 (review round 1, CR #7) — the F7 adapter implements both audit ports. */
+export type F7AuditAdapter = AuditPort & AudienceDeletedAuditPort;
+
+export const f7AuditAdapter: F7AuditAdapter = {
   async emit(txUnknown: unknown, event: AuditEmitInput): Promise<void> {
     // Mutation-path invariant: a non-null tx MUST carry a non-null
     // tenantId. RLS is bound on the tx's connection — emitting an
@@ -115,7 +119,7 @@ export const f7AuditAdapter: AuditPort = {
 
   /**
    * Spec 142 (AO2) — the `broadcast_audience_deleted` row, at most once per
-   * (tenant, segment); see the port docblock.
+   * (tenant, segment); see the `AudienceDeletedAuditPort` docblock.
    *
    * The conflict target and its WHERE are literal SQL, never parameters: with
    * a bound `event_type` Postgres cannot prove the index predicate and answers

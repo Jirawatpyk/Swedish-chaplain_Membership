@@ -1121,7 +1121,6 @@ export function makeRecordingF7Audit(): RecordingF7Audit {
   return {
     events,
     emit: vi.fn(record),
-    emitOnce: async () => true,
     emitTyped: vi.fn(record) as AuditPort['emitTyped'],
   };
 }

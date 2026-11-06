@@ -83,7 +83,7 @@ import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
 import { broadcastsMetrics } from '@/lib/metrics';
 import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore, type BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
-import type { AuditPort } from '../ports/audit-port';
+import type { AudienceDeletedAuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import { recordReclaimedAudienceDeleted } from './_audience-audit';
@@ -104,7 +104,7 @@ export interface ReclaimOrphanedAudiencesDeps {
    * written before a disclosed segment's delete, through `emitOnce` (spec
    * 142). A composition that forgot it would delete with no record, silently.
    */
-  readonly audit: Pick<AuditPort, 'emitOnce'>;
+  readonly audit: Pick<AudienceDeletedAuditPort, 'emitOnce'>;
 }
 
 export interface ReclaimOrphanedAudiencesInput {

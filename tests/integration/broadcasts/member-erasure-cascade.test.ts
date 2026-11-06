@@ -216,7 +216,6 @@ function makeStubAudit(): {
       async emit(_tx, event): Promise<void> {
         events.push(event);
       },
-      emitOnce: async () => true,
       async emitTyped(_tx, event): Promise<void> {
         events.push(event as AuditEmitInput);
       },

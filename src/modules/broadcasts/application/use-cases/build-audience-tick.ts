@@ -59,7 +59,7 @@ import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { AuditPortInvariantError } from '../ports/audit-port';
-import type { AuditEmitInput, AuditPort } from '../ports/audit-port';
+import type { AudienceDeletedAuditPort, AuditEmitInput, AuditPort } from '../ports/audit-port';
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
   decideDispatchStanding,
@@ -427,7 +427,8 @@ export interface BuildAudienceTickDeps {
    * chrome (fail-soft, metered) — a brand outage must never fail a send.
    */
   readonly brandChrome: BrandChromePort;
-  readonly audit: AuditPort;
+  /** Spec 142: the restart writes the audience deleted row through `emitOnce`. */
+  readonly audit: AuditPort & AudienceDeletedAuditPort;
   readonly clock: ClockPort;
   readonly fromEmail: string;
   readonly tenantDisplayName: string;

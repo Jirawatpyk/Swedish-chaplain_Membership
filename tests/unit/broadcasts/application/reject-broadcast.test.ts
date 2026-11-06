@@ -81,7 +81,6 @@ function makeAudit(): {
       async emit(_tx, e) {
         emits.push(e);
       },
-      emitOnce: async () => true,
       async emitTyped(_tx, e) {
         emits.push(e as AuditEmitInput);
       },

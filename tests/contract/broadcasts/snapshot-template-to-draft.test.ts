@@ -101,7 +101,7 @@ const makeDeps = (overrides?: {
         .fn()
         .mockResolvedValue(overrides?.chamberName ?? 'SweCham'),
     },
-    audit: { emit: vi.fn().mockResolvedValue(undefined), emitOnce: async () => true, emitTyped: vi.fn().mockResolvedValue(undefined) },
+    audit: { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) },
   };
 };
 

@@ -821,7 +821,7 @@ export interface BroadcastsRepo {
    * `broadcast_audience_deleted` row for this Resend segment? Spec 142: a plain
    * lockless read, used by `reclaim-orphaned-audiences` only, so a segment
    * already recorded as deleted is skipped, not reported unattributed. The
-   * dedupe itself is migration 0328's index, through `AuditPort.emitOnce`; the
+   * dedupe itself is migration 0328's index, through `AudienceDeletedAuditPort.emitOnce`; the
    * first `reason` wins (an accepted consequence: a `hold` row whose lease gate
    * then stopped the delete keeps `reason: 'hold'` after cleanup really
    * deletes the segment).

@@ -87,7 +87,7 @@ import { pgErrorCode, pgErrorMeta } from '@/lib/db-errors';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 
-import type { AuditPort } from '../ports/audit-port';
+import type { AudienceDeletedAuditPort } from '../ports/audit-port';
 import type { BroadcastOrphansRepo, OrphanedResendIdRef } from '../ports/broadcast-orphans-repo';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
@@ -156,7 +156,7 @@ export interface CleanupOrphanedAudiencesDeps {
    * dedupe). A composition that forgot it would delete segments with no
    * record, silently.
    */
-  readonly audit: Pick<AuditPort, 'emitOnce'>;
+  readonly audit: Pick<AudienceDeletedAuditPort, 'emitOnce'>;
   readonly broadcastsGateway: Pick<BroadcastsGatewayPort, 'deleteAudience' | 'deleteBroadcastOnce' | 'retrieveBroadcastOnce'>;
   readonly clock: ClockPort;
   /** Spec 140 s2c — the orphaned Resend id record the drain settles. */

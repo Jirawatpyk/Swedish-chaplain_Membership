@@ -111,7 +111,7 @@ describe('template images travel by reference (FR-046a) — real use cases over 
     const { reclaimOrphanedImages } = await import('@/modules/broadcasts/application/use-cases/reclaim-orphaned-images');
     const imagesRepo = makeFakeBroadcastImagesRepo();
     const storage = makeFakeImageStorage();
-    const audit = { emit: vi.fn(async () => undefined), emitOnce: async () => true, emitTyped: vi.fn(async () => undefined) };
+    const audit = { emit: vi.fn(async () => undefined), emitTyped: vi.fn(async () => undefined) };
     const deps = {
       allowlistPort: {
         withTx: async <T,>(_t: never, fn: (tx: unknown) => Promise<T>) => fn(null),

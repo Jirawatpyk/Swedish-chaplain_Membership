@@ -164,7 +164,6 @@ function makeDeps(
     emit: auditEmit,
     // R6.2 H1 — typed emit pass-through; tests assert on auditEmit.calls
     // regardless of which method the use-case invokes.
-    emitOnce: async () => true,
     emitTyped: auditEmit as unknown as AuditPort['emitTyped'],
   };
 

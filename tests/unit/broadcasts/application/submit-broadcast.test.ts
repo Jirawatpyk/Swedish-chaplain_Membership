@@ -103,7 +103,6 @@ function makeAuditEmits(): {
       async emit(_tx, event) {
         emits.push(event);
       },
-      emitOnce: async () => true,
       async emitTyped(_tx, event) {
         emits.push(event as AuditEmitInput);
       },
@@ -1103,7 +1102,6 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       async emit() {
         throw new Error('audit DB unreachable');
       },
-      emitOnce: async () => true,
       async emitTyped() {
         throw new Error('audit DB unreachable');
       },

@@ -5,7 +5,7 @@
  * `broadcast_audience_disclosed` records a recipient list handed to Resend
  * (tick 1, before `createContactImport`); `broadcast_audience_deleted` records
  * the delete of a segment that may hold recipients, once per (tenant,
- * segment). Spec 142: that row is written only through `AuditPort.emitOnce`,
+ * segment). Spec 142: that row is written only through `AudienceDeletedAuditPort.emitOnce`,
  * whose `ON CONFLICT DO NOTHING` against migration 0328's partial unique index
  * is the dedupe (the first `reason` wins); `emitOnce` answering false is a
  * skip. Every deleted row is built by `audienceDeletedInput`. The orphan
@@ -48,7 +48,12 @@ import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 
-import type { AudienceDeletedEmitInput, AudienceDeleteReason, AuditPort } from '../ports/audit-port';
+import type {
+  AudienceDeletedAuditPort,
+  AudienceDeletedEmitInput,
+  AudienceDeleteReason,
+  AuditPort,
+} from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import { writePreCallAuditRow, type PreCallAuditRowDeps } from './_pre-call-audit-row';
 
@@ -64,7 +69,7 @@ export interface AudienceAuditDeps {
  * the index is the dedupe, so restart and cleanup read nothing first).
  */
 export interface AudienceDeleteAuditDeps extends Omit<AudienceAuditDeps, 'audit'> {
-  readonly audit: Pick<AuditPort, 'emitOnce'>;
+  readonly audit: Pick<AudienceDeletedAuditPort, 'emitOnce'>;
 }
 
 type AudienceEventType = 'broadcast_audience_disclosed' | 'broadcast_audience_deleted';

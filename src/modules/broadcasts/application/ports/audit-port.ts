@@ -744,7 +744,7 @@ export interface F7AuditPayloadShapes {
   };
   // Spec 139 s2 (DA2, DA3) — a segment that may hold recipients is about to be
   // deleted (before the delete's lease gate). One row per (tenant, segment):
-  // spec 142 writes it only through `AuditPort.emitOnce`, against migration
+  // spec 142 writes it only through `AudienceDeletedAuditPort.emitOnce`, against
   // 0328's partial unique index `audit_log_audience_deleted_once`.
   readonly broadcast_audience_deleted: AudienceAuditCommon & {
     readonly reason: AudienceDeleteReason;
@@ -986,25 +986,33 @@ export interface AuditPort {
     tx: unknown,
     events: readonly TypedAuditEmitInput<E>[],
   ): Promise<void>;
+}
+
+/**
+ * Spec 142 (AO2; review round 1, CR #7) — the one writer of the
+ * `broadcast_audience_deleted` row, a port of its own so the shared
+ * `AuditPort` (and its ~200 test doubles) does not carry it. The delete sites
+ * (the tick restart, the cleanup and the reclaim) take it; `f7AuditAdapter`
+ * implements both ports, and its other methods refuse this event.
+ */
+export interface AudienceDeletedAuditPort {
   /**
-   * Spec 142 (AO2) — the `broadcast_audience_deleted` row, at most once per
-   * (tenant, segment). `INSERT … ON CONFLICT (tenant_id,
-   * (payload->>'resend_audience_id')) WHERE event_type =
-   * 'broadcast_audience_deleted' DO NOTHING RETURNING 1` against migration
-   * 0328's index: answers true when it wrote the row, false when the key
-   * already had one (the first `reason` wins).
+   * The `broadcast_audience_deleted` row, at most once per (tenant, segment).
+   * `INSERT … ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE
+   * event_type = 'broadcast_audience_deleted' DO NOTHING RETURNING 1` against
+   * migration 0328's index: answers true when it wrote the row, false when the
+   * key already had one (the first `reason` wins).
    *
    * - The tx must be the caller's tenant-bound tx; a null tx, a null
-   *   `tenantId`, or a tx bound to another tenant is an
-   *   `AuditPortInvariantError` (a NULL never conflicts, and a wrong-tenant
-   *   row is a wiring bug), so the caller fails closed.
+   *   `tenantId`, an empty segment id, another event type, or a tx bound to
+   *   another tenant is an `AuditPortInvariantError` raised before any write
+   *   (a NULL never conflicts, and a wrong-tenant row is a wiring bug), so the
+   *   caller fails closed.
    * - The INSERT waits on another tx's uncommitted insert of the key: if that
    *   commits, this answers false; if it rolls back, this writes and answers
    *   true. The wait is bounded by `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` and ends
    *   in a 55P03 driver error.
    * - Nothing is swallowed: any other storage error reaches the caller.
-   *
-   * REQUIRED, unlike `emitMany`: the deleted row has no other writer.
    */
   emitOnce(tx: unknown, event: AudienceDeletedEmitInput): Promise<boolean>;
 }

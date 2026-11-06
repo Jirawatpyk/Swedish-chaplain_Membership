@@ -79,7 +79,6 @@ describe('AuditPort.emitTyped<E> generic constraint — R6.7 M-12', () => {
     // TypedAuditEmitInput<E>).
     const audit: AuditPort = {
       emit: async () => undefined,
-      emitOnce: async () => true,
       emitTyped: async () => undefined,
     };
     // Typed event — compiles.

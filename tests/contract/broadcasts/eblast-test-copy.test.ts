@@ -34,7 +34,7 @@ function makeDeps(o?: {
   sanitize?: (html: string) => string;
 }) {
   const send = vi.fn(async () => (o?.mailerFails ? err({ code: o.mailerFails, message: 'x' }) : ok({ messageId: 'msg-1' })));
-  const audit: AuditPort = { emit: vi.fn(async () => undefined), emitOnce: async () => true, emitTyped: vi.fn(async () => undefined) };
+  const audit: AuditPort = { emit: vi.fn(async () => undefined), emitTyped: vi.fn(async () => undefined) };
   // A spy, so the size guards can be pinned as running BEFORE or AFTER it.
   const sanitize = vi.fn(o?.sanitize ?? ((html: string) => html.replace(/<script>.*?<\/script>/g, '')));
   return {

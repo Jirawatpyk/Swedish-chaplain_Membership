@@ -58,7 +58,6 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
   it('audit.emit resolves → no log, no metric, no throw', async () => {
     const audit: AuditPort = {
       emit: vi.fn().mockResolvedValue(undefined),
-      emitOnce: async () => true,
       emitTyped: vi.fn().mockResolvedValue(undefined),
     };
     await expect(safeAuditEmit(audit, null, SAMPLE_EVENT)).resolves.toBeUndefined();
@@ -72,7 +71,6 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
     const failureCause = new Error('audit-storage transient failure');
     const audit: AuditPort = {
       emit: vi.fn().mockRejectedValue(failureCause),
-      emitOnce: async () => true,
       emitTyped: vi.fn().mockRejectedValue(failureCause),
     };
 
@@ -109,7 +107,6 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
   it('audit.emit rejects with non-Error value → still catches + logs the unknown class', async () => {
     const audit: AuditPort = {
       emit: vi.fn().mockRejectedValue('plain string failure'),
-      emitOnce: async () => true,
       emitTyped: vi.fn().mockRejectedValue('plain string failure'),
     };
     await expect(safeAuditEmit(audit, null, SAMPLE_EVENT)).resolves.toBeUndefined();
@@ -122,7 +119,6 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
   it('threads tx argument unchanged (atomic-tx path used by manageImageAllowlist)', async () => {
     const audit: AuditPort = {
       emit: vi.fn().mockResolvedValue(undefined),
-      emitOnce: async () => true,
       emitTyped: vi.fn().mockResolvedValue(undefined),
     };
     const fakeTx = { __test: 'tx-handle' };
@@ -142,7 +138,6 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
             '(eventType=broadcast_template_snapshotted). Use tx=null for system audits.',
         ),
       ),
-      emitOnce: async () => true,
       emitTyped: vi.fn().mockResolvedValue(undefined),
     };
     await expect(safeAuditEmit(audit, null, SAMPLE_EVENT)).rejects.toThrow(
@@ -160,7 +155,6 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
       emit: vi
         .fn()
         .mockRejectedValue(new Error('connection terminated unexpectedly')),
-      emitOnce: async () => true,
       emitTyped: vi.fn().mockResolvedValue(undefined),
     };
     await expect(
@@ -221,7 +215,6 @@ describe('safeAuditEmitTyped (R008 Round 2 closure — typed sibling coverage)',
   it('audit.emitTyped resolves → no log, no metric, no throw', async () => {
     const audit: AuditPort = {
       emit: vi.fn().mockResolvedValue(undefined),
-      emitOnce: async () => true,
       emitTyped: vi.fn().mockResolvedValue(undefined),
     };
     await expect(
@@ -236,7 +229,6 @@ describe('safeAuditEmitTyped (R008 Round 2 closure — typed sibling coverage)',
   it('audit.emitTyped rejects → catches + logs + increments counter + returns void', async () => {
     const audit: AuditPort = {
       emit: vi.fn().mockResolvedValue(undefined),
-      emitOnce: async () => true,
       emitTyped: vi
         .fn()
         .mockRejectedValue(new Error('typed audit storage transient failure')),
@@ -270,7 +262,6 @@ describe('safeAuditEmitTyped (R008 Round 2 closure — typed sibling coverage)',
   it('threads tx argument unchanged (atomic-tx path)', async () => {
     const audit: AuditPort = {
       emit: vi.fn().mockResolvedValue(undefined),
-      emitOnce: async () => true,
       emitTyped: vi.fn().mockResolvedValue(undefined),
     };
     const fakeTx = { __test: 'tx-typed-handle' };
@@ -281,7 +272,6 @@ describe('safeAuditEmitTyped (R008 Round 2 closure — typed sibling coverage)',
   it('R8.5 LOW-1: re-throws adapter invariant errors (f7AuditAdapter: prefix)', async () => {
     const audit: AuditPort = {
       emit: vi.fn().mockResolvedValue(undefined),
-      emitOnce: async () => true,
       emitTyped: vi.fn().mockRejectedValue(
         new Error(
           'f7AuditAdapter: mutation tx requires non-null tenantId ' +
@@ -300,7 +290,6 @@ describe('safeAuditEmitTyped (R008 Round 2 closure — typed sibling coverage)',
   it('R8.5 LOW-1: non-invariant Errors still get swallowed + logged + metered', async () => {
     const audit: AuditPort = {
       emit: vi.fn().mockResolvedValue(undefined),
-      emitOnce: async () => true,
       emitTyped: vi
         .fn()
         .mockRejectedValue(new Error('connection terminated unexpectedly')),

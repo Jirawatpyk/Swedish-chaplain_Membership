@@ -72,7 +72,6 @@ function makeAudit(): { emits: Array<AuditEmitInput>; port: AuditPort } {
       async emit(_tx, e) {
         emits.push(e);
       },
-      emitOnce: async () => true,
       async emitTyped(_tx, e) {
         emits.push(e as AuditEmitInput);
       },
@@ -649,7 +648,6 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
         }
         audit.emits.push(e);
       },
-      emitOnce: async () => true,
       async emitTyped(_tx, e) {
         if (e.eventType === 'broadcast_submitted') {
           auditWasInsideTx = txOpened && !txClosed;

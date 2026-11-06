@@ -53,7 +53,7 @@ function makeDeps(o?: { existing?: boolean; verdict?: 'clean' | 'infected' }) {
     put: vi.fn().mockResolvedValue({ blobUrl: BLOB_URL, blobKey: BLOB_KEY, contentHash: 'abc' }),
     delete: vi.fn(),
   };
-  const audit: AuditPort = { emit: vi.fn().mockResolvedValue(undefined), emitOnce: async () => true, emitTyped: vi.fn().mockResolvedValue(undefined) };
+  const audit: AuditPort = { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) };
   const record = vi.fn(async (_t: never, input: Record<string, unknown>, _tx: unknown) => ({ id: 'img-1', ...input }));
   const imagesRepo: BroadcastImagesRepo = {
     withTx: vi.fn(async <T,>(_t: never, fn: (tx: unknown) => Promise<T>) => fn('tx-1')),

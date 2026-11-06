@@ -38,7 +38,7 @@ function makeDeps(current: Partial<BrandSettingsRecord> = {}) {
     findForUpdate: vi.fn(async () => record),
     save: save as never,
   };
-  const audit: AuditPort = { emit: vi.fn(async () => undefined), emitOnce: async () => true, emitTyped: vi.fn(async () => undefined) };
+  const audit: AuditPort = { emit: vi.fn(async () => undefined), emitTyped: vi.fn(async () => undefined) };
   return { repo, audit, save };
 }
 

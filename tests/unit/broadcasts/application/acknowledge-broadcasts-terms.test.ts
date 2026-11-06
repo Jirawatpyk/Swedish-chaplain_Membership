@@ -71,7 +71,6 @@ describe('acknowledgeBroadcastsTerms', () => {
   it('member_not_found — maps to ack.member_not_found, no audit emit', async () => {
     const audit: AuditPort = {
       emit: vi.fn<AuditPort['emit']>(async () => undefined),
-      emitOnce: async () => true,
       emitTyped: vi.fn<AuditPort['emitTyped']>(async () => undefined),
     };
     const membersBridge = partialBridge(async () =>
@@ -100,7 +99,6 @@ describe('acknowledgeBroadcastsTerms', () => {
     // for a re-ack would write a duplicate audit row.
     const audit: AuditPort = {
       emit: vi.fn<AuditPort['emit']>(async () => undefined),
-      emitOnce: async () => true,
       emitTyped: vi.fn<AuditPort['emitTyped']>(async () => undefined),
     };
     const membersBridge = partialBridge(async () =>
@@ -126,7 +124,6 @@ describe('acknowledgeBroadcastsTerms', () => {
     const emit = vi.fn<AuditPort['emit']>(async () => undefined);
     const audit: AuditPort = {
       emit,
-      emitOnce: async () => true,
       emitTyped: vi.fn<AuditPort['emitTyped']>(async () => undefined),
     };
     const membersBridge = partialBridge(async () =>
@@ -171,7 +168,6 @@ describe('acknowledgeBroadcastsTerms', () => {
     // outage during consent write — GDPR Art. 7 risk.
     const audit: AuditPort = {
       emit: vi.fn<AuditPort['emit']>(async () => undefined),
-      emitOnce: async () => true,
       emitTyped: vi.fn<AuditPort['emitTyped']>(async () => undefined),
     };
     const membersBridge = partialBridge(async () =>
@@ -220,7 +216,6 @@ describe('acknowledgeBroadcastsTerms', () => {
     const bridgeCalls: Array<{ tenantSlug: string }> = [];
     const audit: AuditPort = {
       emit: vi.fn<AuditPort['emit']>(async () => undefined),
-      emitOnce: async () => true,
       emitTyped: vi.fn<AuditPort['emitTyped']>(async () => undefined),
     };
     const membersBridge = partialBridge(async (ctx) => {
@@ -248,7 +243,6 @@ describe('acknowledgeBroadcastsTerms', () => {
       emit: vi.fn<AuditPort['emit']>(async () => {
         throw new Error('audit transport down');
       }),
-      emitOnce: async () => true,
       emitTyped: vi.fn<AuditPort['emitTyped']>(async () => {
         throw new Error('audit transport down');
       }),
