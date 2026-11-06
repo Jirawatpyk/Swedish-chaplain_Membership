@@ -98,6 +98,46 @@ describe('AuditPort.emitTyped<E> generic constraint — R6.7 M-12', () => {
     expect(true).toBe(true);
   });
 
+  it('emit, emitTyped, emitMany and emitManyTyped do not compile with broadcast_audience_deleted (spec 142 r2)', () => {
+    // Spec 142 review round 2 (code-review #2) — the deleted row's only writer
+    // is `AudienceDeletedAuditPort.emitOnce`; the shared port's methods exclude
+    // the event by type (the adapter's runtime refusal stays behind it). Each
+    // `@ts-expect-error` is load-bearing: widen a signature back and the
+    // directive becomes unused, which fails `tsc`. The disclosed row is the
+    // positive control: the same calls compile.
+    const audit: AuditPort = {
+      emit: async () => undefined,
+      emitTyped: async () => undefined,
+      emitMany: async () => undefined,
+      emitManyTyped: async () => undefined,
+    };
+    const common = {
+      broadcast_id: 'bc-1',
+      related_member_id: 'mem-1',
+      resend_audience_id: 'aud-1',
+      leg: 'import',
+      actor_role: 'system',
+    } as const;
+    const fields = { actorUserId: 'system:cron', summary: 's', tenantId: 't', requestId: null };
+    const deleted = { ...fields, eventType: 'broadcast_audience_deleted' as const, payload: { ...common, reason: 'terminal_cleanup' as const } };
+    const disclosed = { ...fields, eventType: 'broadcast_audience_disclosed' as const, payload: { ...common, recipient_count: 2 } };
+
+    // @ts-expect-error — `emit` takes F7EmitEventType, which excludes broadcast_audience_deleted
+    void audit.emit(null, deleted);
+    // @ts-expect-error — `emitTyped`'s E excludes broadcast_audience_deleted
+    void audit.emitTyped(null, deleted);
+    // @ts-expect-error — `emitMany` takes AuditEmitInput, whose event type excludes it
+    void audit.emitMany?.(null, [deleted]);
+    // @ts-expect-error — `emitManyTyped`'s E excludes broadcast_audience_deleted
+    void audit.emitManyTyped?.(null, [deleted]);
+
+    void audit.emit(null, disclosed);
+    void audit.emitTyped(null, disclosed);
+    void audit.emitMany?.(null, [disclosed]);
+    void audit.emitManyTyped?.(null, [disclosed]);
+    expect(true).toBe(true);
+  });
+
   it('F7AuditPayloadShapes covers exactly the 30 declared events', () => {
     // Lock the documented count so a future addition surfaces here for
     // review. The list used to be typed `ReadonlyArray<keyof …>`, which a
