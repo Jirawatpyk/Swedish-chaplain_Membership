@@ -19,7 +19,7 @@
  * `emit`, `emitTyped` and the multi-row methods refuse the event before any
  * write (review round 1, code-review #3), so no path bypasses the index.
  */
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import {
   AUDIENCE_AUDIT_LOCK_TIMEOUT_MS,
   AuditPortInvariantError,
@@ -28,6 +28,7 @@ import {
   type AudienceDeletedEmitInput,
   type AuditEmitInput,
   type AuditPort,
+  type F7AuditEventType,
   type F7AuditPayloadShapes,
   type TypedAuditEmitInput,
 } from '../application/ports/audit-port';
@@ -58,21 +59,7 @@ export const f7AuditAdapter: F7AuditAdapter = {
     }
 
     const tx = (txUnknown as TenantTx | null) ?? db;
-    const requestId = event.requestId ?? 'no-request-id';
-    const retentionYears = f7RetentionFor(event.eventType);
-
-    await tx.execute(sql`
-      INSERT INTO audit_log
-        (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
-      VALUES
-        (${event.eventType}::audit_event_type,
-         ${event.actorUserId},
-         ${event.summary},
-         ${requestId},
-         ${JSON.stringify(event.payload)}::jsonb,
-         ${event.tenantId},
-         ${retentionYears})
-    `);
+    await tx.execute(sql`INSERT INTO audit_log ${AUDIT_LOG_COLUMNS} VALUES ${auditRowValues(event, boundEventType(event))}`);
   },
   /**
    * R4.3 M-15 — typed counterpart of `emit`. At runtime the two paths
@@ -155,21 +142,40 @@ export const f7AuditAdapter: F7AuditAdapter = {
     // The INSERT waits on another tx's uncommitted insert of the same key.
     await setLocalLockTimeout(tx, AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, 'emitOnce');
     const rows = (await tx.execute(sql`
-      INSERT INTO audit_log
-        (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
-      VALUES
-        ('broadcast_audience_deleted'::audit_event_type,
-         ${event.actorUserId},
-         ${event.summary},
-         ${event.requestId ?? 'no-request-id'},
-         ${JSON.stringify(event.payload)}::jsonb,
-         ${event.tenantId},
-         ${f7RetentionFor('broadcast_audience_deleted')})
+      INSERT INTO audit_log ${AUDIT_LOG_COLUMNS}
+      VALUES ${auditRowValues(event, sql`'broadcast_audience_deleted'::audit_event_type`)}
       ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE event_type = 'broadcast_audience_deleted' DO NOTHING RETURNING 1
     `)) as unknown as readonly unknown[];
     return rows.length === 1;
   },
 };
+
+/**
+ * Spec 142 (review round 1, code-review #6) — the one column list and the one
+ * row builder of every adapter INSERT, so the defaults (`no-request-id`, the
+ * F7 retention, the jsonb payload) exist once. `eventTypeSql` is the
+ * `event_type` value: bound (`boundEventType`) for `emit` and `emitMany`, a
+ * literal for `emitOnce`, whose only event it is.
+ */
+const AUDIT_LOG_COLUMNS = sql`(event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)`;
+
+interface AuditRowFields {
+  readonly eventType: F7AuditEventType;
+  readonly actorUserId: string;
+  readonly summary: string;
+  readonly requestId: string | null;
+  readonly payload: unknown;
+  readonly tenantId: string | null;
+}
+
+function boundEventType(event: AuditRowFields): SQL {
+  return sql`${event.eventType}::audit_event_type`;
+}
+
+function auditRowValues(event: AuditRowFields, eventTypeSql: SQL): SQL {
+  return sql`(${eventTypeSql}, ${event.actorUserId}, ${event.summary}, ${event.requestId ?? 'no-request-id'},
+    ${JSON.stringify(event.payload)}::jsonb, ${event.tenantId}, ${f7RetentionFor(event.eventType)})`;
+}
 
 /**
  * Spec 142 (review round 1, code-review #3) — `broadcast_audience_deleted` is
@@ -200,21 +206,6 @@ async function insertAuditRows(txUnknown: unknown, events: readonly AuditEmitInp
   }
 
   const tx = (txUnknown as TenantTx | null) ?? db;
-  const rows = events.map(
-    (event) => sql`(
-      ${event.eventType}::audit_event_type,
-      ${event.actorUserId},
-      ${event.summary},
-      ${event.requestId ?? 'no-request-id'},
-      ${JSON.stringify(event.payload)}::jsonb,
-      ${event.tenantId},
-      ${f7RetentionFor(event.eventType)}
-    )`,
-  );
-
-  await tx.execute(sql`
-    INSERT INTO audit_log
-      (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
-    VALUES ${sql.join(rows, sql`, `)}
-  `);
+  const rows = events.map((event) => auditRowValues(event, boundEventType(event)));
+  await tx.execute(sql`INSERT INTO audit_log ${AUDIT_LOG_COLUMNS} VALUES ${sql.join(rows, sql`, `)}`);
 }
