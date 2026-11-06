@@ -2829,7 +2829,7 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
   it.each([
     ['tick 1 (no import yet)', {}, []],
     ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }, ['deleteAudience']],
-  ] as const)('%s, a SUSPENDED member → held: ok, no transition, no audit, no email, nothing sent', async (_label, row, calls) => {
+  ] as const)('%s, a SUSPENDED member → held: ok, no transition, only the segment deleted row, no email, nothing sent', async (_label, row, calls) => {
     const heldSpy = vi.spyOn(broadcastsMetrics, 'dispatchStandingHeldTotal');
     const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
     const { deps, rec } = makeDeps({ ...row, standing: { access: 'suspended' } });
