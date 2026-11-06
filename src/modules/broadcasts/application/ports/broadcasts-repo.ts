@@ -23,6 +23,12 @@ import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 
+/** Spec 139 s2 — what a `broadcast_audience_disclosed` row names (ids only). */
+export interface AudienceDisclosure {
+  readonly broadcastId: string;
+  readonly relatedMemberId: string;
+}
+
 /**
  * Spec 140 s1 review round 1 (code-review #8) — what the erasure cascade's
  * terminal-draft pass reads of a row: its id, its status and the Resend id it
@@ -809,6 +815,38 @@ export interface BroadcastsRepo {
     broadcastId: BroadcastId,
     resendBroadcastId: string,
   ): Promise<boolean>;
+
+  /**
+   * Spec 139 s2 (DA2) — does this tenant already hold a
+   * `broadcast_audience_deleted` row for this Resend segment? Every delete site
+   * reads this in the SAME tx before inserting, so a segment gets one row: the
+   * first `reason` wins (an accepted consequence: a `hold` row whose lease gate
+   * then stopped the delete keeps `reason: 'hold'` after cleanup really
+   * deletes the segment).
+   *
+   * The read first takes a transaction-scoped advisory lock on (tenant,
+   * segment) in the `broadcasts-audience-audit:` namespace (disjoint from the
+   * row lock's `broadcasts:` and the evidence locks), so two sites'
+   * check-then-insert on one segment is serialised. Tenant-scoped by RLS AND
+   * an explicit `tenant_id` predicate (`audit_log`'s policy also admits
+   * `tenant_id IS NULL` rows); `assertTenantBoundTx` refuses a tx bound to
+   * another tenant.
+   */
+  hasAudienceDeletedAuditInTx(tx: unknown, tenantId: TenantSlug, resendAudienceId: string): Promise<boolean>;
+
+  /**
+   * Spec 139 s2 (DA2, pdpa M-3) — this tenant's `broadcast_audience_disclosed`
+   * row for the segment (the earliest), or `null`. `reclaim-orphaned-audiences`
+   * writes its deleted row only when one exists, copying its broadcast and its
+   * requester (`related_member_id`): without one, this deployment never filled
+   * the segment, and the row is never filed under a guessed tenant or member.
+   * Tenant-scoped exactly as {@link hasAudienceDeletedAuditInTx}.
+   */
+  findAudienceDisclosureInTx(
+    tx: unknown,
+    tenantId: TenantSlug,
+    resendAudienceId: string,
+  ): Promise<AudienceDisclosure | null>;
 
   /**
    * F119 PR-E (migration 0311) — start the FR-021 retry clock: stamp

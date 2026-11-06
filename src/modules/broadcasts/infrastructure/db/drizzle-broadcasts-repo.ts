@@ -1793,6 +1793,14 @@ export function makeDrizzleBroadcastsRepo(
       return rows[0]?.found === true || rows[0]?.found === 't';
     },
 
+    async hasAudienceDeletedAuditInTx(_txUnknown, _tenantIdArg: TenantSlug, _resendAudienceId: string): Promise<boolean> {
+      return false; // RED stub (spec 139 s2): the real read lands with its GREEN commit.
+    },
+
+    async findAudienceDisclosureInTx(_txUnknown, _tenantIdArg: TenantSlug, _resendAudienceId: string) {
+      return null; // RED stub (spec 139 s2): the real read lands with its GREEN commit.
+    },
+
     async markAudienceImportCompleted(
       txUnknown,
       tenantIdArg: TenantSlug,
