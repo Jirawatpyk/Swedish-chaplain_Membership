@@ -15,7 +15,7 @@
  * because the route handler does not yet know which tenant owns the
  * incoming `resend_broadcast_id`.
  */
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db, runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -582,16 +582,15 @@ const LIST_SORTS: Readonly<
     {
       readonly column: AnyPgColumn;
       readonly direction: 'asc' | 'desc';
-      readonly keyOf: (row: BroadcastRow) => Date | null;
     }
   >
 > = {
-  submitted_at_asc: { column: broadcasts.submittedAt, direction: 'asc', keyOf: (r) => r.submittedAt },
-  submitted_at_desc: { column: broadcasts.submittedAt, direction: 'desc', keyOf: (r) => r.submittedAt },
-  created_at_desc: { column: broadcasts.createdAt, direction: 'desc', keyOf: (r) => r.createdAt },
-  stage_entered_at_asc: { column: broadcasts.stageEnteredAt, direction: 'asc', keyOf: (r) => r.stageEnteredAt },
-  stage_entered_at_desc: { column: broadcasts.stageEnteredAt, direction: 'desc', keyOf: (r) => r.stageEnteredAt },
-  scheduled_for_asc: { column: broadcasts.scheduledFor, direction: 'asc', keyOf: (r) => r.scheduledFor },
+  submitted_at_asc: { column: broadcasts.submittedAt, direction: 'asc' },
+  submitted_at_desc: { column: broadcasts.submittedAt, direction: 'desc' },
+  created_at_desc: { column: broadcasts.createdAt, direction: 'desc' },
+  stage_entered_at_asc: { column: broadcasts.stageEnteredAt, direction: 'asc' },
+  stage_entered_at_desc: { column: broadcasts.stageEnteredAt, direction: 'desc' },
+  scheduled_for_asc: { column: broadcasts.scheduledFor, direction: 'asc' },
 };
 
 function pageLimit(pageSize: number): number {
@@ -641,7 +640,11 @@ export function adminQueueListQuery(tx: TenantTx, tenantId: string, opts: ListBy
     // refuses a `Date` for a timestamptz slot — so the key goes over as ISO
     // text with an explicit cast. (Passing the Date made every second page
     // of this list fail; nothing had paged it until T114.)
-    const key = sql`${cursor.submittedAt === null ? null : cursor.submittedAt.toISOString()}::timestamptz`;
+    // The key is Postgres's own text for the value (microseconds and offset),
+    // cast back as it was read — a JS Date would round it to the millisecond
+    // and the keyset would repeat or skip rows in that millisecond. An old
+    // ISO-text cursor casts the same way.
+    const key = sql`${cursor.key}::timestamptz`;
     conditions.push(
       sort.direction === 'asc'
         ? sql`(${sort.column}, ${broadcasts.broadcastId}) > (${key}, ${cursor.broadcastId})`
@@ -650,23 +653,31 @@ export function adminQueueListQuery(tx: TenantTx, tenantId: string, opts: ListBy
   }
   const order = sort.direction === 'asc' ? asc : desc;
   return tx
-    .select()
+    .select({
+      ...getTableColumns(broadcasts),
+      // The sort key at full precision, for the next page's cursor.
+      // ISO 8601 UTC with microseconds, written explicitly rather than
+      // `::text`, whose shape follows the session's DateStyle.
+      cursorKey: sql<string | null>`to_char(${sort.column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as('cursor_key'),
+    })
     .from(broadcasts)
     .where(and(...conditions))
     .orderBy(order(sort.column), order(broadcasts.broadcastId))
     .limit(pageLimit(opts.pageSize) + 1);
 }
 
-// Cursor format: base64 of `<sort-key-iso>|broadcast-id` (the key is the
-// value of the column the list is ordered by — see `LIST_SORTS`).
-function encodeCursor(submittedAt: Date | null, broadcastId: string): string {
-  const iso = submittedAt === null ? '' : submittedAt.toISOString();
-  return Buffer.from(`${iso}|${broadcastId}`, 'utf8').toString('base64url');
+// Cursor format: base64 of `<sort-key>|broadcast-id`, the key being the
+// sort column's value in ISO 8601 UTC with microseconds
+// (`2026-11-01T03:00:00.000123Z`, written by `to_char` above); older cursors
+// carry the millisecond ISO a JS Date printed, which casts the same. Empty = NULL.
+const CURSOR_KEY_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
+function encodeCursor(key: string | null, broadcastId: string): string {
+  return Buffer.from(`${key ?? ''}|${broadcastId}`, 'utf8').toString('base64url');
 }
 
 function decodeCursor(
   cursor: string,
-): { submittedAt: Date | null; broadcastId: string } | null {
+): { key: string | null; broadcastId: string } | null {
   // Review ERR-H4: log decode failures (length-only, never the cursor
   // bytes — they may carry tenant ids in clear text). Returning null
   // keeps the existing "tampered cursor → reset to first page"
@@ -682,8 +693,14 @@ function decodeCursor(
       );
       return null;
     }
+    if (iso !== undefined && iso !== '' && !CURSOR_KEY_RE.test(iso)) {
+      // A tampered key would reach the `::timestamptz` cast and fail the page;
+      // reset to the first page instead, as for any other bad cursor.
+      logger.warn({ cursorLen: cursor.length }, 'broadcasts.repo.cursor_decode_bad_key');
+      return null;
+    }
     return {
-      submittedAt: iso === '' || iso === undefined ? null : new Date(iso),
+      key: iso === '' || iso === undefined ? null : iso,
       broadcastId,
     };
   } catch (e) {
@@ -1876,7 +1893,7 @@ export function makeDrizzleBroadcastsRepo(
         const last = trimmed[trimmed.length - 1];
         const nextCursor =
           hasNext && last !== undefined
-            ? encodeCursor(LIST_SORTS[opts.sort ?? 'created_at_desc'].keyOf(last), last.broadcastId)
+            ? encodeCursor(last.cursorKey, last.broadcastId)
             : null;
 
         return {
