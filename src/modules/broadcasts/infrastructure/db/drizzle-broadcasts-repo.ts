@@ -656,7 +656,9 @@ export function adminQueueListQuery(tx: TenantTx, tenantId: string, opts: ListBy
     .select({
       ...getTableColumns(broadcasts),
       // The sort key at full precision, for the next page's cursor.
-      cursorKey: sql<string | null>`${sort.column}::text`.as('cursor_key'),
+      // ISO 8601 UTC with microseconds, written explicitly rather than
+      // `::text`, whose shape follows the session's DateStyle.
+      cursorKey: sql<string | null>`to_char(${sort.column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as('cursor_key'),
     })
     .from(broadcasts)
     .where(and(...conditions))
@@ -665,9 +667,10 @@ export function adminQueueListQuery(tx: TenantTx, tenantId: string, opts: ListBy
 }
 
 // Cursor format: base64 of `<sort-key>|broadcast-id`, the key being the
-// sort column's value as Postgres prints it (`…::text`, e.g.
-// `2026-11-01 03:00:00.000123+00`), so it keeps microseconds; older cursors
-// carry an ISO string, which casts the same. Empty = NULL.
+// sort column's value in ISO 8601 UTC with microseconds
+// (`2026-11-01T03:00:00.000123Z`, written by `to_char` above); older cursors
+// carry the millisecond ISO a JS Date printed, which casts the same. Empty = NULL.
+const CURSOR_KEY_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
 function encodeCursor(key: string | null, broadcastId: string): string {
   return Buffer.from(`${key ?? ''}|${broadcastId}`, 'utf8').toString('base64url');
 }
@@ -688,6 +691,12 @@ function decodeCursor(
         { cursorLen: cursor.length },
         'broadcasts.repo.cursor_decode_missing_broadcast_id',
       );
+      return null;
+    }
+    if (iso !== undefined && iso !== '' && !CURSOR_KEY_RE.test(iso)) {
+      // A tampered key would reach the `::timestamptz` cast and fail the page;
+      // reset to the first page instead, as for any other bad cursor.
+      logger.warn({ cursorLen: cursor.length }, 'broadcasts.repo.cursor_decode_bad_key');
       return null;
     }
     return {
