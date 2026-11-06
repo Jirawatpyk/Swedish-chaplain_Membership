@@ -246,10 +246,18 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       repo.hasAudienceDeletedAuditInTx(tx, slug, randomUUID())],
     ['findAudienceDisclosureInTx', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never) =>
       repo.findAudienceDisclosureInTx(tx, slug, randomUUID())],
-  ] as const)("cross-tenant: %s with a tx bound to tenant B refuses tenant A's read", async (_label, call) => {
+  ] as const)("cross-tenant: %s with a tx bound to tenant B refuses tenant A's read as an invariant error", async (_label, call) => {
     const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
     const slug = tenantA.ctx.slug as never;
-    await expect(runInTenant(asTenantContext(tenantB.ctx.slug), (tx): Promise<unknown> => call(repo, tx, slug))).rejects.toThrow(/tx tenant mismatch/);
+    const e = await runInTenant(asTenantContext(tenantB.ctx.slug), (tx): Promise<unknown> => call(repo, tx, slug)).then(
+      () => null,
+      (err: unknown) => err,
+    );
+    expect(e).toBeInstanceOf(Error);
+    expect((e as Error).message).toMatch(/tx tenant mismatch/);
+    // Review round 3 (code-review #1): a wiring bug, so the row helper fails
+    // closed (ERROR `*.audit_invariant`, rethrown, no Resend call), never a lost row.
+    expect(isAdapterInvariantError(e)).toBe(true);
   });
 
   describe('DA1 / DA2 through the real composition root', () => {
