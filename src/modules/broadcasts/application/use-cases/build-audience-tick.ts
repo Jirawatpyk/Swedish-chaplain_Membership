@@ -2119,10 +2119,10 @@ function unverifiableErrorReason(failure: GatewayFailure): UnverifiableErrorReas
  * count call FAILED, so the one check that can see a carried-over contact did
  * not run. It records that failed count on the attempt, whether or not the
  * attempt then sent (a send that fails, or a lease lost at the second gate,
- * included). The deleted legacy leg wrote it on its own
- * count failure; this is the only leg since spec 140 s4. Same payload keys as the
- * legacy row plus the import id; ids, a count and a closed error code, no address
- * and no provider text (the row is append-only and shown on the audit viewer).
+ * included). The deleted legacy leg wrote it on its own count failure; this is
+ * the only leg since spec 140 s4. Same payload keys as the legacy row plus the
+ * import id; ids, a count and a closed error code, no address and no provider
+ * text (the row is append-only and shown on the audit viewer).
  *
  * PER DRAFT, not per attempt (rounds 3 and 4): written once for each
  * (`broadcastId`, `resendBroadcastId`), by the first attempt on that draft whose
@@ -2141,17 +2141,17 @@ function unverifiableErrorReason(failure: GatewayFailure): UnverifiableErrorReas
  * The send-started pattern, through the shared pre-call envelope
  * (`writePreCallAuditRow`, spec 142 AO4): its own tenant-bound `withTx` (a null
  * tx would take a pool connection with no `app.current_tenant`, where RLS
- * writes nothing) and a RAW emit, so a failure is known. A storage failure is logged and counted, and
- * the send goes ahead: refusing it on an audit blip would kill a legitimate send.
- * A failure of the dedupe READ (the lock, the `EXISTS`, or the repo's
- * `assertTenantBoundTx`, a plain Error) is treated as a storage failure too; that
- * is acceptable here because `withTx` always binds the tx through `runInTenant`,
- * so a binding refusal can only mean a wiring change the rest of the tick's
- * writes would also refuse. A wiring bug in the AUDIT write
- * (`isAdapterInvariantError`: an `AuditPortInvariantError` or the adapter's
- * `f7AuditAdapter:`-prefixed Error) RETHROWS: nothing has been sent, so it fails
- * closed and the row stays `approved`. (`broadcast_send_started`'s own rethrow
- * after the send is pre-existing and out of this change's scope.)
+ * writes nothing) and a RAW emit, so a failure is known. A storage failure is
+ * logged and counted, and the send goes ahead: refusing it on an audit blip
+ * would kill a legitimate send. A failure of the dedupe READ (the lock, the
+ * `EXISTS`, or the repo's `assertTenantBoundTx`, a plain Error) is treated as a
+ * storage failure too; that is acceptable here because `withTx` always binds
+ * the tx through `runInTenant`, so a binding refusal can only mean a wiring
+ * change the rest of the tick's writes would also refuse. A wiring bug in the
+ * AUDIT write (`isAdapterInvariantError`: an `AuditPortInvariantError` or the
+ * adapter's `f7AuditAdapter:`-prefixed Error) RETHROWS: nothing has been sent,
+ * so it fails closed and the row stays `approved`. (`broadcast_send_started`'s
+ * own rethrow after the send is pre-existing and out of this change's scope.)
  *
  * The caller re-runs the send's lease gate after it, whether a row was written,
  * deduped or the tx failed (rounds 4 and 5): this tx ran between the gate and

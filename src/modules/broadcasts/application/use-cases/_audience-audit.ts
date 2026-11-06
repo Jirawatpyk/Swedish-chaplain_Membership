@@ -7,12 +7,13 @@
  * the delete of a segment that may hold recipients, once per (tenant,
  * segment). Spec 142: that row is written only through
  * `AudienceDeletedAuditPort.emitOnce`, whose `ON CONFLICT DO NOTHING` against
- * migration 0328's partial unique index is the dedupe (the first `reason` wins); `emitOnce` answering false is a
- * skip. Every deleted row is built by `audienceDeletedInput`. The orphan
- * reclaim writes its deleted row only when this tenant's disclosed row names
- * the segment, copying that row's broadcast and requester (pdpa M-3: never
- * filed under a guessed tenant or member); a segment already recorded as
- * deleted is skipped, and any other gets a WARN and a counter.
+ * migration 0328's partial unique index is the dedupe (the first `reason`
+ * wins); `emitOnce` answering false is a skip. Every deleted row is built by
+ * `audienceDeletedInput`. The orphan reclaim writes its deleted row only when
+ * this tenant's disclosed row names the segment, copying that row's broadcast
+ * and requester (pdpa M-3: never filed under a guessed tenant or member); a
+ * segment already recorded as deleted is skipped, and any other gets a WARN
+ * and a counter.
  *
  * Every row is written BEFORE its Resend call, in its own tenant-bound
  * `withTx` (never a null tx: that would take a pool connection with no
@@ -57,10 +58,8 @@ import type {
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import { writePreCallAuditRow, type PreCallAuditRowDeps } from './_pre-call-audit-row';
 
-/** The ports the disclosed row needs. */
-export interface AudienceAuditDeps {
-  readonly tenant: TenantContext;
-  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx'>;
+/** The ports the disclosed row needs: the envelope's, plus its writer. */
+export interface AudienceAuditDeps extends PreCallAuditRowDeps {
   readonly audit: Pick<AuditPort, 'emit'>;
 }
 
