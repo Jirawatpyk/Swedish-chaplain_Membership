@@ -61,6 +61,13 @@ function fakeGateway(send: 'ok' | 'retryable'): { calls: string[]; sends: string
       calls.push('createBroadcast');
       return { broadcastId: `rb-unverifiable-${randomUUID()}` };
     },
+    // A later tick inherits the persisted draft: Resend reports it `draft`, so
+    // the tick reuses it rather than minting (round 4: the two-tick case must
+    // reach the send on BOTH ticks, not stop at an unanswered probe).
+    async retrieveBroadcast(id: string) {
+      calls.push('retrieveBroadcast');
+      return { kind: 'present', resource: { id, status: 'draft', sentAt: null } };
+    },
     async sendBroadcast(id: string) {
       calls.push('sendBroadcast');
       sends.push(id);
@@ -82,7 +89,7 @@ function fakeGateway(send: 'ok' | 'retryable'): { calls: string[]; sends: string
   return { calls, sends, port: guarded };
 }
 
-describe('PR #756 rounds 2–3 — the unverifiable-count audit row (live Neon)', () => {
+describe('PR #756 rounds 2–4 — the unverifiable-count audit row (live Neon)', () => {
   let tenant: TestTenant;
   let user: TestUser;
   let requester: { readonly memberId: string; readonly planId: string };
@@ -199,12 +206,19 @@ describe('PR #756 rounds 2–3 — the unverifiable-count audit row (live Neon)'
     expect((await readRow(id)).status).toBe('approved');
   });
 
-  it('two ticks whose counts both fail → one row for the broadcast', async () => {
+  it('two ticks whose counts both fail on the same draft → one row for it', async () => {
     const id = await seedTick2Row();
+    const first = fakeGateway('retryable');
+    const second = fakeGateway('retryable');
 
-    await tick(id, fakeGateway('retryable').port);
-    await tick(id, fakeGateway('retryable').port);
+    await tick(id, first.port);
+    await tick(id, second.port);
 
-    expect(await unverifiableRows(id)).toHaveLength(1);
+    // Both ticks reached `/send` with the same draft: the second one reused it.
+    expect(first.sends).toHaveLength(1);
+    expect(second.sends).toEqual(first.sends);
+    const rows = await unverifiableRows(id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.payload).toMatchObject({ resendBroadcastId: first.sends[0] });
   });
 });

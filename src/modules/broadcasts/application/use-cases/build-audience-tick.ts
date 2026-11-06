@@ -59,6 +59,7 @@ import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { AuditPortInvariantError } from '../ports/audit-port';
+import { isAdapterInvariantError } from './_safe-audit-emit';
 import type { AuditEmitInput, AuditPort } from '../ports/audit-port';
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
@@ -2083,10 +2084,12 @@ function unverifiableErrorReason(failure: GatewayFailure): UnverifiableErrorReas
  * legacy row plus the import id; ids, a count and a closed error code, no address
  * and no provider text (the row is append-only and shown on the audit viewer).
  *
- * PER BROADCAST, not per attempt: written once, by the first attempt whose count
- * failed (an `EXISTS` read on `audit_log` in the same tx, then the insert). The
- * per-ATTEMPT signal is the `driftCheckUnverifiable` metric, which fires on every
- * attempt at the count arm.
+ * PER DRAFT, not per attempt (rounds 3 and 4): written once for each
+ * (`broadcastId`, `resendBroadcastId`), by the first attempt on that draft whose
+ * count failed (an advisory lock and an `EXISTS` read on `audit_log` in the same
+ * tx, then the insert). A draft re-minted after a restart is a different attempt
+ * and gets its own row, naming its own resources. The per-ATTEMPT signal is the
+ * `driftCheckUnverifiable` metric, which fires on every attempt at the count arm.
  *
  * Written BEFORE `/send` (round 3 reversed round 2's post-send placement: a kill
  * after the send lost the row for good, an accepted-refusal send was recorded as
@@ -2099,9 +2102,18 @@ function unverifiableErrorReason(failure: GatewayFailure): UnverifiableErrorReas
  * a pool connection with no `app.current_tenant`, where RLS writes nothing) and a
  * RAW emit, so a failure is known. A storage failure is logged and counted, and
  * the send goes ahead: refusing it on an audit blip would kill a legitimate send.
- * An `AuditPortInvariantError` (a wiring bug) RETHROWS: nothing has been sent, so
- * it fails closed and the row stays `approved`. (`broadcast_send_started`'s own
- * rethrow after the send is pre-existing and out of this change's scope.)
+ * A failure of the dedupe READ (the lock, the `EXISTS`, or the repo's
+ * `assertTenantBoundTx`, a plain Error) is treated as a storage failure too; that
+ * is acceptable here because `withTx` always binds the tx through `runInTenant`,
+ * so a binding refusal can only mean a wiring change the rest of the tick's
+ * writes would also refuse. A wiring bug in the AUDIT write
+ * (`isAdapterInvariantError`: an `AuditPortInvariantError` or the adapter's
+ * `f7AuditAdapter:`-prefixed Error) RETHROWS: nothing has been sent, so it fails
+ * closed and the row stays `approved`. (`broadcast_send_started`'s own rethrow
+ * after the send is pre-existing and out of this change's scope.)
+ *
+ * Returns whether a row was written, so the caller re-runs the send's lease gate
+ * (round 4): this tx ran between the gate and `/send`.
  */
 async function recordUnverifiableCount(
   deps: LeasedTickDeps,
@@ -2113,12 +2125,22 @@ async function recordUnverifiableCount(
     readonly expectedRecipientCount: number;
     readonly errorReason: UnverifiableErrorReason;
   },
-): Promise<void> {
+): Promise<boolean> {
   const broadcastId = input.broadcastId as unknown as string;
   let written = false;
   try {
     await deps.broadcastsRepo.withTx(async (tx) => {
-      if (await deps.broadcastsRepo.hasUnverifiableCountAuditInTx(tx, deps.tenant.slug, input.broadcastId)) return;
+      written = false;
+      if (
+        await deps.broadcastsRepo.hasUnverifiableCountAuditInTx(
+          tx,
+          deps.tenant.slug,
+          input.broadcastId,
+          fields.resendBroadcastId,
+        )
+      ) {
+        return;
+      }
       written = true;
       await deps.audit.emit(tx, {
         eventType: 'broadcast_resend_drift_check_unverifiable',
@@ -2137,9 +2159,10 @@ async function recordUnverifiableCount(
       });
     });
     if (written) broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_resend_drift_check_unverifiable');
+    return written;
   } catch (auditErr) {
     // Pre-send: a wiring bug fails closed (see the docblock).
-    if (auditErr instanceof AuditPortInvariantError) throw auditErr;
+    if (isAdapterInvariantError(auditErr)) throw auditErr;
     logger.error(
       {
         err: errKind(auditErr),
@@ -2150,6 +2173,7 @@ async function recordUnverifiableCount(
       'broadcasts.audience_import.unverifiable_audit_emit_failed',
     );
     broadcastsMetrics.auditEmitFailed('broadcast_resend_drift_check_unverifiable', deps.tenant.slug);
+    return false;
   }
 }
 
@@ -2419,9 +2443,9 @@ async function confirmImport(
     // blind here — and this is the branch a Resend blip lands in, on the only
     // dispatch leg since spec 140 s4.
     broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
-    // PR #756 review rounds 1 and 2 (code-review #1, #5) — and the durable record
-    // the legacy leg wrote beside that metric, on the same half: a count call
-    // that FAILED. Written once per broadcast, before the send (`recordUnverifiableCount`).
+    // PR #756 review rounds 1 to 4 — and the durable record the legacy leg wrote
+    // beside that metric, on the same half: a count call that FAILED. Written
+    // once per draft, before the send (`recordUnverifiableCount`).
     // A page Resend could not finish reading is not a failure, so (as there) it
     // gets the metric and the warn but no append-only row.
     if (!audienceCount.ok) countFailedReason = unverifiableErrorReason(audienceCount.error);
@@ -2441,9 +2465,11 @@ async function confirmImport(
   // THE SENDER'S FENCE (2026-10-29): every persist on this leg is fenced on
   // the import this tick confirmed, so a hold on an overlapping tick that
   // claimed the row (`restartAudienceBuild`) makes it lose and nothing is sent
-  // into the audience the hold is deleting. Nothing runs between the persist
-  // and `/send`: on a fresh mint the persist IS the fence; an inherited id is
-  // re-asserted through it.
+  // into the audience the hold is deleting. Between the persist and `/send` run
+  // only the send's lease gate and, on a failed count, the unverifiable row's
+  // own tx followed by the gate again (PR #756 review rounds 3 and 4): on a
+  // fresh mint the persist IS the fence; an inherited id is re-asserted through
+  // it.
   //
   // A DEAD inherited id is never sent to: `not_found` could only 404. A fresh
   // one is minted and replaces exactly that dead id
@@ -2533,15 +2559,21 @@ async function confirmImport(
   // `_probe-refused-send.ts`), and the loser's 422 is probed below.
   const sendGated = await leaseGate(deps, input, 'sendBroadcast');
   if (sendGated !== null) return sendGated;
-  // PR #756 review round 3 — after the send's lease gate, before `/send`.
+  // PR #756 review rounds 3 and 4 — after the send's lease gate, before
+  // `/send`. A row actually written means a tx ran after the gate, so the gate
+  // runs again before the call (the gate-then-call invariant).
   if (countFailedReason !== null) {
-    await recordUnverifiableCount(deps, input, {
+    const written = await recordUnverifiableCount(deps, input, {
       resendAudienceId: audienceId,
       importId,
       resendBroadcastId,
       expectedRecipientCount: resolvedCount,
       errorReason: countFailedReason,
     });
+    if (written) {
+      const regated = await leaseGate(deps, input, 'sendBroadcast');
+      if (regated !== null) return regated;
+    }
   }
   const sent = await viaGateway(() =>
     deps.broadcastsGateway.sendBroadcast(

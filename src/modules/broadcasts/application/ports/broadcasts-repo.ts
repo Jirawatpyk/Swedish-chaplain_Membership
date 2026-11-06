@@ -787,15 +787,26 @@ export interface BroadcastsRepo {
   ): Promise<{ readonly broadcastRecorded: boolean; readonly memberBroadcastCount: number }>;
 
   /**
-   * PR #756 review round 3 — does this tenant already hold a
-   * `broadcast_resend_drift_check_unverifiable` row for `broadcastId`? The
-   * import tick writes that row once per broadcast (the first attempt whose
-   * audience count failed) and reads this in the SAME tx before inserting.
-   * Tenant-scoped by RLS AND an explicit `tenant_id` predicate (`audit_log`'s
-   * policy also admits `tenant_id IS NULL` rows), as `readAlreadySentEvidenceInTx`.
-   * Two ticks cannot race it: the second is fenced off by the dispatch lease.
+   * PR #756 review rounds 3 and 4 — does this tenant already hold a
+   * `broadcast_resend_drift_check_unverifiable` row for this (`broadcastId`,
+   * `resendBroadcastId`)? The import tick writes that row once per draft (the
+   * first attempt on it whose audience count failed; a draft re-minted after a
+   * restart gets its own row) and reads this in the SAME tx before inserting.
+   *
+   * The read first takes a transaction-scoped advisory lock on (tenant,
+   * broadcast) in the `broadcasts-unverifiable:` namespace, as
+   * `readAlreadySentEvidenceInTx` does, so a check-then-insert on the same tx is
+   * serialised against any other writer of that broadcast's row (the dispatch
+   * lease already keeps a second tick out). Tenant-scoped by RLS AND an
+   * explicit `tenant_id` predicate (`audit_log`'s policy also admits
+   * `tenant_id IS NULL` rows).
    */
-  hasUnverifiableCountAuditInTx(tx: unknown, tenantId: TenantSlug, broadcastId: BroadcastId): Promise<boolean>;
+  hasUnverifiableCountAuditInTx(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    resendBroadcastId: string,
+  ): Promise<boolean>;
 
   /**
    * F119 PR-E (migration 0311) — start the FR-021 retry clock: stamp

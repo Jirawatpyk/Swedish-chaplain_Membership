@@ -1752,9 +1752,17 @@ export function makeDrizzleBroadcastsRepo(
       };
     },
 
-    async hasUnverifiableCountAuditInTx(txUnknown, tenantIdArg: TenantSlug, broadcastId: BroadcastId): Promise<boolean> {
+    async hasUnverifiableCountAuditInTx(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+      resendBroadcastId: string,
+    ): Promise<boolean> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'hasUnverifiableCountAuditInTx');
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-unverifiable:' || ${tenantIdArg} || ':' || ${broadcastId as string}, 0))`,
+      );
       const rows = (await tx.execute(sql`
         SELECT EXISTS (
           SELECT 1
@@ -1762,6 +1770,7 @@ export function makeDrizzleBroadcastsRepo(
           WHERE tenant_id = ${tenantIdArg}
             AND event_type = 'broadcast_resend_drift_check_unverifiable'
             AND payload->>'broadcastId' = ${broadcastId as string}::text
+            AND payload->>'resendBroadcastId' = ${resendBroadcastId}::text
         ) AS found
       `)) as unknown as Array<{ found: boolean | 't' | 'f' }>;
       return rows[0]?.found === true || rows[0]?.found === 't';
