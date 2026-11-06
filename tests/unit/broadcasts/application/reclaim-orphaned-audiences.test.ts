@@ -962,7 +962,14 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     await h.run();
     expect(h.gateway.deleteCalls).toEqual([AUDIENCE]);
     expect(error.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audience_audit_lost').map((c) => c[0])).toEqual([
-      expect.objectContaining({ eventType: DELETED, resendAudienceId: AUDIENCE, err: 'Error', severity: 'critical' }),
+      expect.objectContaining({
+        eventType: DELETED,
+        broadcastId: null,
+        resendAudienceId: AUDIENCE,
+        segmentNameBroadcastId: UUID_A,
+        err: 'Error',
+        severity: 'critical',
+      }),
     ]);
     expect(failed).toHaveBeenCalledWith(DELETED, TENANT_SLUG);
   });
@@ -983,11 +990,14 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     await h.run();
     // Review round 2 (code-review #5) — one line, from the row helper: no broadcast
     // id (the segment name's is a guess, pdpa M-3), the segment as `resendAudienceId`.
+    // Review round 3 (code-review #5): the name's id as a log-only field, so ops
+    // can find the E-Blast; never on the record.
     expect(error.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audit_invariant').map((c) => c[0])).toEqual([
       {
         tenantId: TENANT_SLUG,
         broadcastId: null,
         resendAudienceId: AUDIENCE,
+        segmentNameBroadcastId: UUID_A,
         eventType: DELETED,
         err: 'AuditPortInvariantError',
         severity: 'critical',
@@ -1009,7 +1019,15 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     expect(h.rows).toEqual([]);
     expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
     expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audience_audit_lock_timeout').map((c) => c[0])).toEqual([
-      { tenantId: TENANT_SLUG, broadcastId: null, resendAudienceId: AUDIENCE, eventType: DELETED, err: 'Error', code: '55P03' },
+      {
+        tenantId: TENANT_SLUG,
+        broadcastId: null,
+        resendAudienceId: AUDIENCE,
+        segmentNameBroadcastId: UUID_A,
+        eventType: DELETED,
+        err: 'Error',
+        code: '55P03',
+      },
     ]);
     expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed')).toEqual([]);
     expect(unattributed).not.toHaveBeenCalled();
