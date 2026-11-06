@@ -888,7 +888,9 @@ polish iteration but is intentionally not part of F7 MVP.
 once per segment, deduped). It records the request, not the result. A lost row logs
 `broadcasts.audience_cleanup.audience_audit_lost` (ERROR) and counts `broadcasts_audit_emit_failed_total`;
 the delete still runs. An adapter invariant error makes no delete, counts the item `failed` and logs the ERROR
-`broadcasts.audience_cleanup.audit_invariant`. A wait over 5 s on the row's lock is a lost row; the delete runs.
+`broadcasts.audience_cleanup.audit_invariant`. A wait over `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on the segment's
+`broadcasts-audience-audit:` advisory lock logs the WARN `broadcasts.audience_cleanup.audience_audit_lock_timeout`
+(the row may be missing); the delete runs.
 
 Periodic housekeeping cron that **deletes the ephemeral per-broadcast Resend
 audiences** created during dispatch for broadcasts that have reached a

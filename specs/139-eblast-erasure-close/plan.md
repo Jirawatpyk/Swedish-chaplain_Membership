@@ -249,8 +249,9 @@ e2e: none (cron and erasure server paths only; no UI).
 | reclaim, disclosed row found | deleted `orphan_reclaim` with its `related_member_id` | unit (stub `referencedAudienceIdsForBroadcasts` explicitly) |
 | reclaim, no disclosed row | none; warn + counter; the delete still runs | unit |
 | reclaim, segment already has a deleted row (review round 1, code-review #3) | none, no warn, no counter (the dedupe runs before the disclosure read); the delete still runs | unit `reclaim-orphaned-audiences.test.ts` "a segment already recorded as deleted is neither re-recorded nor reported unattributed" |
-| the dedupe's advisory lock held by another tx for more than 5 s (review round 1, code-review #4 / reliability LOW-3) | `lock_timeout` (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`) → the lost-record arm: ERROR + `auditEmitFailed`, the call proceeds | integration `audience-audit-rows.test.ts` "a read behind a held lock fails with a lock timeout" |
-| cron item, adapter invariant error (review round 1, reliability LOW-2) | ERROR `broadcasts.audience_cleanup.audit_invariant` / `broadcasts.audience_reclaim.audit_invariant`, no delete, counted `failed` | unit, both cron files |
+| the dedupe's advisory lock held by another tx for more than 5 s (review round 1, code-review #4 / reliability LOW-3) | `lock_timeout` (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, SQLSTATE 55P03) → not a known loss (review round 2, code-review #1 / #4, reliability LOW-1): the WARN `<prefix>.audience_audit_lock_timeout` + `auditEmitFailed` (the row may be missing), the call proceeds; on the reclaim, no row and no unattributed WARN that run | integration `audience-audit-rows.test.ts` "a read behind a held lock fails with a lock timeout (55P03, not an invariant error)"; unit, both cron files "a lock timeout on the dedupe logs the WARN audience_audit_lock_timeout …" |
+| cron item, adapter invariant error (review round 1, reliability LOW-2) | ERROR `broadcasts.audience_cleanup.audit_invariant` / `broadcasts.audience_reclaim.audit_invariant`, logged once by the row helper (review round 2, code-review #5; the tick restart's `broadcasts.audience_import.audit_invariant` too), no delete, counted `failed` | unit, both cron files and `build-audience-tick-audience-audit.test.ts` |
+| reclaim chunk start, remaining time fits one call but not call + audit wait (review round 2, code-review #2) | deferred (`deferredDeletes`), no delete | unit `reclaim-orphaned-audiences.test.ts` "a chunk is deferred when the time left fits one Resend call but not the call plus the audit lock wait" |
 | another tenant's row, or a NULL-tenant row with the same payload | not seen | integration cross-tenant |
 | a new `deleteAudience(` / `createContactImport(` call site | the source scan fails | unit source scan (positive control) |
 
@@ -265,7 +266,7 @@ e2e: none (cron and erasure server paths only; no UI).
 | DA2 sites pinned | new `tests/unit/broadcasts/application/audience-audit-sites.test.ts` | unit |
 | dedupe, tenant fence, no `@` in the payload | new `tests/integration/broadcasts/audience-audit-rows.test.ts`; `tests/integration/audit/completeness.test.ts` | integration |
 | reclaim dedupes before the disclosure read (review round 1) | `reclaim-orphaned-audiences.test.ts` "a segment already recorded as deleted is neither re-recorded nor reported unattributed" | unit |
-| the dedupe's lock wait is bounded at 5 s (review round 1) | `audience-audit-rows.test.ts` "a read behind a held lock fails with a lock timeout (a lost row, not an invariant error)" | integration |
+| the dedupe's lock wait is bounded at 5 s (review round 1) | `audience-audit-rows.test.ts` "a read behind a held lock fails with a lock timeout (55P03, not an invariant error)" | integration |
 | a cron item's adapter invariant error logs ERROR `*.audit_invariant` (review round 1) | `cleanup-orphaned-audiences.test.ts`, `reclaim-orphaned-audiences.test.ts` "an adapter invariant error logs ERROR audit_invariant …" | unit |
 
 **Docs (DA5; pdpa H-1, architect M):**
