@@ -521,6 +521,31 @@ Verdicts:
   - **L1:** the full-path lock-timeout case is pinned at unit level only. **Listed.**
   - **L2:** the source scan attributes a call inside an arrow function to the enclosing `function`. **Fixed:** it is named in `OUT_OF_REACH`.
 
+**Review round 2 fixes** (`/code-review high 93a4611c5..4a3597a44`, 10 candidates):
+
+| Finding | Disposition |
+|---|---|
+| CR2 #5: the invariant ERROR was pasted into two cron catches, and the tick restart had none | **Fixed** (`ce232c087` → `359bcac5d`): `writeAudienceRow` logs `${prefix}.audit_invariant` before it rethrows, so all three sites log it the same way |
+| CR2 #1 / #4 / rel r2 LOW-1: a lock timeout (55P03) was logged as a critical lost row, although the holder may be writing that row | **Fixed** (same commits): it is now the WARN `*.audience_audit_lock_timeout`. It is still counted in `auditEmitFailed`, because the row may be missing, and the call proceeds |
+| CR2 #3: the lost-row log carried the error class only | **Fixed**: it now logs `errLogFields`, which adds the SQLSTATE `code` (live-Neon cell `91ff8b420`) |
+| CR2 #2: the reclaim chunk-start deadline check did not charge the audit wait | **Fixed**: the check now charges `RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`. The constant moved to `audit-port.ts`. State-table row added. Cleanup's terminal pass has no deadline check: at most 50 rows × (10 s call + 5 s lock) = 150 s, under `maxDuration` 300 s |
+| CR2 #6: the 5 s wait is not in the lease budget | **Documented** in `_dispatch-lease.ts`'s list of bounds "outside W_max on purpose". The restart's row is followed by `leaseGateStep('delete_audience')`, so the wait cannot overrun the lease |
+| CR2 #7 / #8: runbook wording; the test's timer | **Fixed** (`9173752e3`, `91ff8b420`, `448c8b275`): 20 s guard, timer cleared |
+| CR2 #9 / #10: the retention sweep's literal; one combined statement | **Listed (Low)** |
+
+**Review round 3** (the second full round: `/code-review high 763` on `448c8b275`, pdpa-gdpr). pdpa: APPROVE WITH CONDITIONS, documentation only.
+
+| Finding | Disposition |
+|---|---|
+| pdpa r3 M-1 / L-1 / L-2 / L-3: the RoPA removal rows, the metric and alert rows, and the reclaim runbook did not name the two failure modes; `research.md` was in the future tense | **Fixed** (`8fc4ed363`) |
+| CR3 #1: a tenant-binding refusal in the two audience reads was a plain `Error`, read as a lost row, so the call proceeded (fail-open on a wiring bug; also CR #1 of round 1) | **Fixed** (`0e859273f` → `4aa57850e`, `41935049e`). Those two reads rethrow it as `AuditPortInvariantError`, so the helper logs `*.audit_invariant` and makes no Resend call. `assertTenantBoundTx` still throws a plain `Error` with the same message at every other site; a module-local `WeakSet` tells its refusals apart from a driver error on the probe. State-table and test-plan rows added |
+| CR3 #3: the reclaim's failure logs said `broadcastId: null` | **Fixed** (`487f1bdd6` → `cd711f245`): a log-only `segmentNameBroadcastId`. The row still never names a guessed id (pdpa M-3) |
+| CR3 #5: the two reads' ordering contract was not stated | **Fixed** (`4aa57850e`): the port docblocks say `hasAudienceDeletedAuditInTx` sets the lock timeout and takes the lock, and must run first |
+| CR3 #9: the scan accepts a record call in another branch | **Fixed** (`5e6e45dfc`): named in `OUT_OF_REACH` |
+| CR3 #2: cleanup has no deadline | **Accepted**: bounded at 150 s, as in CR2 #2 |
+| CR3 #4: a lock timeout counts on the same series as a real loss | **Accepted**: the row may be missing. The WARN versus ERROR line tells them apart |
+| CR3 #6 / #7 / #8: three copies of the audit envelope, the dedupe pattern and the payload literal | **Listed (Low)**: a shared helper is a follow-up candidate |
+
 **Dev litter:** each run of `audience-audit-rows` leaves `audit_log` rows with the summary `spec 139 s2 fixture`, some with `tenant_id IS NULL` (`audit_log` is append-only).
 
 
