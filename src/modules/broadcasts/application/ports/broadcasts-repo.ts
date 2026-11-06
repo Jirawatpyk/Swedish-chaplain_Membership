@@ -787,6 +787,17 @@ export interface BroadcastsRepo {
   ): Promise<{ readonly broadcastRecorded: boolean; readonly memberBroadcastCount: number }>;
 
   /**
+   * PR #756 review round 3 — does this tenant already hold a
+   * `broadcast_resend_drift_check_unverifiable` row for `broadcastId`? The
+   * import tick writes that row once per broadcast (the first attempt whose
+   * audience count failed) and reads this in the SAME tx before inserting.
+   * Tenant-scoped by RLS AND an explicit `tenant_id` predicate (`audit_log`'s
+   * policy also admits `tenant_id IS NULL` rows), as `readAlreadySentEvidenceInTx`.
+   * Two ticks cannot race it: the second is fenced off by the dispatch lease.
+   */
+  hasUnverifiableCountAuditInTx(tx: unknown, tenantId: TenantSlug, broadcastId: BroadcastId): Promise<boolean>;
+
+  /**
    * F119 PR-E (migration 0311) — start the FR-021 retry clock: stamp
    * `dispatch_first_failed_at = COALESCE(dispatch_first_failed_at, at)` while
    * the row is still `approved`. Called by the import tick on a retryable

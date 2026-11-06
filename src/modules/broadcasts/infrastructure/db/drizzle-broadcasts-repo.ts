@@ -1752,6 +1752,21 @@ export function makeDrizzleBroadcastsRepo(
       };
     },
 
+    async hasUnverifiableCountAuditInTx(txUnknown, tenantIdArg: TenantSlug, broadcastId: BroadcastId): Promise<boolean> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'hasUnverifiableCountAuditInTx');
+      const rows = (await tx.execute(sql`
+        SELECT EXISTS (
+          SELECT 1
+          FROM audit_log
+          WHERE tenant_id = ${tenantIdArg}
+            AND event_type = 'broadcast_resend_drift_check_unverifiable'
+            AND payload->>'broadcastId' = ${broadcastId as string}::text
+        ) AS found
+      `)) as unknown as Array<{ found: boolean | 't' | 'f' }>;
+      return rows[0]?.found === true || rows[0]?.found === 't';
+    },
+
     async markAudienceImportCompleted(
       txUnknown,
       tenantIdArg: TenantSlug,

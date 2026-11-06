@@ -2075,26 +2075,33 @@ function unverifiableErrorReason(failure: GatewayFailure): UnverifiableErrorReas
 }
 
 /**
- * PR #756 review rounds 1 and 2 (code-review #1, #5; reliability L1) — the
- * `broadcast_resend_drift_check_unverifiable` row: this attempt SENT the
- * broadcast without the membership check, because the audience count call
- * FAILED. The deleted legacy leg wrote it on its own count failure; this is the
- * only leg since spec 140 s4. Same payload keys as the legacy row plus the import
- * id; ids, a count and a closed error code, no address and no provider text (the
- * row is append-only and shown on the audit viewer).
+ * PR #756 review rounds 1 to 3 (code-review #1, #5; reliability L1) — the
+ * `broadcast_resend_drift_check_unverifiable` row: a dispatch attempt went to
+ * `/send` although its audience count call FAILED, so the one check that can see
+ * a carried-over contact did not run. The deleted legacy leg wrote it on its own
+ * count failure; this is the only leg since spec 140 s4. Same payload keys as the
+ * legacy row plus the import id; ids, a count and a closed error code, no address
+ * and no provider text (the row is append-only and shown on the audit viewer).
  *
- * Written AFTER `/send` succeeded and the post-send writes ran, outside the
- * leased pre-send window (so the longest path W_max is unchanged), so it records
- * only an attempt whose mail went out: a send that failed sent nothing, writes
- * no row, and the next tick re-checks.
+ * PER BROADCAST, not per attempt: written once, by the first attempt whose count
+ * failed (an `EXISTS` read on `audit_log` in the same tx, then the insert). The
+ * per-ATTEMPT signal is the `driftCheckUnverifiable` metric, which fires on every
+ * attempt at the count arm.
+ *
+ * Written BEFORE `/send` (round 3 reversed round 2's post-send placement: a kill
+ * after the send lost the row for good, an accepted-refusal send was recorded as
+ * this tick's, overlapping ticks could write two rows, and a throw from the
+ * post-send writes skipped it), after the send's lease gate, so a tick that lost
+ * its lease writes nothing. `resendBroadcastId` is the id about to be sent
+ * (minted or inherited; never null at this point).
  *
  * The send-started pattern: its own tenant-bound `withTx` (a null tx would take
  * a pool connection with no `app.current_tenant`, where RLS writes nothing) and a
- * RAW emit, so a failure is known. A storage failure is logged and counted. An
- * `AuditPortInvariantError` (a wiring bug) is ALSO logged critical and counted,
- * not thrown, unlike the pre-send rule elsewhere in this file: the mail is
- * already out, and throwing past a successful send would report a delivered
- * broadcast as an uncaught error.
+ * RAW emit, so a failure is known. A storage failure is logged and counted, and
+ * the send goes ahead: refusing it on an audit blip would kill a legitimate send.
+ * An `AuditPortInvariantError` (a wiring bug) RETHROWS: nothing has been sent, so
+ * it fails closed and the row stays `approved`. (`broadcast_send_started`'s own
+ * rethrow after the send is pre-existing and out of this change's scope.)
  */
 async function recordUnverifiableCount(
   deps: LeasedTickDeps,
@@ -2108,13 +2115,16 @@ async function recordUnverifiableCount(
   },
 ): Promise<void> {
   const broadcastId = input.broadcastId as unknown as string;
+  let written = false;
   try {
     await deps.broadcastsRepo.withTx(async (tx) => {
+      if (await deps.broadcastsRepo.hasUnverifiableCountAuditInTx(tx, deps.tenant.slug, input.broadcastId)) return;
+      written = true;
       await deps.audit.emit(tx, {
         eventType: 'broadcast_resend_drift_check_unverifiable',
         tenantId: deps.tenant.slug,
         actorUserId: 'system:cron',
-        summary: `Broadcast ${broadcastId} sent without a membership check (audience count unverifiable)`,
+        summary: `Broadcast ${broadcastId}: the membership check could not be read on a dispatch attempt`,
         payload: {
           broadcastId,
           resendBroadcastId: fields.resendBroadcastId,
@@ -2126,17 +2136,16 @@ async function recordUnverifiableCount(
         requestId: null,
       });
     });
-    broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_resend_drift_check_unverifiable');
+    if (written) broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_resend_drift_check_unverifiable');
   } catch (auditErr) {
-    // Post-send: an invariant breach is logged critical, never rethrown (see the
-    // docblock).
+    // Pre-send: a wiring bug fails closed (see the docblock).
+    if (auditErr instanceof AuditPortInvariantError) throw auditErr;
     logger.error(
       {
         err: errKind(auditErr),
         tenantId: deps.tenant.slug,
         broadcastId,
         importId: fields.importId,
-        ...(auditErr instanceof AuditPortInvariantError ? { severity: 'critical' } : {}),
       },
       'broadcasts.audience_import.unverifiable_audit_emit_failed',
     );
@@ -2412,7 +2421,7 @@ async function confirmImport(
     broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
     // PR #756 review rounds 1 and 2 (code-review #1, #5) — and the durable record
     // the legacy leg wrote beside that metric, on the same half: a count call
-    // that FAILED. Written after the send went out (`recordUnverifiableCount`).
+    // that FAILED. Written once per broadcast, before the send (`recordUnverifiableCount`).
     // A page Resend could not finish reading is not a failure, so (as there) it
     // gets the metric and the warn but no append-only row.
     if (!audienceCount.ok) countFailedReason = unverifiableErrorReason(audienceCount.error);
@@ -2524,6 +2533,16 @@ async function confirmImport(
   // `_probe-refused-send.ts`), and the loser's 422 is probed below.
   const sendGated = await leaseGate(deps, input, 'sendBroadcast');
   if (sendGated !== null) return sendGated;
+  // PR #756 review round 3 — after the send's lease gate, before `/send`.
+  if (countFailedReason !== null) {
+    await recordUnverifiableCount(deps, input, {
+      resendAudienceId: audienceId,
+      importId,
+      resendBroadcastId,
+      expectedRecipientCount: resolvedCount,
+      errorReason: countFailedReason,
+    });
+  }
   const sent = await viaGateway(() =>
     deps.broadcastsGateway.sendBroadcast(
       resendBroadcastId,
@@ -2579,7 +2598,7 @@ async function confirmImport(
     );
   }
 
-  const advanced = await advanceToSending(deps, input, broadcast, now, {
+  return advanceToSending(deps, input, broadcast, now, {
     resendBroadcastId,
     audienceId,
     importId,
@@ -2590,18 +2609,6 @@ async function confirmImport(
     notHandedStatus: inherited.observedResendStatus,
     acceptedOnRefusedSend,
   });
-  // The mail is out whatever `advanced` says, so the unverified send is recorded
-  // either way.
-  if (countFailedReason !== null) {
-    await recordUnverifiableCount(deps, input, {
-      resendAudienceId: audienceId,
-      importId,
-      resendBroadcastId,
-      expectedRecipientCount: resolvedCount,
-      errorReason: countFailedReason,
-    });
-  }
-  return advanced;
 }
 
 /**

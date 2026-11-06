@@ -75,6 +75,11 @@ export const TICK1_BOUNDED_CALLS = 5;
  * - ESTIMATE: ~15 statements × ~220 ms ≈ 3.3 s.
  * Together that is under 8 s, so 15 s keeps about 2× headroom. The prod p99 is
  * SLO-F7-013 (`broadcasts_recipient_count_ms`).
+ *
+ * PR #756 review round 3 — counted in the ~15 statements: on a failed audience
+ * count, the unverifiable row's own short tx (an `EXISTS` read on `audit_log`
+ * plus one INSERT), between the send's lease check and `/send`. It runs at most
+ * once per tick and spends part of M's post-call slack, not a Resend call.
  */
 export const DB_AND_RESOLVE_MS = 15_000;
 

@@ -82,7 +82,7 @@ function fakeGateway(send: 'ok' | 'retryable'): { calls: string[]; sends: string
   return { calls, sends, port: guarded };
 }
 
-describe('PR #756 round 2 — the unverifiable-count audit row after a send (live Neon)', () => {
+describe('PR #756 rounds 2–3 — the unverifiable-count audit row (live Neon)', () => {
   let tenant: TestTenant;
   let user: TestUser;
   let requester: { readonly memberId: string; readonly planId: string };
