@@ -41,10 +41,12 @@
  *   - Spec 139 s2 (DA2, pdpa M-3): before each delete, the
  *     `broadcast_audience_deleted` row (`reason: 'orphan_reclaim'`), written
  *     only when this tenant's `broadcast_audience_disclosed` row names the
- *     segment, with that row's broadcast and requester; otherwise a WARN
+ *     segment, with that row's broadcast and requester. A segment that already
+ *     has its deleted row gets none; any other gets a WARN
  *     (`delete_unattributed`) and `broadcasts_audience_reclaim_delete_unattributed_total`.
  *     A storage failure is logged and counted and the delete goes ahead; an
- *     adapter invariant error stops that orphan's delete (counted `failed`).
+ *     adapter invariant error stops that orphan's delete (counted `failed`,
+ *     logged ERROR `audit_invariant`).
  *   - Per-item try/catch: a single delete failure does NOT abort the batch.
  *     "Cannot delete last audience" (Resend 403 validation) is treated as a
  *     benign skip rather than a failure — the audience cannot be removed while
@@ -71,7 +73,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errLogFields } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
@@ -82,6 +84,7 @@ import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import { recordReclaimedAudienceDeleted } from './_audience-audit';
 import { classifyThrown, isRetryableThrow } from './_classify-thrown';
+import { isAdapterInvariantError } from './_safe-audit-emit';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -364,6 +367,22 @@ export async function reclaimOrphanedAudiences(
       await deps.broadcastsGateway.deleteAudience(orphan.audienceId);
       deleted++;
     } catch (e) {
+      // Review round 1 (reliability LOW-2) — a wiring bug stopped the delete:
+      // an ERROR, not the WARN of a failed Resend call.
+      if (isAdapterInvariantError(e)) {
+        failed++;
+        logger.error(
+          {
+            tenantId: deps.tenant.slug,
+            audienceId: orphan.audienceId,
+            broadcastId: orphan.broadcastId,
+            err: errKind(e),
+            severity: 'critical',
+          },
+          'broadcasts.audience_reclaim.audit_invariant',
+        );
+        return;
+      }
       // "Cannot delete last audience" — Resend 403 validation meaning this
       // audience is the account's sole audience and Resend forbids removing it.
       // Treat as a benign skip: NOT a failure (don't increment `failed`), NOT

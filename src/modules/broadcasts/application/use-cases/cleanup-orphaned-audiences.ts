@@ -94,6 +94,7 @@ import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import { recordAudienceDeleted } from './_audience-audit';
+import { isAdapterInvariantError } from './_safe-audit-emit';
 import { settleOrphanAtResend } from './_settle-orphan-at-resend';
 
 // Review round 2 (code-review #8) — the grace lives with the other orphan
@@ -335,6 +336,21 @@ export async function cleanupOrphanedAudiences(
       deleted++;
     } catch (e) {
       failed++;
+      // Review round 1 (reliability LOW-2) — a wiring bug stopped the delete:
+      // an ERROR, not the WARN of a failed Resend call.
+      if (isAdapterInvariantError(e)) {
+        logger.error(
+          {
+            tenantId,
+            broadcastId: candidate.broadcastId,
+            resendAudienceId: candidate.resendAudienceId,
+            err: errKind(e),
+            severity: 'critical',
+          },
+          'broadcasts.audience_cleanup.audit_invariant',
+        );
+        return;
+      }
       logger.warn(
         { tenantId, broadcastId: candidate.broadcastId, err: errKind(e) },
         'broadcasts.audience_cleanup.delete_failed',
