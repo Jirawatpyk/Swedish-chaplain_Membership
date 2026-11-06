@@ -585,12 +585,12 @@ function makeDeps(opts: {
         // first tick's rows).
         // Round 4: keyed on (broadcastId, resendBroadcastId), so a re-minted draft
         // gets its own row.
-        async hasUnverifiableCountAuditInTx(_tx: unknown, _t: unknown, id: unknown, resendBroadcastId?: unknown) {
+        async hasUnverifiableCountAuditInTx(_tx: unknown, _t: unknown, id: unknown, resendBroadcastId: unknown) {
           return rec.audits.some(
             (a) =>
               a.eventType === 'broadcast_resend_drift_check_unverifiable' &&
               a.payload['broadcastId'] === id &&
-              (resendBroadcastId === undefined || a.payload['resendBroadcastId'] === resendBroadcastId),
+              a.payload['resendBroadcastId'] === resendBroadcastId,
           );
         },
         async releaseDispatchLease() { return true; },
@@ -1938,6 +1938,26 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(rec.audits.filter((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable')).toHaveLength(1);
+    expect(rec.sends).toHaveLength(0);
+  });
+
+  // Round 5 — the gate re-runs whenever the row's tx ran, written or not: a
+  // dedupe read that fails (a storage error, the send goes ahead) still spent
+  // time after the first gate, and a lease lost meanwhile must send nothing.
+  it('a failed dedupe read with the lease lost meanwhile sends nothing', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    failCount(deps);
+    let readFailed = false;
+    const repo = (deps as { broadcastsRepo: Record<string, unknown> }).broadcastsRepo;
+    repo['hasUnverifiableCountAuditInTx'] = async () => {
+      readFailed = true;
+      throw new Error('08006 connection failure');
+    };
+    repo['checkDispatchLease'] = async () => (readFailed ? ('lost' as const) : ('held' as const));
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(readFailed).toBe(true);
     expect(rec.sends).toHaveLength(0);
   });
 

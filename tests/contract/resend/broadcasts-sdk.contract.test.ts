@@ -714,10 +714,24 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
         kind: 'permanent',
         code: 'invalid_identifier',
       });
-      // Round 4 — a warn BEFORE the throw, with the id's class and never the id.
+      // Rounds 4 and 5 — a warn BEFORE the throw, with the id's class and the id
+      // itself: a segment id is not personal data (`audience_created` logs it),
+      // and an operator needs it to delete the segment Resend created by hand.
       const line = warn.mock.calls.find((c) => c[1] === 'resend.broadcasts.created_audience_id_not_a_segment');
-      expect(line?.[0]).toEqual({ idClass: 'aud_prefixed' });
+      expect(line?.[0]).toEqual({ idClass: 'aud_prefixed', audienceId: 'aud_1' });
       warn.mockRestore();
+    });
+
+    // Round 5 — a non-string id in the answer is the same classified refusal, not
+    // a TypeError the retry wrapper would read as transient.
+    it('createAudience refuses a non-string id in Resend\u2019s answer as invalid_identifier', async () => {
+      const calls = stubWire(() => json(201, { object: 'audience', id: 12345, name: 'probe' }));
+      await expect(resendBroadcastsGateway.createAudience('probe')).rejects.toMatchObject({
+        name: 'GatewayThrowable',
+        kind: 'permanent',
+        code: 'invalid_identifier',
+      });
+      expect(calls).toHaveLength(1);
     });
 
     // Spec 140 s3 review round 1 (R1-K) — the SDK puts the email in the URL path
