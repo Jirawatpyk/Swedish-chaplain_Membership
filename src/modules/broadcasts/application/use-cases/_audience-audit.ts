@@ -57,9 +57,12 @@ export type AudienceAuditLogPrefix =
   | 'broadcasts.audience_cleanup'
   | 'broadcasts.audience_reclaim';
 
+/** Why `build` wrote nothing: deduped, or (reclaim) never disclosed here. */
+type NoRow = 'skip' | 'unattributed';
+
 /**
  * Write one row in its own tx. `build` runs inside that tx and answers the
- * payload, or `null` to write nothing. Answers whether a row was written.
+ * payload, or why nothing is written. Answers what happened.
  */
 async function writeAudienceRow<E extends AudienceEventType>(
   deps: AudienceAuditDeps,
@@ -67,14 +70,13 @@ async function writeAudienceRow<E extends AudienceEventType>(
   logPrefix: AudienceAuditLogPrefix,
   ids: { readonly broadcastId: string | null; readonly resendAudienceId: string },
   summary: (payload: F7AuditPayloadShapes[E]) => string,
-  build: (tx: unknown) => Promise<F7AuditPayloadShapes[E] | null>,
-): Promise<'written' | 'skipped' | 'lost'> {
-  let written = false;
+  build: (tx: unknown) => Promise<F7AuditPayloadShapes[E] | NoRow>,
+): Promise<'written' | NoRow | 'lost'> {
+  let result: 'written' | NoRow;
   try {
-    await deps.broadcastsRepo.withTx(async (tx) => {
-      written = false;
+    result = await deps.broadcastsRepo.withTx(async (tx): Promise<'written' | NoRow> => {
       const payload = await build(tx);
-      if (payload === null) return;
+      if (payload === 'skip' || payload === 'unattributed') return payload;
       await deps.audit.emit(tx, {
         eventType,
         tenantId: deps.tenant.slug,
@@ -83,7 +85,7 @@ async function writeAudienceRow<E extends AudienceEventType>(
         payload: { ...payload },
         requestId: null,
       });
-      written = true;
+      return 'written';
     });
   } catch (e) {
     // A wiring bug fails closed: nothing has been sent or deleted yet.
@@ -102,9 +104,8 @@ async function writeAudienceRow<E extends AudienceEventType>(
     broadcastsMetrics.auditEmitFailed(eventType, deps.tenant.slug);
     return 'lost';
   }
-  if (!written) return 'skipped';
-  broadcastsMetrics.auditEmitCount(deps.tenant.slug, eventType);
-  return 'written';
+  if (result === 'written') broadcastsMetrics.auditEmitCount(deps.tenant.slug, eventType);
+  return result;
 }
 
 /**
@@ -161,7 +162,7 @@ export async function recordAudienceDeleted(
     (p) => `Broadcast ${p.broadcast_id}: Resend segment removal requested (${p.reason})`,
     async (tx) =>
       (await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, fields.resendAudienceId))
-        ? null
+        ? 'skip'
         : {
             broadcast_id: fields.broadcastId,
             related_member_id: fields.relatedMemberId,
@@ -193,21 +194,16 @@ export async function recordReclaimedAudienceDeleted(
   deps: ReclaimAudienceAuditDeps,
   resendAudienceId: string,
 ): Promise<void> {
-  let unattributed = false;
-  await writeAudienceRow(
+  const written = await writeAudienceRow(
     deps,
     'broadcast_audience_deleted',
     'broadcasts.audience_reclaim',
     { broadcastId: null, resendAudienceId },
     (p) => `Broadcast ${p.broadcast_id}: Resend segment removal requested (${p.reason})`,
     async (tx) => {
-      unattributed = false;
       const disclosed = await deps.broadcastsRepo.findAudienceDisclosureInTx(tx, deps.tenant.slug, resendAudienceId);
-      if (disclosed === null) {
-        unattributed = true;
-        return null;
-      }
-      if (await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, resendAudienceId)) return null;
+      if (disclosed === null) return 'unattributed';
+      if (await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, resendAudienceId)) return 'skip';
       return {
         broadcast_id: disclosed.broadcastId,
         related_member_id: disclosed.relatedMemberId,
@@ -218,7 +214,7 @@ export async function recordReclaimedAudienceDeleted(
       };
     },
   );
-  if (!unattributed) return;
+  if (written !== 'unattributed') return;
   logger.warn(
     { tenantId: deps.tenant.slug, resendAudienceId, deleteReason: 'never_disclosed' },
     'broadcasts.audience_reclaim.delete_unattributed',
