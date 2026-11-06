@@ -31,6 +31,7 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { asBroadcastId } from '@/modules/broadcasts';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import { isAdapterInvariantError } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
 import { makeBuildAudienceTickDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
@@ -172,6 +173,42 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
            AND payload->>'resend_audience_id' = ${audienceId}
       `)) as unknown as Array<{ n: number }>;
       expect(rows[0]?.n).toBe(1);
+    });
+
+    // Review round 1 (code-review #4, reliability LOW-3) — the read runs before
+    // a bounded Resend call, so its lock wait is bounded too (lock_timeout 5 s).
+    // A 55P03 is a plain driver error, not an adapter invariant one, so the
+    // site logs and counts a lost row and the call goes ahead. Raced against
+    // 10 s: the dev branch has statement_timeout = 0, so an unbounded wait HANGS.
+    it('a read behind a held lock fails with a lock timeout (a lost row, not an invariant error)', async () => {
+      const audienceId = randomUUID();
+      const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
+      let release!: () => void;
+      const released = new Promise<void>((r) => (release = r));
+      let markLocked!: () => void;
+      const locked = new Promise<void>((r) => (markLocked = r));
+      const holder = repo.withTx(async (tx) => {
+        await repo.hasAudienceDeletedAuditInTx(tx, tenantA.ctx.slug, audienceId);
+        markLocked();
+        await released;
+      });
+      await locked;
+      try {
+        const outcome = await Promise.race([
+          deletedSeen(tenantA, audienceId).then(
+            (v) => ({ kind: 'resolved' as const, v }),
+            (e: unknown) => ({ kind: 'rejected' as const, e }),
+          ),
+          new Promise<{ kind: 'hung' }>((r) => setTimeout(() => r({ kind: 'hung' }), 10_000)),
+        ]);
+        expect(outcome.kind).toBe('rejected');
+        const e = (outcome as { e?: unknown }).e;
+        expect(JSON.stringify(e, Object.getOwnPropertyNames(e as object)) + String((e as { cause?: unknown })?.cause)).toMatch(/55P03|lock timeout/i);
+        expect(isAdapterInvariantError(e)).toBe(false);
+      } finally {
+        release();
+        await holder;
+      }
     });
   });
 
