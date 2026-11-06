@@ -452,6 +452,21 @@ No new cascade decision cell: M-NEW-1 is a pre-Resend guard; the pause adds a wa
 - `check:audit-events` and `check:audit-counts` exit 0. Neither covers F7.
 - **Not run locally:** the full `pnpm test:coverage` (CI runs it).
 
+**Verify:** the maintainer's `/verify`, 6 Nov 2026, on `bae8a188f`. Setup: :3401 from `wt/f139s2`, Neon dev (0327 applied), the live Resend Broadcasts account, sink addresses only. Result: PASS, with the deviations noted below.
+
+| Done-when / item | Evidence |
+|---|---|
+| Provider premise | `segments.create`, then `contacts.list({ segmentId })` → `count: 0`. The segment was then deleted (GET → 404). MEASURED 09:29 UTC; recorded in `research.md`. |
+| DA1 | Throwaway tenant `test-d4588fe3`, 3 sink members, one approved E-Blast due now. Tick 1 → `import_submitted: 1`. There is exactly one `broadcast_audience_disclosed` row: `recipient_count: 3`, `related_member_id` = the requester, `resend_audience_id` = the row's segment, `actor_user_id: system:cron`, `retention_years: 5`, `leg: import`, `actor_role: system`, and no `@`. Resend held 3 contacts in that segment. |
+| DA2 restart | **Deviation:** the hold path was not driven. Halting the requester (`broadcasts_halted_until_admin_review`) is a terminal refusal (`failed_to_dispatch` / `member_halted`), not a hold; a hold needs a suspended membership. The `/verify` command's premise was wrong, not the code. The same function, `restartAudienceBuild`, was driven through `stale_audience` instead: an approved row B holding a real segment and no import → tick → `audience_restarted: 1`. There is exactly one `broadcast_audience_deleted` row (`reason: stale_audience`, row B, the requester, that segment), and the segment answers 404 at Resend. The next tick ran a fresh tick 1 for B, which wrote a new disclosed row for the new segment and no second deleted row for the old one. The `hold` and `audience_missing` reasons are pinned by the unit `it.each`. |
+| DA2 cleanup | A terminal row C2 was INSERTed holding row A's real segment (3 contacts), with `updated_at` 2 h ago (an UPDATE is re-stamped by a trigger, so the backdate has to be on the INSERT). `cleanup-audiences` → `deleted: 1`. There is one `broadcast_audience_deleted` row (`reason: terminal_cleanup`, row C2, the requester). The segment answers 404 and the row is stamped `audience_deleted_at`. |
+| DA2 reclaim | **Not reachable live:** the cron skips any segment younger than `GRACE_MS` (24 h), and Resend's `created_at` cannot be backdated. Probe: a fresh `broadcast-<slug>-<uuid>` segment → `scanned: 3, orphaned: 0`, and no audit row was added. The attributed arm, the unattributed arm and the counter are pinned by the unit tests. |
+| Probe | A wrong Bearer on dispatch-scheduled → 401. |
+| Labels | `/admin/audit` as super-admin shows both labels in EN, TH and SV (the TH wording after i18n round 1, `bae8a188f`), with no MISSING_MESSAGE. The viewer is scoped to `swecham`, so the labels were read from its event-type filter, not from the test tenant's rows. |
+| Log | The dev log has no level 40 or level 50 line during the run. |
+
+**Teardown:** the tenant and its rows were removed (0 `broadcasts` rows). Resend: the three segments and the three sink contacts were deleted (contacts by id). The account is back to 22 contacts with only `General`. A side finding: the Free plan's 3-segment cap was reached while seeding (`validation_error` "Your plan includes 3 segments"), as `.claude/rules/modules/broadcasts.md` records.
+
 **Dev litter:** each run of `audience-audit-rows` leaves `audit_log` rows with the summary `spec 139 s2 fixture`, some with `tenant_id IS NULL` (`audit_log` is append-only).
 
 
