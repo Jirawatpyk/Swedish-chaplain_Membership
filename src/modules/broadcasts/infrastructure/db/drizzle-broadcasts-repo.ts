@@ -1806,7 +1806,8 @@ export function makeDrizzleBroadcastsRepo(
      * bounded by `SET LOCAL lock_timeout` (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`),
      * because the read runs before a bounded Resend call and the Neon pooler
      * can drop `statement_timeout`. A 55P03 is a plain driver error, so the
-     * site logs and counts a lost row and the call goes ahead. The bound holds
+     * site logs the WARN `audience_audit_lock_timeout` and counts a possibly
+     * missing row (review round 2), and the call goes ahead. The bound holds
      * for the rest of the row's tx (the disclosure read and the insert).
      */
     async hasAudienceDeletedAuditInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string): Promise<boolean> {

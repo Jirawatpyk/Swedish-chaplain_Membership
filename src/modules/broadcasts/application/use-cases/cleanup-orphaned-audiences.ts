@@ -337,20 +337,9 @@ export async function cleanupOrphanedAudiences(
     } catch (e) {
       failed++;
       // Review round 1 (reliability LOW-2) — a wiring bug stopped the delete:
-      // an ERROR, not the WARN of a failed Resend call.
-      if (isAdapterInvariantError(e)) {
-        logger.error(
-          {
-            tenantId,
-            broadcastId: candidate.broadcastId,
-            resendAudienceId: candidate.resendAudienceId,
-            err: errKind(e),
-            severity: 'critical',
-          },
-          'broadcasts.audience_cleanup.audit_invariant',
-        );
-        return;
-      }
+      // not the WARN of a failed Resend call. Review round 2 (code-review #5):
+      // the row helper already logged the ERROR `audit_invariant`.
+      if (isAdapterInvariantError(e)) return;
       logger.warn(
         { tenantId, broadcastId: candidate.broadcastId, err: errKind(e) },
         'broadcasts.audience_cleanup.delete_failed',

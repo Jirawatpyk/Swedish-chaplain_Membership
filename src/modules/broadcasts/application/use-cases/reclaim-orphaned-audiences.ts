@@ -33,8 +33,10 @@
  *     `maxDuration`) covers the listing and the delete chunks. The gateway
  *     stops paging inside it; a chunk starts only while one bounded call
  *     (`RESEND_CALL_TIMEOUT_MS`; a chunk's deletes run in parallel, each with
- *     its 403 probe on the same signal) still fits — both judged by
- *     `oneCallFitsBefore` (review round 1, R1-H) — and the orphans not reached
+ *     its 403 probe on the same signal) plus its audit row's lock wait
+ *     (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, spec 139 s2 review round 2) still
+ *     fits — both judged by `oneCallFitsBefore` (review round 1, R1-H; the
+ *     listing pages charge the call alone) — and the orphans not reached
  *     are `deferredDeletes`. Nothing is resumed: the next daily run lists again
  *     from page one, and the deferred orphans are found and deleted then. A cut
  *     run is counted on `broadcasts_audience_reclaim_truncated_total{stage}`.
@@ -44,9 +46,10 @@
  *     segment, with that row's broadcast and requester. A segment that already
  *     has its deleted row gets none; any other gets a WARN
  *     (`delete_unattributed`) and `broadcasts_audience_reclaim_delete_unattributed_total`.
- *     A storage failure is logged and counted and the delete goes ahead; an
- *     adapter invariant error stops that orphan's delete (counted `failed`,
- *     logged ERROR `audit_invariant`).
+ *     A storage failure is logged and counted and the delete goes ahead (a
+ *     lock timeout as the WARN `audience_audit_lock_timeout`); an adapter
+ *     invariant error stops that orphan's delete (counted `failed`; the row
+ *     helper logs the ERROR `audit_invariant`).
  *   - Per-item try/catch: a single delete failure does NOT abort the batch.
  *     "Cannot delete last audience" (Resend 403 validation) is treated as a
  *     benign skip rather than a failure — the audience cannot be removed while
@@ -73,13 +76,13 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errKind, errLogFields } from '@/lib/log-id';
+import { errLogFields } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
 import { broadcastsMetrics } from '@/lib/metrics';
 import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore, type BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
-import type { AuditPort } from '../ports/audit-port';
+import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, type AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import { recordReclaimedAudienceDeleted } from './_audience-audit';
@@ -368,19 +371,10 @@ export async function reclaimOrphanedAudiences(
       deleted++;
     } catch (e) {
       // Review round 1 (reliability LOW-2) — a wiring bug stopped the delete:
-      // an ERROR, not the WARN of a failed Resend call.
+      // not the WARN of a failed Resend call. Review round 2 (code-review #5):
+      // the row helper already logged the ERROR `audit_invariant`.
       if (isAdapterInvariantError(e)) {
         failed++;
-        logger.error(
-          {
-            tenantId: deps.tenant.slug,
-            audienceId: orphan.audienceId,
-            broadcastId: orphan.broadcastId,
-            err: errKind(e),
-            severity: 'critical',
-          },
-          'broadcasts.audience_reclaim.audit_invariant',
-        );
         return;
       }
       // "Cannot delete last audience" — Resend 403 validation meaning this
@@ -421,7 +415,15 @@ export async function reclaimOrphanedAudiences(
   for (let i = 0; i < orphans.length; i += RECLAIM_CONCURRENCY) {
     // Spec 140 DT5 — start a chunk only while one bounded call still fits (the
     // gateway's listing pages judge with the same rule, review round 1 R1-H).
-    if (!oneCallFitsBefore(input.deadlineAt, deps.clock.now().getTime(), RESEND_CALL_TIMEOUT_MS)) {
+    // Spec 139 s2 review round 2 (code-review #2) — each delete first writes its
+    // audit row, whose lock wait is bounded too: charge both.
+    if (
+      !oneCallFitsBefore(
+        input.deadlineAt,
+        deps.clock.now().getTime(),
+        RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS,
+      )
+    ) {
       deferredDeletes = orphans.length - i;
       broadcastsMetrics.audienceReclaimTruncated(deps.tenant.slug, 'deletes');
       logger.warn(

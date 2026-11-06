@@ -17,19 +17,29 @@
  * `app.current_tenant`, where RLS writes nothing), so it records a request,
  * not its outcome. On failure (the pre-send unverifiable row's pattern, spec
  * 140 s4):
- *   - an adapter invariant error (`isAdapterInvariantError`: a wiring bug)
- *     RETHROWS, so the call is never made;
+ *   - an adapter invariant error (`isAdapterInvariantError`: a wiring bug) is
+ *     logged at ERROR with `severity: 'critical'` (`<prefix>.audit_invariant`)
+ *     and RETHROWN, so the call is never made (review round 2, code-review #5:
+ *     logged here, so the tick restart has the line as well as the crons);
+ *   - a lock timeout (SQLSTATE 55P03: the dedupe waited
+ *     `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` for the segment's advisory lock) is not
+ *     a known loss, because the holder may be writing this very row: the WARN
+ *     `<prefix>.audience_audit_lock_timeout` and the counter below (the row may
+ *     be missing), and the caller makes the call (review round 2, code-review
+ *     #1 / #4, reliability LOW-1);
  *   - any other error is a lost record: logged at ERROR with
  *     `severity: 'critical'` (`<prefix>.audience_audit_lost`) and counted on
  *     `broadcasts_audit_emit_failed_total`, and the caller makes the call
  *     anyway. So a missing row is not proof that nothing was disclosed. No
  *     alert backend is wired: the ERROR line and the counter are the control.
+ * The two storage lines log `errLogFields` (class and SQLSTATE), never the
+ * driver's message (review round 2, code-review #3).
  *
  * Payloads carry ids and a count only, never an address or a hash.
  *
  * Pure Application — no framework imports (Constitution Principle III).
  */
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
@@ -57,6 +67,9 @@ export type AudienceAuditLogPrefix =
   | 'broadcasts.audience_import'
   | 'broadcasts.audience_cleanup'
   | 'broadcasts.audience_reclaim';
+
+/** SQLSTATE `lock_not_available`: a `lock_timeout` wait ran out. */
+const LOCK_NOT_AVAILABLE = '55P03';
 
 /** Why `build` wrote nothing: deduped, or (reclaim) never disclosed here. */
 type NoRow = 'skip' | 'unattributed';
@@ -89,19 +102,23 @@ async function writeAudienceRow<E extends AudienceEventType>(
       return 'written';
     });
   } catch (e) {
+    const where = {
+      tenantId: deps.tenant.slug,
+      broadcastId: ids.broadcastId,
+      resendAudienceId: ids.resendAudienceId,
+      eventType,
+    };
     // A wiring bug fails closed: nothing has been sent or deleted yet.
-    if (isAdapterInvariantError(e)) throw e;
-    logger.error(
-      {
-        tenantId: deps.tenant.slug,
-        broadcastId: ids.broadcastId,
-        resendAudienceId: ids.resendAudienceId,
-        eventType,
-        err: errKind(e),
-        severity: 'critical',
-      },
-      `${logPrefix}.audience_audit_lost`,
-    );
+    if (isAdapterInvariantError(e)) {
+      logger.error({ ...where, err: errKind(e), severity: 'critical' }, `${logPrefix}.audit_invariant`);
+      throw e;
+    }
+    const fields = errLogFields(e);
+    if (fields.code === LOCK_NOT_AVAILABLE) {
+      logger.warn({ ...where, ...fields }, `${logPrefix}.audience_audit_lock_timeout`);
+    } else {
+      logger.error({ ...where, ...fields, severity: 'critical' }, `${logPrefix}.audience_audit_lost`);
+    }
     broadcastsMetrics.auditEmitFailed(eventType, deps.tenant.slug);
     return 'lost';
   }
@@ -192,6 +209,13 @@ export interface ReclaimAudienceAuditDeps extends AudienceAuditDeps {
  * `broadcasts.audience_reclaim.delete_unattributed` (`deleteReason`, never
  * `reason`: the logger redacts that key) and its counter. The delete runs
  * either way. Never throws, except an adapter invariant error.
+ *
+ * Review round 2 (code-review #1 / #4): a lock timeout on the dedupe ends the
+ * tx before the disclosure read, so that segment writes no row and no
+ * unattributed WARN on this run, only the `audience_audit_lock_timeout` WARN
+ * and its counter, which are then the only trace of that delete. The delete
+ * runs; if it fails, the next daily run lists the segment again and retries
+ * the row (dedupe, disclosure read, then the row or the unattributed WARN).
  */
 export async function recordReclaimedAudienceDeleted(
   deps: ReclaimAudienceAuditDeps,
