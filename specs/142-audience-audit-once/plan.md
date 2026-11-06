@@ -167,7 +167,7 @@ Where these rows and the sections above disagree, these rows win. Each row lands
 | S4 (CR2 #7) | `AuditRowFields` is `AuditEmitInput \| AudienceDeletedEmitInput`, the two port inputs, not a hand-declared copy | typecheck | refactor |
 | S5 (CR2 #5) | `RECLAIM_DEADLINE_MARGIN_MS`'s docblock: the INSERT wait is bounded by `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, but the tenant probe and the two reads have no statement bound (the pooler drops `statement_timeout`), so the margin covers their typical cost, not a worst case | — (a docblock) | docs |
 
-**Superseded by these rows:** R4's "loses `IF NOT EXISTS`" and its 42P07 cell.
+**Superseded by these rows:** R4's "loses `IF NOT EXISTS`" and its 42P07 cell; R7's "`emitOnce` keeps its literal event type".
 
 ## Constitution Check
 - **I Privacy & Security:**

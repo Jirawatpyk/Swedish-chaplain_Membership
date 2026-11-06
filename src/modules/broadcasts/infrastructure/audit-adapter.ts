@@ -28,7 +28,6 @@ import {
   type AudienceDeletedEmitInput,
   type AuditEmitInput,
   type AuditPort,
-  type F7AuditEventType,
   type F7EmitTypedEventType,
   type TypedAuditEmitInput,
 } from '../application/ports/audit-port';
@@ -59,7 +58,7 @@ export const f7AuditAdapter: F7AuditAdapter = {
     }
 
     const tx = (txUnknown as TenantTx | null) ?? db;
-    await tx.execute(sql`INSERT INTO audit_log ${AUDIT_LOG_COLUMNS} VALUES ${auditRowValues(event, boundEventType(event))}`);
+    await tx.execute(sql`INSERT INTO audit_log ${AUDIT_LOG_COLUMNS} VALUES ${auditRowValues(event)}`);
   },
   /**
    * R4.3 M-15 — typed counterpart of `emit`. At runtime the two paths
@@ -112,9 +111,10 @@ export const f7AuditAdapter: F7AuditAdapter = {
    * (tenant, segment); see the `AudienceDeletedAuditPort` docblock.
    *
    * The conflict target and its WHERE are literal SQL, never parameters: with
-   * a bound `event_type` Postgres cannot prove the index predicate and answers
-   * 42P10. The VALUES row stays parameterised, except `event_type`, which is
-   * this method's only event. Unlike the invoicing overdue adapter, nothing is
+   * a parameter there Postgres cannot prove the index predicate and answers
+   * 42P10. The VALUES row is bound like every other writer's, `event_type`
+   * included (review round 2, code-review #6): index inference reads only the
+   * conflict clause. Unlike the invoicing overdue adapter, nothing is
    * swallowed: a lost row must reach the caller's ERROR and counter.
    *
    * Every refusal is an `AuditPortInvariantError` raised before any write: a
@@ -143,7 +143,7 @@ export const f7AuditAdapter: F7AuditAdapter = {
     await setLocalLockTimeout(tx, AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, 'emitOnce');
     const rows = (await tx.execute(sql`
       INSERT INTO audit_log ${AUDIT_LOG_COLUMNS}
-      VALUES ${auditRowValues(event, sql`'broadcast_audience_deleted'::audit_event_type`)}
+      VALUES ${auditRowValues(event)}
       ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE event_type = 'broadcast_audience_deleted' DO NOTHING RETURNING 1
     `)) as unknown as readonly unknown[];
     return rows.length === 1;
@@ -153,27 +153,16 @@ export const f7AuditAdapter: F7AuditAdapter = {
 /**
  * Spec 142 (review round 1, code-review #6) — the one column list and the one
  * row builder of every adapter INSERT, so the defaults (`no-request-id`, the
- * F7 retention, the jsonb payload) exist once. `eventTypeSql` is the
- * `event_type` value: bound (`boundEventType`) for `emit` and `emitMany`, a
- * literal for `emitOnce`, whose only event it is.
+ * F7 retention, the jsonb payload) exist once. Every value is bound, the
+ * `event_type` of `emitOnce` included (review round 2, code-review #6).
  */
 const AUDIT_LOG_COLUMNS = sql`(event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)`;
 
-interface AuditRowFields {
-  readonly eventType: F7AuditEventType;
-  readonly actorUserId: string;
-  readonly summary: string;
-  readonly requestId: string | null;
-  readonly payload: unknown;
-  readonly tenantId: string | null;
-}
+/** Spec 142 (review round 2, code-review #7) — a row is one of the two port inputs. */
+type AuditRowFields = AuditEmitInput | AudienceDeletedEmitInput;
 
-function boundEventType(event: AuditRowFields): SQL {
-  return sql`${event.eventType}::audit_event_type`;
-}
-
-function auditRowValues(event: AuditRowFields, eventTypeSql: SQL): SQL {
-  return sql`(${eventTypeSql}, ${event.actorUserId}, ${event.summary}, ${event.requestId ?? 'no-request-id'},
+function auditRowValues(event: AuditRowFields): SQL {
+  return sql`(${event.eventType}::audit_event_type, ${event.actorUserId}, ${event.summary}, ${event.requestId ?? 'no-request-id'},
     ${JSON.stringify(event.payload)}::jsonb, ${event.tenantId}, ${f7RetentionFor(event.eventType)})`;
 }
 
@@ -208,6 +197,6 @@ async function insertAuditRows(txUnknown: unknown, events: readonly AuditEmitInp
   }
 
   const tx = (txUnknown as TenantTx | null) ?? db;
-  const rows = events.map((event) => auditRowValues(event, boundEventType(event)));
+  const rows = events.map((event) => auditRowValues(event));
   await tx.execute(sql`INSERT INTO audit_log ${AUDIT_LOG_COLUMNS} VALUES ${sql.join(rows, sql`, `)}`);
 }
