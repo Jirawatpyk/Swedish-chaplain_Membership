@@ -420,3 +420,22 @@ describe('PR Q round 2 — failed reads on the render-less pages are LoadErrorCa
     expect(s).not.toMatch(/sameUrlHref|<Link\b/);
   });
 });
+
+describe('PR Q parity item 1 — every empty dashboard card uses the same EmptyState', () => {
+  // The two chart cards moved to AURA's EmptyState; the other five kept a
+  // muted <p>, so an empty dashboard mixed two looks. All seven now match.
+  it.each([
+    ['src/components/dashboard/_mini-series-chart.tsx', false],
+    ['src/components/dashboard/activity-feed.tsx', false],
+    ['src/components/dashboard/insights-panel.tsx', true],
+    ['src/components/dashboard/needs-attention-list.tsx', true],
+  ])('%s renders its empty label through <EmptyState size="sm"> (announced: %s)', (file, announced) => {
+    const s = src(file);
+    expect(s).toContain("import { EmptyState } from '@/components/shell/empty-state';");
+    expect(s).toMatch(/<EmptyState\b[^>]*title=\{emptyLabel\}[^>]*size="sm"[^>]*bordered=\{false\}/);
+    expect(s).not.toMatch(/>\s*\{emptyLabel\}\s*<\/p>/);
+    // The two lists that announced their all-clear keep the status role.
+    if (announced) expect(s).not.toMatch(/<EmptyState\b[^>]*title=\{emptyLabel\}[^>]*announce=\{false\}/);
+    else expect(s).toMatch(/<EmptyState\b[^>]*title=\{emptyLabel\}[^>]*announce=\{false\}/);
+  });
+});

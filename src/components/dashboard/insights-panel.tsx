@@ -19,6 +19,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/toast';
 import { Card } from '@jirawatpyk/aura-react';
 import { InsightDismissButton } from './insight-dismiss-button';
+import { EmptyState } from '@/components/shell/empty-state';
 
 export interface InsightLine {
   readonly key: string;
@@ -131,9 +132,7 @@ export function InsightsPanel({
   return (
     <Card title={title} titleId={titleId} headingLevel={2}>
       {visible.length === 0 ? (
-        <p role="status" className="aura-text-body text-[var(--aura-fg-secondary)]">
-          {emptyLabel}
-        </p>
+        <EmptyState title={emptyLabel} size="sm" bordered={false} />
       ) : (
         <ul
           ref={listRef}
