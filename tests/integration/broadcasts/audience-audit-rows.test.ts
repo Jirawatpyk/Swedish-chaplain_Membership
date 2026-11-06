@@ -368,9 +368,33 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     function preCheckSql(): string {
       const block = readFileSync(MIGRATION, 'utf8')
         .split('--> statement-breakpoint')
-        .find((s) => s.includes('DO $$'));
+        .find((s) => s.includes('DO $$') && s.includes('duplicate keys'));
       expect(block).toBeDefined();
       return block!;
+    }
+
+    /** The migration's index-definition check (the `DO $$` block after the CREATE), verbatim from the file. */
+    function indexCheckSql(): string {
+      const block = readFileSync(MIGRATION, 'utf8')
+        .split('--> statement-breakpoint')
+        .find((s) => s.includes('DO $$') && s.includes('pg_indexes'));
+      expect(block).toBeDefined();
+      return block!;
+    }
+
+    /** The check's expected text, from its `expected constant text := '…';` literal. */
+    function expectedIndexdef(check: string): string {
+      const m = /expected\s+constant\s+text\s*:=\s*'((?:[^']|'')*)'\s*;/.exec(check);
+      expect(m).not.toBeNull();
+      return m![1]!.replaceAll("''", "'");
+    }
+
+    /** The check with its `pg_indexes` read replaced by `actual := <value>`, so it reads no catalog. */
+    function checkAgainst(check: string, actual: string | null): string {
+      const read = /SELECT\s+indexdef\s+INTO\s+actual[^;]*;/;
+      expect(read.test(check)).toBe(true);
+      const literal = actual === null ? 'NULL' : `'${actual.replaceAll("'", "''")}'`;
+      return check.replace(read, `actual := ${literal};`);
     }
 
     /** `rows` into a temp `audit_log` that shadows the real one (pg_temp is searched first), then the pre-check. */
@@ -410,24 +434,44 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       expect(errLogFields(second).code).toBe('23505');
     });
 
-    // Review round 1 (code-review #8, migration L2) — the CREATE has no
-    // IF NOT EXISTS, so a name clash fails the migration instead of leaving an
-    // index of another definition in place under this name. Run verbatim from
-    // the file on the real table (the dev branch already has the index), in a
-    // rolled-back tx: Postgres refuses the name before it builds anything.
-    it('the CREATE statement fails on an existing index name (42P07), not a NOTICE', async () => {
-      const create = readFileSync(MIGRATION, 'utf8')
-        .split('--> statement-breakpoint')
-        .find((s) => s.includes('CREATE UNIQUE INDEX'));
-      expect(create).toBeDefined();
-      const e = await rolledBack(async (tx) => {
-        await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
-        return tx.execute(sql.raw(create!)).then(
+    // Review round 2 (code-review #1, #3) — the CREATE is IF NOT EXISTS again,
+    // so a re-run is a no-op, and the check after it fails the migration when
+    // the index under this name has another definition. Both cells are
+    // read-only: the check reads pg_indexes only, and no index is created on
+    // the shared audit_log (the round 1 42P07 cell took its SHARE lock).
+    it("the index check passes on the live index, whose indexdef is the check's expected text", async () => {
+      const check = indexCheckSql();
+      const live = (await db.execute(sql`
+        SELECT indexdef FROM pg_indexes
+         WHERE schemaname = 'public' AND indexname = 'audit_log_audience_deleted_once'
+      `)) as unknown as Array<{ indexdef: string }>;
+      expect(live.map((r) => r.indexdef)).toEqual([expectedIndexdef(check)]);
+      const e = await rolledBack((tx) =>
+        tx.execute(sql.raw(check)).then(
           () => null,
           (err: unknown) => err,
+        ),
+      );
+      expect(e).toBeNull();
+    });
+
+    it('the index check raises on another definition and on a missing index', async () => {
+      const check = indexCheckSql();
+      const other = expectedIndexdef(check).replace('(tenant_id, ', '(');
+      expect(other).not.toBe(expectedIndexdef(check));
+      for (const actual of [other, null]) {
+        const e = await rolledBack((tx) =>
+          tx.execute(sql.raw(checkAgainst(check, actual))).then(
+            () => null,
+            (err: unknown) => err,
+          ),
         );
-      });
-      expect(errLogFields(e).code).toBe('42P07');
+        expect(e).not.toBeNull();
+        const cause = (e as { cause?: { message?: string } }).cause;
+        expect(String(cause?.message ?? (e as Error).message)).toContain(
+          '0328: index audit_log_audience_deleted_once has another definition',
+        );
+      }
     });
 
     it('the pre-check raises on a duplicate key and names it as tenant/segment', async () => {

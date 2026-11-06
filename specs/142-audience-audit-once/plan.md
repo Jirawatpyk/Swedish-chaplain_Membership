@@ -155,6 +155,20 @@ Where these rows and the sections above disagree, these rows win. Each mechanism
 
 **Superseded by these rows:** the Test plan's AO3 order ("reclaim reads the lockless check, then the disclosure, then `emitOnce`"); § Data model's `CREATE UNIQUE INDEX IF NOT EXISTS`; the fold-in's pre-check filter `AND payload ? 'resend_audience_id'`; the port's "REQUIRED" note on `emitOnce`.
 
+## Review round 2 fold-in (7 Nov 2026: code-review and reliability findings on PR #767)
+
+Where these rows and the sections above disagree, these rows win. Each row lands before its GREEN commit (D-043).
+
+| Finding | Mechanism | Test (file, name) | Commit kind |
+|---|---|---|---|
+| S1 (CR2 #1, #3, reliability r2 LOW) | 0328 is idempotent again: `CREATE UNIQUE INDEX IF NOT EXISTS`, then a `DO $$` block that reads `pg_indexes.indexdef` for the name and raises `0328: index audit_log_audience_deleted_once has another definition` unless it equals the text `pg_get_indexdef` prints on dev (exact string; a missing index raises too). A re-run is a no-op; an index of another definition under the name still fails the deploy. Dev keeps its index; `db:migrate` is not re-run | `audience-audit-rows.test.ts` "the index check passes on the live index, whose indexdef is the check's expected text" and "the index check raises on another definition and on a missing index" (both read-only: the check reads `pg_indexes` only; no index is created on `audit_log`). They replace the 42P07 cell, which took a SHARE lock on the shared table | test (red) → fix |
+| S2 (CR2 #2) | `AuditEmitInput.eventType` is `F7EmitEventType` (`F7AuditEventType` without `broadcast_audience_deleted`), so `emit` and `emitMany` reject the event at compile time; `emitTyped` and `emitManyTyped` constrain `E` to `F7EmitTypedEventType` (`keyof F7AuditPayloadShapes` without it). The runtime refusal stays (a cast past the type) | `audit-port-typed-constraint.test.ts` "emit, emitTyped, emitMany and emitManyTyped do not compile with broadcast_audience_deleted" (`@ts-expect-error` cells; RED is the unused-directive errors from `tsc`) | test (red) → fix |
+| S3 (CR2 #6) | Every adapter INSERT binds `event_type` in `VALUES`, `emitOnce` included; only the `ON CONFLICT` target and its `WHERE` stay literal (a bound VALUES cell does not affect index inference) | the existing `audience-audit-rows.test.ts` `emitOnce` cells (true then false, concurrent, rollback); a 42P10 would fail them | refactor |
+| S4 (CR2 #7) | `AuditRowFields` is `AuditEmitInput \| AudienceDeletedEmitInput`, the two port inputs, not a hand-declared copy | typecheck | refactor |
+| S5 (CR2 #5) | `RECLAIM_DEADLINE_MARGIN_MS`'s docblock: the INSERT wait is bounded by `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, but the tenant probe and the two reads have no statement bound (the pooler drops `statement_timeout`), so the margin covers their typical cost, not a worst case | — (a docblock) | docs |
+
+**Superseded by these rows:** R4's "loses `IF NOT EXISTS`" and its 42P07 cell.
+
 ## Constitution Check
 - **I Privacy & Security:**
   - the index key includes the tenant;
