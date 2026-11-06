@@ -82,7 +82,12 @@ async function writeAudienceRow<E extends AudienceEventType>(
   deps: AudienceAuditDeps,
   eventType: E,
   logPrefix: AudienceAuditLogPrefix,
-  ids: { readonly broadcastId: string | null; readonly resendAudienceId: string },
+  ids: {
+    readonly broadcastId: string | null;
+    readonly resendAudienceId: string;
+    /** Log-only (the reclaim): the id parsed from the segment name, never on the record. */
+    readonly segmentNameBroadcastId?: string;
+  },
   summary: (payload: F7AuditPayloadShapes[E]) => string,
   build: (tx: unknown) => Promise<F7AuditPayloadShapes[E] | NoRow>,
 ): Promise<'written' | NoRow | 'lost'> {
@@ -106,6 +111,7 @@ async function writeAudienceRow<E extends AudienceEventType>(
       tenantId: deps.tenant.slug,
       broadcastId: ids.broadcastId,
       resendAudienceId: ids.resendAudienceId,
+      ...(ids.segmentNameBroadcastId === undefined ? {} : { segmentNameBroadcastId: ids.segmentNameBroadcastId }),
       eventType,
     };
     // A wiring bug fails closed: nothing has been sent or deleted yet.
@@ -216,16 +222,22 @@ export interface ReclaimAudienceAuditDeps extends AudienceAuditDeps {
  * and its counter, which are then the only trace of that delete. The delete
  * runs; if it fails, the next daily run lists the segment again and retries
  * the row (dedupe, disclosure read, then the row or the unattributed WARN).
+ *
+ * Review round 3 (code-review #5): `segmentNameBroadcastId` is the id parsed
+ * from the segment name. It goes on the lost, lock-timeout and invariant lines
+ * only (so ops can find the E-Blast); `broadcastId` there stays `null`, and the
+ * record never carries it (a name is a guess).
  */
 export async function recordReclaimedAudienceDeleted(
   deps: ReclaimAudienceAuditDeps,
   resendAudienceId: string,
+  segmentNameBroadcastId: string,
 ): Promise<void> {
   const written = await writeAudienceRow(
     deps,
     'broadcast_audience_deleted',
     'broadcasts.audience_reclaim',
-    { broadcastId: null, resendAudienceId },
+    { broadcastId: null, resendAudienceId, segmentNameBroadcastId },
     (p) => `Broadcast ${p.broadcast_id}: Resend segment removal requested (${p.reason})`,
     async (tx) => {
       // The dedupe first: a segment already recorded as deleted (e.g. cleanup's

@@ -366,7 +366,7 @@ export async function reclaimOrphanedAudiences(
     try {
       // Spec 139 s2 (DA2) — the Art. 30 row, before the delete. An adapter
       // invariant error throws into the catch below: no delete, `failed`.
-      await recordReclaimedAudienceDeleted(deps, orphan.audienceId);
+      await recordReclaimedAudienceDeleted(deps, orphan.audienceId, orphan.broadcastId);
       await deps.broadcastsGateway.deleteAudience(orphan.audienceId);
       deleted++;
     } catch (e) {
