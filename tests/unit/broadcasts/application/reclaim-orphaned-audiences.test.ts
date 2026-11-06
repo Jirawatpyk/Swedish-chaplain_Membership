@@ -29,7 +29,10 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { reclaimOrphanedAudiences } from '@/modules/broadcasts/application/use-cases/reclaim-orphaned-audiences';
+import {
+  RECLAIM_CHUNK_BUDGET_MS,
+  reclaimOrphanedAudiences,
+} from '@/modules/broadcasts/application/use-cases/reclaim-orphaned-audiences';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId, type BroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
@@ -753,18 +756,19 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     expect(counted.mock.calls).toEqual([[TENANT_SLUG, 'listing']]);
   });
 
-  it('a chunk is not started once less than one call is left: its orphans are deferred, not failed', async () => {
+  it('a chunk is not started once less than one call and its audit wait is left: its orphans are deferred, not failed', async () => {
     const counted = vi.spyOn(broadcastsMetrics, 'audienceReclaimTruncated');
     // Seven orphans = a chunk of five, then one of two. The first chunk's
-    // deletes move the clock to one millisecond short of a call before the
-    // deadline, so the second chunk must not start.
+    // deletes move the clock to one millisecond short of the chunk budget (a
+    // call plus its audit wait) before the deadline, so the second chunk must
+    // not start (spec 142 review round 4, code-review #4).
     const deadlineAt = new Date(FROZEN_NOW.getTime() + 60_000);
     let now = FROZEN_NOW;
     const movingClock = { now: (): Date => now };
     const gateway = makeGateway({
       audiences: orphanAudiences([UUID_A, UUID_B, UUID_C, UUID_D, UUID_E, UUID_F, UUID_G]),
       onDelete: () => {
-        now = new Date(deadlineAt.getTime() - RESEND_CALL_TIMEOUT_MS + 1);
+        now = new Date(deadlineAt.getTime() - RECLAIM_CHUNK_BUDGET_MS + 1);
       },
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
@@ -786,12 +790,12 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     expect(counted.mock.calls).toEqual([[TENANT_SLUG, 'deletes']]);
   });
 
-  it('a deadline already inside one call defers every orphan and deletes none', async () => {
+  it('a deadline already inside one call and its audit wait defers every orphan and deletes none', async () => {
     const gateway = makeGateway({ audiences: orphanAudiences([UUID_A, UUID_B]) });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
-      { graceMs: GRACE_MS, limit: 50, deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS - 1) },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: new Date(FROZEN_NOW.getTime() + RECLAIM_CHUNK_BUDGET_MS - 1) },
     );
     expect(result.ok && result.value).toMatchObject({ orphaned: 2, deleted: 0, deferredDeletes: 2 });
     expect(gateway.deleteCalls).toHaveLength(0);
@@ -803,6 +807,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
   // s2 review round 2 did.
   it('a chunk is deferred when the time left fits one Resend call but not the call and the audit wait', async () => {
     expect(AUDIENCE_AUDIT_LOCK_TIMEOUT_MS).toBe(5_000);
+    expect(RECLAIM_CHUNK_BUDGET_MS).toBe(RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS);
     const gateway = makeGateway({ audiences: orphanAudiences([UUID_A, UUID_B]) });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
@@ -810,7 +815,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
       {
         graceMs: GRACE_MS,
         limit: 50,
-        deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS - 1),
+        deadlineAt: new Date(FROZEN_NOW.getTime() + RECLAIM_CHUNK_BUDGET_MS - 1),
       },
     );
     expect(result.ok && result.value).toMatchObject({ orphaned: 2, deleted: 0, deferredDeletes: 2 });
@@ -825,7 +830,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
       {
         graceMs: GRACE_MS,
         limit: 50,
-        deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS),
+        deadlineAt: new Date(FROZEN_NOW.getTime() + RECLAIM_CHUNK_BUDGET_MS),
       },
     );
     expect(result.ok && result.value).toMatchObject({ orphaned: 2, deleted: 2, deferredDeletes: 0 });
