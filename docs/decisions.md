@@ -234,7 +234,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
   - Claude does not present a plan without them (`feature-flow` § 3); `spec-compliance-auditor` reports a missing one as a Medium finding.
 - *Consequence*: `docs/workflow.md` step 1, `feature-flow`, the plan template, the auditor and the broadcasts rule carry the rule. The legacy-leg retirement decision planned for spec 140 takes the next number (D-042).
 
-**D-042 — E-Blast keeps one dispatch leg, the Contacts-Import leg; the legacy leg and `FEATURE_F7_IMPORT_AUDIENCE` are deleted** (decided 2026-10-30; written 2026-11-05, spec 140 slice 4)
+**D-042 — E-Blast keeps one dispatch leg, the Contacts-Import leg; the legacy leg and `FEATURE_F7_IMPORT_AUDIENCE` are deleted** (decided 2026-10-30; written 2026-11-05, spec 140 slice 4; merged as #756 `67e65b88f`, live in production from 2026-11-06 06:22 UTC)
 - *Context*: E-Blast had two dispatch legs, chosen per cron tick by `FEATURE_F7_IMPORT_AUDIENCE`:
   - the legacy leg (`dispatch-scheduled-broadcast.ts`, a per-contact push, live while the flag was OFF);
   - the Contacts-Import leg (`build-audience-tick.ts`, dark).
