@@ -257,6 +257,13 @@ describe('PortalInvoicesPage — empty vs no-match empty-state copy', () => {
     expect(html).not.toContain('MISSING_KEY:');
   });
 
+  it('below 1024px the list card drops its padding as well as its frame, so the row cards line up with the banner', async () => {
+    const html = await renderPage();
+    // AURA `flushBelow` drops border, surface and shadow but keeps padding
+    // (its docs), so the cards sat 17px inside the alert above them at 390.
+    expect(html).toMatch(/class="[^"]*aura-card--flush-below-lg[^"]*max-lg:border-0 max-lg:p-0/);
+  });
+
   it('no filter + zero rows → empty copy (NOT the no-match copy)', async () => {
     const html = await renderPage();
     expect(html).toContain(en.portal.invoices.empty);

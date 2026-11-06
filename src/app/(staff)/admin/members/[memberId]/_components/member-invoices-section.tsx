@@ -235,7 +235,7 @@ export async function MemberInvoicesCard({
     <Card
       as="section"
       flushBelow="sm"
-      className="max-sm:p-0"
+      className="max-sm:border-0 max-sm:p-0"
       title={t('title')}
       titleId="member-invoices-heading"
       headingLevel={2}

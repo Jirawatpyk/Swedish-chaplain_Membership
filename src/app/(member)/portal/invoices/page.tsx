@@ -340,8 +340,11 @@ export async function renderPortalInvoicesView({
       {alert}
       {/* Below 1024px, where the rows turn into cards, the card frame drops
           away: those rows are cards of their own (the `Invoices-mobile`
-          board), not cards in a card (AURA `flushBelow`, #93). */}
-      <Card flushBelow="lg">
+          board), not cards in a card (AURA `flushBelow`, #93). AURA keeps the
+          padding (and a transparent 1px border), so `max-lg:border-0 max-lg:p-0`
+          drop them too: the row cards then line up
+          with the banner above (docs/aura-adoption.md, list pages). */}
+      <Card flushBelow="lg" className="max-lg:border-0 max-lg:p-0">
         <div className="flex flex-col gap-4">
           {/* Reuse the admin InvoiceFilters client component for UI parity
               (same FilterBar row, debounced search and Clear filters), but

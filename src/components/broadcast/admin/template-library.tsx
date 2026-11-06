@@ -147,7 +147,7 @@ export function AdminTemplateLibrary({
   // Below 640px the rows are cards of their own, so the outer card's frame
   // drops away (AURA `flushBelow`), as the phone board draws it.
   return (
-    <Card flushBelow="sm" className="max-sm:p-0">
+    <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
       <div className="flex flex-col gap-[var(--aura-space-4)]">
         {/* flex-wrap keeps SV labels from overflowing on a 320px phone. */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
