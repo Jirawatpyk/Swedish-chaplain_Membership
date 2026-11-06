@@ -185,9 +185,8 @@ export async function MemberInvoicesSection({
       paid: inv.paidAt ? formatDate(inv.paidAt) : null,
       total: formatBaht(inv.total?.satang ?? null),
       remaining: formatBaht(remaining),
-      // `issued` is the only unpaid state (canTransition: issued → paid | void;
-      // credit notes need paid), the same rule as `_lib/member-outstanding.ts`.
-      owing: inv.status === 'issued',
+      // One rule with Remaining (`owedSatang`): flagged only when something is owed.
+      owing: remaining !== null && remaining > 0n,
     };
   });
   return (
