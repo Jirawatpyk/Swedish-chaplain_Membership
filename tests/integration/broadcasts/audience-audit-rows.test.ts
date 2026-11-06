@@ -2,11 +2,12 @@
  * Spec 139 slice 2 (DA1–DA3) — the audience audit rows on live Postgres (Neon
  * `dev`).
  *
- * The two repo reads every delete site depends on:
+ * What the delete sites depend on:
  *
- *   - `hasAudienceDeletedAuditInTx` — the dedupe of `broadcast_audience_deleted`
- *     on the segment id, under the `broadcasts-audience-audit:` advisory lock,
- *     so a segment gets one row;
+ *   - `f7AuditAdapter.emitOnce` — the one writer of `broadcast_audience_deleted`
+ *     (spec 142): `INSERT … ON CONFLICT DO NOTHING` against migration 0328's
+ *     partial unique index on (tenant, segment), so a segment gets one row;
+ *   - `hasAudienceDeletedAuditInTx` — the reclaim's lockless read of that row;
  *   - `findAudienceDisclosureInTx` — the `broadcast_audience_disclosed` row
  *     `reclaim-orphaned-audiences` copies its broadcast and requester from.
  *
@@ -20,6 +21,8 @@
  * so it can write any tenant's row and a NULL-tenant one); `audit_log` is
  * append-only, so each run leaves its rows on the dev branch (the same litter
  * class as `already-sent-evidence.test.ts`, summary `spec 139 s2 fixture`).
+ * Every fixture uses a fresh segment id, so no cell seeds two deleted rows for
+ * one (tenant, segment) key: the index refuses that (spec 142).
  */
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -32,6 +35,12 @@ import { errLogFields } from '@/lib/log-id';
 import { ok } from '@/lib/result';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { asBroadcastId } from '@/modules/broadcasts';
+import {
+  AuditPortInvariantError,
+  type AudienceDeleteReason,
+  type F7AuditPayloadShapes,
+} from '@/modules/broadcasts/application/ports/audit-port';
+import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { isAdapterInvariantError } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
@@ -126,83 +135,112 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       await insertRow(tenantA.ctx.slug, 'broadcast_audience_deleted', deletedPayload(randomUUID(), randomUUID(), randomUUID()));
       expect(await deletedSeen(tenantA, audienceId)).toBe(false);
     });
+  });
 
-    it('a second tx waits for the first to commit, so two sites write ONE deleted row', async () => {
-      const audienceId = randomUUID();
-      const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
-      let release!: () => void;
-      const released = new Promise<void>((r) => (release = r));
-      let firstRead!: () => void;
-      const firstHasRead = new Promise<void>((r) => (firstRead = r));
-
-      // Each site does what the delete sites do: read under the lock, insert
-      // when nothing is recorded, on the same tx.
-      const site = (hold: boolean) =>
-        repo.withTx(async (tx) => {
-          const seen = await repo.hasAudienceDeletedAuditInTx(tx, tenantA.ctx.slug, audienceId);
-          if (hold) {
-            firstRead();
-            await released;
-          }
-          if (!seen) {
-            await (tx as { execute: typeof db.execute }).execute(sql`
-              INSERT INTO audit_log (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
-              VALUES ('broadcast_audience_deleted'::audit_event_type, 'system:cron', 'spec 139 s2 fixture', 'no-request-id',
-                      ${JSON.stringify(deletedPayload(audienceId, randomUUID(), randomUUID()))}::jsonb, ${tenantA.ctx.slug}, 5)
-            `);
-          }
-          return seen;
-        });
-
-      const first = site(true);
-      await firstHasRead;
-      let secondDone = false;
-      const second = site(false).then((seen) => {
-        secondDone = true;
-        return seen;
-      });
-      // Short: the dev branch has statement_timeout = 0, so a wrong lock HANGS.
-      await new Promise((r) => setTimeout(r, 750));
-      const secondFinishedWhileFirstHeld = secondDone;
-      release();
-      const [firstSeen, secondSeen] = await Promise.all([first, second]);
-      expect(secondFinishedWhileFirstHeld).toBe(false);
-      expect(firstSeen).toBe(false);
-      expect(secondSeen).toBe(true);
-      const rows = (await db.execute(sql`
-        SELECT count(*)::int AS n FROM audit_log
-         WHERE tenant_id = ${tenantA.ctx.slug}
+  // Spec 142 (AO2) — the adapter's one-row write. Each cell uses a fresh
+  // segment id; every wait is short, because the dev branch has
+  // statement_timeout = 0, so a wrong wait HANGS.
+  describe('spec 142 AO2 — f7AuditAdapter.emitOnce', () => {
+    const deletedInput = (tenantId: string | null, audienceId: string, reason: AudienceDeleteReason = 'terminal_cleanup') => ({
+      eventType: 'broadcast_audience_deleted' as const,
+      tenantId: tenantId as string,
+      actorUserId: 'system:cron',
+      summary: 'spec 142 fixture',
+      requestId: null,
+      payload: { ...deletedPayload(audienceId, randomUUID(), randomUUID()), reason } as F7AuditPayloadShapes['broadcast_audience_deleted'],
+    });
+    const emitIn = (tenant: TestTenant, input: ReturnType<typeof deletedInput>) =>
+      runInTenant(tenant.ctx, (tx) => f7AuditAdapter.emitOnce(tx, input));
+    const rowsFor = async (tenantSlug: string, audienceId: string) =>
+      (await db.execute(sql`
+        SELECT payload->>'reason' AS reason FROM audit_log
+         WHERE tenant_id = ${tenantSlug}
            AND event_type = 'broadcast_audience_deleted'::audit_event_type
            AND payload->>'resend_audience_id' = ${audienceId}
-      `)) as unknown as Array<{ n: number }>;
-      expect(rows[0]?.n).toBe(1);
+      `)) as unknown as Array<{ reason: string }>;
+
+    it('answers true, then false, and leaves one row', async () => {
+      const audienceId = randomUUID();
+      expect(await emitIn(tenantA, deletedInput(tenantA.ctx.slug, audienceId, 'hold'))).toBe(true);
+      expect(await emitIn(tenantA, deletedInput(tenantA.ctx.slug, audienceId, 'terminal_cleanup'))).toBe(false);
+      expect(await rowsFor(tenantA.ctx.slug, audienceId)).toEqual([{ reason: 'hold' }]);
+      expect(await deletedSeen(tenantA, audienceId)).toBe(true);
     });
 
-    // Review round 1 (code-review #4, reliability LOW-3) — the read runs before
-    // a bounded Resend call, so its lock wait is bounded too (lock_timeout 5 s).
-    // A 55P03 is a plain driver error, not an adapter invariant one. Review
-    // round 2 (code-review #1/#4): the row helper reads it with `errLogFields`
-    // as `code: '55P03'` (the WARN `audience_audit_lock_timeout`, counted, the
-    // call goes ahead), so this pins that the REAL error carries it. Raced
-    // against 20 s (review round 2, code-review #8: well above the 5 s server
-    // bound): the dev branch has statement_timeout = 0, so an unbounded wait HANGS.
-    it('a read behind a held lock fails with a lock timeout (55P03, not an invariant error)', async () => {
+    it("tenant B's row for the same segment id does not block tenant A's (the key includes the tenant)", async () => {
       const audienceId = randomUUID();
-      const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
+      expect(await emitIn(tenantB, deletedInput(tenantB.ctx.slug, audienceId))).toBe(true);
+      expect(await emitIn(tenantA, deletedInput(tenantA.ctx.slug, audienceId))).toBe(true);
+      expect(await rowsFor(tenantA.ctx.slug, audienceId)).toHaveLength(1);
+      expect(await rowsFor(tenantB.ctx.slug, audienceId)).toHaveLength(1);
+    });
+
+    /** Two txs on one key: the first holds its uncommitted insert until `finish` says how it ends. */
+    async function overlapping(audienceId: string, firstEnds: 'commit' | 'rollback') {
+      let finish!: () => void;
+      const finished = new Promise<void>((r) => (finish = r));
+      let inserted!: () => void;
+      const firstInserted = new Promise<void>((r) => (inserted = r));
+      const ROLLBACK = new Error('rollback');
+      const first = runInTenant(tenantA.ctx, async (tx) => {
+        const wrote = await f7AuditAdapter.emitOnce(tx, deletedInput(tenantA.ctx.slug, audienceId, 'hold'));
+        inserted();
+        await finished;
+        if (firstEnds === 'rollback') throw ROLLBACK;
+        return wrote;
+      }).catch((e: unknown) => {
+        if (e === ROLLBACK) return 'rolled_back' as const;
+        throw e;
+      });
+      // A first tx that fails before its insert must not hang the cell.
+      await Promise.race([firstInserted, first.then(() => undefined, () => undefined)]);
+      let secondDone = false;
+      const second = emitIn(tenantA, deletedInput(tenantA.ctx.slug, audienceId, 'terminal_cleanup')).then((wrote) => {
+        secondDone = true;
+        return wrote;
+      });
+      await new Promise((r) => setTimeout(r, 750));
+      const secondFinishedWhileFirstHeld = secondDone;
+      finish();
+      const [firstWrote, secondWrote] = await Promise.all([first, second]);
+      return { secondFinishedWhileFirstHeld, firstWrote, secondWrote };
+    }
+
+    it('two concurrent emitOnce for one segment leave one row: the second waits, then answers false', async () => {
+      const audienceId = randomUUID();
+      const r = await overlapping(audienceId, 'commit');
+      expect(r).toEqual({ secondFinishedWhileFirstHeld: false, firstWrote: true, secondWrote: false });
+      expect(await rowsFor(tenantA.ctx.slug, audienceId)).toEqual([{ reason: 'hold' }]);
+    });
+
+    it('when the first rolls back, the waiting second writes the row and answers true', async () => {
+      const audienceId = randomUUID();
+      const r = await overlapping(audienceId, 'rollback');
+      expect(r).toEqual({ secondFinishedWhileFirstHeld: false, firstWrote: 'rolled_back', secondWrote: true });
+      expect(await rowsFor(tenantA.ctx.slug, audienceId)).toEqual([{ reason: 'terminal_cleanup' }]);
+    });
+
+    // AO3 as amended at plan review — the INSERT still waits on another tx's
+    // uncommitted insert of the key, so emitOnce bounds it with
+    // `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s). A 55P03 is a plain driver error,
+    // not an adapter invariant one: the row helper logs the WARN
+    // `audience_audit_lock_timeout` and the call goes ahead. Raced against 20 s.
+    it('an INSERT behind a held insert of the key fails with a lock timeout (55P03, not an invariant error)', async () => {
+      const audienceId = randomUUID();
       let release!: () => void;
       const released = new Promise<void>((r) => (release = r));
-      let markLocked!: () => void;
-      const locked = new Promise<void>((r) => (markLocked = r));
-      const holder = repo.withTx(async (tx) => {
-        await repo.hasAudienceDeletedAuditInTx(tx, tenantA.ctx.slug, audienceId);
-        markLocked();
+      let inserted!: () => void;
+      const holding = new Promise<void>((r) => (inserted = r));
+      const holder = runInTenant(tenantA.ctx, async (tx) => {
+        await f7AuditAdapter.emitOnce(tx, deletedInput(tenantA.ctx.slug, audienceId));
+        inserted();
         await released;
       });
-      await locked;
+      await Promise.race([holding, holder.then(() => undefined, () => undefined)]);
       let guard: ReturnType<typeof setTimeout> | undefined;
       try {
         const outcome = await Promise.race([
-          deletedSeen(tenantA, audienceId).then(
+          emitIn(tenantA, deletedInput(tenantA.ctx.slug, audienceId)).then(
             (v) => ({ kind: 'resolved' as const, v }),
             (e: unknown) => ({ kind: 'rejected' as const, e }),
           ),
@@ -212,7 +250,6 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
         ]);
         expect(outcome.kind).toBe('rejected');
         const e = (outcome as { e?: unknown }).e;
-        expect(JSON.stringify(e, Object.getOwnPropertyNames(e as object)) + String((e as { cause?: unknown })?.cause)).toMatch(/55P03|lock timeout/i);
         expect(errLogFields(e).code).toBe('55P03');
         expect(isAdapterInvariantError(e)).toBe(false);
       } finally {
@@ -220,6 +257,26 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
         release();
         await holder;
       }
+    });
+
+    it('refuses a null tx and a null tenantId as invariant errors (a NULL never conflicts)', async () => {
+      const audienceId = randomUUID();
+      const nullTx = await f7AuditAdapter.emitOnce(null, deletedInput(tenantA.ctx.slug, audienceId)).then(() => null, (e: unknown) => e);
+      expect(nullTx).toBeInstanceOf(AuditPortInvariantError);
+      const nullTenant = await emitIn(tenantA, deletedInput(null, audienceId)).then(() => null, (e: unknown) => e);
+      expect(nullTenant).toBeInstanceOf(AuditPortInvariantError);
+      expect(await rowsFor(tenantA.ctx.slug, audienceId)).toEqual([]);
+    });
+
+    it("cross-tenant: a tx bound to tenant B refuses tenant A's row as an invariant error", async () => {
+      const audienceId = randomUUID();
+      const e = await runInTenant(asTenantContext(tenantB.ctx.slug), (tx) =>
+        f7AuditAdapter.emitOnce(tx, deletedInput(tenantA.ctx.slug, audienceId)),
+      ).then(() => null, (err: unknown) => err);
+      expect((e as Error).message).toMatch(/tx tenant mismatch/);
+      expect(isAdapterInvariantError(e)).toBe(true);
+      expect(await rowsFor(tenantA.ctx.slug, audienceId)).toEqual([]);
+      expect(await rowsFor(tenantB.ctx.slug, audienceId)).toEqual([]);
     });
   });
 

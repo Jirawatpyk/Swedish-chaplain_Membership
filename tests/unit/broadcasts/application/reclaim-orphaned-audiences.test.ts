@@ -38,7 +38,7 @@ import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/res
 import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
-import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
+import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -59,7 +59,7 @@ const clock = { now: (): Date => FROZEN_NOW };
  * row is ever written (the delete is unattributed); the spec 139 cells at the
  * end drive the row.
  */
-const NO_AUDIT = { async emit() {} };
+const NO_AUDIT = { async emitOnce() { return true; } };
 /** Spec 140 DT5 — a deadline none of the legacy cases comes near. */
 const FAR_DEADLINE = new Date(FROZEN_NOW.getTime() + 60 * 60 * 1000);
 
@@ -792,22 +792,18 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     expect(gateway.deleteCalls).toHaveLength(0);
   });
 
-  // Spec 139 s2 review round 2 (code-review #2) — each delete first writes its
-  // audit row, whose lock wait is bounded at AUDIENCE_AUDIT_LOCK_TIMEOUT_MS.
-  it('a chunk is deferred when the time left fits one Resend call but not the call plus the audit lock wait', async () => {
-    expect(AUDIENCE_AUDIT_LOCK_TIMEOUT_MS).toBe(5_000);
+  // Spec 142 (AO3) — the audit row's wait is no longer charged at the chunk
+  // check: RECLAIM_DEADLINE_MARGIN_MS covers the DB work, and the delete is
+  // bounded by RESEND_CALL_TIMEOUT_MS (spec 139 s2 review round 2 charged both).
+  it('a chunk starts when the time left fits exactly one Resend call (the audit row is not charged)', async () => {
     const gateway = makeGateway({ audiences: orphanAudiences([UUID_A, UUID_B]) });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
-      {
-        graceMs: GRACE_MS,
-        limit: 50,
-        deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS - 1),
-      },
+      { graceMs: GRACE_MS, limit: 50, deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS) },
     );
-    expect(result.ok && result.value).toMatchObject({ orphaned: 2, deleted: 0, deferredDeletes: 2 });
-    expect(gateway.deleteCalls).toHaveLength(0);
+    expect(result.ok && result.value).toMatchObject({ orphaned: 2, deleted: 2, deferredDeletes: 0 });
+    expect(gateway.deleteCalls).toHaveLength(2);
   });
 
   it('a run inside its budget is not counted', async () => {
@@ -851,8 +847,9 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
   function harness(opts: {
     readonly disclosure?: { readonly broadcastId: string; readonly relatedMemberId: string } | 'throws' | null;
     readonly alreadyDeleted?: boolean;
-    readonly auditThrows?: 'invariant';
-    readonly dedupeThrows?: 'lock_timeout';
+    /** Spec 142 — emitOnce's answer when the lockless read saw nothing: false = a row landed in between. */
+    readonly onceWrites?: boolean;
+    readonly auditThrows?: 'invariant' | 'storage' | 'lock_timeout';
   }) {
     const events: string[] = [];
     const rows: Array<{ eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }> = [];
@@ -872,21 +869,31 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
       if (opts.disclosure === 'throws') throw new Error('57P01 terminating connection');
       return opts.disclosure ?? null;
     };
+    // Spec 142 (AO3) — the reclaim's lockless read: no lock, no lock_timeout.
     repo.port.hasAudienceDeletedAuditInTx = async (_tx, _t, audienceId) => {
       events.push(`dedupe:${audienceId}`);
-      // A lock wait past `lock_timeout` as Drizzle throws it: the driver's 55P03 at `.cause`.
-      if (opts.dedupeThrows === 'lock_timeout') {
-        throw Object.assign(new Error('Failed query'), {
-          cause: Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }),
-        });
-      }
       return opts.alreadyDeleted === true;
     };
+    type Row = { eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> };
     const audit = {
-      async emit(_tx: unknown, e: { eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }) {
-        if (opts.auditThrows === 'invariant') throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
+      // A plain emit of the deleted row would bypass the index's arbiter.
+      async emit(_tx: unknown, e: Row) {
         events.push(`audit:${e.eventType}`);
         rows.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, requestId: e.requestId, payload: e.payload });
+      },
+      async emitOnce(_tx: unknown, e: Row): Promise<boolean> {
+        if (opts.auditThrows === 'invariant') throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
+        if (opts.auditThrows === 'storage') throw new Error('53300 too many connections');
+        // An INSERT wait past `lock_timeout` as Drizzle throws it: the driver's 55P03 at `.cause`.
+        if (opts.auditThrows === 'lock_timeout') {
+          throw Object.assign(new Error('Failed query'), {
+            cause: Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }),
+          });
+        }
+        events.push(`audit-once:${e.eventType}`);
+        if (opts.onceWrites === false) return false;
+        rows.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, requestId: e.requestId, payload: e.payload });
+        return true;
       },
     };
     const run = () =>
@@ -902,7 +909,7 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' } });
     const result = await h.run();
     expect(result.ok && result.value.deleted).toBe(1);
-    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `find:${AUDIENCE}`, `audit:${DELETED}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `find:${AUDIENCE}`, `audit-once:${DELETED}`, `gw:deleteAudience:${AUDIENCE}`]);
     expect(h.rows).toEqual([
       {
         eventType: DELETED,
@@ -953,6 +960,39 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed')).toEqual([]);
     expect(unattributed).not.toHaveBeenCalled();
     expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
+  });
+
+  // Spec 142 (plan fold-in, reliability L2) — the lockless read no longer
+  // orders reclaim against another writer: a row that lands between the read
+  // and the INSERT makes emitOnce answer false, which is a skip.
+  it('emitOnce answers false (a row landed after the lockless read): a skip, no unattributed WARN, no count; the delete runs', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const counted = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
+    const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
+    const unattributed = vi.spyOn(broadcastsMetrics, 'audienceReclaimDeleteUnattributed');
+    const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' }, onceWrites: false });
+    const result = await h.run();
+    expect(result.ok && result.value).toMatchObject({ deleted: 1, failed: 0 });
+    expect(h.rows).toEqual([]);
+    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `find:${AUDIENCE}`, `audit-once:${DELETED}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed')).toEqual([]);
+    expect(unattributed).not.toHaveBeenCalled();
+    expect(counted).not.toHaveBeenCalled();
+    expect(failed).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it('an adapter storage error on the INSERT is the ERROR audience_audit_lost, not a skip; the delete runs', async () => {
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
+    const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' }, auditThrows: 'storage' });
+    const result = await h.run();
+    expect(result.ok && result.value).toMatchObject({ deleted: 1, failed: 0 });
+    expect(error.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audience_audit_lost').map((c) => c[0])).toEqual([
+      expect.objectContaining({ eventType: DELETED, resendAudienceId: AUDIENCE, err: 'Error', severity: 'critical' }),
+    ]);
+    expect(failed).toHaveBeenCalledWith(DELETED, TENANT_SLUG);
   });
 
   it('a failed disclosure read logs ERROR and counts a lost row, and the delete still runs', async () => {
@@ -1008,16 +1048,17 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
 
   // Review round 2 (code-review #1/#4, reliability LOW-1) — a timed-out segment
   // writes no row and no unattributed WARN this run; the next run retries.
-  it('a lock timeout on the dedupe logs the WARN audience_audit_lock_timeout and counts it; no unattributed WARN, the delete still runs', async () => {
+  // Spec 142: the wait is now the INSERT's, on another tx's uncommitted insert.
+  it('a lock timeout on the INSERT logs the WARN audience_audit_lock_timeout and counts it; no unattributed WARN, the delete still runs', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
     const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
     const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
     const unattributed = vi.spyOn(broadcastsMetrics, 'audienceReclaimDeleteUnattributed');
-    const h = harness({ disclosure: null, dedupeThrows: 'lock_timeout' });
+    const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' }, auditThrows: 'lock_timeout' });
     const result = await h.run();
     expect(result.ok && result.value).toMatchObject({ deleted: 1, failed: 0 });
     expect(h.rows).toEqual([]);
-    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `find:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
     expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audience_audit_lock_timeout').map((c) => c[0])).toEqual([
       {
         tenantId: TENANT_SLUG,
