@@ -268,6 +268,69 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       expect(await rowsFor(tenantA.ctx.slug, audienceId)).toEqual([]);
     });
 
+    // Review round 1 (reliability L2) — the other two refusals, pinned: an empty
+    // segment id (a NULL-like key never conflicts) and another event type (a
+    // cast past the input type). Characterization: the adapter already refuses.
+    it('refuses an empty resend_audience_id and another event type as invariant errors (no row written)', async () => {
+      const audienceId = randomUUID();
+      const base = deletedInput(tenantA.ctx.slug, audienceId);
+      const emptyKey = await emitIn(tenantA, { ...base, payload: { ...base.payload, resend_audience_id: '' } }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(emptyKey).toBeInstanceOf(AuditPortInvariantError);
+      const otherEvent = await emitIn(tenantA, {
+        ...base,
+        eventType: 'broadcast_audience_disclosed' as 'broadcast_audience_deleted',
+      }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(otherEvent).toBeInstanceOf(AuditPortInvariantError);
+      expect(await rowsFor(tenantA.ctx.slug, '')).toEqual([]);
+      expect(await rowsFor(tenantA.ctx.slug, audienceId)).toEqual([]);
+      expect(await disclosureOf(tenantA, audienceId)).toBeNull();
+    });
+
+    // Review round 1 (code-review #3) — emitOnce is the deleted row's only
+    // writer: the adapter's other methods refuse the event before any write, so
+    // a plain emit can never bypass the index's arbiter. emitMany gets a mixed
+    // batch, whose good row must not land either.
+    it('emit, emitTyped and emitMany refuse broadcast_audience_deleted before any write', async () => {
+      const ids = { emit: randomUUID(), emitTyped: randomUUID(), emitMany: randomUUID(), emitManyTyped: randomUUID() };
+      const disclosedId = randomUUID();
+      const plain = (audienceId: string) => {
+        const input = deletedInput(tenantA.ctx.slug, audienceId);
+        return { ...input, payload: { ...input.payload } };
+      };
+      const goodRow = {
+        eventType: 'broadcast_audience_disclosed' as const,
+        tenantId: tenantA.ctx.slug,
+        actorUserId: 'system:cron',
+        summary: 'spec 142 fixture',
+        requestId: null,
+        payload: disclosedPayload(disclosedId, randomUUID(), randomUUID()) as F7AuditPayloadShapes['broadcast_audience_disclosed'],
+      };
+      const refused = (write: (tx: unknown) => Promise<void> | undefined) =>
+        runInTenant(tenantA.ctx, async (tx) => {
+          await write(tx);
+        }).then(
+          () => null,
+          (e: unknown) => e,
+        );
+      const errors = [
+        await refused((tx) => f7AuditAdapter.emit(tx, plain(ids.emit))),
+        await refused((tx) => f7AuditAdapter.emitTyped(tx, deletedInput(tenantA.ctx.slug, ids.emitTyped))),
+        await refused((tx) => f7AuditAdapter.emitMany?.(tx, [{ ...goodRow, payload: { ...goodRow.payload } }, plain(ids.emitMany)])),
+        await refused((tx) =>
+          f7AuditAdapter.emitManyTyped?.(tx, [deletedInput(tenantA.ctx.slug, ids.emitManyTyped)]),
+        ),
+      ];
+      expect(errors.map((e) => e instanceof AuditPortInvariantError)).toEqual([true, true, true, true]);
+      for (const id of Object.values(ids)) expect(await rowsFor(tenantA.ctx.slug, id)).toEqual([]);
+      expect(await disclosureOf(tenantA, disclosedId)).toBeNull();
+    });
+
     it("cross-tenant: a tx bound to tenant B refuses tenant A's row as an invariant error", async () => {
       const audienceId = randomUUID();
       const e = await runInTenant(asTenantContext(tenantB.ctx.slug), (tx) =>
@@ -345,6 +408,26 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       });
       expect(second).not.toBeNull();
       expect(errLogFields(second).code).toBe('23505');
+    });
+
+    // Review round 1 (code-review #8, migration L2) — the CREATE has no
+    // IF NOT EXISTS, so a name clash fails the migration instead of leaving an
+    // index of another definition in place under this name. Run verbatim from
+    // the file on the real table (the dev branch already has the index), in a
+    // rolled-back tx: Postgres refuses the name before it builds anything.
+    it('the CREATE statement fails on an existing index name (42P07), not a NOTICE', async () => {
+      const create = readFileSync(MIGRATION, 'utf8')
+        .split('--> statement-breakpoint')
+        .find((s) => s.includes('CREATE UNIQUE INDEX'));
+      expect(create).toBeDefined();
+      const e = await rolledBack(async (tx) => {
+        await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+        return tx.execute(sql.raw(create!)).then(
+          () => null,
+          (err: unknown) => err,
+        );
+      });
+      expect(errLogFields(e).code).toBe('42P07');
     });
 
     it('the pre-check raises on a duplicate key and names it as tenant/segment', async () => {
