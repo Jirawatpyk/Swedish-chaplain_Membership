@@ -155,10 +155,17 @@ export function reduceDeliveryAggregateRows(
  * For defence-in-depth security, the chamber_app role + RLS+FORCE
  * policies on the underlying tables are the actual enforcement layer.
  *
- * A refusal is a `TenantBindingRefusalError` (still an `Error`, same message),
- * so a caller can tell it from a driver error on the probe itself.
+ * A refusal is a plain `Error` (so `errKind` logs `Error` at every site, as
+ * before) recorded in `tenantBindingRefusals`, so a caller can tell it from a
+ * driver error on the probe itself.
  */
-class TenantBindingRefusalError extends Error {}
+const tenantBindingRefusals = new WeakSet<Error>();
+
+function tenantBindingRefusal(message: string): Error {
+  const e = new Error(message);
+  tenantBindingRefusals.add(e);
+  return e;
+}
 
 export async function assertTenantBoundTx(
   tx: TenantTx,
@@ -170,12 +177,12 @@ export async function assertTenantBoundTx(
   )) as unknown as Array<{ current_tenant: string | null }>;
   const currentTenant = probe[0]?.current_tenant ?? null;
   if (currentTenant === null || currentTenant.length === 0) {
-    throw new TenantBindingRefusalError(
+    throw tenantBindingRefusal(
       `${callerName}: tx is NOT inside a runInTenant scope (app.current_tenant is unset). Refusing to mutate without tenant binding.`,
     );
   }
   if (currentTenant !== expectedTenantId) {
-    throw new TenantBindingRefusalError(
+    throw tenantBindingRefusal(
       `${callerName}: tx tenant mismatch — repo bound to "${expectedTenantId}" but tx carries "${currentTenant}". Refusing to write to a different tenant's namespace.`,
     );
   }
@@ -198,7 +205,7 @@ async function assertAudienceAuditTenantBoundTx(
   try {
     await assertTenantBoundTx(tx, expectedTenantId, callerName);
   } catch (e) {
-    if (e instanceof TenantBindingRefusalError) throw new AuditPortInvariantError(eventType, e.message);
+    if (e instanceof Error && tenantBindingRefusals.has(e)) throw new AuditPortInvariantError(eventType, e.message);
     throw e;
   }
 }
