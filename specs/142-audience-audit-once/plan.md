@@ -137,6 +137,24 @@ Where these points and the sections above disagree, these points win.
 
 Kept unchanged: the reclaim skip cell, the cross-tenant fail-closed cell, every `recordUnverifiableCount` cell, and the hold cell (`eblast-send-time-standing.test.ts:504-568`).
 
+## Review round 1 fold-in (7 Nov 2026: code-review, migration and reliability findings on PR #767)
+
+Where these rows and the sections above disagree, these rows win. Each mechanism the reviewers asked for gets its row here before its GREEN commit (D-043).
+
+| Finding | Mechanism | Test (file, name) | Commit kind |
+|---|---|---|---|
+| R1 (CR #7) | `emitOnce` leaves the shared `AuditPort` for a narrow `AudienceDeletedAuditPort`; `f7AuditAdapter` implements both; the restart (`BuildAudienceTickDeps.audit`), cleanup and reclaim deps take it; the unrelated test fakes lose their `emitOnce` stub | typecheck finds the set (a stray stub is an excess property, a missing one a missing property); the existing site cells stay green | refactor |
+| R2 (CR #3) | `emit`, `emitTyped` (through `emit`) and the multi-row `emitMany` / `emitManyTyped` refuse `broadcast_audience_deleted` with `AuditPortInvariantError` before any write; `emitOnce` is its only writer | `audience-audit-rows.test.ts` "emit, emitTyped and emitMany refuse broadcast_audience_deleted before any write" | test (red) → fix |
+| R3 (CR #5, migration L1) | Reclaim reads the disclosure first. Found: `emitOnce` (false is a skip). Not found: the lockless existence read, found is a skip with no WARN, else unattributed. `hasAudienceDeletedAuditInTx` writes the key as the literal `payload->>'resend_audience_id'`, so the read's expression matches the index's | `reclaim-orphaned-audiences.test.ts`, the call-order cells (disclosure first); `audience-audit-sites.test.ts` "the deleted-row key is the literal AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId in the read, the ON CONFLICT and 0328" | test (red) → fix |
+| R4 (CR #8, migration L2) | 0328's `CREATE UNIQUE INDEX` loses `IF NOT EXISTS`, so a name clash fails the migration; the pre-check loses the redundant `payload ? 'resend_audience_id'` (`->> IS NOT NULL` covers it). Dev keeps the index built by the earlier file version (same definition); `db:migrate` is not re-run, `db:verify` re-checked | `audience-audit-rows.test.ts` "the CREATE statement fails on an existing index name (42P07), not a NOTICE"; the NULL-key pre-check cell covers the filter | test (red) → fix |
+| R5 (CR #2) | The port docblock: `emitOnce` runs `SET LOCAL lock_timeout` for the rest of the caller's tx, so it runs in its own tx and as its last lock-taking statement | — (a docblock) | docs |
+| R6 (CR #4) | `RECLAIM_DEADLINE_MARGIN_MS`'s docblock names the per-orphan audit-row DB work and the INSERT wait the last chunk can overrun by | — (a docblock) | docs |
+| R7 (CR #6) | One row builder for `emit`, `emitMany` and `emitOnce`: the column list and the defaults exist once; `emitOnce` keeps its literal event type and `ON CONFLICT` | the existing `audience-audit-rows.test.ts` adapter cells (a 42P10 would fail them) | refactor |
+| R8 (reliability L1) | Pin the unverifiable row's lost line (`broadcasts.audience_import.unverifiable_audit_emit_failed` with `{ err, tenantId, broadcastId, importId }`, `auditEmitFailed`) and the invariant arm's silence | `build-audience-tick-failure-paths.test.ts` "a lost unverifiable row …" and "(d) an AuditPortInvariantError on the unverifiable row …" | test (characterization) |
+| R9 (reliability L2) | `emitOnce` refuses an empty `resend_audience_id` and a wrong event type, with no row written | `audience-audit-rows.test.ts` "refuses an empty resend_audience_id and another event type as invariant errors" | test (characterization) |
+
+**Superseded by these rows:** the Test plan's AO3 order ("reclaim reads the lockless check, then the disclosure, then `emitOnce`"); § Data model's `CREATE UNIQUE INDEX IF NOT EXISTS`; the fold-in's pre-check filter `AND payload ? 'resend_audience_id'`; the port's "REQUIRED" note on `emitOnce`.
+
 ## Constitution Check
 - **I Privacy & Security:**
   - the index key includes the tenant;
