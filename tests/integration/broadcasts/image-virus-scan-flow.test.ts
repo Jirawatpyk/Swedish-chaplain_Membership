@@ -79,6 +79,7 @@ describe.skipIf(!hasClamAV)(
               async emit(_tx, e) {
                 auditEvents.push({ eventType: e.eventType });
               },
+              emitOnce: async () => true,
               async emitTyped(_tx, e) {
                 auditEvents.push({ eventType: e.eventType });
               },
@@ -113,7 +114,7 @@ describe.skipIf(!hasClamAV)(
             storage: vercelBlobImageStorage,
             imagesRepo: drizzleBroadcastImagesRepo,
             reencoder: sharpImageReencoder,
-            audit: { async emit() {}, async emitTyped() {} },
+            audit: { async emit() {}, emitOnce: async () => true, async emitTyped() {} },
           },
           {
             tenantId: tenantId as never,

@@ -24,7 +24,7 @@ import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/por
 import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
+import { AuditPortInvariantError, type AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -436,7 +436,8 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
         throw new Error('emitTyped is not used here');
       },
       // Spec 142 (AO2) — the one writer: answers false when the key already has its row.
-      async emitOnce(_tx: unknown, e: Row): Promise<boolean> {
+      async emitOnce(_tx: unknown, input: AudienceDeletedEmitInput): Promise<boolean> {
+        const e: Row = { ...input, payload: { ...input.payload } };
         if (opts.auditThrows === 'invariant') throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
         if (opts.auditThrows === 'storage') throw new Error('53300 too many connections');
         if (opts.auditThrows === 'storage_sqlstate') {

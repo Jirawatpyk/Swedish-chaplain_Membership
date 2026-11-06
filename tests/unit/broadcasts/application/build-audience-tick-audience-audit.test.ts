@@ -410,8 +410,7 @@ describe('spec 139 s2 DA2 — the restart teardown writes broadcast_audience_del
     await h.run();
     const at = h.events.indexOf(`audit-once:${DELETED}`);
     expect(at).toBeGreaterThan(-1);
-    expect(h.events.slice(at - 1, at + 3)).toEqual([
-      expect.not.stringMatching(/^dedupe:/),
+    expect(h.events.slice(at, at + 3)).toEqual([
       `audit-once:${DELETED}`,
       `check:${CALL_HEADROOM_MS}:held`,
       `gw:deleteAudience:${audienceId}`,

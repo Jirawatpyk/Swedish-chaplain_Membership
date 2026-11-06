@@ -44,6 +44,7 @@ function makeAudit(): AuditPort & { events: string[] } {
     async emit(_tx, e) {
       events.push(e.eventType);
     },
+    emitOnce: async () => true,
     async emitTyped(_tx, e) {
       events.push(e.eventType);
     },

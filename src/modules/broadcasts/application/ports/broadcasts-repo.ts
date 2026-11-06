@@ -818,26 +818,19 @@ export interface BroadcastsRepo {
 
   /**
    * Spec 139 s2 (DA2) — does this tenant already hold a
-   * `broadcast_audience_deleted` row for this Resend segment? Every delete site
-   * reads this in the SAME tx before inserting, so a segment gets one row: the
+   * `broadcast_audience_deleted` row for this Resend segment? Spec 142: a plain
+   * lockless read, used by `reclaim-orphaned-audiences` only, so a segment
+   * already recorded as deleted is skipped, not reported unattributed. The
+   * dedupe itself is migration 0328's index, through `AuditPort.emitOnce`; the
    * first `reason` wins (an accepted consequence: a `hold` row whose lease gate
    * then stopped the delete keeps `reason: 'hold'` after cleanup really
    * deletes the segment).
    *
-   * The read first takes a transaction-scoped advisory lock on (tenant,
-   * segment) in the `broadcasts-audience-audit:` namespace (disjoint from the
-   * row lock's `broadcasts:` and the evidence locks), so two sites'
-   * check-then-insert on one segment is serialised. Tenant-scoped by RLS AND
-   * an explicit `tenant_id` predicate (`audit_log`'s policy also admits
-   * `tenant_id IS NULL` rows); a tx bound to another tenant (or to none) is
-   * refused with an `AuditPortInvariantError` (review round 3), so the row
-   * helper fails closed and the Resend call is never made.
-   *
-   * Ordering contract (review round 3): this is NOT a pure read. It sets
-   * `SET LOCAL lock_timeout` (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, for the rest of
-   * the tx) and takes the per-segment advisory lock, held to the end of the tx.
-   * A caller that writes a deleted row calls it FIRST, in the same tx as any
-   * {@link findAudienceDisclosureInTx} read and the insert.
+   * Tenant-scoped by RLS AND an explicit `tenant_id` predicate (`audit_log`'s
+   * policy also admits `tenant_id IS NULL` rows); a tx bound to another tenant
+   * (or to none) is refused with an `AuditPortInvariantError` (spec 139 s2
+   * review round 3), so the row helper fails closed and the Resend call is
+   * never made. It takes no lock and sets no `lock_timeout`.
    */
   hasAudienceDeletedAuditInTx(tx: unknown, tenantId: TenantSlug, resendAudienceId: string): Promise<boolean>;
 
@@ -850,10 +843,9 @@ export interface BroadcastsRepo {
    * Tenant-scoped exactly as {@link hasAudienceDeletedAuditInTx}, with the same
    * `AuditPortInvariantError` refusal of a tx bound to another tenant.
    *
-   * Ordering contract (review round 3): it takes NO lock and sets no
-   * `lock_timeout`. It relies on {@link hasAudienceDeletedAuditInTx} having run
-   * first in the same tx (the per-segment lock is then held, and the bound
-   * applies); disclosed rows are append-only, so the read itself needs none.
+   * It takes no lock and sets no `lock_timeout`: disclosed rows are
+   * append-only, so the read needs none (spec 142 removed the per-segment lock
+   * the reclaim's dedupe read used to take before it).
    */
   findAudienceDisclosureInTx(
     tx: unknown,

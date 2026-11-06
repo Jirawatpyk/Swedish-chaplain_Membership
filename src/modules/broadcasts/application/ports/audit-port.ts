@@ -743,8 +743,9 @@ export interface F7AuditPayloadShapes {
     readonly recipient_count: number;
   };
   // Spec 139 s2 (DA2, DA3) — a segment that may hold recipients is about to be
-  // deleted (before the delete's lease gate). One row per segment: the delete
-  // sites dedupe on `resend_audience_id` (`hasAudienceDeletedAuditInTx`).
+  // deleted (before the delete's lease gate). One row per (tenant, segment):
+  // spec 142 writes it only through `AuditPort.emitOnce`, against migration
+  // 0328's partial unique index `audit_log_audience_deleted_once`.
   readonly broadcast_audience_deleted: AudienceAuditCommon & {
     readonly reason: AudienceDeleteReason;
   };
@@ -775,12 +776,25 @@ export const AUDIENCE_AUDIT_PAYLOAD_KEYS = {
 } as const satisfies Record<string, keyof AudienceAuditCommon>;
 
 /**
- * Spec 139 s2 review round 1 — how long the audience-audit dedupe waits for its
- * advisory lock (`hasAudienceDeletedAuditInTx`); the retention sweep's 5 s.
- * Review round 2 (code-review #2): here, not in the repo, so the reclaim's
- * chunk-start deadline check can charge it beside `RESEND_CALL_TIMEOUT_MS`.
+ * How long `emitOnce`'s INSERT waits on another transaction's uncommitted
+ * insert of the same (tenant, segment) key before it gives up with 55P03
+ * (`SET LOCAL lock_timeout`; the Neon pooler can drop `statement_timeout`).
+ * The retention sweep's 5 s. Spec 139 s2 review round 1 introduced it for the
+ * advisory lock that spec 142 removed; the INSERT still waits (plan review,
+ * 6 Nov 2026), so the bound stays. In practice the holder's transaction is a
+ * single INSERT, so the wait is milliseconds.
  */
 export const AUDIENCE_AUDIT_LOCK_TIMEOUT_MS = 5_000;
+
+/**
+ * Spec 142 (AO2) — the one input `emitOnce` takes: the deleted row, with a
+ * tenant. The segment id is required by the payload type
+ * (`AudienceAuditCommon.resend_audience_id`), because a NULL key never
+ * conflicts in a unique index and would silently allow duplicates.
+ */
+export interface AudienceDeletedEmitInput extends TypedAuditEmitInput<'broadcast_audience_deleted'> {
+  readonly tenantId: string;
+}
 
 /** Spec 139 s2 (DA3) — the fields both audience rows carry. */
 export interface AudienceAuditCommon {
@@ -972,6 +986,27 @@ export interface AuditPort {
     tx: unknown,
     events: readonly TypedAuditEmitInput<E>[],
   ): Promise<void>;
+  /**
+   * Spec 142 (AO2) — the `broadcast_audience_deleted` row, at most once per
+   * (tenant, segment). `INSERT … ON CONFLICT (tenant_id,
+   * (payload->>'resend_audience_id')) WHERE event_type =
+   * 'broadcast_audience_deleted' DO NOTHING RETURNING 1` against migration
+   * 0328's index: answers true when it wrote the row, false when the key
+   * already had one (the first `reason` wins).
+   *
+   * - The tx must be the caller's tenant-bound tx; a null tx, a null
+   *   `tenantId`, or a tx bound to another tenant is an
+   *   `AuditPortInvariantError` (a NULL never conflicts, and a wrong-tenant
+   *   row is a wiring bug), so the caller fails closed.
+   * - The INSERT waits on another tx's uncommitted insert of the key: if that
+   *   commits, this answers false; if it rolls back, this writes and answers
+   *   true. The wait is bounded by `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` and ends
+   *   in a 55P03 driver error.
+   * - Nothing is swallowed: any other storage error reaches the caller.
+   *
+   * REQUIRED, unlike `emitMany`: the deleted row has no other writer.
+   */
+  emitOnce(tx: unknown, event: AudienceDeletedEmitInput): Promise<boolean>;
 }
 
 /**

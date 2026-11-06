@@ -82,7 +82,7 @@ function makeDeps(rows: BroadcastImageRecord[], liveCounts: Record<string, numbe
     put: vi.fn(),
     delete: vi.fn(async () => undefined),
   };
-  const audit: AuditPort = { emit: vi.fn(async () => undefined), emitTyped: vi.fn(async () => undefined) };
+  const audit: AuditPort = { emit: vi.fn(async () => undefined), emitOnce: async () => true, emitTyped: vi.fn(async () => undefined) };
   return { imagesRepo, storage, audit };
 }
 

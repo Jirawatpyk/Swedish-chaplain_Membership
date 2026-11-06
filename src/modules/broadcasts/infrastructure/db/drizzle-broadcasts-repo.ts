@@ -60,7 +60,7 @@ import {
   orphanStuckCutoff,
 } from '../../domain/value-objects/orphaned-resend-id';
 import { orphanStuckSql } from './_orphan-stuck-sql';
-import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, AUDIENCE_AUDIT_PAYLOAD_KEYS, AuditPortInvariantError } from '../../application/ports/audit-port';
+import { AUDIENCE_AUDIT_PAYLOAD_KEYS, AuditPortInvariantError } from '../../application/ports/audit-port';
 import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
@@ -190,13 +190,14 @@ export async function assertTenantBoundTx(
 
 /**
  * Spec 139 s2, review round 3 (code-review #1) — `assertTenantBoundTx` for the
- * two audience audit reads, whose refusal is an `AuditPortInvariantError`: the
- * row helper then fails closed (ERROR `*.audit_invariant`, rethrown, no Resend
- * call) instead of reading a wiring bug as a lost row and making the call. A
- * driver error on the probe stays as it is (a lost row, per `_audience-audit`).
- * The message keeps the original text (tenant slugs only, no PII).
+ * two audience audit reads and (spec 142) `f7AuditAdapter.emitOnce`, whose
+ * refusal is an `AuditPortInvariantError`: the row helper then fails closed
+ * (ERROR `*.audit_invariant`, rethrown, no Resend call) instead of reading a
+ * wiring bug as a lost row and making the call. A driver error on the probe
+ * stays as it is (a lost row, per `_audience-audit`). The message keeps the
+ * original text (tenant slugs only, no PII). Exported for the audit adapter.
  */
-async function assertAudienceAuditTenantBoundTx(
+export async function assertAudienceAuditTenantBoundTx(
   tx: TenantTx,
   expectedTenantId: string,
   callerName: string,
@@ -561,11 +562,12 @@ export async function hasLiveDispatchLeaseStatement(
 }
 
 /**
- * `SET LOCAL lock_timeout` for the rest of the caller's tx (the lease check and
- * the release each run in their own). A literal, not a bind parameter: SET
- * takes none, so the value is validated as a positive integer first.
+ * `SET LOCAL lock_timeout` for the rest of the caller's tx (the lease check, the
+ * release and the audit adapter's `emitOnce` each run in their own). A literal,
+ * not a bind parameter: SET takes none, so the value is validated as a
+ * positive integer first. Exported for the audit adapter.
  */
-async function setLocalLockTimeout(tx: TenantTx, lockTimeoutMs: number, callerName: string): Promise<void> {
+export async function setLocalLockTimeout(tx: TenantTx, lockTimeoutMs: number, callerName: string): Promise<void> {
   if (!Number.isInteger(lockTimeoutMs) || lockTimeoutMs <= 0) {
     throw new Error(`${callerName}: lockTimeoutMs must be a positive integer, got ${lockTimeoutMs}`);
   }
@@ -1829,28 +1831,15 @@ export function makeDrizzleBroadcastsRepo(
     },
 
     /**
-     * See the port docblock. The `broadcasts-audience-audit:` lock key is
-     * disjoint from the row lock's `broadcasts:` and from the evidence and
-     * unverifiable locks. `tenant_id = ${tenantIdArg}` is load-bearing (the
-     * `audit_log` policy also admits `tenant_id IS NULL` rows). The payload key
-     * is the one the emit writes (`AUDIENCE_AUDIT_PAYLOAD_KEYS`). Read once
-     * per segment delete, so no index is claimed for it.
-     *
-     * Review round 1 (code-review #4, reliability LOW-3): the lock wait is
-     * bounded by `SET LOCAL lock_timeout` (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`),
-     * because the read runs before a bounded Resend call and the Neon pooler
-     * can drop `statement_timeout`. A 55P03 is a plain driver error, so the
-     * site logs the WARN `audience_audit_lock_timeout` and counts a possibly
-     * missing row (review round 2), and the call goes ahead. The bound holds
-     * for the rest of the row's tx (the disclosure read and the insert).
+     * See the port docblock. Spec 142: a lockless read (the dedupe is
+     * migration 0328's index, written through `f7AuditAdapter.emitOnce`).
+     * `tenant_id = ${tenantIdArg}` is load-bearing (the `audit_log` policy also
+     * admits `tenant_id IS NULL` rows). The payload key is the one the emit
+     * writes (`AUDIENCE_AUDIT_PAYLOAD_KEYS`). Read once per reclaimed segment.
      */
     async hasAudienceDeletedAuditInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string): Promise<boolean> {
       const tx = txUnknown as TenantTx;
       await assertAudienceAuditTenantBoundTx(tx, ctx.slug, 'hasAudienceDeletedAuditInTx', 'broadcast_audience_deleted');
-      await setLocalLockTimeout(tx, AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, 'hasAudienceDeletedAuditInTx');
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-audience-audit:' || ${tenantIdArg} || ':' || ${resendAudienceId}, 0))`,
-      );
       const rows = (await tx.execute(sql`
         SELECT EXISTS (
           SELECT 1
@@ -1865,9 +1854,8 @@ export function makeDrizzleBroadcastsRepo(
 
     /**
      * See the port docblock. Tenant-fenced as `hasAudienceDeletedAuditInTx`
-     * (`assertTenantBoundTx` and the explicit `tenant_id` predicate), but it
-     * takes no lock: disclosed rows are append-only, and the dedupe read that
-     * runs before it in the same tx (the reclaim's order) holds the lock.
+     * (`assertTenantBoundTx` and the explicit `tenant_id` predicate); it takes
+     * no lock: disclosed rows are append-only.
      */
     async findAudienceDisclosureInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string) {
       const tx = txUnknown as TenantTx;

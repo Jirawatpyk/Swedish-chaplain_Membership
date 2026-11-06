@@ -82,6 +82,7 @@ function makeAudit(): { emits: Array<AuditEmitInput>; port: AuditPort } {
       // R6.2 H1 — typed-emit mirror: production code may call either
       // method depending on whether the event has a typed payload in
       // F7AuditPayloadShapes; tests assert on `emits` regardless.
+      emitOnce: async () => true,
       async emitTyped(_tx, e) {
         emits.push(e as AuditEmitInput);
       },
@@ -906,6 +907,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
         auditWasInsideTx = txOpened && !txClosed;
         audit.emits.push(e);
       },
+      emitOnce: async () => true,
       async emitTyped(_tx, e) {
         auditWasInsideTx = txOpened && !txClosed;
         audit.emits.push(e as AuditEmitInput);

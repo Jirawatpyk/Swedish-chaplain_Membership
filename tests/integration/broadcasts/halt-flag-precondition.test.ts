@@ -53,6 +53,7 @@ const auditPort: AuditPort = {
   async emit(_tx, e) {
     auditEmits.push(e);
   },
+  emitOnce: async () => true,
   async emitTyped(_tx, e) {
     auditEmits.push(e as AuditEmitInput);
   },

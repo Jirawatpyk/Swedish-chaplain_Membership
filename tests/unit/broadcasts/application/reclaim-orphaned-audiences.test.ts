@@ -38,7 +38,7 @@ import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/res
 import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
-import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
+import { AuditPortInvariantError, type AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -881,7 +881,8 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
         events.push(`audit:${e.eventType}`);
         rows.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, requestId: e.requestId, payload: e.payload });
       },
-      async emitOnce(_tx: unknown, e: Row): Promise<boolean> {
+      async emitOnce(_tx: unknown, input: AudienceDeletedEmitInput): Promise<boolean> {
+        const e: Row = { ...input, payload: { ...input.payload } };
         if (opts.auditThrows === 'invariant') throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
         if (opts.auditThrows === 'storage') throw new Error('53300 too many connections');
         // An INSERT wait past `lock_timeout` as Drizzle throws it: the driver's 55P03 at `.cause`.

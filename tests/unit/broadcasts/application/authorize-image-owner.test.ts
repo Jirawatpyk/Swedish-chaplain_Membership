@@ -40,6 +40,7 @@ function makeDeps(o: {
     async emit(_tx, e) {
       audit.events.push({ eventType: e.eventType, payload: e.payload });
     },
+    emitOnce: async () => true,
     async emitTyped(_tx, e) {
       audit.events.push({ eventType: e.eventType, payload: e.payload as Record<string, unknown> });
     },

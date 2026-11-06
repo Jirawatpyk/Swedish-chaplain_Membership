@@ -97,7 +97,7 @@ const makeDeps = (
     }),
     delete: vi.fn(),
   };
-  const audit: AuditPort = { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) };
+  const audit: AuditPort = { emit: vi.fn().mockResolvedValue(undefined), emitOnce: async () => true, emitTyped: vi.fn().mockResolvedValue(undefined) };
   const imagesRepo: BroadcastImagesRepo = {
     withTx: vi.fn(async <T>(_t: never, fn: (tx: unknown) => Promise<T>) => fn(null)),
     record: vi.fn(async (_t: never, input: Record<string, unknown>) => ({ id: 'img-1', ...input })) as never,

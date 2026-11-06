@@ -28,13 +28,13 @@
  *   to fence; its lease simply expires at TTL and the row waits one more tick.
  * - the CLAIM's wait for the row lock is not bounded by `lock_timeout`; it
  *   stays the ASSUMED k term (one cascade per row per tick, ≤ E).
- * - spec 139 s2 review round 2 (code-review #6): the restart's
- *   `broadcast_audience_deleted` row and its wait for the segment's
- *   `broadcasts-audience-audit:` advisory lock (≤ `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`,
- *   5 s). The row is written BEFORE `leaseGateStep('delete_audience')`, so the
- *   wait is followed by a lease check that demands `CALL_HEADROOM_MS` left and
- *   cannot overrun the lease. (Tick 1's disclosed row is not deduped and takes
- *   no such lock.)
+ * - the restart's `broadcast_audience_deleted` row (spec 139 s2; spec 142
+ *   writes it through `emitOnce`, with no lock). Its INSERT can wait on another
+ *   tx's uncommitted insert of the same (tenant, segment) key, at most
+ *   `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s; in practice that holder is one short
+ *   INSERT). The row is written BEFORE `leaseGateStep('delete_audience')`, so
+ *   any wait is followed by a lease check that demands `CALL_HEADROOM_MS` left
+ *   and cannot overrun the lease.
  * None of these can break the lease: safety rests on TTL > `maxDuration` (a
  * holder is killed before its lease can end) and on the token fencing every
  * write.

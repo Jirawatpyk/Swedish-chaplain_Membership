@@ -118,7 +118,7 @@ function makeRepoMocks(opts: {
 function makeAuditEmitMock() {
   const emit = vi.fn<AuditPort['emit']>(async () => undefined);
   const emitTyped = vi.fn<AuditPort['emitTyped']>(async () => undefined);
-  const audit: AuditPort = { emit, emitTyped };
+  const audit: AuditPort = { emit, emitTyped, emitOnce: async () => true };
   return { audit, emit, emitTyped };
 }
 
@@ -169,6 +169,7 @@ describe('getMemberBroadcast', () => {
       emit: vi.fn<AuditPort['emit']>(async () => {
         throw new Error('audit transport down');
       }),
+      emitOnce: async () => true,
       emitTyped: vi.fn<AuditPort['emitTyped']>(async () => {
         throw new Error('audit transport down');
       }),

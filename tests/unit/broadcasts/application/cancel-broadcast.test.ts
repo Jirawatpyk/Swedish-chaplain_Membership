@@ -85,6 +85,7 @@ function makeAudit(): { emits: Array<AuditEmitInput>; txs: unknown[]; port: Audi
         emits.push(e);
         txs.push(tx);
       },
+      emitOnce: async () => true,
       async emitTyped(tx, e) {
         emits.push(e as AuditEmitInput);
         txs.push(tx);
@@ -884,6 +885,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       async emit() {
         throw new Error('audit table down');
       },
+      emitOnce: async () => true,
       async emitTyped() {
         throw new Error('audit table down');
       },

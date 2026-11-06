@@ -33,10 +33,11 @@
  *     `maxDuration`) covers the listing and the delete chunks. The gateway
  *     stops paging inside it; a chunk starts only while one bounded call
  *     (`RESEND_CALL_TIMEOUT_MS`; a chunk's deletes run in parallel, each with
- *     its 403 probe on the same signal) plus its audit row's lock wait
- *     (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, spec 139 s2 review round 2) still
- *     fits — both judged by `oneCallFitsBefore` (review round 1, R1-H; the
- *     listing pages charge the call alone) — and the orphans not reached
+ *     its 403 probe on the same signal) still fits, judged by
+ *     `oneCallFitsBefore` (review round 1, R1-H; the listing pages use the
+ *     same rule). Each delete's audit row is DB work, which the route's
+ *     `RECLAIM_DEADLINE_MARGIN_MS` covers (spec 142 removed the charge spec 139
+ *     s2 review round 2 added for its lock wait) — and the orphans not reached
  *     are `deferredDeletes`. Nothing is resumed: the next daily run lists again
  *     from page one, and the deferred orphans are found and deleted then. A cut
  *     run is counted on `broadcasts_audience_reclaim_truncated_total{stage}`.
@@ -46,8 +47,8 @@
  *     segment, with that row's broadcast and requester. A segment that already
  *     has its deleted row gets none; any other gets a WARN
  *     (`delete_unattributed`) and `broadcasts_audience_reclaim_delete_unattributed_total`.
- *     A storage failure is logged and counted and the delete goes ahead (a
- *     lock timeout as the WARN `audience_audit_lock_timeout`); an adapter
+ *     A storage failure is logged and counted and the delete goes ahead (an
+ *     INSERT lock timeout as the WARN `audience_audit_lock_timeout`); an adapter
  *     invariant error stops that orphan's delete (counted `failed`; the row
  *     helper logs the ERROR `audit_invariant`).
  *   - Per-item try/catch: a single delete failure does NOT abort the batch.
@@ -82,7 +83,7 @@ import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
 import { broadcastsMetrics } from '@/lib/metrics';
 import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore, type BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
-import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, type AuditPort } from '../ports/audit-port';
+import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import { recordReclaimedAudienceDeleted } from './_audience-audit';
@@ -100,10 +101,10 @@ export interface ReclaimOrphanedAudiencesDeps {
   readonly clock: ClockPort;
   /**
    * Spec 139 s2 (DA2) — REQUIRED: the `broadcast_audience_deleted` row is
-   * written before a disclosed segment's delete. A composition that forgot it
-   * would delete with no record, silently.
+   * written before a disclosed segment's delete, through `emitOnce` (spec
+   * 142). A composition that forgot it would delete with no record, silently.
    */
-  readonly audit: Pick<AuditPort, 'emit'>;
+  readonly audit: Pick<AuditPort, 'emitOnce'>;
 }
 
 export interface ReclaimOrphanedAudiencesInput {
@@ -415,15 +416,12 @@ export async function reclaimOrphanedAudiences(
   for (let i = 0; i < orphans.length; i += RECLAIM_CONCURRENCY) {
     // Spec 140 DT5 — start a chunk only while one bounded call still fits (the
     // gateway's listing pages judge with the same rule, review round 1 R1-H).
-    // Spec 139 s2 review round 2 (code-review #2) — each delete first writes its
-    // audit row, whose lock wait is bounded too: charge both.
-    if (
-      !oneCallFitsBefore(
-        input.deadlineAt,
-        deps.clock.now().getTime(),
-        RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS,
-      )
-    ) {
+    // Spec 142 — the audit row each delete writes first is not charged here:
+    // RECLAIM_DEADLINE_MARGIN_MS covers the DB work, and the Resend call is
+    // bounded by RESEND_CALL_TIMEOUT_MS. (Its INSERT can still wait on another
+    // tx's uncommitted insert of the key, at most AUDIENCE_AUDIT_LOCK_TIMEOUT_MS;
+    // in practice that holder is one short INSERT.)
+    if (!oneCallFitsBefore(input.deadlineAt, deps.clock.now().getTime(), RESEND_CALL_TIMEOUT_MS)) {
       deferredDeletes = orphans.length - i;
       broadcastsMetrics.audienceReclaimTruncated(deps.tenant.slug, 'deletes');
       logger.warn(

@@ -331,6 +331,7 @@ function makeAudit(): { port: AuditPort; emits: Array<AuditEmitInput> } {
       async emit(_tx, e) {
         emits.push(e);
       },
+      emitOnce: async () => true,
       async emitTyped(_tx, e) {
         emits.push(e as AuditEmitInput);
       },

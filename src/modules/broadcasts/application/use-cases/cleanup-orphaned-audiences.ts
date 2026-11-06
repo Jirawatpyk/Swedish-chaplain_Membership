@@ -148,14 +148,15 @@ export interface CleanupOrphanedAudiencesDeps {
   readonly tenant: TenantContext;
   readonly broadcastsRepo: Pick<
     BroadcastsRepo,
-    'listTerminalBroadcastsWithLiveAudience' | 'withTx' | 'markAudienceDeletedInTx' | 'hasAudienceDeletedAuditInTx'
+    'listTerminalBroadcastsWithLiveAudience' | 'withTx' | 'markAudienceDeletedInTx'
   >;
   /**
    * Spec 139 s2 (DA2) — REQUIRED: the `broadcast_audience_deleted` row is
-   * written before each delete. A composition that forgot it would delete
-   * segments with no record, silently.
+   * written before each delete, through `emitOnce` (spec 142: the index is the
+   * dedupe). A composition that forgot it would delete segments with no
+   * record, silently.
    */
-  readonly audit: Pick<AuditPort, 'emit'>;
+  readonly audit: Pick<AuditPort, 'emitOnce'>;
   readonly broadcastsGateway: Pick<BroadcastsGatewayPort, 'deleteAudience' | 'deleteBroadcastOnce' | 'retrieveBroadcastOnce'>;
   readonly clock: ClockPort;
   /** Spec 140 s2c — the orphaned Resend id record the drain settles. */

@@ -39,6 +39,7 @@ function makeAudit(throwOnEmit = false): {
         if (throwOnEmit) throw new Error('audit DB unreachable');
         emits.push(event);
       },
+      emitOnce: async () => true,
       async emitTyped(_tx, event) {
         if (throwOnEmit) throw new Error('audit DB unreachable');
         emits.push(event as AuditEmitInput);
@@ -166,6 +167,7 @@ describe('enforce-tenant-context — Wave 6b', () => {
           'simulated wiring bug',
         );
       },
+      emitOnce: async () => true,
       async emitTyped() {
         throw new AuditPortInvariantError(
           'broadcast_cross_member_probe',

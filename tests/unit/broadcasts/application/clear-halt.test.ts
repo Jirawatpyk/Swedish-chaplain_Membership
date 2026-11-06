@@ -42,6 +42,7 @@ function makeAudit(): {
       async emit(_tx, e) {
         emits.push(e);
       },
+      emitOnce: async () => true,
       async emitTyped(_tx, e) {
         emits.push(e as AuditEmitInput);
       },
@@ -250,6 +251,7 @@ describe('clear-halt — Wave 6 GREEN (T114)', () => {
       async emit() {
         throw new Error('audit table down');
       },
+      emitOnce: async () => true,
       async emitTyped() {
         throw new Error('audit table down');
       },
