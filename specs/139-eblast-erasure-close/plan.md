@@ -546,7 +546,7 @@ Verdicts:
 | CR3 #4: a lock timeout counts on the same series as a real loss | **Accepted**: the row may be missing. The WARN versus ERROR line tells them apart |
 | CR3 #6 / #7 / #8: three copies of the audit envelope, the dedupe pattern and the payload literal | **Listed (Low)**: a shared helper is a follow-up candidate |
 
-**Re-Verify on the final head:** the maintainer's `/verify`, 6 Nov 2026, on `4eddf9b61`, after review rounds 1–3. Run on :3401, Neon dev, the live Resend account, sink addresses only. The re-run covers the paths the review fixes touched: the restart and the cleanup with the dedupe lock (`lock_timeout`), and the invariant and lock-timeout log arms. Result: **PASS**.
+**Re-Verify on the final head:** the maintainer's `/verify`, 6 Nov 2026, on `4eddf9b61`, after review rounds 1–3. Run on :3401, Neon dev, the live Resend account, sink addresses only. The run drove the paths the review fixes touched that can be driven live: the restart and the cleanup, with the dedupe lock and its `lock_timeout`. It did NOT exercise the invariant or lock-timeout log arms. It only observed that neither fired, and those arms are proven by the unit and integration cells. The reclaim changes (dedupe first, `segmentNameBroadcastId`, the deadline charge) cannot be driven live, because of the 24 h grace, and also rest on the unit cells. Result: **PASS**.
 
 | Done-when / item | Evidence |
 |---|---|
@@ -559,6 +559,15 @@ Verdicts:
 **Setup slip in the run (not the code):** the shell redirect created the signal file `B` empty before the id was written. The harness read it in that gap, and inserted row B with `resend_audience_id = ''`. That row ended `failed_to_dispatch` / `gateway_permanent`; nothing reached Resend for it, and its segment was then used by row B2. Unplanned probe: a row holding an empty segment id fails permanently at the gateway, with no import and no audit row.
 
 **Teardown:** the tenant and its rows were removed (0 `broadcasts` rows). At Resend, every segment created was deleted, and the 3 sink contacts were deleted by id. The account is back at 22 contacts, with only `General`.
+
+**Gates after rounds 2 and 3:**
+- **Runs on `4eddf9b61` code** (round 3's last code commit was `41935049e`; every commit after it is docs-only):
+  - unit (broadcasts, broadcast, enum guard, label coverage): 3928/3928;
+  - contract: 3094 passed + 2 todo;
+  - integration by path, each exit 0: tx-tenant-binding-guard 4, audience-audit-rows 11, audience-cleanup 5;
+  - `pnpm check`: exit 0 (red-first: 48 commits).
+- **Runs on `448c8b275`** (round 2 code): unit 3928, contract 3094, integration audience-audit-rows 11, audience-cleanup 5, audit/completeness 45, and `pnpm check` exit 0.
+- **Not run locally:** the full `pnpm test:coverage` (CI runs it).
 
 **Dev litter:** each run of `audience-audit-rows` leaves `audit_log` rows with the summary `spec 139 s2 fixture`, some with `tenant_id IS NULL` (`audit_log` is append-only).
 
