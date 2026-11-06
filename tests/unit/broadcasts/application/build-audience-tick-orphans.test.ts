@@ -69,6 +69,8 @@ function harness(opts: Opts = {}) {
   const events: string[] = [];
   const recorded: RecordOrphanInput[] = [];
   const audits: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+  /** Spec 142 review round 3 — the rows `emitOnce` wrote (the restart's deleted row). */
+  const deletedRows: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
   const memberEmails: unknown[] = [];
   const checks = opts.checks ?? ['held'];
   let checkIndex = 0;
@@ -253,7 +255,7 @@ function harness(opts: Opts = {}) {
     pauseBeforeReprobe: async () => {},
   };
   const run = () => buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
-  return { run, events, recorded, audits, memberEmails };
+  return { run, events, recorded, audits, deletedRows, memberEmails };
 }
 
 beforeEach(() => {
@@ -372,6 +374,13 @@ describe('spec 140 s2c — the import leg records its orphans at the caller', ()
     const res = await h.run();
     expect(res.ok ? res.value : res.error).toEqual({ kind: 'dispatch_held_member_suspended' });
     expect(h.recorded).toEqual([]);
+    // Spec 142 review round 3 (code-review #1) — the restart's deleted row is
+    // written, not lost: a double without `emitOnce` sent it down the silent
+    // lost-row branch while this cell stayed green.
+    expect(h.deletedRows).toEqual([
+      { eventType: 'broadcast_audience_deleted', payload: expect.objectContaining({ resend_audience_id: 'aud-1' }) },
+    ]);
+    expect(vi.mocked(logger.error).mock.calls.map((c) => c[1])).not.toContain('broadcasts.audience_import.audience_audit_lost');
   });
 
   it('a lost audience attach whose delete fails → audience_leaked (resource_type audience)', async () => {
