@@ -26,7 +26,11 @@ import { erasedUserEmail } from '@/modules/auth/domain/erased-user-email';
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const refreshSpy = vi.fn();
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshSpy }) }));
+let searchParams = new URLSearchParams();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: refreshSpy }),
+  useSearchParams: () => searchParams,
+}));
 
 type Users = UserListTableProps['users'];
 
@@ -707,5 +711,18 @@ describe('UserListTable — empty list on AURA (PR Q)', () => {
       expect(state.querySelector('.aura-empty__text')).toHaveTextContent(en.admin.users.emptyBody);
     }
     expect(container.querySelector('td .aura-empty')).not.toHaveClass('is-bordered');
+  });
+
+  it('a search or filter with no match says so, not "No users yet" (R143b)', () => {
+    searchParams = new URLSearchParams('q=zzqq-nomatch');
+    try {
+      const { container } = renderTable([]);
+      const state = container.querySelector('td .aura-empty')!;
+      expect(state).toHaveTextContent(en.admin.users.emptyFiltered);
+      expect(state.querySelector('.aura-empty__text')).toHaveTextContent(en.admin.users.emptyFilteredBody);
+      expect(state).not.toHaveTextContent(en.admin.users.empty);
+    } finally {
+      searchParams = new URLSearchParams();
+    }
   });
 });

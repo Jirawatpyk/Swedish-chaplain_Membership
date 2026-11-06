@@ -9,7 +9,7 @@
  * Keeps the parent server component free of 'use client' noise.
  */
 import { useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import {
@@ -163,6 +163,10 @@ export function UserListTable({
   const t = useTranslations('admin.users');
   const tErrors = useTranslations('errors');
   const router = useRouter();
+  // A search or a filter that matches nobody is not an empty tenant (R143b):
+  // the same params `users-filters.tsx` writes.
+  const searchParams = useSearchParams();
+  const filtered = ['q', 'role', 'status'].some((k) => (searchParams.get(k) ?? '') !== '');
   const [pending, setPending] = useState<PendingAction>(null);
   const [roleChangeUser, setRoleChangeUser] = useState<UserRow | null>(null);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
@@ -598,7 +602,7 @@ export function UserListTable({
                     {/* PR Q — AURA's EmptyState at the cell size. Not a live
                         region: the table and the phone list both render it,
                         so one announcer each would read it twice. */}
-                    <EmptyState title={t('empty')} description={t('emptyBody')} size="sm" bordered={false} announce={false} />
+                    <EmptyState title={t(filtered ? 'emptyFiltered' : 'empty')} description={t(filtered ? 'emptyFilteredBody' : 'emptyBody')} size="sm" bordered={false} announce={false} />
                   </Td>
                 </Tr>
               ) : null}
@@ -642,7 +646,7 @@ export function UserListTable({
           })}
           {users.length === 0 ? (
             <li>
-              <EmptyState title={t('empty')} description={t('emptyBody')} size="sm" announce={false} />
+              <EmptyState title={t(filtered ? 'emptyFiltered' : 'empty')} description={t(filtered ? 'emptyFilteredBody' : 'emptyBody')} size="sm" announce={false} />
             </li>
           ) : null}
         </ul>

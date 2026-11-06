@@ -691,6 +691,8 @@
       "pageSubtitle": "Manage staff and member accounts, roles, and status.",
       "empty": "No users yet",
       "emptyBody": "Invite the first one to get started.",
+      "emptyFiltered": "No users match your filters",
+      "emptyFilteredBody": "Try another search, or clear the filters.",
       "erasedAccount": "Erased account",
       "filters": {
         "searchPlaceholder": "Search by email or display name",

@@ -691,6 +691,8 @@
       "pageSubtitle": "Hantera personal- och medlemskonton, roller och status.",
       "empty": "Inga användare ännu",
       "emptyBody": "Bjud in den första för att komma igång.",
+      "emptyFiltered": "Inga användare matchar filtren",
+      "emptyFilteredBody": "Prova en annan sökning eller rensa filtren.",
       "erasedAccount": "Raderat konto",
       "filters": {
         "searchPlaceholder": "Sök på e-post eller visningsnamn",
@@ -6206,7 +6208,7 @@
           },
           "recentDeliveries": {
             "title": "Senaste leveranser",
-            "empty": "Inga senaste leveranser ännu",
+            "empty": "Inga leveranser ännu",
             "emptyBody": "Trigga en Zap eller tryck på \"Skicka testhändelse\" för att se trafik.",
             "includeTestDeliveriesLabel": "Inkludera testleveranser",
             "updating": "Uppdaterar senaste leveranser…",
