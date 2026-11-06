@@ -58,10 +58,34 @@ export async function seedNoInvoiceMember(): Promise<NoInvoiceMemberSeed | null>
       return null;
     }
 
+    // Sweep leftovers from runs killed before their cleanup (worker loss,
+    // timeout): AS3 members over an hour old that never gained an invoice.
+    await sql.begin(async (tx) => {
+      const stale = await tx<{ member_id: string; user_id: string | null }[]>`
+        SELECT m.member_id, c.linked_user_id AS user_id
+        FROM members m
+        JOIN contacts c ON c.tenant_id = m.tenant_id AND c.member_id = m.member_id
+        JOIN users u ON u.id = c.linked_user_id
+        WHERE m.tenant_id = ${TENANT_ID}
+          AND m.company_name LIKE 'E2E AS3 Co %'
+          AND u.email LIKE 'e2e-as3-%@swecham.test'
+          AND u.created_at < now() - interval '1 hour'
+          AND NOT EXISTS (
+            SELECT 1 FROM invoices i WHERE i.tenant_id = m.tenant_id AND i.member_id = m.member_id
+          )
+      `;
+      for (const row of stale) {
+        await tx`DELETE FROM contacts WHERE tenant_id = ${TENANT_ID} AND member_id = ${row.member_id}::uuid`;
+        await tx`DELETE FROM members WHERE tenant_id = ${TENANT_ID} AND member_id = ${row.member_id}::uuid`;
+        if (row.user_id) await tx`DELETE FROM users WHERE id = ${row.user_id}::uuid`;
+      }
+    });
+
     const passwordHash = await argon2Hasher.hash(password);
-    // `member_number` is per-tenant UNIQUE; the 990_000+ band keeps clear of
-    // the allocator's 1..N, as the other dummy-member seeds do.
-    const memberNumber = 990_000 + Math.floor(Math.random() * 9_000);
+    // `member_number` is per-tenant UNIQUE. A band of its own (8_000_000+),
+    // clear of the allocator's 1..N and of the other dummy seeds' 990_000+,
+    // wide enough that two runs at once (chromium + mobile-chrome) don't collide.
+    const memberNumber = 8_000_000 + Math.floor(Math.random() * 1_000_000);
 
     await sql.begin(async (tx) => {
       await tx`
