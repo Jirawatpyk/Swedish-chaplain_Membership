@@ -29,6 +29,7 @@ import { logger } from '@/lib/logger';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import type { BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import type { AudienceDeletedAuditPort, AudienceDeletedEmitInput, AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import { makeFakeSendStanding } from '../../../helpers/eblast-approval-fakes';
 
 const tenant = asTenantContext('test-tenant');
@@ -303,11 +304,18 @@ function makeDeps(opts: {
           rec.sends.push(id);
         },
       },
+      // Spec 142 review round 3 (code-review #1) — the restart writes its
+      // deleted row through `emitOnce`; `satisfies` makes a double without it a
+      // type error instead of a silent lost row.
       audit: {
         async emit(_tx: unknown, e: { eventType: string }) {
           rec.audits.push(e.eventType);
         },
-      },
+        async emitOnce(_tx: unknown, e: AudienceDeletedEmitInput) {
+          rec.deletedRows.push({ eventType: e.eventType, payload: { ...e.payload } });
+          return true;
+        },
+      } satisfies Pick<AuditPort, 'emit'> & AudienceDeletedAuditPort,
       // ── Round 4 T2 — the three ports this harness never had ────────────────
       //
       // Their absence was not a coverage gap, it was a SILENT one: the calls

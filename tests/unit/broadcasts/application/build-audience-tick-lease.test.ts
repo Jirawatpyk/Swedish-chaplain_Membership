@@ -25,6 +25,7 @@ import { broadcastsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick, type BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import type { AudienceDeletedAuditPort, AudienceDeletedEmitInput, AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
 
@@ -284,7 +285,16 @@ function harness(opts: Opts = {}) {
         return { kind: 'not_found' as const };
       },
     },
-    audit: { async emit() {} },
+    // Spec 142 review round 3 (code-review #1) — the restart writes its
+    // deleted row through `emitOnce`; `satisfies` makes a double without it a
+    // type error instead of a silent lost row.
+    audit: {
+      async emit() {},
+      async emitOnce(_tx: unknown, e: AudienceDeletedEmitInput) {
+        deletedRows.push({ eventType: e.eventType, payload: { ...e.payload } });
+        return true;
+      },
+    } satisfies Pick<AuditPort, 'emit'> & AudienceDeletedAuditPort,
     membersBridge: {
       async getMemberPrimaryContact() {
         return 'member@example.com';
