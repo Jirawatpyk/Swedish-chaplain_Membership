@@ -123,8 +123,11 @@ describe('the DR4 wire guard (spec 140 s4)', () => {
  * held in a variable (`const p = '/contacts/' + e; fetch(p)` passes the concat
  * pattern only if the literal and the `+` sit together, and `fetch(p)` alone
  * says nothing), a `new URL(...)` argument, a path built by `[...].join('/')` or
- * a helper, and a file that reaches Resend without importing any of the three
- * modules above (a raw fetch to `api.resend.com`). The runtime wire guard
+ * a helper, a dynamic `import('resend')` (the importer filter reads static
+ * `from` / `require` only), a re-export through a barrel (a file that takes the
+ * SDK or the client from a local barrel is not in the raw-path set), and a file
+ * that reaches Resend without importing any of the three modules above (a raw
+ * fetch to `api.resend.com`). The runtime wire guard
  * (`tests/support/resend/wire-guard.ts`) covers only part of that: it fails a
  * `DELETE /contacts/{email}` on a path a test drives with a stubbed `fetch`, and
  * sees nothing a test never runs. `\s` spans `\r\n`, so the scan holds on a CRLF
