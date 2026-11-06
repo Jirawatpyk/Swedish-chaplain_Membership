@@ -121,7 +121,7 @@ Rules: `.claude/rules/modules/broadcasts.md` (the measured Resend traps), `membe
 | # | Slice | Done-when lines it covers | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
 | 1 | Erasure close: gate + cascade | DE1–DE6 | security-engineer, pdpa-gdpr, reliability-guardian, senior-tester, spec-compliance-auditor | `139-eblast-erasure-close-s1` | #698 · done |
-| 2 | Art. 30 audit events | DA1–DA5 | pdpa-gdpr, drizzle-migration-reviewer, observability-instrumentor, i18n, spec-compliance-auditor | `139-eblast-erasure-close-s2` | — · in progress |
+| 2 | Art. 30 audit events | DA1–DA5 | pdpa-gdpr, drizzle-migration-reviewer, observability-instrumentor, i18n, spec-compliance-auditor | `139-eblast-erasure-close-s2` | #763 · done |
 
 ## State table (slice 1: the erasure cascade × a dispatch tick on one row)
 
