@@ -99,14 +99,14 @@ export function MemberInvoicesTable({
         </span>
       ),
     },
-    // Card-only (hideBelow is not applied to stacked cards): stand-in until
-    // AURA #198 (a column that shows only in stacked cards).
-    { key: 'cardNumber', label: labels.number, mono: true, card: 'title', hideBelow: 100_000, render: (row) => row.number },
+    // Card-only columns (AURA 5.85 #198 `grid: false`): the phone card's
+    // title and pill; never drawn in the grid.
+    { key: 'cardNumber', label: labels.number, mono: true, card: 'title', grid: false, render: (row) => row.number },
     {
       key: 'status',
       label: labels.status,
       card: 'pill',
-      hideBelow: 100_000,
+      grid: false,
       render: (row) => <StatusPill tone={invoiceStatusTone(row.status)}>{row.statusLabel}</StatusPill>,
     },
     // The phone board's card shows Due, Total and Remaining only.

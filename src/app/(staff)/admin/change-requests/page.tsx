@@ -306,13 +306,14 @@ export async function renderChangeRequestQueueView({
             <ChangeRequestQueueTable items={items} />
           )}
           {/* Spec 122: AURA cursor Pagination — a forward-only keyset, so
-              Previous stays disabled; First (PR #757 review) is the way back
+              there is no Previous (AURA 5.84 #197 showPrevious); First (PR #757 review) is the way back
               from page 2+, disabled on the first page. The same Next href
               as before. */}
           {nextHref || firstHref ? (
             <CursorPagination
               label={t('paginationLabel')}
               showFirst
+              showPrevious={false}
               firstHref={firstHref ?? undefined}
               hasFirst={firstHref !== null}
               nextHref={nextHref ?? undefined}

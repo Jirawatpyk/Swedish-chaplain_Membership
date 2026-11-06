@@ -29,6 +29,20 @@ describe('QueuePagination', () => {
     );
   });
 
+  it('draws no Previous step: the queue only pages forward (AURA 5.84 #197)', () => {
+    render(
+      <QueuePagination
+        label={P.label}
+        status={null}
+        firstPageHref="/admin/broadcasts"
+        nextPageHref="/admin/broadcasts?cursor=c2"
+      />,
+    );
+    expect(screen.getByRole('navigation', { name: P.label })).not.toHaveTextContent(/previous/i);
+    expect(screen.queryByRole('link', { name: /previous/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /previous/i })).toBeNull();
+  });
+
   it('shows the status line it is given, and nothing when there is one page only', () => {
     const { unmount } = render(
       <QueuePagination label={P.label} status="Showing 50 of 132" firstPageHref={null} nextPageHref="/admin/broadcasts?cursor=c2" />,

@@ -18,7 +18,7 @@ import { MemberInvoicesTable, type MemberInvoiceRow } from '@/app/(staff)/admin/
 // (`getBoundingClientRect().width` in a layout effect, then a ResizeObserver),
 // and a 0px box reads as a phone. Give every box a desktop 1280px width and a
 // ResizeObserver that reports it, so the table renders as a browser at 1280
-// does: not stacked, and the card-only columns removed by their `hideBelow`.
+// does: not stacked (the card-only columns are `grid: false`, see below).
 const DESKTOP_WIDTH = 1280;
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
@@ -92,10 +92,17 @@ describe('MemberInvoicesTable (T556)', () => {
   it('a grid with the board columns, the figures as given', () => {
     render(<MemberInvoicesTable rows={[issued, paid]} labels={labels} canMutate />);
     const grid = screen.getByRole('grid', { name: labels.caption });
-    const headers = within(grid).getAllByRole('columnheader').map((h) => h.textContent?.trim());
     // PR P — the status pill sits under the number in the table, so the card
-    // holds every column at 1280; the card-only Number/Status columns (the
-    // phone card's title and pill) are not rendered at this width.
+    // holds every column at 1280. The card-only Number/Status columns (the
+    // phone card's title and pill) are AURA 5.85 `grid: false`: drawn with
+    // `data-grid="off"`, which AURA's stylesheet hides in the grid (jsdom
+    // applies no CSS, so the test leaves them out by that marker).
+    const allHeaders = within(grid).getAllByRole('columnheader');
+    expect(allHeaders.filter((h) => h.getAttribute('data-grid') === 'off').map((h) => h.textContent?.trim())).toEqual([
+      'Number',
+      'Status',
+    ]);
+    const headers = allHeaders.filter((h) => h.getAttribute('data-grid') !== 'off').map((h) => h.textContent?.trim());
     expect(headers.slice(0, 6)).toEqual(['Number', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
     expect(headers.filter((h) => h === 'Number')).toHaveLength(1);
     expect(headers).not.toContain('Status');

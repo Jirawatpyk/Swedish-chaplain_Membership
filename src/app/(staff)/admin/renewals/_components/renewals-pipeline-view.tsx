@@ -196,12 +196,13 @@ export async function renderPipelineLens({
         // page was reached by a cursor. AURA cursor Pagination (same as
         // /admin/audit): a Next link + the visible "Showing first 50" status
         // (only while capped) so everyone knows the list is truncated.
-        // Forward-only, so Previous stays disabled; First (PR #757 review) is
+        // Forward-only, so there is no Previous (AURA 5.84 #197 showPrevious); First (PR #757 review) is
         // the way back from page 2+, disabled on the first page.
         // UrgencyBucketTabs drops the cursor on a tab switch.
         <CursorPagination
           label={t('table.pagination.label')}
           showFirst
+          showPrevious={false}
           firstHref={firstHref ?? undefined}
           hasFirst={firstHref !== null}
           status={nextHref ? t('table.pagination.showingFirst') : null}

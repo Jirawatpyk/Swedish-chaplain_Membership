@@ -48,7 +48,7 @@ export async function renderTasksQueueView({ sectionTabs, queue, nextHref, first
             {queue}
             {/* UX-audit PR-A #1 — the keyset footer, while the page is
                 capped at 50 or was reached by a cursor: AURA cursor
-                Pagination. Forward-only, so Previous stays disabled; First
+                Pagination. Forward-only, so there is no Previous (AURA 5.84 #197 showPrevious); First
                 (PR #757 review) is the way back from page 2+, disabled on
                 the first page. Real links (work without JavaScript); the
                 status is page-position-neutral, so it holds on page 2 too. */}
@@ -56,6 +56,7 @@ export async function renderTasksQueueView({ sectionTabs, queue, nextHref, first
               <CursorPagination
                 label={t('pagination.label')}
                 showFirst
+                showPrevious={false}
                 firstHref={firstHref ?? undefined}
                 hasFirst={firstHref !== null}
                 status={t('pagination.showingFirst')}

@@ -72,9 +72,6 @@ export interface CsvImportHistoryRow {
   readonly errorCsvExpiresAt: string | null;
 }
 
-/** Wider than any table, so these columns never show in the grid. */
-const CARD_ONLY = 100_000;
-
 export interface CsvImportHistoryPagination {
   readonly page: number;
   readonly perPage: number;
@@ -243,13 +240,13 @@ export function CsvImportHistoryTable({
           ),
       },
       // Phone cards only (board `Admin-events-import-history-mobile`):
-      // `hideBelow` drops these from the grid at any width, and stacked cards
-      // ignore it. Date over filename as the title, one summary line, and the
+      // `grid: false` (AURA 5.85 #198) keeps these out of the grid at every
+      // width. Date over filename as the title, one summary line, and the
       // download at the foot only when there is something to download.
       {
         key: 'cardTitle',
         label: t('columns.file'),
-        hideBelow: CARD_ONLY,
+        grid: false,
         card: 'title',
         render: (row) => (
           <span className="flex flex-col gap-[var(--aura-space-1)]">
@@ -263,7 +260,7 @@ export function CsvImportHistoryTable({
       {
         key: 'cardSummary',
         label: '',
-        hideBelow: CARD_ONLY,
+        grid: false,
         card: 'wide',
         render: (row) => (
           <span className="tabular-nums">
@@ -279,7 +276,7 @@ export function CsvImportHistoryTable({
       {
         key: 'cardDownload',
         label: t('columns.actions'),
-        hideBelow: CARD_ONLY,
+        grid: false,
         card: 'footer',
         render: (row) =>
           row.counts.failed > 0 && row.errorCsvAvailable ? (
