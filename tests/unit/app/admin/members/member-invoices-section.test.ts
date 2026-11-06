@@ -2,7 +2,9 @@
  * 122 US5b-1 (T556) — the member invoices section hands the table its money
  * in the board's form ("38,520.00 THB", `formatSatangThb`), the same form as
  * the figures strip above it, so one page never shows one amount two ways
- * (financial-integrity review L1). Remaining is still total − credited.
+ * (financial-integrity review L1). Remaining is the amount still owed (#77):
+ * an issued invoice's total, nothing once paid or credited, "—" for a draft or
+ * a void bill — the same rule as the figures strip's Outstanding.
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
@@ -39,13 +41,13 @@ const { MemberInvoicesSection } = await import(
 );
 
 describe('MemberInvoicesSection money form (T556)', () => {
-  it('Total and Remaining read as "<amount> THB", Remaining net of credits', async () => {
+  it('Total and Remaining read as "<amount> THB"; a paid, partly credited invoice owes nothing', async () => {
     const el = (await MemberInvoicesSection({
       tenant: { slug: 't1' } as never,
       memberId: 'm-1',
       role: 'admin',
     })) as ReactElement<{ rows: { total: string; remaining: string }[] }>;
-    expect(el.props.rows[0]).toMatchObject({ total: '38,520.00 THB', remaining: '37,520.00 THB' });
+    expect(el.props.rows[0]).toMatchObject({ total: '38,520.00 THB', remaining: '0.00 THB' });
   });
 
   // UX review (board): the h2 is "Invoices"; the count sits beside it, not
@@ -94,6 +96,42 @@ describe('MemberInvoicesSection owing flag', () => {
 
   it('an issued invoice is owed', async () => {
     expect(await owingFor({ ...invoice, ...unpaid, status: 'issued' })).toBe(true);
+  });
+});
+
+// #77 (R137): Remaining is what is still owed, not total − credited, so a paid
+// row never reads as owing its full total.
+describe('MemberInvoicesSection Remaining is the amount still owed', () => {
+  const remainingFor = async (row: Record<string, unknown>): Promise<string> => {
+    rows = [row];
+    try {
+      const el = (await MemberInvoicesSection({
+        tenant: { slug: 't1' } as never,
+        memberId: 'm-1',
+        role: 'admin',
+      })) as ReactElement<{ rows: { remaining: string }[] }>;
+      return el.props.rows[0]!.remaining;
+    } finally {
+      rows = [invoice];
+    }
+  };
+  const unpaid = { paidAt: null, creditedTotal: { satang: 0n } };
+
+  it('an issued invoice owes its total', async () => {
+    expect(await remainingFor({ ...invoice, ...unpaid, status: 'issued' })).toBe('38,520.00 THB');
+  });
+
+  it('a paid invoice owes nothing', async () => {
+    expect(await remainingFor({ ...invoice, status: 'paid', creditedTotal: { satang: 0n } })).toBe('0.00 THB');
+  });
+
+  it('a fully credited invoice owes nothing', async () => {
+    expect(await remainingFor({ ...invoice, status: 'credited', creditedTotal: { satang: 3852000n } })).toBe('0.00 THB');
+  });
+
+  it('a void bill and a draft show a dash', async () => {
+    expect(await remainingFor({ ...invoice, ...unpaid, status: 'void' })).toBe('—');
+    expect(await remainingFor({ ...invoice, ...unpaid, status: 'draft', documentNumber: null })).toBe('—');
   });
 });
 
