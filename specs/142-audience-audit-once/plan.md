@@ -247,6 +247,19 @@ ALTER TABLE audit_log ENABLE TRIGGER audit_log_no_delete;
 ```
 The script refused any host but `ep-gentle-king-` (the dev branch).
 
+### Gates on the final code (`c051feabb`, 7 Nov 2026; spec-compliance H1)
+
+| Done-when | Evidence on this head |
+|---|---|
+| AO1 | `audience-audit-rows.test.ts` 25/25: a raw duplicate is refused (23505); the pre-check raises on a duplicate key and not on a NULL key; the structural check passes on dev's live index and raises on another definition, an invalid index, and on a non-btree, INCLUDE, non-default-collation, non-default-opclass or deferrable index. `pnpm db:verify`: 32/32 canaries, including the structural one |
+| AO2 | the same file: `emitOnce` answers true then false; a concurrent pair leaves 1 row; when the first rolls back the second writes; tenant B does not block A; a null tenant, null tx, empty segment or other event is refused; an adapter error gives an ERROR lost row; 55P03 bounds the INSERT wait. The shared `AuditPort` methods refuse the event by type (`audit-port-typed-constraint.test.ts`) and at runtime |
+| AO3 | unit call-order cells for restart, cleanup and reclaim; the reclaim skip and unattributed cells; `RECLAIM_CHUNK_BUDGET_MS` boundary cells, mutation-proved by the builder (3 cells fail with the budget reverted to one call); the tick harnesses assert the deleted row is written and nothing is lost (T1); `eblast-send-time-standing.test.ts` 19/19 (the hold cell) |
+| AO4 | `pre-call-audit-row.test.ts`; `unverifiable-count-audit.test.ts` 3/3; the failure-paths pin on `unverifiable_audit_emit_failed` (R8) |
+| AO5 | the docs grep finds no `broadcasts-audience-audit:` outside history markers; the RoPA, `cron-jobs.md`, `observability.md`, the changelog and the 139 plan rows are updated |
+| AO6 | pending: the maintainer's `/verify` |
+
+Also: `pnpm check` exit 0 (red-first: 48 commits); unit + contract 587 files, 7747 passed; `audit/completeness` 45, `tx-tenant-binding-guard` 4, `audience-cleanup` 5.
+
 ## Rollout
 - Unflagged.
 - Migration 0328 runs on deploy, before the code serves.
