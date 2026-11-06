@@ -6007,6 +6007,7 @@
           },
           "downloadErrorCsv": "Download error CSV",
           "cardSummary": "{source} · {processed} processed · {skipped} skipped · {failed} failed",
+          "cardSummaryLabel": "Summary",
           "downloadErrorCsvAriaLabel": "Download error CSV for import {recordId}",
           "expiredBadge": "Expired",
           "expiredTooltip": "The error CSV for this import expired after 30 days. Re-run the import to regenerate.",

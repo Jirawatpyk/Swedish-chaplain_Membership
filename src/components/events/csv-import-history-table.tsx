@@ -259,7 +259,10 @@ export function CsvImportHistoryTable({
       },
       {
         key: 'cardSummary',
-        label: '',
+        // A real name: the header stays in the accessibility tree while the
+        // cards show, and AURA reads the key when the label is empty (R143;
+        // the visible field label goes when AURA #205 hides it).
+        label: t('cardSummaryLabel'),
         grid: false,
         card: 'wide',
         render: (row) => (

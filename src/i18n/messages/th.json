@@ -6007,6 +6007,7 @@
           },
           "downloadErrorCsv": "ดาวน์โหลด CSV ของแถวผิดพลาด",
           "cardSummary": "{source} · ประมวลผล {processed} · ข้าม {skipped} · ล้มเหลว {failed}",
+          "cardSummaryLabel": "สรุป",
           "downloadErrorCsvAriaLabel": "ดาวน์โหลด CSV ของแถวผิดพลาดสำหรับการนำเข้า {recordId}",
           "expiredBadge": "หมดอายุแล้ว",
           "expiredTooltip": "ไฟล์ CSV ของแถวผิดพลาดสำหรับการนำเข้าครั้งนี้หมดอายุหลังจาก 30 วัน หากต้องการดาวน์โหลด ให้นำเข้าใหม่อีกครั้ง",

@@ -6007,6 +6007,7 @@
           },
           "downloadErrorCsv": "Ladda ner fel-CSV",
           "cardSummary": "{source} · {processed} bearbetade · {skipped} hoppade över · {failed} misslyckade",
+          "cardSummaryLabel": "Sammanfattning",
           "downloadErrorCsvAriaLabel": "Ladda ner fel-CSV för importen {recordId}",
           "expiredBadge": "Utgången",
           "expiredTooltip": "Fel-CSV-filen för denna import utgick efter 30 dagar. Kör om importen för att återskapa filen.",
