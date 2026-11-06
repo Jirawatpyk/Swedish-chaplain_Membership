@@ -60,6 +60,7 @@ import {
   orphanStuckCutoff,
 } from '../../domain/value-objects/orphaned-resend-id';
 import { orphanStuckSql } from './_orphan-stuck-sql';
+import { AUDIENCE_AUDIT_PAYLOAD_KEYS } from '../../application/ports/audit-port';
 import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
@@ -1793,12 +1794,51 @@ export function makeDrizzleBroadcastsRepo(
       return rows[0]?.found === true || rows[0]?.found === 't';
     },
 
-    async hasAudienceDeletedAuditInTx(_txUnknown, _tenantIdArg: TenantSlug, _resendAudienceId: string): Promise<boolean> {
-      return false; // RED stub (spec 139 s2): the real read lands with its GREEN commit.
+    /**
+     * See the port docblock. The `broadcasts-audience-audit:` lock key is
+     * disjoint from the row lock's `broadcasts:` and from the evidence and
+     * unverifiable locks. `tenant_id = ${tenantIdArg}` is load-bearing (the
+     * `audit_log` policy also admits `tenant_id IS NULL` rows). The payload key
+     * is the one the emit writes (`AUDIENCE_AUDIT_PAYLOAD_KEYS`). Read once
+     * per segment delete, so no index is claimed for it.
+     */
+    async hasAudienceDeletedAuditInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string): Promise<boolean> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'hasAudienceDeletedAuditInTx');
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-audience-audit:' || ${tenantIdArg} || ':' || ${resendAudienceId}, 0))`,
+      );
+      const rows = (await tx.execute(sql`
+        SELECT EXISTS (
+          SELECT 1
+          FROM audit_log
+          WHERE tenant_id = ${tenantIdArg}
+            AND event_type = 'broadcast_audience_deleted'
+            AND payload->>${AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId}::text = ${resendAudienceId}::text
+        ) AS found
+      `)) as unknown as Array<{ found: boolean | 't' | 'f' }>;
+      return rows[0]?.found === true || rows[0]?.found === 't';
     },
 
-    async findAudienceDisclosureInTx(_txUnknown, _tenantIdArg: TenantSlug, _resendAudienceId: string) {
-      return null; // RED stub (spec 139 s2): the real read lands with its GREEN commit.
+    /** See the port docblock; fenced exactly as `hasAudienceDeletedAuditInTx`. */
+    async findAudienceDisclosureInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string) {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'findAudienceDisclosureInTx');
+      const keys = AUDIENCE_AUDIT_PAYLOAD_KEYS;
+      const rows = (await tx.execute(sql`
+        SELECT payload->>${keys.broadcastId}::text AS broadcast_id,
+               payload->>${keys.relatedMemberId}::text AS related_member_id
+        FROM audit_log
+        WHERE tenant_id = ${tenantIdArg}
+          AND event_type = 'broadcast_audience_disclosed'
+          AND payload->>${keys.resendAudienceId}::text = ${resendAudienceId}::text
+          AND payload->>${keys.broadcastId}::text IS NOT NULL
+          AND payload->>${keys.relatedMemberId}::text IS NOT NULL
+        ORDER BY timestamp ASC
+        LIMIT 1
+      `)) as unknown as Array<{ broadcast_id: string; related_member_id: string }>;
+      const row = rows[0];
+      return row === undefined ? null : { broadcastId: row.broadcast_id, relatedMemberId: row.related_member_id };
     },
 
     async markAudienceImportCompleted(
