@@ -286,5 +286,7 @@ describe('StepCard on AURA Card (PR Q)', () => {
     const card = heading.closest('.aura-card');
     expect(card).not.toBeNull();
     expect(card?.tagName).toBe('DIV');
+    // Round 2 — our wrapper keeps the page's line-height under AURA's 1.7 card body.
+    expect(heading.parentElement?.parentElement).toHaveClass('leading-normal');
   });
 });

@@ -40,6 +40,8 @@ import { timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { TimelineEventItem } from '@/components/members/timeline-event-item';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { EmptyState } from '@/components/shell/empty-state';
 import type { Role } from '@/modules/auth';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
@@ -130,7 +132,8 @@ export async function TimelinePreviewCard({
 }) {
   const t = await getTranslations('admin.members.detail');
   const tTimeline = await getTranslations('admin.members.timeline');
-  const tErrors = await getTranslations('errors');
+  // The errors translator is read only when the timeline failed to load.
+  const retryLabel = loadFailed ? (await getTranslations('errors'))('loadError.retry') : '';
   // Spec 122 US3: an AURA card — its h2 title (056 fix #1: reachable via SR
   // heading navigation under the page h1) and the "view all" link as its action.
   return (
@@ -147,25 +150,14 @@ export async function TimelinePreviewCard({
       }
     >
       {loadFailed ? (
-        // PR Q — AURA's EmptyState, frameless inside the card: the danger tone
-        // for a failed read, the neutral one for an empty timeline.
-        // Round 1b — announced as an alert, with "Try again" on the member page.
-        <div role="alert">
-          <EmptyState
-            title={t('timelinePreview.loadFailed')}
-            tone="danger"
-            bordered={false}
-            announce={false}
-            action={
-              <Link
-                href={`/admin/members/${memberId}`}
-                className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
-              >
-                {tErrors('loadError.retry')}
-              </Link>
-            }
-          />
-        </div>
+        // PR Q — a failed read is the LoadErrorCard below; an empty timeline is
+        // AURA's neutral EmptyState, frameless inside the card.
+        // Review round 2 — the shared LoadErrorCard, bare inside the card,
+        // with a "Try again" that refreshes in place (the page keeps its
+        // invoice filters in the query).
+        <LoadErrorCard card={false} message={t('timelinePreview.loadFailed')}>
+          <RefreshPageButton label={retryLabel} />
+        </LoadErrorCard>
       ) : events.length === 0 ? (
         <EmptyState title={t('timelinePreview.empty')} bordered={false} announce={false} />
       ) : (

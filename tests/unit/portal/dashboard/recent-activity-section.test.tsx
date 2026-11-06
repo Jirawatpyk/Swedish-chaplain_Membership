@@ -43,6 +43,10 @@ function makeRealTranslator(ns: string) {
 // --- mocks ----------------------------------------------------------------
 
 const warnSpy = vi.fn();
+// PR Q review round 2 — a failed read renders RefreshPageButton (router.refresh()).
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { warn: (...args: unknown[]) => warnSpy(...args) },
 }));
@@ -141,11 +145,10 @@ describe('RecentActivitySection — states on AURA EmptyState (PR Q)', () => {
       error: { type: 'server_error', message: 'boom', cause: new Error('NeonDbError') },
     });
     const html = await renderSection();
-    expect(html).toContain('<div class="aura-empty is-danger">');
     expect(html).not.toContain('role="status"');
-    // Round 1b — announced as an alert, with "Try again" on the dashboard.
-    expect(html).toContain('<div role="alert"><div class="aura-empty is-danger">');
-    expect(html).toMatch(/<a class="[^"]*aura-btn--touch[^"]*" href="\/portal">Try again<\/a>/);
+    // Round 2 — LoadErrorCard's alert (bare inside the card) with a refresh button.
+    expect(html).toMatch(/<div role="alert" aria-live="assertive" class="aura-empty is-sm is-danger"/);
+    expect(html).toMatch(/<button[^>]*type="button"[^>]*>.*Try again.*<\/button>/);
   });
 
   it('the empty read is the neutral EmptyState with the benefits CTA as its action', async () => {

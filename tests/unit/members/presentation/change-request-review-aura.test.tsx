@@ -166,5 +166,7 @@ describe('change-request review card on AURA (PR Q)', () => {
     const card = screen.getByRole('heading', { level: 2, name: enMessages.admin.changeRequests.decision.fieldsHeading }).closest('.aura-card');
     expect(card).toHaveClass('aura-card--flush-below-sm');
     expect(card?.tagName).toBe('DIV');
+    // Round 2 — our wrapper keeps the page's line-height under AURA's 1.7 card body.
+    expect(card?.querySelector('.aura-card__body > .leading-normal')).not.toBeNull();
   });
 });

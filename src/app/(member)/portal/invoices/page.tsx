@@ -33,8 +33,9 @@ import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { Suspense } from 'react';
-import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
-import { sameUrlHref } from '@/lib/same-url-href';
+import { Card } from '@jirawatpyk/aura-react/server';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { EmptyState } from '@/components/shell/empty-state';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import Link from 'next/link';
@@ -120,7 +121,6 @@ export default async function PortalInvoicesPage({
 }) {
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.invoices');
-  const tErrors = await getTranslations('errors');
   const f088TaxAtPayment = env.features.f088TaxAtPayment;
   const userLocale = await getLocale();
 
@@ -133,34 +133,32 @@ export default async function PortalInvoicesPage({
   // differs. Extracted to a local helper so the three branches keep their
   // own log/discriminate logic but share ONE byte-identical card shape (a
   // copy drifting would give members three subtly different empty states).
-  // PR Q — the card body is AURA's EmptyState (frameless inside the Card). A
-  // failed read (`retryHref` given) takes its danger tone, is announced as an
-  // alert, and offers "Try again" on the same URL; not-linked stays quiet.
-  const messageState = (message: string, retryHref?: string): React.ReactElement => (
+  // PR Q — the card body is AURA's EmptyState (frameless inside the Card);
+  // not-linked stays a quiet empty state. A failed read (review round 2) is the
+  // shared LoadErrorCard — its alert, danger tone and icon — with a "Try
+  // again" that refreshes in place, keeping the URL and its query. The errors
+  // translator is fetched only on that path.
+  const messageState = (message: string): React.ReactElement => (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <Card>
-        {retryHref ? (
-          <div role="alert">
-            <EmptyState
-              title={message}
-              tone="danger"
-              bordered={false}
-              announce={false}
-              action={
-                <Link href={retryHref} className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
-                  {tErrors('loadError.retry')}
-                </Link>
-              }
-            />
-          </div>
-        ) : (
-          <EmptyState title={message} bordered={false} announce={false} />
-        )}
+        <EmptyState title={message} bordered={false} announce={false} />
       </Card>
     </DetailContainer>
   );
-  const retryHref = async (): Promise<string> => sameUrlHref('/portal/invoices', { ...(await searchParams) });
+  const loadFailedState = async (): Promise<React.ReactElement> => {
+    const tErrors = await getTranslations('errors');
+    return (
+      <DetailContainer>
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <Card>
+          <LoadErrorCard card={false} message={t('loadFailed')}>
+            <RefreshPageButton label={tErrors('loadError.retry')} />
+          </LoadErrorCard>
+        </Card>
+      </DetailContainer>
+    );
+  };
 
   // Resolve the member linked to this user — if none, surface the
   // "not linked" empty state instead of listing zero rows (which
@@ -186,7 +184,7 @@ export default async function PortalInvoicesPage({
         },
         '[portal-invoices-list] member lookup failed — rendering error state',
       );
-      return messageState(t('loadFailed'), await retryHref());
+      return loadFailedState();
     }
     return messageState(t('notLinked'));
   }
@@ -257,7 +255,7 @@ export default async function PortalInvoicesPage({
       },
       '[portal-invoices-list] listInvoicesPaged threw — rendering error state',
     );
-    return messageState(t('loadFailed'), await retryHref());
+    return loadFailedState();
   }
   const rawRows = pageData.rows;
   const total = pageData.total;

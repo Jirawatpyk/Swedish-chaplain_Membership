@@ -23,6 +23,7 @@ import { Suspense } from 'react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
+import { PowerOff } from 'lucide-react';
 import { Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -174,7 +175,7 @@ export default async function RenewalsPipelinePage({
           {/* PR Q — AURA's EmptyState, frameless inside the card; the status
               live region stays on its own wrapper, as before. */}
           <div role="status" aria-live="polite">
-            <EmptyState title={t('error.featureDisabled')} bordered={false} announce={false} />
+            <EmptyState icon={PowerOff} title={t('error.featureDisabled')} bordered={false} announce={false} />
           </div>
         </Card>
       </RenewalsPageShell>

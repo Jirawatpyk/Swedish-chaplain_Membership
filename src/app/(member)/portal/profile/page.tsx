@@ -2,10 +2,10 @@ import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { UserX } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
-import Link from 'next/link';
-import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { renderPortalProfileView } from '@/components/members/portal-profile-view';
 import { resolveLegalEntityTypeLabel } from '@/components/members/resolve-legal-entity-type-label';
 import { safeExternalHref } from '@/lib/safe-url';
@@ -64,7 +64,6 @@ export async function PortalProfileBody({
   user: { id: string };
 }) {
   const t = await getTranslations('portal.profile');
-  const tErrors = await getTranslations('errors');
   // 059 / PR-A Task 3b — the ADMIN member-detail page already resolves
   // legal_entity_type through these same labels (resolveLegalEntityTypeLabel);
   // reused here rather than duplicated so a member sees IDENTICAL copy to
@@ -108,19 +107,11 @@ export async function PortalProfileBody({
     return (
       <DetailContainer>
         <PageHeader title={t('pageTitle')} />
-        {/* PR Q round 1b — a failed read is announced as an alert, with a retry. */}
-        <div role="alert">
-          <EmptyState
-            title={t('loadError')}
-            tone="danger"
-            announce={false}
-            action={
-              <Link href="/portal/profile" className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
-                {tErrors('loadError.retry')}
-              </Link>
-            }
-          />
-        </div>
+        {/* PR Q review round 2 — the shared LoadErrorCard (alert, danger tone,
+            icon) with a "Try again" that refreshes in place. */}
+        <LoadErrorCard message={t('loadError')}>
+          <RefreshPageButton label={(await getTranslations('errors'))('loadError.retry')} />
+        </LoadErrorCard>
       </DetailContainer>
     );
   }

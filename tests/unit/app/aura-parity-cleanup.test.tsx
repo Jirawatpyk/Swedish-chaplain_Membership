@@ -379,8 +379,8 @@ describe('PR B consistency (maintainer, 2 Oct)', () => {
 
 describe('PR Q — page-level states on the shared EmptyState (pages without a render test)', () => {
   it.each([
-    ['src/app/(member)/portal/contacts/invite/page.tsx', 3],
-    ['src/app/(member)/portal/edit/page.tsx', 1],
+    // Round 2: invite's failed read and every edit-page state are LoadErrorCard.
+    ['src/app/(member)/portal/contacts/invite/page.tsx', 2],
     ['src/app/(staff)/admin/renewals/page.tsx', 1],
   ])('%s renders its states through <EmptyState> (%i), not a hand-built centred paragraph', (file, count) => {
     const s = src(file);
@@ -392,36 +392,31 @@ describe('PR Q — page-level states on the shared EmptyState (pages without a r
 
   it('round 1 — the invite page states are no live region (the old ones had none) and carry their own icons', () => {
     const s = src('src/app/(member)/portal/contacts/invite/page.tsx');
-    expect(s.match(/<EmptyState\b[^>]*announce=\{false\}/g)).toHaveLength(3);
+    expect(s.match(/<EmptyState\b[^>]*announce=\{false\}/g)).toHaveLength(2);
     expect(s).toContain(`<EmptyState icon={UserX} title={t('notLinked')}`);
     expect(s).toContain(`<EmptyState icon={Lock} title={t('notPrimary')}`);
   });
 
-  it('the edit page keeps its alert role around the danger-tone EmptyState', () => {
-    expect(src('src/app/(member)/portal/edit/page.tsx')).toMatch(
-      /<div role="alert">\s*<EmptyState\s+title=\{message\}\s+tone="danger"\s+announce=\{false\}/,
-    );
-  });
-
   it('the renewals feature-off notice keeps its polite status region', () => {
     expect(src('src/app/(staff)/admin/renewals/page.tsx')).toMatch(
-      /<div role="status" aria-live="polite">\s*<EmptyState title=\{t\('error\.featureDisabled'\)\}/,
+      /<div role="status" aria-live="polite">\s*<EmptyState icon=\{PowerOff\} title=\{t\('error\.featureDisabled'\)\}/,
     );
   });
 });
 
-describe('PR Q round 1b — failed reads on the render-less pages are alerts with a retry', () => {
-  it('the invite page’s failed read sits in role="alert" with a "Try again" link to the same page', () => {
+describe('PR Q round 2 — failed reads on the render-less pages are LoadErrorCard with a refresh', () => {
+  it('the invite page’s failed read is LoadErrorCard with RefreshPageButton', () => {
     expect(src('src/app/(member)/portal/contacts/invite/page.tsx')).toMatch(
-      /<div role="alert">\s*<EmptyState\s+title=\{t\('loadError'\)\}\s+tone="danger"\s+announce=\{false\}\s+action=\{\s*<Link href="\/portal\/contacts\/invite"[^>]*>\s*\{tErrors\('loadError\.retry'\)\}/,
+      /<LoadErrorCard message=\{t\('loadError'\)\}>\s*<RefreshPageButton label=\{\(await getTranslations\('errors'\)\)\('loadError\.retry'\)\} \/>/,
     );
   });
 
-  it('every edit-page loadError offers the retry (same URL and query); notLinked does not', () => {
+  it('every edit-page loadError offers the refresh; notLinked does not; no URL rebuilt', () => {
     const s = src('src/app/(member)/portal/edit/page.tsx');
-    expect(s.match(/loadFailed\(t\('pageTitle'\), t\('loadError'\), await retry\(\)\)/g)).toHaveLength(4);
+    expect(s).toMatch(/<LoadErrorCard message=\{message\}>\s*\{retryLabel \? <RefreshPageButton label=\{retryLabel\} \/> : null\}/);
+    expect(s.match(/loadFailed\(t\('pageTitle'\), t\('loadError'\), await retryLabel\(\)\)/g)).toHaveLength(4);
     expect(s).not.toMatch(/loadFailed\(t\('pageTitle'\), t\('loadError'\)\)/);
-    expect(s).toContain("href: sameUrlHref('/portal/edit', await searchParams)");
     expect(s.match(/loadFailed\(t\('pageTitle'\), t\('notLinked'\)\)/g)).toHaveLength(2);
+    expect(s).not.toMatch(/sameUrlHref|<Link\b/);
   });
 });

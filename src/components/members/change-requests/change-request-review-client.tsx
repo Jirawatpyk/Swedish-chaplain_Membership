@@ -157,9 +157,11 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
   return (
     // PR Q — AURA's Card (as a div; the sections inside carry the headings).
     // `flushBelow="sm"` drops its frame on a phone, where each field is its own
-    // card, and `max-sm:p-0` keeps the phone edge-to-edge as before.
+    // card, and `max-sm:p-0` keeps the phone edge-to-edge as before. AURA's
+    // card body sets line-height 1.7; `leading-normal` keeps the page's 1.5
+    // that this content inherited before (review round 2).
     <Card as="div" flushBelow="sm" className="max-sm:p-0">
-      <div className="space-y-4">
+      <div className="space-y-4 leading-normal">
         {/* One card holds the proposed changes and the decision bar (board
             `Admin-change-request`); on a phone each field is its own card on
             the page (`-mobile`). The page's primary content gets a real

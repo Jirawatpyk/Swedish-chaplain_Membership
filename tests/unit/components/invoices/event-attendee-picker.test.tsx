@@ -207,4 +207,15 @@ describe('AttendeeList empty states on AURA (PR Q)', () => {
     renderPicker({ rows: [row({ isPseudonymised: true })] });
     expect(screen.getByText('All attendees have been erased.').closest('.aura-empty')).toHaveClass('is-sm');
   });
+
+  it('round 2 — announces (the event switch is client-side, no other live region) and draws the users icon', () => {
+    const { unmount } = renderPicker({ rows: [] });
+    const none = screen.getByText('This event has no registered attendees yet.').closest('.aura-empty');
+    expect(none).toHaveAttribute('role', 'status');
+    expect(none?.querySelector('svg.lucide-users')).not.toBeNull();
+    unmount();
+    renderPicker({ rows: [row({ isPseudonymised: true })] });
+    const erased = screen.getByText('All attendees have been erased.').closest('.aura-empty');
+    expect(erased?.querySelector('svg.lucide-users')).not.toBeNull();
+  });
 });

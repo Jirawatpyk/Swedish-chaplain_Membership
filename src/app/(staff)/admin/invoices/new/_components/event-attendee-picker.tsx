@@ -35,7 +35,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { CheckIcon } from 'lucide-react';
+import { CheckIcon, Users } from 'lucide-react';
 import { Badge } from '@jirawatpyk/aura-react';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -143,12 +143,12 @@ export function EventAttendeePicker({
 
   if (rows.length === 0) {
     // PR Q — AURA's EmptyState (its dashed frame is the old hand-drawn one).
-    return <EmptyState title={t('empty.none')} size="sm" />;
+    return <EmptyState icon={Users} title={t('empty.none')} size="sm" />;
   }
 
   const allErased = rows.every((r) => r.isPseudonymised);
   if (allErased) {
-    return <EmptyState title={t('empty.allErased')} size="sm" />;
+    return <EmptyState icon={Users} title={t('empty.allErased')} size="sm" />;
   }
 
   // B3 — plain list of toggle buttons (NOT an ARIA listbox). Each enabled

@@ -45,6 +45,10 @@ function makeRealTranslator(ns: string) {
 // --- mocks ----------------------------------------------------------------
 
 const errorSpy = vi.fn();
+// PR Q review round 2 — a failed read renders RefreshPageButton (router.refresh()).
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { error: (...args: unknown[]) => errorSpy(...args) },
 }));
@@ -171,10 +175,11 @@ describe('<TimelinePreviewSection> states on AURA EmptyState (PR Q)', () => {
   it('a failed read is the danger-tone EmptyState; an empty one the neutral EmptyState', async () => {
     timelineListMock.mockRejectedValue(new TypeError('bad'));
     const failed = await renderSection();
-    expect(failed).toContain('<div class="aura-empty is-danger">');
-    // Round 1b — announced as an alert, with "Try again" on the member page.
-    expect(failed).toContain('<div role="alert"><div class="aura-empty is-danger">');
-    expect(failed).toMatch(/<a class="[^"]*aura-btn--touch[^"]*" href="\/admin\/members\/m1">Try again<\/a>/);
+    // Round 2 — LoadErrorCard's alert (bare inside the card) with a refresh
+    // button, so the member page keeps its invoice filters in the query.
+    expect(failed).toMatch(/<div role="alert" aria-live="assertive" class="aura-empty is-sm is-danger"/);
+    expect(failed).toMatch(/<button[^>]*type="button"[^>]*>.*Try again.*<\/button>/);
+    expect(failed).not.toContain('href="/admin/members/m1"');
     timelineListMock.mockResolvedValue({ ok: true, value: { events: [] } });
     const html = await renderSection();
     expect(html).toMatch(/<div class="aura-empty">.*No recent activity yet/);

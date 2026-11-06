@@ -14,6 +14,8 @@ import { Card, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { AuraCardSkeleton } from '@/components/shell/aura-card-skeleton';
 import { EmptyState } from '@/components/shell/empty-state';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { RecentActivityList } from './recent-activity-list';
 
 /**
@@ -39,7 +41,6 @@ export async function RecentActivitySection({
   readonly memberId: string;
 }): Promise<React.JSX.Element> {
   const t = await getTranslations('portal.dashboard.activity');
-  const tErrors = await getTranslations('errors');
   const tenant = resolveTenantFromRequest();
   const h = await headers();
   const requestId = requestIdFromHeaders(h);
@@ -51,7 +52,7 @@ export async function RecentActivitySection({
   const ownContact = await resolveOwnContactId(deps.contactRepo, tenant, asMemberId(memberId), userId, requestId);
   if (!ownContact.ok) {
     logger.warn({ requestId, errKind: ownContact.error.code }, '[dashboard-recent-activity] own contact unresolved');
-    return unavailableCard(t('title'), t('loadFailed'), tErrors('loadError.retry'));
+    return unavailableCard(t('title'), t('loadFailed'), (await getTranslations('errors'))('loadError.retry'));
   }
   const result = await timelineList(
     { memberId, limit: PREVIEW_LIMIT },
@@ -82,7 +83,7 @@ export async function RecentActivitySection({
       { requestId, errKind: errKind(rootCause(result.error)) },
       '[dashboard-recent-activity] timelineList failed',
     );
-    return unavailableCard(t('title'), t('loadFailed'), tErrors('loadError.retry'));
+    return unavailableCard(t('title'), t('loadFailed'), (await getTranslations('errors'))('loadError.retry'));
   }
 
   const events = result.value.events
@@ -141,21 +142,11 @@ export function RecentActivitySkeleton(): React.JSX.Element {
 function unavailableCard(title: string, body: string, retryLabel: string) {
   return (
     <Card title={title} headingLevel={2}>
-      {/* PR Q — a failed read: AURA's EmptyState in its danger tone, announced
-          as an alert, and "Try again" reloads the dashboard (round 1b). */}
-      <div role="alert">
-        <EmptyState
-          title={body}
-          tone="danger"
-          bordered={false}
-          announce={false}
-          action={
-            <Link href="/portal" className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
-              {retryLabel}
-            </Link>
-          }
-        />
-      </div>
+      {/* PR Q review round 2 — the shared LoadErrorCard, bare inside the card
+          (alert, danger tone, icon), with a "Try again" that refreshes in place. */}
+      <LoadErrorCard card={false} message={body}>
+        <RefreshPageButton label={retryLabel} />
+      </LoadErrorCard>
     </Card>
   );
 }

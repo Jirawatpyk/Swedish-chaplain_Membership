@@ -22,6 +22,10 @@ vi.mock('@/lib/db', () => ({
 // F114 (PR-1): the profile page imports `@/lib/logger` at module scope for the
 // decision-banner read; pino would read `env.log.level` from the partial env
 // mock below and crash the import.
+// PR Q review round 2 — a failed read renders RefreshPageButton (router.refresh()).
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
@@ -274,12 +278,13 @@ describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', (
     }
   });
 
-  it('a failed member read is an alert with a "Try again" link back to the profile (PR Q round 1b)', async () => {
+  it('a failed member read is LoadErrorCard’s alert with a "Try again" refresh button (PR Q round 2)', async () => {
     getMemberMock.mockResolvedValueOnce({ ok: false, error: { type: 'server_error', message: 'boom' } });
     const tree = await PortalProfileBody({ user: { id: 'user-a' } });
     const html = renderToStaticMarkup(tree as ReactElement);
-    expect(html).toContain('<div role="alert"><div class="aura-empty is-bordered is-danger">');
-    expect(html).toMatch(/<a class="[^"]*aura-btn--touch[^"]*" href="\/portal\/profile">loadError\.retry<\/a>/);
+    expect(html).toMatch(/<div role="alert" aria-live="assertive" class="aura-empty is-bordered is-danger"/);
+    expect(html).toMatch(/<button[^>]*type="button"[^>]*>.*loadError\.retry.*<\/button>/);
+    expect(html).not.toContain('href="/portal/profile"');
   });
 
   it('isPrimary:false — Invite Colleague button is absent', async () => {

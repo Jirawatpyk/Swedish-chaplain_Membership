@@ -51,6 +51,10 @@ function makeRealTranslator(ns: string) {
 // --- mocks ----------------------------------------------------------------
 
 const warnSpy = vi.fn();
+// PR Q review round 2 — a failed read renders RefreshPageButton (router.refresh()).
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { warn: (...args: unknown[]) => warnSpy(...args) },
 }));
@@ -302,9 +306,9 @@ describe('PortalInvoicesPage — states on AURA EmptyState (PR Q)', () => {
   it('a failed read is the danger-tone EmptyState inside the card', async () => {
     listInvoicesPagedMock.mockRejectedValue(new Error('NeonDbError'));
     const html = await renderPage();
-    // Round 1 — not a live region: the old card had none (UX M1).
-    expect(html).toContain('<div class="aura-empty is-danger">');
-    expect(html).not.toMatch(/role="status" class="aura-empty/);
+    // Round 2 — the shared LoadErrorCard, bare (small) inside the card.
+    expect(html).toContain('class="aura-empty is-sm is-danger"');
+    expect(html).not.toMatch(/role="status"[^>]*class="aura-empty/);
   });
 
   it('not-linked and the empty list are the neutral EmptyState, neither a live region', async () => {
@@ -317,12 +321,16 @@ describe('PortalInvoicesPage — states on AURA EmptyState (PR Q)', () => {
   });
 });
 
-describe('PortalInvoicesPage — a failed read is an alert with a retry (PR Q round 1b)', () => {
-  it('the list-read failure is role="alert" and "Try again" keeps the page’s query', async () => {
-    listInvoicesPagedMock.mockRejectedValue(new Error('NeonDbError'));
+describe('PortalInvoicesPage — a failed read is an alert with a retry (PR Q rounds 1b + 2)', () => {
+  it.each([
+    ['member lookup', () => findByLinkedUserIdMock.mockResolvedValueOnce({ ok: false, error: { code: 'repo.unexpected' } })],
+    ['list read', () => listInvoicesPagedMock.mockRejectedValue(new Error('NeonDbError'))],
+  ])('a failed %s is LoadErrorCard’s alert with a "Try again" refresh button, not a link', async (_, fail) => {
+    fail();
     const html = await renderPage({ status: 'paid', q: 'acme' });
-    expect(html).toContain('<div role="alert"><div class="aura-empty is-danger">');
-    expect(html).toContain(`href="/portal/invoices?status=paid&amp;q=acme">${en.errors.loadError.retry}</a>`);
+    expect(html).toMatch(/<div role="alert" aria-live="assertive" class="aura-empty[^"]*is-danger"/);
+    expect(html).toMatch(new RegExp(`<button[^>]*type="button"[^>]*>.*${en.errors.loadError.retry}.*</button>`));
+    expect(html).not.toMatch(new RegExp(`<a [^>]*>${en.errors.loadError.retry}</a>`));
   });
 
   it('not-linked stays a quiet empty state with no retry', async () => {

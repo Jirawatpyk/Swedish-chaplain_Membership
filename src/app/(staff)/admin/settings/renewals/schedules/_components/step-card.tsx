@@ -313,9 +313,10 @@ export function StepCard({
     // PR Q — AURA's Card (as a div: the h3 inside heads the step), its padding
     // and frame in place of the hand-drawn ones. Not Card `title` + `titleId`:
     // on `as="div"` that puts `aria-labelledby` on a generic element (stand-in
-    // until AURA #199).
+    // until AURA #199). AURA's card body sets line-height 1.7; `leading-normal`
+    // keeps the page's 1.5 that this content inherited (review round 2).
     <Card as="div">
-      <div className="flex flex-col gap-[var(--aura-space-3)]">
+      <div className="flex flex-col gap-[var(--aura-space-3)] leading-normal">
         <div className="flex flex-wrap items-center justify-between gap-[var(--aura-space-2)]">
           {/* The timing in plain language, not "T-30". */}
           <h3 id={headingId} className="m-0 text-sm font-semibold text-[var(--aura-fg-primary)]">
