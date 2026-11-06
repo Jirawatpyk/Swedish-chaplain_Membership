@@ -12,7 +12,7 @@
  * Each case below is one way that happens.
  */
 import { describe, expect, it } from 'vitest';
-import { seedTargetRefusal } from '../../../scripts/lib/seed-target-guard';
+import { blobTargetRefusal, seedTargetRefusal } from '../../../scripts/lib/seed-target-guard';
 
 const SAFE_EMAILS = ['e2e-admin@swecham.test', 'e2e-super-admin@swecham.test'];
 const PROD_NEEDLE = 'ep-prod-endpoint-999';
@@ -158,5 +158,33 @@ describe('seedTargetRefusal', () => {
     for (const raw of ['', ' , ', '   ']) {
       expect(seedTargetRefusal({ ...base, blocklistRaw: raw }), raw).toMatch(/is unset/);
     }
+  });
+});
+
+// #78 security review L1 — the portal-invoice seeder also WRITES to Vercel
+// Blob, and the DB guard above says nothing about which store
+// `BLOB_READ_WRITE_TOKEN` points at: an env file with a dev DATABASE_URL and a
+// production Blob token would upload fixture PDFs into production.
+describe('blobTargetRefusal', () => {
+  const DEV_TOKEN = 'vercel_blob_rw_DevStore123_secretpart';
+  const PROD_TOKEN = 'vercel_blob_rw_ProdStore999_secretpart';
+
+  it('allows a token whose store is not on the blocklist', () => {
+    expect(blobTargetRefusal({ blobToken: DEV_TOKEN, blocklistRaw: 'ProdStore999' })).toBeNull();
+  });
+
+  it('refuses a token whose store is on the blocklist, without printing the token', () => {
+    const msg = blobTargetRefusal({ blobToken: PROD_TOKEN, blocklistRaw: 'OtherStore, ProdStore999' });
+    expect(msg).toMatch(/TEST_BLOB_STORE_BLOCKLIST/);
+    expect(msg).not.toContain('secretpart');
+  });
+
+  it('refuses when the blocklist is unset, unless --confirm-target', () => {
+    expect(blobTargetRefusal({ blobToken: DEV_TOKEN, blocklistRaw: undefined })).toMatch(/--confirm-target/);
+    expect(blobTargetRefusal({ blobToken: DEV_TOKEN, blocklistRaw: '', confirmedTarget: true })).toBeNull();
+  });
+
+  it('refuses a missing token', () => {
+    expect(blobTargetRefusal({ blobToken: undefined, blocklistRaw: 'ProdStore999' })).toMatch(/BLOB_READ_WRITE_TOKEN/);
   });
 });
