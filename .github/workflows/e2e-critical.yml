@@ -86,6 +86,9 @@ jobs:
       # The `ci-e2e/` prefix is what the DW-9 guard and the sweep key on.
       CI_E2E_BRANCH_NAME: ci-e2e/${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.project }}
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+      # #78 — the portal fixture seed also refuses a Blob token whose store is
+      # on this list (production store ids), fail-closed when it is unset.
+      TEST_BLOB_STORE_BLOCKLIST: ${{ vars.TEST_BLOB_STORE_BLOCKLIST }}
       # US runner, Singapore-class latency: give each address 1 s to connect
       # (see integration-smoke.yml for the AggregateError ETIMEDOUT it avoids).
       NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
