@@ -58,11 +58,12 @@ import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoi
 import { argon2Hasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
 import { reactPdfRenderAdapter } from '@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter';
 import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
+import { BlobKeyNotFoundError } from '@/modules/invoicing/application/ports/blob-storage-port';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { asInvoiceLineId } from '@/modules/invoicing/domain/invoice-line';
-import { seedTargetRefusal } from './lib/seed-target-guard';
+import { blobTargetRefusal, seedTargetRefusal } from './lib/seed-target-guard';
 import {
   E2E_PAID_TEMPLATE_VERSION,
   E2E_PORTAL_INVOICE_SEEDS,
@@ -126,6 +127,13 @@ function requireDevTarget(): void {
     confirmedTarget: process.argv.includes('--confirm-target'),
   });
   if (refusal) throw new Error(refusal);
+  // It also uploads fixture PDFs, so the Blob store needs the same answer.
+  const blobRefusal = blobTargetRefusal({
+    blobToken: process.env.BLOB_READ_WRITE_TOKEN,
+    blocklistRaw: process.env.TEST_BLOB_STORE_BLOCKLIST,
+    confirmedTarget: process.argv.includes('--confirm-target'),
+  });
+  if (blobRefusal) throw new Error(blobRefusal);
 }
 
 /**
@@ -334,6 +342,20 @@ async function renderAndUpload(
   return { blobKey, sha256: rendered.sha256 };
 }
 
+/** True when any non-null key has no object in Blob (a `head` miss). */
+async function anyBlobMissing(keys: ReadonlyArray<string | null>): Promise<boolean> {
+  for (const key of keys) {
+    if (key === null) continue;
+    try {
+      await vercelBlobAdapter.signDownloadUrl(key);
+    } catch (e) {
+      if (e instanceof BlobKeyNotFoundError) return true;
+      throw e;
+    }
+  }
+  return false;
+}
+
 function fixtureDocumentNumber(prefix: 'SC' | 'RC', seed: E2ePortalInvoiceSeed): DocumentNumber {
   const r = DocumentNumber.of(prefix, E2E_SEED_FISCAL_YEAR, seed.sequence);
   if (!r.ok) {
@@ -465,6 +487,8 @@ async function seedInvoicesIfMissing(
           documentNumber: invoices.documentNumber,
           billDocumentNumberRaw: invoices.billDocumentNumberRaw,
           tenantIdentitySnapshot: invoices.tenantIdentitySnapshot,
+          pdfBlobKey: invoices.pdfBlobKey,
+          receiptPdfBlobKey: invoices.receiptPdfBlobKey,
         })
         .from(invoices)
         .where(
@@ -482,6 +506,25 @@ async function seedInvoicesIfMissing(
         await deleteStaleFixture(tx, ctx, found.invoiceId, s.number);
       } else if (found) {
         console.log(`  invoice ${s.number} already present — invoice_id=${found.invoiceId}`);
+        // #78 (R141) — a present row whose PDF object is gone (the local Blob
+        // store was swapped on 2026-11-04) answers `blob_missing`. Re-render
+        // and re-upload to the row's own deterministic keys; an object that is
+        // still there is left as it is (`uploadPdf` does not overwrite). No DB
+        // write, so the row's stored sha256 may then differ from the new bytes
+        // — fine for dev fixture data, never for a real tax document.
+        const rowKeys = [found.pdfBlobKey, found.receiptPdfBlobKey];
+        if (await anyBlobMissing(rowKeys)) {
+          await renderFixturePdfs(ctx, s);
+          // The re-upload goes to today's deterministic keys; a row written
+          // under an older key shape would still miss. Say so, don't hide it.
+          if (await anyBlobMissing(rowKeys)) {
+            console.warn(
+              `  ${s.number}: PDF still missing after re-upload — the row's key differs from today's; delete the fixture (scripts/cleanup-e2e-seed.ts) and re-run`,
+            );
+          } else {
+            console.log(`  re-uploaded missing PDF for ${s.number}`);
+          }
+        }
         continue;
       }
 

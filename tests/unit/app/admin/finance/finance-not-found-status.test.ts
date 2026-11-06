@@ -1,13 +1,11 @@
 /**
- * PR P — `/admin/finance` answers a real 404 when FEATURE_INVOICE_DASHBOARD
- * is off (R136 follow-up).
+ * PR P / #78 — `/admin/finance` with FEATURE_INVOICE_DASHBOARD off.
  *
- * The page calls `notFound()` behind the flag, but the segment has a
- * `loading.tsx`, so without `force-dynamic` and a sibling `not-found.tsx`
- * Next streams the not-found page with HTTP 200 (the class
- * `tests/e2e/smoke-404-status-contract.spec.ts` guards; the fix pattern is
- * `admin/invoices/[invoiceId]/page.tsx`). The live status is checked on the
- * relay with the flag off; this pins the two pieces the status depends on.
+ * The not-found page is the segment's own `not-found.tsx` (the admin one).
+ * The HTTP status is NOT set by the page: its `notFound()` runs inside the
+ * segment's `loading.tsx` boundary, after the stream has started with 200
+ * (production build, R141 relay rev 70). The status-bearing gate is
+ * `layout.tsx` (finance-layout-gate.test.tsx); the relay checks the live 404.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

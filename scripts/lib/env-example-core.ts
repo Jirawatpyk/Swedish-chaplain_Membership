@@ -184,4 +184,13 @@ export const HARNESS_ONLY_KEYS: readonly ExemptEnvKey[] = [
       'the template so a fresh checkout does not run the BYPASSRLS fixture ' +
       'writers unguarded (108 PR-D security review LOW-5).',
   },
+  {
+    key: 'TEST_BLOB_STORE_BLOCKLIST',
+    reason:
+      'Production Blob store guard read by scripts/lib/seed-target-guard.ts ' +
+      '(blobTargetRefusal), which REFUSES to let a seed upload fixture PDFs ' +
+      'into a listed store and fails closed when the list is unset. The app ' +
+      'never reads it, so env.ts does not declare it; it stays in the ' +
+      'template so a fresh checkout does not seed into the production store.',
+  },
 ];

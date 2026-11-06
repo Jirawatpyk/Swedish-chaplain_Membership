@@ -123,7 +123,9 @@ test.describe('@principle-I @smoke 404 status contract for [id] routes', () => {
 
       // Next 16 dev-mode RSC streaming commits the response headers BEFORE
       // `notFound()` resolves, so the dev server answers 200 while still
-      // rendering the not-found UI; a production build returns a clean 404.
+      // rendering the not-found UI. A production build returns a clean 404
+      // only when `notFound()` runs before any Suspense boundary streams: a
+      // page inside a `loading.tsx` segment still answers 200 there too (R141).
       // Asserting `.toBe(404)` here therefore failed on every route since the
       // day this spec landed, against the `pnpm dev` server its own config
       // boots. Six sibling specs already encode the accepted contract —

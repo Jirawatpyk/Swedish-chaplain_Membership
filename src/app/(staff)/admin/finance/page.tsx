@@ -16,10 +16,11 @@
  * streams in its own Suspense island.
  */
 
-// PR P — `force-dynamic` with the sibling `not-found.tsx` lets `notFound()`
-// set HTTP 404 under RSC streaming; without them the segment's `loading.tsx`
-// commits a 200 first (the `admin/invoices/[invoiceId]/page.tsx` pattern,
-// guarded by tests/e2e/smoke-404-status-contract.spec.ts).
+// The page reads request headers and the session, so it renders per request.
+// `force-dynamic` does NOT make a page-level `notFound()` answer 404: this
+// segment's `loading.tsx` starts the stream with 200 first (R141, relay rev
+// 70). The status-bearing gate is `layout.tsx`; the checks below are the
+// second wall and render the not-found page inside the stream.
 export const dynamic = 'force-dynamic';
 
 import type { Metadata } from 'next';

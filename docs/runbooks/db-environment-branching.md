@@ -22,7 +22,7 @@ All branches are copy-on-write from `main` at creation time and stay in `ap-sout
 > ⚠️ `pnpm db:migrate` and `pnpm test:integration` now hit **`dev`**, NOT production.
 
 ### Production-safety guard
-`tests/integration-setup.ts` refuses to run the integration suite if `DATABASE_URL` matches `TEST_DB_HOST_BLOCKLIST` (comma-separated host substrings, set in `.env.local` to the prod endpoint id). This is a hard stop against tests ever creating/mutating data in production. **Set the same `TEST_DB_HOST_BLOCKLIST` in CI.**
+`tests/integration-setup.ts` refuses to run the integration suite if `DATABASE_URL` matches `TEST_DB_HOST_BLOCKLIST` (comma-separated host substrings, set in `.env.local` to the prod endpoint id). This is a hard stop against tests ever creating/mutating data in production. **Set the same `TEST_DB_HOST_BLOCKLIST` in CI.** Seeders that also upload to Vercel Blob (`seed-e2e-portal-invoices.ts`) check `BLOB_READ_WRITE_TOKEN` against `TEST_BLOB_STORE_BLOCKLIST` (production store ids) the same way, `--confirm-target` included (#78). CI passes the repository variable `TEST_BLOB_STORE_BLOCKLIST` to the e2e workflows (`e2e-critical`, `e2e-nightly`); with it unset the CI seed chain refuses.
 
 ## 3. Preview isolation (per-PR branches)
 
