@@ -527,6 +527,12 @@ export async function hasLiveDispatchLeaseStatement(
 }
 
 /**
+ * Spec 139 s2 review round 1 — how long the audience-audit dedupe waits for its
+ * advisory lock (`hasAudienceDeletedAuditInTx`); the retention sweep's 5 s.
+ */
+const AUDIENCE_AUDIT_LOCK_TIMEOUT_MS = 5_000;
+
+/**
  * `SET LOCAL lock_timeout` for the rest of the caller's tx (the lease check and
  * the release each run in their own). A literal, not a bind parameter: SET
  * takes none, so the value is validated as a positive integer first.
@@ -1801,10 +1807,18 @@ export function makeDrizzleBroadcastsRepo(
      * `audit_log` policy also admits `tenant_id IS NULL` rows). The payload key
      * is the one the emit writes (`AUDIENCE_AUDIT_PAYLOAD_KEYS`). Read once
      * per segment delete, so no index is claimed for it.
+     *
+     * Review round 1 (code-review #4, reliability LOW-3): the lock wait is
+     * bounded by `SET LOCAL lock_timeout` (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`),
+     * because the read runs before a bounded Resend call and the Neon pooler
+     * can drop `statement_timeout`. A 55P03 is a plain driver error, so the
+     * site logs and counts a lost row and the call goes ahead. The bound holds
+     * for the rest of the row's tx (the disclosure read and the insert).
      */
     async hasAudienceDeletedAuditInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string): Promise<boolean> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'hasAudienceDeletedAuditInTx');
+      await setLocalLockTimeout(tx, AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, 'hasAudienceDeletedAuditInTx');
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-audience-audit:' || ${tenantIdArg} || ':' || ${resendAudienceId}, 0))`,
       );
