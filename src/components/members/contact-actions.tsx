@@ -20,6 +20,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { StarIcon } from 'lucide-react';
 import { Button, DropdownMenu, IconButton } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
@@ -122,7 +123,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
               label={t('moreActions', { name: contactName })}
               trigger={<IconButton icon="ellipsis" size="sm" touchHeight label={t('moreActions', { name: contactName })} />}
               items={[
-                { label: t('promote'), icon: 'star', onSelect: () => setPromoteOpen(true) },
+                { label: t('promote'), icon: <StarIcon />, onSelect: () => setPromoteOpen(true) },
                 { separator: true },
                 { label: t('remove'), icon: 'trash-2', tone: 'danger', onSelect: () => setRemoveOpen(true) },
               ]}
