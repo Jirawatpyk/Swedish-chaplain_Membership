@@ -60,16 +60,36 @@ interface MemberInvoicesSectionProps {
   readonly searchFilter?: string | undefined;
 }
 
-/** Difference between invoice total and credited total = amount owing. */
 /**
  * Layout B (maintainer, 22 Oct) — the filter row shows only above this many
  * invoices (unfiltered): fewer fit on one screen and need no filtering.
  */
 export const INVOICE_FILTER_THRESHOLD = 10;
 
-function remainingSatang(inv: Invoice): bigint | null {
-  if (!inv.total) return null;
-  return inv.total.satang - inv.creditedTotal.satang;
+/**
+ * The Remaining column — the amount still owed (#77). `issued` is the one
+ * unpaid state (issued → paid | void; a credit note only follows payment, so an
+ * issued invoice carries no credit), the same rule as the figures strip's
+ * Outstanding (`_lib/member-outstanding.ts`). Paid or credited owes nothing; a
+ * draft was never billed and a void bill is cancelled, so both read "—".
+ */
+function owedSatang(inv: Invoice): bigint | null {
+  switch (inv.status) {
+    case 'issued':
+      return inv.total?.satang ?? null;
+    case 'paid':
+    case 'partially_credited':
+    case 'credited':
+      return 0n;
+    case 'draft':
+    case 'void':
+      return null;
+    default: {
+      const _exhaustive: never = inv.status;
+      void _exhaustive;
+      return null;
+    }
+  }
 }
 
 export async function MemberInvoicesSection({
@@ -154,7 +174,7 @@ export async function MemberInvoicesSection({
   // number in `billDocumentNumberRaw` with the §87 `documentNumber` NULL;
   // `null` (a true draft) falls back to the placeholder.
   const tableRows: MemberInvoiceRow[] = rows.map((inv) => {
-    const remaining = remainingSatang(inv);
+    const remaining = owedSatang(inv);
     return {
       invoiceId: inv.invoiceId,
       number: resolveMemberInvoiceDisplayNumber(inv) ?? t('draftPlaceholder'),
