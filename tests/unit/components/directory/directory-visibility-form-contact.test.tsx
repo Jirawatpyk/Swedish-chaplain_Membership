@@ -169,6 +169,7 @@ describe('DirectoryVisibilityForm — preview', () => {
     const state = screen.getByText(en.directorySettings.previewNotListed).closest('.aura-empty');
     expect(state).toHaveClass('is-sm');
     expect(state).not.toHaveAttribute('role');
+    expect(state?.querySelector('.aura-empty__text')).toHaveTextContent(en.directorySettings.previewHiddenBody);
   });
 });
 

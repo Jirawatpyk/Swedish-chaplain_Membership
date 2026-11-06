@@ -51,7 +51,7 @@ export default async function PortalInvitePage() {
     return (
       <InviteFrame back={tHistory('backToProfile')}>
         <PageHeader title={t('pageTitle')} />
-        <EmptyState icon={UserX} title={t('notLinked')} announce={false} />
+        <EmptyState icon={UserX} title={t('notLinkedTitle')} description={t('notLinked')} announce={false} />
       </InviteFrame>
     );
   }

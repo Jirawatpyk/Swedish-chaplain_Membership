@@ -393,13 +393,13 @@ describe('PR Q — page-level states on the shared EmptyState (pages without a r
   it('round 1 — the invite page states are no live region (the old ones had none) and carry their own icons', () => {
     const s = src('src/app/(member)/portal/contacts/invite/page.tsx');
     expect(s.match(/<EmptyState\b[^>]*announce=\{false\}/g)).toHaveLength(2);
-    expect(s).toContain(`<EmptyState icon={UserX} title={t('notLinked')}`);
+    expect(s).toContain(`<EmptyState icon={UserX} title={t('notLinkedTitle')} description={t('notLinked')}`);
     expect(s).toContain(`<EmptyState icon={Lock} title={t('notPrimary')}`);
   });
 
   it('the renewals feature-off notice keeps its polite status region', () => {
     expect(src('src/app/(staff)/admin/renewals/page.tsx')).toMatch(
-      /<div role="status" aria-live="polite">\s*<EmptyState icon=\{PowerOff\} title=\{t\('error\.featureDisabled'\)\}/,
+      /<div role="status" aria-live="polite">\s*<EmptyState icon=\{PowerOff\} title=\{t\('error\.featureDisabledTitle'\)\} description=\{t\('error\.featureDisabled'\)\}/,
     );
   });
 });

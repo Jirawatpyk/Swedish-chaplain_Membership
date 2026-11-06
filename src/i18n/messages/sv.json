@@ -294,8 +294,9 @@
     "contactConfirmBody": "Bekräfta om ditt namn och mejl ska publiceras. Tills du sparar visar katalogen bara ditt namn och döljer ditt mejl.",
     "notPrimaryContact": "Endast företagets primära kontaktperson kan ändra om deras namn och mejl publiceras.",
     "previewUnsaved": "Förhandsvisning av osparade ändringar",
-    "previewNotListed": "Inte listad — din organisation visas inte i katalogen.",
-    "previewEmpty": "Inga uppgifter valda — din organisation visas inte i katalogen.",
+    "previewNotListed": "Inte listad",
+    "previewHiddenBody": "Din organisation visas inte i katalogen.",
+    "previewEmpty": "Inga uppgifter valda",
     "previewContactForm": "Kontakt via kammaren",
     "saved": "Katalogposten sparades.",
     "saveFailed": "Kunde inte spara. Kontrollera uppgifterna och försök igen.",
@@ -688,7 +689,8 @@
     "users": {
       "title": "Användare",
       "pageSubtitle": "Hantera personal- och medlemskonton, roller och status.",
-      "empty": "Inga användare ännu. Bjud in den första för att komma igång.",
+      "empty": "Inga användare ännu",
+      "emptyBody": "Bjud in den första för att komma igång.",
       "erasedAccount": "Raderat konto",
       "filters": {
         "searchPlaceholder": "Sök på e-post eller visningsnamn",
@@ -3141,7 +3143,8 @@
           "erasedTooltip": "Denna deltagares personuppgifter har raderats — de kan inte längre faktureras.",
           "empty": {
             "none": "Detta evenemang har inga registrerade deltagare ännu.",
-            "allErased": "Alla deltagare för detta evenemang har fått sina personuppgifter raderade och kan inte faktureras."
+            "allErased": "Alla deltagare för detta evenemang har fått sina personuppgifter raderade och kan inte faktureras.",
+            "allErasedTitle": "Inga deltagare att fakturera"
           }
         },
         "buyer": {
@@ -4643,6 +4646,7 @@
       },
       "error": {
         "featureDisabled": "Förnyelseflödet är ännu inte aktiverat för denna kammare.",
+        "featureDisabledTitle": "Förnyelser är inte aktiverade",
         "loadFailed": "Kunde inte ladda förnyelsepipelinen.",
         "retry": "Försök igen",
         "retrying": "Försöker igen…",
@@ -6033,7 +6037,9 @@
         "searchPlaceholder": "attendee@example.com",
         "searchSubmit": "Sök",
         "emptyPrompt": "Ange en registrerads e-postadress ovan för att hitta varje evenemangsregistrering som delar den.",
-        "noMatches": "Inga evenemangsregistreringar delar denna e-postadress. Inget att radera.",
+        "emptyPromptTitle": "Sök med e-postadress",
+        "noMatches": "Inga matchande registreringar",
+        "noMatchesBody": "Inga evenemangsregistreringar delar denna e-postadress, så det finns inget att radera.",
         "resultsCount": "{count, plural, =0 {Inga registreringar hittades} one {1 registrering hittades} other {# registreringar hittades}}",
         "columns": {
           "event": "Evenemang",
@@ -6199,7 +6205,8 @@
           },
           "recentDeliveries": {
             "title": "Senaste leveranser",
-            "empty": "Inga senaste leveranser ännu. Trigga en Zap eller tryck på \"Skicka testhändelse\" för att se trafik.",
+            "empty": "Inga senaste leveranser ännu",
+            "emptyBody": "Trigga en Zap eller tryck på \"Skicka testhändelse\" för att se trafik.",
             "includeTestDeliveriesLabel": "Inkludera testleveranser",
             "updating": "Uppdaterar senaste leveranser…",
             "listSummary": "{count, plural, =0 {Inga leveranser} one {# leverans visas} other {# leveranser visas}}",
@@ -6751,9 +6758,11 @@
     "invoices": {
       "title": "Fakturor",
       "subtitle": "Ditt företags fakturor och skattekvitton.",
-      "empty": "Inga fakturor ännu. Fakturor visas här när de utfärdas.",
+      "empty": "Inga fakturor ännu",
+      "emptyBody": "Fakturor visas här när de utfärdas.",
       "loadFailed": "Vi kunde inte ladda dina fakturor just nu. Uppdatera sidan eller försök igen om en stund.",
       "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",
+      "notLinkedTitle": "Kontot är inte kopplat",
       "loaded": "Fakturalistan laddad.",
       "columns": {
         "documentNumber": "Fakturanr.",
@@ -7381,6 +7390,7 @@
     "profile": {
       "pageTitle": "Min profil",
       "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",
+      "notLinkedTitle": "Kontot är inte kopplat",
       "loadError": "Det gick inte att läsa in din profil. Försök igen.",
       "editButton": "Redigera profil",
       "organisationSection": "Organisation",
@@ -7648,6 +7658,7 @@
     "invite": {
       "pageTitle": "Bjud in kollega",
       "notLinked": "Ditt konto är inte kopplat till en medlem.",
+      "notLinkedTitle": "Kontot är inte kopplat",
       "loadError": "Kunde inte ladda din profil.",
       "notPrimary": "Endast den primära kontakten kan bjuda in kollegor.",
       "formTitle": "Kollegauppgifter",

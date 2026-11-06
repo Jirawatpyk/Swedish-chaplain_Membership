@@ -141,7 +141,7 @@ export function RecentDeliveriesPanel({
         {deliveries.length === 0 ? (
           // PR Q — AURA's EmptyState. Not a live region: the summary line
           // above (MED-07) already announces the zero count.
-          <EmptyState title={t('empty')} size="sm" bordered={false} announce={false} />
+          <EmptyState title={t('empty')} description={t('emptyBody')} size="sm" bordered={false} announce={false} />
         ) : (
           <>
             {/* From 640px: the board's four-column table. */}

@@ -598,7 +598,7 @@ export function UserListTable({
                     {/* PR Q — AURA's EmptyState at the cell size. Not a live
                         region: the table and the phone list both render it,
                         so one announcer each would read it twice. */}
-                    <EmptyState title={t('empty')} size="sm" bordered={false} announce={false} />
+                    <EmptyState title={t('empty')} description={t('emptyBody')} size="sm" bordered={false} announce={false} />
                   </Td>
                 </Tr>
               ) : null}
@@ -642,7 +642,7 @@ export function UserListTable({
           })}
           {users.length === 0 ? (
             <li>
-              <EmptyState title={t('empty')} size="sm" announce={false} />
+              <EmptyState title={t('empty')} description={t('emptyBody')} size="sm" announce={false} />
             </li>
           ) : null}
         </ul>

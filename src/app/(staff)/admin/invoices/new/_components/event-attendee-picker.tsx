@@ -148,7 +148,7 @@ export function EventAttendeePicker({
 
   const allErased = rows.every((r) => r.isPseudonymised);
   if (allErased) {
-    return <EmptyState icon={Users} title={t('empty.allErased')} size="sm" />;
+    return <EmptyState icon={Users} title={t('empty.allErasedTitle')} description={t('empty.allErased')} size="sm" />;
   }
 
   // B3 — plain list of toggle buttons (NOT an ARIA listbox). Each enabled

@@ -116,9 +116,9 @@ export function DirectoryListingPreview({
         {!state.listed ? (
           // PR Q — AURA's EmptyState, frameless inside the preview card. Not a
           // live region: the "unsaved" badge beside the heading announces a change.
-          <EmptyState title={t('previewNotListed')} size="sm" bordered={false} announce={false} />
+          <EmptyState title={t('previewNotListed')} description={t('previewHiddenBody')} size="sm" bordered={false} announce={false} />
         ) : published === null ? (
-          <EmptyState title={t('previewEmpty')} size="sm" bordered={false} announce={false} />
+          <EmptyState title={t('previewEmpty')} description={t('previewHiddenBody')} size="sm" bordered={false} announce={false} />
         ) : (
           <div className="flex flex-col gap-3 aura-text-table-cell">
             <div className="flex items-center gap-3">

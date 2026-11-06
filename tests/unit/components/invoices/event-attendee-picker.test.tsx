@@ -34,6 +34,7 @@ const messages = {
           empty: {
             none: 'This event has no registered attendees yet.',
             allErased: 'All attendees have been erased.',
+            allErasedTitle: 'No attendees to invoice',
           },
         },
       },
@@ -150,6 +151,8 @@ describe('<EventAttendeePicker>', () => {
       rows: [row({ isPseudonymised: true }), row({ isPseudonymised: true })],
     });
     expect(screen.getByText('All attendees have been erased.')).toBeInTheDocument();
+    // Parity item 2 — a short title, the sentence as the description.
+    expect(screen.getByText('No attendees to invoice').closest('.aura-empty')).not.toBeNull();
   });
 
   it('renders a pseudonymised row as a non-actionable aria-disabled button with the reason in its accessible name (B1)', () => {

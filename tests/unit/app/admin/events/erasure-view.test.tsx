@@ -119,11 +119,13 @@ describe('erasure view (board Admin-events-erasure)', () => {
 
 describe('erasure view — prompt and no-match on AURA EmptyState (PR Q)', () => {
   it.each([
-    ['idle', { searchedEmail: '', status: 'idle' as const }, er.emptyPrompt],
-    ['no match', { searchedEmail: EMAIL, status: 'results' as const }, er.noMatches],
-  ])('%s is AURA’s frameless EmptyState in the card, not a second live region', async (_, state, text) => {
+    ['idle', { searchedEmail: '', status: 'idle' as const }, er.emptyPromptTitle, er.emptyPrompt],
+    ['no match', { searchedEmail: EMAIL, status: 'results' as const }, er.noMatches, er.noMatchesBody],
+  ])('%s is AURA’s frameless EmptyState in the card, not a second live region', async (_, state, text, body) => {
     await show(renderErasureBody({ ...state, truncated: false, rows: [] }));
     const empty = screen.getByText(text).closest('.aura-empty');
+    // Parity item 2 — a short title, the sentence as the description.
+    expect(empty?.querySelector('.aura-empty__text')).toHaveTextContent(body);
     expect(empty).not.toHaveClass('is-bordered');
     expect(empty).not.toHaveAttribute('role');
     expect(empty?.closest('.aura-card')).not.toBeNull();
@@ -131,6 +133,6 @@ describe('erasure view — prompt and no-match on AURA EmptyState (PR Q)', () =>
 
   it('the idle prompt draws a search icon, not the empty inbox (round 1)', async () => {
     await show(renderErasureBody({ searchedEmail: '', status: 'idle', truncated: false, rows: [] }));
-    expect(screen.getByText(er.emptyPrompt).closest('.aura-empty')?.querySelector('svg.lucide-search')).not.toBeNull();
+    expect(screen.getByText(er.emptyPromptTitle).closest('.aura-empty')?.querySelector('svg.lucide-search')).not.toBeNull();
   });
 });

@@ -136,6 +136,7 @@ describe('PortalInvoicesPage — member lookup error vs not-linked (finding I5)'
     findByLinkedUserIdMock.mockResolvedValue({ ok: false, error: { code: 'repo.not_found' } });
     const html = await renderPage();
     expect(html).toContain(en.portal.invoices.notLinked);
+    expect(html).toContain(en.portal.invoices.notLinkedTitle);
     expect(warnSpy).not.toHaveBeenCalled();
     // Must NOT show the loadFailed error copy for a genuine no-link.
     expect(html).not.toContain('load your invoices right now');
@@ -259,6 +260,7 @@ describe('PortalInvoicesPage — empty vs no-match empty-state copy', () => {
   it('no filter + zero rows → empty copy (NOT the no-match copy)', async () => {
     const html = await renderPage();
     expect(html).toContain(en.portal.invoices.empty);
+    expect(html).toContain(en.portal.invoices.emptyBody);
     expect(html).not.toContain(en.portal.invoices.filters.noMatch);
     expect(html).not.toContain('MISSING_KEY:');
   });

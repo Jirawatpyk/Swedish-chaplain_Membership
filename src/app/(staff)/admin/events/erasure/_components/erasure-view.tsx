@@ -54,13 +54,13 @@ export async function renderErasureBody({ searchedEmail, status, truncated, rows
           {!searched ? (
             // PR Q — AURA's EmptyState, frameless inside the card. Not a live
             // region: the search panel's own status line announces the count.
-            <EmptyState icon={SearchIcon} title={t('emptyPrompt')} bordered={false} announce={false} />
+            <EmptyState icon={SearchIcon} title={t('emptyPromptTitle')} description={t('emptyPrompt')} bordered={false} announce={false} />
           ) : status === 'error' ? (
             <Alert tone="danger" role="alert">
               {t('errorState')}
             </Alert>
           ) : rows.length === 0 ? (
-            <EmptyState title={t('noMatches')} bordered={false} announce={false} />
+            <EmptyState title={t('noMatches')} description={t('noMatchesBody')} bordered={false} announce={false} />
           ) : (
             <ErasureResultsTable rows={rows} />
           )}

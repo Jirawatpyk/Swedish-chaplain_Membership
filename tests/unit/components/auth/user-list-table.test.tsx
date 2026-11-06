@@ -703,6 +703,8 @@ describe('UserListTable — empty list on AURA (PR Q)', () => {
       expect(state).toHaveClass('is-sm');
       expect(state).not.toHaveAttribute('role');
       expect(state).toHaveTextContent(en.admin.users.empty);
+      // Parity item 2 — a short title, the rest as AURA's muted description.
+      expect(state.querySelector('.aura-empty__text')).toHaveTextContent(en.admin.users.emptyBody);
     }
     expect(container.querySelector('td .aura-empty')).not.toHaveClass('is-bordered');
   });

@@ -96,5 +96,7 @@ describe('RecentDeliveriesPanel empty state on AURA (PR Q)', () => {
     const state = screen.getByText(r.empty).closest('.aura-empty');
     expect(state).toHaveClass('is-sm');
     expect(state).not.toHaveAttribute('role');
+    // Parity item 2 — a short title, the how-to as the description.
+    expect(state?.querySelector('.aura-empty__text')).toHaveTextContent(r.emptyBody);
   });
 });

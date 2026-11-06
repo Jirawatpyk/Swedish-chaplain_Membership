@@ -197,7 +197,7 @@ export function InvoicesSummaryView({
     <Card title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
         {rows.length === 0 ? (
           // PR Q — AURA's EmptyState, frameless inside the card.
-          <EmptyState title={t('empty')} bordered={false} announce={false} />
+          <EmptyState title={t('empty')} description={t('emptyBody')} bordered={false} announce={false} />
         ) : (
           <>
           <ul>

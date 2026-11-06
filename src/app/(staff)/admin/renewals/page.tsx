@@ -175,7 +175,7 @@ export default async function RenewalsPipelinePage({
           {/* PR Q — AURA's EmptyState, frameless inside the card; the status
               live region stays on its own wrapper, as before. */}
           <div role="status" aria-live="polite">
-            <EmptyState icon={PowerOff} title={t('error.featureDisabled')} bordered={false} announce={false} />
+            <EmptyState icon={PowerOff} title={t('error.featureDisabledTitle')} description={t('error.featureDisabled')} bordered={false} announce={false} />
           </div>
         </Card>
       </RenewalsPageShell>

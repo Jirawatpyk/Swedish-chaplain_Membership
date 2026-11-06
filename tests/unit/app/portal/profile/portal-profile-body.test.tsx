@@ -253,6 +253,8 @@ describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', (
     const tree = await PortalProfileBody({ user: { id: 'user-a' } });
     const html = renderToStaticMarkup(tree as ReactElement);
     expect(html).toContain('notLinked');
+    // Parity item 2 — a short title over the sentence (keys echo in this mock).
+    expect(html).toContain('notLinkedTitle');
     // PR Q — AURA's EmptyState (neutral), not a hand-built paragraph.
     // Round 1 — no live region (the old markup had none) and the user-x icon, not the inbox.
     expect(html).toContain('<div class="aura-empty is-bordered">');

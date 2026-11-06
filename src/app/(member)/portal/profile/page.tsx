@@ -86,7 +86,7 @@ export async function PortalProfileBody({
     return (
       <DetailContainer>
         <PageHeader title={t('pageTitle')} />
-        <EmptyState icon={UserX} title={t('notLinked')} announce={false} />
+        <EmptyState icon={UserX} title={t('notLinkedTitle')} description={t('notLinked')} announce={false} />
       </DetailContainer>
     );
   }

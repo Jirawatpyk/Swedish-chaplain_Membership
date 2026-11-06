@@ -138,11 +138,11 @@ export default async function PortalInvoicesPage({
   // shared LoadErrorCard — its alert, danger tone and icon — with a "Try
   // again" that refreshes in place, keeping the URL and its query. The errors
   // translator is fetched only on that path.
-  const messageState = (message: string): React.ReactElement => (
+  const messageState = (title: string, description?: string): React.ReactElement => (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <Card>
-        <EmptyState title={message} bordered={false} announce={false} />
+        <EmptyState title={title} {...(description ? { description } : {})} bordered={false} announce={false} />
       </Card>
     </DetailContainer>
   );
@@ -186,7 +186,7 @@ export default async function PortalInvoicesPage({
       );
       return loadFailedState();
     }
-    return messageState(t('notLinked'));
+    return messageState(t('notLinkedTitle'), t('notLinked'));
   }
   const member = memberResult.value;
 
@@ -366,6 +366,7 @@ export async function renderPortalInvoicesView({
             // the FilterBar's result count already announces the zero.
             <EmptyState
               title={hasActiveFilter ? t('filters.noMatch') : t('empty')}
+              {...(hasActiveFilter ? {} : { description: t('emptyBody') })}
               bordered={false}
               announce={false}
             />
