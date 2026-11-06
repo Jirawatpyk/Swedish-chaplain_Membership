@@ -583,9 +583,14 @@ function makeDeps(opts: {
         // PR #756 review round 3 — the unverifiable row's per-broadcast dedupe,
         // read over what this recorder holds (a second tick seeds it with the
         // first tick's rows).
-        async hasUnverifiableCountAuditInTx(_tx: unknown, _t: unknown, id: unknown) {
+        // Round 4: keyed on (broadcastId, resendBroadcastId), so a re-minted draft
+        // gets its own row.
+        async hasUnverifiableCountAuditInTx(_tx: unknown, _t: unknown, id: unknown, resendBroadcastId?: unknown) {
           return rec.audits.some(
-            (a) => a.eventType === 'broadcast_resend_drift_check_unverifiable' && a.payload['broadcastId'] === id,
+            (a) =>
+              a.eventType === 'broadcast_resend_drift_check_unverifiable' &&
+              a.payload['broadcastId'] === id &&
+              (resendBroadcastId === undefined || a.payload['resendBroadcastId'] === resendBroadcastId),
           );
         },
         async releaseDispatchLease() { return true; },
@@ -1756,8 +1761,8 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(rows[0]!.payload).toMatchObject({
       broadcastId: BROADCAST_ID,
       resendAudienceId: 'aud-1',
-      // Round 2 (code-review #5) — written after the send, so it names the
-      // broadcast resource that was sent.
+      // Written before the send (round 3), it names the broadcast resource that
+      // attempt was about to send, which is the one sent.
       resendBroadcastId: rec.sends[0],
       expectedRecipientCount: RECIPIENTS.length,
       importId: 'imp-1',
@@ -1890,6 +1895,70 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
 
     expect(rec.sends).toHaveLength(0);
     expect(rec.audits.map((a) => a.eventType)).not.toContain('broadcast_resend_drift_check_unverifiable');
+  });
+
+  // PR #756 round 4 — the dedupe key is (broadcastId, resendBroadcastId): a draft
+  // re-minted after a restart is a different attempt and gets its own row,
+  // naming its own resources. The same draft on two ticks stays one row (a).
+  it('a count failing on two attempts with different drafts writes one row per draft', async () => {
+    const first = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      resendBroadcastId: 'rb-draft-1',
+      probe: { kind: 'present', status: 'draft' },
+      throwOn: { method: 'sendBroadcast', kind: 'retryable', subKind: 'server_5xx' },
+    });
+    failCount(first.deps);
+    await buildAudienceTick(first.deps as never, { broadcastId: BROADCAST_ID });
+    const second = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      resendBroadcastId: 'rb-draft-2',
+      probe: { kind: 'present', status: 'draft' },
+      throwOn: { method: 'sendBroadcast', kind: 'retryable', subKind: 'server_5xx' },
+    });
+    second.rec.audits.push(...first.rec.audits);
+    failCount(second.deps);
+
+    await buildAudienceTick(second.deps as never, { broadcastId: BROADCAST_ID });
+
+    const rows = second.rec.audits.filter((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable');
+    expect(rows.map((r) => r.payload['resendBroadcastId'])).toEqual(['rb-draft-1', 'rb-draft-2']);
+  });
+
+  // Round 4 — the row's own tx runs between the send's lease gate and `/send`,
+  // so a row actually written re-runs the gate: a lease lost in that window
+  // sends nothing.
+  it('a lease lost between the unverifiable row and the send sends nothing', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    failCount(deps);
+    (deps as { broadcastsRepo: Record<string, unknown> }).broadcastsRepo['checkDispatchLease'] = async () =>
+      rec.audits.some((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable') ? ('lost' as const) : ('held' as const);
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.audits.filter((a) => a.eventType === 'broadcast_resend_drift_check_unverifiable')).toHaveLength(1);
+    expect(rec.sends).toHaveLength(0);
+  });
+
+  // Round 4 — the adapter's own invariants arrive as a plain Error prefixed
+  // `f7AuditAdapter:` (`isAdapterInvariantError`), not only as
+  // `AuditPortInvariantError`. Either fails closed before the send.
+  it('an f7AuditAdapter-prefixed invariant on the unverifiable row is thrown before any send', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    failCount(deps);
+    const audit = (deps as { audit: { emit: (tx: unknown, e: { eventType: string }) => Promise<void> } }).audit;
+    const emit = audit.emit.bind(audit);
+    audit.emit = async (tx, e) => {
+      if (e.eventType === 'broadcast_resend_drift_check_unverifiable') {
+        throw new Error('f7AuditAdapter: tx is not bound to the tenant');
+      }
+      return emit(tx, e);
+    };
+
+    await expect(buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID })).rejects.toThrow(/^f7AuditAdapter:/);
+
+    expect(rec.sends).toHaveLength(0);
   });
 
   // Spec L-1 / reliability L4 — before the send, nothing has gone out, so a
