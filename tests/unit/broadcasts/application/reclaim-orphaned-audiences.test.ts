@@ -917,6 +917,19 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     expect(h.events).toContain(`gw:deleteAudience:${AUDIENCE}`);
   });
 
+  // Review round 1 (code-review #3) — e.g. cleanup's `terminal_cleanup` row for
+  // a pre-s2 segment whose delete keeps failing: it is recorded, not unattributed.
+  it('a segment already recorded as deleted is neither re-recorded nor reported unattributed', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    const unattributed = vi.spyOn(broadcastsMetrics, 'audienceReclaimDeleteUnattributed');
+    const h = harness({ disclosure: null, alreadyDeleted: true });
+    await h.run();
+    expect(h.rows).toEqual([]);
+    expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed')).toEqual([]);
+    expect(unattributed).not.toHaveBeenCalled();
+    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
+  });
+
   it('a failed disclosure read logs ERROR and counts a lost row, and the delete still runs', async () => {
     const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
     const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
