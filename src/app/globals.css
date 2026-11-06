@@ -925,5 +925,7 @@ summary,
       border-radius: 0;
     }
     .member-invoices-list .aura-table__row:last-child { border-bottom-width: 0; }
+    /* AURA pulls the ⋯ 8px into the row's side padding, which is 0 here. */
+    .member-invoices-list .aura-table__td[data-card='actions'] { margin-inline-end: 0; }
   }
 }

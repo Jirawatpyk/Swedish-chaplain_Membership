@@ -194,6 +194,9 @@ describe('MemberInvoicesTable (T556)', () => {
     expect(wrapper).toHaveClass('member-invoices-list');
     const css = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8');
     expect(css).toMatch(/@container invoices \(width < 592px\)\s*\{\s*\.member-invoices-list \.aura-table__row \{[^}]*border-width: 0 0 1px;[^}]*border-radius: 0;/);
+    // AURA pulls the ⋯ 8px into the row's side padding; with no padding it
+    // would overhang the card by 8px (R143b), so the stand-in zeroes it.
+    expect(css).toMatch(/\.member-invoices-list \.aura-table__td\[data-card='actions'\] \{ margin-inline-end: 0; \}/);
   });
 
   it('the phone card still takes the number as its title and the status as its pill', () => {
