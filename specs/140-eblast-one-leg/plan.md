@@ -2775,6 +2775,24 @@ All Low, fixed in `6d7c7282d`, `e081491ce` and `24f74f57d`. That fix delta is **
 - The harness dedupe double compares strictly.
 - The broadcasts rule now states exactly what the gate covers, and asks that a new spelling class get its pattern and catch case together.
 
+### Slice 4 — final Verify: the maintainer's `/verify` (6 Nov 2026, on `eb3d3890f`, on :3401, flag absent, sink only): PASS
+
+**DR2:**
+- A wrong Bearer → 401.
+- Tick 1 `import_submitted: 1`.
+- Tick 2 `succeeded: 1`, row `sending`, with `broadcast_send_started` the only audit row: the count read fine, so there is no unverifiable row.
+- At Resend the broadcast went `queued` → `sent`, with `segment_id` set.
+- Three signed `email.delivered` webhooks → `sent`.
+
+**The evidence card** (EN/TH/SV, no MISSING_MESSAGE):
+- X (marked) reads "Removed from Resend segments 2" / "รายการที่ Resend ถอดออกจากกลุ่มแล้ว", "Not in the Resend segment 1" / "ไม่อยู่ในกลุ่มของ Resend", and the note "…dispatched on or before 5 Nov 2026…" / "…ส่งในหรือก่อนวันที่ 5 พ.ย. 2569…" / "…ett E-Blast som skickades den 5 november 2026 eller tidigare".
+- Y reads the older labels and "Earlier record (older Resend detach method): each contact … accepted detach requests even for addresses that were no longer in the audience…" / "บันทึกก่อนหน้า (…)".
+- At 320 × 727 (mobile-chrome): `innerWidth 320`, `scrollWidth 320`, nothing overflows.
+
+**Teardown:** rows, members and the tenant are gone. At Resend the segment and the 3 contacts were deleted, contacts by id; `General` alone remains, and the account is back at 22 contacts.
+
+**The prod count the maintainer ordered** (D-034, 04:14 UTC, read-only, host `ep-bold-block`) is in D-042. Approved rows due within 15 minutes: 0, so the merge gate passes.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
