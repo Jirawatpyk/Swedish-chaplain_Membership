@@ -267,11 +267,15 @@ async function main(): Promise<void> {
         // Spec 142 (mig 0328) — the arbiter of `f7AuditAdapter.emitOnce`'s
         // `ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE
         // event_type = 'broadcast_audience_deleted'`. Without it that INSERT
-        // fails with 42P10, so every segment removal loses its row. Asserted by
-        // its definition as `pg_get_indexdef` renders it on dev after the apply
-        // (unique, the key and the partial predicate), not by its name.
-        name: 'audit_log_audience_deleted_once partial unique index on (tenant_id, payload->>resend_audience_id) (mig 0328)',
-        query: `SELECT 1 AS hit FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'audit_log' AND indexname = 'audit_log_audience_deleted_once' AND indexdef LIKE 'CREATE UNIQUE INDEX%' AND indexdef LIKE '%(tenant_id, ((payload ->> ''resend_audience_id''::text))) WHERE (event_type = ''broadcast_audience_deleted''::audit_event_type)'`,
+        // fails with 42P10, so every segment removal loses its row. Asserted
+        // structurally from `pg_index`, as 0328's own check reads it (spec 142
+        // review round 3): on public.audit_log, unique, VALID (an invalid index
+        // is not used for ON CONFLICT inference), two key columns, the key and
+        // the partial predicate (whitespace, parentheses and the enum type's
+        // schema qualifier stripped). `[[:space:]()]`, not `\s`: a backslash
+        // escape in this template literal would be lost.
+        name: 'audit_log_audience_deleted_once valid partial unique index on (tenant_id, payload->>resend_audience_id) (mig 0328)',
+        query: `SELECT 1 AS hit FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_class t ON t.oid = i.indrelid WHERE c.relname = 'audit_log_audience_deleted_once' AND c.relnamespace = 'public'::regnamespace AND t.relname = 'audit_log' AND t.relnamespace = 'public'::regnamespace AND i.indisunique AND i.indisvalid AND i.indnkeyatts = 2 AND pg_get_indexdef(i.indexrelid, 1, true) = 'tenant_id' AND regexp_replace(pg_get_indexdef(i.indexrelid, 2, true), '[[:space:]()]', '', 'g') = 'payload->>''resend_audience_id''::text' AND regexp_replace(replace(pg_get_expr(i.indpred, i.indrelid, true), 'public.audit_event_type', 'audit_event_type'), '[[:space:]()]', '', 'g') = 'event_type=''broadcast_audience_deleted''::audit_event_type'`,
       },
       {
         // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure
