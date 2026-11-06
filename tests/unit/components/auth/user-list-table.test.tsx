@@ -693,3 +693,17 @@ describe('UserListTable on AURA', () => {
   });
 });
 
+
+describe('UserListTable — empty list on AURA (PR Q)', () => {
+  it('the table cell and the phone list each show AURA’s small EmptyState, neither a live region', () => {
+    const { container } = renderTable([]);
+    const states = Array.from(container.querySelectorAll('.aura-empty'));
+    expect(states.length).toBeGreaterThanOrEqual(1);
+    for (const state of states) {
+      expect(state).toHaveClass('is-sm');
+      expect(state).not.toHaveAttribute('role');
+      expect(state).toHaveTextContent(en.admin.users.empty);
+    }
+    expect(container.querySelector('td .aura-empty')).not.toHaveClass('is-bordered');
+  });
+});

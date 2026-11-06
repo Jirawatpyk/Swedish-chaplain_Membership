@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { EmptyState } from '@/components/shell/empty-state';
 import {
   Badge,
   Card,
@@ -221,8 +222,10 @@ export function AdminTemplateLibrary({
               // template is a Starter); the page-level empty state only
               // covers "zero templates at all".
               <Tr>
-                <Td colSpan={6} label="" align="center" className="py-8 text-[var(--aura-fg-secondary)]">
-                  {t('filterEmpty')}
+                <Td colSpan={6} label="" align="center">
+                  {/* PR Q — AURA's EmptyState at the cell size. Not a live
+                      region: the sr-only count above announces the filter. */}
+                  <EmptyState title={t('filterEmpty')} size="sm" bordered={false} announce={false} />
                 </Td>
               </Tr>
             ) : (

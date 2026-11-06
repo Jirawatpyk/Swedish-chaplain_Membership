@@ -219,3 +219,13 @@ describe('MembershipTierChart', () => {
     });
   });
 });
+
+describe('MembershipTierChart empty state on AURA (PR Q)', () => {
+  it('is AURA’s small, frameless EmptyState inside the chart card', () => {
+    renderChart([]);
+    const state = screen.getByText('No active members yet.').closest('.aura-empty');
+    expect(state).toHaveClass('is-sm');
+    expect(state).not.toHaveClass('is-bordered');
+    expect(state?.closest('.aura-card')).not.toBeNull();
+  });
+});

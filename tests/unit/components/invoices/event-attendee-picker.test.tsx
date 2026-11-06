@@ -195,3 +195,16 @@ describe('<EventAttendeePickerSkeleton>', () => {
     expect(skeleton.querySelectorAll('[data-slot="skeleton-block"], .aura-skeleton').length).toBeGreaterThan(0);
   });
 });
+
+describe('AttendeeList empty states on AURA (PR Q)', () => {
+  it('"none" and "allErased" are AURA’s small bordered EmptyState', () => {
+    const { unmount } = renderPicker({ rows: [] });
+    expect(screen.getByText('This event has no registered attendees yet.').closest('.aura-empty')).toHaveClass(
+      'is-sm',
+      'is-bordered',
+    );
+    unmount();
+    renderPicker({ rows: [row({ isPseudonymised: true })] });
+    expect(screen.getByText('All attendees have been erased.').closest('.aura-empty')).toHaveClass('is-sm');
+  });
+});

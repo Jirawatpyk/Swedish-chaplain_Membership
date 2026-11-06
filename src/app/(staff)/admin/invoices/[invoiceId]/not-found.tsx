@@ -23,7 +23,7 @@ import { ArrowLeft } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Icon, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, EmptyState, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 
 export default async function InvoiceNotFound(): Promise<React.ReactElement> {
   const t = await getTranslations('admin.invoices');
@@ -32,19 +32,24 @@ export default async function InvoiceNotFound(): Promise<React.ReactElement> {
   return (
     <DetailContainer>
       <PageHeader title={t('list.title')} />
-      <div
-        data-testid="invoice-not-found"
-        className="rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-8 text-center"
-      >
-        <p className="m-0 text-sm text-[var(--aura-fg-secondary)]">{tErrors('notFound')}</p>
-        <Link
-          href="/admin/invoices"
-          className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, className: 'mt-4' })}
-        >
-          <Icon name={<ArrowLeft />} size={16} />
-          {t('list.title')}
-        </Link>
-      </div>
+      {/* PR Q — AURA's Card holding AURA's EmptyState (frameless, its title a
+          paragraph so the page outline is unchanged), the way back its action. */}
+      <Card as="div" data-testid="invoice-not-found">
+        <EmptyState
+          bordered={false}
+          headingLevel={false}
+          title={tErrors('notFound')}
+          action={
+            <Link
+              href="/admin/invoices"
+              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
+            >
+              <Icon name={<ArrowLeft />} size={16} />
+              {t('list.title')}
+            </Link>
+          }
+        />
+      </Card>
     </DetailContainer>
   );
 }

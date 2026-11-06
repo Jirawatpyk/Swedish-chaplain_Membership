@@ -297,3 +297,20 @@ describe('PortalInvoicesPage — one clock for the overdue filter', () => {
     }
   });
 });
+
+describe('PortalInvoicesPage — states on AURA EmptyState (PR Q)', () => {
+  it('a failed read is the danger-tone EmptyState inside the card', async () => {
+    listInvoicesPagedMock.mockRejectedValue(new Error('NeonDbError'));
+    const html = await renderPage();
+    expect(html).toContain('<div role="status" class="aura-empty is-danger">');
+  });
+
+  it('not-linked and the empty list are the neutral EmptyState; the list one is no live region', async () => {
+    findByLinkedUserIdMock.mockResolvedValueOnce({ ok: false, error: { code: 'repo.not_found' } });
+    expect(await renderPage()).toContain('<div role="status" class="aura-empty">');
+    listInvoicesPagedMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+    const list = await renderPage({ status: 'paid' });
+    expect(list).toMatch(/<div class="aura-empty"><span class="aura-empty__icon"/);
+    expect(list).not.toContain('is-danger');
+  });
+});

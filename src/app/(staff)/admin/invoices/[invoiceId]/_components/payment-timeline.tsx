@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { Badge, Card } from '@jirawatpyk/aura-react/server';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { EmptyState } from '@/components/shell/empty-state';
 import { ErrorCardActions } from '@/components/shell/error-card-actions';
 import {
   SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY,
@@ -496,49 +497,35 @@ export async function PaymentTimeline({
           `issued` — it's the most likely next action when no online
           payment has settled (chamber admin reconciling a wire). */}
       {events.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <BanknoteIcon
-            className="size-12 text-[var(--aura-fg-secondary)]"
-            aria-hidden="true"
-          />
-          {/* F5R1-UX4 — distinguish two empty-state semantics:
-                (a) Invoice not paid yet (issued/overdue) — current
-                    copy "no online payment activity yet" + record-
-                    manually CTA. Bookkeeper expects this when they
-                    first issue an invoice.
-                (b) Invoice paid via manual record (cash, bank xfer,
-                    cheque) — no F5 events were emitted (manual
-                    record-payment bypasses the F5 webhook pipeline).
-                    Previously the timeline showed the "no online
-                    payment activity yet" copy here, suggesting the
-                    record-payment action had silently failed. Show
-                    a paid-manually copy instead so the bookkeeper
-                    sees the action took effect. */}
-          {invoicePaidAt !== null ? (
-            <>
-              <p className="text-sm font-medium">{t('emptyPaidManual.title')}</p>
-              <p className="max-w-md text-xs text-[var(--aura-fg-secondary)]">
-                {t('emptyPaidManual.body')}
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm font-medium">{t('empty.title')}</p>
-              <p className="max-w-md text-xs text-[var(--aura-fg-secondary)]">
-                {t('empty.body')}
-              </p>
-              {isAdmin && invoiceStatus === 'issued' && (
-                <a
-                  href={`/admin/invoices/${invoiceId}#record-payment`}
-                  data-testid="empty-state-record-payment-link"
-                  className="rounded-xs text-sm font-medium text-[var(--aura-fg-accent)] underline underline-offset-2"
-                >
-                  {t('empty.recordManualLink')}
-                </a>
-              )}
-            </>
-          )}
-        </div>
+        // PR Q — AURA's EmptyState, frameless inside the timeline card, the
+        // banknote its icon and the record-manually link its action.
+        // F5R1-UX4 — distinguish two empty-state semantics:
+        //   (a) Invoice not paid yet (issued/overdue) — current copy "no online
+        //       payment activity yet" + record-manually CTA. Bookkeeper expects
+        //       this when they first issue an invoice.
+        //   (b) Invoice paid via manual record (cash, bank xfer, cheque) — no F5
+        //       events were emitted (manual record-payment bypasses the F5
+        //       webhook pipeline). Previously the timeline showed the "no online
+        //       payment activity yet" copy here, suggesting the record-payment
+        //       action had silently failed. Show a paid-manually copy instead so
+        //       the bookkeeper sees the action took effect.
+        <EmptyState
+          icon={BanknoteIcon}
+          bordered={false}
+          title={invoicePaidAt !== null ? t('emptyPaidManual.title') : t('empty.title')}
+          description={invoicePaidAt !== null ? t('emptyPaidManual.body') : t('empty.body')}
+          action={
+            invoicePaidAt === null && isAdmin && invoiceStatus === 'issued' ? (
+              <a
+                href={`/admin/invoices/${invoiceId}#record-payment`}
+                data-testid="empty-state-record-payment-link"
+                className="rounded-xs text-sm font-medium text-[var(--aura-fg-accent)] underline underline-offset-2"
+              >
+                {t('empty.recordManualLink')}
+              </a>
+            ) : undefined
+          }
+        />
       ) : (
         <ol className="flex flex-col gap-3">
           {events.map((event) => {

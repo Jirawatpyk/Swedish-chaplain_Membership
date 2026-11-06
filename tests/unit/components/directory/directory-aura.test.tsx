@@ -258,3 +258,25 @@ describe('RecentExports on AURA (T506)', () => {
     }
   });
 });
+
+describe('RecentExports card on AURA (PR Q)', () => {
+  const labels = {
+    heading: 'Recent exports',
+    empty: 'No exports yet.',
+    caption: 'Recently generated directory exports',
+    kindLabel: 'Type',
+    statusLabel: 'Status',
+    requestedLabel: 'Requested',
+    download: 'Download',
+  };
+
+  it('is an AURA Card labelled by its h2 title (the id is kept), with AURA’s EmptyState when empty', () => {
+    render(<RecentExports labels={labels} rows={[]} />);
+    const heading = screen.getByRole('heading', { level: 2, name: 'Recent exports' });
+    expect(heading).toHaveAttribute('id', 'recent-exports-heading');
+    const card = heading.closest('section');
+    expect(card).toHaveClass('aura-card');
+    expect(card).toHaveAttribute('aria-labelledby', 'recent-exports-heading');
+    expect(screen.getByText('No exports yet.').closest('.aura-empty')).not.toHaveClass('is-bordered');
+  });
+});

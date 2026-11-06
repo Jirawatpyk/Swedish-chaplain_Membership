@@ -27,7 +27,7 @@ import { ArrowLeft, FileQuestion } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Icon, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, EmptyState, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { portalBroadcastBackForViewer } from './_lib/portal-broadcast-back';
 
 export default async function BroadcastNotFound(): Promise<React.ReactElement> {
@@ -36,26 +36,31 @@ export default async function BroadcastNotFound(): Promise<React.ReactElement> {
 
   return (
     // F2 UX hardening — full empty-state anatomy per ux-standards § 3.1:
-    // muted icon (48px), heading, explanatory paragraph, primary CTA.
+    // muted icon, heading, explanatory paragraph, primary CTA.
     // Previously: just a flat `<p>` — visually anaemic and SR users had
     // no heading landmark for the state.
     <DetailContainer>
       <PageHeader title={t('title')} />
-      <div
-        data-testid="broadcast-not-found"
-        className="flex flex-col items-center gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-12 text-center"
-      >
-        <Icon name={<FileQuestion />} size={48} className="text-[var(--aura-fg-secondary)]" />
-        <h2 className="m-0 aura-text-h3">{t('notFound.title')}</h2>
-        <p className="m-0 max-w-md aura-text-body text-[var(--aura-fg-secondary)]">{t('notFound.body')}</p>
-        <Link
-          href={back.href}
-          className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, className: 'mt-2' })}
-        >
-          <Icon name={<ArrowLeft />} size={16} />
-          {back.toDashboard ? t('backToDashboard') : t('back')}
-        </Link>
-      </div>
+      {/* PR Q — AURA's Card holding AURA's EmptyState (frameless): the icon,
+          the h2 heading, the explanation and the way back as its action. */}
+      <Card as="div" data-testid="broadcast-not-found">
+        <EmptyState
+          bordered={false}
+          headingLevel={2}
+          icon={<FileQuestion />}
+          title={t('notFound.title')}
+          description={t('notFound.body')}
+          action={
+            <Link
+              href={back.href}
+              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
+            >
+              <Icon name={<ArrowLeft />} size={16} />
+              {back.toDashboard ? t('backToDashboard') : t('back')}
+            </Link>
+          }
+        />
+      </Card>
     </DetailContainer>
   );
 }

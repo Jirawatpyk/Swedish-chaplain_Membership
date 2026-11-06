@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { EmptyState } from '@/components/shell/empty-state';
 import { requireSession } from '@/lib/auth-session';
 import { env } from '@/lib/env';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -61,8 +62,10 @@ function loadFailed(title: string, message: string) {
   return (
     <FormContainer>
       <PageHeader title={title} />
-      <div role="alert" className="py-12 text-center">
-        <p className="text-body">{message}</p>
+      {/* PR Q — AURA's EmptyState in its danger tone; the alert role stays on
+          the wrapper (AURA's EmptyState takes no role of its own here). */}
+      <div role="alert">
+        <EmptyState title={message} tone="danger" announce={false} />
       </div>
     </FormContainer>
   );

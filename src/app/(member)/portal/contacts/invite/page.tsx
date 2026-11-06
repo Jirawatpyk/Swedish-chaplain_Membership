@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { EmptyState } from '@/components/shell/empty-state';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -47,9 +48,7 @@ export default async function PortalInvitePage() {
     return (
       <InviteFrame back={tHistory('backToProfile')}>
         <PageHeader title={t('pageTitle')} />
-        <div className="py-12 text-center">
-          <p className="text-body text-[var(--aura-fg-secondary)]">{t('notLinked')}</p>
-        </div>
+        <EmptyState title={t('notLinked')} />
       </InviteFrame>
     );
   }
@@ -62,9 +61,7 @@ export default async function PortalInvitePage() {
     return (
       <InviteFrame back={tHistory('backToProfile')}>
         <PageHeader title={t('pageTitle')} />
-        <div className="py-12 text-center">
-          <p className="text-body text-[var(--aura-fg-secondary)]">{t('loadError')}</p>
-        </div>
+        <EmptyState title={t('loadError')} tone="danger" />
       </InviteFrame>
     );
   }
@@ -76,9 +73,7 @@ export default async function PortalInvitePage() {
     return (
       <InviteFrame back={tHistory('backToProfile')}>
         <PageHeader title={t('pageTitle')} />
-        <div className="py-12 text-center">
-          <p className="text-body text-[var(--aura-fg-secondary)]">{t('notPrimary')}</p>
-        </div>
+        <EmptyState title={t('notPrimary')} />
       </InviteFrame>
     );
   }

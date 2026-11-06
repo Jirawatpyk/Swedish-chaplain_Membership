@@ -99,3 +99,25 @@ describe('broadcast detail not-found', () => {
     expect(document.body.textContent).not.toContain('MISSING_KEY');
   });
 });
+
+describe('portal segment not-found pages on AURA (PR Q)', () => {
+  it.each([
+    ['invoice', () => import('@/app/(member)/portal/invoices/[invoiceId]/not-found'), 'portal-invoice-not-found'],
+    ['credit note', () => import('@/app/(member)/portal/credit-notes/[creditNoteId]/not-found'), 'portal-credit-note-not-found'],
+  ] as const)('the %s not-found is an AURA Card holding AURA’s EmptyState with the back link', async (_, load, testId) => {
+    const { default: Page } = await load();
+    render(await Page());
+    const card = screen.getByTestId(testId);
+    expect(card).toHaveClass('aura-card');
+    expect(card.querySelector('.aura-empty')).toHaveTextContent(enMessages.errors.notFound);
+    expect(screen.getByRole('link', { name: enMessages.portal.invoices.title })).toHaveAttribute('href', '/portal/invoices');
+  });
+
+  it('the E-Blast not-found keeps its h2 inside AURA’s EmptyState in an AURA Card', async () => {
+    const { default: BroadcastNotFound } = await import('@/app/(member)/portal/broadcasts/[id]/not-found');
+    render(await BroadcastNotFound());
+    const card = screen.getByTestId('broadcast-not-found');
+    expect(card).toHaveClass('aura-card');
+    expect(card.querySelector('.aura-empty h2')).toHaveTextContent(enMessages.portal.broadcasts.detail.notFound.title);
+  });
+});

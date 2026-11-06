@@ -29,6 +29,7 @@ import {
   type StatusTone,
 } from '@jirawatpyk/aura-react';
 import { RelativeTime } from '@/components/shell/relative-time';
+import { EmptyState } from '@/components/shell/empty-state';
 import {
   KNOWN_RECENT_PROCESSING_OUTCOMES,
   type RecentDelivery,
@@ -138,7 +139,9 @@ export function RecentDeliveriesPanel({
         </span>
 
         {deliveries.length === 0 ? (
-          <p className="text-[var(--aura-fg-secondary)]">{t('empty')}</p>
+          // PR Q — AURA's EmptyState. Not a live region: the summary line
+          // above (MED-07) already announces the zero count.
+          <EmptyState title={t('empty')} size="sm" bordered={false} announce={false} />
         ) : (
           <>
             {/* From 640px: the board's four-column table. */}

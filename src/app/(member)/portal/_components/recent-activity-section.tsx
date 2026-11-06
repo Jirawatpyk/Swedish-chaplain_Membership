@@ -13,6 +13,7 @@ import { ArrowRight } from 'lucide-react';
 import { Card, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { AuraCardSkeleton } from '@/components/shell/aura-card-skeleton';
+import { EmptyState } from '@/components/shell/empty-state';
 import { RecentActivityList } from './recent-activity-list';
 
 /**
@@ -92,13 +93,17 @@ export async function RecentActivitySection({
     // row of the body, left-aligned under a hairline, as the board draws it.
     <Card title={t('title')} headingLevel={2}>
       {events.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          {/* activity.empty.title = "No activity yet" (nested key, existing G2 key) */}
-          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('empty.title')}</p>
-          <Link href="/portal/benefits" className={buttonClass({ variant: 'secondary' })}>
-            {t('emptyCta')}
-          </Link>
-        </div>
+        // activity.empty.title = "No activity yet" (nested key, existing G2 key);
+        // PR Q — AURA's EmptyState, frameless inside the card, the CTA its action.
+        <EmptyState
+          title={t('empty.title')}
+          bordered={false}
+          action={
+            <Link href="/portal/benefits" className={buttonClass({ variant: 'secondary' })}>
+              {t('emptyCta')}
+            </Link>
+          }
+        />
       ) : (
         <div className="flex flex-col">
           <RecentActivityList events={events} />
@@ -134,7 +139,8 @@ export function RecentActivitySkeleton(): React.JSX.Element {
 function unavailableCard(title: string, body: string) {
   return (
     <Card title={title} headingLevel={2}>
-      <p className="py-8 text-center text-sm text-[var(--aura-fg-secondary)]">{body}</p>
+      {/* PR Q — a failed read: AURA's EmptyState in its danger tone. */}
+      <EmptyState title={body} tone="danger" bordered={false} />
     </Card>
   );
 }

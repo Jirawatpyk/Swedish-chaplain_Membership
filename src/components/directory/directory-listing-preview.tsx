@@ -23,6 +23,7 @@ import i18nIsoCountries from 'i18n-iso-countries';
 import { Badge, Card } from '@jirawatpyk/aura-react/server';
 import { isLocaleRegistered } from '@/components/members/country-display';
 import { safeExternalHref } from '@/lib/safe-url';
+import { EmptyState } from '@/components/shell/empty-state';
 import {
   projectPublishedListing,
   type FieldVisibility,
@@ -113,9 +114,11 @@ export function DirectoryListingPreview({
       </div>
       <Card>
         {!state.listed ? (
-          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('previewNotListed')}</p>
+          // PR Q — AURA's EmptyState, frameless inside the preview card. Not a
+          // live region: the "unsaved" badge beside the heading announces a change.
+          <EmptyState title={t('previewNotListed')} size="sm" bordered={false} announce={false} />
         ) : published === null ? (
-          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('previewEmpty')}</p>
+          <EmptyState title={t('previewEmpty')} size="sm" bordered={false} announce={false} />
         ) : (
           <div className="flex flex-col gap-3 aura-text-table-cell">
             <div className="flex items-center gap-3">

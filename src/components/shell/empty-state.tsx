@@ -40,6 +40,16 @@ export interface EmptyStateProps {
    * (unchanged for every existing consumer).
    */
   readonly announce?: boolean;
+  /**
+   * PR Q — `danger` for a load FAILURE (the data couldn't be read), AURA's
+   * danger tint and icon colour; without an `icon` it draws AURA's
+   * triangle-alert instead of the inbox. Defaults to `neutral` (unchanged for
+   * every existing consumer). It stays quiet: a caller that must interrupt
+   * wraps it in its own `role="alert"`.
+   */
+  readonly tone?: 'neutral' | 'danger';
+  /** PR Q — `sm` for a table cell or a compact panel. Defaults to AURA's `md`. */
+  readonly size?: 'sm' | 'md';
 }
 
 export function EmptyState({
@@ -52,6 +62,8 @@ export function EmptyState({
   iconClassName,
   'data-testid': dataTestId,
   announce = true,
+  tone = 'neutral',
+  size,
 }: EmptyStateProps) {
   // Spec 122 — AURA's EmptyState (#86, 5.14): the title stays a <p>
   // (`headingLevel={false}`) so no page's outline changes, and `announce`
@@ -64,7 +76,9 @@ export function EmptyState({
       className={className}
       bordered={bordered}
       headingLevel={false}
-      icon={Icon ? <Icon className={iconClassName} aria-hidden /> : undefined}
+      tone={tone}
+      {...(size ? { size } : {})}
+      icon={Icon ? <Icon className={iconClassName} aria-hidden /> : tone === 'danger' ? 'triangle-alert' : undefined}
       title={title}
       description={description}
       action={action}

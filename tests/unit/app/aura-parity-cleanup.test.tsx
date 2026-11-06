@@ -376,3 +376,32 @@ describe('PR B consistency (maintainer, 2 Oct)', () => {
     }
   });
 });
+
+describe('PR Q — page-level states on the shared EmptyState (pages without a render test)', () => {
+  it.each([
+    ['src/app/(member)/portal/contacts/invite/page.tsx', 3],
+    ['src/app/(member)/portal/edit/page.tsx', 1],
+    ['src/app/(staff)/admin/renewals/page.tsx', 1],
+  ])('%s renders its states through <EmptyState> (%i), not a hand-built centred paragraph', (file, count) => {
+    const s = src(file);
+    expect(s).toContain("import { EmptyState } from '@/components/shell/empty-state';");
+    expect(s.match(/<EmptyState\b/g)?.length).toBe(count);
+    expect(s).not.toMatch(/className="py-(12|\[var\(--aura-space-8\)\]) text-center"/);
+  });
+
+  it('the invite page’s failed read takes the danger tone', () => {
+    expect(src('src/app/(member)/portal/contacts/invite/page.tsx')).toContain(`<EmptyState title={t('loadError')} tone="danger" />`);
+  });
+
+  it('the edit page keeps its alert role around the danger-tone EmptyState', () => {
+    expect(src('src/app/(member)/portal/edit/page.tsx')).toMatch(
+      /<div role="alert">\s*<EmptyState title=\{message\} tone="danger" announce=\{false\} \/>/,
+    );
+  });
+
+  it('the renewals feature-off notice keeps its polite status region', () => {
+    expect(src('src/app/(staff)/admin/renewals/page.tsx')).toMatch(
+      /<div role="status" aria-live="polite">\s*<EmptyState title=\{t\('error\.featureDisabled'\)\}/,
+    );
+  });
+});

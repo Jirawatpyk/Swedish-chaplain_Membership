@@ -216,7 +216,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
-| — | None open after 5.85.0 (PR Q) | — |
+| #199 | `Card` with `title` + `titleId` sets `aria-labelledby` on its root whatever `as` is; on `as="div"` (no role) that names a generic element, which ARIA prohibits. Ask: label the root only when it is a `section`/`article`/`aside`/`form` or carries a `role` (handoff addendum 100, found in PR Q) | `step-card.tsx` keeps its own `h3` inside `<Card as="div">` instead of `title` |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

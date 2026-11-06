@@ -89,3 +89,12 @@ describe('<RecentDeliveriesPanel> on AURA', () => {
     expect(screen.queryByRole('table')).toBeNull();
   });
 });
+
+describe('RecentDeliveriesPanel empty state on AURA (PR Q)', () => {
+  it('is AURA’s EmptyState and not a second live region (the summary line announces)', () => {
+    renderPanel([]);
+    const state = screen.getByText(r.empty).closest('.aura-empty');
+    expect(state).toHaveClass('is-sm');
+    expect(state).not.toHaveAttribute('role');
+  });
+});

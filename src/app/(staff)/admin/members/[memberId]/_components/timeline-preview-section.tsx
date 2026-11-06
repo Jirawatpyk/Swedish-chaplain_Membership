@@ -40,6 +40,7 @@ import { timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { TimelineEventItem } from '@/components/members/timeline-event-item';
+import { EmptyState } from '@/components/shell/empty-state';
 import type { Role } from '@/modules/auth';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
 
@@ -145,13 +146,11 @@ export async function TimelinePreviewCard({
       }
     >
       {loadFailed ? (
-        <div className="py-6 text-center">
-          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('timelinePreview.loadFailed')}</p>
-        </div>
+        // PR Q — AURA's EmptyState, frameless inside the card: the danger tone
+        // for a failed read, the neutral one for an empty timeline.
+        <EmptyState title={t('timelinePreview.loadFailed')} tone="danger" bordered={false} />
       ) : events.length === 0 ? (
-        <div className="py-6 text-center">
-          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('timelinePreview.empty')}</p>
-        </div>
+        <EmptyState title={t('timelinePreview.empty')} bordered={false} />
       ) : (
         <ul className="flex flex-col gap-1" aria-label={tTimeline('subtitle')}>
           {events.map((ev) => (

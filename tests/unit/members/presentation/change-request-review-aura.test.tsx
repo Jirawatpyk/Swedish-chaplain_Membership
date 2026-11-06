@@ -159,3 +159,12 @@ describe('change-request review — board content (US5a parity)', () => {
     expect(row.querySelector('[data-value="proposed"]')).toHaveClass('font-semibold');
   });
 });
+
+describe('change-request review card on AURA (PR Q)', () => {
+  it('is one AURA Card (a div) that drops its frame below 640px', () => {
+    renderClient();
+    const card = screen.getByRole('heading', { level: 2, name: enMessages.admin.changeRequests.decision.fieldsHeading }).closest('.aura-card');
+    expect(card).toHaveClass('aura-card--flush-below-sm');
+    expect(card?.tagName).toBe('DIV');
+  });
+});

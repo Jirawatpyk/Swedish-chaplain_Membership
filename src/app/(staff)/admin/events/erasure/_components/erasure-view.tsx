@@ -15,6 +15,7 @@ import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 import { Alert, Card } from '@jirawatpyk/aura-react/server';
 import { PageHeader } from '@/components/layout/page-header';
+import { EmptyState } from '@/components/shell/empty-state';
 import { EraseByEmailPanel } from '@/components/events/erase-by-email-panel';
 import { ErasureResultsTable, type ErasureResultRow } from '@/components/events/erasure-results-table';
 
@@ -32,7 +33,6 @@ export interface ErasureViewState {
 export async function renderErasureBody({ searchedEmail, status, truncated, rows }: ErasureViewState) {
   const t = await getTranslations('admin.events.erasure');
   const searched = searchedEmail !== '' && status !== 'idle';
-  const quiet = 'aura-text-body py-[var(--aura-space-8)] text-center text-[var(--aura-fg-secondary)]';
 
   return (
     <>
@@ -52,13 +52,15 @@ export async function renderErasureBody({ searchedEmail, status, truncated, rows
           ) : null}
 
           {!searched ? (
-            <p className={quiet}>{t('emptyPrompt')}</p>
+            // PR Q — AURA's EmptyState, frameless inside the card. Not a live
+            // region: the search panel's own status line announces the count.
+            <EmptyState title={t('emptyPrompt')} bordered={false} announce={false} />
           ) : status === 'error' ? (
             <Alert tone="danger" role="alert">
               {t('errorState')}
             </Alert>
           ) : rows.length === 0 ? (
-            <p className={quiet}>{t('noMatches')}</p>
+            <EmptyState title={t('noMatches')} bordered={false} announce={false} />
           ) : (
             <ErasureResultsTable rows={rows} />
           )}

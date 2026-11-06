@@ -165,6 +165,10 @@ describe('DirectoryVisibilityForm — preview', () => {
     expect(screen.getByTestId('directory-listing-preview').textContent).toContain(
       en.directorySettings.previewNotListed,
     );
+    // PR Q — AURA's small EmptyState, not a live region (the unsaved badge announces).
+    const state = screen.getByText(en.directorySettings.previewNotListed).closest('.aura-empty');
+    expect(state).toHaveClass('is-sm');
+    expect(state).not.toHaveAttribute('role');
   });
 });
 

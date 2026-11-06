@@ -249,6 +249,8 @@ describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', (
     const tree = await PortalProfileBody({ user: { id: 'user-a' } });
     const html = renderToStaticMarkup(tree as ReactElement);
     expect(html).toContain('notLinked');
+    // PR Q — AURA's EmptyState (neutral), not a hand-built paragraph.
+    expect(html).toContain('<div role="status" class="aura-empty is-bordered">');
   });
 
   it('f9Dashboard:true — renders 4 <h2> sections including the Directory section', async () => {

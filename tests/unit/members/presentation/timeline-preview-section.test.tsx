@@ -162,3 +162,17 @@ describe('<TimelinePreviewSection> on AURA (spec 122 US3)', () => {
     expect(link).toHaveClass('aura-btn', 'aura-btn--ghost');
   });
 });
+
+describe('<TimelinePreviewSection> states on AURA EmptyState (PR Q)', () => {
+  beforeEach(() => {
+    timelineListMock.mockReset();
+  });
+
+  it('a failed read is the danger-tone EmptyState; an empty one the neutral EmptyState', async () => {
+    timelineListMock.mockRejectedValue(new TypeError('bad'));
+    expect(await renderSection()).toMatch(/class="aura-empty is-danger"/);
+    timelineListMock.mockResolvedValue({ ok: true, value: { events: [] } });
+    const html = await renderSection();
+    expect(html).toMatch(/class="aura-empty"[^>]*>.*No recent activity yet/);
+  });
+});

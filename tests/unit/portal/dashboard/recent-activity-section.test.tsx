@@ -129,3 +129,24 @@ describe('<RecentActivitySection> — failure path (finding B2)', () => {
     expect(html).toContain('No activity yet');
   });
 });
+
+describe('RecentActivitySection — states on AURA EmptyState (PR Q)', () => {
+  beforeEach(() => {
+    timelineListMock.mockReset();
+  });
+
+  it('a failed read is the danger-tone EmptyState', async () => {
+    timelineListMock.mockResolvedValue({
+      ok: false,
+      error: { type: 'server_error', message: 'boom', cause: new Error('NeonDbError') },
+    });
+    expect(await renderSection()).toMatch(/class="aura-empty is-danger"/);
+  });
+
+  it('the empty read is the neutral EmptyState with the benefits CTA as its action', async () => {
+    timelineListMock.mockResolvedValue({ ok: true, value: { events: [] } });
+    const html = await renderSection();
+    expect(html).toMatch(/class="aura-empty"/);
+    expect(html).toMatch(/class="aura-empty__action"><a[^>]*href="\/portal\/benefits"/);
+  });
+});

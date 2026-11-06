@@ -34,6 +34,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { Suspense } from 'react';
 import { Card } from '@jirawatpyk/aura-react/server';
+import { EmptyState } from '@/components/shell/empty-state';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import Link from 'next/link';
 import { MembershipInvoiceAlertSection } from '../_components/membership-invoice-alert-section';
@@ -130,11 +131,13 @@ export default async function PortalInvoicesPage({
   // differs. Extracted to a local helper so the three branches keep their
   // own log/discriminate logic but share ONE byte-identical card shape (a
   // copy drifting would give members three subtly different empty states).
-  const messageState = (message: string): React.ReactElement => (
+  // PR Q — the card body is AURA's EmptyState (frameless inside the Card); a
+  // failed read takes its danger tone, so it never reads as "nothing here".
+  const messageState = (message: string, tone: 'neutral' | 'danger' = 'neutral'): React.ReactElement => (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <Card>
-        <p className="m-0 py-8 text-center text-[var(--aura-fg-secondary)]">{message}</p>
+        <EmptyState title={message} tone={tone} bordered={false} />
       </Card>
     </DetailContainer>
   );
@@ -163,7 +166,7 @@ export default async function PortalInvoicesPage({
         },
         '[portal-invoices-list] member lookup failed — rendering error state',
       );
-      return messageState(t('loadFailed'));
+      return messageState(t('loadFailed'), 'danger');
     }
     return messageState(t('notLinked'));
   }
@@ -234,7 +237,7 @@ export default async function PortalInvoicesPage({
       },
       '[portal-invoices-list] listInvoicesPaged threw — rendering error state',
     );
-    return messageState(t('loadFailed'));
+    return messageState(t('loadFailed'), 'danger');
   }
   const rawRows = pageData.rows;
   const total = pageData.total;
@@ -341,11 +344,13 @@ export async function renderPortalInvoicesView({
             {...(rows.length > 0 || hasActiveFilter ? { resultCount: total } : {})}
           />
           {rows.length === 0 ? (
-            <div className="py-12 text-center">
-              <p className="m-0 text-[var(--aura-fg-secondary)]">
-                {hasActiveFilter ? t('filters.noMatch') : t('empty')}
-              </p>
-            </div>
+            // PR Q — AURA's EmptyState. Not a live region: with a filter on,
+            // the FilterBar's result count already announces the zero.
+            <EmptyState
+              title={hasActiveFilter ? t('filters.noMatch') : t('empty')}
+              bordered={false}
+              announce={false}
+            />
           ) : (
             <>
               {/* 060-member-portal-d4 — dual-render. Both forms consume the

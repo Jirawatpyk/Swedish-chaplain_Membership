@@ -116,6 +116,10 @@ describe('T092 — an empty message renders the translated empty-state line, not
     expect(
       screen.getByText(/your message preview appears here/i),
     ).toBeInTheDocument();
+    // PR Q — AURA's small, frameless EmptyState; not a live region while typing.
+    const state = screen.getByText(/your message preview appears here/i).closest('.aura-empty');
+    expect(state).toHaveClass('is-sm');
+    expect(state).not.toHaveAttribute('role');
     expect(frame()).toBeNull();
 
     await settle();

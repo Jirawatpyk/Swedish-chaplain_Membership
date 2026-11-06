@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { ActionBar, Alert, Button, Textarea } from '@jirawatpyk/aura-react';
+import { ActionBar, Alert, Button, Card, Textarea } from '@jirawatpyk/aura-react';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/shell/reason-confirmation-dialog';
 import type { ChangeRequestReviewFieldView, StaffChangeRequestView } from '@/lib/change-request-staff-view';
@@ -155,127 +155,132 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
   }
 
   return (
-    <div className="space-y-4 sm:rounded-[var(--aura-card-radius)] sm:border sm:border-[var(--aura-border-default)] sm:bg-[var(--aura-bg-surface)] sm:p-5">
-      {/* One card holds the proposed changes and the decision bar (board
-          `Admin-change-request`); on a phone each field is its own card on
-          the page (`-mobile`). The page's primary content gets a real
-          heading (the h1 was the only one — PR-1 review, UX M8). */}
-      <section aria-labelledby="cr-fields-heading" className="space-y-3">
-        <h2 id="cr-fields-heading" className="text-base font-semibold leading-snug">
-          {t('fieldsHeading')}
-        </h2>
-        <ChangeRequestDecisionTable
-          fields={fields}
-          selected={selected}
-          onToggle={(key, approved) => setSelected((prev) => ({ ...prev, [key]: approved }))}
-          canDecide={canDecide && !decided}
-          decided={decided}
-          className="rounded-none border-0 bg-transparent"
-        />
-      </section>
-      {canDecide && !decided ? (
-        // AURA's sticky bar (boards `Admin-change-request` / `-mobile`): it
-        // stays on screen while the fields scroll, its status is a polite
-        // live region, and it sits last in the flow so it never covers a row.
-        <ActionBar
-          position="container"
-          status={
-            <span data-testid="selection-summary" className="text-[var(--aura-fg-primary)]">
-              {t.rich('selectionSummary', {
-                approved: counts.approved,
-                rejected: counts.rejected,
-                b: (chunks) => <strong>{chunks}</strong>,
-              })}
-            </span>
-          }
-        >
-          <Button ref={triggerRef} type="button" onClick={() => setOpen(true)} data-testid="confirm-decision">
-            {t('confirm')}
-          </Button>
-        </ActionBar>
-      ) : null}
-      <ConfirmationDialog
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (next) {
-            setReason('');
-            setNote('');
-            setDialogError(null);
-            closedViaSuccessRef.current = false;
-          }
-        }}
-        title={title}
-        description={reasonRequired ? t('descriptionReject') : t('descriptionApprove')}
-        confirmLabel={confirmLabel}
-        cancelLabel={t('cancel')}
-        destructive={reasonRequired}
-        confirmDisabled={confirmDisabled}
-        closeOnConfirm={false}
-        onConfirm={onConfirm}
-        finalFocus={finalFocus}
-        {...(reasonRequired ? { initialFocusRef: reasonRef } : {})}
-      >
-        <div className="space-y-4">
-          <div ref={dialogErrorRef} role="alert" aria-atomic="true" data-testid="decision-error-region">
-            {/* PR O — AURA's Alert in the danger tone. `role="none"`: the
-                wrapper above is the live region, mounted before the error so
-                it is announced once. */}
-            {dialogError ? (
-              <Alert tone="danger" role="none" data-testid="decision-error">
-                {dialogError}
-              </Alert>
-            ) : null}
-          </div>
-          <div className="space-y-1">
-            <Textarea
-              id="decision-reason"
-              ref={reasonRef}
-              label={t('reasonLabel')}
-              required={reasonRequired}
-              hint={reasonRequired ? t('reasonHelpRequired') : t('reasonHelpOptional')}
-              error={reasonOverCap ? t('errors.tooLong', { max: DECISION_REASON_MAX_LENGTH }) : undefined}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder={t('reasonPlaceholder')}
-              rows={4}
-              data-testid="decision-reason"
-              // The counter describes the field, and whitespace alone is not a
-              // reason (as before AURA; `error` only covers the length cap).
-              aria-describedby="decision-reason-counter"
-              aria-invalid={reasonRequired && reasonTrimmed.length === 0 && reason.length > 0}
-            />
-            <p
-              id="decision-reason-counter"
-              aria-live="polite"
-              className={
-                reasonOverCap
-                  ? 'text-xs font-semibold text-[var(--aura-fg-danger)]'
-                  : 'text-xs text-[var(--aura-fg-secondary)]'
-              }
-            >
-              {reason.length} / {DECISION_REASON_MAX_LENGTH}
-            </p>
-            {/* AURA's field error is plain text; announce going over the cap. */}
-            <p role="alert" className="sr-only">
-              {reasonOverCap ? t('errors.tooLong', { max: DECISION_REASON_MAX_LENGTH }) : null}
-            </p>
-          </div>
-          <Textarea
-            id="decision-note"
-            label={t('noteLabel')}
-            hint={t('noteHelp', { max: DECISION_NOTE_MAX_LENGTH })}
-            error={noteOverCap ? t('errors.tooLong', { max: DECISION_NOTE_MAX_LENGTH }) : undefined}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={2}
-            data-testid="decision-note"
+    // PR Q — AURA's Card (as a div; the sections inside carry the headings).
+    // `flushBelow="sm"` drops its frame on a phone, where each field is its own
+    // card, and `max-sm:p-0` keeps the phone edge-to-edge as before.
+    <Card as="div" flushBelow="sm" className="max-sm:p-0">
+      <div className="space-y-4">
+        {/* One card holds the proposed changes and the decision bar (board
+            `Admin-change-request`); on a phone each field is its own card on
+            the page (`-mobile`). The page's primary content gets a real
+            heading (the h1 was the only one — PR-1 review, UX M8). */}
+        <section aria-labelledby="cr-fields-heading" className="space-y-3">
+          <h2 id="cr-fields-heading" className="text-base font-semibold leading-snug">
+            {t('fieldsHeading')}
+          </h2>
+          <ChangeRequestDecisionTable
+            fields={fields}
+            selected={selected}
+            onToggle={(key, approved) => setSelected((prev) => ({ ...prev, [key]: approved }))}
+            canDecide={canDecide && !decided}
+            decided={decided}
+            className="rounded-none border-0 bg-transparent"
           />
-          <p role="alert" className="sr-only">
-            {noteOverCap ? t('errors.tooLong', { max: DECISION_NOTE_MAX_LENGTH }) : null}
-          </p>
-        </div>
-      </ConfirmationDialog>
-    </div>
+        </section>
+        {canDecide && !decided ? (
+          // AURA's sticky bar (boards `Admin-change-request` / `-mobile`): it
+          // stays on screen while the fields scroll, its status is a polite
+          // live region, and it sits last in the flow so it never covers a row.
+          <ActionBar
+            position="container"
+            status={
+              <span data-testid="selection-summary" className="text-[var(--aura-fg-primary)]">
+                {t.rich('selectionSummary', {
+                  approved: counts.approved,
+                  rejected: counts.rejected,
+                  b: (chunks) => <strong>{chunks}</strong>,
+                })}
+              </span>
+            }
+          >
+            <Button ref={triggerRef} type="button" onClick={() => setOpen(true)} data-testid="confirm-decision">
+              {t('confirm')}
+            </Button>
+          </ActionBar>
+        ) : null}
+        <ConfirmationDialog
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (next) {
+              setReason('');
+              setNote('');
+              setDialogError(null);
+              closedViaSuccessRef.current = false;
+            }
+          }}
+          title={title}
+          description={reasonRequired ? t('descriptionReject') : t('descriptionApprove')}
+          confirmLabel={confirmLabel}
+          cancelLabel={t('cancel')}
+          destructive={reasonRequired}
+          confirmDisabled={confirmDisabled}
+          closeOnConfirm={false}
+          onConfirm={onConfirm}
+          finalFocus={finalFocus}
+          {...(reasonRequired ? { initialFocusRef: reasonRef } : {})}
+        >
+          <div className="space-y-4">
+            <div ref={dialogErrorRef} role="alert" aria-atomic="true" data-testid="decision-error-region">
+              {/* PR O — AURA's Alert in the danger tone. `role="none"`: the
+                  wrapper above is the live region, mounted before the error so
+                  it is announced once. */}
+              {dialogError ? (
+                <Alert tone="danger" role="none" data-testid="decision-error">
+                  {dialogError}
+                </Alert>
+              ) : null}
+            </div>
+            <div className="space-y-1">
+              <Textarea
+                id="decision-reason"
+                ref={reasonRef}
+                label={t('reasonLabel')}
+                required={reasonRequired}
+                hint={reasonRequired ? t('reasonHelpRequired') : t('reasonHelpOptional')}
+                error={reasonOverCap ? t('errors.tooLong', { max: DECISION_REASON_MAX_LENGTH }) : undefined}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder={t('reasonPlaceholder')}
+                rows={4}
+                data-testid="decision-reason"
+                // The counter describes the field, and whitespace alone is not a
+                // reason (as before AURA; `error` only covers the length cap).
+                aria-describedby="decision-reason-counter"
+                aria-invalid={reasonRequired && reasonTrimmed.length === 0 && reason.length > 0}
+              />
+              <p
+                id="decision-reason-counter"
+                aria-live="polite"
+                className={
+                  reasonOverCap
+                    ? 'text-xs font-semibold text-[var(--aura-fg-danger)]'
+                    : 'text-xs text-[var(--aura-fg-secondary)]'
+                }
+              >
+                {reason.length} / {DECISION_REASON_MAX_LENGTH}
+              </p>
+              {/* AURA's field error is plain text; announce going over the cap. */}
+              <p role="alert" className="sr-only">
+                {reasonOverCap ? t('errors.tooLong', { max: DECISION_REASON_MAX_LENGTH }) : null}
+              </p>
+            </div>
+            <Textarea
+              id="decision-note"
+              label={t('noteLabel')}
+              hint={t('noteHelp', { max: DECISION_NOTE_MAX_LENGTH })}
+              error={noteOverCap ? t('errors.tooLong', { max: DECISION_NOTE_MAX_LENGTH }) : undefined}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={2}
+              data-testid="decision-note"
+            />
+            <p role="alert" className="sr-only">
+              {noteOverCap ? t('errors.tooLong', { max: DECISION_NOTE_MAX_LENGTH }) : null}
+            </p>
+          </div>
+        </ConfirmationDialog>
+      </div>
+    </Card>
   );
 }

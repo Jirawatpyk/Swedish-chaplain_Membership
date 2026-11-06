@@ -116,3 +116,16 @@ describe('erasure view (board Admin-events-erasure)', () => {
     expect(document.querySelector('output[role="status"]')).toHaveTextContent('');
   });
 });
+
+describe('erasure view — prompt and no-match on AURA EmptyState (PR Q)', () => {
+  it.each([
+    ['idle', { searchedEmail: '', status: 'idle' as const }, er.emptyPrompt],
+    ['no match', { searchedEmail: EMAIL, status: 'results' as const }, er.noMatches],
+  ])('%s is AURA’s frameless EmptyState in the card, not a second live region', async (_, state, text) => {
+    await show(renderErasureBody({ ...state, truncated: false, rows: [] }));
+    const empty = screen.getByText(text).closest('.aura-empty');
+    expect(empty).not.toHaveClass('is-bordered');
+    expect(empty).not.toHaveAttribute('role');
+    expect(empty?.closest('.aura-card')).not.toBeNull();
+  });
+});

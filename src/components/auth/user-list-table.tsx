@@ -36,6 +36,7 @@ import {
   type MenuItem,
 } from '@jirawatpyk/aura-react';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+import { EmptyState } from '@/components/shell/empty-state';
 import { ChangeRoleDialog, CHANGE_ROLE_OPTIONS } from '@/components/auth/change-role-dialog';
 import { ROLE_BADGE_STYLE } from '@/components/auth/role-badge-style';
 // The deep path (rather than the `@/modules/auth` barrel) matches the
@@ -593,8 +594,11 @@ export function UserListTable({
               })}
               {users.length === 0 ? (
                 <Tr>
-                  <Td colSpan={5} className="text-center text-[var(--aura-fg-secondary)]">
-                    {t('empty')}
+                  <Td colSpan={5}>
+                    {/* PR Q — AURA's EmptyState at the cell size. Not a live
+                        region: the table and the phone list both render it,
+                        so one announcer each would read it twice. */}
+                    <EmptyState title={t('empty')} size="sm" bordered={false} announce={false} />
                   </Td>
                 </Tr>
               ) : null}
@@ -636,7 +640,11 @@ export function UserListTable({
               </li>
             );
           })}
-          {users.length === 0 ? <li className="text-center text-[var(--aura-fg-secondary)]">{t('empty')}</li> : null}
+          {users.length === 0 ? (
+            <li>
+              <EmptyState title={t('empty')} size="sm" announce={false} />
+            </li>
+          ) : null}
         </ul>
       ) : null}
 

@@ -7,7 +7,7 @@
  * pulse fallback under `prefers-reduced-motion: reduce`).
  *
  * Design alignment with F4 PageHeader + F5 layout containers:
- * - CardSkeleton honours --card-padding / --card-radius / --card-shadow
+ * - CardSkeleton honours --card-padding / --card-shadow (PR Q: radius, frame and surface on AURA tokens)
  *   so skeleton cards are visually indistinguishable in dimensions from
  *   real Cards.
  * - TableSkeleton mirrors the shadcn Table grid so the initial row
@@ -61,7 +61,7 @@ export function CardSkeleton({
       data-slot="card-skeleton"
       aria-busy="true"
       className={cn(
-        'rounded-[var(--card-radius)] border border-border bg-card shadow-[var(--card-shadow)]',
+        'rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] shadow-[var(--card-shadow)]',
         className,
       )}
     >
@@ -142,7 +142,7 @@ export function FormSkeleton({
       data-slot="form-skeleton"
       aria-busy="true"
       className={cn(
-        'rounded-[var(--card-radius)] border border-border bg-card shadow-[var(--card-shadow)]',
+        'rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] shadow-[var(--card-shadow)]',
         className,
       )}
     >

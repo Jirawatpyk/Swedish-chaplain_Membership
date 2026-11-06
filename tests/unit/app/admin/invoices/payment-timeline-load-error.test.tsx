@@ -195,6 +195,10 @@ describe('PaymentTimeline — activity read failure renders an inline error with
     const html = await renderTimeline();
 
     expect(html).toContain(timelineEn.empty.title);
+    // PR Q — AURA's frameless EmptyState: the title, then the body as its text.
+    expect(html).toContain(
+      `<p class="aura-empty__title">${timelineEn.empty.title}</p><p class="aura-empty__text">`,
+    );
     expect(html).not.toContain(LOAD_FAILED);
     expect(errorSpy).not.toHaveBeenCalled();
   });

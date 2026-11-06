@@ -221,3 +221,16 @@ describe('admin/settings/broadcasts loading.tsx', () => {
     ).toBeGreaterThanOrEqual(4);
   });
 });
+
+describe('card and form skeleton frames on AURA tokens (PR Q)', () => {
+  it.each([
+    ['CardSkeleton', () => render(<CardSkeleton />)],
+    ['FormSkeleton', () => render(<FormSkeleton />)],
+  ])('%s draws its frame with AURA tokens, not the legacy card tokens', (_, draw) => {
+    const root = draw().container.firstElementChild as HTMLElement;
+    expect(root.className).toContain('rounded-[var(--aura-card-radius)]');
+    expect(root.className).toContain('border-[var(--aura-border-default)]');
+    expect(root.className).toContain('bg-[var(--aura-bg-surface)]');
+    expect(root.className).not.toMatch(/\bborder-border\b|\bbg-card\b|var\(--card-radius\)/);
+  });
+});

@@ -30,6 +30,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
+import { EmptyState } from '@/components/shell/empty-state';
 import { isLocale, type Locale } from '@/i18n/config';
 
 export type PreviewState =
@@ -255,9 +256,9 @@ export function PreviewSurface({
   switch (state.status) {
     case 'empty':
       return (
-        <p className="px-3 py-6 text-center text-sm text-[var(--aura-fg-secondary)]">
-          {t('empty')}
-        </p>
+        // PR Q — AURA's EmptyState, small and frameless inside the preview
+        // frame. Not a live region: it had none, and it shows while typing.
+        <EmptyState title={t('empty')} size="sm" bordered={false} announce={false} />
       );
     case 'loading':
       return (

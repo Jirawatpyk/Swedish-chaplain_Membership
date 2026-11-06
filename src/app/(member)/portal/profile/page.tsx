@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { EmptyState } from '@/components/shell/empty-state';
 import { renderPortalProfileView } from '@/components/members/portal-profile-view';
 import { resolveLegalEntityTypeLabel } from '@/components/members/resolve-legal-entity-type-label';
 import { safeExternalHref } from '@/lib/safe-url';
@@ -82,9 +83,7 @@ export async function PortalProfileBody({
     return (
       <DetailContainer>
         <PageHeader title={t('pageTitle')} />
-        <div className="py-12 text-center">
-          <p className="text-body text-muted-foreground">{t('notLinked')}</p>
-        </div>
+        <EmptyState title={t('notLinked')} />
       </DetailContainer>
     );
   }
@@ -105,9 +104,7 @@ export async function PortalProfileBody({
     return (
       <DetailContainer>
         <PageHeader title={t('pageTitle')} />
-        <div className="py-12 text-center">
-          <p className="text-body text-muted-foreground">{t('loadError')}</p>
-        </div>
+        <EmptyState title={t('loadError')} tone="danger" />
       </DetailContainer>
     );
   }

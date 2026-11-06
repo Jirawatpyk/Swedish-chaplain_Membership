@@ -6,7 +6,8 @@
  * a fresh single-use token before redirecting to the private proxy.
  */
 import { DownloadIcon } from 'lucide-react';
-import { StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
+import { EmptyState } from '@/components/shell/empty-state';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import type { ExportStatus } from '@/modules/insights';
 import { exportStatusTone } from '@/lib/export-status-variant';
@@ -53,15 +54,11 @@ export function RecentExports({
   // targets (WCAG 2.4.6), not "Download" ×N.
   const downloadLabel = (row: RecentExportRow) => `${labels.download} — ${row.kindLabel}, ${row.requestedAt}`;
   return (
-    <section
-      aria-labelledby="recent-exports-heading"
-      className="flex flex-col gap-4 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-5 max-sm:p-4"
-    >
-      <h2 id="recent-exports-heading" className="m-0 text-base font-semibold">
-        {labels.heading}
-      </h2>
+    // PR Q — AURA's Card: a section labelled by its h2 title (the id is kept),
+    // and AURA's EmptyState, frameless inside it, for an empty list.
+    <Card title={labels.heading} titleId="recent-exports-heading" headingLevel={2}>
       {rows.length === 0 ? (
-        <p className="py-6 text-center text-sm text-[var(--aura-fg-secondary)]">{labels.empty}</p>
+        <EmptyState title={labels.empty} bordered={false} />
       ) : (
         <>
           <div className="max-sm:hidden">
@@ -129,6 +126,6 @@ export function RecentExports({
           </ul>
         </>
       )}
-    </section>
+    </Card>
   );
 }

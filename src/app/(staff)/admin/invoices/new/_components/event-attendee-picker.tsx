@@ -38,6 +38,7 @@ import { useTranslations } from 'next-intl';
 import { CheckIcon } from 'lucide-react';
 import { Badge } from '@jirawatpyk/aura-react';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
+import { EmptyState } from '@/components/shell/empty-state';
 import { useMinDelay } from '@/hooks/use-min-delay';
 import { cn } from '@/lib/utils';
 
@@ -141,20 +142,13 @@ export function EventAttendeePicker({
   const t = useTranslations('admin.invoices.eventFeeForm.attendeePicker');
 
   if (rows.length === 0) {
-    return (
-      <p className="rounded-[var(--aura-radius-md)] border border-dashed border-[var(--aura-border-control)] p-6 text-center text-sm text-[var(--aura-fg-secondary)]">
-        {t('empty.none')}
-      </p>
-    );
+    // PR Q — AURA's EmptyState (its dashed frame is the old hand-drawn one).
+    return <EmptyState title={t('empty.none')} size="sm" />;
   }
 
   const allErased = rows.every((r) => r.isPseudonymised);
   if (allErased) {
-    return (
-      <p className="rounded-[var(--aura-radius-md)] border border-dashed border-[var(--aura-border-control)] p-6 text-center text-sm text-[var(--aura-fg-secondary)]">
-        {t('empty.allErased')}
-      </p>
-    );
+    return <EmptyState title={t('empty.allErased')} size="sm" />;
   }
 
   // B3 — plain list of toggle buttons (NOT an ARIA listbox). Each enabled

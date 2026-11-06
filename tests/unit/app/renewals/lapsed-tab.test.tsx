@@ -83,3 +83,12 @@ describe('<LapsedTab> on AURA', () => {
     expect(screen.getByRole('alertdialog', { name: 'Record outreach' })).toBeInTheDocument();
   });
 });
+
+describe('LapsedTab empty bucket on AURA (PR Q)', () => {
+  it('is AURA’s EmptyState at the cell size, inside the one table cell', () => {
+    renderTab([]);
+    const state = screen.getByText(en.admin.renewals.table.noRows).closest('.aura-empty');
+    expect(state).toHaveClass('is-sm');
+    expect(state?.closest('td')).toHaveAttribute('colspan', '5');
+  });
+});
