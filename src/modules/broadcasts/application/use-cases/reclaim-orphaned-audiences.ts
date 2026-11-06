@@ -33,12 +33,13 @@
  *     `maxDuration`) covers the listing and the delete chunks. The gateway
  *     stops paging inside it; a chunk starts only while one bounded call
  *     (`RESEND_CALL_TIMEOUT_MS`; a chunk's deletes run in parallel, each with
- *     its 403 probe on the same signal) still fits, judged by
- *     `oneCallFitsBefore` (review round 1, R1-H; the listing pages use the
- *     same rule). Each delete's audit row is DB work, which the route's
- *     `RECLAIM_DEADLINE_MARGIN_MS` covers (spec 142 removed the charge spec 139
- *     s2 review round 2 added for its lock wait) — and the orphans not reached
- *     are `deferredDeletes`. Nothing is resumed: the next daily run lists again
+ *     its 403 probe on the same signal) plus its audit row's INSERT wait
+ *     (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`; spec 139 s2 review round 2, restored
+ *     by spec 142 review round 3) still fits, judged by `oneCallFitsBefore`
+ *     (review round 1, R1-H; the listing pages charge the call alone). The
+ *     audit row's other DB work is held by the route's
+ *     `RECLAIM_DEADLINE_MARGIN_MS` — and the orphans not reached are
+ *     `deferredDeletes`. Nothing is resumed: the next daily run lists again
  *     from page one, and the deferred orphans are found and deleted then. A cut
  *     run is counted on `broadcasts_audience_reclaim_truncated_total{stage}`.
  *   - Spec 139 s2 (DA2, pdpa M-3): before each delete, the
@@ -83,7 +84,7 @@ import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
 import { broadcastsMetrics } from '@/lib/metrics';
 import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore, type BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
-import type { AudienceDeletedAuditPort } from '../ports/audit-port';
+import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, type AudienceDeletedAuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import { recordReclaimedAudienceDeleted } from './_audience-audit';
@@ -133,19 +134,17 @@ export interface ReclaimOrphanedAudiencesInput {
 
 /**
  * Spec 140 slice 3 (DT5) — how far before the route's `maxDuration` the
- * deadline sits. The last page and the last chunk each start with at least one
- * bounded call (`RESEND_CALL_TIMEOUT_MS`, 10 s) left. This margin holds what
- * follows or is not charged: the one DB read between the listing and the
- * deletes, the log and the response, and (spec 142, review round 1,
- * code-review #4) each orphan's audit-row DB work before its delete: the
- * tenant probe, the disclosure and existence reads, and an INSERT that can
- * wait up to `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on another tx's
- * uncommitted insert of the key. Only that INSERT wait is bounded (by
- * `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`). The tenant probe and the two reads have no
- * statement bound, because the pooler drops `statement_timeout` (review
- * round 2, code-review #5). So the last chunk can overrun `deadlineAt` by up
- * to that wait plus its DB time, and the 30 s covers that DB time's typical
- * cost, not a worst case: a stalled read is not cut short here.
+ * deadline sits. The last page starts with at least one bounded call
+ * (`RESEND_CALL_TIMEOUT_MS`, 10 s) left; the last chunk with that call plus
+ * its audit row's INSERT wait (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, 5 s, on
+ * another tx's uncommitted insert of the key), both charged at the chunk
+ * check (spec 142 review round 3, code-review #3). This margin holds what is
+ * not charged: the one DB read between the listing and the deletes, the log
+ * and the response, and each orphan's other audit-row DB work before its
+ * delete (the tenant probe and the disclosure and existence reads). Those
+ * have no statement bound, because the pooler drops `statement_timeout`
+ * (review round 2, code-review #5), so the 30 s covers their typical cost,
+ * not a worst case: a stalled read is not cut short here.
  */
 export const RECLAIM_DEADLINE_MARGIN_MS = 30_000;
 
@@ -425,13 +424,17 @@ export async function reclaimOrphanedAudiences(
   for (let i = 0; i < orphans.length; i += RECLAIM_CONCURRENCY) {
     // Spec 140 DT5 — start a chunk only while one bounded call still fits (the
     // gateway's listing pages judge with the same rule, review round 1 R1-H).
-    // Spec 142 — the audit row each delete writes first is not charged here:
-    // RECLAIM_DEADLINE_MARGIN_MS absorbs its DB work, including an INSERT wait
-    // of up to AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, so the last chunk can end past
-    // deadlineAt by that much plus DB time, inside the margin. The Resend call
-    // is bounded by RESEND_CALL_TIMEOUT_MS. In practice the INSERT's holder is
-    // one short INSERT.
-    if (!oneCallFitsBefore(input.deadlineAt, deps.clock.now().getTime(), RESEND_CALL_TIMEOUT_MS)) {
+    // Spec 142 review round 3 (code-review #3) — each delete first writes its
+    // audit row, whose INSERT can wait up to AUDIENCE_AUDIT_LOCK_TIMEOUT_MS on
+    // another tx's uncommitted insert of the key: charge both. The row's other
+    // DB work (the tenant probe and two reads) is RECLAIM_DEADLINE_MARGIN_MS's.
+    if (
+      !oneCallFitsBefore(
+        input.deadlineAt,
+        deps.clock.now().getTime(),
+        RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS,
+      )
+    ) {
       deferredDeletes = orphans.length - i;
       broadcastsMetrics.audienceReclaimTruncated(deps.tenant.slug, 'deletes');
       logger.warn(
