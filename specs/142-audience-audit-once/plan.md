@@ -1,0 +1,137 @@
+# Plan: one audience removal row per segment, enforced by the database
+
+Spec: `specs/142-audience-audit-once/spec.md` · Size: M · Agreed by the user on: 6 Nov 2026 (plan mode; the dev cleanup decided the same day)
+
+## Approach
+
+A partial unique index on `audit_log` replaces the advisory lock and `EXISTS` dedupe of `broadcast_audience_deleted`. The deleted row is written through a new `AuditPort.emitOnce`, an `INSERT … ON CONFLICT … DO NOTHING RETURNING 1` like the invoicing overdue adapter's. It answers whether it wrote. With the database as the arbiter, three things that existed only to bound or route the lock wait go:
+- the 5 s `lock_timeout`;
+- the WARN arm for a timed-out wait;
+- reclaim's deadline charge for that wait.
+
+The pre-call envelope is shared. `writeAudienceRow` (spec 139 s2) and `recordUnverifiableCount` (spec 140 s4) implement the same policy:
+- a row written in its own tenant transaction before an irreversible Resend call;
+- an adapter invariant error rethrown;
+- any other failure logged at ERROR and counted, with the call going ahead.
+
+They become one helper. One builder makes the deleted-row payload.
+
+**Alternatives not taken:**
+- **Keep the lock** (the maintainer's option 2). Rejected by the maintainer: it keeps three mechanisms that exist only for the lock.
+- **Exclude old rows with a date literal in the index predicate.** An unsourced bound in a constraint, which leaves earlier rows unconstrained and has to be repeated in every `ON CONFLICT`.
+- **A `DELETE` of the duplicates inside the migration.** That migration also runs on prod, and it would set a precedent for deleting from the append-only table. The one dev duplicate was cleaned by hand instead (spec § Premises).
+- **Converting the unverifiable and evidence reads too.** Out of scope (spec § Out of scope).
+
+**Paths kept compatible:** `recordUnverifiableCount`'s behaviour and log name (`broadcasts.audience_import.unverifiable_audit_emit_failed`). Its usage is the import tick on every failed membership count; prod has 0 broadcasts (spec § Premises).
+
+## Files and modules
+
+Rules: `.claude/rules/modules/broadcasts.md`, in particular "Gates and audit rows for Resend calls" and "A bound in prose names its source"; `architecture.md` (migrations, `tx` threading).
+- **Migration:** `drizzle/migrations/0328_audit_log_audience_deleted_once.sql`, plus its `meta/_journal.json` entry (idx 329; its `when` is above 0327's `1798546000000`).
+- **`scripts/verify-schema.ts`:** a canary for the index.
+- **Port:** `src/modules/broadcasts/application/ports/audit-port.ts`. Add `emitOnce`. Remove `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`.
+- **Adapter:** `src/modules/broadcasts/infrastructure/audit-adapter.ts`. Add `emitOnce`.
+- **Use cases:**
+  - new shared `application/use-cases/_pre-call-audit-row.ts`;
+  - `_audience-audit.ts`, which uses it, with one deleted-payload builder;
+  - `build-audience-tick.ts` (`recordUnverifiableCount`, which uses it);
+  - `reclaim-orphaned-audiences.ts` (the deadline charge goes);
+  - `_dispatch-lease.ts` (its docblock entry goes).
+- **Repo:** `ports/broadcasts-repo.ts` and `infrastructure/db/drizzle-broadcasts-repo.ts`.
+  - `hasAudienceDeletedAuditInTx` becomes a lockless read, used only by reclaim, with no `SET LOCAL` and no lock. It keeps `assertAudienceAuditTenantBoundTx`.
+  - `setLocalLockTimeout` stays for its other callers.
+- **Tests:**
+  - the unit files for the three sites and the source scan;
+  - `audience-audit-rows.test.ts`. Its lock cells become constraint cells, and its fixture must never seed two deleted rows for one key;
+  - every typed `AuditPort` fake, found by grepping the symbol `AuditPort`.
+- **Docs:**
+  - RoPA F7 "Removal rows", `observability.md` § 22.1 / § 22.3 and `cron-jobs.md`;
+  - spec 139 `plan.md`, where the rows that describe the lock are marked superseded;
+  - the changelog.
+
+## Data model and migration
+
+0328 is one statement after a pre-check:
+```sql
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM audit_log WHERE event_type = 'broadcast_audience_deleted' AND tenant_id IS NOT NULL
+             GROUP BY tenant_id, payload->>'resend_audience_id' HAVING count(*) > 1) THEN
+    RAISE EXCEPTION '0328: duplicate broadcast_audience_deleted keys exist; clean them first (spec 142 § Premises)';
+  END IF;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS audit_log_audience_deleted_once
+  ON audit_log (tenant_id, (payload->>'resend_audience_id'))
+  WHERE event_type = 'broadcast_audience_deleted';
+```
+- **NULL tenants:** a NULL `tenant_id` never conflicts, which is standard unique-index semantics. These are test fixtures only, because the product always writes a tenant.
+- **Build:** non-CONCURRENTLY inside the migration tx, as 0021 does. The dev build time is measured and recorded here.
+- **Rollout:** the migration is unflagged. `vercel-build` migrates before the code serves.
+- **Rollback:** reverting the code is safe, because a plain `emit` is not used for this event after the change. Dropping the index takes a forward migration.
+
+## Test plan
+
+| Done-when line | Test that goes red first (file, name) | Level |
+|---|---|---|
+| AO1: the index exists | `scripts/verify-schema.ts` canary; `audience-audit-rows.test.ts` "a second deleted row for the same tenant and segment is refused by the index" (a raw second INSERT → 23505) | integration |
+| AO1: the pre-check | `audience-audit-rows.test.ts` or a migration test: the pre-check SQL raises on a seeded duplicate in a rolled-back tx | integration |
+| AO2: `emitOnce` writes once | `audience-audit-rows.test.ts` "emitOnce answers true, then false, and leaves one row"; "two concurrent emitOnce for one segment leave one row" (replaces the held-lock and lock-timeout cells) | integration |
+| AO2: other tenants | the same file, cross-tenant: tenant B's row for the same segment id does not block tenant A's (the key includes the tenant) | integration |
+| AO3: restart, cleanup and reclaim write through `emitOnce`, with no lock | the unit files of the three sites: the call order shows `emitOnce` and no `hasAudienceDeletedAuditInTx` in restart/cleanup; reclaim reads the lockless check, then the disclosure, then `emitOnce` | unit |
+| AO3: reclaim skips a recorded segment with no unattributed WARN | the existing reclaim cell, kept | unit |
+| AO3: a tenant-binding refusal still fails closed | the existing integration cross-tenant cell, kept | integration |
+| AO3: the lock-timeout arms are gone | the lock-timeout unit cells are deleted; the source scan is updated | unit |
+| AO4: one helper | `recordUnverifiableCount`'s unit and integration cells pass unchanged through the helper; a helper unit test covers invariant rethrow, lost row (ERROR + `auditEmitFailed`, the call proceeds), and written (`auditEmitCount`) | unit + integration |
+| AO5: the docs | the grep in spec AO5 returns nothing outside history markers | gate (grep in the PR) |
+| AO6: hold on live Resend | the maintainer's `/verify` | verify |
+
+**Cross-tenant:** the AO2 row above. **e2e:** none, because the change touches no UI.
+
+## Constitution Check
+- **I Privacy & Security:**
+  - the index key includes the tenant;
+  - payloads are unchanged (ids and counts only);
+  - the RoPA is updated in the same PR;
+  - the one dev `audit_log` delete was a one-off, made on the maintainer's word on dev test data and recorded in the spec's Premises.
+- **II Test-First:** a RED commit comes before each GREEN commit, and `check:red-first` checks it.
+- **III Clean Architecture:** `emitOnce` is a port method, and the SQL stays in infrastructure.
+- **IV PCI:** n/a.
+- **V i18n:** n/a, because no labels change.
+- **VI Inclusive UX:** n/a.
+- **VII Perf & Observability:**
+  - removes a lock and up to 5 s of wait from every removal;
+  - the index is maintained only for rows of this event type (partial);
+  - the build is timed on dev.
+- **VIII Reliability:** the database is the single arbiter, and a lost row keeps its ERROR and counter.
+- **IX Code Quality:** one helper replaces two copies, and there is no `return _exhaustive`.
+- **X Simplicity:** zero new dependencies, and the change removes code.
+
+## Complexity Tracking
+
+| Deviation | Why it is needed | Simpler alternative rejected, and why |
+|---|---|---|
+| A one-off manual delete of 1 fixture row in dev `audit_log`, with the append-only trigger disabled for one statement | The unique index cannot build while a duplicate exists, and the migration must not delete rows (it also runs on prod) | A delete inside the migration (a prod precedent on an append-only table); a date literal in the predicate (unsourced, and it leaves rows unconstrained) |
+| Solo-maintainer review (audit log) | No second human reviewer | — the five checks are evidenced in § Evidence |
+
+## Evidence
+
+### Dev cleanup (6 Nov 2026, the maintainer's yes)
+`node wt/v139/devdedupe.mjs` ran on host `ep-gentle-king-…` (dev). It refuses any other host.
+
+The guard: exactly 1 row with id `7db7cd75-85ed-4047-b2f5-5f5cc4581799`, `broadcast_audience_deleted`, summary `spec 139 s2 fixture`, and a tenant matching `test-%`.
+
+The delete ran with `audit_log_no_delete` disabled, and the trigger was re-enabled in the same transaction.
+
+Result: `{"deleted":["7db7cd75-85ed-4047-b2f5-5f5cc4581799"],"triggerEnabled":"O","remainingDuplicateKeys":0}`.
+
+## Rollout
+- Unflagged.
+- Migration 0328 runs on deploy, before the code serves.
+- Rollback is a revert commit. The index stays and is harmless.
+
+## Risks
+
+| Risk | How we notice |
+|---|---|
+| The shared `ci` Neon branch holds fixture duplicates | The pre-check RAISE fails the migration in CI, naming the cause. The maintainer is asked before that branch is touched |
+| The index build is slow on prod `audit_log` | The prod row count is measured before merge, and the dev build time is recorded above |
+| A future writer uses plain `emit` for this event and gets a 23505 | It lands in the lost-row ERROR. The source scan pins the deleted-row writers to `emitOnce` |
