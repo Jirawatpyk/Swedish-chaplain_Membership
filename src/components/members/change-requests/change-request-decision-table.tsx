@@ -20,7 +20,7 @@
  */
 import { useTranslations } from 'next-intl';
 import { CheckIcon, InfoIcon, ReceiptIcon, UserXIcon, XIcon } from 'lucide-react';
-import { Checkbox } from '@jirawatpyk/aura-react';
+import { Alert, Checkbox } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 import type { ChangeRequestReviewFieldView } from '@/lib/change-request-staff-view';
 import { ProposedValueDisplay } from './proposed-value-display';
@@ -117,12 +117,14 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
                 <ProposedValueDisplay fieldKey={f.key} value={f.current} />
               </div>
               {f.changedSinceSubmitted ? (
-                <div className="col-span-2 rounded-[var(--aura-radius-sm)] border border-[var(--aura-alert-warning-border)] bg-[var(--aura-alert-warning-bg)] p-2 text-xs text-[var(--aura-alert-warning-fg)]" data-testid="marker-changed-since-submitted">
+                // PR O — AURA's Alert in the warning tone; a standing note in
+                // the row, not a live region.
+                <Alert tone="warning" role="note" className="col-span-2" data-testid="marker-changed-since-submitted">
                   <span>{t('markers.changedSinceSubmitted')}</span>
-                  <div className="mt-1 font-semibold text-[var(--aura-fg-primary)]">
+                  <div className="mt-1 font-semibold">
                     <ProposedValueDisplay fieldKey={f.key} value={f.seen} />
                   </div>
-                </div>
+                </Alert>
               ) : null}
             </div>
             <div className="col-span-2 grid grid-cols-[6rem_minmax(0,1fr)] gap-x-2 sm:col-span-1 sm:row-span-2 sm:block">

@@ -77,6 +77,25 @@ describe('ZeroRateCertUploader', () => {
     }
   });
 
+  it('while uploading, shows AURA\'s indeterminate Progress with the same name', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+    try {
+      renderUploader();
+      fireEvent.change(screen.getByLabelText(/Choose a certificate scan/i), {
+        target: { files: [pdfFile()] },
+      });
+      const bar = await screen.findByRole('progressbar', {
+        name: enMessages.admin.invoices.issue.form.certUpload.uploadingAria,
+      });
+      // AURA's track, not a native <progress>; no value while indeterminate.
+      expect(bar.tagName).toBe('DIV');
+      expect(bar).toHaveClass('is-indeterminate');
+      expect(bar).not.toHaveAttribute('aria-valuenow');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('infected upload shows a role=alert error and does NOT surface a blob key', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: false,

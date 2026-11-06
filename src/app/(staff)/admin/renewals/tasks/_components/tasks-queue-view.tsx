@@ -10,7 +10,8 @@
  */
 import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
-import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, Card } from '@jirawatpyk/aura-react/server';
+import { CursorPagination } from '@/components/layout/cursor-pagination';
 import { RenewalsErrorRetry } from '../../_components/renewals-error-retry';
 
 export interface TasksQueueViewProps {
@@ -20,11 +21,13 @@ export interface TasksQueueViewProps {
   readonly queue: ReactNode;
   /** The keyset "Next 50" link, or null on the last page. */
   readonly nextHref: string | null;
+  /** "First page": the cursor-less view, or null on the first page. */
+  readonly firstHref?: string | null | undefined;
   /** The queue read failed: say so rather than show an empty queue. */
   readonly loadFailed?: boolean;
 }
 
-export async function renderTasksQueueView({ sectionTabs, queue, nextHref, loadFailed = false }: TasksQueueViewProps) {
+export async function renderTasksQueueView({ sectionTabs, queue, nextHref, firstHref = null, loadFailed = false }: TasksQueueViewProps) {
   const t = await getTranslations('admin.renewals.tasks');
   return (
     // One card on a desktop; on a phone the rows are cards of their own, so it
@@ -43,16 +46,21 @@ export async function renderTasksQueueView({ sectionTabs, queue, nextHref, loadF
         ) : (
           <>
             {queue}
-            {/* UX-audit PR-A #1 — the keyset footer, only when the page is
-                capped at 50. A plain link (works without JavaScript); the copy
-                is page-position-neutral, so it holds on page 2 too. */}
-            {nextHref ? (
-              <div className="flex flex-wrap items-center justify-between gap-[var(--aura-space-3)]">
-                <p className="m-0 text-xs text-[var(--aura-fg-secondary)]">{t('pagination.showingFirst')}</p>
-                <a href={nextHref} className={buttonClass({ variant: 'secondary' })}>
-                  {t('pagination.next')}
-                </a>
-              </div>
+            {/* UX-audit PR-A #1 — the keyset footer, while the page is
+                capped at 50 or was reached by a cursor: AURA cursor
+                Pagination. Forward-only, so Previous stays disabled; First
+                (PR #757 review) is the way back from page 2+, disabled on
+                the first page. Real links (work without JavaScript); the
+                status is page-position-neutral, so it holds on page 2 too. */}
+            {nextHref || firstHref ? (
+              <CursorPagination
+                label={t('pagination.label')}
+                showFirst
+                firstHref={firstHref ?? undefined}
+                hasFirst={firstHref !== null}
+                status={t('pagination.showingFirst')}
+                nextHref={nextHref ?? undefined}
+              />
             ) : null}
           </>
         )}

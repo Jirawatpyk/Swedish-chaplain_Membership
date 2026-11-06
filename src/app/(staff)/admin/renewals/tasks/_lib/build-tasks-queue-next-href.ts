@@ -27,10 +27,8 @@ export interface TasksQueueNextHrefInput {
   readonly nextCursor: string | null;
 }
 
-export function buildTasksQueueNextHref(
-  input: TasksQueueNextHrefInput,
-): string | null {
-  if (input.nextCursor === null) return null;
+/** The current filter state, without any cursor (the defaults omitted). */
+function filterParams(input: Omit<TasksQueueNextHrefInput, 'nextCursor'>): URLSearchParams {
   const p = new URLSearchParams();
   // status defaults to 'open' when absent — omit it in that case.
   if (input.status !== 'open') p.set('status', input.status);
@@ -40,6 +38,27 @@ export function buildTasksQueueNextHref(
   }
   if (input.taskType !== '') p.set('task_type', input.taskType);
   if (input.overdueOnly) p.set('overdue_only', 'true');
+  return p;
+}
+
+export function buildTasksQueueNextHref(
+  input: TasksQueueNextHrefInput,
+): string | null {
+  if (input.nextCursor === null) return null;
+  const p = filterParams(input);
   p.set('cursor', input.nextCursor);
   return `/admin/renewals/tasks?${p.toString()}`;
+}
+
+/**
+ * The footer's "First page" link (PR #757 review): the same filters with the
+ * cursor dropped, so page 2+ of the forward-only keyset has a way back.
+ * `null` on the first page (no `cursor` in the current URL).
+ */
+export function buildTasksQueueFirstHref(
+  input: Omit<TasksQueueNextHrefInput, 'nextCursor'> & { readonly cursor: string | undefined },
+): string | null {
+  if (input.cursor === undefined) return null;
+  const query = filterParams(input).toString();
+  return query === '' ? '/admin/renewals/tasks' : `/admin/renewals/tasks?${query}`;
 }

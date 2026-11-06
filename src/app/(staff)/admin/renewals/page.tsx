@@ -393,6 +393,14 @@ export default async function RenewalsPipelinePage({
   // cursor encodes a tier/desc key → dup/skip. Omitted when default so the
   // pre-Task-8 URL shape is unchanged.
   if (sort !== DEFAULT_SORT) paginationParams.set('sort', sort);
+  // PR #757 review — "First page" on page 2+: the same view with the cursor
+  // (and its `nowIso` companion, which is read only alongside a cursor)
+  // dropped. Null on the first page, where it shows disabled.
+  const firstParams = new URLSearchParams(paginationParams);
+  firstParams.delete('nowIso');
+  const firstQuery = firstParams.toString();
+  const firstHref =
+    cursor !== undefined ? `/admin/renewals${firstQuery === '' ? '' : `?${firstQuery}`}` : null;
   if (nextCursor !== null) paginationParams.set('cursor', nextCursor);
   const nextHref =
     nextCursor !== null
@@ -532,6 +540,7 @@ export default async function RenewalsPipelinePage({
           sort,
           sortHrefs,
           nextHref,
+          firstHref,
           showEmptyState,
           canMutate,
           canManageSchedules: canPerform(currentUser.role, 'settings.renewal_schedules'),

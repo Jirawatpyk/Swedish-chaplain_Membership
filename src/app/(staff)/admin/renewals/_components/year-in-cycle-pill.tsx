@@ -26,6 +26,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { Badge } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 
 export interface YearInCyclePillProps {
@@ -72,15 +73,19 @@ export function YearInCyclePill({
 
   if (variant === 'full' && memberCompanyName !== undefined) {
     return (
-      <span
-        className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground"
-        aria-label={t('aria_label', {
-          year: yearInCycle,
-          total: totalYears,
-          taskType: taskTypeLabel,
-          company: memberCompanyName,
-        })}
-      >
+      // PR O — AURA's neutral Badge, not a hand-built pill. Its name is
+      // screen-reader text: ARIA forbids an aria-label on a role-less span
+      // (review a11y M1).
+      <Badge tone="neutral" className="gap-1.5">
+        <span className="sr-only">
+          {t('aria_label', {
+            year: yearInCycle,
+            total: totalYears,
+            taskType: taskTypeLabel,
+            company: memberCompanyName,
+          })}
+        </span>
+        <span aria-hidden className="contents">
         {label !== null && (
           <>
             <span>{label}</span>
@@ -89,16 +94,17 @@ export function YearInCyclePill({
         )}
         <span>{taskTypeLabel}</span>
         <span aria-hidden>·</span>
-        <span className="font-normal text-muted-foreground">
+        <span className="font-normal text-[var(--aura-fg-secondary)]">
           {memberCompanyName}
         </span>
-      </span>
+        </span>
+      </Badge>
     );
   }
 
   // compact variant — used inside table cells with company name in a
   // separate column. Drops the company name to save horizontal space.
-  // Round 5 I-22 close — added `aria-label` so screen-reader users get
+  // Round 5 I-22 close — screen-reader text (sr-only since PR O) gives
   // the same year-context information that sighted users see in the
   // visible "Year X of Y" pill (parity with `full` variant).
   // R6 UX-I-3 close — fallback case (multi-year, no company) now uses
@@ -123,19 +129,18 @@ export function YearInCyclePill({
     // `items-start` (not `items-center`) — identical when the label is a
     // single line, but correct once `labelClassName` wraps it to 2 lines
     // (mirrors the members-table name/badge alignment convention).
-    <span
-      className="inline-flex items-start gap-1 text-xs"
-      aria-label={compactAriaLabel}
-    >
+    <span className="inline-flex items-start gap-1 text-xs">
+      {/* Screen-reader text, not an aria-label on a role-less span. */}
+      <span className="sr-only">{compactAriaLabel}</span>
       {label !== null && (
-        <span aria-hidden className="rounded bg-muted px-1.5 py-0.5 font-medium text-muted-foreground">
+        <Badge tone="neutral" aria-hidden>
           {label}
-        </span>
+        </Badge>
       )}
       <span
         aria-hidden
         title={taskTypeLabel}
-        className={cn('text-foreground', labelClassName)}
+        className={cn('text-[var(--aura-fg-primary)]', labelClassName)}
       >
         {taskTypeLabel}
       </span>

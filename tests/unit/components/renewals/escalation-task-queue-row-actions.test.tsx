@@ -176,7 +176,7 @@ describe('<EscalationTaskQueue> table (AURA DataTable)', () => {
 
   it('gives the task type line and the due line the full width of a phone card (board; AURA 5.23, #120)', () => {
     renderQueue();
-    const typeCell = screen.getByText('Phone call').closest('[role="gridcell"]');
+    const typeCell = screen.getByTitle('Phone call').closest('[role="gridcell"]');
     const dueCell = screen.getByText('Karin Ek (Admin)', { exact: false, selector: 'span' }).closest('[role="gridcell"]');
     expect(typeCell).toHaveAttribute('data-card', 'wide');
     expect(dueCell).toHaveAttribute('data-card', 'wide');

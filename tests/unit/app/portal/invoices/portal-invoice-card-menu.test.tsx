@@ -58,9 +58,9 @@ describe('<PortalInvoiceCardMenu>', () => {
     renderMenu();
     const trigger = screen.getByRole('button', { name: 'More actions for SC-2026-000045' });
     expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
-    // The same secondary button as the download beside it, square at 44px.
-    expect(trigger.className).toContain('aura-btn--secondary');
-    expect(trigger).toHaveClass('aura-btn--touch', 'aspect-square');
+    // An AURA IconButton, outlined like the secondary download beside it,
+    // square at 44px on touch.
+    expect(trigger).toHaveClass('aura-icon-btn', 'aura-icon-btn--outline', 'aura-icon-btn--touch');
 
     openMenu();
     const items = screen.getAllByRole('menuitem').map((el) => el.textContent?.trim());

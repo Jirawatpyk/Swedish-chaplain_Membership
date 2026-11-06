@@ -33,9 +33,8 @@ import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { Suspense } from 'react';
-import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
-import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { MembershipInvoiceAlertSection } from '../_components/membership-invoice-alert-section';
 import { formatDate, formatSatangThb } from './_utils/format';
@@ -519,9 +518,7 @@ export async function renderPortalInvoicesView({
                                         number: mainDownloadNumber,
                                       },
                                     )}
-                                    className={cn(
-                                      buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true }),
-                                    )}
+                                    appearance={{ variant: 'ghost', size: 'sm', touchHeight: true }}
                                   />
                                 )}
                                 {vm.showReceipt &&
@@ -544,9 +541,7 @@ export async function renderPortalInvoicesView({
                                         ariaLabel={t('actions.downloadReceiptAria', {
                                           number: receiptRef,
                                         })}
-                                        className={cn(
-                                          buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true }),
-                                        )}
+                                        appearance={{ variant: 'ghost', size: 'sm', touchHeight: true }}
                                       />
                                     );
                                   })()}

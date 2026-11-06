@@ -15,6 +15,13 @@
  * the tiles (they decide the "No invoices yet" state); every other card
  * streams in its own Suspense island.
  */
+
+// PR P — `force-dynamic` with the sibling `not-found.tsx` lets `notFound()`
+// set HTTP 404 under RSC streaming; without them the segment's `loading.tsx`
+// commits a 200 first (the `admin/invoices/[invoiceId]/page.tsx` pattern,
+// guarded by tests/e2e/smoke-404-status-contract.spec.ts).
+export const dynamic = 'force-dynamic';
+
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';

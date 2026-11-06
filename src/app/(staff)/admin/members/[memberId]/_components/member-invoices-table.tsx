@@ -2,8 +2,8 @@
 
 /**
  * 122 US5b-1 (T556) — the member's invoices on AURA `DataTable` (board
- * `Admin-member-detail`): Number, Status, Issued, Due, Paid, Total, Remaining
- * and a "⋯" row menu. Stacked into cards on a phone.
+ * `Admin-member-detail`): Number (with its status pill), Issued, Due, Paid,
+ * Total, Remaining and a "⋯" row menu. Stacked into cards on a phone.
  *
  * The server formats every figure (`MemberInvoicesSection`); this only lays
  * the rows out, so the money shown is exactly what the section computed. The
@@ -85,12 +85,28 @@ export function MemberInvoicesTable({
   // Memoised: a fresh `columns` array on every render remounts each cell, and
   // the row menu closed on the same click that opened it (R18).
   const columns: DataTableColumn<MemberInvoiceRow>[] = useMemo(() => [
-    { key: 'number', label: labels.number, mono: true, card: 'title' },
+    // PR P — in the table the status pill sits under the number, so the card
+    // in the member page's main column (655px at 1280) holds every column
+    // without scrolling; the phone card keeps its own title and pill slots.
+    {
+      key: 'number',
+      label: labels.number,
+      card: 'hide',
+      render: (row) => (
+        <span className="flex flex-col items-start gap-1">
+          <span className="font-mono">{row.number}</span>
+          <StatusPill tone={invoiceStatusTone(row.status)}>{row.statusLabel}</StatusPill>
+        </span>
+      ),
+    },
+    // Card-only (hideBelow is not applied to stacked cards): stand-in until
+    // AURA #198 (a column that shows only in stacked cards).
+    { key: 'cardNumber', label: labels.number, mono: true, card: 'title', hideBelow: 100_000, render: (row) => row.number },
     {
       key: 'status',
       label: labels.status,
-      width: 140,
       card: 'pill',
+      hideBelow: 100_000,
       render: (row) => <StatusPill tone={invoiceStatusTone(row.status)}>{row.statusLabel}</StatusPill>,
     },
     // The phone board's card shows Due, Total and Remaining only.

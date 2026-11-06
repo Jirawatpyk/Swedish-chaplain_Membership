@@ -26,7 +26,7 @@
  */
 import { useCallback, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Button, Dialog } from '@jirawatpyk/aura-react';
+import { Button, Dialog, SegmentedControl } from '@jirawatpyk/aura-react';
 import { PreviewSurface, type PreviewState } from './use-preview-html';
 
 /** FR-043 — the two recipient widths, in CSS pixels. */
@@ -66,26 +66,20 @@ export function PreviewDialog({ state }: PreviewDialogProps): React.ReactElement
         description={t('dialogDescription')}
       >
         <div className="flex flex-col gap-[var(--aura-space-3)]">
-          <div role="group" aria-label={t('widthLabel')} className="flex flex-wrap gap-2">
-            {(
-              [
-                [PREVIEW_WIDTH_DESKTOP, t('widthDesktop')],
-                [PREVIEW_WIDTH_PHONE, t('widthPhone')],
-              ] as ReadonlyArray<readonly [PreviewWidth, string]>
-            ).map(([value, label]) => (
-              <Button
-                key={value}
-                type="button"
-                size="sm"
-                touchHeight
-                variant={width === value ? 'secondary' : 'ghost'}
-                aria-pressed={width === value}
-                onClick={() => setWidth(value)}
-              >
-                {label}
-              </Button>
-            ))}
-          </div>
+          <SegmentedControl
+            label={t('widthLabel')}
+            options={[
+              { value: String(PREVIEW_WIDTH_DESKTOP), label: t('widthDesktop') },
+              { value: String(PREVIEW_WIDTH_PHONE), label: t('widthPhone') },
+            ]}
+            value={String(width)}
+            onChange={(next) =>
+              setWidth(Number(next) === PREVIEW_WIDTH_PHONE ? PREVIEW_WIDTH_PHONE : PREVIEW_WIDTH_DESKTOP)
+            }
+            size="sm"
+            touchHeight
+            className="self-start"
+          />
 
           <div className="max-h-[70vh] overflow-auto rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-canvas)] p-2">
             <PreviewSurface state={state} width={width} height={PREVIEW_DIALOG_FRAME_HEIGHT} />

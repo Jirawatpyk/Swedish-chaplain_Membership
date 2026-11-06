@@ -50,19 +50,26 @@ import { render, screen, within } from '@testing-library/react';
 // ---------------------------------------------------------------------------
 vi.mock(
   '@/app/(member)/portal/invoices/_components/portal-pdf-download-button',
-  () => ({
+  async () => {
+    const { buttonClass } = await import('@jirawatpyk/aura-react/server');
+    // The real component draws AURA's Button from `appearance`; the echo
+    // renders the same classes plus the card's own layout `className`.
+    const cls = (props: { appearance?: Parameters<typeof buttonClass>[0]; className?: string }) =>
+      buttonClass({ ...props.appearance, ...(props.className !== undefined && { className: props.className }) });
+    return {
     PortalInvoiceDownloadButton: (props: {
       label: string;
       ariaLabel?: string;
+      appearance?: Parameters<typeof buttonClass>[0];
       className?: string;
     }) => (
       <button
         type="button"
         data-testid="invoice-download"
         aria-label={props.ariaLabel ?? props.label}
-        // Echo the card's className so the ≥44px target-size guard
+        // Echo the card's look so the ≥44px target-size guard
         // (T072b) can assert the touch-height class the card passes lands.
-        className={props.className}
+        className={cls(props)}
       >
         {props.label}
       </button>
@@ -70,18 +77,20 @@ vi.mock(
     PortalReceiptDownloadButton: (props: {
       label: string;
       ariaLabel?: string;
+      appearance?: Parameters<typeof buttonClass>[0];
       className?: string;
     }) => (
       <button
         type="button"
         data-testid="receipt-download"
         aria-label={props.ariaLabel ?? props.label}
-        className={props.className}
+        className={cls(props)}
       >
         {props.label}
       </button>
     ),
-  }),
+    };
+  },
 );
 
 vi.mock(

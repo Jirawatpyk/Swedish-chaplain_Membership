@@ -73,6 +73,23 @@ const roleLabel = enMessages.portal.changeRequests.diff.labels.role_title;
 const approveName = (field: string) => REVIEW.approveCheckbox.replace('{field}', field);
 
 describe('change-request review on AURA (T508)', () => {
+  it('PR O — a value changed since submission is an AURA warning Alert (not a live region), showing the seen value', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ChangeRequestReviewClient
+          request={request}
+          fields={[{ ...fields[0]!, changedSinceSubmitted: true, seen: '+66800000000' }] as unknown as ChangeRequestReviewFieldView[]}
+          canDecide
+        />
+      </NextIntlClientProvider>,
+    );
+    const box = screen.getByTestId('marker-changed-since-submitted');
+    expect(box).toHaveClass('aura-alert', 'aura-alert--warning');
+    expect(box).not.toHaveAttribute('role', 'alert');
+    expect(box).toHaveTextContent(REVIEW.markers.changedSinceSubmitted);
+    expect(box).toHaveTextContent('+66800000000');
+  });
+
   it('each row is an AURA checkbox with the row state in words, as on the board', () => {
     renderClient();
     const phone = screen.getByRole('checkbox', { name: approveName(phoneLabel) });

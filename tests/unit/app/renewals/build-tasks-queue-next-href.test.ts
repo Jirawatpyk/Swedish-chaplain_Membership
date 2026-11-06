@@ -6,7 +6,7 @@
  * decodes under the same filters it was minted under). Pure — no render.
  */
 import { describe, it, expect } from 'vitest';
-import { buildTasksQueueNextHref } from '@/app/(staff)/admin/renewals/tasks/_lib/build-tasks-queue-next-href';
+import { buildTasksQueueFirstHref, buildTasksQueueNextHref } from '@/app/(staff)/admin/renewals/tasks/_lib/build-tasks-queue-next-href';
 
 describe('buildTasksQueueNextHref', () => {
   it('returns null when there is no next page (nextCursor === null)', () => {
@@ -61,5 +61,23 @@ describe('buildTasksQueueNextHref', () => {
     });
     expect(href).not.toContain('assignment');
     expect(href).toContain('cursor=C2');
+  });
+});
+
+// PR #757 review — the footer's First page link: the same filters, no cursor.
+describe('buildTasksQueueFirstHref', () => {
+  const filters = { status: 'done', assignment: 'unassigned', taskType: 'director_call', overdueOnly: true } as const;
+
+  it('keeps the active filters and drops the cursor when this page came from one', () => {
+    expect(buildTasksQueueFirstHref({ ...filters, cursor: 'C1' })).toBe(
+      '/admin/renewals/tasks?status=done&assignment=unassigned&task_type=director_call&overdue_only=true',
+    );
+    expect(buildTasksQueueFirstHref({ status: 'open', assignment: undefined, taskType: '', overdueOnly: false, cursor: 'C1' })).toBe(
+      '/admin/renewals/tasks',
+    );
+  });
+
+  it('is null on the first page (no cursor in the URL)', () => {
+    expect(buildTasksQueueFirstHref({ ...filters, cursor: undefined })).toBeNull();
   });
 });

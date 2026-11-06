@@ -40,7 +40,7 @@
  *     wraps (`flex flex-wrap`) so a 320px card never scrolls horizontally.
  */
 import Link from 'next/link';
-import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
 import { formatDate, formatSatangThb } from '../_utils/format';
 import type { InvoiceRowDisplayStatus } from '../_utils/format';
@@ -270,10 +270,8 @@ export function PortalInvoiceCardList({
                         // "download"); the full aria label is kept for SR users.
                         label={t('actions.downloadReceipt')}
                         ariaLabel={t('actions.downloadReceiptAria', { number: receiptRef })}
-                        className={cn(
-                          buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true }),
-                          'flex-1',
-                        )}
+                        appearance={{ variant: 'secondary', size: 'sm', touchHeight: true }}
+                        className="flex-1"
                       />
                     ) : vm.showInvoice ? (
                       <PortalInvoiceDownloadButton
@@ -281,11 +279,8 @@ export function PortalInvoiceCardList({
                         documentNumber={mainDownloadNumber}
                         label={invoiceLabel}
                         ariaLabel={invoiceAria}
-                        className={cn(
-                          buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true }),
-                          'flex-1',
-                          vm.mainPdfKind === 'combined' && 'h-auto whitespace-normal',
-                        )}
+                        appearance={{ variant: 'secondary', size: 'sm', touchHeight: true }}
+                        className={cn('flex-1', vm.mainPdfKind === 'combined' && 'h-auto whitespace-normal')}
                       />
                     ) : null}
                     {(vm.showReceipt && vm.showInvoice) || vm.resendable ? (

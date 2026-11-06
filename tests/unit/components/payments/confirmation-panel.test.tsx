@@ -312,6 +312,28 @@ describe('<ConfirmationPanel>', () => {
   // missing / non-4-digit / non-digit) are obsolete — there is no
   // last4 string to mask anymore.
 
+  it('spec 122 — the three actions are AURA Buttons: Download shows AURA loading while it fetches, Pause draws its icon through AURA', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    renderPanel();
+    const cta = screen.getByTestId('pay-sheet-download-receipt');
+    expect(cta).toHaveClass('aura-btn', 'aura-btn--primary', 'aura-btn--full');
+    await act(async () => {
+      fireEvent.click(cta);
+      await Promise.resolve();
+    });
+    expect(cta).toHaveClass('is-loading');
+    expect(cta).toHaveAttribute('aria-busy', 'true');
+    // PR P review M2 — loading, not `disabled`: focus stays on the CTA
+    // (WCAG 2.4.3) and AURA swallows a second press, so one fetch only.
+    expect(cta).not.toBeDisabled();
+    expect(cta).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(cta);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const pause = screen.getByTestId('pay-sheet-confirmation-pause');
+    expect(pause).toHaveClass('aura-btn', 'aura-btn--sm', 'aura-btn--touch');
+    expect(pause.querySelector('.aura-icon')).not.toBeNull();
+  });
+
   // -- Option A layout (commit 675abe7) -------------------------------------
   describe('button layout (Option A — full-width primary + text-link close)', () => {
     it('Download receipt takes full drawer width (primary CTA)', () => {

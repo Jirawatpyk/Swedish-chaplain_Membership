@@ -2,7 +2,7 @@
  * Spec 122 US10b (T1013) — the /admin/audit frame on AURA: Export CSV as an
  * AURA button link (same href), the list in an AURA card with the count in
  * the filter bar (no second sr-only count), the board's retention line under
- * the table, and the keyset pager as AURA button links.
+ * the table, and the keyset pager as AURA cursor `Pagination`.
  *
  * Harness copied from audit-page-load-error.test.tsx:
  *
@@ -197,17 +197,20 @@ describe('AuditLogPage on AURA', () => {
     expect(html).toMatch(/class="aura-card__body"><div class="flex flex-col gap-\[var\(--aura-space-4\)\]"/);
   });
 
-  it('pages with AURA button links over the cursor', async () => {
+  it('pages with AURA cursor Pagination over the same cursor links', async () => {
     const html = await renderPage();
-    const older = tagFor(html, en.admin.audit.pagination.next);
+    expect(html).toContain(`<nav class="aura-pagination aura-pagination--cursor" aria-label="${en.admin.audit.pagination.label}"`);
+    // AURA's own label for the step (AuraBridge strings), the same href as before.
+    const older = tagFor(html, 'Next page');
     expect(older).toContain('href="/admin/audit?cursor=c-next"');
-    expect(older).toContain('aura-btn');
+    expect(older).toContain('aura-page--step');
+    // PR P review L7 — the status line says which way the pages run.
+    expect(html).toContain('<span class="aura-pagination__status">Newest first</span>');
   });
 
-  it('gives Export CSV and the pager links 44px boxes on phones', async () => {
+  it('gives Export CSV a 44px box on phones', async () => {
     const html = await renderPage();
     expect(tagFor(html, en.admin.audit.export)).toContain('aura-btn--touch');
-    expect(tagFor(html, en.admin.audit.pagination.next)).toContain('aura-btn--touch');
   });
 
   it('an invalid filter is named in an alert inside the list card, under the filters (board `Admin-state-audit-invalid`)', async () => {

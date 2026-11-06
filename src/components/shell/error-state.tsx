@@ -6,11 +6,12 @@
  * Used by Next.js error.tsx boundaries and by API failure surfaces.
  * Always shows a "Try again" button when an `onRetry` is provided so
  * users have an obvious recovery path.
+ *
+ * PR O — AURA's EmptyState in the danger tone (5.13), framed, announced as
+ * an alert (the old `aria-live="polite"` contradicted the role; review L8).
  */
-import { TriangleAlertIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@jirawatpyk/aura-react';
-import { cn } from '@/lib/utils';
+import { Button, EmptyState } from '@jirawatpyk/aura-react';
 
 export interface ErrorStateProps {
   readonly title?: string;
@@ -22,26 +23,24 @@ export interface ErrorStateProps {
 export function ErrorState({ title, description, onRetry, className }: ErrorStateProps) {
   const t = useTranslations();
   return (
-    <div
-      className={cn(
-        'flex flex-col items-center justify-center gap-4 rounded-lg border border-destructive/20 bg-destructive/5 p-12 text-center',
-        className,
-      )}
+    <EmptyState
+      tone="danger"
+      bordered
+      icon="triangle-alert"
+      headingLevel={false}
       role="alert"
-      aria-live="polite"
-    >
-      <TriangleAlertIcon className="size-10 text-destructive" aria-hidden />
-      <div className="space-y-1">
-        <p className="text-base font-medium text-destructive">{title ?? t('errors.generic')}</p>
-        {description ? (
-          <p className="max-w-md text-sm text-muted-foreground">{description}</p>
-        ) : null}
-      </div>
-      {onRetry ? (
-        <Button variant="secondary" size="sm" touchHeight onClick={onRetry}>
-          {t('buttons.retry')}
-        </Button>
-      ) : null}
-    </div>
+      title={title ?? t('errors.generic')}
+      {...(description ? { description } : {})}
+      {...(onRetry
+        ? {
+            action: (
+              <Button variant="secondary" size="sm" touchHeight onClick={onRetry}>
+                {t('buttons.retry')}
+              </Button>
+            ),
+          }
+        : {})}
+      {...(className ? { className } : {})}
+    />
   );
 }

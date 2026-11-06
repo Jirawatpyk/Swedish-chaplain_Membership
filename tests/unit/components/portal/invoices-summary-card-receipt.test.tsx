@@ -66,26 +66,24 @@ vi.mock('@/modules/invoicing', async (importOriginal) => {
   };
 });
 
-// Download buttons → sentinels that echo which variant the card chose.
+// Download buttons → sentinels that record the props the card passes (the
+// icon-only form, its label and accessible name), so the tests assert what the
+// card asks for rather than a class the stand-in itself adds.
+const downloadProps = vi.hoisted(() => ({
+  invoice: [] as Array<Record<string, unknown>>,
+  receipt: [] as Array<Record<string, unknown>>,
+}));
 vi.mock(
   '@/app/(member)/portal/invoices/_components/portal-pdf-download-button',
   () => ({
-    PortalInvoiceDownloadButton: (props: {
-      documentNumber: string;
-      className?: string;
-    }) => (
-      <span data-testid="invoice-download" className={props.className}>
-        INVOICE_DOWNLOAD:{props.documentNumber}
-      </span>
-    ),
-    PortalReceiptDownloadButton: (props: {
-      documentNumber: string;
-      className?: string;
-    }) => (
-      <span data-testid="receipt-download" className={props.className}>
-        RECEIPT_DOWNLOAD:{props.documentNumber}
-      </span>
-    ),
+    PortalInvoiceDownloadButton: (props: Record<string, unknown> & { documentNumber: string }) => {
+      downloadProps.invoice.push(props);
+      return <span data-testid="invoice-download">INVOICE_DOWNLOAD:{props.documentNumber}</span>;
+    },
+    PortalReceiptDownloadButton: (props: Record<string, unknown> & { documentNumber: string }) => {
+      downloadProps.receipt.push(props);
+      return <span data-testid="receipt-download">RECEIPT_DOWNLOAD:{props.documentNumber}</span>;
+    },
   }),
 );
 
@@ -259,6 +257,8 @@ describe('<InvoicesSummaryCard> — receipt download (090 Bug 3)', () => {
 describe('<InvoicesSummaryCard> — row layout + variant (090 UX findings #1/#3/#4)', () => {
   beforeEach(() => {
     listInvoicesPagedMock.mockReset();
+    downloadProps.invoice.length = 0;
+    downloadProps.receipt.length = 0;
   });
   afterEach(() => {
     cleanup();
@@ -280,15 +280,27 @@ describe('<InvoicesSummaryCard> — row layout + variant (090 UX findings #1/#3/
 
   it('spec 122 US3 — the downloads are AURA icon buttons named in full; a separate-mode paid row keeps both (FR-011)', async () => {
     await renderCardDom([paidSeparateRow]);
-    const invoice = screen.getByTestId('invoice-download');
-    const receipt = screen.getByTestId('receipt-download');
-    expect(invoice).toHaveClass('aura-icon-btn');
-    expect(receipt).toHaveClass('aura-icon-btn');
+    expect(screen.getByTestId('invoice-download')).toBeInTheDocument();
+    expect(screen.getByTestId('receipt-download')).toBeInTheDocument();
+    expect(downloadProps.invoice).toEqual([
+      expect.objectContaining({ iconOnly: true, label: 'actions.download', ariaLabel: 'actions.downloadInvoiceAria' }),
+    ]);
+    expect(downloadProps.receipt).toEqual([
+      expect.objectContaining({
+        iconOnly: true,
+        documentNumber: 'RC-2026-000001',
+        label: 'actions.downloadReceipt',
+        ariaLabel: 'actions.downloadReceiptAria',
+      }),
+    ]);
+    // The card leaves the button's look to the wrapper: no variant override.
+    expect(downloadProps.invoice[0]).not.toHaveProperty('variant');
+    expect(downloadProps.receipt[0]).not.toHaveProperty('variant');
   });
 
   it('a paid row with no RC number keeps BOTH downloads (the combined-mode hiding is retired)', async () => {
     await renderCardDom([combinedPaidRow]);
-    expect(screen.getByTestId('receipt-download')).toHaveClass('aura-icon-btn');
-    expect(screen.getByTestId('invoice-download')).toHaveClass('aura-icon-btn');
+    expect(downloadProps.receipt).toEqual([expect.objectContaining({ iconOnly: true })]);
+    expect(downloadProps.invoice).toEqual([expect.objectContaining({ iconOnly: true })]);
   });
 });
