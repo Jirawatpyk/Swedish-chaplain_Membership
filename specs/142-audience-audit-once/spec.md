@@ -36,7 +36,7 @@ The same slice left three near-copies of the "write an audit row before an irrev
 - **AO1.** Migration 0328 creates `audit_log_audience_deleted_once`, a partial unique index on `(tenant_id, (payload->>'resend_audience_id'))` where `event_type = 'broadcast_audience_deleted'`.
   - Before it builds, a `DO $$` pre-check raises if any duplicate key exists, and names the keys.
   - `db:verify` checks that the index exists.
-- **AO2.** `AuditPort.emitOnce` exists for the deleted row only. It runs `INSERT … ON CONFLICT … DO NOTHING RETURNING 1` and answers whether a row was written. A second write for the same tenant and segment answers false and writes nothing.
+- **AO2.** `emitOnce` exists for the deleted row only, on a narrow port `AudienceDeletedAuditPort` (review round 1, code-review #7; it is not on the shared `AuditPort`). It runs `INSERT … ON CONFLICT … DO NOTHING RETURNING 1` and answers whether a row was written. A second write for the same tenant and segment answers false and writes nothing.
 - **AO3.** The restart, cleanup and reclaim sites write the deleted row through `emitOnce`, with no advisory lock and no `EXISTS` dedupe read on restart and cleanup.
   - *Amended at plan review, 6 Nov 2026:* an `INSERT … ON CONFLICT` still waits on an uncommitted insert of the same key. So `emitOnce` keeps `SET LOCAL lock_timeout` at `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s), and a timeout still logs the WARN `*.audience_audit_lock_timeout`.
   - Removed:
@@ -49,7 +49,7 @@ The same slice left three near-copies of the "write an audit row before an irrev
   - A tenant-binding refusal still fails closed (`AuditPortInvariantError`).
 - **AO4.** One shared helper writes a pre-call audit row, so that its success, its lost-row path and its invariant rethrow are not reimplemented. Both the audience rows and `recordUnverifiableCount` use it. `recordUnverifiableCount` keeps its log name `broadcasts.audience_import.unverifiable_audit_emit_failed`. One builder makes the deleted-row payload for every site.
 - **AO5.** The docs no longer describe the lock:
-  - the RoPA F7 "Removal rows" names one failure mode;
+  - the RoPA F7 "Removal rows" describes the index and both failure modes, a lost row and an INSERT lock wait (amended with AO3);
   - `observability.md` § 22.1 / § 22.3 and `cron-jobs.md` are updated;
   - the spec 139 plan rows that describe the lock are marked superseded by 142.
 

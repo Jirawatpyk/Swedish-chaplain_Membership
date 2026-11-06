@@ -4,7 +4,7 @@ Spec: `specs/142-audience-audit-once/spec.md` · Size: M · Agreed by the user o
 
 ## Approach
 
-A partial unique index on `audit_log` replaces the advisory lock and `EXISTS` dedupe of `broadcast_audience_deleted`. The deleted row is written through a new `AuditPort.emitOnce`, an `INSERT … ON CONFLICT … DO NOTHING RETURNING 1` like the invoicing overdue adapter's. It answers whether it wrote. With the database as the arbiter, three things that existed only to bound or route the lock wait go:
+A partial unique index on `audit_log` replaces the advisory lock and `EXISTS` dedupe of `broadcast_audience_deleted`. The deleted row is written through a new `emitOnce` (since review round 1 on the narrow port `AudienceDeletedAuditPort`, not `AuditPort`), an `INSERT … ON CONFLICT … DO NOTHING RETURNING 1` like the invoicing overdue adapter's. It answers whether it wrote. With the database as the arbiter, three things that existed only to bound or route the lock wait go:
 - the 5 s `lock_timeout`;
 - the WARN arm for a timed-out wait;
 - reclaim's deadline charge for that wait.
@@ -29,7 +29,7 @@ They become one helper. One builder makes the deleted-row payload.
 Rules: `.claude/rules/modules/broadcasts.md`, in particular "Gates and audit rows for Resend calls" and "A bound in prose names its source"; `architecture.md` (migrations, `tx` threading).
 - **Migration:** `drizzle/migrations/0328_audit_log_audience_deleted_once.sql`, plus its `meta/_journal.json` entry (idx 329; its `when` is above 0327's `1798546000000`).
 - **`scripts/verify-schema.ts`:** a canary for the index.
-- **Port:** `src/modules/broadcasts/application/ports/audit-port.ts`. Add `emitOnce`. Remove `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`.
+- **Port:** `src/modules/broadcasts/application/ports/audit-port.ts`. Add `emitOnce` on the narrow `AudienceDeletedAuditPort` (review round 1). *Superseded:* `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` is kept (plan review fold-in).
 - **Adapter:** `src/modules/broadcasts/infrastructure/audit-adapter.ts`. Add `emitOnce`.
 - **Use cases:**
   - new shared `application/use-cases/_pre-call-audit-row.ts`;
@@ -191,6 +191,18 @@ The guard: exactly 1 row with id `7db7cd75-85ed-4047-b2f5-5f5cc4581799`, `broadc
 The delete ran with `audit_log_no_delete` disabled, and the trigger was re-enabled in the same transaction.
 
 Result: `{"deleted":["7db7cd75-85ed-4047-b2f5-5f5cc4581799"],"triggerEnabled":"O","remainingDuplicateKeys":0}`.
+
+The guard, as run (pdpa round 1 L-3), in one transaction:
+```sql
+-- refuse unless exactly one row matches all four guards
+SELECT id FROM audit_log WHERE id = '7db7cd75-85ed-4047-b2f5-5f5cc4581799'::uuid
+  AND event_type = 'broadcast_audience_deleted' AND summary = 'spec 139 s2 fixture' AND tenant_id LIKE 'test-%';
+ALTER TABLE audit_log DISABLE TRIGGER audit_log_no_delete;
+DELETE FROM audit_log WHERE id = '7db7cd75-85ed-4047-b2f5-5f5cc4581799'::uuid
+  AND event_type = 'broadcast_audience_deleted' AND summary = 'spec 139 s2 fixture' AND tenant_id LIKE 'test-%' RETURNING id;
+ALTER TABLE audit_log ENABLE TRIGGER audit_log_no_delete;
+```
+The script refused any host but `ep-gentle-king-` (the dev branch).
 
 ## Rollout
 - Unflagged.
