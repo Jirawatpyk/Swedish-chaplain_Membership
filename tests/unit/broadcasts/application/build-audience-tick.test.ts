@@ -527,7 +527,7 @@ describe('buildAudienceTick — the two happy ticks (T087)', () => {
     // never reused. It is deleted (no orphan on Resend Free's three) and the
     // next tick builds a fresh one.
     const { deps, rec } = makeDeps({ resendAudienceId: 'aud-existing' });
-    const error = vi.spyOn(logger, 'error');
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
 
     try {
       await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
