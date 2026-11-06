@@ -174,6 +174,10 @@ describe('the DR4 source gate on every file that imports resend (spec 140 s4)', 
     ['an importFetch, any method', 'await importFetch(\n  `/contacts/${encodeURIComponent(email)}`,\n  { method: "GET" },\n);'],
     ['the SDK low-level delete', 'await sdk.delete(`/contacts/${email}`);'],
     ['a concatenated path', 'await fetch(BASE + "/contacts/" + email, { method: "DELETE" });'],
+    // PR #756 review round 3 (code-review #7, security L1).
+    ['the SDK low-level delete with a type argument', 'await sdk.delete<{ deleted: boolean }>(`/contacts/${e}`);'],
+    ['the SDK low-level delete by bracket', "await sdk['delete'](`/contacts/${e}`);"],
+    ['optional chaining into a bracket lookup', "await sdk.contacts?.['remove']({ email });"],
   ])('the scan catches %s', (_label, snippet) => {
     expect(forbidden(snippet)).not.toEqual([]);
   });
@@ -191,6 +195,8 @@ describe('the DR4 source gate on every file that imports resend (spec 140 s4)', 
     ['a destructured method', 'const { remove } = sdk.contacts;\nawait remove({ email });'],
     ['a path held in a variable', 'const p = `${BASE}/contacts/${email}`;\nawait fetch(p, { method: "DELETE" });'],
     ['a joined path', "await fetch([BASE, 'contacts', email].join('/'), { method: 'DELETE' });"],
+    ['an aliased contacts object', 'const c = sdk.contacts; await c.remove({ email });'],
+    ['a URL object', 'await fetch(new URL(`/contacts/${e}`, BASE), { method: "DELETE" });'],
   ])('out of reach of the source scan (runtime guard only): %s', (_label, snippet) => {
     expect(forbidden(snippet)).toEqual([]);
   });
