@@ -38,7 +38,11 @@ import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/res
 import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
-import { AuditPortInvariantError, type AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
+import {
+  AUDIENCE_AUDIT_LOCK_TIMEOUT_MS,
+  AuditPortInvariantError,
+  type AudienceDeletedEmitInput,
+} from '@/modules/broadcasts/application/ports/audit-port';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -702,7 +706,8 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
  * Spec 140 DT5 — one per-invocation deadline covers the listing and the delete
  * chunks. The gateway stops paging inside it (pinned in the contract suite) and
  * says so with `truncated`; the use case starts a delete chunk only while one
- * bounded call (RESEND_CALL_TIMEOUT_MS) still fits, and counts the orphans it
+ * bounded call (RESEND_CALL_TIMEOUT_MS) plus its audit row's INSERT wait
+ * (AUDIENCE_AUDIT_LOCK_TIMEOUT_MS) still fits, and counts the orphans it
  * did not reach as `deferredDeletes`. Both are counted on
  * `broadcasts_audience_reclaim_truncated_total{stage}`.
  */
@@ -792,15 +797,36 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     expect(gateway.deleteCalls).toHaveLength(0);
   });
 
-  // Spec 142 (AO3) — the audit row's wait is no longer charged at the chunk
-  // check: RECLAIM_DEADLINE_MARGIN_MS covers the DB work, and the delete is
-  // bounded by RESEND_CALL_TIMEOUT_MS (spec 139 s2 review round 2 charged both).
-  it('a chunk starts when the time left fits exactly one Resend call (the audit row is not charged)', async () => {
+  // Spec 142 review round 3 (code-review #3) — each delete first writes its
+  // audit row, whose INSERT can wait up to AUDIENCE_AUDIT_LOCK_TIMEOUT_MS on
+  // another tx's insert of the key: the chunk check charges both, as spec 139
+  // s2 review round 2 did.
+  it('a chunk is deferred when the time left fits one Resend call but not the call and the audit wait', async () => {
+    expect(AUDIENCE_AUDIT_LOCK_TIMEOUT_MS).toBe(5_000);
     const gateway = makeGateway({ audiences: orphanAudiences([UUID_A, UUID_B]) });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
-      { graceMs: GRACE_MS, limit: 50, deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS) },
+      {
+        graceMs: GRACE_MS,
+        limit: 50,
+        deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS - 1),
+      },
+    );
+    expect(result.ok && result.value).toMatchObject({ orphaned: 2, deleted: 0, deferredDeletes: 2 });
+    expect(gateway.deleteCalls).toHaveLength(0);
+  });
+
+  it('a chunk starts when the time left fits one Resend call and the audit wait', async () => {
+    const gateway = makeGateway({ audiences: orphanAudiences([UUID_A, UUID_B]) });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
+      {
+        graceMs: GRACE_MS,
+        limit: 50,
+        deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS),
+      },
     );
     expect(result.ok && result.value).toMatchObject({ orphaned: 2, deleted: 2, deferredDeletes: 0 });
     expect(gateway.deleteCalls).toHaveLength(2);
