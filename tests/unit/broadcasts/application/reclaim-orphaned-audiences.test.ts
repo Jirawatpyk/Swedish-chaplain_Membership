@@ -847,7 +847,7 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
   function harness(opts: {
     readonly disclosure?: { readonly broadcastId: string; readonly relatedMemberId: string } | 'throws' | null;
     readonly alreadyDeleted?: boolean;
-    /** Spec 142 — emitOnce's answer when the lockless read saw nothing: false = a row landed in between. */
+    /** Spec 142 — emitOnce's answer for a disclosed segment with no deleted row yet: false = a row landed first. */
     readonly onceWrites?: boolean;
     readonly auditThrows?: 'invariant' | 'storage' | 'lock_timeout';
   }) {
@@ -870,6 +870,8 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
       return opts.disclosure ?? null;
     };
     // Spec 142 (AO3) — the reclaim's lockless read: no lock, no lock_timeout.
+    // Review round 1 (code-review #5): read only when no disclosure names the
+    // segment, to tell "already recorded" from unattributed.
     repo.port.hasAudienceDeletedAuditInTx = async (_tx, _t, audienceId) => {
       events.push(`dedupe:${audienceId}`);
       return opts.alreadyDeleted === true;
@@ -892,7 +894,8 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
           });
         }
         events.push(`audit-once:${e.eventType}`);
-        if (opts.onceWrites === false) return false;
+        // The index's answer: the key already holds its row.
+        if (opts.onceWrites === false || opts.alreadyDeleted === true) return false;
         rows.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, requestId: e.requestId, payload: e.payload });
         return true;
       },
@@ -910,7 +913,8 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' } });
     const result = await h.run();
     expect(result.ok && result.value.deleted).toBe(1);
-    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `find:${AUDIENCE}`, `audit-once:${DELETED}`, `gw:deleteAudience:${AUDIENCE}`]);
+    // Review round 1 (code-review #5): the disclosure first, then emitOnce; no existence read.
+    expect(h.events).toEqual([`find:${AUDIENCE}`, `audit-once:${DELETED}`, `gw:deleteAudience:${AUDIENCE}`]);
     expect(h.rows).toEqual([
       {
         eventType: DELETED,
@@ -936,18 +940,21 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     const h = harness({ disclosure: null });
     await h.run();
     expect(h.rows).toEqual([]);
-    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `find:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
+    // No disclosure: the existence read tells a recorded segment from an unattributed one.
+    expect(h.events).toEqual([`find:${AUDIENCE}`, `dedupe:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
     const lines = warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed').map((c) => c[0] as Record<string, unknown>);
     expect(lines).toEqual([{ tenantId: TENANT_SLUG, resendAudienceId: AUDIENCE, deleteReason: 'never_disclosed' }]);
     expect(lines[0]).not.toHaveProperty('reason');
     expect(unattributed).toHaveBeenCalledWith(TENANT_SLUG);
   });
 
-  it('a segment that already has its deleted row gets no second one; the delete still runs', async () => {
+  it('a disclosed segment that already has its deleted row gets no second one (emitOnce false, no WARN); the delete still runs', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
     const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' }, alreadyDeleted: true });
     await h.run();
     expect(h.rows).toEqual([]);
-    expect(h.events).toContain(`gw:deleteAudience:${AUDIENCE}`);
+    expect(h.events).toEqual([`find:${AUDIENCE}`, `audit-once:${DELETED}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed')).toEqual([]);
   });
 
   // Review round 1 (code-review #3) — e.g. cleanup's `terminal_cleanup` row for
@@ -960,13 +967,13 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     expect(h.rows).toEqual([]);
     expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed')).toEqual([]);
     expect(unattributed).not.toHaveBeenCalled();
-    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(h.events).toEqual([`find:${AUDIENCE}`, `dedupe:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
   });
 
-  // Spec 142 (plan fold-in, reliability L2) — the lockless read no longer
-  // orders reclaim against another writer: a row that lands between the read
-  // and the INSERT makes emitOnce answer false, which is a skip.
-  it('emitOnce answers false (a row landed after the lockless read): a skip, no unattributed WARN, no count; the delete runs', async () => {
+  // Spec 142 (plan fold-in, reliability L2; review round 1, code-review #5) —
+  // for a disclosed segment the index is the dedupe: a row already there, or
+  // one that lands first, makes emitOnce answer false, which is a skip.
+  it('emitOnce answers false for a disclosed segment: a skip, no unattributed WARN, no count; the delete runs', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
     const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
     const counted = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
@@ -976,7 +983,7 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     const result = await h.run();
     expect(result.ok && result.value).toMatchObject({ deleted: 1, failed: 0 });
     expect(h.rows).toEqual([]);
-    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `find:${AUDIENCE}`, `audit-once:${DELETED}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(h.events).toEqual([`find:${AUDIENCE}`, `audit-once:${DELETED}`, `gw:deleteAudience:${AUDIENCE}`]);
     expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed')).toEqual([]);
     expect(unattributed).not.toHaveBeenCalled();
     expect(counted).not.toHaveBeenCalled();
@@ -1059,7 +1066,7 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     const result = await h.run();
     expect(result.ok && result.value).toMatchObject({ deleted: 1, failed: 0 });
     expect(h.rows).toEqual([]);
-    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `find:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(h.events).toEqual([`find:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
     expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audience_audit_lock_timeout').map((c) => c[0])).toEqual([
       {
         tenantId: TENANT_SLUG,

@@ -21,6 +21,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { AUDIENCE_AUDIT_PAYLOAD_KEYS } from '@/modules/broadcasts/application/ports/audit-port';
+
 const OUT_OF_REACH = [
   'a destructured method: const { deleteAudience } = gateway; deleteAudience(id)',
   'an alias: const del = gateway.deleteAudience; del(id)',
@@ -288,5 +290,45 @@ describe('spec 142 — the deleted row is written only through emitOnce', () => 
         'function audienceDeletedInput(a, b) { return a; }\nasync function x() { await audit.emitOnce(tx, audienceDeletedInput(t, p)); }',
       ).violations,
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 1 (code-review #5, migration L1) — one key, written as a literal.
+// ---------------------------------------------------------------------------
+
+/**
+ * The deleted row's key is `payload->>'resend_audience_id'` in three places that
+ * must agree: migration 0328's index, `emitOnce`'s `ON CONFLICT` (a parameter
+ * there is a 42P10), and the reclaim's existence read. The read writes it as a
+ * literal too, not a bound parameter, so its expression is the index's own
+ * text. Each must carry `AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId`.
+ */
+describe('spec 142 — the deleted-row key is one literal', () => {
+  const root = process.cwd();
+  const read = (rel: string) => readFileSync(join(root, rel), 'utf8');
+  const keyExpr = `payload->>'${AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId}'`;
+
+  /** The source of the repo method `name`, from its declaration to the next method's. */
+  function methodBody(src: string, name: string, next: string): string {
+    const from = src.indexOf(`async ${name}(`);
+    const to = src.indexOf(`async ${next}(`, from + 1);
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    return src.slice(from, to);
+  }
+
+  it('the deleted-row key is the literal AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId in the read, the ON CONFLICT and 0328', () => {
+    const read_ = methodBody(
+      read('src/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo.ts'),
+      'hasAudienceDeletedAuditInTx',
+      'findAudienceDisclosureInTx',
+    );
+    expect(read_).toContain(`AND ${keyExpr} = `);
+    expect(read_).not.toContain('payload->>${');
+    expect(read('src/modules/broadcasts/infrastructure/audit-adapter.ts')).toContain(`ON CONFLICT (tenant_id, (${keyExpr}))`);
+    expect(read('drizzle/migrations/0328_audit_log_audience_deleted_once.sql')).toContain(
+      `("tenant_id", ("payload"->>'${AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId}'))`,
+    );
   });
 });
