@@ -37,6 +37,8 @@ import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/por
 import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
 import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { broadcastsMetrics } from '@/lib/metrics';
+import { logger } from '@/lib/logger';
+import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -808,5 +810,124 @@ describe('oneCallFitsBefore', () => {
     ['past the deadline', 100_001, false],
   ])('%s -> %s', (_label, nowMs, fits) => {
     expect(oneCallFitsBefore(deadline, nowMs, RESEND_CALL_TIMEOUT_MS)).toBe(fits);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 139 s2 (DA2, pdpa M-3) — the orphan_reclaim row, only when this tenant
+// disclosed the segment
+// ---------------------------------------------------------------------------
+
+describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted only for a segment this tenant disclosed', () => {
+  const DELETED = 'broadcast_audience_deleted';
+  const AUDIENCE = 'aud-orphan';
+
+  afterEach(() => vi.restoreAllMocks());
+
+  function harness(opts: {
+    readonly disclosure?: { readonly broadcastId: string; readonly relatedMemberId: string } | 'throws' | null;
+    readonly alreadyDeleted?: boolean;
+    readonly auditThrows?: 'invariant';
+  }) {
+    const events: string[] = [];
+    const rows: Array<{ eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }> = [];
+    const gateway = makeGateway({
+      audiences: [{ id: AUDIENCE, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE }],
+    });
+    const del = gateway.port.deleteAudience.bind(gateway.port);
+    gateway.port.deleteAudience = async (id) => {
+      events.push(`gw:deleteAudience:${id}`);
+      return del(id);
+    };
+    // The referenced-audience read, stubbed explicitly: the row is gone, so
+    // the segment is an orphan (no existence-only fallback).
+    const repo = makeRepo({ existing: new Set<BroadcastId>(), referencedMap: new Map() });
+    repo.port.findAudienceDisclosureInTx = async (_tx, _t, audienceId) => {
+      events.push(`find:${audienceId}`);
+      if (opts.disclosure === 'throws') throw new Error('57P01 terminating connection');
+      return opts.disclosure ?? null;
+    };
+    repo.port.hasAudienceDeletedAuditInTx = async (_tx, _t, audienceId) => {
+      events.push(`dedupe:${audienceId}`);
+      return opts.alreadyDeleted === true;
+    };
+    const audit = {
+      async emit(_tx: unknown, e: { eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }) {
+        if (opts.auditThrows === 'invariant') throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
+        events.push(`audit:${e.eventType}`);
+        rows.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, requestId: e.requestId, payload: e.payload });
+      },
+    };
+    const run = () =>
+      reclaimOrphanedAudiences(
+        { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit } as never,
+        { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
+      );
+    return { run, events, rows, gateway };
+  }
+
+  it("a disclosed row found: the deleted row (orphan_reclaim) copies ITS broadcast and requester, then the delete", async () => {
+    const counted = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
+    const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' } });
+    const result = await h.run();
+    expect(result.ok && result.value.deleted).toBe(1);
+    expect(h.events).toEqual([`find:${AUDIENCE}`, `dedupe:${AUDIENCE}`, `audit:${DELETED}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(h.rows).toEqual([
+      {
+        eventType: DELETED,
+        tenantId: TENANT_SLUG,
+        actorUserId: 'system:cron',
+        requestId: null,
+        payload: {
+          broadcast_id: 'bc-disclosed',
+          related_member_id: 'm-disclosed',
+          resend_audience_id: AUDIENCE,
+          reason: 'orphan_reclaim',
+          leg: 'import',
+          actor_role: 'system',
+        },
+      },
+    ]);
+    expect(counted).toHaveBeenCalledWith(TENANT_SLUG, DELETED);
+  });
+
+  it('no disclosed row: no audit row, a warn (deleteReason never_disclosed, never a `reason` key) and the counter; the delete still runs', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    const unattributed = vi.spyOn(broadcastsMetrics, 'audienceReclaimDeleteUnattributed');
+    const h = harness({ disclosure: null });
+    await h.run();
+    expect(h.rows).toEqual([]);
+    expect(h.events).toEqual([`find:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
+    const lines = warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed').map((c) => c[0] as Record<string, unknown>);
+    expect(lines).toEqual([{ tenantId: TENANT_SLUG, resendAudienceId: AUDIENCE, deleteReason: 'never_disclosed' }]);
+    expect(lines[0]).not.toHaveProperty('reason');
+    expect(unattributed).toHaveBeenCalledWith(TENANT_SLUG);
+  });
+
+  it('a segment that already has its deleted row gets no second one; the delete still runs', async () => {
+    const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' }, alreadyDeleted: true });
+    await h.run();
+    expect(h.rows).toEqual([]);
+    expect(h.events).toContain(`gw:deleteAudience:${AUDIENCE}`);
+  });
+
+  it('a failed disclosure read logs ERROR and counts a lost row, and the delete still runs', async () => {
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
+    const h = harness({ disclosure: 'throws' });
+    await h.run();
+    expect(h.gateway.deleteCalls).toEqual([AUDIENCE]);
+    expect(error.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audience_audit_lost').map((c) => c[0])).toEqual([
+      expect.objectContaining({ eventType: DELETED, resendAudienceId: AUDIENCE, err: 'Error', severity: 'critical' }),
+    ]);
+    expect(failed).toHaveBeenCalledWith(DELETED, TENANT_SLUG);
+  });
+
+  it('an adapter invariant error stops that delete (fail closed): counted failed, no Resend call', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' }, auditThrows: 'invariant' });
+    const result = await h.run();
+    expect(result.ok && result.value).toMatchObject({ deleted: 0, failed: 1 });
+    expect(h.gateway.deleteCalls).toEqual([]);
   });
 });

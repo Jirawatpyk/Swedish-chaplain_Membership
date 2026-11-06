@@ -3264,6 +3264,26 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts_audience_reclaim_delete_unattributed_total{tenant}` — spec 139
+   * s2 (DA2, pdpa M-3): `reclaim-orphan-audiences` deleted a segment named for
+   * this tenant for which the tenant holds no `broadcast_audience_disclosed`
+   * row, so it wrote no `broadcast_audience_deleted` row (never filed under a
+   * guessed tenant or member). `tenant` is the one the cron runs for. Beside
+   * the WARN `broadcasts.audience_reclaim.delete_unattributed`
+   * (`deleteReason: 'never_disclosed'`). Expected for a segment created before
+   * spec 139 s2 or by the attach-failed reclaim; a rise on segments created
+   * since then means a disclosure went unrecorded.
+   */
+  audienceReclaimDeleteUnattributed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audience_reclaim_delete_unattributed_total',
+        'reclaim-orphan-audiences segment deletes with no broadcast_audience_disclosed row for the tenant (no audit row written)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
    * `broadcasts_orphaned_resend_ids_unsettled{tenant}` — spec 140 s2c review
    * round 1: orphan rows with an id still unsettled more than
    * `ORPHAN_UNSETTLED_GAUGE_AGE_HOURS` (24 h) after they were written — a
