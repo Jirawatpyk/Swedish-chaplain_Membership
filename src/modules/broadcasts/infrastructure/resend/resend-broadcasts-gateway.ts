@@ -464,7 +464,15 @@ export function createResendBroadcastsGateway({
             throw classifyResendError(result.error ?? undefined, 'audience');
           }
           // Fail loud before a non-UUID id is persisted: every later call that
-          // puts it into a path would refuse it (round 3, reliability L3).
+          // puts it into a path would refuse it (round 3, reliability L3). The
+          // warn comes first and names the id's class, never the id (round 4):
+          // Resend created a resource this call will not hand back.
+          if (!RESEND_SEGMENT_ID_PATTERN.test(result.data.id)) {
+            logger.warn(
+              { idClass: result.data.id.startsWith('aud_') ? 'aud_prefixed' : 'not_a_segment_id' },
+              'resend.broadcasts.created_audience_id_not_a_segment',
+            );
+          }
           assertSegmentId({ audienceId: result.data.id });
           logger.info(
             { audienceId: result.data.id },
