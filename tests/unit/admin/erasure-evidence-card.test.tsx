@@ -105,7 +105,7 @@ describe('EvidenceCard', () => {
     expect(screen.getByText(/counts segment entries Resend confirmed it removed\. It is a minimum/i)).toBeInTheDocument();
     // Round 3 — the copy is removed, not "covered", and pre-5-Nov E-Blasts are named.
     expect(screen.getByText(/stored in another letter case is not removed/i)).toBeInTheDocument();
-    expect(screen.getByText(/an E-Blast sent before 5 Nov 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/an E-Blast dispatched on or before 5 Nov 2026/)).toBeInTheDocument();
     expect(screen.queryByText(/may include addresses that were already absent/i)).toBeNull();
     expect(screen.queryByText(/^Earlier record/)).toBeNull();
   });
@@ -136,7 +136,7 @@ describe('EvidenceCard', () => {
     );
     expect(screen.getByText(/^Earlier record \(older Resend detach method\): each contact is counted once\./)).toBeInTheDocument();
     // Round 3 — the old wire's measured behaviour, not "whether or not".
-    expect(screen.getByText(/accepted a detach request for an address that was no longer in the audience/)).toBeInTheDocument();
+    expect(screen.getByText(/accepted detach requests even for addresses that were no longer in the audience/)).toBeInTheDocument();
     expect(screen.queryByText(/whether or not the address was in the audience/)).toBeNull();
     expect(screen.queryByText(/counts segment entries Resend confirmed it removed/i)).toBeNull();
   });
