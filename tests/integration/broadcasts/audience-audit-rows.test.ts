@@ -379,24 +379,70 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     function indexCheckSql(): string {
       const block = readFileSync(MIGRATION, 'utf8')
         .split('--> statement-breakpoint')
-        .find((s) => s.includes('DO $$') && s.includes('pg_indexes'));
+        .find((s) => s.includes('DO $$') && s.includes('has another definition'));
       expect(block).toBeDefined();
       return block!;
     }
 
-    /** The check's expected text, from its `expected constant text := '…';` literal. */
-    function expectedIndexdef(check: string): string {
-      const m = /expected\s+constant\s+text\s*:=\s*'((?:[^']|'')*)'\s*;/.exec(check);
-      expect(m).not.toBeNull();
-      return m![1]!.replaceAll("''", "'");
+    /**
+     * Review round 3 (code-review #2, #6) — what the check's one catalog read
+     * answers, field by field. `LIVE` is what dev's `pg_index` row answers
+     * (read with `pnpm db:query` on 7 Nov 2026; the positive control below
+     * re-reads it); `idx` stands for the index oid, NULL when there is none.
+     */
+    interface IndexFacts {
+      readonly idx: number | null;
+      readonly tbl: string | null;
+      readonly isUnique: boolean | null;
+      readonly isValid: boolean | null;
+      readonly keyCount: number | null;
+      readonly key1: string | null;
+      readonly key2: string | null;
+      readonly pred: string | null;
+    }
+    const LIVE: IndexFacts = {
+      idx: 1,
+      tbl: 'public.audit_log',
+      isUnique: true,
+      isValid: true,
+      keyCount: 2,
+      key1: 'tenant_id',
+      key2: "(payload ->> 'resend_audience_id'::text)",
+      pred: "event_type = 'broadcast_audience_deleted'::audit_event_type",
+    };
+
+    /** The check with its catalog read replaced by literal assignments of `facts`, so it reads no catalog. */
+    function checkAgainst(check: string, facts: IndexFacts): string {
+      const read = /SELECT\s+i\.indexrelid\b[^;]*;/;
+      expect(read.test(check)).toBe(true);
+      const text = (v: string | null) => (v === null ? 'NULL' : `'${v.replaceAll("'", "''")}'`);
+      const lit = (v: number | boolean | null) => (v === null ? 'NULL' : String(v));
+      return check.replace(
+        read,
+        [
+          `v_idx := ${lit(facts.idx)}::oid;`,
+          `v_tbl := ${text(facts.tbl)};`,
+          `v_is_unique := ${lit(facts.isUnique)};`,
+          `v_is_valid := ${lit(facts.isValid)};`,
+          `v_key_count := ${lit(facts.keyCount)};`,
+          `v_key1 := ${text(facts.key1)};`,
+          `v_key2 := ${text(facts.key2)};`,
+          `v_pred := ${text(facts.pred)};`,
+        ].join(' '),
+      );
     }
 
-    /** The check with its `pg_indexes` read replaced by `actual := <value>`, so it reads no catalog. */
-    function checkAgainst(check: string, actual: string | null): string {
-      const read = /SELECT\s+indexdef\s+INTO\s+actual[^;]*;/;
-      expect(read.test(check)).toBe(true);
-      const literal = actual === null ? 'NULL' : `'${actual.replaceAll("'", "''")}'`;
-      return check.replace(read, `actual := ${literal};`);
+    /** Runs `block` in a rolled-back tx; answers the RAISE message, or null when it passed. */
+    async function raised(block: string): Promise<string | null> {
+      const e = await rolledBack((tx) =>
+        tx.execute(sql.raw(block)).then(
+          () => null,
+          (err: unknown) => err,
+        ),
+      );
+      if (e === null) return null;
+      const cause = (e as { cause?: { message?: string } }).cause;
+      return String(cause?.message ?? (e as Error).message);
     }
 
     /** `rows` into a temp `audit_log` that shadows the real one (pg_temp is searched first), then the pre-check. */
@@ -438,42 +484,66 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
 
     // Review round 2 (code-review #1, #3) — the CREATE is IF NOT EXISTS again,
     // so a re-run is a no-op, and the check after it fails the migration when
-    // the index under this name has another definition. Both cells are
-    // read-only: the check reads pg_indexes only, and no index is created on
-    // the shared audit_log (the round 1 42P07 cell took its SHARE lock).
-    it("the index check passes on the live index, whose indexdef is the check's expected text", async () => {
-      const check = indexCheckSql();
+    // the index under this name has another definition. Review round 3
+    // (code-review #2, #6) — the check is structural, against pg_index, and an
+    // invalid index fails it too. Every cell is read-only: the check reads the
+    // catalog only (or literal values in its place), and no index is created
+    // on the shared audit_log (the round 1 42P07 cell took its SHARE lock).
+    const PREFIX = '0328: index audit_log_audience_deleted_once has another definition';
+
+    it("the index check passes on the live index, and on LIVE's values in place of the catalog read", async () => {
+      // Positive control: dev's live row is what LIVE says.
       const live = (await db.execute(sql`
-        SELECT indexdef FROM pg_indexes
-         WHERE schemaname = 'public' AND indexname = 'audit_log_audience_deleted_once'
-      `)) as unknown as Array<{ indexdef: string }>;
-      expect(live.map((r) => r.indexdef)).toEqual([expectedIndexdef(check)]);
-      const e = await rolledBack((tx) =>
-        tx.execute(sql.raw(check)).then(
-          () => null,
-          (err: unknown) => err,
-        ),
-      );
-      expect(e).toBeNull();
+        SELECT t.relname AS tbl, i.indisunique, i.indisvalid, i.indnkeyatts,
+               pg_get_indexdef(i.indexrelid, 1, true) AS key1, pg_get_indexdef(i.indexrelid, 2, true) AS key2,
+               pg_get_expr(i.indpred, i.indrelid, true) AS pred
+          FROM pg_index i
+          JOIN pg_class c ON c.oid = i.indexrelid
+          JOIN pg_class t ON t.oid = i.indrelid
+         WHERE c.relname = 'audit_log_audience_deleted_once' AND c.relnamespace = 'public'::regnamespace
+      `)) as unknown as Array<Record<string, unknown>>;
+      expect(live).toEqual([
+        {
+          tbl: 'audit_log',
+          indisunique: true,
+          indisvalid: true,
+          indnkeyatts: 2,
+          key1: LIVE.key1,
+          key2: LIVE.key2,
+          pred: LIVE.pred,
+        },
+      ]);
+      const check = indexCheckSql();
+      expect(await raised(check)).toBeNull();
+      expect(await raised(checkAgainst(check, LIVE))).toBeNull();
+      // The enum type's schema qualifier is not a difference.
+      expect(
+        await raised(checkAgainst(check, { ...LIVE, pred: "event_type = 'broadcast_audience_deleted'::public.audit_event_type" })),
+      ).toBeNull();
     });
 
-    it('the index check raises on another definition and on a missing index', async () => {
+    it('the index check raises on another definition and on a missing index, naming what differed', async () => {
       const check = indexCheckSql();
-      const other = expectedIndexdef(check).replace('(tenant_id, ', '(');
-      expect(other).not.toBe(expectedIndexdef(check));
-      for (const actual of [other, null]) {
-        const e = await rolledBack((tx) =>
-          tx.execute(sql.raw(checkAgainst(check, actual))).then(
-            () => null,
-            (err: unknown) => err,
-          ),
-        );
-        expect(e).not.toBeNull();
-        const cause = (e as { cause?: { message?: string } }).cause;
-        expect(String(cause?.message ?? (e as Error).message)).toContain(
-          '0328: index audit_log_audience_deleted_once has another definition',
-        );
+      const cases: ReadonlyArray<readonly [Partial<IndexFacts>, string]> = [
+        [{ idx: null, tbl: null, isUnique: null, isValid: null, keyCount: null, key1: null, key2: null, pred: null }, 'no such index'],
+        [{ tbl: 'public.other_table' }, 'table public.other_table'],
+        [{ isUnique: false }, 'indisunique false'],
+        [{ keyCount: 1 }, 'indnkeyatts 1'],
+        [{ key1: 'payload' }, 'key 1 payload'],
+        [{ key2: "(payload ->> 'broadcast_id'::text)" }, "key 2 (payload ->> 'broadcast_id'::text)"],
+        [{ pred: "event_type = 'broadcast_audience_disclosed'::audit_event_type" }, 'predicate'],
+        [{ pred: null }, 'predicate (none)'],
+      ];
+      for (const [diff, named] of cases) {
+        const message = await raised(checkAgainst(check, { ...LIVE, ...diff }));
+        expect(message).toContain(PREFIX);
+        expect(message).toContain(named);
       }
+    });
+
+    it('the index check raises on an invalid index (indisvalid false)', async () => {
+      const message = await raised(checkAgainst(indexCheckSql(), { ...LIVE, isValid: false }));
+      expect(message).toContain(`${PREFIX}: indisvalid false`);
     });
 
     it('the pre-check raises on a duplicate key and names it as tenant/segment', async () => {
