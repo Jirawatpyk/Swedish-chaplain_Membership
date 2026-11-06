@@ -44,7 +44,9 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
   return (
     <ul
       className={cn(
-        'divide-y divide-[var(--aura-border-default)] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)]',
+        // Phone (board `Admin-change-request-mobile`): a plain list of field
+        // cards 12px apart. From 640px: one framed table, rows divided.
+        'flex flex-col gap-3 sm:block sm:divide-y sm:divide-[var(--aura-border-default)] sm:rounded-[var(--aura-radius-md)] sm:border sm:border-[var(--aura-border-default)] sm:bg-[var(--aura-bg-surface)]',
         className,
       )}
       data-testid="change-request-decision-table"

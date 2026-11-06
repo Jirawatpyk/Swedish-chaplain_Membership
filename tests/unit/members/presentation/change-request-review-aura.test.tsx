@@ -108,6 +108,18 @@ describe('change-request review on AURA (T508)', () => {
     expect(within(row).getByText(REVIEW.willApprove)).toHaveClass('max-sm:hidden');
   });
 
+  it('on a phone the field cards are a plain list 12px apart, not one framed box (board)', () => {
+    renderClient();
+    const list = screen.getByTestId('change-request-decision-table');
+    // Board `Admin-change-request-mobile`: <ul> flex column, gap 12px, no
+    // frame; the frame and row dividers are the desktop table's only.
+    expect(list).toHaveClass('flex', 'flex-col', 'gap-3');
+    for (const cls of ['divide-y', 'border', 'rounded-[var(--aura-radius-md)]', 'bg-[var(--aura-bg-surface)]']) {
+      expect(list.className.split(' ')).not.toContain(cls);
+      expect(list.className.split(' ')).toContain(`sm:${cls}`);
+    }
+  });
+
   it('a contact-removed row is reachable but inert and explained', () => {
     renderClient();
     const email = screen.getByRole('checkbox', { name: approveName(roleLabel) });
