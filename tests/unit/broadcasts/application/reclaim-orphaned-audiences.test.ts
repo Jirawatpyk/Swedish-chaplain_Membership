@@ -877,7 +877,7 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' } });
     const result = await h.run();
     expect(result.ok && result.value.deleted).toBe(1);
-    expect(h.events).toEqual([`find:${AUDIENCE}`, `dedupe:${AUDIENCE}`, `audit:${DELETED}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `find:${AUDIENCE}`, `audit:${DELETED}`, `gw:deleteAudience:${AUDIENCE}`]);
     expect(h.rows).toEqual([
       {
         eventType: DELETED,
@@ -903,7 +903,7 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     const h = harness({ disclosure: null });
     await h.run();
     expect(h.rows).toEqual([]);
-    expect(h.events).toEqual([`find:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `find:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
     const lines = warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed').map((c) => c[0] as Record<string, unknown>);
     expect(lines).toEqual([{ tenantId: TENANT_SLUG, resendAudienceId: AUDIENCE, deleteReason: 'never_disclosed' }]);
     expect(lines[0]).not.toHaveProperty('reason');

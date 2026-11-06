@@ -9,7 +9,8 @@
  * the insert; the first `reason` wins). The orphan reclaim writes its deleted
  * row only when this tenant's disclosed row names the segment, copying that
  * row's broadcast and requester (pdpa M-3: never filed under a guessed tenant
- * or member); otherwise a WARN and a counter.
+ * or member); a segment already recorded as deleted is skipped, and any other
+ * gets a WARN and a counter.
  *
  * Every row is written BEFORE its Resend call, in its own tenant-bound
  * `withTx` (never a null tx: that would take a pool connection with no
@@ -183,7 +184,9 @@ export interface ReclaimAudienceAuditDeps extends AudienceAuditDeps {
  * DA2 (pdpa M-3) — the orphan reclaim is about to delete a segment named for
  * this tenant. Only a segment this tenant DISCLOSED gets a deleted row
  * (`reason: 'orphan_reclaim'`), with the disclosure's broadcast and
- * requester; the read, the dedupe and the insert share one tx. A segment with
+ * requester; the dedupe, the read and the insert share one tx, the dedupe
+ * first, so a segment that already has this tenant's deleted row is skipped
+ * (no row, no WARN) whether or not it was disclosed. Any other segment with
  * no disclosed row was never filled by this deployment (one created before
  * spec 139 s2, or by the attach-failed reclaim): no row, the WARN
  * `broadcasts.audience_reclaim.delete_unattributed` (`deleteReason`, never
@@ -201,9 +204,11 @@ export async function recordReclaimedAudienceDeleted(
     { broadcastId: null, resendAudienceId },
     (p) => `Broadcast ${p.broadcast_id}: Resend segment removal requested (${p.reason})`,
     async (tx) => {
+      // The dedupe first: a segment already recorded as deleted (e.g. cleanup's
+      // row for a segment whose delete keeps failing) is not unattributed.
+      if (await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, resendAudienceId)) return 'skip';
       const disclosed = await deps.broadcastsRepo.findAudienceDisclosureInTx(tx, deps.tenant.slug, resendAudienceId);
       if (disclosed === null) return 'unattributed';
-      if (await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, resendAudienceId)) return 'skip';
       return {
         broadcast_id: disclosed.broadcastId,
         related_member_id: disclosed.relatedMemberId,
