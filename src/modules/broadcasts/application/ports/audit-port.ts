@@ -774,6 +774,14 @@ export const AUDIENCE_AUDIT_PAYLOAD_KEYS = {
   resendAudienceId: 'resend_audience_id',
 } as const satisfies Record<string, keyof AudienceAuditCommon>;
 
+/**
+ * Spec 139 s2 review round 1 — how long the audience-audit dedupe waits for its
+ * advisory lock (`hasAudienceDeletedAuditInTx`); the retention sweep's 5 s.
+ * Review round 2 (code-review #2): here, not in the repo, so the reclaim's
+ * chunk-start deadline check can charge it beside `RESEND_CALL_TIMEOUT_MS`.
+ */
+export const AUDIENCE_AUDIT_LOCK_TIMEOUT_MS = 5_000;
+
 /** Spec 139 s2 (DA3) — the fields both audience rows carry. */
 export interface AudienceAuditCommon {
   readonly broadcast_id: string;

@@ -60,7 +60,7 @@ import {
   orphanStuckCutoff,
 } from '../../domain/value-objects/orphaned-resend-id';
 import { orphanStuckSql } from './_orphan-stuck-sql';
-import { AUDIENCE_AUDIT_PAYLOAD_KEYS } from '../../application/ports/audit-port';
+import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, AUDIENCE_AUDIT_PAYLOAD_KEYS } from '../../application/ports/audit-port';
 import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
@@ -525,12 +525,6 @@ export async function hasLiveDispatchLeaseStatement(
   if (row.live === false || row.live === 'f') return false;
   throw new Error(`hasLiveDispatchLease: expected a boolean, got ${typeof row.live}`);
 }
-
-/**
- * Spec 139 s2 review round 1 — how long the audience-audit dedupe waits for its
- * advisory lock (`hasAudienceDeletedAuditInTx`); the retention sweep's 5 s.
- */
-const AUDIENCE_AUDIT_LOCK_TIMEOUT_MS = 5_000;
 
 /**
  * `SET LOCAL lock_timeout` for the rest of the caller's tx (the lease check and

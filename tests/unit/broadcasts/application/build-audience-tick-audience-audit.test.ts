@@ -344,6 +344,17 @@ describe('spec 139 s2 DA1 — tick 1 writes broadcast_audience_disclosed before 
     await expect(h.run()).rejects.toBeInstanceOf(AuditPortInvariantError);
     expect(h.events).not.toContain('gw:createContactImport');
     expect(h.events.at(-1)).toBe('release');
+    // Review round 2 (code-review #5) — the row helper logs the wiring bug before it rethrows.
+    expect(errorLogged('broadcasts.audience_import.audit_invariant')).toEqual([
+      {
+        tenantId: tenant.slug,
+        broadcastId: BROADCAST_ID,
+        resendAudienceId: 'aud-new',
+        eventType: DISCLOSED,
+        err: 'AuditPortInvariantError',
+        severity: 'critical',
+      },
+    ]);
   });
 
   it('an attach that fails (the fresh segment is reclaimed) writes no row: exempt, it never held recipients', async () => {
@@ -456,5 +467,16 @@ describe('spec 139 s2 DA2 — the restart teardown writes broadcast_audience_del
     const h = harness({ row: { resendAudienceId: 'aud-stale' }, auditThrows: { eventType: DELETED, kind: 'invariant' } });
     await expect(h.run()).rejects.toBeInstanceOf(AuditPortInvariantError);
     expect(h.events.some((e) => e.startsWith('gw:deleteAudience'))).toBe(false);
+    // Review round 2 (code-review #5) — the restart's line comes from the row helper too.
+    expect(errorLogged('broadcasts.audience_import.audit_invariant')).toEqual([
+      {
+        tenantId: tenant.slug,
+        broadcastId: BROADCAST_ID,
+        resendAudienceId: 'aud-stale',
+        eventType: DELETED,
+        err: 'AuditPortInvariantError',
+        severity: 'critical',
+      },
+    ]);
   });
 });

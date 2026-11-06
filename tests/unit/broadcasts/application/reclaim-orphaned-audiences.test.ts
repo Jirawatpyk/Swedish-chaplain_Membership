@@ -38,7 +38,7 @@ import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/res
 import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
-import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
+import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -792,6 +792,24 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     expect(gateway.deleteCalls).toHaveLength(0);
   });
 
+  // Spec 139 s2 review round 2 (code-review #2) — each delete first writes its
+  // audit row, whose lock wait is bounded at AUDIENCE_AUDIT_LOCK_TIMEOUT_MS.
+  it('a chunk is deferred when the time left fits one Resend call but not the call plus the audit lock wait', async () => {
+    expect(AUDIENCE_AUDIT_LOCK_TIMEOUT_MS).toBe(5_000);
+    const gateway = makeGateway({ audiences: orphanAudiences([UUID_A, UUID_B]) });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
+      {
+        graceMs: GRACE_MS,
+        limit: 50,
+        deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS - 1),
+      },
+    );
+    expect(result.ok && result.value).toMatchObject({ orphaned: 2, deleted: 0, deferredDeletes: 2 });
+    expect(gateway.deleteCalls).toHaveLength(0);
+  });
+
   it('a run inside its budget is not counted', async () => {
     const counted = vi.spyOn(broadcastsMetrics, 'audienceReclaimTruncated');
     const gateway = makeGateway({ audiences: orphanAudiences([UUID_A]) });
@@ -834,6 +852,7 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     readonly disclosure?: { readonly broadcastId: string; readonly relatedMemberId: string } | 'throws' | null;
     readonly alreadyDeleted?: boolean;
     readonly auditThrows?: 'invariant';
+    readonly dedupeThrows?: 'lock_timeout';
   }) {
     const events: string[] = [];
     const rows: Array<{ eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }> = [];
@@ -855,6 +874,12 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     };
     repo.port.hasAudienceDeletedAuditInTx = async (_tx, _t, audienceId) => {
       events.push(`dedupe:${audienceId}`);
+      // A lock wait past `lock_timeout` as Drizzle throws it: the driver's 55P03 at `.cause`.
+      if (opts.dedupeThrows === 'lock_timeout') {
+        throw Object.assign(new Error('Failed query'), {
+          cause: Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }),
+        });
+      }
       return opts.alreadyDeleted === true;
     };
     const audit = {
@@ -956,9 +981,39 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
     const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' }, auditThrows: 'invariant' });
     await h.run();
+    // Review round 2 (code-review #5) — one line, from the row helper: no broadcast
+    // id (the segment name's is a guess, pdpa M-3), the segment as `resendAudienceId`.
     expect(error.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audit_invariant').map((c) => c[0])).toEqual([
-      { tenantId: TENANT_SLUG, audienceId: AUDIENCE, broadcastId: UUID_A, err: 'AuditPortInvariantError', severity: 'critical' },
+      {
+        tenantId: TENANT_SLUG,
+        broadcastId: null,
+        resendAudienceId: AUDIENCE,
+        eventType: DELETED,
+        err: 'AuditPortInvariantError',
+        severity: 'critical',
+      },
     ]);
     expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_failed')).toEqual([]);
+  });
+
+  // Review round 2 (code-review #1/#4, reliability LOW-1) — a timed-out segment
+  // writes no row and no unattributed WARN this run; the next run retries.
+  it('a lock timeout on the dedupe logs the WARN audience_audit_lock_timeout and counts it; no unattributed WARN, the delete still runs', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
+    const unattributed = vi.spyOn(broadcastsMetrics, 'audienceReclaimDeleteUnattributed');
+    const h = harness({ disclosure: null, dedupeThrows: 'lock_timeout' });
+    const result = await h.run();
+    expect(result.ok && result.value).toMatchObject({ deleted: 1, failed: 0 });
+    expect(h.rows).toEqual([]);
+    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audience_audit_lock_timeout').map((c) => c[0])).toEqual([
+      { tenantId: TENANT_SLUG, broadcastId: null, resendAudienceId: AUDIENCE, eventType: DELETED, err: 'Error', code: '55P03' },
+    ]);
+    expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed')).toEqual([]);
+    expect(unattributed).not.toHaveBeenCalled();
+    expect(error.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audience_audit_lost')).toEqual([]);
+    expect(failed).toHaveBeenCalledWith(DELETED, TENANT_SLUG);
   });
 });

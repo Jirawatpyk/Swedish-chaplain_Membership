@@ -398,12 +398,25 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
   const DELETED = 'broadcast_audience_deleted';
   const candidate = { broadcastId: 'bc-1111', resendAudienceId: 'aud-1111', requestedByMemberId: 'm-requester' };
 
-  function harness(opts: { readonly alreadyDeleted?: boolean; readonly auditThrows?: 'storage' | 'invariant' } = {}) {
+  /** A lock wait past `lock_timeout` as Drizzle throws it: the driver's 55P03 at `.cause`. */
+  const lockTimeout = () =>
+    Object.assign(new Error('Failed query'), {
+      cause: Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }),
+    });
+
+  function harness(
+    opts: {
+      readonly alreadyDeleted?: boolean;
+      readonly auditThrows?: 'storage' | 'storage_sqlstate' | 'invariant';
+      readonly dedupeThrows?: 'lock_timeout';
+    } = {},
+  ) {
     const events: string[] = [];
     const rows: Array<{ eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }> = [];
     const repo = makeRepo({ candidates: [candidate] });
     repo.port.hasAudienceDeletedAuditInTx = async (_tx, _t, audienceId) => {
       events.push(`dedupe:${audienceId}`);
+      if (opts.dedupeThrows === 'lock_timeout') throw lockTimeout();
       return opts.alreadyDeleted === true;
     };
     const gateway = makeGateway({});
@@ -416,6 +429,9 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
       async emit(_tx: unknown, e: { eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }) {
         if (opts.auditThrows === 'invariant') throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
         if (opts.auditThrows === 'storage') throw new Error('53300 too many connections');
+        if (opts.auditThrows === 'storage_sqlstate') {
+          throw Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' });
+        }
         events.push(`audit:${e.eventType}`);
         rows.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, requestId: e.requestId, payload: e.payload });
       },
@@ -492,13 +508,55 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
   });
 
   // Review round 1 (reliability LOW-2) — a wiring bug is an ERROR, not the WARN of a failed delete.
+  // Review round 2 (code-review #5) — one line, from the row helper (with the event type).
   it('an adapter invariant error logs ERROR audit_invariant (ids, err, critical), not the delete_failed WARN', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
     const h = harness({ auditThrows: 'invariant' });
     await h.run();
     expect(errorSpy.mock.calls.filter((c) => c[1] === 'broadcasts.audience_cleanup.audit_invariant').map((c) => c[0])).toEqual([
-      { tenantId: tenant.slug, broadcastId: 'bc-1111', resendAudienceId: 'aud-1111', err: 'AuditPortInvariantError', severity: 'critical' },
+      {
+        tenantId: tenant.slug,
+        broadcastId: 'bc-1111',
+        resendAudienceId: 'aud-1111',
+        eventType: DELETED,
+        err: 'AuditPortInvariantError',
+        severity: 'critical',
+      },
     ]);
     expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_cleanup.delete_failed')).toEqual([]);
+  });
+
+  // Review round 2 (code-review #3) — the lost line carries the SQLSTATE (`errLogFields`), never the message.
+  it('a storage failure with a SQLSTATE logs it as `code` on the audience_audit_lost line', async () => {
+    const h = harness({ auditThrows: 'storage_sqlstate' });
+    await h.run();
+    expect(errorSpy.mock.calls.filter((c) => c[1] === 'broadcasts.audience_cleanup.audience_audit_lost').map((c) => c[0])).toEqual([
+      {
+        tenantId: tenant.slug,
+        broadcastId: 'bc-1111',
+        resendAudienceId: 'aud-1111',
+        eventType: DELETED,
+        err: 'Error',
+        code: '57014',
+        severity: 'critical',
+      },
+    ]);
+  });
+
+  // Review round 2 (code-review #1/#4, reliability LOW-1) — a lock wait past
+  // `lock_timeout` is not a known loss: another tx may be writing the row.
+  it('a lock timeout on the dedupe logs the WARN audience_audit_lock_timeout and counts it; no ERROR, the delete still runs', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
+    const h = harness({ dedupeThrows: 'lock_timeout' });
+    const result = await h.run();
+    expect(result.ok && result.value).toMatchObject({ deleted: 1, failed: 0 });
+    expect(h.gateway.deleteCalls).toEqual(['aud-1111']);
+    expect(h.rows).toEqual([]);
+    expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_cleanup.audience_audit_lock_timeout').map((c) => c[0])).toEqual([
+      { tenantId: tenant.slug, broadcastId: 'bc-1111', resendAudienceId: 'aud-1111', eventType: DELETED, err: 'Error', code: '55P03' },
+    ]);
+    expect(errorSpy.mock.calls.filter((c) => c[1] === 'broadcasts.audience_cleanup.audience_audit_lost')).toEqual([]);
+    expect(failed).toHaveBeenCalledWith(DELETED, tenant.slug);
   });
 });
