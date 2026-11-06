@@ -2705,6 +2705,20 @@ Two throwaway tenants were reached with `x-tenant`. Tenant A had 3 recipients on
 
 The old keys keep their names.
 
+### Slice 4 — re-Verify on the final code head: the maintainer's `/verify` (6 Nov 2026, on `6ef8da93c`, on :3401, flag absent, Neon dev, sink addresses only): PASS
+
+Run after review rounds 1–2, which changed the DR2 path (spec-compliance r2 M-1).
+
+| Done-when / item | Evidence |
+|---|---|
+| DR2 | Two cron ticks and the webhooks took the row to `sent`: <br>• tick 1 `import_submitted: 1`, row `approved` with its audience and import ids, lease cleared; <br>• tick 2 `succeeded: 1`, row `sending`; at Resend `queued` → `sent` with `segment_id`; <br>• the only audit row is `broadcast_send_started`, and no unverifiable row (the count read fine); <br>• three signed `email.delivered` webhooks → `sent`. <br>**Probe:** a tick on a tenant with no due rows answers `processed: 0`, and `tick_complete` carries `audienceCeiling: 900`. No tenant display-name read is logged, so no deps were built (CR#3). **Probe:** a wrong Bearer → 401 |
+| The evidence card | X (`resend_detach_wire: 'segments'`) and Y (no key) render in EN, TH and SV with no MISSING_MESSAGE: <br>• **X:** "Removed from Resend segments 2", "Not in the Resend segment 1", and the Segments note ("…It is a minimum… search the Resend dashboard for it."); <br>• **Y:** the older labels, and "Earlier record (older Resend detach method): each contact …". <br>**Probe:** at 320 × 727 (mobile-chrome, TH), `innerWidth 320`, `scrollWidth 320`, nothing overflows. **Probe:** at a 32 px font on 390 × 844, `innerWidth 390`, `scrollWidth 375`. **Probe:** in dark mode the new note and labels read 6.91:1 |
+| The unverifiable row | **Not driven live.** The sink offers no safe way to make `getAudienceContactCount` fail: a deleted segment takes the 404 path, and a bad key fails the whole tick. It is pinned instead by `tests/integration/broadcasts/unverifiable-count-audit.test.ts` (`89fcbb8d0`, `58321cf49`; live Neon, real repo and audit adapter, fake gateway), 2/2. A failed count followed by a send that went out writes exactly one row, naming the sent id, with `errorReason: 'server_5xx'` and no address. A failed count followed by a send that failed writes no row, and the row stays `approved` |
+
+**Teardown:**
+- Neon dev: tenant A's rows and the X and Y members are gone. Their audit rows are append-only.
+- Resend: the DR2 segment and the 3 sink contacts were deleted, contacts by id. `General` alone remains, and the account is back at 22 contacts.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
