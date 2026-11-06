@@ -295,13 +295,15 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     // Review round 1 (code-review #3) — emitOnce is the deleted row's only
     // writer: the adapter's other methods refuse the event before any write, so
     // a plain emit can never bypass the index's arbiter. emitMany gets a mixed
-    // batch, whose good row must not land either.
+    // batch, whose good row must not land either. Review round 2: the port's
+    // types exclude the event, so each input is cast past them (`as never`),
+    // which is what this runtime refusal stands behind.
     it('emit, emitTyped and emitMany refuse broadcast_audience_deleted before any write', async () => {
       const ids = { emit: randomUUID(), emitTyped: randomUUID(), emitMany: randomUUID(), emitManyTyped: randomUUID() };
       const disclosedId = randomUUID();
       const plain = (audienceId: string) => {
         const input = deletedInput(tenantA.ctx.slug, audienceId);
-        return { ...input, payload: { ...input.payload } };
+        return { ...input, payload: { ...input.payload } } as never;
       };
       const goodRow = {
         eventType: 'broadcast_audience_disclosed' as const,
@@ -320,10 +322,10 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
         );
       const errors = [
         await refused((tx) => f7AuditAdapter.emit(tx, plain(ids.emit))),
-        await refused((tx) => f7AuditAdapter.emitTyped(tx, deletedInput(tenantA.ctx.slug, ids.emitTyped))),
+        await refused((tx) => f7AuditAdapter.emitTyped(tx, deletedInput(tenantA.ctx.slug, ids.emitTyped) as never)),
         await refused((tx) => f7AuditAdapter.emitMany?.(tx, [{ ...goodRow, payload: { ...goodRow.payload } }, plain(ids.emitMany)])),
         await refused((tx) =>
-          f7AuditAdapter.emitManyTyped?.(tx, [deletedInput(tenantA.ctx.slug, ids.emitManyTyped)]),
+          f7AuditAdapter.emitManyTyped?.(tx, [deletedInput(tenantA.ctx.slug, ids.emitManyTyped) as never]),
         ),
       ];
       expect(errors.map((e) => e instanceof AuditPortInvariantError)).toEqual([true, true, true, true]);

@@ -891,7 +891,20 @@ export class AuditPortInvariantError extends Error {
   }
 }
 
+/**
+ * Spec 142 (review round 2, code-review #2) — the events the shared
+ * `AuditPort` writes: every F7 event but `broadcast_audience_deleted`, whose
+ * only writer is `AudienceDeletedAuditPort.emitOnce` (its `ON CONFLICT` is the
+ * dedupe). The adapter's runtime refusal stays behind this, for a cast.
+ */
+export type F7EmitEventType = Exclude<F7AuditEventType, 'broadcast_audience_deleted'>;
+
+/** The typed half of {@link F7EmitEventType}: the `emitTyped` / `emitManyTyped` events. */
+export type F7EmitTypedEventType = Exclude<keyof F7AuditPayloadShapes, 'broadcast_audience_deleted'>;
+
 export interface AuditEmitInput extends F7AuditEvent {
+  /** Spec 142 (review round 2) — never `broadcast_audience_deleted`; see {@link F7EmitEventType}. */
+  readonly eventType: F7EmitEventType;
   /**
    * Tenant slug. `null` is permitted ONLY for pre-tenant audit paths
    * where the route has not (or cannot) bind a tenant context — e.g.
@@ -950,8 +963,11 @@ export interface AuditPort {
    * through `emit`; only events with a declared `F7AuditPayloadShapes`
    * entry are eligible for `emitTyped`. Adding a new event to the
    * typed map immediately makes it available to `emitTyped`.
+   *
+   * Spec 142 (review round 2) — `E` excludes `broadcast_audience_deleted`
+   * ({@link F7EmitTypedEventType}); `AudienceDeletedAuditPort.emitOnce` writes it.
    */
-  emitTyped<E extends keyof F7AuditPayloadShapes>(
+  emitTyped<E extends F7EmitTypedEventType>(
     tx: unknown,
     event: TypedAuditEmitInput<E>,
   ): Promise<void>;
@@ -982,7 +998,7 @@ export interface AuditPort {
    * statement, all-or-nothing with the caller's tx, rows in order, an empty
    * array is a no-op.
    */
-  emitManyTyped?<E extends keyof F7AuditPayloadShapes>(
+  emitManyTyped?<E extends F7EmitTypedEventType>(
     tx: unknown,
     events: readonly TypedAuditEmitInput<E>[],
   ): Promise<void>;

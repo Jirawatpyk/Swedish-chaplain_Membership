@@ -29,7 +29,7 @@ import {
   type AuditEmitInput,
   type AuditPort,
   type F7AuditEventType,
-  type F7AuditPayloadShapes,
+  type F7EmitTypedEventType,
   type TypedAuditEmitInput,
 } from '../application/ports/audit-port';
 import { db, type TenantTx } from '@/lib/db';
@@ -75,7 +75,7 @@ export const f7AuditAdapter: F7AuditAdapter = {
    * 2 production call sites use `deps.audit.emitTyped(tx, event)`
    * which preserves the receiver binding; no destructuring exists.
    */
-  async emitTyped<E extends keyof F7AuditPayloadShapes>(
+  async emitTyped<E extends F7EmitTypedEventType>(
     txUnknown: unknown,
     event: TypedAuditEmitInput<E>,
   ): Promise<void> {
@@ -100,7 +100,7 @@ export const f7AuditAdapter: F7AuditAdapter = {
    * `emit`: the payload is constrained at the call site, the INSERT is the
    * same one statement.
    */
-  async emitManyTyped<E extends keyof F7AuditPayloadShapes>(
+  async emitManyTyped<E extends F7EmitTypedEventType>(
     txUnknown: unknown,
     events: readonly TypedAuditEmitInput<E>[],
   ): Promise<void> {
@@ -182,9 +182,11 @@ function auditRowValues(event: AuditRowFields, eventTypeSql: SQL): SQL {
  * written only through `emitOnce`, whose `ON CONFLICT` is the dedupe. A plain
  * INSERT of it bypasses that dedupe: a second row meets the index as a 23505,
  * which the row helper logs as a lost row. So every other method refuses it
- * before any write; `emitTyped` reaches this through `emit`.
+ * before any write; `emitTyped` reaches this through `emit`. The port's types
+ * exclude the event (review round 2); this catches a cast past them, so it
+ * takes the event type as a plain string.
  */
-function refuseAudienceDeletedRow(eventType: AuditEmitInput['eventType']): void {
+function refuseAudienceDeletedRow(eventType: string): void {
   if (eventType === 'broadcast_audience_deleted') {
     throw new AuditPortInvariantError(eventType, 'written only through emitOnce (migration 0328).');
   }
