@@ -2719,6 +2719,24 @@ Run after review rounds 1–2, which changed the DR2 path (spec-compliance r2 M-
 - Neon dev: tenant A's rows and the X and Y members are gone. Their audit rows are append-only.
 - Resend: the DR2 segment and the 3 sink contacts were deleted, contacts by id. `General` alone remains, and the account is back at 22 contacts.
 
+### Slice 4 — review round 3, targeted (`/code-review high c06052fdd^..d865e039e`: 10; security APPROVE, signed: 2 LOW; pdpa APPROVE WITH CONDITIONS: 1 MEDIUM, 4 LOW; reliability MERGEABLE: 1 MEDIUM, 5 LOW; i18n fix-then-ship: 3 copy fixes; 6 Nov 2026)
+
+| Finding | Disposition |
+|---|---|
+| code-review r3 #1–#4, reliability L1/L4/L5, security L2: the round 2 post-send unverifiable row had four defects. A function kill after `/send` lost it for good, because the failure lived only in a local. The 409/422-accepted arm recorded a send this tick did not make. Two overlapping ticks could write two rows. A throw from `advanceToSending` skipped it | **Fixed by reversing round 2's placement**, the advisor's call (a durable Art. 30 record outweighs a noisy one). The row is written BEFORE `/send` and after the pre-send lease check, in its own tenant tx, deduped per broadcast by a tenant-fenced `EXISTS` on `audit_log` (new port read `hasUnverifiableCountAuditInTx`). The wording is per attempt ("the membership check could not be read on a dispatch attempt"). An `AuditPortInvariantError` rethrows before anything is sent. A storage failure logs and the send continues. There is no post-send writer. Commits: RED `fa45c1362`, fix `cce29ab1b`, stubs `6d9164024`. **Measured on dev (6 Nov 2026):** the `EXISTS` read uses `audit_log_tenant_event_ts_idx`, 1.3 ms over 908,730 rows. It runs only on a failed count, at most once per tick, and is in the `_dispatch-lease.ts` budget comment |
+| code-review r3 #9: the metric and the row no longer reconcile | **Documented.** The metric counts attempts and the row counts broadcasts (`observability.md`) |
+| reliability M: `unverifiable-count-audit` was flaky about 2% of runs (`'503'` inside random UUID hex) | **Fixed.** It asserts the exact provider string is absent (same commits). The file is 3/3 green, including a two-tick case that yields one row |
+| code-review r3 #5/#6, reliability L3: a non-UUID `deleteAudience` settled silently, including a decorated real id | **Fixed** (`b109ed946`, `9d546e54c`). Only an id with no UUID in it resolves as gone; one that contains a UUID is refused, loudly, as before. `createAudience` checks the id Resend returned. The pattern docblock is exact |
+| code-review r3 #7, security L1: the DR4 gate missed the wrapper consumers, `delete<T>(`, `['delete'](` and `?.['remove']` | **Fixed** (`f8fb8dbed`, `291ab2e6e`). `contacts.remove` is scanned over all of src; raw paths are scanned over every importer of `resend`, the broadcasts client or the base URL; the verb regex is widened. The aliased object and `new URL(...)` are named out of reach, and the docblock no longer overclaims the runtime guard |
+| pdpa M-1: the card note left out pre-November sends as a wrong-case source | **Fixed, copy (a)** (`173db30c6`): "…or the member was on an E-Blast sent before 5 Nov 2026…", in all three locales. It holds whatever the prod count says |
+| pdpa L-2: the older note body stated an unmeasured fact | **Fixed.** "Resend accepted a detach request for an address that was no longer in the audience" |
+| i18n r3 / pdpa L-3 / L-4 / code-review r3 #8: Thai and Swedish wording | **Fixed** (`173db30c6`): TH "รายการที่ Resend ถอดออกจากกลุ่มแล้ว", "ไม่อยู่ในกลุ่มของ Resend", "จะไม่ถูกถอดออก", "แดชบอร์ดของ Resend", "บันทึกก่อนหน้า"; SV "instrumentpanel"; the stale code comment |
+| reliability L2: an all-attempts-ambiguous send left no row | **Closed by the pre-send placement.** The row exists before any send attempt |
+
+**Round 3 card failing runs** (D-023; the round 3 copy against the round 2 copy):
+- `… shows the Segments counts note …` → `Unable to find … /stored in another letter case is not removed/i`
+- `… shows the note for older records, marked as such` → `Unable to find … /accepted a detach request for an address that was no longer in the audience/`
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
