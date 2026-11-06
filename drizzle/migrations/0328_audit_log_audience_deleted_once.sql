@@ -56,11 +56,28 @@ BEGIN
   END IF;
 END $$;--> statement-breakpoint
 
--- No IF NOT EXISTS: an index of another definition under this name must fail
--- the migration, not pass it with a NOTICE (review round 1, code-review #8).
-CREATE UNIQUE INDEX "audit_log_audience_deleted_once"
+-- IF NOT EXISTS keeps a re-run a no-op (the new-migration skill's rule). An
+-- index of another definition under this name would pass it with a NOTICE, so
+-- the block after it fails the migration unless the index under the name is
+-- this one (review round 2, code-review #1 and #3).
+CREATE UNIQUE INDEX IF NOT EXISTS "audit_log_audience_deleted_once"
   ON "audit_log" ("tenant_id", ("payload"->>'resend_audience_id'))
   WHERE "event_type" = 'broadcast_audience_deleted';--> statement-breakpoint
+
+-- `expected` is the text `pg_get_indexdef` (and so `pg_indexes.indexdef`)
+-- prints for the CREATE above, taken from the dev branch after the apply. The
+-- comparison is exact: a missing index (NULL) or any other definition raises.
+DO $$
+DECLARE
+  expected constant text := 'CREATE UNIQUE INDEX audit_log_audience_deleted_once ON public.audit_log USING btree (tenant_id, ((payload ->> ''resend_audience_id''::text))) WHERE (event_type = ''broadcast_audience_deleted''::audit_event_type)';
+  actual text;
+BEGIN
+  SELECT indexdef INTO actual FROM pg_indexes
+   WHERE schemaname = 'public' AND indexname = 'audit_log_audience_deleted_once';
+  IF actual IS DISTINCT FROM expected THEN
+    RAISE EXCEPTION '0328: index audit_log_audience_deleted_once has another definition: %', coalesce(actual, '(none)');
+  END IF;
+END $$;--> statement-breakpoint
 
 -- Hand the default back (see the lock_timeout block above).
 SET LOCAL lock_timeout = DEFAULT;
