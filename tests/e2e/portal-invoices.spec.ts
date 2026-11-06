@@ -22,6 +22,7 @@
 import { expect, test } from './fixtures';
 import { signInViaForm, waitForLayoutContainer } from './helpers/layout';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { seedNoInvoiceMember } from './helpers/no-invoice-member-seed';
 
 // Reset Upstash auth-rate-limit between tests — keeps member sign-in
 // preconditions clean when many tests stack across browsers.
@@ -38,24 +39,12 @@ const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 // un-seeded local dev boxes while still asserting the full US3 AS
 // contracts on CI / staging where fixtures are present.
 //
-// AS3 (zero-invoice member) requires a DIFFERENT sign-in than AS1 /
-// AS4 because the same member cannot simultaneously have 3 invoices
-// and 0 invoices — so we gate AS3 on a separate credential pair.
+// AS3 (zero-invoice member) signs in as a member minted for the run
+// (`seedNoInvoiceMember`): the shared good-standing persona gains invoices
+// from other specs and manual checks, and an issued invoice cannot be removed.
 const EXPECTS_ROWS =
   process.env.E2E_MEMBER_HAS_INVOICES === '1' ||
   process.env.E2E_MEMBER_HAS_INVOICES === 'true';
-const EXPECTS_EMPTY =
-  process.env.E2E_MEMBER_EMPTY === '1' ||
-  process.env.E2E_MEMBER_EMPTY === 'true';
-
-// AS3-only credentials (zero-invoice member seeded by
-// `seed-e2e-portal-invoices.ts`). Falls back to the main member
-// creds if unset so the gate degrades gracefully — but AS3 will then
-// skip because the main member has 3 invoices, not 0.
-const MEMBER_EMAIL_EMPTY =
-  process.env.E2E_MEMBER_EMAIL_EMPTY ?? MEMBER_EMAIL;
-const MEMBER_PASSWORD_EMPTY =
-  process.env.E2E_MEMBER_PASSWORD_EMPTY ?? MEMBER_PASSWORD;
 
 test.describe('F4 portal /portal/invoices smoke (N9) @f4 @critical', () => {
   test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
@@ -209,39 +198,35 @@ test.describe('F4 portal /portal/invoices smoke (N9) @f4 @critical', () => {
     expect(await downloadButtons.count()).toBeGreaterThan(0);
   });
 
-  // US3 AS3 — dedicated empty-state copy assertion. Gated on
-  // `E2E_MEMBER_EMPTY=1` with a SEPARATE sign-in
-  // (`E2E_MEMBER_EMAIL_EMPTY` / `E2E_MEMBER_PASSWORD_EMPTY`) because
-  // the same member cannot simultaneously have 3 invoices (AS1 +
-  // AS4) and 0 invoices (AS3). Asserts the specific empty-state
-  // string, not a broad OR over "empty | not-linked | h1".
+  // US3 AS3 — dedicated empty-state copy assertion, for a member that owns no
+  // invoices. The member is made for this test and removed after it, so no
+  // other spec can bill it first. Asserts the specific empty-state string,
+  // not a broad OR over "empty | not-linked | h1".
   test('AS3 — empty-state copy shown for member with zero invoices', async ({
     page,
   }) => {
-    test.skip(
-      !EXPECTS_EMPTY,
-      'E2E_MEMBER_EMPTY not set — empty-state assertion skipped',
-    );
-    test.skip(
-      !MEMBER_EMAIL_EMPTY || !MEMBER_PASSWORD_EMPTY,
-      'E2E_MEMBER_EMAIL_EMPTY/PASSWORD_EMPTY not set',
-    );
-    await signInViaForm(
-      page,
-      '/portal/sign-in',
-      MEMBER_EMAIL_EMPTY!,
-      MEMBER_PASSWORD_EMPTY!,
-      /^\/portal(\/|$)/,
-    );
-    await page.goto('/portal/invoices');
-    await waitForLayoutContainer(page);
+    const member = await seedNoInvoiceMember();
+    test.skip(!member, 'DATABASE_URL not set — cannot mint the invoice-free member');
+    try {
+      await signInViaForm(
+        page,
+        '/portal/sign-in',
+        member!.email,
+        member!.password,
+        /^\/portal(\/|$)/,
+      );
+      await page.goto('/portal/invoices');
+      await waitForLayoutContainer(page);
 
-    const empty = page.getByText(
-      /no invoices yet|ยังไม่มีใบแจ้งหนี้|inga fakturor ännu/i,
-    );
-    await expect(empty).toBeVisible();
-    // Must NOT render the data table when empty.
-    expect(await page.getByRole('row').count()).toBe(0);
+      const empty = page.getByText(
+        /no invoices yet|ยังไม่มีใบแจ้งหนี้|inga fakturor ännu/i,
+      );
+      await expect(empty).toBeVisible();
+      // Must NOT render the data table when empty.
+      expect(await page.getByRole('row').count()).toBe(0);
+    } finally {
+      await member!.cleanup();
+    }
   });
 
   // US7 AS4 — summary card "view all" link asserted when rows

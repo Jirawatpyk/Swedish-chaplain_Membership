@@ -574,7 +574,9 @@ async function main(): Promise<void> {
     'E2E',
     'Echo',
   );
-  // No invoices for Echo — AS3 empty-state surface.
+  // No invoices for Echo by design. portal-invoices AS3 no longer relies on it:
+  // other specs sign in as this good-standing persona and can bill it, so AS3
+  // mints its own invoice-free member (tests/e2e/helpers/no-invoice-member-seed.ts).
 
   // ── Stream C: e2e-member-payable is in good standing AND holds one open bill ─
   //
