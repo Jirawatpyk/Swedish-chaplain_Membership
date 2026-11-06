@@ -15,13 +15,16 @@
  * Project memory: `mock-only-tests-miss-throw-paths` — the per-item try/catch
  * + this throw-path test are MANDATORY (brief §Step 1).
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { cleanupOrphanedAudiences } from '@/modules/broadcasts/application/use-cases/cleanup-orphaned-audiences';
 import { asTenantContext } from '@/modules/tenants';
 import type { BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
+import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
+import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -381,5 +384,107 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
       // Spec 140 s2c — the error CLASS, never the driver's message (review round 1: named errClass).
       expect(result.error.errClass).toBe('Error');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 139 s2 (DA2) — the terminal_cleanup row
+// ---------------------------------------------------------------------------
+
+describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted before each delete', () => {
+  const DELETED = 'broadcast_audience_deleted';
+  const candidate = { broadcastId: 'bc-1111', resendAudienceId: 'aud-1111', requestedByMemberId: 'm-requester' };
+
+  function harness(opts: { readonly alreadyDeleted?: boolean; readonly auditThrows?: 'storage' | 'invariant' } = {}) {
+    const events: string[] = [];
+    const rows: Array<{ eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }> = [];
+    const repo = makeRepo({ candidates: [candidate] as never });
+    repo.port.hasAudienceDeletedAuditInTx = async (_tx, _t, audienceId) => {
+      events.push(`dedupe:${audienceId}`);
+      return opts.alreadyDeleted === true;
+    };
+    const gateway = makeGateway({});
+    const del = gateway.port.deleteAudience.bind(gateway.port);
+    gateway.port.deleteAudience = async (id) => {
+      events.push(`gw:deleteAudience:${id}`);
+      return del(id);
+    };
+    const audit = {
+      async emit(_tx: unknown, e: { eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }) {
+        if (opts.auditThrows === 'invariant') throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
+        if (opts.auditThrows === 'storage') throw new Error('53300 too many connections');
+        events.push(`audit:${e.eventType}`);
+        rows.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, requestId: e.requestId, payload: e.payload });
+      },
+      async emitTyped(): Promise<never> {
+        throw new Error('emitTyped is not used here');
+      },
+    };
+    const run = () =>
+      cleanupOrphanedAudiences(
+        { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, ...NO_DRAIN_DEPS, audit } as never,
+        { graceMs: GRACE_MS, limit: 50 },
+      );
+    return { run, events, rows, repo, gateway };
+  }
+
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('a terminal row past the grace: the deleted row (terminal_cleanup, the requester), then the delete', async () => {
+    const counted = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
+    const h = harness();
+    const result = await h.run();
+    expect(result.ok && result.value.deleted).toBe(1);
+    expect(h.events).toEqual(['dedupe:aud-1111', `audit:${DELETED}`, 'gw:deleteAudience:aud-1111']);
+    expect(h.rows).toEqual([
+      {
+        eventType: DELETED,
+        tenantId: tenant.slug,
+        actorUserId: 'system:cron',
+        requestId: null,
+        payload: {
+          broadcast_id: 'bc-1111',
+          related_member_id: 'm-requester',
+          resend_audience_id: 'aud-1111',
+          reason: 'terminal_cleanup',
+          leg: 'import',
+          actor_role: 'system',
+        },
+      },
+    ]);
+    expect(counted).toHaveBeenCalledWith(tenant.slug, DELETED);
+  });
+
+  it('a segment that already has its deleted row (a restart wrote it) gets no second one; the delete still runs', async () => {
+    const h = harness({ alreadyDeleted: true });
+    await h.run();
+    expect(h.rows).toEqual([]);
+    expect(h.events).toEqual(['dedupe:aud-1111', 'gw:deleteAudience:aud-1111']);
+  });
+
+  it('a storage failure of the row logs ERROR and counts it, and the delete still runs', async () => {
+    const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
+    const h = harness({ auditThrows: 'storage' });
+    const result = await h.run();
+    expect(result.ok && result.value.deleted).toBe(1);
+    expect(h.gateway.deleteCalls).toEqual(['aud-1111']);
+    const lines = errorSpy.mock.calls.filter((c) => c[1] === 'broadcasts.audience_cleanup.audience_audit_lost');
+    expect(lines.map((c) => c[0])).toEqual([
+      expect.objectContaining({ eventType: DELETED, broadcastId: 'bc-1111', resendAudienceId: 'aud-1111', err: 'Error', severity: 'critical' }),
+    ]);
+    expect(failed).toHaveBeenCalledWith(DELETED, tenant.slug);
+  });
+
+  it('an adapter invariant error stops that delete (fail closed): counted failed, no Resend call', async () => {
+    const h = harness({ auditThrows: 'invariant' });
+    const result = await h.run();
+    expect(result.ok && result.value).toMatchObject({ deleted: 0, failed: 1 });
+    expect(h.gateway.deleteCalls).toEqual([]);
+    expect(h.repo.markCalls).toEqual([]);
   });
 });
