@@ -63,9 +63,7 @@ export interface AudienceAuditDeps {
  * A delete site's ports: the deleted row's one writer, `emitOnce` (spec 142;
  * the index is the dedupe, so restart and cleanup read nothing first).
  */
-export interface AudienceDeleteAuditDeps {
-  readonly tenant: TenantContext;
-  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx'>;
+export interface AudienceDeleteAuditDeps extends Omit<AudienceAuditDeps, 'audit'> {
   readonly audit: Pick<AuditPort, 'emitOnce'>;
 }
 
