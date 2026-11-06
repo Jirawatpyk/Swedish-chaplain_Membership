@@ -73,7 +73,12 @@ function menuItems(row: MemberInvoiceRow, labels: MemberInvoicesTableLabels, can
   return items;
 }
 
-/** Table width (px) from which Status is its own column; matches the stacked pill's `@min-[760px]:hidden`. */
+/**
+ * Table width (px) from which Status is its own column. The stacked pill
+ * hides from a 712px WRAPPER: `bleed` makes the table 2 × 24px (the card's
+ * padding) wider than its wrapper, so 712 + 48 = 760 and exactly one of the
+ * two shows (checked at 1280 and 1440).
+ */
 const STATUS_COLUMN_FROM = 760;
 
 export function MemberInvoicesTable({
@@ -92,9 +97,9 @@ export function MemberInvoicesTable({
     // STATUS_COLUMN_FROM px wide (AURA `hideBelow` reads the table's width).
     // Narrower — the 655px main column at 1280 — the column drops and the pill
     // shows under the number instead, so every other column still fits
-    // (PR P). The stacked pill follows the wrapper's width (`@container`),
-    // which is never wider than the table, so at worst both show for a few
-    // pixels and the status is never missing. The phone card keeps its own
+    // (PR P). The stacked pill follows the wrapper's width (a named
+    // `@container`), offset by the bleed (see STATUS_COLUMN_FROM), so exactly
+    // one of the two shows. The phone card keeps its own
     // title and pill slots.
     {
       key: 'number',
@@ -103,7 +108,7 @@ export function MemberInvoicesTable({
       render: (row) => (
         <span className="flex flex-col items-start gap-1">
           <span className="font-mono">{row.number}</span>
-          <span data-stacked-status="" className="@min-[760px]:hidden">
+          <span data-stacked-status="" className="@min-[712px]/invoices:hidden">
             <StatusPill tone={invoiceStatusTone(row.status)}>{row.statusLabel}</StatusPill>
           </span>
         </span>
@@ -112,6 +117,9 @@ export function MemberInvoicesTable({
     {
       key: 'status',
       label: labels.status,
+      // Fixed, so only Number flexes: the six columns need ~716px and fit a
+      // 760px table without scrolling (unfixed, Status took the flexible 160).
+      width: 120,
       hideBelow: STATUS_COLUMN_FROM,
       card: 'pill',
       render: (row) => <StatusPill tone={invoiceStatusTone(row.status)}>{row.statusLabel}</StatusPill>,
@@ -164,9 +172,12 @@ export function MemberInvoicesTable({
   ], [labels, canMutate]);
 
   return (
-    // The query container for the stacked status pill. No padding, frame or
-    // clipping, so the table still bleeds to the card's edges.
-    <div className="@container">
+    // The query container for the stacked status pill, NAMED: AURA's table
+    // nests its own inline-size containers (its hideBelow / stackBelow
+    // queries, thousands of px wide), so an unnamed query would read those.
+    // No padding, frame or clipping, so the table still bleeds to the card's
+    // edges.
+    <div className="@container/invoices">
       <DataTable<MemberInvoiceRow>
         label={labels.caption}
         rows={rows as MemberInvoiceRow[]}

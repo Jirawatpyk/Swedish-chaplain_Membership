@@ -110,8 +110,9 @@ describe('MemberInvoicesTable (T556)', () => {
     expect(cells[1]).toHaveTextContent(issued.statusLabel);
     // The stacked pill under the number is the narrow-table fallback only.
     const stacked = within(cells[0]!).getByText(issued.statusLabel).closest('[data-stacked-status]');
-    expect(stacked).toHaveClass('@min-[760px]:hidden');
-    expect(grid.closest('.\\@container')).not.toBeNull();
+    // Named container: AURA nests its own (very wide) query containers.
+    expect(stacked).toHaveClass('@min-[712px]/invoices:hidden');
+    expect(grid.closest('.\\@container\\/invoices')).not.toBeNull();
     expect(grid).toHaveTextContent('SC-2026-000123');
     expect(grid).toHaveTextContent('38,520.00 THB');
     // The board prints "Not paid yet" in the Paid column (G-U7P: words, not a dash).
