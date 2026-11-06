@@ -10,6 +10,8 @@
  *   saying why (the tooltip before) — never a dead link.
  * - The figures are the server's: the table prints what it is given.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemberInvoicesTable, type MemberInvoiceRow } from '@/app/(staff)/admin/members/[memberId]/_components/member-invoices-table';
@@ -183,6 +185,15 @@ describe('MemberInvoicesTable (T556)', () => {
       .filter((h) => h.getAttribute('data-grid') !== 'off')
       .map((h) => Number(h.getAttribute('aria-colindex')));
     expect(visible).toEqual(visible.map((_, i) => i + 1));
+  });
+
+  it('on a phone the rows are a divided list inside the Invoices card, not framed cards of their own', () => {
+    render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
+    const wrapper = screen.getByRole('grid').closest<HTMLElement>('.\\@container\\/invoices')!;
+    // The divided-list rule lives in globals.css on this class (AURA #204).
+    expect(wrapper).toHaveClass('member-invoices-list');
+    const css = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8');
+    expect(css).toMatch(/@container invoices \(width < 592px\)\s*\{\s*\.member-invoices-list \.aura-table__row \{[^}]*border-width: 0 0 1px;[^}]*border-radius: 0;/);
   });
 
   it('the phone card still takes the number as its title and the status as its pill', () => {

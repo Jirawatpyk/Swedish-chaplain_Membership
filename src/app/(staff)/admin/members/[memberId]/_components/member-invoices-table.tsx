@@ -177,7 +177,10 @@ export function MemberInvoicesTable({
     // queries, thousands of px wide), so an unnamed query would read those.
     // No padding, frame or clipping, so the table still bleeds to the card's
     // edges.
-    <div className="@container/invoices">
+    // `member-invoices-list`: on a phone the stacked rows are one list
+    // divided by rules inside the framed Invoices card (globals.css,
+    // stand-in until AURA #204).
+    <div className="@container/invoices member-invoices-list">
       <DataTable<MemberInvoiceRow>
         label={labels.caption}
         rows={rows as MemberInvoiceRow[]}
