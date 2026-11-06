@@ -822,9 +822,9 @@ export interface BroadcastsRepo {
    * lockless read, used by `reclaim-orphaned-audiences` only, for a segment
    * with no disclosure, so one already recorded as deleted is skipped, not
    * reported unattributed. The dedupe itself is migration 0328's index,
-   * through `AudienceDeletedAuditPort.emitOnce`; the first `reason` wins (an accepted consequence: a `hold` row whose lease gate
-   * then stopped the delete keeps `reason: 'hold'` after cleanup really
-   * deletes the segment).
+   * through `AudienceDeletedAuditPort.emitOnce`; the first `reason` wins (an
+   * accepted consequence: a `hold` row whose lease gate then stopped the
+   * delete keeps `reason: 'hold'` after cleanup really deletes the segment).
    *
    * Tenant-scoped by RLS AND an explicit `tenant_id` predicate (`audit_log`'s
    * policy also admits `tenant_id IS NULL` rows); a tx bound to another tenant

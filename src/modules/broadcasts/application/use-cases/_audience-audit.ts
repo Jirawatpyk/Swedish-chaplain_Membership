@@ -5,9 +5,9 @@
  * `broadcast_audience_disclosed` records a recipient list handed to Resend
  * (tick 1, before `createContactImport`); `broadcast_audience_deleted` records
  * the delete of a segment that may hold recipients, once per (tenant,
- * segment). Spec 142: that row is written only through `AudienceDeletedAuditPort.emitOnce`,
- * whose `ON CONFLICT DO NOTHING` against migration 0328's partial unique index
- * is the dedupe (the first `reason` wins); `emitOnce` answering false is a
+ * segment). Spec 142: that row is written only through
+ * `AudienceDeletedAuditPort.emitOnce`, whose `ON CONFLICT DO NOTHING` against
+ * migration 0328's partial unique index is the dedupe (the first `reason` wins); `emitOnce` answering false is a
  * skip. Every deleted row is built by `audienceDeletedInput`. The orphan
  * reclaim writes its deleted row only when this tenant's disclosed row names
  * the segment, copying that row's broadcast and requester (pdpa M-3: never
