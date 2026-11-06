@@ -420,6 +420,41 @@ No new cascade decision cell: M-NEW-1 is a pre-Resend guard; the pause adds a wa
 - integration by path, each exit 0: erasure-vs-dispatch-begun 3, already-sent-evidence 6, eblast-send-time-standing 21, member-erasure-cascade 4, scrub-content-for-member 24, dispatch-persist-before-send 2, audience-import-two-tick 4, eblast-approved-exit-vs-dispatch 7, members/erase-member-cascade-real 2, members/reconcile-erasures 2.
 - **Not run locally:** the full `pnpm test:coverage` (CI runs it); no live Verify of round 2 (the pause, the locked re-read and P4 are pinned by unit and integration tests; `canceled` by the gateway unit tests and the coordinator's live measurement).
 
+### Slice 2 (6 Nov 2026)
+
+**Build** (one `software-engineer` builder for rows 1–4; the main session wrote rows 0 and 5 and the `/simplify` refactor). RED → GREEN per state-table row. Every RED failed on an assertion, and its failure line is in its `test(...)` commit message. `check:red-first` reports: 19 commits, every logic change has a RED before it.
+
+**Departures from the plan, accepted:**
+- The F7 tuple, its count assert and the typed payload move with each type's first emitter (69 → 70 → 71), not in DA4. This way the emission grep never sees a type that has no emit site.
+- In the two crons, an adapter invariant error lands in the per-item catch. That item makes no Resend call, is counted `failed`, and its error class is logged. An escape would vanish into `Promise.allSettled`. The tick rethrows, as planned.
+- The `verify-schema` canary has no positive control, because 0326 has none to copy.
+- `d5ce1bf30` is a live-Neon pin written after its GREEN. The repo's held-lock case is the RED for that dedupe.
+
+**False premise found while building.** Two `eblast-send-time-standing` cases and three hold/self-heal cases in `build-audience-tick-failure-paths.test.ts` asserted "no audit row".
+- The failure-paths cases stayed green only because their harness lacked the dedupe stub: the call threw into the lost-record arm.
+- The stub is added now, and all five cases expect the one deleted row.
+
+**`/simplify`** (reuse, simplification, efficiency, altitude):
+- **Fixed** (`487f808a1`): two closure flags in `_audience-audit.ts` are replaced by the tx callback's return value.
+- **Skipped**, with reasons:
+  - Merging `writeAudienceRow` with s4's `recordUnverifiableCount`: that code is outside this diff.
+  - `safeAuditEmitTyped` for the disclosed row: it would change log names the RoPA cites.
+  - Folding the reclaim's two `audit_log` reads into one: a daily cron of at most 200 candidates, and the dedupe read has to take the lock.
+  - The repeated call-site comments: minor.
+
+**Gates on `487f808a1`:**
+- `pnpm check`: exit 0.
+- `pnpm vitest run tests/contract/`: 266 files, 3094 passed + 2 todo.
+- Unit, broadcasts + broadcast + enum guard + label coverage: 280 files, 3921/3921.
+- Integration by path, each exit 0: audience-audit-rows 10, audit/completeness 45, audience-cleanup 5, erasure-after-audience-cleanup 1, orphan-drain 1.
+- Builder runs on `bd8db347f`: audit-event-type-parity 1, halt-flag-precondition 7, eblast-send-time-standing 19.
+- Migration 0327 was applied to dev: `pg_enum` shows both values, and `db:verify` exits 0.
+- `check:audit-events` and `check:audit-counts` exit 0. Neither covers F7.
+- **Not run locally:** the full `pnpm test:coverage` (CI runs it).
+
+**Dev litter:** each run of `audience-audit-rows` leaves `audit_log` rows with the summary `spec 139 s2 fixture`, some with `tenant_id IS NULL` (`audit_log` is append-only).
+
+
 ## Rollout
 
 - **Slice 1 is live on merge for the legacy leg:** erasure now deletes and cancels a dispatch-begun draft.
