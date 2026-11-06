@@ -72,7 +72,7 @@ Spec: `specs/139-eblast-erasure-close/spec.md` · Size: L · Agreed by the user 
 - **M-1:** the orphan sweeps run on one Resend team shared by every tenant, so a deleted row's `tenant_id` comes from our broadcast row. A deletion that cannot be attributed writes no tenant row. It is logged and counted, never filed under a guessed tenant.
 - **M-2:** the label for `broadcast_audience_deleted` says the audience (segment) was removed, never that contacts were deleted. They survive (8a).
 - **L-2:** a failed audit write logs at error level and increments a counter with an alert rule, as `broadcast_send_started` does.
-- **Payload:** `broadcast_id` (nullable for orphans), `related_member_id`, the audience id, `recipient_count`, `leg`, the delete `reason` and `outcome`. No addresses and no hashes.
+- **Payload:** `broadcast_id` (nullable for orphans), `related_member_id`, the audience id, `recipient_count`, `leg`, the delete `reason` and `outcome`. No addresses and no hashes. *Superseded on 6 Nov 2026 (maintainer): no `outcome`, because the row is written before the call; see § Slice 2 plan.*
 - **Slice 1's RoPA edits** must not name the slice-2 rows as evidence before they exist.
 
 **Rejected alternatives** (Complexity Tracking, D-040):
@@ -81,7 +81,7 @@ Spec: `specs/139-eblast-erasure-close/spec.md` · Size: L · Agreed by the user 
 - **A re-check of erasure between persist and `/send`:** this narrows the window but cannot close it. Only Resend's own arbitration (DELETE answers 200 only on a draft; `/send` works only on a draft) closes it.
 - **Gate only, with 8b narrowed:** rejected by the maintainer.
 
-**Slice 2 adds two audit event types**, `broadcast_audience_disclosed` and `broadcast_audience_deleted`, with migration 0322, following the `add-audit-event` skill. They are emitted at the six sites listed in the spec, through `deps.audit.emit` inside each step's own `withTx`. A disclosure row is written after Resend returns the id. If that write fails, it is logged and counted, never rolled back, mirroring `broadcast_send_started` on the import leg.
+**Slice 2 adds two audit event types**, `broadcast_audience_disclosed` and `broadcast_audience_deleted`, with migration 0322, following the `add-audit-event` skill. They are emitted at the six sites listed in the spec, through `deps.audit.emit` inside each step's own `withTx`. A disclosure row is written after Resend returns the id. If that write fails, it is logged and counted, never rolled back, mirroring `broadcast_send_started` on the import leg. *Superseded on 6 Nov 2026: migration 0327, the four live sites, rows written before the call (maintainer decision); see § Slice 2 plan.*
 
 ## Files and modules
 
@@ -104,24 +104,24 @@ Rules: `.claude/rules/modules/broadcasts.md` (the measured Resend traps), `membe
   - `application/use-cases/erase-member.ts` (passes the mode)
 - **Cross-module port meaning changes**, so grep `tests/` for the symbols `cancelInFlightForMember`, `getMembersHaltedInTenant` and `MembersBridgePort`. This catches the fakes in other modules.
 
-**Slice 2**
-- `audit-port.ts` (tuple and assert)
-- `auth/infrastructure/db/schema.ts` (enum)
+**Slice 2** (amended 6 Nov 2026; the full list is in § Slice 2 plan)
+- `audit-port.ts` (tuple, payload map and the static assert)
+- `auth/infrastructure/db/schema.ts` (enum), `scripts/lib/enum-migration-guard.ts`, `scripts/verify-schema.ts`
 - i18n EN, TH and SV
 - the count tests
-- `dispatch-scheduled-broadcast.ts`, `build-audience-tick.ts`, `cleanup-orphaned-audiences.ts`, `reclaim-orphaned-audiences.ts`
+- `build-audience-tick.ts`, `cleanup-orphaned-audiences.ts`, `reclaim-orphaned-audiences.ts`, the broadcasts repo, `broadcasts-deps.ts`
 
 ## Data model and migration
 
 - **Slice 1:** n/a.
-- **Slice 2:** `0322`, two `ALTER TYPE audit_event_type ADD VALUE IF NOT EXISTS` statements inside `DO $$` guards. Unflagged on deploy; inert until a row is written. Rollback: enum values cannot be dropped, and they are harmless if unused.
+- **Slice 2:** `0327` (`0322` went to spec 140's dispatch lease), two `ALTER TYPE audit_event_type ADD VALUE` statements inside `DO $$` `IF NOT EXISTS` guards (the `0324` shape). Unflagged on deploy; inert until a row is written. Rollback: enum values cannot be dropped, and they are harmless if unused.
 
 ## Slices
 
 | # | Slice | Done-when lines it covers | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
 | 1 | Erasure close: gate + cascade | DE1–DE6 | security-engineer, pdpa-gdpr, reliability-guardian, senior-tester, spec-compliance-auditor | `139-eblast-erasure-close-s1` | #698 · done |
-| 2 | Art. 30 audit events | DA1–DA5 | pdpa-gdpr, drizzle-migration-reviewer, observability-instrumentor, spec-compliance-auditor | `139-eblast-erasure-close-s2` | — · open |
+| 2 | Art. 30 audit events | DA1–DA5 | pdpa-gdpr, drizzle-migration-reviewer, observability-instrumentor, i18n, spec-compliance-auditor | `139-eblast-erasure-close-s2` | — · in progress |
 
 ## State table (slice 1: the erasure cascade × a dispatch tick on one row)
 
@@ -169,6 +169,105 @@ Rules: `.claude/rules/modules/broadcasts.md` (the measured Resend traps), `membe
 | DA4 | `check:audit-events`, `check:audit-counts`, `db:verify` after `db:migrate` on dev | gate |
 
 e2e: none (cron and erasure server paths only; no UI).
+
+## Slice 2 plan (6 Nov 2026)
+
+**Branch and base.** Branch `139-eblast-erasure-close-s2`, worktree `wt/f139s2`, cut from `origin/main` `5fd3f6e26`. Slice 1 merged as #698. Spec 140 has since deleted the legacy leg (D-042), so this section replaces the slice-2 lines written on 30 Oct.
+
+**Premises (checked on `5fd3f6e26`, 6 Nov 2026):**
+- **Usage:**
+  - Prod holds 0 `broadcasts` rows and 1 `broadcast_send_started` row (7 Jul 2026). Source: a read-only count at 04:14 UTC on 6 Nov 2026 (the D-042 table). No existing row needs a backfill.
+  - At merge, the maintainer orders a read-only prod count of `broadcast_orphaned_resend_ids WHERE resource_type = 'audience'` (pdpa L-2).
+- **The one disclosure site** is `build-audience-tick.ts` `submitImport`:
+  - the order is `createAudience`, then the lease-fenced `attachAudienceId`, then the `IMPORT_HEADROOM_MS` lease gate and `createContactImport`;
+  - the recipient count (`resolved.value.recipients.length`) is known before the call.
+- **The delete sites:**
+  - `restartAudienceBuild` (`why`: `hold` / `stale_audience` / `audience_missing`). Every caller holds the broadcast.
+  - `cleanup-orphaned-audiences` `handleOne`, for terminal rows past the grace. The grace reads `updated_at`.
+  - `reclaim-orphaned-audiences` `handleOne`, over a team-wide listing matched on the name `broadcast-<slug>-<uuid>`.
+  - `reclaimUnattachedAudience` and `_settle-orphan-at-resend.ts`, both exempt (spec DA2).
+- **The exemption rests on the code.**
+  - `reclaimUnattachedAudience` is the only writer of an audience orphan (`resourceType: 'audience'`). Every other `recordOrphan` call writes `broadcast`, `_persist-minted-broadcast-id.ts` included.
+  - It runs only inside the `createAudience` block, before the import.
+  - The provider half, "a new segment is empty on create", is NOT MEASURED. `/verify` lists the fresh segment's contacts before the import (expect 0), and the result goes into `research.md`.
+- **Patterns copied:**
+  - The pre-send unverifiable row (spec 140 s4): its own tenant tx; `isAdapterInvariantError` rethrows; any other failure logs ERROR and calls `broadcastsMetrics.auditEmitFailed`.
+  - `hasUnverifiableCountAuditInTx`: `assertTenantBoundTx`, then a `pg_advisory_xact_lock`, then a tenant-fenced `EXISTS`.
+
+**Design.** The maintainer decided on 6 Nov 2026 that rows are written before the call.
+
+- **`broadcast_audience_disclosed`**
+  - It is written after `attachAudienceId` and before the existing `IMPORT_HEADROOM_MS` gate. That gate stays the last read before the POST, so no second gate is needed and the import keeps its headroom (architect HIGH).
+  - It needs no dedupe. A row that already holds an audience goes to restart (`stale_audience`), so one segment id never reaches the import twice.
+  - If a tick is killed between the row and the POST, the next tick deletes that segment and replaces it, and the replacement gets a new disclosure row.
+- **`broadcast_audience_deleted`**
+  - It is deduped on `resend_audience_id`, under the advisory lock `broadcasts-audience-audit:<tenant>:<audienceId>`. The first `reason` wins. Accepted consequence: a `hold` row whose gate then stopped the delete keeps `reason: 'hold'`, even after cleanup really deletes the segment.
+  - **Restart:** it is written before `leaseGateStep('delete_audience')`, which becomes its re-gate.
+  - **Cleanup:** it is written before `deleteAudience`, with the row's `requestedByMemberId`. `listTerminalBroadcastsWithLiveAudience` is widened to return that column, which is NOT NULL.
+  - **Reclaim (pdpa M-3):** it is written before `deleteAudience`, but only when `findAudienceDisclosureInTx` finds this tenant's disclosed row for the segment, and it copies that row's `related_member_id`. With no such row, nothing is written. Instead:
+    - a warn `broadcasts.audience_reclaim.delete_unattributed`, with the log key `deleteReason` (`reason` is redacted);
+    - the counter `broadcasts_audience_reclaim_delete_unattributed_total{tenant}`, where the tenant is the one the cron runs for.
+- **Repo methods:** `hasAudienceDeletedAuditInTx(tx, tenant, audienceId)` and `findAudienceDisclosureInTx(tx, tenant, audienceId)`.
+  - Both keep `assertTenantBoundTx` and `WHERE tenant_id = $tenant`. The predicate is load-bearing: the RLS policy also shows rows with `tenant_id IS NULL`.
+  - The payload key names are consts that the emit and the SQL share.
+- **Payload:** snake_case, because `related_member_id` is the key the Art. 15 export reads.
+  - Keys: `broadcast_id`, `related_member_id`, `resend_audience_id`, `recipient_count` (disclosed only), `leg: 'import'`, `reason` (deleted only), `actor_role: 'system'`.
+  - The actor is `system:cron`. Retention is 5 years. No address and no hash.
+- **Failure:**
+  - A storage failure logs ERROR (`err: errKind(e)`) and calls `auditEmitFailed`, and the call proceeds.
+  - An adapter invariant error rethrows before the call.
+  - No alert backend is wired, so the ERROR log and the counter are the control (pdpa M-2).
+- **Labels (pdpa M-1, M-2):** EN "Recipient list disclosure to Resend requested" and "Resend segment removal requested", never "contacts deleted". TH and SV go to the i18n review.
+- **Out of scope:** the E-Blast page's audit-timeline allowlist (`audit-timeline.tsx`) does not show the new rows, so there is no UI change. The F9 audit viewer shows them with their labels.
+
+**Event-type places (migration review H1, M1):**
+- `schema.ts` `auditEventTypeEnum`.
+- `audit-port.ts`: the tuple, the payload map, and the static assert 69 → 71, plus the header lines. `RETIRED` stays at 8.
+- The `declared` list in `audit-port-typed-constraint.test.ts`.
+- `scripts/lib/enum-migration-guard.ts` `REQUIRED_ENUM_VALUES`, and the three lists in its test.
+- A `scripts/verify-schema.ts` canary in the 0326 shape, with a positive control.
+- i18n in all three locales.
+
+`auth/domain/audit-event.ts` and `admin/audit/page.tsx` carry no F7 types, so they are not touched.
+
+**Migration:** `0327_audit_event_broadcast_audience.sql`, journal idx 328, `when` 1798546000000. Bump `when` if the file changes after a dev migrate.
+
+**State table (slice 2):**
+
+| Site / situation | Row | Test |
+|---|---|---|
+| tick 1, attach landed, gate ok | disclosed (count), then the POST | unit `build-audience-tick` "writes broadcast_audience_disclosed before createContactImport" |
+| tick 1, import refused / times out / 5xx | disclosed already written (request) | unit, same file, `it.each` over the import failures |
+| tick 1, disclosed storage failure | ERROR + `auditEmitFailed`, the POST proceeds | unit |
+| tick 1, adapter invariant error | rethrown, no POST | unit |
+| tick 1, attach failed (`reclaimUnattachedAudience`) | none (exempt) | unit |
+| tick 1, lease lost at the import gate after the row | the row stays (request); the next tick's `stale_audience` restart deletes the segment and writes deleted | unit |
+| restart `hold` / `stale_audience` / `audience_missing` | deleted with `reason`, before the delete's lease gate | unit `it.each` |
+| restart, a second attempt on the same segment | none (dedupe) | unit + integration |
+| restart, the gate stops the delete | the row stays (request) | unit |
+| cleanup, terminal row past the grace | deleted `terminal_cleanup` with the requester | unit |
+| reclaim, disclosed row found | deleted `orphan_reclaim` with its `related_member_id` | unit (stub `referencedAudienceIdsForBroadcasts` explicitly) |
+| reclaim, no disclosed row | none; warn + counter; the delete still runs | unit |
+| another tenant's row, or a NULL-tenant row with the same payload | not seen | integration cross-tenant |
+| a new `deleteAudience(` / `createContactImport(` call site | the source scan fails | unit source scan (positive control) |
+
+**Test plan:**
+
+| Done-when | Test that goes red first | Level |
+|---|---|---|
+| DA4 | `enum-migration-guard.test.ts`, `audit-port-typed-constraint.test.ts`, `audit-event-label-coverage.test.ts`; `check:audit-events`, `check:audit-counts`; `db:migrate` then `db:verify` on dev | unit + gate |
+| DA1, DA3 | `tests/unit/broadcasts/application/build-audience-tick*.test.ts` (the tick-1 cells) | unit |
+| DA2 restart | the same files (the restart cells) | unit |
+| DA2 sweeps | `cleanup-orphaned-audiences.test.ts`, `reclaim-orphaned-audiences.test.ts` | unit |
+| DA2 sites pinned | new `tests/unit/broadcasts/application/audience-audit-sites.test.ts` | unit |
+| dedupe, tenant fence, no `@` in the payload | new `tests/integration/broadcasts/audience-audit-rows.test.ts`; `tests/integration/audit/completeness.test.ts` | integration |
+
+**Docs (DA5; pdpa H-1, architect M):**
+- **RoPA F7:** carries the pdpa wording: the rows are requests, not outcomes; a failed store is logged and counted; contacts are detached, not deleted.
+- **RoPA 8d:** every statement that rests on "a leaked audience holds the recipients' contacts" is rewritten. That covers the 8a third arm, residuals 5 and 6, and the DSAR clause.
+- **Code comment:** `drizzle-broadcasts-repo.ts:2870`.
+- **`observability.md`:** § 22.1 gets the new counter and the corrected `audit_emit_failed` emitter list; § 22.3 gets the F7-A1 row and the new counter.
+- **Also updated:** `cron-jobs.md`, go-live § 6.10, `operational-state.md`, the changelog, and this plan's Slices row.
 
 ## Constitution Check
 
@@ -327,7 +426,7 @@ No new cascade decision cell: M-NEW-1 is a pre-Resend guard; the pause adds a wa
   - No flag, because this is a privacy fix.
   - Rollback is a revert commit.
   - Once it has merged, runbook step 3b needs no manual Resend action.
-- **Slice 2:** migration 0322 runs on deploy (`vercel-build`); the rows start on merge. Rollback is a revert commit; the enum values stay.
+- **Slice 2:** migration 0327 runs on deploy (`vercel-build`); the rows start on merge. Rollback is a revert commit; the enum values stay.
 
 ## Risks
 
