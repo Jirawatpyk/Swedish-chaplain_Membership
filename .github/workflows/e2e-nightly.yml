@@ -59,6 +59,9 @@ jobs:
     env:
       CI_E2E_BRANCH_NAME: ci-e2e/nightly-${{ github.run_id }}-${{ github.run_attempt }}-s${{ matrix.shard }}
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+      # #78 — the portal fixture seed also refuses a Blob token whose store is
+      # on this list (production store ids), fail-closed when it is unset.
+      TEST_BLOB_STORE_BLOCKLIST: ${{ vars.TEST_BLOB_STORE_BLOCKLIST }}
       NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
       SHARD: ${{ matrix.shard }}
       # Own Upstash buckets per shard (M2; default swecham).
