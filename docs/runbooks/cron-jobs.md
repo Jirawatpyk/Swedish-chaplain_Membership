@@ -883,6 +883,12 @@ polish iteration but is intentionally not part of F7 MVP.
 
 ## F7 — broadcasts/cleanup-audiences (NEW — PR-2 defect #5)
 
+**Art. 30 row (spec 139 slice 2):** before each `deleteAudience`, the cron writes one
+`broadcast_audience_deleted` row (`reason: 'terminal_cleanup'`, the row's requester as `related_member_id`;
+once per segment, deduped). It records the request, not the result. A lost row logs
+`broadcasts.audience_cleanup.audience_audit_lost` (ERROR) and counts `broadcasts_audit_emit_failed_total`;
+the delete still runs. An adapter invariant error makes no delete and counts the item `failed`.
+
 Periodic housekeeping cron that **deletes the ephemeral per-broadcast Resend
 audiences** created during dispatch for broadcasts that have reached a
 terminal status (`sent` / `cancelled` / `failed_to_dispatch` / `rejected` /
@@ -975,6 +981,14 @@ Per tenant, inside `cleanupOrphanedAudiences`:
 `src/app/api/cron/broadcasts/cleanup-audiences/route.ts`
 
 ## F7 — broadcasts/reclaim-orphan-audiences (NEW — PR-2 Task 4, defect #5 companion)
+
+**Art. 30 row (spec 139 slice 2):** before each `deleteAudience`, the cron reads this tenant's
+`broadcast_audience_disclosed` row for the segment. Found: it writes one `broadcast_audience_deleted` row
+(`reason: 'orphan_reclaim'`, that row's broadcast and requester; once per segment). Not found: no row (never
+filed under a guessed tenant), the WARN `broadcasts.audience_reclaim.delete_unattributed`
+(`deleteReason: 'never_disclosed'`) and `broadcasts_audience_reclaim_delete_unattributed_total{tenant}`; the
+delete still runs. A segment from before spec 139 s2, or one another deployment on the same Resend team
+created under the same slug, lands in the not-found arm.
 
 Daily safety-net cron that **reclaims orphaned Resend audiences** — audiences
 that exist in the Resend account but whose corresponding local broadcast row

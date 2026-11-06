@@ -353,7 +353,7 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
 
 **Before the first prod E-Blast through the import leg:**
 
-- [ ] **Spec 139 slice 2 (the Art. 30 audit events) is MERGED.** The gate is dated in
+- [x] **Spec 139 slice 2 (the Art. 30 audit events) is MERGED** (ticked by its own PR: the box is true once that PR merges; migration 0327). The gate is dated in
   `docs/operational-state.md`. Nothing in code enforces it; the maintainer owns it.
 - [ ] **Resend headroom.**
   - Read the account's contact count and segment count. The Free plan allows 1,000
