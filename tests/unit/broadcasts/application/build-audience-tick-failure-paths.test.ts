@@ -826,7 +826,11 @@ function makeDeps(opts: {
         },
         // Spec 142 — the deleted row's writer: false when this recorder already
         // holds the segment's row (the index's answer), else the emit above.
-        async emitOnce(tx: unknown, e: { eventType: string; payload: Record<string, unknown>; actorUserId?: string; summary?: string }) {
+        async emitOnce(
+          this: { emit(tx: unknown, e: { eventType: string; payload: Record<string, unknown>; actorUserId?: string; summary?: string }): Promise<void> },
+          tx: unknown,
+          e: { eventType: string; payload: Record<string, unknown>; actorUserId?: string; summary?: string },
+        ) {
           const key = e.payload['resend_audience_id'];
           if (rec.audits.some((a) => a.eventType === e.eventType && a.payload['resend_audience_id'] === key)) return false;
           await this.emit(tx, e);
