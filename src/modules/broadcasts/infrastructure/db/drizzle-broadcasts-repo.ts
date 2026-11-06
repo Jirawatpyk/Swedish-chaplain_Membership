@@ -2915,7 +2915,9 @@ export function makeDrizzleBroadcastsRepo(
         -- later, at its own instant: a row that turns stuck in between (its
         -- age, or attempts a concurrent drain adds) can miss the detach past
         -- the cap and then be released by pass (b). RoPA 8d residual 6 names
-        -- it; the address is still removed when the drain deletes the audience.
+        -- it. On the one-leg code a leaked audience never held recipients:
+        -- its only writer is the attach-failed reclaim, which runs before any
+        -- import (spec 139 s2).
         SELECT DISTINCT o.resource_id AS audience_id,
                         e.email AS email
         FROM (
