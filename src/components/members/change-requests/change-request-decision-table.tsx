@@ -78,7 +78,7 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
             // the state word under the checkbox. Phone (board
             // `Admin-change-request-mobile`): a card per field — the name and
             // the Approve checkbox on its first line, Current / Proposed as a
-            // labelled list, the state word at its foot.
+            // labelled list.
             className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 text-sm max-sm:rounded-[var(--aura-card-radius)] max-sm:border max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:p-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_9rem] sm:grid-rows-[auto_1fr] sm:gap-x-4 sm:gap-y-1 sm:px-3 sm:py-3"
             data-field-key={f.key}
             data-undecidable={undecidable ? 'contact_removed' : undefined}
@@ -181,12 +181,15 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
               )}
             </div>
             {/* The row's state in words (board), for sighted users: the checkbox
-                announces its own state. Under the checkbox on desktop, at the
-                card's foot on a phone; not shown to a viewer who cannot decide. */}
+                announces its own state. Under the checkbox from 640px only:
+                the phone board (`Admin-change-request-mobile`) draws none,
+                and the card's own "Approve" beside the box already says it
+                (a lone foot line read as a label missing its value). Not
+                shown to a viewer who cannot decide. */}
             {!decided && canDecide ? (
               <span
                 className={cn(
-                  'col-span-2 self-start text-xs sm:col-span-1 sm:col-start-4 sm:row-start-2',
+                  'self-start text-xs max-sm:hidden sm:col-start-4 sm:row-start-2',
                   approved ? 'text-[var(--aura-fg-secondary)]' : 'text-[var(--aura-fg-danger)]',
                 )}
                 aria-hidden="true"

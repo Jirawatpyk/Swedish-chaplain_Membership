@@ -100,6 +100,14 @@ describe('change-request review on AURA (T508)', () => {
     expect(within(row).getByText(REVIEW.willReject)).toBeInTheDocument();
   });
 
+  it('the state words show from 640px only: the phone card has the Approve checkbox and no foot line (board)', () => {
+    renderClient();
+    const row = document.querySelector('[data-field-key="phone"]') as HTMLElement;
+    // Board `Admin-change-request-mobile` draws no state line on a phone card;
+    // a lone "Will be approved" under the values read as a label with its value missing.
+    expect(within(row).getByText(REVIEW.willApprove)).toHaveClass('max-sm:hidden');
+  });
+
   it('a contact-removed row is reachable but inert and explained', () => {
     renderClient();
     const email = screen.getByRole('checkbox', { name: approveName(roleLabel) });
