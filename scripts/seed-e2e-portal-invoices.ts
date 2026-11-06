@@ -63,7 +63,7 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { asInvoiceLineId } from '@/modules/invoicing/domain/invoice-line';
-import { seedTargetRefusal } from './lib/seed-target-guard';
+import { blobTargetRefusal, seedTargetRefusal } from './lib/seed-target-guard';
 import {
   E2E_PAID_TEMPLATE_VERSION,
   E2E_PORTAL_INVOICE_SEEDS,
@@ -127,6 +127,13 @@ function requireDevTarget(): void {
     confirmedTarget: process.argv.includes('--confirm-target'),
   });
   if (refusal) throw new Error(refusal);
+  // It also uploads fixture PDFs, so the Blob store needs the same answer.
+  const blobRefusal = blobTargetRefusal({
+    blobToken: process.env.BLOB_READ_WRITE_TOKEN,
+    blocklistRaw: process.env.TEST_BLOB_STORE_BLOCKLIST,
+    confirmedTarget: process.argv.includes('--confirm-target'),
+  });
+  if (blobRefusal) throw new Error(blobRefusal);
 }
 
 /**

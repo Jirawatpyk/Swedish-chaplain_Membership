@@ -108,3 +108,50 @@ export function seedTargetRefusal(input: SeedTargetInput): string | null {
 
   return null;
 }
+
+/**
+ * #78 security review L1 — the Blob half of the target check, for a seeder
+ * that also uploads to Vercel Blob (`seed-e2e-portal-invoices.ts`). The DB
+ * guard above cannot see which store `BLOB_READ_WRITE_TOKEN` points at, so an
+ * env file with a dev DATABASE_URL and a production token would upload fixture
+ * PDFs into production. Same shape as the DB arm: a blocklist of store ids
+ * (`TEST_BLOB_STORE_BLOCKLIST`, comma-separated, kept out of the repo) and the
+ * same `--confirm-target` escape when it is unset. The token is never echoed.
+ */
+export interface BlobTargetInput {
+  /** `process.env.BLOB_READ_WRITE_TOKEN` — `vercel_blob_rw_<storeId>_<secret>`. */
+  readonly blobToken: string | undefined;
+  /** `process.env.TEST_BLOB_STORE_BLOCKLIST` — comma-separated store ids. */
+  readonly blocklistRaw: string | undefined;
+  readonly confirmedTarget?: boolean;
+}
+
+export function blobTargetRefusal(input: BlobTargetInput): string | null {
+  if (!input.blobToken) {
+    return 'seed refused: BLOB_READ_WRITE_TOKEN is not set, so the PDF uploads have no target.';
+  }
+  const blocklist = (input.blocklistRaw ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    // `.env.example`'s placeholder is a value that matches no store: read it
+    // as unset, as the DB blocklist's placeholder is.
+    .filter((s) => s !== '' && !s.startsWith('REPLACE-WITH-'));
+  // The store id sits between the fixed prefix and the secret; match the whole
+  // token anyway, so a token in an unexpected shape is still compared.
+  const storeId = /^vercel_blob_rw_([^_]+)_/.exec(input.blobToken)?.[1] ?? '';
+  const blocked = blocklist.find((needle) => storeId === needle || input.blobToken!.includes(needle));
+  if (blocked) {
+    return (
+      `seed refused: BLOB_READ_WRITE_TOKEN belongs to store "${blocked}" from ` +
+      'TEST_BLOB_STORE_BLOCKLIST. Point it at the dev Blob store, never production.'
+    );
+  }
+  if (blocklist.length === 0 && input.confirmedTarget !== true) {
+    return (
+      'seed refused: TEST_BLOB_STORE_BLOCKLIST is unset, so the Blob store cannot ' +
+      'be ruled out as production. Set it in the env file you are passing, or ' +
+      're-run with --confirm-target once you have checked BLOB_READ_WRITE_TOKEN yourself.'
+    );
+  }
+  return null;
+}

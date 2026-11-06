@@ -184,6 +184,12 @@ describe('blobTargetRefusal', () => {
     expect(blobTargetRefusal({ blobToken: DEV_TOKEN, blocklistRaw: '', confirmedTarget: true })).toBeNull();
   });
 
+  it('reads the .env.example placeholder as unset', () => {
+    expect(
+      blobTargetRefusal({ blobToken: DEV_TOKEN, blocklistRaw: 'REPLACE-WITH-YOUR-PROD-BLOB-STORE-ID' }),
+    ).toMatch(/--confirm-target/);
+  });
+
   it('refuses a missing token', () => {
     expect(blobTargetRefusal({ blobToken: undefined, blocklistRaw: 'ProdStore999' })).toMatch(/BLOB_READ_WRITE_TOKEN/);
   });
