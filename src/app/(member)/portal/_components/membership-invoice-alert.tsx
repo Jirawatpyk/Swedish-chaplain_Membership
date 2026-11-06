@@ -44,17 +44,17 @@ export function MembershipInvoiceAlert({
 
   return (
     <Alert tone={overdue ? 'warning' : 'info'} title={t('title')}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      {/* The action is a normal-size button on a phone too, start-aligned
+          like every other Alert action (the Home-mobile / Invoices-mobile
+          boards); the arrow leads the label, as there. */}
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <span>{body}</span>
         <Link
           href={href}
-          className={cn(
-            buttonClass({ variant: online ? 'primary' : 'secondary' }),
-            'shrink-0 no-underline max-sm:w-full max-sm:justify-center',
-          )}
+          className={cn(buttonClass({ variant: online ? 'primary' : 'secondary' }), 'shrink-0 no-underline')}
         >
-          {online ? t('payNow') : t('viewInvoice')}
           <Icon name={<ArrowRight />} size={16} />
+          {online ? t('payNow') : t('viewInvoice')}
         </Link>
       </div>
     </Alert>
