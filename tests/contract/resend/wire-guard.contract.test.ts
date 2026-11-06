@@ -218,4 +218,14 @@ describe('the DR4 source gate on src (spec 140 s4)', () => {
   ])('out of reach of the source scan (runtime guard only): %s', (_label, snippet) => {
     expect(forbidden(snippet)).toEqual([]);
   });
+
+  // Round 5 — two escapes of the IMPORTER filter rather than of the patterns: a
+  // file that loads the SDK this way is not in the raw-path set, so a raw
+  // contact delete in it is never scanned.
+  it.each([
+    ['a dynamic import', "const { Resend } = await import('resend');"],
+    ['a barrel re-export', "import { resendBroadcastsClient } from '@/modules/broadcasts/infrastructure';"],
+  ])('out of reach of the importer filter: %s', (_label, snippet) => {
+    expect(REACHES_RESEND.test(snippet)).toBe(false);
+  });
 });
