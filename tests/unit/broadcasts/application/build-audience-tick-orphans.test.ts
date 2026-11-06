@@ -172,6 +172,10 @@ function harness(opts: Opts = {}) {
       async readAlreadySentEvidenceInTx() {
         return { broadcastRecorded: false, memberBroadcastCount: 0 };
       },
+      // Spec 139 s2 - the deleted-row dedupe (no prior row here).
+      async hasAudienceDeletedAuditInTx() {
+        return false;
+      },
     },
     broadcastsGateway: {
       async retrieveBroadcast(id: string) {

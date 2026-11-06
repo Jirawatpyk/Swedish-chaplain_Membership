@@ -37,6 +37,8 @@ import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/por
 import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
 import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { broadcastsMetrics } from '@/lib/metrics';
+import { logger } from '@/lib/logger';
+import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -52,6 +54,12 @@ const WITHIN_GRACE_DATE = new Date(FROZEN_NOW.getTime() - 30 * 60 * 1000);
 const TENANT_SLUG = 'swecham';
 const tenant = asTenantContext(TENANT_SLUG);
 const clock = { now: (): Date => FROZEN_NOW };
+/**
+ * Spec 139 s2 — the audit dep. These cases' repo finds no disclosed row, so no
+ * row is ever written (the delete is unattributed); the spec 139 cells at the
+ * end drive the row.
+ */
+const NO_AUDIT = { async emit() {} };
 /** Spec 140 DT5 — a deadline none of the legacy cases comes near. */
 const FAR_DEADLINE = new Date(FROZEN_NOW.getTime() + 60 * 60 * 1000);
 
@@ -121,6 +129,12 @@ function makeRepo(opts: {
     },
     async hasUnverifiableCountAuditInTx() {
       return false;
+    },
+    async hasAudienceDeletedAuditInTx() {
+      return false;
+    },
+    async findAudienceDisclosureInTx() {
+      return null;
     },
     async clearDispatchRetryClock() {},
     async listByTenantStatus() { return { rows: [], nextCursor: null }; },
@@ -238,7 +252,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_A is NOT in DB
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -268,7 +282,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set([asBroadcastId(UUID_B)]) });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -296,7 +310,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -318,7 +332,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -339,7 +353,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -366,7 +380,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -386,7 +400,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -413,7 +427,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_C not in DB, but still within grace
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -452,7 +466,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // neither UUID in DB
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -480,7 +494,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -506,7 +520,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ failed: 0, skippedLastAudience: 1 });
@@ -523,7 +537,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ failed: 0, skippedLastAudience: 1 });
@@ -543,7 +557,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ failed: 1, skippedLastAudience: 0 });
@@ -563,7 +577,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]), shouldThrow: true });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -597,7 +611,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_B NOT in DB → orphan
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -614,7 +628,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -641,7 +655,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_A not in DB
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
 
@@ -669,7 +683,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
 
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 2, deadlineAt: FAR_DEADLINE },
     );
 
@@ -704,7 +718,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     const gateway = makeGateway({ audiences: [] });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(gateway.listInputs).toEqual([{ deadlineAt: FAR_DEADLINE }]);
@@ -715,7 +729,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     const gateway = makeGateway({ audiences: [{ id: 'aud-gen', name: 'General', createdAt: PAST_GRACE_DATE }], listTruncated: true });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ scanned: 1, orphaned: 0, truncated: true, deferredDeletes: 0 });
@@ -727,7 +741,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     const gateway = makeGateway({ audiences: orphanAudiences([UUID_A]), listTruncated: true });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(result.ok && result.value).toMatchObject({ orphaned: 1, deleted: 1, truncated: true, deferredDeletes: 0 });
@@ -750,7 +764,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock: movingClock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock: movingClock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt },
     );
     expect(result.ok && result.value).toEqual({
@@ -771,8 +785,26 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     const gateway = makeGateway({ audiences: orphanAudiences([UUID_A, UUID_B]) });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS - 1) },
+    );
+    expect(result.ok && result.value).toMatchObject({ orphaned: 2, deleted: 0, deferredDeletes: 2 });
+    expect(gateway.deleteCalls).toHaveLength(0);
+  });
+
+  // Spec 139 s2 review round 2 (code-review #2) — each delete first writes its
+  // audit row, whose lock wait is bounded at AUDIENCE_AUDIT_LOCK_TIMEOUT_MS.
+  it('a chunk is deferred when the time left fits one Resend call but not the call plus the audit lock wait', async () => {
+    expect(AUDIENCE_AUDIT_LOCK_TIMEOUT_MS).toBe(5_000);
+    const gateway = makeGateway({ audiences: orphanAudiences([UUID_A, UUID_B]) });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
+      {
+        graceMs: GRACE_MS,
+        limit: 50,
+        deadlineAt: new Date(FROZEN_NOW.getTime() + RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS - 1),
+      },
     );
     expect(result.ok && result.value).toMatchObject({ orphaned: 2, deleted: 0, deferredDeletes: 2 });
     expect(gateway.deleteCalls).toHaveLength(0);
@@ -783,7 +815,7 @@ describe('reclaimOrphanedAudiences — the time budget (spec 140 DT5)', () => {
     const gateway = makeGateway({ audiences: orphanAudiences([UUID_A]) });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
     expect(counted).not.toHaveBeenCalled();
@@ -802,5 +834,204 @@ describe('oneCallFitsBefore', () => {
     ['past the deadline', 100_001, false],
   ])('%s -> %s', (_label, nowMs, fits) => {
     expect(oneCallFitsBefore(deadline, nowMs, RESEND_CALL_TIMEOUT_MS)).toBe(fits);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 139 s2 (DA2, pdpa M-3) — the orphan_reclaim row, only when this tenant
+// disclosed the segment
+// ---------------------------------------------------------------------------
+
+describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted only for a segment this tenant disclosed', () => {
+  const DELETED = 'broadcast_audience_deleted';
+  const AUDIENCE = 'aud-orphan';
+
+  afterEach(() => vi.restoreAllMocks());
+
+  function harness(opts: {
+    readonly disclosure?: { readonly broadcastId: string; readonly relatedMemberId: string } | 'throws' | null;
+    readonly alreadyDeleted?: boolean;
+    readonly auditThrows?: 'invariant';
+    readonly dedupeThrows?: 'lock_timeout';
+  }) {
+    const events: string[] = [];
+    const rows: Array<{ eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }> = [];
+    const gateway = makeGateway({
+      audiences: [{ id: AUDIENCE, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE }],
+    });
+    const del = gateway.port.deleteAudience.bind(gateway.port);
+    gateway.port.deleteAudience = async (id) => {
+      events.push(`gw:deleteAudience:${id}`);
+      return del(id);
+    };
+    // The referenced-audience read, stubbed explicitly: the row is gone, so
+    // the segment is an orphan (no existence-only fallback).
+    const repo = makeRepo({ existing: new Set<BroadcastId>(), referencedMap: new Map() });
+    repo.port.findAudienceDisclosureInTx = async (_tx, _t, audienceId) => {
+      events.push(`find:${audienceId}`);
+      if (opts.disclosure === 'throws') throw new Error('57P01 terminating connection');
+      return opts.disclosure ?? null;
+    };
+    repo.port.hasAudienceDeletedAuditInTx = async (_tx, _t, audienceId) => {
+      events.push(`dedupe:${audienceId}`);
+      // A lock wait past `lock_timeout` as Drizzle throws it: the driver's 55P03 at `.cause`.
+      if (opts.dedupeThrows === 'lock_timeout') {
+        throw Object.assign(new Error('Failed query'), {
+          cause: Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }),
+        });
+      }
+      return opts.alreadyDeleted === true;
+    };
+    const audit = {
+      async emit(_tx: unknown, e: { eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }) {
+        if (opts.auditThrows === 'invariant') throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
+        events.push(`audit:${e.eventType}`);
+        rows.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, requestId: e.requestId, payload: e.payload });
+      },
+    };
+    const run = () =>
+      reclaimOrphanedAudiences(
+        { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit },
+        { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
+      );
+    return { run, events, rows, gateway };
+  }
+
+  it("a disclosed row found: the deleted row (orphan_reclaim) copies ITS broadcast and requester, then the delete", async () => {
+    const counted = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
+    const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' } });
+    const result = await h.run();
+    expect(result.ok && result.value.deleted).toBe(1);
+    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `find:${AUDIENCE}`, `audit:${DELETED}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(h.rows).toEqual([
+      {
+        eventType: DELETED,
+        tenantId: TENANT_SLUG,
+        actorUserId: 'system:cron',
+        requestId: null,
+        payload: {
+          broadcast_id: 'bc-disclosed',
+          related_member_id: 'm-disclosed',
+          resend_audience_id: AUDIENCE,
+          reason: 'orphan_reclaim',
+          leg: 'import',
+          actor_role: 'system',
+        },
+      },
+    ]);
+    expect(counted).toHaveBeenCalledWith(TENANT_SLUG, DELETED);
+  });
+
+  it('no disclosed row: no audit row, a warn (deleteReason never_disclosed, never a `reason` key) and the counter; the delete still runs', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    const unattributed = vi.spyOn(broadcastsMetrics, 'audienceReclaimDeleteUnattributed');
+    const h = harness({ disclosure: null });
+    await h.run();
+    expect(h.rows).toEqual([]);
+    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `find:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
+    const lines = warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed').map((c) => c[0] as Record<string, unknown>);
+    expect(lines).toEqual([{ tenantId: TENANT_SLUG, resendAudienceId: AUDIENCE, deleteReason: 'never_disclosed' }]);
+    expect(lines[0]).not.toHaveProperty('reason');
+    expect(unattributed).toHaveBeenCalledWith(TENANT_SLUG);
+  });
+
+  it('a segment that already has its deleted row gets no second one; the delete still runs', async () => {
+    const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' }, alreadyDeleted: true });
+    await h.run();
+    expect(h.rows).toEqual([]);
+    expect(h.events).toContain(`gw:deleteAudience:${AUDIENCE}`);
+  });
+
+  // Review round 1 (code-review #3) — e.g. cleanup's `terminal_cleanup` row for
+  // a pre-s2 segment whose delete keeps failing: it is recorded, not unattributed.
+  it('a segment already recorded as deleted is neither re-recorded nor reported unattributed', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    const unattributed = vi.spyOn(broadcastsMetrics, 'audienceReclaimDeleteUnattributed');
+    const h = harness({ disclosure: null, alreadyDeleted: true });
+    await h.run();
+    expect(h.rows).toEqual([]);
+    expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed')).toEqual([]);
+    expect(unattributed).not.toHaveBeenCalled();
+    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
+  });
+
+  it('a failed disclosure read logs ERROR and counts a lost row, and the delete still runs', async () => {
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
+    const h = harness({ disclosure: 'throws' });
+    await h.run();
+    expect(h.gateway.deleteCalls).toEqual([AUDIENCE]);
+    expect(error.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audience_audit_lost').map((c) => c[0])).toEqual([
+      expect.objectContaining({
+        eventType: DELETED,
+        broadcastId: null,
+        resendAudienceId: AUDIENCE,
+        segmentNameBroadcastId: UUID_A,
+        err: 'Error',
+        severity: 'critical',
+      }),
+    ]);
+    expect(failed).toHaveBeenCalledWith(DELETED, TENANT_SLUG);
+  });
+
+  it('an adapter invariant error stops that delete (fail closed): counted failed, no Resend call', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' }, auditThrows: 'invariant' });
+    const result = await h.run();
+    expect(result.ok && result.value).toMatchObject({ deleted: 0, failed: 1 });
+    expect(h.gateway.deleteCalls).toEqual([]);
+  });
+
+  // Review round 1 (reliability LOW-2) — a wiring bug is an ERROR, not the WARN of a failed delete.
+  it('an adapter invariant error logs ERROR audit_invariant (ids, err, critical), not the delete_failed WARN', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const h = harness({ disclosure: { broadcastId: 'bc-disclosed', relatedMemberId: 'm-disclosed' }, auditThrows: 'invariant' });
+    await h.run();
+    // Review round 2 (code-review #5) — one line, from the row helper: no broadcast
+    // id (the segment name's is a guess, pdpa M-3), the segment as `resendAudienceId`.
+    // Review round 3 (code-review #5): the name's id as a log-only field, so ops
+    // can find the E-Blast; never on the record.
+    expect(error.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audit_invariant').map((c) => c[0])).toEqual([
+      {
+        tenantId: TENANT_SLUG,
+        broadcastId: null,
+        resendAudienceId: AUDIENCE,
+        segmentNameBroadcastId: UUID_A,
+        eventType: DELETED,
+        err: 'AuditPortInvariantError',
+        severity: 'critical',
+      },
+    ]);
+    expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_failed')).toEqual([]);
+  });
+
+  // Review round 2 (code-review #1/#4, reliability LOW-1) — a timed-out segment
+  // writes no row and no unattributed WARN this run; the next run retries.
+  it('a lock timeout on the dedupe logs the WARN audience_audit_lock_timeout and counts it; no unattributed WARN, the delete still runs', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
+    const unattributed = vi.spyOn(broadcastsMetrics, 'audienceReclaimDeleteUnattributed');
+    const h = harness({ disclosure: null, dedupeThrows: 'lock_timeout' });
+    const result = await h.run();
+    expect(result.ok && result.value).toMatchObject({ deleted: 1, failed: 0 });
+    expect(h.rows).toEqual([]);
+    expect(h.events).toEqual([`dedupe:${AUDIENCE}`, `gw:deleteAudience:${AUDIENCE}`]);
+    expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audience_audit_lock_timeout').map((c) => c[0])).toEqual([
+      {
+        tenantId: TENANT_SLUG,
+        broadcastId: null,
+        resendAudienceId: AUDIENCE,
+        segmentNameBroadcastId: UUID_A,
+        eventType: DELETED,
+        err: 'Error',
+        code: '55P03',
+      },
+    ]);
+    expect(warn.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.delete_unattributed')).toEqual([]);
+    expect(unattributed).not.toHaveBeenCalled();
+    expect(error.mock.calls.filter((c) => c[1] === 'broadcasts.audience_reclaim.audience_audit_lost')).toEqual([]);
+    expect(failed).toHaveBeenCalledWith(DELETED, TENANT_SLUG);
   });
 });

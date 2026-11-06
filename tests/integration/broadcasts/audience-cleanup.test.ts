@@ -189,6 +189,8 @@ describe('PR-2 Task 2 — audience-cleanup repo methods (live Neon)', () => {
     expect(results[0]).toEqual({
       broadcastId: terminalId,
       resendAudienceId: 'aud_seed_terminal_1',
+      // Spec 139 s2 — the requester the cleanup's deleted row names.
+      requestedByMemberId: expect.any(String),
     });
   });
 

@@ -256,6 +256,14 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_class WHERE relname = 'credit_note_abandoned_attempts' AND relnamespace = 'public'::regnamespace AND relkind = 'r' AND relrowsecurity AND relforcerowsecurity) AND has_table_privilege('chamber_app', 'public.credit_note_abandoned_attempts', 'SELECT') AND has_table_privilege('chamber_app', 'public.credit_note_abandoned_attempts', 'INSERT') AND NOT has_table_privilege('chamber_app', 'public.credit_note_abandoned_attempts', 'UPDATE') AND NOT has_table_privilege('chamber_app', 'public.credit_note_abandoned_attempts', 'DELETE') AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'credit_note_attempt_abandoned')`,
       },
       {
+        // Spec 139 s2 (mig 0327) — the two audit values the import tick and
+        // the audience crons write before a Resend call. Both must exist: a
+        // missing value fails the INSERT, which is logged and counted, so
+        // the call goes ahead with no record.
+        name: 'audit_event_type broadcast_audience_disclosed + broadcast_audience_deleted (mig 0327)',
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'broadcast_audience_disclosed') AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'broadcast_audience_deleted')`,
+      },
+      {
         // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure
         // indexes. The tax-point one is asserted by its expression: an index
         // of that name on another expression would silently stop matching

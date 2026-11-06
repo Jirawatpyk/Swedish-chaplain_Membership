@@ -23,6 +23,12 @@ import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 
+/** Spec 139 s2 — what a `broadcast_audience_disclosed` row names (ids only). */
+export interface AudienceDisclosure {
+  readonly broadcastId: string;
+  readonly relatedMemberId: string;
+}
+
 /**
  * Spec 140 s1 review round 1 (code-review #8) — what the erasure cascade's
  * terminal-draft pass reads of a row: its id, its status and the Resend id it
@@ -811,6 +817,51 @@ export interface BroadcastsRepo {
   ): Promise<boolean>;
 
   /**
+   * Spec 139 s2 (DA2) — does this tenant already hold a
+   * `broadcast_audience_deleted` row for this Resend segment? Every delete site
+   * reads this in the SAME tx before inserting, so a segment gets one row: the
+   * first `reason` wins (an accepted consequence: a `hold` row whose lease gate
+   * then stopped the delete keeps `reason: 'hold'` after cleanup really
+   * deletes the segment).
+   *
+   * The read first takes a transaction-scoped advisory lock on (tenant,
+   * segment) in the `broadcasts-audience-audit:` namespace (disjoint from the
+   * row lock's `broadcasts:` and the evidence locks), so two sites'
+   * check-then-insert on one segment is serialised. Tenant-scoped by RLS AND
+   * an explicit `tenant_id` predicate (`audit_log`'s policy also admits
+   * `tenant_id IS NULL` rows); a tx bound to another tenant (or to none) is
+   * refused with an `AuditPortInvariantError` (review round 3), so the row
+   * helper fails closed and the Resend call is never made.
+   *
+   * Ordering contract (review round 3): this is NOT a pure read. It sets
+   * `SET LOCAL lock_timeout` (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, for the rest of
+   * the tx) and takes the per-segment advisory lock, held to the end of the tx.
+   * A caller that writes a deleted row calls it FIRST, in the same tx as any
+   * {@link findAudienceDisclosureInTx} read and the insert.
+   */
+  hasAudienceDeletedAuditInTx(tx: unknown, tenantId: TenantSlug, resendAudienceId: string): Promise<boolean>;
+
+  /**
+   * Spec 139 s2 (DA2, pdpa M-3) — this tenant's `broadcast_audience_disclosed`
+   * row for the segment (the earliest), or `null`. `reclaim-orphaned-audiences`
+   * writes its deleted row only when one exists, copying its broadcast and its
+   * requester (`related_member_id`): without one, this deployment never filled
+   * the segment, and the row is never filed under a guessed tenant or member.
+   * Tenant-scoped exactly as {@link hasAudienceDeletedAuditInTx}, with the same
+   * `AuditPortInvariantError` refusal of a tx bound to another tenant.
+   *
+   * Ordering contract (review round 3): it takes NO lock and sets no
+   * `lock_timeout`. It relies on {@link hasAudienceDeletedAuditInTx} having run
+   * first in the same tx (the per-segment lock is then held, and the bound
+   * applies); disclosed rows are append-only, so the read itself needs none.
+   */
+  findAudienceDisclosureInTx(
+    tx: unknown,
+    tenantId: TenantSlug,
+    resendAudienceId: string,
+  ): Promise<AudienceDisclosure | null>;
+
+  /**
    * F119 PR-E (migration 0311) — start the FR-021 retry clock: stamp
    * `dispatch_first_failed_at = COALESCE(dispatch_first_failed_at, at)` while
    * the row is still `approved`. Called by the import tick on a retryable
@@ -1312,12 +1363,17 @@ export interface BroadcastsRepo {
    * Tenant-scoped via `WHERE tenant_id = $1` + RLS+FORCE on `broadcasts`.
    * Does NOT use `runInTenant` (read-only, no RLS manipulation needed —
    * the Drizzle adapter runs its own `runInTenant` internally).
+   *
+   * Spec 139 s2 — with the row's requester (`requested_by_member_id`, NOT
+   * NULL), which the cleanup's `broadcast_audience_deleted` row names.
    */
   listTerminalBroadcastsWithLiveAudience(
     tenantId: TenantSlug,
     graceCutoff: Date,
     limit: number,
-  ): Promise<ReadonlyArray<{ readonly broadcastId: string; readonly resendAudienceId: string }>>;
+  ): Promise<
+    ReadonlyArray<{ readonly broadcastId: string; readonly resendAudienceId: string; readonly requestedByMemberId: string }>
+  >;
 
   /**
    * PR-2 Task 2 — Audience cleanup: stamp `audience_deleted_at = now()` on

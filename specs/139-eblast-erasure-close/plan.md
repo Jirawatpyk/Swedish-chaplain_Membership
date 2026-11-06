@@ -72,7 +72,7 @@ Spec: `specs/139-eblast-erasure-close/spec.md` · Size: L · Agreed by the user 
 - **M-1:** the orphan sweeps run on one Resend team shared by every tenant, so a deleted row's `tenant_id` comes from our broadcast row. A deletion that cannot be attributed writes no tenant row. It is logged and counted, never filed under a guessed tenant.
 - **M-2:** the label for `broadcast_audience_deleted` says the audience (segment) was removed, never that contacts were deleted. They survive (8a).
 - **L-2:** a failed audit write logs at error level and increments a counter with an alert rule, as `broadcast_send_started` does.
-- **Payload:** `broadcast_id` (nullable for orphans), `related_member_id`, the audience id, `recipient_count`, `leg`, the delete `reason` and `outcome`. No addresses and no hashes.
+- **Payload:** `broadcast_id` (nullable for orphans), `related_member_id`, the audience id, `recipient_count`, `leg`, the delete `reason` and `outcome`. No addresses and no hashes. *Superseded on 6 Nov 2026 (maintainer): no `outcome`, because the row is written before the call; see § Slice 2 plan.*
 - **Slice 1's RoPA edits** must not name the slice-2 rows as evidence before they exist.
 
 **Rejected alternatives** (Complexity Tracking, D-040):
@@ -81,7 +81,7 @@ Spec: `specs/139-eblast-erasure-close/spec.md` · Size: L · Agreed by the user 
 - **A re-check of erasure between persist and `/send`:** this narrows the window but cannot close it. Only Resend's own arbitration (DELETE answers 200 only on a draft; `/send` works only on a draft) closes it.
 - **Gate only, with 8b narrowed:** rejected by the maintainer.
 
-**Slice 2 adds two audit event types**, `broadcast_audience_disclosed` and `broadcast_audience_deleted`, with migration 0322, following the `add-audit-event` skill. They are emitted at the six sites listed in the spec, through `deps.audit.emit` inside each step's own `withTx`. A disclosure row is written after Resend returns the id. If that write fails, it is logged and counted, never rolled back, mirroring `broadcast_send_started` on the import leg.
+**Slice 2 adds two audit event types**, `broadcast_audience_disclosed` and `broadcast_audience_deleted`, with migration 0322, following the `add-audit-event` skill. They are emitted at the six sites listed in the spec, through `deps.audit.emit` inside each step's own `withTx`. A disclosure row is written after Resend returns the id. If that write fails, it is logged and counted, never rolled back, mirroring `broadcast_send_started` on the import leg. *Superseded on 6 Nov 2026: migration 0327, the four live sites, rows written before the call (maintainer decision); see § Slice 2 plan.*
 
 ## Files and modules
 
@@ -104,24 +104,24 @@ Rules: `.claude/rules/modules/broadcasts.md` (the measured Resend traps), `membe
   - `application/use-cases/erase-member.ts` (passes the mode)
 - **Cross-module port meaning changes**, so grep `tests/` for the symbols `cancelInFlightForMember`, `getMembersHaltedInTenant` and `MembersBridgePort`. This catches the fakes in other modules.
 
-**Slice 2**
-- `audit-port.ts` (tuple and assert)
-- `auth/infrastructure/db/schema.ts` (enum)
+**Slice 2** (amended 6 Nov 2026; the full list is in § Slice 2 plan)
+- `audit-port.ts` (tuple, payload map and the static assert)
+- `auth/infrastructure/db/schema.ts` (enum), `scripts/lib/enum-migration-guard.ts`, `scripts/verify-schema.ts`
 - i18n EN, TH and SV
 - the count tests
-- `dispatch-scheduled-broadcast.ts`, `build-audience-tick.ts`, `cleanup-orphaned-audiences.ts`, `reclaim-orphaned-audiences.ts`
+- `build-audience-tick.ts`, `cleanup-orphaned-audiences.ts`, `reclaim-orphaned-audiences.ts`, the broadcasts repo, `broadcasts-deps.ts`
 
 ## Data model and migration
 
 - **Slice 1:** n/a.
-- **Slice 2:** `0322`, two `ALTER TYPE audit_event_type ADD VALUE IF NOT EXISTS` statements inside `DO $$` guards. Unflagged on deploy; inert until a row is written. Rollback: enum values cannot be dropped, and they are harmless if unused.
+- **Slice 2:** `0327` (`0322` went to spec 140's dispatch lease), two `ALTER TYPE audit_event_type ADD VALUE` statements inside `DO $$` `IF NOT EXISTS` guards (the `0324` shape). Unflagged on deploy; inert until a row is written. Rollback: enum values cannot be dropped, and they are harmless if unused.
 
 ## Slices
 
 | # | Slice | Done-when lines it covers | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
 | 1 | Erasure close: gate + cascade | DE1–DE6 | security-engineer, pdpa-gdpr, reliability-guardian, senior-tester, spec-compliance-auditor | `139-eblast-erasure-close-s1` | #698 · done |
-| 2 | Art. 30 audit events | DA1–DA5 | pdpa-gdpr, drizzle-migration-reviewer, observability-instrumentor, spec-compliance-auditor | `139-eblast-erasure-close-s2` | — · open |
+| 2 | Art. 30 audit events | DA1–DA5 | pdpa-gdpr, drizzle-migration-reviewer, observability-instrumentor, i18n, spec-compliance-auditor | `139-eblast-erasure-close-s2` | #763 · done |
 
 ## State table (slice 1: the erasure cascade × a dispatch tick on one row)
 
@@ -169,6 +169,114 @@ Rules: `.claude/rules/modules/broadcasts.md` (the measured Resend traps), `membe
 | DA4 | `check:audit-events`, `check:audit-counts`, `db:verify` after `db:migrate` on dev | gate |
 
 e2e: none (cron and erasure server paths only; no UI).
+
+## Slice 2 plan (6 Nov 2026)
+
+**Branch and base.** Branch `139-eblast-erasure-close-s2`, worktree `wt/f139s2`, cut from `origin/main` `5fd3f6e26`. Slice 1 merged as #698. Spec 140 has since deleted the legacy leg (D-042), so this section replaces the slice-2 lines written on 30 Oct.
+
+**Premises (checked on `5fd3f6e26`, 6 Nov 2026):**
+- **Usage:**
+  - Prod holds 0 `broadcasts` rows and 1 `broadcast_send_started` row (7 Jul 2026). Source: a read-only count at 04:14 UTC on 6 Nov 2026 (the D-042 table). No existing row needs a backfill.
+  - At merge, the maintainer orders a read-only prod count of `broadcast_orphaned_resend_ids WHERE resource_type = 'audience'` (pdpa L-2).
+- **The one disclosure site** is `build-audience-tick.ts` `submitImport`:
+  - the order is `createAudience`, then the lease-fenced `attachAudienceId`, then the `IMPORT_HEADROOM_MS` lease gate and `createContactImport`;
+  - the recipient count (`resolved.value.recipients.length`) is known before the call.
+- **The delete sites:**
+  - `restartAudienceBuild` (`why`: `hold` / `stale_audience` / `audience_missing`). Every caller holds the broadcast.
+  - `cleanup-orphaned-audiences` `handleOne`, for terminal rows past the grace. The grace reads `updated_at`.
+  - `reclaim-orphaned-audiences` `handleOne`, over a team-wide listing matched on the name `broadcast-<slug>-<uuid>`.
+  - `reclaimUnattachedAudience` and `_settle-orphan-at-resend.ts`, both exempt (spec DA2).
+- **The exemption rests on the code.**
+  - `reclaimUnattachedAudience` is the only writer of an audience orphan (`resourceType: 'audience'`). Every other `recordOrphan` call writes `broadcast`, `_persist-minted-broadcast-id.ts` included.
+  - It runs only inside the `createAudience` block, before the import.
+  - The provider half, "a new segment is empty on create", is NOT MEASURED. `/verify` lists the fresh segment's contacts before the import (expect 0), and the result goes into `research.md`.
+- **Patterns copied:**
+  - The pre-send unverifiable row (spec 140 s4): its own tenant tx; `isAdapterInvariantError` rethrows; any other failure logs ERROR and calls `broadcastsMetrics.auditEmitFailed`.
+  - `hasUnverifiableCountAuditInTx`: `assertTenantBoundTx`, then a `pg_advisory_xact_lock`, then a tenant-fenced `EXISTS`.
+
+**Design.** The maintainer decided on 6 Nov 2026 that rows are written before the call.
+
+- **`broadcast_audience_disclosed`**
+  - It is written after `attachAudienceId` and before the existing `IMPORT_HEADROOM_MS` gate. That gate stays the last read before the POST, so no second gate is needed and the import keeps its headroom (architect HIGH).
+  - It needs no dedupe. A row that already holds an audience goes to restart (`stale_audience`), so one segment id never reaches the import twice.
+  - If a tick is killed between the row and the POST, the next tick deletes that segment and replaces it, and the replacement gets a new disclosure row.
+- **`broadcast_audience_deleted`**
+  - It is deduped on `resend_audience_id`, under the advisory lock `broadcasts-audience-audit:<tenant>:<audienceId>`. The first `reason` wins. Accepted consequence: a `hold` row whose gate then stopped the delete keeps `reason: 'hold'`, even after cleanup really deletes the segment.
+  - **Restart:** it is written before `leaseGateStep('delete_audience')`, which becomes its re-gate.
+  - **Cleanup:** it is written before `deleteAudience`, with the row's `requestedByMemberId`. `listTerminalBroadcastsWithLiveAudience` is widened to return that column, which is NOT NULL.
+  - **Reclaim (pdpa M-3):** it is written before `deleteAudience`, but only when `findAudienceDisclosureInTx` finds this tenant's disclosed row for the segment, and it copies that row's `related_member_id`. With no such row, nothing is written. Instead:
+    - a warn `broadcasts.audience_reclaim.delete_unattributed`, with the log key `deleteReason` (`reason` is redacted);
+    - the counter `broadcasts_audience_reclaim_delete_unattributed_total{tenant}`, where the tenant is the one the cron runs for.
+- **Repo methods:** `hasAudienceDeletedAuditInTx(tx, tenant, audienceId)` and `findAudienceDisclosureInTx(tx, tenant, audienceId)`.
+  - Both keep `assertTenantBoundTx` and `WHERE tenant_id = $tenant`. The predicate is load-bearing: the RLS policy also shows rows with `tenant_id IS NULL`.
+  - The payload key names are consts that the emit and the SQL share.
+- **Payload:** snake_case, because `related_member_id` is the key the Art. 15 export reads.
+  - Keys: `broadcast_id`, `related_member_id`, `resend_audience_id`, `recipient_count` (disclosed only), `leg: 'import'`, `reason` (deleted only), `actor_role: 'system'`.
+  - The actor is `system:cron`. Retention is 5 years. No address and no hash.
+- **Failure:**
+  - A storage failure logs ERROR (`err: errKind(e)`) and calls `auditEmitFailed`, and the call proceeds.
+  - An adapter invariant error rethrows before the call.
+  - No alert backend is wired, so the ERROR log and the counter are the control (pdpa M-2).
+- **Labels (pdpa M-1, M-2):** EN "Recipient list disclosure to Resend requested" and "Resend segment removal requested", never "contacts deleted". TH and SV go to the i18n review.
+- **Out of scope:** the E-Blast page's audit-timeline allowlist (`audit-timeline.tsx`) does not show the new rows, so there is no UI change. The F9 audit viewer shows them with their labels.
+
+**Event-type places (migration review H1, M1):**
+- `schema.ts` `auditEventTypeEnum`.
+- `audit-port.ts`: the tuple, the payload map, and the static assert 69 → 71, plus the header lines. `RETIRED` stays at 8.
+- The `declared` list in `audit-port-typed-constraint.test.ts`.
+- `scripts/lib/enum-migration-guard.ts` `REQUIRED_ENUM_VALUES`, and the three lists in its test.
+- A `scripts/verify-schema.ts` canary in the 0326 shape, with a positive control.
+- i18n in all three locales.
+
+`auth/domain/audit-event.ts` and `admin/audit/page.tsx` carry no F7 types, so they are not touched.
+
+**Migration:** `0327_audit_event_broadcast_audience.sql`, journal idx 328, `when` 1798546000000. Bump `when` if the file changes after a dev migrate.
+
+**State table (slice 2):**
+
+| Site / situation | Row | Test |
+|---|---|---|
+| tick 1, attach landed, gate ok | disclosed (count), then the POST | unit `build-audience-tick` "writes broadcast_audience_disclosed before createContactImport" |
+| tick 1, import refused / times out / 5xx | disclosed already written (request) | unit, same file, `it.each` over the import failures |
+| tick 1, disclosed storage failure | ERROR + `auditEmitFailed`, the POST proceeds | unit |
+| tick 1, adapter invariant error | rethrown, no POST | unit |
+| tick 1, attach failed (`reclaimUnattachedAudience`) | none (exempt) | unit |
+| tick 1, lease lost at the import gate after the row | the row stays (request); the next tick's `stale_audience` restart deletes the segment and writes deleted | unit |
+| restart `hold` / `stale_audience` / `audience_missing` | deleted with `reason`, before the delete's lease gate | unit `it.each` |
+| restart, a second attempt on the same segment | none (dedupe) | unit + integration |
+| restart, the gate stops the delete | the row stays (request) | unit |
+| cleanup, terminal row past the grace | deleted `terminal_cleanup` with the requester | unit |
+| reclaim, disclosed row found | deleted `orphan_reclaim` with its `related_member_id` | unit (stub `referencedAudienceIdsForBroadcasts` explicitly) |
+| reclaim, no disclosed row | none; warn + counter; the delete still runs | unit |
+| reclaim, segment already has a deleted row (review round 1, code-review #3) | none, no warn, no counter (the dedupe runs before the disclosure read); the delete still runs | unit `reclaim-orphaned-audiences.test.ts` "a segment already recorded as deleted is neither re-recorded nor reported unattributed" |
+| the dedupe's advisory lock held by another tx for more than 5 s (review round 1, code-review #4 / reliability LOW-3) | `lock_timeout` (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, SQLSTATE 55P03) → not a known loss (review round 2, code-review #1 / #4, reliability LOW-1): the WARN `<prefix>.audience_audit_lock_timeout` + `auditEmitFailed` (the row may be missing), the call proceeds; on the reclaim, no row and no unattributed WARN that run | integration `audience-audit-rows.test.ts` "a read behind a held lock fails with a lock timeout (55P03, not an invariant error)"; unit, both cron files "a lock timeout on the dedupe logs the WARN audience_audit_lock_timeout …" |
+| cron item, adapter invariant error (review round 1, reliability LOW-2) | ERROR `broadcasts.audience_cleanup.audit_invariant` / `broadcasts.audience_reclaim.audit_invariant`, logged once by the row helper (review round 2, code-review #5; the tick restart's `broadcasts.audience_import.audit_invariant` too), no delete, counted `failed` | unit, both cron files and `build-audience-tick-audience-audit.test.ts` |
+| reclaim chunk start, remaining time fits one call but not call + audit wait (review round 2, code-review #2) | deferred (`deferredDeletes`), no delete | unit `reclaim-orphaned-audiences.test.ts` "a chunk is deferred when the time left fits one Resend call but not the call plus the audit lock wait" |
+| another tenant's row, or a NULL-tenant row with the same payload | not seen | integration cross-tenant |
+| an audit read on a tx bound to another tenant (review round 3) | `AuditPortInvariantError` → ERROR `*.audit_invariant`, rethrown, no Resend call | integration `audience-audit-rows.test.ts` "cross-tenant: %s with a tx bound to tenant B refuses tenant A's read as an invariant error" (both reads) |
+| a new `deleteAudience(` / `createContactImport(` call site | the source scan fails | unit source scan (positive control) |
+
+**Test plan:**
+
+| Done-when | Test that goes red first | Level |
+|---|---|---|
+| DA4 | `enum-migration-guard.test.ts`, `audit-port-typed-constraint.test.ts`, `audit-event-label-coverage.test.ts`; `check:audit-events`, `check:audit-counts`; `db:migrate` then `db:verify` on dev | unit + gate |
+| DA1, DA3 | `tests/unit/broadcasts/application/build-audience-tick*.test.ts` (the tick-1 cells) | unit |
+| DA2 restart | the same files (the restart cells) | unit |
+| DA2 sweeps | `cleanup-orphaned-audiences.test.ts`, `reclaim-orphaned-audiences.test.ts` | unit |
+| DA2 sites pinned | new `tests/unit/broadcasts/application/audience-audit-sites.test.ts` | unit |
+| dedupe, tenant fence, no `@` in the payload | new `tests/integration/broadcasts/audience-audit-rows.test.ts`; `tests/integration/audit/completeness.test.ts` | integration |
+| reclaim dedupes before the disclosure read (review round 1) | `reclaim-orphaned-audiences.test.ts` "a segment already recorded as deleted is neither re-recorded nor reported unattributed" | unit |
+| the dedupe's lock wait is bounded at 5 s (review round 1) | `audience-audit-rows.test.ts` "a read behind a held lock fails with a lock timeout (55P03, not an invariant error)" | integration |
+| a cron item's adapter invariant error logs ERROR `*.audit_invariant` (review round 1) | `cleanup-orphaned-audiences.test.ts`, `reclaim-orphaned-audiences.test.ts` "an adapter invariant error logs ERROR audit_invariant …" | unit |
+| a cross-tenant audience audit read is an invariant error, so the site fails closed (review round 3) | `audience-audit-rows.test.ts` "cross-tenant: %s with a tx bound to tenant B refuses tenant A's read as an invariant error" | integration |
+
+**Docs (DA5; pdpa H-1, architect M):**
+- **RoPA F7:** carries the pdpa wording: the rows are requests, not outcomes; a failed store is logged and counted; contacts are detached, not deleted.
+- **RoPA 8d:** every statement that rests on "a leaked audience holds the recipients' contacts" is rewritten. That covers the 8a third arm, residuals 5 and 6, and the DSAR clause.
+- **Code comment:** `drizzle-broadcasts-repo.ts:2870`.
+- **`observability.md`:** § 22.1 gets the new counter and the corrected `audit_emit_failed` emitter list; § 22.3 gets the F7-A1 row and the new counter.
+- **Also updated:** `cron-jobs.md`, go-live § 6.10, `operational-state.md`, the changelog, and this plan's Slices row.
 
 ## Constitution Check
 
@@ -321,13 +429,162 @@ No new cascade decision cell: M-NEW-1 is a pre-Resend guard; the pause adds a wa
 - integration by path, each exit 0: erasure-vs-dispatch-begun 3, already-sent-evidence 6, eblast-send-time-standing 21, member-erasure-cascade 4, scrub-content-for-member 24, dispatch-persist-before-send 2, audience-import-two-tick 4, eblast-approved-exit-vs-dispatch 7, members/erase-member-cascade-real 2, members/reconcile-erasures 2.
 - **Not run locally:** the full `pnpm test:coverage` (CI runs it); no live Verify of round 2 (the pause, the locked re-read and P4 are pinned by unit and integration tests; `canceled` by the gateway unit tests and the coordinator's live measurement).
 
+### Slice 2 (6 Nov 2026)
+
+**Build** (one `software-engineer` builder for rows 1–4; the main session wrote rows 0 and 5 and the `/simplify` refactor). RED → GREEN per state-table row. Every RED failed on an assertion, and its failure line is in its `test(...)` commit message. `check:red-first` reports: 19 commits, every logic change has a RED before it.
+
+**Departures from the plan, accepted:**
+- The F7 tuple, its count assert and the typed payload move with each type's first emitter (69 → 70 → 71), not in DA4. This way the emission grep never sees a type that has no emit site.
+- In the two crons, an adapter invariant error lands in the per-item catch. That item makes no Resend call, is counted `failed`, and its error class is logged. An escape would vanish into `Promise.allSettled`. The tick rethrows, as planned.
+- The `verify-schema` canary has no positive control, because 0326 has none to copy.
+- `d5ce1bf30` is a live-Neon pin written after its GREEN. The repo's held-lock case is the RED for that dedupe.
+
+**False premise found while building.** Two `eblast-send-time-standing` cases and three hold/self-heal cases in `build-audience-tick-failure-paths.test.ts` asserted "no audit row".
+- The failure-paths cases stayed green only because their harness lacked the dedupe stub: the call threw into the lost-record arm.
+- The stub is added now, and all five cases expect the one deleted row.
+
+**`/simplify`** (reuse, simplification, efficiency, altitude):
+- **Fixed** (`487f808a1`): two closure flags in `_audience-audit.ts` are replaced by the tx callback's return value.
+- **Skipped**, with reasons:
+  - Merging `writeAudienceRow` with s4's `recordUnverifiableCount`: that code is outside this diff.
+  - `safeAuditEmitTyped` for the disclosed row: it would change log names the RoPA cites.
+  - Folding the reclaim's two `audit_log` reads into one: a daily cron of at most 200 candidates, and the dedupe read has to take the lock.
+  - The repeated call-site comments: minor.
+
+**Gates on `487f808a1`:**
+- `pnpm check`: exit 0.
+- `pnpm vitest run tests/contract/`: 266 files, 3094 passed + 2 todo.
+- Unit, broadcasts + broadcast + enum guard + label coverage: 280 files, 3921/3921.
+- Integration by path, each exit 0: audience-audit-rows 10, audit/completeness 45, audience-cleanup 5, erasure-after-audience-cleanup 1, orphan-drain 1.
+- Builder runs on `bd8db347f`: audit-event-type-parity 1, halt-flag-precondition 7, eblast-send-time-standing 19.
+- Migration 0327 was applied to dev: `pg_enum` shows both values, and `db:verify` exits 0.
+- `check:audit-events` and `check:audit-counts` exit 0. Neither covers F7.
+- **Not run locally:** the full `pnpm test:coverage` (CI runs it).
+
+**Verify:** the maintainer's `/verify`, 6 Nov 2026, on `bae8a188f`. Setup: :3401 from `wt/f139s2`, Neon dev (0327 applied), the live Resend Broadcasts account, sink addresses only. Result: PASS, with the deviations noted below.
+
+| Done-when / item | Evidence |
+|---|---|
+| Provider premise | `segments.create`, then `contacts.list({ segmentId })` → `count: 0`. The segment was then deleted (GET → 404). MEASURED 09:29 UTC; recorded in `research.md`. |
+| DA1 | Throwaway tenant `test-d4588fe3`, 3 sink members, one approved E-Blast due now. Tick 1 → `import_submitted: 1`. There is exactly one `broadcast_audience_disclosed` row: `recipient_count: 3`, `related_member_id` = the requester, `resend_audience_id` = the row's segment, `actor_user_id: system:cron`, `retention_years: 5`, `leg: import`, `actor_role: system`, and no `@`. Resend held 3 contacts in that segment. |
+| DA2 restart | **Deviation:** the hold path was not driven. Halting the requester (`broadcasts_halted_until_admin_review`) is a terminal refusal (`failed_to_dispatch` / `member_halted`), not a hold; a hold needs a suspended membership. The `/verify` command's premise was wrong, not the code. The same function, `restartAudienceBuild`, was driven through `stale_audience` instead: an approved row B holding a real segment and no import → tick → `audience_restarted: 1`. There is exactly one `broadcast_audience_deleted` row (`reason: stale_audience`, row B, the requester, that segment), and the segment answers 404 at Resend. The next tick ran a fresh tick 1 for B, which wrote a new disclosed row for the new segment and no second deleted row for the old one. The `hold` and `audience_missing` reasons are pinned by the unit `it.each`. |
+| DA2 cleanup | A terminal row C2 was INSERTed holding row A's real segment (3 contacts), with `updated_at` 2 h ago (an UPDATE is re-stamped by a trigger, so the backdate has to be on the INSERT). `cleanup-audiences` → `deleted: 1`. There is one `broadcast_audience_deleted` row (`reason: terminal_cleanup`, row C2, the requester). The segment answers 404 and the row is stamped `audience_deleted_at`. |
+| DA2 reclaim | **Not reachable live:** the cron skips any segment younger than `GRACE_MS` (24 h), and Resend's `created_at` cannot be backdated. Probe: a fresh `broadcast-<slug>-<uuid>` segment → `scanned: 3, orphaned: 0`, and no audit row was added. The attributed arm, the unattributed arm and the counter are pinned by the unit tests. |
+| Probe | A wrong Bearer on dispatch-scheduled → 401. |
+| Labels | `/admin/audit` as super-admin shows both labels in EN, TH and SV (the TH wording after i18n round 1, `bae8a188f`), with no MISSING_MESSAGE. The viewer is scoped to `swecham`, so the labels were read from its event-type filter, not from the test tenant's rows. |
+| Log | *Corrected on 6 Nov 2026 (re-Verify):* the first grep looked for JSON `"level":50` / `40`, and the dev log is pino-pretty, so it matched nothing and proved nothing. A re-read of that log finds one ERROR `broadcasts.audience_import.failed` (`member_halted`, the halted row this run made on purpose) and one WARN `dispatch_failure_email.skipped_no_primary_contact` for the same row. It has no `audience_audit_lost`, `audit_invariant` or lock-timeout line. |
+
+**Teardown:** the tenant and its rows were removed (0 `broadcasts` rows). Resend: the three segments and the three sink contacts were deleted (contacts by id). The account is back to 22 contacts with only `General`. A side finding: the Free plan's 3-segment cap was reached while seeding (`validation_error` "Your plan includes 3 segments"), as `.claude/rules/modules/broadcasts.md` records.
+
+**Review round 1 (6 Nov 2026, on `9c0634790`..`bae8a188f`):**
+
+Verdicts:
+- `/code-review high 763`: 10 candidates; none is High or Medium once checked against the code.
+- pdpa-gdpr: APPROVE WITH CONDITIONS, Low only.
+- drizzle-migration: MERGEABLE, 3 Low.
+- reliability-guardian: MERGEABLE, Low only.
+- i18n: ship, with one TH wording fix.
+
+| Finding | Disposition |
+|---|---|
+| CR #3: reclaim reported a segment already recorded as deleted as unattributed, on every run | **Fixed** (`362852a6f` → `05f52ce19`): the dedupe runs first. State-table row added |
+| CR #4 / rel LOW-3: the audit tx before a bounded Resend call had no bound on its lock wait | **Fixed** (`cab29b031` → `74608f18e`): `SET LOCAL lock_timeout` at `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) before the advisory lock. A timeout is a lost row and the call proceeds. State-table row added. Remaining bound: a row can add up to 5 s before its call, which the cron and tick deadline checks do not count (before this fix the wait had no bound) |
+| rel LOW-2: an adapter invariant error in a cron item logged as the WARN `delete_failed` | **Fixed** (`dd7701766` → `e38f6e566`): it now logs the ERROR `*.audit_invariant`. State-table row added |
+| CR #7: the drain harness's `as never` deps ran the lost-record branch silently | **Fixed** (`1342d2673`): stubs added; the log-hygiene case asserts the row. A grep of `tests/` found no other harness with the gap |
+| CR #2: the rule and the port comment said "after its lease gate, and deduped" | **Kept as built; wording fixed** (`850bae908`). The disclosed row sits after the last lease-fenced step and before the import's own gate, so that gate stays the last read before the POST (architect HIGH). It needs no dedupe: a row holding a segment restarts, so one segment reaches the import once. The broadcasts rule now says so. A gate that stops the call leaves the row as a request (state table) |
+| migration LOW-1 / LOW-2: untyped payload keys; the `findAudienceDisclosureInTx` docblock | **Fixed** (`9afc7f9c5`, `850bae908`) |
+| rel NIT: a test name still said "no audit" | **Fixed** (`f3005b5ab`) |
+| i18n: the two TH labels read as a polite "please send" | **Fixed** (`bae8a188f`): "ส่งคำขอเปิดเผยรายชื่อผู้รับต่อ Resend" / "ส่งคำขอลบกลุ่ม (segment) ใน Resend". Copy only, under D-023: the label coverage test checks that a label exists, not its wording |
+| pdpa L-1 / L-2, rel LOW-1: the RoPA's attempt cases, the NOT MEASURED premise, write-time timestamps | **Fixed** (`93a4611c5`) |
+| pdpa L-3: `operational-state.md` | **After merge**: editing it now would conflict with #761. The "Also updated" line above means post-merge |
+| CR #1: a tenant-binding refusal (a plain `Error`) is treated as a lost row | **Low, unreachable; documented**: `withTx` always binds through `runInTenant` (same disposition as spec 140 s4 CR4 #7) |
+| CR #5: a restart writes a deleted row for a segment never disclosed | **Accepted**: it over-records a request, which is the safe direction (pdpa INFO) |
+| CR #6: a partial unique index instead of lock + EXISTS | **Listed**: the module's convention is the lock pattern (evidence, unverifiable, audience). The index is a follow-up candidate |
+| CR #8: `emit` rather than `emitTyped` | **Listed (Low)**: the payload is typed by `F7AuditPayloadShapes[E]` inside `writeAudienceRow` |
+| CR #9: the deleted payload is built twice | **Listed (Low)** |
+| CR #10: the tenant probe runs twice in the reclaim tx | **Listed (Low)**: daily cron only |
+| migration LOW-3: the reads use single-column indexes | **Listed**: about one row per broadcast. Revisit if the reclaim volume grows |
+
+**Gates after round 1:**
+- **On `4a3597a44`:**
+  - `pnpm check`: exit 0 (red-first: 34 commits).
+  - Unit (broadcasts, broadcast, the enum guard and label coverage): 3924/3924.
+  - Contract: 3094 passed + 2 todo.
+  - Integration by path, each exit 0: audience-audit-rows 11, audience-cleanup 5, orphan-drain 1.
+- **Then:** merged `origin/main` (`ee1f69982`, a changelog conflict; both sides kept).
+
+**Review round 2** (targeted, on `93a4611c5..4a3597a44`; reliability-guardian, spec-compliance-auditor, `/code-review high`):
+- **reliability:** MERGEABLE. LOW-1: two crons that wait more than 5 s on one segment's lock log a critical `audience_audit_lost` though the winner may have written the row. The chance is low, because the lock is held for milliseconds. **Listed:** the runbook line in `cron-jobs.md` says a lock-wait lost row is possible.
+- **spec-compliance:** DA1, DA3, DA4 and DA5 MET. DA2 PARTIAL on evidence only.
+  - **M1:** `74608f18e` (`lock_timeout`) is on the restart and cleanup path that Verify drove. **Closed by a short `/verify` on the final head** (below).
+  - **M2:** the test plan lacked the round 1 rows. **Fixed** above.
+  - **L1:** the full-path lock-timeout case is pinned at unit level only. **Listed.**
+  - **L2:** the source scan attributes a call inside an arrow function to the enclosing `function`. **Fixed:** it is named in `OUT_OF_REACH`.
+
+**Review round 2 fixes** (`/code-review high 93a4611c5..4a3597a44`, 10 candidates):
+
+| Finding | Disposition |
+|---|---|
+| CR2 #5: the invariant ERROR was pasted into two cron catches, and the tick restart had none | **Fixed** (`ce232c087` → `359bcac5d`): `writeAudienceRow` logs `${prefix}.audit_invariant` before it rethrows, so all three sites log it the same way |
+| CR2 #1 / #4 / rel r2 LOW-1: a lock timeout (55P03) was logged as a critical lost row, although the holder may be writing that row | **Fixed** (same commits): it is now the WARN `*.audience_audit_lock_timeout`. It is still counted in `auditEmitFailed`, because the row may be missing, and the call proceeds |
+| CR2 #3: the lost-row log carried the error class only | **Fixed**: it now logs `errLogFields`, which adds the SQLSTATE `code` (live-Neon cell `91ff8b420`) |
+| CR2 #2: the reclaim chunk-start deadline check did not charge the audit wait | **Fixed**: the check now charges `RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`. The constant moved to `audit-port.ts`. State-table row added. Cleanup's terminal pass has no deadline check: at most 50 rows × (10 s call + 5 s lock) = 150 s, under `maxDuration` 300 s |
+| CR2 #6: the 5 s wait is not in the lease budget | **Documented** in `_dispatch-lease.ts`'s list of bounds "outside W_max on purpose". The restart's row is followed by `leaseGateStep('delete_audience')`, so the wait cannot overrun the lease |
+| CR2 #7 / #8: runbook wording; the test's timer | **Fixed** (`9173752e3`, `91ff8b420`, `448c8b275`): 20 s guard, timer cleared |
+| CR2 #9 / #10: the retention sweep's literal; one combined statement | **Listed (Low)** |
+
+**Review round 3** (the second full round: `/code-review high 763` on `448c8b275`, pdpa-gdpr). pdpa: APPROVE WITH CONDITIONS, documentation only.
+
+| Finding | Disposition |
+|---|---|
+| pdpa r3 M-1 / L-1 / L-2 / L-3: the RoPA removal rows, the metric and alert rows, and the reclaim runbook did not name the two failure modes; `research.md` was in the future tense | **Fixed** (`8fc4ed363`) |
+| CR3 #1: a tenant-binding refusal in the two audience reads was a plain `Error`, read as a lost row, so the call proceeded (fail-open on a wiring bug; also CR #1 of round 1) | **Fixed** (`0e859273f` → `4aa57850e`, `41935049e`). Those two reads rethrow it as `AuditPortInvariantError`, so the helper logs `*.audit_invariant` and makes no Resend call. `assertTenantBoundTx` still throws a plain `Error` with the same message at every other site; a module-local `WeakSet` tells its refusals apart from a driver error on the probe. State-table and test-plan rows added |
+| CR3 #3: the reclaim's failure logs said `broadcastId: null` | **Fixed** (`487f1bdd6` → `cd711f245`): a log-only `segmentNameBroadcastId`. The row still never names a guessed id (pdpa M-3) |
+| CR3 #5: the two reads' ordering contract was not stated | **Fixed** (`4aa57850e`): the port docblocks say `hasAudienceDeletedAuditInTx` sets the lock timeout and takes the lock, and must run first |
+| CR3 #9: the scan accepts a record call in another branch | **Fixed** (`5e6e45dfc`): named in `OUT_OF_REACH` |
+| CR3 #2: cleanup has no deadline | **Accepted**: bounded at 150 s, as in CR2 #2 |
+| CR3 #4: a lock timeout counts on the same series as a real loss | **Accepted**: the row may be missing. The WARN versus ERROR line tells them apart |
+| CR3 #6 / #7 / #8: three copies of the audit envelope, the dedupe pattern and the payload literal | **Listed (Low)**: a shared helper is a follow-up candidate |
+
+**Re-Verify on the final head:** the maintainer's `/verify`, 6 Nov 2026, on `4eddf9b61`, after review rounds 1–3. Run on :3401, Neon dev, the live Resend account, sink addresses only. The run drove the paths the review fixes touched that can be driven live: the restart and the cleanup, with the dedupe lock and its `lock_timeout`. It did NOT exercise the invariant or lock-timeout log arms. It only observed that neither fired, and those arms are proven by the unit and integration cells. The reclaim changes (dedupe first, `segmentNameBroadcastId`, the deadline charge) cannot be driven live, because of the 24 h grace, and also rest on the unit cells. Result: **PASS**.
+
+| Done-when / item | Evidence |
+|---|---|
+| DA1 | Throwaway tenant `test-f54103d1`, 3 sink members, one approved E-Blast due now. Tick 1 → `import_submitted: 1`. Exactly one `broadcast_audience_disclosed` row, with `recipient_count: 3`, `related_member_id` = the requester, `system:cron`, retention 5, and no `@` |
+| DA2 restart | Row B2 (approved, holding a real segment, no import id). Tick → `audience_restarted: 1`; exactly one `broadcast_audience_deleted` with `reason: stale_audience` (row B2, the requester); the segment answers 404 at Resend. The next tick ran a fresh tick 1: a new disclosed row (new segment, count 3), and still one deleted row for the old segment (count = 1) |
+| DA2 cleanup | Terminal row C, INSERTed with `updated_at` 2 h ago and holding row A's real segment. `cleanup-audiences` → `deleted: 1`; one deleted row with `reason: terminal_cleanup` (row C, the requester); the segment answers 404; `audience_deleted_at` is set |
+| Probe | A wrong Bearer → 401 |
+| Log (read as pino-pretty) | One ERROR `broadcasts.audience_import.failed` (`gateway_permanent`) and its WARN `skipped_no_primary_contact`, both for the setup row below. No `audience_audit_lost`, `audit_invariant` or `audience_audit_lock_timeout` line |
+
+**Setup slip in the run (not the code):** the shell redirect created the signal file `B` empty before the id was written. The harness read it in that gap, and inserted row B with `resend_audience_id = ''`. That row ended `failed_to_dispatch` / `gateway_permanent`; nothing reached Resend for it, and its segment was then used by row B2. Unplanned probe: a row holding an empty segment id fails permanently at the gateway, with no import and no audit row.
+
+**Teardown:** the tenant and its rows were removed (0 `broadcasts` rows). At Resend, every segment created was deleted, and the 3 sink contacts were deleted by id. The account is back at 22 contacts, with only `General`.
+
+**Gates after rounds 2 and 3:**
+- **Runs on `4eddf9b61` code** (round 3's last code commit was `41935049e`; every commit after it is docs-only):
+  - unit (broadcasts, broadcast, enum guard, label coverage): 3928/3928;
+  - contract: 3094 passed + 2 todo;
+  - integration by path, each exit 0: tx-tenant-binding-guard 4, audience-audit-rows 11, audience-cleanup 5;
+  - `pnpm check`: exit 0 (red-first: 48 commits).
+- **Runs on `448c8b275`** (round 2 code): unit 3928, contract 3094, integration audience-audit-rows 11, audience-cleanup 5, audit/completeness 45, and `pnpm check` exit 0.
+- **Not run locally:** the full `pnpm test:coverage` (CI runs it).
+
+**Prod count (pdpa L-2; the maintainer's order on 6 Nov 2026).** A read-only transaction (`transaction_read_only = on`) against host `ep-bold-block`, at 12:00 UTC:
+- `broadcast_orphaned_resend_ids` holds 0 audience rows (0 unsettled) and 0 rows of any type;
+- `broadcasts` holds 0 rows.
+
+So prod holds no segment from before this slice that would need an audit row, and the no-backfill premise holds.
+
+**Dev litter:** each run of `audience-audit-rows` leaves `audit_log` rows with the summary `spec 139 s2 fixture`, some with `tenant_id IS NULL` (`audit_log` is append-only).
+
+
 ## Rollout
 
 - **Slice 1 is live on merge for the legacy leg:** erasure now deletes and cancels a dispatch-begun draft.
   - No flag, because this is a privacy fix.
   - Rollback is a revert commit.
   - Once it has merged, runbook step 3b needs no manual Resend action.
-- **Slice 2:** migration 0322 runs on deploy (`vercel-build`); the rows start on merge. Rollback is a revert commit; the enum values stay.
+- **Slice 2:** migration 0327 runs on deploy (`vercel-build`); the rows start on merge. Rollback is a revert commit; the enum values stay.
 
 ## Risks
 
