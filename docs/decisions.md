@@ -258,10 +258,10 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
   | `approved` rows with `resend_audience_id` | 0 |
   | rows with `resend_broadcast_id` | 0 |
   | all `broadcasts` rows | 0 |
-  | `broadcast_send_started` audit rows | 1 (a past send whose row is gone) |
+  | `broadcast_send_started` audit rows | 1: one send on 2026-07-07 08:50 UTC whose `broadcasts` row was since deleted (its timestamp, read in the same ordered probe) |
   | `audit_log` rows of the two retired types | 0 |
 
-  So the legacy leg's unknown-id retry residual (RoPA 8d) and the wrong-case window (8a) have no live row behind them. The audit filter hides no existing row.
+  No row is live, so no legacy-leg row can be in flight at deploy. One historical send exists, from 2026-07-07, before the lowercase push of spec 140 s3 R1-A. It is the one send that bounds the wrong-case window of RoPA 8a, and the legacy-retry residual of 8d. The audit filter hides no existing row.
 - *Rollback*: a revert re-adds the flag check with the flag absent, so the legacy leg is live again. s2's skip stops it touching an import row. Three effects remain:
   - rows holding import columns stay `approved` under the skip, and staff cannot cancel them (`cancel-broadcast.ts` refuses an `approved` row with `audience_import_id` as `sending_started`); they need (c) or a roll-forward;
   - the 500 clamp returns, so an `approved` row with 501–900 recipients fails at dispatch and the member is emailed;
