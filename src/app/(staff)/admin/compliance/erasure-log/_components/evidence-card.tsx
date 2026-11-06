@@ -221,7 +221,7 @@ export function EvidenceCard({
                   accepted (spec 140 s3 R1-I; `contactsDetached` and `countsNote`).
                   The segment wire (spec 140 s4) answers 200 only for a membership
                   that existed (MEASURED 5 Nov 2026), so a `detachWire: 'segments'`
-                  record's figure is memberships removed (`contactsDetachedSegments`,
+                  record's figure is segment entries removed (`contactsDetachedSegments`,
                   PR #756 review round 1). The contact record itself survives at
                   the processor (residual 8a).
                 */}

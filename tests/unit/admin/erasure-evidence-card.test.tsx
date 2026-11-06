@@ -103,7 +103,9 @@ describe('EvidenceCard', () => {
     // PR #756 review round 2 — the final copy: a minimum, cite the first figure,
     // and the other-letter-case copy the detach cannot reach.
     expect(screen.getByText(/counts segment entries Resend confirmed it removed\. It is a minimum/i)).toBeInTheDocument();
-    expect(screen.getByText(/stored in another letter case is not covered/i)).toBeInTheDocument();
+    // Round 3 — the copy is removed, not "covered", and pre-5-Nov E-Blasts are named.
+    expect(screen.getByText(/stored in another letter case is not removed/i)).toBeInTheDocument();
+    expect(screen.getByText(/an E-Blast sent before 5 Nov 2026/)).toBeInTheDocument();
     expect(screen.queryByText(/may include addresses that were already absent/i)).toBeNull();
     expect(screen.queryByText(/^Earlier record/)).toBeNull();
   });
@@ -133,6 +135,9 @@ describe('EvidenceCard', () => {
       baseRow({ subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 0, contactsFailed: 0, detachWire: null } }),
     );
     expect(screen.getByText(/^Earlier record \(older Resend detach method\): each contact is counted once\./)).toBeInTheDocument();
+    // Round 3 — the old wire's measured behaviour, not "whether or not".
+    expect(screen.getByText(/accepted a detach request for an address that was no longer in the audience/)).toBeInTheDocument();
+    expect(screen.queryByText(/whether or not the address was in the audience/)).toBeNull();
     expect(screen.queryByText(/counts segment entries Resend confirmed it removed/i)).toBeNull();
   });
 
