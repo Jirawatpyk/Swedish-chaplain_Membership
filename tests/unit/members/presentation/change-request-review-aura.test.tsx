@@ -114,9 +114,15 @@ describe('change-request review on AURA (T508)', () => {
     // Board `Admin-change-request-mobile`: <ul> flex column, gap 12px, no
     // frame; the frame and row dividers are the desktop table's only.
     expect(list).toHaveClass('flex', 'flex-col', 'gap-3');
-    for (const cls of ['divide-y', 'border', 'rounded-[var(--aura-radius-md)]', 'bg-[var(--aura-bg-surface)]']) {
-      expect(list.className.split(' ')).not.toContain(cls);
-      expect(list.className.split(' ')).toContain(`sm:${cls}`);
+    expect(list.className.split(' ')).not.toContain('divide-y');
+    expect(list.className.split(' ')).toContain('sm:divide-y');
+  });
+
+  it('from 640px the rows are divided inside the card with no frame of their own (board, no table in a card)', () => {
+    renderClient();
+    const classes = screen.getByTestId('change-request-decision-table').className.split(' ');
+    for (const cls of ['sm:border', 'sm:rounded-[var(--aura-radius-md)]', 'sm:bg-[var(--aura-bg-surface)]']) {
+      expect(classes).not.toContain(cls);
     }
   });
 

@@ -45,14 +45,16 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
     <ul
       className={cn(
         // Phone (board `Admin-change-request-mobile`): a plain list of field
-        // cards 12px apart. From 640px: one framed table, rows divided.
-        'flex flex-col gap-3 sm:block sm:divide-y sm:divide-[var(--aura-border-default)] sm:rounded-[var(--aura-radius-md)] sm:border sm:border-[var(--aura-border-default)] sm:bg-[var(--aura-bg-surface)]',
+        // cards 12px apart. From 640px (board `Admin-change-request`): rows
+        // divided by rules straight inside the card, no frame of their own,
+        // text in line with the card title (no table in a card).
+        'flex flex-col gap-3 sm:block sm:divide-y sm:divide-[var(--aura-border-default)]',
         className,
       )}
       data-testid="change-request-decision-table"
     >
       <li
-        className="hidden gap-4 px-3 py-2 font-mono text-xs tracking-wider text-[var(--aura-fg-secondary)] uppercase sm:grid sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_9rem]"
+        className="hidden gap-4 py-2 font-mono text-xs tracking-wider text-[var(--aura-fg-secondary)] uppercase sm:grid sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_9rem]"
         aria-hidden="true"
       >
         <span>{tDiff('field')}</span>
@@ -81,7 +83,7 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
             // `Admin-change-request-mobile`): a card per field — the name and
             // the Approve checkbox on its first line, Current / Proposed as a
             // labelled list, the state word at its foot.
-            className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 text-sm max-sm:rounded-[var(--aura-card-radius)] max-sm:border max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:p-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_9rem] sm:grid-rows-[auto_1fr] sm:gap-x-4 sm:gap-y-1 sm:px-3 sm:py-3"
+            className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 text-sm max-sm:rounded-[var(--aura-card-radius)] max-sm:border max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:p-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_9rem] sm:grid-rows-[auto_1fr] sm:gap-x-4 sm:gap-y-1 sm:py-3"
             data-field-key={f.key}
             data-undecidable={undecidable ? 'contact_removed' : undefined}
           >
