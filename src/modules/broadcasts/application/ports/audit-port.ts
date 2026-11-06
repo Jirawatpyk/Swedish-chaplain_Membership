@@ -1012,6 +1012,11 @@ export interface AudienceDeletedAuditPort {
    *   commits, this answers false; if it rolls back, this writes and answers
    *   true. The wait is bounded by `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` and ends
    *   in a 55P03 driver error.
+   * - That bound is a `SET LOCAL lock_timeout`, and it persists for the rest
+   *   of the caller's transaction (review round 1, code-review #2). So call
+   *   this in a transaction of its own (`writePreCallAuditRow` opens one per
+   *   row) and as its last lock-taking statement; a later lock wait in the
+   *   same transaction would otherwise inherit the 5 s bound.
    * - Nothing is swallowed: any other storage error reaches the caller.
    */
   emitOnce(tx: unknown, event: AudienceDeletedEmitInput): Promise<boolean>;

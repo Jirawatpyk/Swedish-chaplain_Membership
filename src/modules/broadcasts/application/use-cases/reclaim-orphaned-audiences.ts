@@ -134,9 +134,14 @@ export interface ReclaimOrphanedAudiencesInput {
 /**
  * Spec 140 slice 3 (DT5) — how far before the route's `maxDuration` the
  * deadline sits. The last page and the last chunk each start with at least one
- * bounded call (`RESEND_CALL_TIMEOUT_MS`, 10 s) left and end by the deadline,
- * so this margin holds only what follows or is unbounded: the one DB read
- * between the listing and the deletes, the log and the response.
+ * bounded call (`RESEND_CALL_TIMEOUT_MS`, 10 s) left. This margin holds what
+ * follows or is not charged: the one DB read between the listing and the
+ * deletes, the log and the response, and (spec 142, review round 1,
+ * code-review #4) each orphan's audit-row DB work before its delete: the
+ * tenant probe, the disclosure and existence reads, and an INSERT that can
+ * wait up to `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` (5 s) on another tx's
+ * uncommitted insert of the key. So the last chunk can overrun `deadlineAt` by
+ * up to that wait plus its DB time; both fit inside the 30 s.
  */
 export const RECLAIM_DEADLINE_MARGIN_MS = 30_000;
 
@@ -417,10 +422,11 @@ export async function reclaimOrphanedAudiences(
     // Spec 140 DT5 — start a chunk only while one bounded call still fits (the
     // gateway's listing pages judge with the same rule, review round 1 R1-H).
     // Spec 142 — the audit row each delete writes first is not charged here:
-    // RECLAIM_DEADLINE_MARGIN_MS covers the DB work, and the Resend call is
-    // bounded by RESEND_CALL_TIMEOUT_MS. (Its INSERT can still wait on another
-    // tx's uncommitted insert of the key, at most AUDIENCE_AUDIT_LOCK_TIMEOUT_MS;
-    // in practice that holder is one short INSERT.)
+    // RECLAIM_DEADLINE_MARGIN_MS absorbs its DB work, including an INSERT wait
+    // of up to AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, so the last chunk can end past
+    // deadlineAt by that much plus DB time, inside the margin. The Resend call
+    // is bounded by RESEND_CALL_TIMEOUT_MS. In practice the INSERT's holder is
+    // one short INSERT.
     if (!oneCallFitsBefore(input.deadlineAt, deps.clock.now().getTime(), RESEND_CALL_TIMEOUT_MS)) {
       deferredDeletes = orphans.length - i;
       broadcastsMetrics.audienceReclaimTruncated(deps.tenant.slug, 'deletes');
