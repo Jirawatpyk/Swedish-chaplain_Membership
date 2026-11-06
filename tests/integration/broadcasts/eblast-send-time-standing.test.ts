@@ -531,7 +531,11 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     expect(held.resendBroadcastId).toBeNull();
     expect(await stuckGaugeMatches(row.broadcastId!)).toBe(false);
     expect(await reserved(memberId)).toBe(1);
-    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+    // Spec 139 s2 (DA2) — the hold's segment delete is the one row: the
+    // teardown records it before the delete (no failure or refusal row).
+    expect(
+      (await dispatchAudits(row.broadcastId!)).map((a) => [a.eventType, (a.payload as Record<string, unknown>)['reason']]),
+    ).toEqual([['broadcast_audience_deleted', 'hold']]);
 
     // Access back to `full` (0309: an early bill on a paid period keeps access).
     await runInTenant(tenant.ctx, (tx) =>
@@ -611,7 +615,11 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     expect(held.audienceImportCompletedAt).toBeNull();
     expect(await stuckGaugeMatches(row.broadcastId!)).toBe(false);
     expect(await reserved(memberId)).toBe(1);
-    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+    // Spec 139 s2 (DA2) — the hold's segment delete is the one row: the
+    // teardown records it before the delete (no failure or refusal row).
+    expect(
+      (await dispatchAudits(row.broadcastId!)).map((a) => [a.eventType, (a.payload as Record<string, unknown>)['reason']]),
+    ).toEqual([['broadcast_audience_deleted', 'hold']]);
   });
 
   it('import leg, tick 1, a TERMINATED (lapsed) member → failed_to_dispatch (member_not_in_good_standing), permanently, no Resend call', async () => {

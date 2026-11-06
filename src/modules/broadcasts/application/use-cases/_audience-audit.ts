@@ -3,7 +3,10 @@
  * calls on a segment.
  *
  * `broadcast_audience_disclosed` records a recipient list handed to Resend
- * (tick 1, before `createContactImport`).
+ * (tick 1, before `createContactImport`); `broadcast_audience_deleted` records
+ * the delete of a segment that may hold recipients, once per segment (deduped
+ * on `resend_audience_id` under the repo's advisory lock, in the same tx as
+ * the insert; the first `reason` wins).
  *
  * Every row is written BEFORE its Resend call, in its own tenant-bound
  * `withTx` (never a null tx: that would take a pool connection with no
@@ -27,7 +30,7 @@ import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 
-import type { AuditPort, F7AuditPayloadShapes } from '../ports/audit-port';
+import type { AudienceDeleteReason, AuditPort, F7AuditPayloadShapes } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import { isAdapterInvariantError } from './_safe-audit-emit';
 
@@ -38,10 +41,18 @@ export interface AudienceAuditDeps {
   readonly audit: Pick<AuditPort, 'emit'>;
 }
 
-type AudienceEventType = 'broadcast_audience_disclosed';
+/** A delete site's ports: the dedupe read too. */
+export interface AudienceDeleteAuditDeps extends AudienceAuditDeps {
+  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'hasAudienceDeletedAuditInTx'>;
+}
+
+type AudienceEventType = 'broadcast_audience_disclosed' | 'broadcast_audience_deleted';
 
 /** The log-line prefix of the site that writes the row. */
-export type AudienceAuditLogPrefix = 'broadcasts.audience_import';
+export type AudienceAuditLogPrefix =
+  | 'broadcasts.audience_import'
+  | 'broadcasts.audience_cleanup'
+  | 'broadcasts.audience_reclaim';
 
 /**
  * Write one row in its own tx. `build` runs inside that tx and answers the
@@ -121,5 +132,40 @@ export async function recordAudienceDisclosed(
       leg: 'import',
       actor_role: 'system',
     }),
+  );
+}
+
+/**
+ * DA2 — a segment is about to be deleted. Deduped: a segment that already has
+ * this tenant's deleted row gets no second one (the delete still runs). Never
+ * throws, except an adapter invariant error.
+ */
+export async function recordAudienceDeleted(
+  deps: AudienceDeleteAuditDeps,
+  fields: {
+    readonly broadcastId: string;
+    readonly relatedMemberId: string;
+    readonly resendAudienceId: string;
+    readonly reason: AudienceDeleteReason;
+  },
+  logPrefix: AudienceAuditLogPrefix,
+): Promise<void> {
+  await writeAudienceRow(
+    deps,
+    'broadcast_audience_deleted',
+    logPrefix,
+    fields,
+    (p) => `Broadcast ${p.broadcast_id}: Resend segment removal requested (${p.reason})`,
+    async (tx) =>
+      (await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, fields.resendAudienceId))
+        ? null
+        : {
+            broadcast_id: fields.broadcastId,
+            related_member_id: fields.relatedMemberId,
+            resend_audience_id: fields.resendAudienceId,
+            reason: fields.reason,
+            leg: 'import',
+            actor_role: 'system',
+          },
   );
 }
