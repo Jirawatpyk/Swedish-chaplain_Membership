@@ -41,6 +41,12 @@ describe('/admin/finance segment layout gate (#78)', () => {
     expect(canPerform).toHaveBeenCalledWith('admin', 'insights.finance');
   });
 
+  it('a refused page guard stops the layout before any other check (marketing)', async () => {
+    requirePagePermission.mockRejectedValue(new Error('NEXT_HTTP_ERROR_FALLBACK;404'));
+    await expect(FinanceLayout({ children: 'page' })).rejects.toThrow('NEXT_HTTP_ERROR_FALLBACK;404');
+    expect(canPerform).not.toHaveBeenCalled();
+  });
+
   it('renders the page for an admin with the flag on, after the invoicing.read page guard', async () => {
     const out = (await FinanceLayout({ children: 'page' })) as ReactElement | string;
     expect(out).toBe('page');
