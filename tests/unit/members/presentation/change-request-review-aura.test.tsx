@@ -100,12 +100,12 @@ describe('change-request review on AURA (T508)', () => {
     expect(within(row).getByText(REVIEW.willReject)).toBeInTheDocument();
   });
 
-  it('the state words show from 640px only: the phone card has the Approve checkbox and no foot line (board)', () => {
+  it('the phone card keeps the state words at its foot, as both boards draw them', () => {
     renderClient();
     const row = document.querySelector('[data-field-key="phone"]') as HTMLElement;
-    // Board `Admin-change-request-mobile` draws no state line on a phone card;
-    // a lone "Will be approved" under the values read as a label with its value missing.
-    expect(within(row).getByText(REVIEW.willApprove)).toHaveClass('max-sm:hidden');
+    // Boards `Admin-change-request` and `Admin-change-request-mobile` both print
+    // "Will be approved" / "Will be rejected" (12px, secondary); never hidden on a phone.
+    expect(within(row).getByText(REVIEW.willApprove)).not.toHaveClass('max-sm:hidden');
   });
 
   it('on a phone the field cards are a plain list 12px apart, not one framed box (board)', () => {
