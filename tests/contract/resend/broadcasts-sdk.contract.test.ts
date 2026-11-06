@@ -690,6 +690,9 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       ['a path segment around a real id', `../contacts/${AUD}`],
       ['a padded real id', ` ${AUD} `],
       ['a prefixed real id', `aud_${AUD}`],
+      // Round 4 — the `aud-${uuid}` fixture shape (`aud-live-<uuid>` in the
+      // integration suites): a UUID is in it, so it is refused, deliberately.
+      ['the aud-live-<uuid> fixture shape', `aud-live-${AUD}`],
     ])('deleteAudience on %s is refused as invalid_identifier, with no request', async (_name, audienceId) => {
       const calls = stubWire(() => json(200, { deleted: true }));
       await expect(resendBroadcastsGateway.deleteAudience(audienceId)).rejects.toMatchObject({
@@ -703,13 +706,18 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     // Round 3 (reliability L3) — the id Resend RETURNED from a create is checked
     // too, before it is returned and persisted: a non-UUID id would otherwise be
     // stored and later refused by every call that puts it in a path.
-    it('createAudience refuses a non-UUID id in Resend\u2019s answer as invalid_identifier', async () => {
+    it('createAudience refuses a non-UUID id in Resend\u2019s answer as invalid_identifier, after a warn naming its class', async () => {
+      const warn = vi.spyOn(logger, 'warn');
       stubWire(() => json(201, { object: 'audience', id: 'aud_1', name: 'probe' }));
       await expect(resendBroadcastsGateway.createAudience('probe')).rejects.toMatchObject({
         name: 'GatewayThrowable',
         kind: 'permanent',
         code: 'invalid_identifier',
       });
+      // Round 4 — a warn BEFORE the throw, with the id's class and never the id.
+      const line = warn.mock.calls.find((c) => c[1] === 'resend.broadcasts.created_audience_id_not_a_segment');
+      expect(line?.[0]).toEqual({ idClass: 'aud_prefixed' });
+      warn.mockRestore();
     });
 
     // Spec 140 s3 review round 1 (R1-K) — the SDK puts the email in the URL path
