@@ -1834,7 +1834,12 @@ export function makeDrizzleBroadcastsRepo(
       return rows[0]?.found === true || rows[0]?.found === 't';
     },
 
-    /** See the port docblock; fenced exactly as `hasAudienceDeletedAuditInTx`. */
+    /**
+     * See the port docblock. Tenant-fenced as `hasAudienceDeletedAuditInTx`
+     * (`assertTenantBoundTx` and the explicit `tenant_id` predicate), but it
+     * takes no lock: disclosed rows are append-only, and the dedupe read that
+     * runs before it in the same tx (the reclaim's order) holds the lock.
+     */
     async findAudienceDisclosureInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string) {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'findAudienceDisclosureInTx');

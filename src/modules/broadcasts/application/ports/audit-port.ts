@@ -240,9 +240,15 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_unsubscribe_unattributed',
 
   // --- Spec 139 s2 (migration 0327) — the import leg's Art. 30 rows --------
-  // Written BEFORE the Resend call, after its lease gate, so a row records a
-  // request, not its outcome (a function killed after the call cannot erase
-  // it). Ids and a count only, never an address or a hash; the requester as
+  // Written BEFORE the Resend call, after the last lease-fenced step before it
+  // (the disclosed row after the fenced attach and before the import's own
+  // `IMPORT_HEADROOM_MS` gate; the restart's deleted row before the delete's
+  // lease gate), so a row records a request, not its outcome: a function
+  // killed after the call cannot erase it, and a gate that then stops the call
+  // leaves the row standing as a request. The deleted row is deduped per
+  // segment; the disclosed row is not, because a row that already holds a
+  // segment restarts, so one segment reaches the import once. Ids and a count
+  // only, never an address or a hash; the requester as
   // snake_case `related_member_id` (the Art. 15 export key; a system row is
   // not the member's own activity, so never `member_id`).
   'broadcast_audience_disclosed',
