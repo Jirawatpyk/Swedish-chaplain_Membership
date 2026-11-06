@@ -206,7 +206,7 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     await expect(runInTenant(asTenantContext(tenantB.ctx.slug), (tx) => call(repo, tx, slug))).rejects.toThrow(/tx tenant mismatch/);
   });
 
-  describe('DA1 through the real composition root', () => {
+  describe('DA1 / DA2 through the real composition root', () => {
     async function seedApprovedRow(): Promise<string> {
       const broadcastId = randomUUID();
       await runInTenant(tenantA.ctx, (tx) =>
@@ -293,6 +293,65 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       });
       expect(JSON.stringify(rows[0])).not.toContain('@');
       expect(await disclosureOf(tenantA, audienceId)).toEqual({ broadcastId: id, relatedMemberId: requester.memberId });
+    });
+
+    it('a restart whose delete failed, then a second restart on the same segment: ONE deleted row (stale_audience)', async () => {
+      const id = await seedApprovedRow();
+      const audienceId = `aud-stale-${randomUUID()}`;
+      await runInTenant(tenantA.ctx, (tx) =>
+        tx.update(broadcasts).set({ resendAudienceId: audienceId }).where(and(eq(broadcasts.tenantId, tenantA.ctx.slug), eq(broadcasts.broadcastId, id))),
+      );
+      const deletes: string[] = [];
+      const gateway = (failDelete: boolean) =>
+        new Proxy(
+          {
+            async deleteAudience(audience: string) {
+              deletes.push(audience);
+              if (failDelete) throw Object.assign(new Error('timeout'), { kind: 'retryable', subKind: 'timeout', reason: 'aborted' });
+            },
+          },
+          {
+            get: (target, prop) =>
+              prop in target || prop === 'then'
+                ? (target as Record<string | symbol, unknown>)[prop]
+                : async () => {
+                    throw new Error(`gateway.${String(prop)} must not be called here`);
+                  },
+          },
+        ) as unknown as BroadcastsGatewayPort;
+      const tick = async (port: BroadcastsGatewayPort) =>
+        buildAudienceTick(
+          {
+            ...(await makeBuildAudienceTickDeps(tenantA.ctx.slug, { tickStartedAt: Date.now() })),
+            broadcastsGateway: port,
+            brandChrome: NO_BRAND,
+            resolveRecipients: async () =>
+              ok({ recipients: RECIPIENTS, estimatedCount: RECIPIENTS.length, orphans: [], droppedByPreference: 0 }),
+          },
+          { broadcastId: asBroadcastId(id) },
+        );
+
+      const first = await tick(gateway(true));
+      expect(first.ok).toBe(false);
+      const second = await tick(gateway(false));
+      expect(second, JSON.stringify(second)).toEqual({ ok: true, value: { kind: 'audience_restarted' } });
+      expect(deletes).toEqual([audienceId, audienceId]);
+
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .where(and(eq(auditLog.eventType, 'broadcast_audience_deleted'), sql`${auditLog.payload}->>'resend_audience_id' = ${audienceId}`));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ tenantId: tenantA.ctx.slug, actorUserId: 'system:cron' });
+      expect(rows[0]!.payload).toEqual({
+        broadcast_id: id,
+        related_member_id: requester.memberId,
+        resend_audience_id: audienceId,
+        reason: 'stale_audience',
+        leg: 'import',
+        actor_role: 'system',
+      });
+      expect(JSON.stringify(rows[0])).not.toContain('@');
     });
   });
 });
