@@ -217,6 +217,9 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | #199 | `Card` with `title` + `titleId` sets `aria-labelledby` on its root whatever `as` is; on `as="div"` (no role) that names a generic element, which ARIA prohibits. Ask: label the root only when it is a `section`/`article`/`aside`/`form` or carries a `role` (handoff addendum 100, found in PR Q) | `step-card.tsx` keeps its own `h3` inside `<Card as="div">` instead of `title` |
+| #200 | DataTable keeps `grid: false` columns in its column list for `aria-colcount` / `aria-colindex`, so a grid shows a count above its visible columns and, with such a column mid-list, an index gap (handoff addendum 101, found in PR Q's a11y review) | `member-invoices-table.tsx` puts its card-only columns last, so visible indexes run 1..N; the count stays high in it and `csv-import-history-table.tsx` |
+| #201 | `EmptyState` always draws an icon (the default inbox); a compact placeholder in a table cell or panel cannot leave it out. Ask: `icon={false}` (handoff addendum 102, found in PR Q's UX review) | None: the cell and panel placeholders keep the icon |
+| #202 | `EmptyState tone="danger"` keeps the inbox icon. Ask: default the danger tone to `triangle-alert` (handoff addendum 103, found in PR Q) | `src/components/shell/empty-state.tsx` passes `triangle-alert` when tone is danger and no icon is given |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
