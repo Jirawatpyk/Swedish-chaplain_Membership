@@ -9,13 +9,14 @@ const NOT_FOUND_TITLES: readonly string[] = [en, th, sv].map((m) => m.admin.notF
  * True when `/admin/finance` is not served on this server
  * (FEATURE_INVOICE_DASHBOARD off).
  *
- * A 404 is not enough to tell: the route has a `loading.tsx` and no
- * `not-found.tsx`, so its `notFound()` streams the admin shell's
- * "Page not available" page with HTTP 200, and the skip guard that read
- * only the status never fired (R136). Nor is the first h1: the loading
- * skeleton already shows the dashboard's own title before the stream
- * swaps in the not-found page. So this waits for whichever settles — the
- * dashboard's tiles or the not-found heading — and reports which.
+ * Since PR P the route is `force-dynamic` with its own `not-found.tsx`, so a
+ * flag-off visit answers HTTP 404 and short-circuits here. The heading wait
+ * stays as a fallback for servers that still stream the not-found page as a
+ * 200 (the dev server, an older build — R136): there the first h1 is not
+ * enough either, since the loading skeleton shows the dashboard's own title
+ * before the stream swaps in the not-found page. So this waits for whichever
+ * settles — the dashboard's tiles or the not-found heading — and reports
+ * which.
  */
 export async function invoiceDashboardIsOff(page: Page, response: Response | null): Promise<boolean> {
   if (response?.status() === 404) return true;

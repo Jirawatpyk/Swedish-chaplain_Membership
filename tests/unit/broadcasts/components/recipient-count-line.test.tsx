@@ -78,6 +78,10 @@ describe('<RecipientCountLine> (108 PR-C T089)', () => {
     renderLine({ status: 'unavailable' }, 'en', onRetry);
     expect(screen.getByRole('status').textContent).toMatch(/unavailable/i);
     const retry = screen.getByRole('button', { name: /try again/i });
+    // An AURA ghost Button, 44px on touch.
+    // PR P review L11 — a text link (AURA linkClass), so the sentence keeps its line height.
+    expect(retry).toHaveClass('aura-link', 'aura-link--touch');
+    expect(retry).not.toHaveClass('aura-btn');
     fireEvent.click(retry);
     expect(onRetry).toHaveBeenCalledTimes(1);
   });

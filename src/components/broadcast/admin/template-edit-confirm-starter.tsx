@@ -18,9 +18,8 @@
  *     landmark navigation, R3.5) and is its one name: the Alert inside is
  *     `role="none"`, so the title is not read twice. It is on the page from
  *     mount, so it is not a live region.
- *   - The dismiss is our own IconButton, labelled with the template's name,
- *     placed top right beside the Alert (AURA's `onDismiss` button is
- *     always "Dismiss": stand-in until AURA #196).
+ *   - The dismiss is AURA's own close button (`onDismiss`), named with the
+ *     template's name through `dismissLabel` (AURA 5.83, #196).
  *   - On dismiss the component `return null`s (NOT hidden with the
  *     HTML `hidden` attribute); re-render after localStorage reset
  *     restores the banner because `useState` reads localStorage on
@@ -28,7 +27,7 @@
  */
 import { useState, useSyncExternalStore } from 'react';
 import { useTranslations } from 'next-intl';
-import { Alert, IconButton } from '@jirawatpyk/aura-react';
+import { Alert } from '@jirawatpyk/aura-react';
 
 interface Props {
   readonly templateId: string;
@@ -87,26 +86,22 @@ export function AdminTemplateEditConfirmStarter({
     return null;
   }
 
-  // PR O — AURA's Alert in the warning tone. The dismiss follows it in the
-  // reading order (title, body, dismiss) and sits top right, where AURA's
-  // own close button would be.
+  // PR O — AURA's Alert in the warning tone, with its own close button
+  // named for this template (AURA 5.83, #196).
   return (
-    <section aria-label={t('starterEditBannerTitle')} className="relative mb-4">
+    <section aria-label={t('starterEditBannerTitle')} className="mb-4">
       {/* role="none": the section is the one named landmark, so the title
           is read once (PR O review); the banner is on the page from mount,
           so it is not a live region. */}
-      <Alert tone="warning" role="none" title={t('starterEditBannerTitle')} className="pe-12">
+      <Alert
+        tone="warning"
+        role="none"
+        title={t('starterEditBannerTitle')}
+        onDismiss={dismiss}
+        dismissLabel={t('starterEditBannerDismiss', { name: templateName })}
+      >
         {t('starterEditBannerBody')}
       </Alert>
-      {/* stand-in until AURA #196: AURA's `onDismiss` can't take this label. */}
-      <IconButton
-        icon="x"
-        variant="ghost"
-        touchHeight
-        className="absolute end-1 top-1"
-        label={t('starterEditBannerDismiss', { name: templateName })}
-        onClick={dismiss}
-      />
     </section>
   );
 }

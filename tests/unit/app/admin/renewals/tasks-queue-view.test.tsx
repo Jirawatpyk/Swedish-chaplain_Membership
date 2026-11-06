@@ -1,7 +1,7 @@
 /**
  * `renderTasksQueueView` — 122 US7b-2 (T735), board `Admin-renewal-tasks`:
  * the page body, shared with the no-DB preview. The section tabs, the queue
- * and the "Next 50" footer sit in one AURA card that drops its frame on a
+ * and the AURA cursor Pagination footer sit in one AURA card that drops its frame on a
  * phone; a failed read is an AURA danger alert with Retry.
  */
 import type { ReactElement } from 'react';
@@ -39,17 +39,41 @@ describe('renderTasksQueueView', () => {
     expect(card).toContainElement(screen.getByText('TABS'));
   });
 
-  it('adds "Showing 50 per page" and a secondary "Next 50" link when there is a next page', async () => {
+  it('adds AURA cursor Pagination with "Showing 50 per page" and the same Next href when there is a next page', async () => {
     await renderView({ sectionTabs: null, queue: <p>QUEUE</p>, nextHref: '/admin/renewals/tasks?cursor=abc' });
-    expect(screen.getByText(T.pagination.showingFirst)).toBeInTheDocument();
-    const next = screen.getByRole('link', { name: T.pagination.next });
+    // PR P review L6 — the nav is named for its list, not AURA's generic default.
+    const nav = screen.getByRole('navigation', { name: 'Escalation task pages' });
+    expect(nav).toHaveClass('aura-pagination', 'aura-pagination--cursor');
+    expect(nav).toHaveTextContent(T.pagination.showingFirst);
+    const next = screen.getByRole('link', { name: 'Next page' });
     expect(next).toHaveAttribute('href', '/admin/renewals/tasks?cursor=abc');
-    expect(next).toHaveClass('aura-btn--secondary');
+  });
+
+  // PR #757 review — page 2+ of a forward-only keyset had no way back.
+  it('on page 2+ links First page to the cursor-less view, filters kept', async () => {
+    await renderView({
+      sectionTabs: null,
+      queue: <p>QUEUE</p>,
+      nextHref: '/admin/renewals/tasks?status=done&cursor=c3',
+      firstHref: '/admin/renewals/tasks?status=done',
+    });
+    expect(screen.getByRole('link', { name: 'First page' })).toHaveAttribute('href', '/admin/renewals/tasks?status=done');
+    expect(screen.getByRole('link', { name: 'Next page' })).toHaveAttribute('href', '/admin/renewals/tasks?status=done&cursor=c3');
+  });
+
+  it('keeps First page on the last page reached by a cursor; disables it on the first page', async () => {
+    const { unmount } = await renderView({ sectionTabs: null, queue: <p>QUEUE</p>, nextHref: null, firstHref: '/admin/renewals/tasks' });
+    expect(screen.getByRole('link', { name: 'First page' })).toHaveAttribute('href', '/admin/renewals/tasks');
+    unmount();
+    await renderView({ sectionTabs: null, queue: <p>QUEUE</p>, nextHref: '/admin/renewals/tasks?cursor=abc', firstHref: null });
+    const first = screen.getByRole('link', { name: 'First page' });
+    expect(first).toHaveAttribute('aria-disabled', 'true');
+    expect(first).not.toHaveAttribute('href');
   });
 
   it('has no footer on the last page', async () => {
     await renderView({ sectionTabs: null, queue: <p>QUEUE</p>, nextHref: null });
-    expect(screen.queryByRole('link', { name: T.pagination.next })).toBeNull();
+    expect(screen.queryByRole('navigation')).toBeNull();
   });
 
   it('shows a failed read as an AURA danger alert with Retry, in place of the queue', async () => {

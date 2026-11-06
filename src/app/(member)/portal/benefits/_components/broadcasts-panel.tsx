@@ -24,7 +24,7 @@
  * icon); the history as an AURA table (its own frame) from `md` up, each status an
  * AURA `StatusPill` in the portal tones; the phone list below `md`; the empty
  * history as the shared EmptyState with the same button. Pagination keeps its
- * own `?tab=broadcasts&page=N` links, on AURA `buttonClass`.
+ * own `?tab=broadcasts&page=N` links, on AURA `Pagination`.
  */
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
@@ -35,6 +35,7 @@ import { EmptyState } from '@/components/shell/empty-state';
 import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { QuotaDisplay, type QuotaSnapshot } from '@/components/broadcast/quota-display';
 import { ComposeButtonWithTooltip } from '@/components/broadcast/compose-button-with-tooltip';
+import { BroadcastHistoryPagination } from './broadcast-history-pagination';
 import { logger } from '@/lib/logger';
 import { errKind, hashId, rootCause } from '@/lib/log-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -475,59 +476,18 @@ export async function BroadcastsPanelView({
         </>
       ) : null}
 
-      {/* Server-driven pagination (T128 / T129). At edges, render a
-          disabled <span> instead of an <a href="#"> — clicking
-          href="#" scrolls to top of page (unexpected on mobile) and
-          aria-disabled on <a> doesn't actually prevent navigation.
-          Hrefs target `?tab=broadcasts&page=N` so the tab + page params
-          coexist on the tabbed Benefits page (058 G1). */}
+      {/* Server-driven pagination (T128 / T129) on AURA Pagination: real
+          `?tab=broadcasts&page=N` links so the tab + page params coexist on
+          the tabbed Benefits page (058 G1); AURA disables the arrows at the
+          edges (no `href="#"`). The wrapper keeps the e2e test id. */}
       {pagination.totalPages > 1 ? (
-        <nav
-          data-testid="broadcast-history-pagination"
-          aria-label={tPagination('ariaLabel')}
-          className="flex items-center justify-between gap-3 aura-text-caption"
-        >
-          {pagination.page > 1 ? (
-            <Link
-              href={`/portal/benefits?tab=broadcasts&page=${pagination.page - 1}`}
-              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
-              data-testid="pagination-prev"
-            >
-              {tPagination('previous')}
-            </Link>
-          ) : (
-            <span
-              aria-disabled="true"
-              data-testid="pagination-prev"
-              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, className: 'pointer-events-none cursor-not-allowed opacity-50' })}
-            >
-              {tPagination('previous')}
-            </span>
-          )}
-          <span className="text-[var(--aura-fg-secondary)]">
-            {tPagination('pageOf', {
-              page: pagination.page,
-              total: pagination.totalPages,
-            })}
-          </span>
-          {pagination.page < pagination.totalPages ? (
-            <Link
-              href={`/portal/benefits?tab=broadcasts&page=${pagination.page + 1}`}
-              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
-              data-testid="pagination-next"
-            >
-              {tPagination('next')}
-            </Link>
-          ) : (
-            <span
-              aria-disabled="true"
-              data-testid="pagination-next"
-              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, className: 'pointer-events-none cursor-not-allowed opacity-50' })}
-            >
-              {tPagination('next')}
-            </span>
-          )}
-        </nav>
+        <div data-testid="broadcast-history-pagination">
+          <BroadcastHistoryPagination
+            page={pagination.page}
+            pageCount={pagination.totalPages}
+            label={tPagination('ariaLabel')}
+          />
+        </div>
       ) : null}
     </section>
   );

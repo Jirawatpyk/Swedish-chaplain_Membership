@@ -43,8 +43,8 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { ExternalLink, Award, Sparkles, Info } from 'lucide-react';
-import { Badge, Card, Tooltip, buttonClass } from '@jirawatpyk/aura-react';
+import { ExternalLink, Award, Sparkles } from 'lucide-react';
+import { Badge, Card, IconButton, Tooltip, buttonClass } from '@jirawatpyk/aura-react';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 
 export type EventHeaderProps = {
@@ -218,13 +218,9 @@ export function EventDetailHeader({ event, actions, actionsHiddenBelowSm = false
               <dd className="flex items-center gap-1">
                 <time dateTime={event.lastUpdatedAt}>{formatDate(event.lastUpdatedAt, locale)}</time>
                 <Tooltip content={t('header.lastUpdatedAtTooltip')}>
-                  <button
-                    type="button"
-                    className={`relative inline-flex size-6 items-center justify-center rounded-full before:absolute before:-inset-2.5 before:content-[''] ${muted} hover:text-[var(--aura-fg-primary)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--aura-focus-ring)]`}
-                    aria-label={t('header.lastUpdatedAtTooltip')}
-                  >
-                    <Info aria-hidden="true" className="size-3.5" />
-                  </button>
+                  {/* AURA's Tooltip owns the tip here (its anchor mutes the
+                      IconButton's own); 44px on touch via `touchHeight`. */}
+                  <IconButton icon="info" label={t('header.lastUpdatedAtTooltip')} touchHeight />
                 </Tooltip>
               </dd>
             </div>

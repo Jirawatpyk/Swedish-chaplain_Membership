@@ -187,36 +187,36 @@ vi.mock('@/app/(member)/portal/invoices/_components/invoice-status-badge', () =>
 vi.mock('@/app/(member)/portal/invoices/_components/resend-invoice-button', () => ({
   ResendInvoiceButton: () => null,
 }));
-vi.mock('@/app/(member)/portal/invoices/_components/portal-pdf-download-button', () => ({
-  PortalInvoiceDownloadButton: ({
-    documentNumber,
-    className,
-  }: {
+vi.mock('@/app/(member)/portal/invoices/_components/portal-pdf-download-button', async () => {
+  const { buttonClass } = await import('@jirawatpyk/aura-react/server');
+  type Props = {
     documentNumber: string;
+    appearance?: Parameters<typeof buttonClass>[0];
     className?: string;
-  }) => (
-    <button
-      type="button"
-      data-testid="portal-download-invoice-marker"
-      data-doc={documentNumber}
-      data-cls={className}
-    />
-  ),
-  PortalReceiptDownloadButton: ({
-    documentNumber,
-    className,
-  }: {
-    documentNumber: string;
-    className?: string;
-  }) => (
-    <button
-      type="button"
-      data-testid="portal-download-receipt-marker"
-      data-doc={documentNumber}
-      data-cls={className}
-    />
-  ),
-}));
+  };
+  // The real component draws AURA's Button from `appearance`; the marker
+  // echoes the same classes plus the page's own layout `className`.
+  const cls = ({ appearance, className }: Props) =>
+    buttonClass({ ...appearance, ...(className !== undefined && { className }) });
+  return {
+    PortalInvoiceDownloadButton: (props: Props) => (
+      <button
+        type="button"
+        data-testid="portal-download-invoice-marker"
+        data-doc={props.documentNumber}
+        data-cls={cls(props)}
+      />
+    ),
+    PortalReceiptDownloadButton: (props: Props) => (
+      <button
+        type="button"
+        data-testid="portal-download-receipt-marker"
+        data-doc={props.documentNumber}
+        data-cls={cls(props)}
+      />
+    ),
+  };
+});
 vi.mock('@/app/(member)/portal/invoices/_components/receipt-status-watcher', () => ({
   ReceiptStatusWatcher: () => null,
 }));

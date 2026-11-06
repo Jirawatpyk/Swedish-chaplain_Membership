@@ -15,8 +15,7 @@
  * disabled item stays in the arrow-key order and reads its reason as its
  * description, and a menu with nothing enabled still takes focus.
  */
-import { DropdownMenu, type MenuItem } from '@jirawatpyk/aura-react';
-import { buttonClass } from '@jirawatpyk/aura-react/server';
+import { DropdownMenu, IconButton, type MenuItem } from '@jirawatpyk/aura-react';
 import { IconDownload, IconEllipsis, IconMail } from '@jirawatpyk/aura-react/icons';
 import { useTranslations } from 'next-intl';
 
@@ -76,22 +75,10 @@ export function PortalInvoiceCardMenu({
       label={label}
       items={items}
       trigger={
-        // The same secondary button as the download beside it, square: 32px,
-        // 44px on phones (AURA `touchHeight`, #100); the label is its name
-        // and its tooltip.
-        <button
-          type="button"
-          aria-label={label}
-          title={label}
-          className={buttonClass({
-            variant: 'secondary',
-            size: 'sm',
-            touchHeight: true,
-            className: 'aspect-square px-0',
-          })}
-        >
-          <IconEllipsis />
-        </button>
+        // An AURA IconButton, outlined like the secondary download beside it:
+        // 32px, 44px on phones (AURA `touchHeight`, #100); the label is its
+        // name and its tooltip.
+        <IconButton icon={<IconEllipsis />} label={label} variant="outline" touchHeight />
       }
     />
   );

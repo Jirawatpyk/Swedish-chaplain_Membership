@@ -101,4 +101,13 @@ describe('ContactActions (T554)', () => {
     expect(screen.getByRole('button', { name: new RegExp(`^${A.edit} ?, Ploy Srisuk$`) })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: new RegExp(`^${A.promote} ?, Ploy Srisuk$`) })).toBeInTheDocument();
   });
+
+  it('Edit and Make primary are AURA Buttons whose icons come through AURA', () => {
+    renderActions(false);
+    for (const name of [A.edit, A.promote]) {
+      const button = screen.getByRole('button', { name: new RegExp(`^${name} ?, Ploy Srisuk$`) });
+      expect(button).toHaveClass('aura-btn', 'aura-btn--secondary', 'aura-btn--sm', 'aura-btn--touch');
+      expect(button.querySelector('.aura-icon')).not.toBeNull();
+    }
+  });
 });

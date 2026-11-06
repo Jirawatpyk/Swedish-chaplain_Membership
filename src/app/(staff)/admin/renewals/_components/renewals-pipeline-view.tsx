@@ -11,8 +11,9 @@
  */
 import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
-import { Card, EmptyState, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, EmptyState } from '@jirawatpyk/aura-react/server';
 import { ErrorCardActions } from '@/components/shell/error-card-actions';
+import { CursorPagination } from '@/components/layout/cursor-pagination';
 import type { PipelineSort, PipelineSummary, TierBucket, UrgencyBucket } from '@/modules/renewals';
 import type { PipelineRow } from '@/modules/renewals/client';
 import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
@@ -92,6 +93,8 @@ export interface PipelineLensProps {
   readonly sortHrefs: Record<'expires' | 'tier', string>;
   /** "Next 50" when the read was capped; null on the last page. */
   readonly nextHref: string | null;
+  /** "First page": the cursor-less view, or null on the first page. */
+  readonly firstHref?: string | null | undefined;
   /** `shouldShowRenewalsEmptyState` — no filter active and nothing due. */
   readonly showEmptyState: boolean;
   /** `renewals.write`: row selection, the bulk bar and the row mutations. */
@@ -112,6 +115,7 @@ export async function renderPipelineLens({
   sort,
   sortHrefs,
   nextHref,
+  firstHref = null,
   showEmptyState,
   canMutate,
   canManageSchedules,
@@ -187,19 +191,22 @@ export async function renderPipelineLens({
           {...(monthLabel !== undefined ? { monthLabel } : {})}
         />
       )}
-      {nextHref ? (
-        // Keyset cursor pagination: the read was capped at 50 rows. A
-        // "Next 50" link (same pattern as /admin/audit) + a visible
-        // "Showing first 50" hint so everyone knows the list is truncated.
+      {nextHref || firstHref ? (
+        // Keyset cursor pagination: the read was capped at 50 rows, or this
+        // page was reached by a cursor. AURA cursor Pagination (same as
+        // /admin/audit): a Next link + the visible "Showing first 50" status
+        // (only while capped) so everyone knows the list is truncated.
+        // Forward-only, so Previous stays disabled; First (PR #757 review) is
+        // the way back from page 2+, disabled on the first page.
         // UrgencyBucketTabs drops the cursor on a tab switch.
-        <div className="flex items-center justify-between gap-4 pt-1">
-          <p className="text-xs text-[var(--aura-fg-secondary)]">
-            {t('table.pagination.showingFirst')}
-          </p>
-          <a href={nextHref} className={buttonClass({ variant: 'secondary' })}>
-            {t('table.pagination.next')}
-          </a>
-        </div>
+        <CursorPagination
+          label={t('table.pagination.label')}
+          showFirst
+          firstHref={firstHref ?? undefined}
+          hasFirst={firstHref !== null}
+          status={nextHref ? t('table.pagination.showingFirst') : null}
+          nextHref={nextHref ?? undefined}
+        />
       ) : null}
     </div>
   );

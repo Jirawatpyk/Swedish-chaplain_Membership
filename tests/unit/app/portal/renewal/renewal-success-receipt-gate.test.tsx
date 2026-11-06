@@ -100,26 +100,36 @@ vi.mock('@/components/layout/page-header', () => ({
     </header>
   ),
 }));
-vi.mock('@/app/(member)/portal/invoices/_components/portal-pdf-download-button', () => ({
-  // Echo the branch-specific data-testid so the test can tell which download
-  // (receipt vs bill/invoice) the page chose to render.
-  PortalReceiptDownloadButton: (props: Record<string, unknown>) => (
-    <button
-      type="button"
-      data-testid={props['data-testid'] as string}
-      data-kind="receipt"
-      className={props.className as string}
-    />
-  ),
-  PortalInvoiceDownloadButton: (props: Record<string, unknown>) => (
-    <button
-      type="button"
-      data-testid={props['data-testid'] as string}
-      data-kind="invoice"
-      className={props.className as string}
-    />
-  ),
-}));
+vi.mock('@/app/(member)/portal/invoices/_components/portal-pdf-download-button', async () => {
+  const { buttonClass } = await import('@jirawatpyk/aura-react/server');
+  // The real component draws AURA's Button from `appearance`; echo the same
+  // classes plus the page's own layout `className`.
+  const cls = (props: Record<string, unknown>) =>
+    buttonClass({
+      ...(props.appearance as Parameters<typeof buttonClass>[0]),
+      className: props.className as string,
+    });
+  return {
+    // Echo the branch-specific data-testid so the test can tell which download
+    // (receipt vs bill/invoice) the page chose to render.
+    PortalReceiptDownloadButton: (props: Record<string, unknown>) => (
+      <button
+        type="button"
+        data-testid={props['data-testid'] as string}
+        data-kind="receipt"
+        className={cls(props)}
+      />
+    ),
+    PortalInvoiceDownloadButton: (props: Record<string, unknown>) => (
+      <button
+        type="button"
+        data-testid={props['data-testid'] as string}
+        data-kind="invoice"
+        className={cls(props)}
+      />
+    ),
+  };
+});
 
 import RenewalSuccessPage from '@/app/(member)/portal/renewal/[memberId]/success/page';
 

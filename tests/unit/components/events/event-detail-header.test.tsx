@@ -69,6 +69,12 @@ describe('event detail summary card (board Admin-event-detail)', () => {
     expect(within(card).getByRole('button', { name: 'act' })).toBeInTheDocument();
     expect(card.querySelector('[data-slot="card"]')).toBeNull();
   });
+
+  it('the last-updated hint opens from an AURA IconButton named for the hint', () => {
+    wrap(<EventDetailHeader event={EVENT} />);
+    const hint = screen.getByRole('button', { name: d.header.lastUpdatedAtTooltip });
+    expect(hint).toHaveClass('aura-icon-btn', 'aura-icon-btn--touch');
+  });
 });
 
 describe('flag and archive actions confirm in the shared AURA dialog', () => {

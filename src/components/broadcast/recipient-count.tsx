@@ -23,6 +23,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { TriangleAlert, Users } from 'lucide-react';
+import { linkClass } from '@jirawatpyk/aura-react';
 
 export type RecipientCountState =
   | { readonly status: 'idle' }
@@ -268,14 +269,11 @@ export function RecipientCountLine({
           </>
         ) : null}
       </p>
-      {/* T1270 — 44 px tall on a phone or a coarse pointer (it was the
-          text's own height), AURA's focus ring. */}
+      {/* T1270 — a text link in the sentence (AURA `linkClass`), so the line
+          keeps its height on a desktop; 44 px tall on a phone or a coarse
+          pointer (`touchHeight`), AURA's focus ring. */}
       {retry ? (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="ms-1 inline-flex min-h-11 shrink-0 items-start rounded-[var(--aura-radius-sm)] px-1 underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] sm:[@media(pointer:fine)]:min-h-0"
-        >
+        <button type="button" onClick={onRetry} className={linkClass({ touchHeight: true, className: 'ms-1 shrink-0' })}>
           {t('retry')}
         </button>
       ) : null}

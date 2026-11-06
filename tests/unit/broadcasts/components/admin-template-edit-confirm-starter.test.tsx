@@ -51,13 +51,16 @@ describe('<AdminTemplateEditConfirmStarter> — R2.1 H-test-5', () => {
       screen.getByText(/starter template/i),
     ).toBeInTheDocument();
     // PR O — one named landmark (the title, read once) holding AURA's
-    // warning Alert; the dismiss sits outside the Alert body, top right.
+    // warning Alert. PR P — the dismiss is AURA's own close button, named
+    // for this template through `dismissLabel` (AURA 5.83, #196).
     const region = screen.getByRole('region');
     expect(region).toHaveAccessibleName(enMessages.admin.broadcasts.templates.starterEditBannerTitle);
     const alert = region.querySelector('.aura-alert');
     expect(alert).toHaveClass('aura-alert--warning');
     expect(alert).toHaveAttribute('role', 'none');
-    expect(alert).not.toContainElement(screen.getByRole('button', { name: /dismiss starter warning/i }));
+    const dismiss = screen.getByRole('button', { name: /dismiss starter warning/i });
+    expect(alert).toContainElement(dismiss);
+    expect(screen.getAllByRole('button')).toHaveLength(1);
   });
 
   it('dismissal of template A does NOT hide banner for template B (per-templateId scoping)', () => {

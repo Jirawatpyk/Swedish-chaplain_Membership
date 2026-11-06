@@ -23,6 +23,7 @@ import { getTranslations, getLocale } from 'next-intl/server';
 import { DownloadIcon } from 'lucide-react';
 import { Alert, buttonClass, Card, Icon } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
+import { CursorPagination } from '@/components/layout/cursor-pagination';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
@@ -385,27 +386,16 @@ export async function renderAuditListView({
           />
 
           {showFirst || prevHref || nextHref ? (
-            <nav aria-label={t('pagination.label')} className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex gap-2">
-                {showFirst ? (
-                  <a href={firstHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
-                    {t('pagination.first')}
-                  </a>
-                ) : null}
-                {prevHref ? (
-                  <a href={prevHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
-                    {t('pagination.previous')}
-                  </a>
-                ) : null}
-              </div>
-              {nextHref ? (
-                <a href={nextHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
-                  {t('pagination.next')}
-                </a>
-              ) : (
-                <span aria-hidden />
-              )}
-            </nav>
+            // Spec 122: AURA cursor Pagination; the same three hrefs as before.
+            <CursorPagination
+              label={t('pagination.label')}
+              // Keyset pages run newest to oldest; say so beside the steps.
+              status={t('pagination.order')}
+              firstHref={firstHref}
+              hasFirst={showFirst}
+              previousHref={prevHref ?? undefined}
+              nextHref={nextHref ?? undefined}
+            />
           ) : null}
 
           <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('retentionNote')}</p>

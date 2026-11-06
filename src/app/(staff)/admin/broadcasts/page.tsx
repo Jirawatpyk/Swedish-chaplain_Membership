@@ -9,6 +9,7 @@ import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { LayoutTemplate } from 'lucide-react';
 import { QueueTable } from '@/components/broadcast/admin/queue-table';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
+import { QueuePagination } from '@/components/broadcast/admin/queue-pagination';
 import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banner';
 import { OverdueBanner } from '@/components/broadcast/admin/overdue-banner';
 import { isDefaultBroadcastView } from './_lib/is-default-view';
@@ -428,32 +429,18 @@ export default async function AdminBroadcastsPage({
             // toolbar: the toolbar is fixed to the bottom of the viewport, so it is
             // visually last and must come last in Tab order too (it came first).
             pagination={
-              nextPageHref !== null || firstPageHref !== null ? (
-                <nav
-                  aria-label={t('pagination.label')}
-                  className="flex flex-wrap items-center justify-between gap-3"
-                >
-                  <p className="aura-text-body tabular-nums">
-                    {/* On the first page only: keyset pages have no offset, so on page 2
-                        "Showing 50 of 132" would read as the same first 50. */}
-                    {viewTotal !== null && firstPageHref === null
-                      ? t('pagination.summary', { shown: rows.length, total: viewTotal })
-                      : null}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {firstPageHref !== null ? (
-                      <Link href={firstPageHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
-                        {t('pagination.first')}
-                      </Link>
-                    ) : null}
-                    {nextPageHref !== null ? (
-                      <Link href={nextPageHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
-                        {t('pagination.next')}
-                      </Link>
-                    ) : null}
-                  </div>
-                </nav>
-              ) : null
+              <QueuePagination
+                label={t('pagination.label')}
+                // On the first page only: keyset pages have no offset, so on
+                // page 2 "Showing 50 of 132" would read as the same first 50.
+                status={
+                  viewTotal !== null && firstPageHref === null
+                    ? t('pagination.summary', { shown: rows.length, total: viewTotal })
+                    : null
+                }
+                firstPageHref={firstPageHref}
+                nextPageHref={nextPageHref}
+              />
             }
           />
         </div>

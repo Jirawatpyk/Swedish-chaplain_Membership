@@ -41,7 +41,7 @@ import {
   type EscalationTaskStatus,
 } from '@/modules/renewals';
 import { EscalationTaskQueue } from './_components/escalation-task-queue';
-import { buildTasksQueueNextHref } from './_lib/build-tasks-queue-next-href';
+import { buildTasksQueueFirstHref, buildTasksQueueNextHref } from './_lib/build-tasks-queue-next-href';
 import { renderTasksQueueView } from './_components/tasks-queue-view';
 import { RenewalsSectionTabs } from '../_components/renewals-section-tabs';
 import { RenewalsSectionTabsWithCounts } from '../_components/renewals-section-tabs-with-counts';
@@ -242,6 +242,14 @@ export default async function EscalationTaskQueuePage({
     overdueOnly,
     nextCursor,
   });
+  // PR #757 review — "First page" on page 2+: the same filters, no cursor.
+  const firstHref = buildTasksQueueFirstHref({
+    status,
+    assignment: assignmentRaw,
+    taskType: taskTypeFilter,
+    overdueOnly,
+    cursor,
+  });
 
   return (
     <TableContainer>
@@ -256,6 +264,7 @@ export default async function EscalationTaskQueuePage({
         ),
         loadFailed: hasError,
         nextHref,
+        firstHref,
         queue: hasError ? null : (
           <EscalationTaskQueue
             canMutate={canPerform(role, 'renewals.write')}
