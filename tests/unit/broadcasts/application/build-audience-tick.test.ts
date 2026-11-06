@@ -2,12 +2,12 @@
  * T087 (108 US5) — `buildAudienceTick`: build the Resend audience with ONE
  * Contacts-Import call, confirm it on a later tick, then send.
  *
- * A separate use case from `dispatchScheduledBroadcast` on purpose. That one is
- * ~1,200 lines carrying the orphan-audience reuse dance, the idempotency-conflict
- * replay, the FR-021 retry budget and the batch hand-off; threading an
- * `if (importEnabled)` through it would give every one of those paths two shapes
- * and make its 44-case suite the regression surface for both. The route picks
- * one or the other; neither learns the other exists.
+ * It began as a separate use case beside the legacy dispatch leg, on purpose:
+ * that one was ~1,200 lines carrying the orphan-audience reuse dance, the
+ * idempotency-conflict replay, the FR-021 retry budget and the batch hand-off,
+ * and threading an import branch through it would have given every one of
+ * those paths two shapes. Spec 140 s4 deleted the legacy leg; this is the only
+ * dispatch leg.
  *
  * **The dangerous cases come first in this file, deliberately.** The happy path
  * is the easy one to write and the one least likely to be wrong. What can send

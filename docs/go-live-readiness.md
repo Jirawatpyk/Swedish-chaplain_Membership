@@ -273,7 +273,7 @@ Flip on only after each feature's gates above pass:
 - [ ] F7 send hardening PR-1 merged (name ≤70, from un-wrapped, quota released on failed_to_dispatch).
 - [ ] **F7 send hardening PR-2 merged** (defect #5 — ephemeral per-broadcast audience + cleanup cron). After merge, each dispatch creates its OWN Resend audience and the `cleanup-audiences` cron deletes it once the broadcast is terminal.
 - [ ] **`cleanup-audiences` cron registered** in cron-job.org: `POST /api/cron/broadcasts/cleanup-audiences`, Bearer `CRON_SECRET`, `*/15`, **retry OFF** (per `docs/runbooks/cron-jobs.md`).
-- [ ] **Resend plan limits — the account is on FREE (confirmed 2026-09-08)**: **1,000 contacts** (13 in use) and **3 segments/audiences** (1 in use — `General`), 3 domains, unlimited sending. Two operator consequences. (a) A broadcast above ~**987** recipients cannot be pushed: Resend answers 4xx, `classifyResendError` returns `permanent`, and the broadcast goes to `failed_to_dispatch` in one tick — loud and terminal, which is the *good* failure, but it is a real cap 5× below the app's configured 5,000 ceiling. (b) With `General` holding a slot, **only two broadcasts can be in flight at once**; a third fails until `cleanup-audiences` frees room — that is the number behind the "plan-segment-limit overflow" bullet below. Pro marketing ($40/mo) raises contacts to 5,000 and segments to unlimited, but **does not** change the push: it is latency-bound at ~2.08 req/s / ~623 per 300 s tick either way (T095, `specs/108-contact-recipient-rules/research.md` § R9). SweCham reaches neither cap today (150 recipients; ~450 after the secondary import).
+- [ ] **Resend plan limits — the account is on FREE (confirmed 2026-09-08)**: **1,000 contacts** team-wide and cumulative (22 in use on 2026-11-05; deleting a segment deletes no contacts, and no code path deletes one) and **3 segments/audiences** (1 in use — `General`), 3 domains, unlimited sending. Two operator consequences. (a) Since spec 140 s4 every E-Blast is one contact import, bounded per E-Blast by `BROADCAST_AUDIENCE_CEILING` (default 900, § 6.10). An import that would pass the account's 1,000 ends the row `failed_to_dispatch`, loud and terminal; how Resend answers it (a 4xx, failed import rows, or a 429) is UNMEASURED (§ 6.10, runbook `broadcast-audience-build` § B). Before spec 140 s4 this was the per-contact push, refused with a 4xx at ~987 recipients (measured 2026-09-08). (b) With `General` holding a slot, **only two broadcasts can be in flight at once**; a third fails until `cleanup-audiences` frees room — that is the number behind the "plan-segment-limit overflow" bullet below. Pro marketing ($40/mo) raises contacts to 5,000 and segments to unlimited. Raising `BROADCAST_AUDIENCE_CEILING` past about 1,000 then also needs the import timing and the resolve budget re-measured (§ 6.10). (Before spec 140 s4 the per-contact push was latency-bound at ~2.08 req/s / ~623 per 300 s tick whatever the plan; T095, `specs/108-contact-recipient-rules/research.md` § R9.) SweCham reaches neither cap today (150 recipients; ~450 after the secondary import).
 - [ ] **Resend audience count stays bounded post-deploy** — spot-check the Resend dashboard a few cron ticks after the first production broadcast: terminal broadcasts' audiences should be removed (`audience_deleted_at` stamped), not accumulating. A transient plan-segment-limit overflow surfaces as a `failed_to_dispatch` until the cron frees room (known behavior; the cron keeps the count bounded).
 - [ ] **COMP-1 GDPR erasure × cleanup interaction** is covered by `tests/integration/broadcasts/erasure-after-audience-cleanup.test.ts` (member-erasure of Resend contacts still resolves after the audience is cleaned up — the gateway is 404-tolerant). No operator action; noted for the security reviewer.
 
@@ -323,118 +323,90 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
 
 ---
 
-### 6.10 108 Phase 9 — `FEATURE_F7_IMPORT_AUDIENCE` flip
+### 6.10 E-Blast's one dispatch leg — merging spec 140 slice 4 makes the import leg live
 
-> **A second flag, with its own gate.** § 6.9 covers the audience LEG
-> (`FEATURE_CONTACT_MARKETING_RECIPIENTS`, primary-only → 1:N). This one covers
-> HOW the audience reaches Resend: OFF is the serial per-contact push, ON is a
-> single Contacts-Import upload confirmed on a later tick.
->
-> The same property as § 6.9 applies and is the reason this section exists at
-> all: `vercel.json` has no `ignoreCommand`, so **setting the variable IS the
-> flip**, scheduled for whoever merges next. `src/lib/env.ts` defaults it to
-> `false`, so absent is a valid boot that resolves to off.
->
-> Added 2026-09-09 by the 108 Phase 9 review (S36): a flag that changes where
-> recipient lists go had no go-live gate, appearing only in a runbook and
-> `.env.example`.
+> **There is no flag to flip any more** (D-042, spec 140 s4). `FEATURE_F7_IMPORT_AUDIENCE`
+> and the legacy per-contact leg are deleted. From the deploy of that merge, every E-Blast
+> goes through the Contacts-Import leg: one CSV upload, confirmed on a later tick, under a
+> dispatch lease. `FEATURE_F7_BROADCASTS` and the cron's read-only guard remain the kill
+> switches. This section owns the ceiling number.
 
-**Unflagged on merge — true whatever this flag is set to:**
+**Unflagged on merge:**
 
-- [ ] **Accepted audience ceiling moves 5,000 → 500** while the import flag is
-  OFF. Deliberate (`reviews/cutover.md` § 5): 501–5,000 is accepted today and
-  already fails silently, because 300 s of the serial loop drains ~623. Run
-  `scripts/inventory-broadcast-outbox.ts` against prod before merging and
-  confirm nothing is queued in that band.
-- [ ] **Migrations `0298` + `0299` apply on the deploy.** Both were measured
-  against an empty `broadcasts` table in prod on 2026-09-09; re-check
-  `SELECT count(*) FROM broadcasts` if that is no longer true, because `0299`
-  validates a CHECK under ACCESS EXCLUSIVE.
+- [ ] **The audience ceiling is `BROADCAST_AUDIENCE_CEILING`, default 900.** It is bounded to
+  1–50,000 and refused at submit with the ceiling message (EN/TH/SV). It was 500 while the
+  legacy leg was live. A value above about 1,000 needs a Resend plan upgrade, and a new
+  measurement of the import timing and the resolve budget (`_dispatch-lease.ts`).
+- [ ] **The erasure detach uses `DELETE /contacts/{email}/segments/{id}`** (the Segments
+  API, measured 2026-11-05). The contract suite fails any `DELETE /contacts/{email}`.
 
-**Before setting the flag:**
+**Before merging slice 4** (spec 140 plan, slice 4 plan review):
 
-- [ ] **Resend plan headroom.** The Free plan allows 3 audiences and 1,000
-  contacts. One in-flight broadcast + one recently sent (reaped ≥ 1 h after
-  terminal) + one crash-orphan (reaped at 24–48 h) fills it. Confirm the plan
-  or the audience count before the first large send.
-- [ ] **Privacy sign-off.** `docs/compliance/processing-records.md` residual 8a
-  records that Resend contact records survive member erasure — measured, not
-  inferred. A DSR answer must say so. Sign the line below acknowledging it.
-- [ ] **FR-043's 400 ms @ 5,000 band has no test**, and the 3 s @ 20,000 budget
-  is asserted only through `ciScaled(3_000)`. Both must be measured from
-  `sin1`, never from CI or a workstation.
+- [ ] **A prod read-only count (D-034, the maintainer orders it):**
+  - `status = 'approved' AND scheduled_for <= now() + interval '15 min'` must be 0, or
+    the merge waits. A legacy tick on the old deployment holds no lease.
+  - Record `approved AND resend_audience_id IS NOT NULL`, and the count of rows that ever
+    carried `resend_broadcast_id`. A row the legacy leg left behind restarts its audience
+    build on the import leg.
 
-**The flip, then the observation:**
+  The numbers go into D-042 and the PR.
 
-- [x] **Spec 139 slice 1 (erasure: an erased member's approved E-Blast caught
-  between the pre-send persist and the send) is MERGED** (PR #698). Slice 2
-  (the Art. 30 audit events) does not gate the flip.
-- [ ] **Spec 140 (import-leg tick concurrency: a dispatch lease for rows with no
-  import id) is MERGED.** Spec 138's row fence does not reach those rows.
-- [ ] **No legacy-leg row is in flight** at the flip: `SELECT COUNT(*) FROM
-  broadcasts WHERE status = 'approved' AND resend_audience_id IS NOT NULL AND
-  audience_import_id IS NULL` is 0, so no legacy tick is mid-push when the
-  import leg starts tearing such rows down.
-- [ ] **Spec 138 is merged** (the hold abandon, the pre-send persist, the row
-  fence). Its `spec.md` names 139 and 140 as the remaining prerequisites.
-- [ ] Add `FEATURE_F7_IMPORT_AUDIENCE=true` → **redeploy immediately after**,
-  in that order, with no unrelated merge in between.
-- [ ] **Observe the first send — CHECK RESEND FIRST, then the audit row.**
-  This order is not cosmetic (round 2 R2-49). The previous version said "if the
-  audit row is missing the send did not go through this path — flag OFF and
-  redeploy", and that instruction **causes** the failure it is trying to detect:
-  S8's whole shape is *mail already out, audit row missing*, and flipping the flag
-  off hands that still-`approved` row to `dispatchScheduledBroadcast`, which
-  reuses `resend_audience_id` and sends the broadcast a SECOND time to the whole
-  audience.
-  1. **Resend dashboard** — was a broadcast created and sent? That is the only
-     source that knows whether mail left the building.
-  2. Then the logs: a submit tick logs `broadcasts.audience_import.submitted`;
-     the confirming tick logs `broadcasts.audience_import.sent` and writes a
-     `broadcast_send_started` audit row.
-  3. **Resend shows a send but there is no audit row.** *(S8 CLOSED
-     2026-10-29: both legs now persist `resend_broadcast_id` BEFORE `/send`
-     and probe an inherited id with `retrieveBroadcast` — the legacy leg since
-     F4, the import leg since this change — so a row carrying the id is caught
-     up without a second send on EITHER leg, and a flag flip no longer
-     double-sends it. A second `/send` of an accepted broadcast is refused by
-     Resend itself, `422`, whatever the key — measured 2026-10-29. Still check
-     the two states below: they decide the audit-trail repair, not the send.)*
-     Do not flip the flag while you work it out. **This is TWO states, not one** (round 4 D4),
-     and they need opposite actions — check
-     `broadcasts_audit_emit_failed_total{event_type='broadcast_send_started'}`
-     and the log `broadcasts.audience_import.send_record_lost` (severity
-     `critical`) to tell them apart:
-     - **`send_record_lost` fired** → the import leg sent correctly and only its
-       audit INSERT failed. The row is already `sending`. Do NOT try to cancel:
-       `cancel-broadcast.ts` accepts only `submitted`/`approved` and will refuse
-       you. Reconcile the audit trail by hand and leave the row alone.
-     - **No `send_record_lost`** → the send did not go through this path.
-       Cancel the broadcast (that releases the quota) and reconcile by hand.
-  4. **Resend shows nothing and the row is still `approved`** → the flag flip is
-     safe, and the drain query in **§ D1 of
-     `docs/runbooks/broadcast-audience-build.md`** is the precondition. (Round 4
-     D2: this said "§ E", and § E was renamed to § D1 in the same commit set that
-     reordered it. There is no § E — an operator scanning for it mid-incident
-     finds nothing and improvises the predicate that exists to stop a delivery to
-     a half-built audience.)
-- [ ] Watch the failure surfaces for one hour — **and know what each can and
-  cannot see** (round 2 R2-16). `broadcasts_audience_import_stuck_count` only
-  fires if the dispatch cron ALSO stops turning stuck rows terminal, so a zero
-  there is not evidence of health on its own. The signals that do move on a
-  first-send failure are — **corrected, round 4 D3, because two of the three
-  this used to name are STRUCTURALLY SILENT inside a one-hour watch**:
+**Before the first prod E-Blast through the import leg:**
+
+- [ ] **Spec 139 slice 2 (the Art. 30 audit events) is MERGED.** The gate is dated in
+  `docs/operational-state.md`. Nothing in code enforces it; the maintainer owns it.
+- [ ] **Resend headroom.**
+  - Read the account's contact count and segment count. The Free plan allows 1,000
+    contacts and 3 segments, team-wide and shared with dev.
+  - Contacts accumulate: every distinct address ever imported stays, and nothing deletes it.
+  - The ceiling bounds one E-Blast only, and two can be in flight. An import over the cap
+    ends the row `failed_to_dispatch`.
+- [ ] **Privacy sign-off.** `docs/compliance/processing-records.md` residual 8a records that
+  Resend contact records survive member erasure — measured, not inferred. A DSR answer must
+  say so. Sign the line below acknowledging it.
+- [ ] **FR-043's 400 ms @ 5,000 band has no test.** The 3 s @ 20,000 budget is asserted only
+  through `ciScaled(3_000)`. Both must be measured from `sin1`, never from CI or a
+  workstation. They apply only if the ceiling is raised above the default.
+
+**Observe the first send — CHECK RESEND FIRST, then the audit row:**
+
+  1. **Resend dashboard.** Was a broadcast created and sent? It is the only source that
+     knows whether mail left the building.
+  2. **Then the logs.** A submit tick logs `broadcasts.audience_import.submitted`. The
+     confirming tick logs `broadcasts.audience_import.sent` and writes a
+     `broadcast_send_started` audit row. The row then reads `sending`, and it
+     stays `sending` until Resend's per-recipient delivery webhooks have
+     arrived for every recipient. Only the webhook moves it to `sent`, never the
+     cron (spec 140 s4 Verify, 2026-11-05). A row at `sending` while Resend
+     shows `sent` therefore means the webhooks are late or missing: check the
+     `resend-broadcasts` webhook endpoint before anything else.
+  3. **Resend shows a send, but there is no audit row.** This does not cause a second
+     send. The id is persisted before `/send`, an inherited id is probed before any
+     re-send, and Resend refuses a second `/send` of an accepted broadcast (`422`,
+     measured 2026-10-29). There are two states, told apart by
+     `broadcasts_audit_emit_failed_total{event_type='broadcast_send_started'}` and the
+     log `broadcasts.audience_import.send_record_lost` (severity `critical`):
+     - **`send_record_lost` fired.** The send went out and only the audit INSERT failed.
+       The row is already `sending`. Do NOT try to cancel it: `cancel-broadcast.ts`
+       accepts only `submitted`/`approved` and refuses. Reconcile the audit trail by
+       hand and leave the row alone.
+     - **No `send_record_lost`.** The send did not go through this path. Cancel the
+       broadcast (that releases the quota) and reconcile by hand.
+  4. **Resend shows nothing, and the row is still `approved`.** The next tick continues
+     it; see `docs/runbooks/broadcast-audience-build.md`.
+- [ ] Watch the failure surfaces for one hour, **and know what each one can and cannot
+  see**:
 
   | signal | moves within the hour? |
   |---|---|
-  | `broadcasts.dispatch_resolve_failed.total` | **yes, immediately** — 15-minute alarm, and since round 4 L4 both legs also write `cron.broadcasts.dispatch.server_error` with a bounded `errClass`, so it says WHICH side failed; since 2026-09-10 the counter itself carries a `phase` label (lock / resolve / inherited_status / persist_broadcast_id / gateway / terminal_write; `audience_restart` since 2026-10-29), so the alarm says which subsystem to open before a log is read |
-  | cron span `cron.import_submitted` / `cron.import_pending` (R2-15), `cron.audience_restarted` (2026-10-29 — the tick-1 audience was gone at Resend and the row restarted) | yes |
+  | `broadcasts.dispatch_resolve_failed.total` | **yes, immediately** — a 15-minute alarm. `cron.broadcasts.dispatch.server_error` carries a bounded `errClass`, and the counter carries a `phase` label (resolve / inherited_status / persist_broadcast_id / gateway / terminal_write / audience_restart). The alarm therefore says which subsystem to open before any log is read |
+  | cron span `cron.import_submitted` / `cron.import_pending`, and `cron.audience_restarted` (the tick-1 audience was gone at Resend and the row restarted) | yes |
   | `broadcasts.failed_to_dispatch.count{failure_reason}` | **no** — emitted only from terminal paths, and a first-send failure that is retrying is not terminal |
-  | `broadcasts_dispatch_budget_exhausted_total` | **no** — needs `elapsedMs > 1 h` measured from the FIRST retryable failure of the attempt (`dispatch_first_failed_at`, mig `0311`, F119 PR-E), so it lands on the first tick past ~65 min after that failure, i.e. after the window closes |
-  | `broadcasts_audience_import_stuck_count` | **no on its own** — it only fires if the dispatch cron ALSO stops turning stuck rows terminal, so a zero is not evidence of health (round 2 R2-16) |
+  | `broadcasts_dispatch_budget_exhausted_total` | **no** — needs `elapsedMs > 1 h` from the FIRST retryable failure of the attempt (`dispatch_first_failed_at`), so it lands after the window closes |
+  | `broadcasts_audience_import_stuck_count` | **no on its own** — it fires only if the dispatch cron ALSO stops turning stuck rows terminal, so a zero is not evidence of health |
 
-  Watch the first two. Reading the others as "quiet, therefore healthy" is the
-  failure this table exists to prevent.
+  Watch the first two. Reading the others as "quiet, therefore healthy" is the failure this
+  table exists to prevent.
 
 **§ 6.10 privacy sign-off** — date: ______ · reviewer: ______ · residual 8a
 acknowledged: ☐ · residual 8b closed for sends (spec 139 slice 1 merged): ☐ · already-sent

@@ -2224,8 +2224,8 @@ export const broadcastsMetrics = {
    * network blips.
    *
    * Round 4 D7 + F8. `internal` was added here on 2026-09-09 for the import
-   * leg's resolve-side budget and is **removed with it** (F3): both legs now
-   * budget gateway failures only, so every value on this series again describes
+   * leg's resolve-side budget and is **removed with it** (F3): the dispatch
+   * tick budgets gateway failures only, so every value on this series again describes
    * something Resend did. `unclassified` replaces the Application layer's
    * `subKind ?? 'api'` default, which the gateway port's docblock had explicitly
    * removed for "masking classifier bugs" — this is a page-on-call series, and a
@@ -3004,27 +3004,24 @@ export const broadcastsMetrics = {
    * `broadcast-audience-build.md` § C).
    *
    * `phase` (2026-09-10 follow-up 5): the NAME says "resolve failed", and the
-   * route incremented it for every `dispatch.server_error` it saw — a Step-1
-   * lock fault, the resolver, the unknown-status refusal, a persist fault, and
-   * on the import leg a gateway retryable within budget — while the runbook's
-   * triage tree (F3 pages / Neon / opt-out lookup) described only the
-   * resolver. The name is kept so the catalogued alert keeps firing; the label
-   * says which subsystem to open. Closed union across both legs:
-   * live leg `lock | standing | resolve | inherited_status | persist_broadcast_id
-   * | terminal_write`, import leg `gateway | standing | resolve | terminal_write`.
+   * route incremented it for every `dispatch.server_error` it saw — the
+   * resolver, the unknown-status refusal, a persist fault, a gateway retryable
+   * within budget — while the runbook's triage tree (F3 pages / Neon / opt-out
+   * lookup) described only the resolver. The name is kept so the catalogued
+   * alert keeps firing; the label says which subsystem to open. The closed union
+   * is the import leg's (`BuildAudienceTickError['phase']`); spec 140 s4 deleted
+   * the legacy leg and with it `lock`, which only that leg emitted.
    * `standing` (F119 PR-A) — the member-standing read (F3 halt list or F8
-   * access) failed, so nothing was sent; `terminal_write` (the live leg since
-   * F119 PR-A) — a terminal `failed_to_dispatch` write did not commit, so the
-   * row is still `approved` (observability.md § 29). `lease` (spec 140 s2b,
-   * import leg) — a pre-call dispatch-lease check could not be read, so no
-   * Resend call was made. `attach_audience` (spec 140 s2b review round 4,
-   * import leg) — the write attaching a just-created audience faulted; the
-   * audience was read back and reclaimed or kept, nothing was sent.
+   * access) failed, so nothing was sent; `terminal_write` — a terminal
+   * `failed_to_dispatch` write did not commit, so the row is still `approved`
+   * (observability.md § 29). `lease` (spec 140 s2b) — a pre-call dispatch-lease
+   * check could not be read, so no Resend call was made. `attach_audience`
+   * (spec 140 s2b review round 4) — the write attaching a just-created audience
+   * faulted; the audience was read back and reclaimed or kept, nothing was sent.
    */
   dispatchResolveFailedTotal(
     tenantId: string,
     phase:
-      | 'lock'
       | 'standing'
       | 'resolve'
       | 'inherited_status'
@@ -3104,8 +3101,8 @@ export const broadcastsMetrics = {
   },
 
   /**
-   * `broadcasts_audience_import_abandoned_on_hold_total{tenant}` — import leg
-   * (`FEATURE_F7_IMPORT_AUDIENCE`). One per HOLD that abandoned an audience
+   * `broadcasts_audience_import_abandoned_on_hold_total{tenant}` — the import
+   * leg (the only dispatch leg since spec 140 s4). One per HOLD that abandoned an audience
    * build: the row claimed, its never-handed broadcast resource and its Resend
    * audience deleted, and those columns released, so the resumed row runs a
    * fresh tick 1. At most once per hold (a released row has nothing left to
@@ -3330,20 +3327,6 @@ export const broadcastsMetrics = {
         'broadcasts_audit_emit_count',
         'F7 audit-event emissions by type — ops dashboard',
       ).add(1, { tenant: tenantId ?? 'unknown', event_type: eventType });
-    });
-  },
-
-  /**
-   * `broadcasts.audience_drift_detected.count{tenant}` — F7.1-IMP5
-   * black-swan event: idempotency replay observed recipient-count
-   * mismatch between expected and Resend audience reality.
-   */
-  audienceDriftDetected(tenantId: string): void {
-    safeMetric(() => {
-      counter(
-        'broadcasts_audience_drift_detected_count',
-        'Idempotency-replay observed audience-count drift (F7.1-IMP5)',
-      ).add(1, { tenant: tenantId });
     });
   },
 

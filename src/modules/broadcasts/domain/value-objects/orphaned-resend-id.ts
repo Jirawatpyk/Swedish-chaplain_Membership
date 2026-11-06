@@ -21,7 +21,9 @@ export type OrphanResourceType = (typeof ORPHAN_RESOURCE_TYPES)[number];
  * `create_unconfirmed` is the one without an id: a `createBroadcast` that ended
  * in a network failure, a timeout or a 5xx may have minted a draft we never
  * learnt the id of. It is never drained (there is nothing to call), only
- * counted by a gauge.
+ * counted by a gauge. `dead_broadcast_replaced` and `dead_broadcast_kept` have
+ * no writer since spec 140 DT2 and s4; they stay because 0325 rows may hold
+ * them.
  */
 export const ORPHAN_REASONS = [
   'attach_lost',

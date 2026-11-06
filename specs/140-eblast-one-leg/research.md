@@ -373,3 +373,35 @@ All on the shared Resend account with the app's broadcasts key, on throwaway aud
 4. **409 `resource_locked` — not observed (MEASURED).** Two concurrent PATCHes on one draft, twice, then PATCH + DELETE together: all answered 200. The draft was then gone (a later DELETE answered 404). The documented code is still classified (DT3), but it is not reproducible on this account.
 5. **DELETE on a `failed` broadcast — UNMEASURED.** A broadcast reaches `failed` only after a send or schedule, which the probe rules forbid. The in-flight arm keeps `failed` undecided, as before.
 
+
+## Addendum — slice 4 step 0 measurements (5 Nov 2026)
+
+All on the shared Resend account with the app's broadcasts key, on throwaway segments at the sink domain (`@resend.dev`). Nothing was sent or scheduled. Every segment, contact and draft created was deleted afterwards, contacts by id.
+
+1. **`contacts.segments.remove({ email, segmentId })` — MEASURED.** The SDK (resend 6.35.0) sends `DELETE /contacts/{email}/segments/{segmentId}`, with the email unencoded in the path.
+   - For `delivered+s4pmw3jeruj@resend.dev` (a `+` address) and `DELIVERED+S4PMW3JERUJU@resend.dev` (stored uppercase):
+     - each answered `200 {"object":"contact_segment","deleted":true}`;
+     - `contacts.segments.list` read the contact's segments as `[]` afterwards;
+     - `contacts.get` still found both contacts, so the detach does not delete the contact.
+   - **A random segment UUID answers `404 not_found` ("Audience not found").** The old `/audiences/{id}/contacts/{email}` path answered `200 deleted:true` for anything (slice 3 item 2).
+   - **The wrong case answers `404 not_found` ("Contact not found").** This was the lowercase form of the uppercase-stored contact, after it had been removed. Resend still matches case-sensitively, so the lowercase push (s3 R1-A) stays load-bearing.
+   - **Conclusion.** On this endpoint a 404 means the contact was not in that segment, or the segment does not exist. So the gateway's `already_absent` branch now reports what Resend held, instead of never firing.
+2. **`broadcasts.create({ segmentId })` and `contacts.list({ segmentId })` — MEASURED.**
+   - The create answered `200 {"object":"broadcast","id":…}`, the same shape as with `audienceId`.
+   - `broadcasts.get` read `status: "draft"`, with `segment_id` and `audience_id` both set to the segment.
+   - `contacts.list({ segmentId })` listed the segment's contacts as `audienceId` did.
+   - The draft was then deleted (`200 deleted:true`).
+3. **Import timing — MEASURED at 100, EXTRAPOLATED to 900** (the maintainer chose 100 on 5 Nov 2026, so the shared Free account, 1,000 contacts team-wide, is not filled).
+   - A 100-address CSV `POST /contacts/imports` (segment-scoped, `on_conflict: upsert`) answered `201` in **481 ms**.
+   - The import read `completed` with `{total: 100, created: 100, failed: 0}` within **1.3 s** of polling.
+   - All 100 contacts were then deleted one by one, by id (100/100), and then the segment (a segment DELETE deletes no contacts, item 5).
+   - **EXTRAPOLATED, not measured:** at 900 rows the POST carries a CSV about 9× larger. Even at 9× the measured time (about 4.3 s) it stays well inside the 30 s `IMPORT_CALL_TIMEOUT_MS` (plan :1216). One sample on one day is not a p95.
+4. **`contacts.segments.remove` on an old-style audience id, and on a non-member — MEASURED** (pdpa plan review H-1 c/d).
+   - **Old-style id.** A raw `POST /audiences` (the pre-Segments endpoint) answered `201 {"object":"audience"}`. A contact was pushed into it the legacy way (`contacts.create({ audienceId })`, i.e. `POST /audiences/{id}/contacts`). `contacts.segments.list` then listed the audience as one of the contact's segments. `contacts.segments.remove` on that id answered `200 deleted:true`, and the list then read `[]`. So ids minted before s4 (rows in flight at deploy, and `broadcast_orphaned_resend_ids`) detach on the new wire.
+   - **Non-member.** The contact existed, but in no segment. The detach answered `404 not_found` ("Audience not found in contact's audience list"), and the contact still existed afterwards.
+   - **Conclusion.** On the new wire, `200 deleted:true` is returned only when the membership existed and is now gone. Every no-op case seen answered 404: random segment, wrong case, non-member. The cleanup deleted both contacts by id, and the audience.
+5. **`segments.get` and `segments.remove` on a random id, plus the account's contact count — MEASURED** (architect plan review H2/H3).
+   - `segments.get(randomUUID)` answered `404 not_found` ("Audience not found").
+   - `segments.remove(randomUUID)` answered **`403 validation_error` ("Cannot delete last audience.")**. The account then held one segment, `General`. Resend checked the last-segment rule before the id, so on this account a 403 on a segment DELETE does not prove the id exists. `deleteAudience` already probes a 403 with a GET (s2c Verify finding), and the GET's 404 settles it.
+   - **Account contacts after every s4 probe: 22, the same as the 30 Oct baseline.** The probes deleted every contact by id. A segment DELETE alone leaves the contacts in the account.
+   - So after s4, every E-Blast's import adds its recipients as account contacts, and no code path deletes them (DR4 forbids the global delete). The Free cap (1,000 contacts team-wide, shared by dev, prod and every tenant) is an accumulating bound on distinct addresses ever imported. The per-E-Blast ceiling of 900 does not enforce it. Whether the cap counts team-level contacts stays DOCUMENTED, not measured, because measuring it would mean filling the account.

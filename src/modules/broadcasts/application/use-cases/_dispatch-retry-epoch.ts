@@ -1,7 +1,8 @@
 /**
- * FR-021 / AS2 — where the one-hour dispatch retry budget starts, for BOTH
- * dispatch legs (`dispatchScheduledBroadcast` and `buildAudienceTick`). One
- * reader, so the legs cannot drift (they did once: round 4 F3).
+ * FR-021 / AS2 — where the one-hour dispatch retry budget starts. It was one
+ * reader for BOTH dispatch legs so they could not drift (they did once: round 4
+ * F3); since spec 140 s4 deleted the legacy leg, `buildAudienceTick` is its
+ * only caller.
  *
  * **F119 PR-E (migration 0311) — the budget counts from the FIRST retryable
  * gateway failure of the current dispatch attempt**, persisted as
@@ -59,7 +60,7 @@ type RetryClockDeps = { readonly tenant: TenantContext; readonly broadcastsRepo:
  * terminal write — there is no attempt left to fail.
  *
  * - The stamp is written on EVERY retryable failure, in its OWN transaction
- *   (both legs call this after their Step-1 lock tx has committed, so no row
+ *   (the tick calls this after its Step-1 lock tx has committed, so no row
  *   lock is held and no second pool connection is taken while one is), and the
  *   answer is what `RETURNING` says the row carries. COALESCE keeps the first
  *   stamp, so the write is idempotent; reading the Step-1 snapshot instead was
@@ -73,8 +74,9 @@ type RetryClockDeps = { readonly tenant: TenantContext; readonly broadcastsRepo:
  *   failure into a permanent one, and must never extend a spent budget either:
  *   a row whose snapshot carries a 61-minute-old stamp is still measured from
  *   it.
- * - `lease` (spec 140 s2b): the import tick passes its token, the legacy leg
- *   `null`. A LOST token is the same `null` answer (no throw), so a stale
+ * - `lease` (spec 140 s2b): the import tick's token, the only caller since
+ *   spec 140 s4 deleted the legacy leg (its `null`, a non-holder, went with
+ *   it). A LOST token is the same `null` answer (no throw), so a stale
  *   holder stops without a terminal write and without a stamp-failure line:
  *   nothing failed, the row is simply no longer its to time (A3).
  */
@@ -83,9 +85,9 @@ export async function dispatchRetryEpoch(
   broadcastId: BroadcastId,
   broadcast: Broadcast,
   now: Date,
-  /** The leg's own log event, so an operator can tell the two apart. */
+  /** The caller's own log event (the import tick's, the only caller since spec 140 s4). */
   stampFailedEvent: string,
-  lease: LeaseToken | null,
+  lease: LeaseToken,
 ): Promise<Date | null> {
   try {
     return await deps.broadcastsRepo.withTx((tx) =>
@@ -121,10 +123,10 @@ export async function dispatchRetryEpoch(
 export async function resetDispatchRetryClock(
   deps: RetryClockDeps,
   broadcastId: BroadcastId,
-  /** The leg's own log event, so an operator can tell the two apart. */
+  /** The caller's own log event (the import tick's, the only caller since spec 140 s4). */
   clearFailedEvent: string,
-  /** Spec 140 s2b — the import tick's token, or `null` (the legacy leg). */
-  lease: LeaseToken | null,
+  /** Spec 140 s2b — the import tick's token (the only caller since spec 140 s4). */
+  lease: LeaseToken,
 ): Promise<void> {
   try {
     await deps.broadcastsRepo.withTx((tx) =>

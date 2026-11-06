@@ -207,7 +207,10 @@ export interface SubmitBroadcastDeps {
    * `domain/audience-mode.ts`.
    */
   readonly audienceMode: AudienceMode;
-  /** 108 PR-C T085 — `audienceCeiling(batchingEnabled)`, from the composition root. */
+  /**
+   * 108 PR-C T085 — the audience ceiling, from the composition root: since spec
+   * 140 s4 `BROADCAST_AUDIENCE_CEILING` (default 900) via `currentAudienceCeiling()`.
+   */
   readonly audienceCeiling: number;
   readonly rateLimiter: RateLimiterPort;
   readonly audit: AuditPort;

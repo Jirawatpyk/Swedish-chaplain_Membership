@@ -214,14 +214,24 @@ export function EvidenceCard({
                   that incremented for every detach the processor acknowledged,
                   404s included. A DPO citing this card in a DSR answer was
                   asserting removals that had not happened (Art. 12(3)). The
-                  counter now leaves out the 404s, but Resend also answers 200 to
-                  a detach of an address that was not in the segment (MEASURED
-                  5 Nov 2026), so the figure is the detach requests Resend
-                  accepted, which may include absent addresses (spec 140 s3
-                  R1-I; the countsNote below says so). The contact record itself
-                  survives at the processor (residual 8a).
+                  counter now leaves out the 404s. On the old `/audiences` wire
+                  Resend also answered 200 for an address no longer in the
+                  audience (an address it never held is not measured), so an older
+                  record's figure is the detach requests Resend
+                  accepted (spec 140 s3 R1-I; `contactsDetached` and `countsNote`).
+                  The segment wire (spec 140 s4) answers 200 only for a membership
+                  that existed (MEASURED 5 Nov 2026), so a `detachWire: 'segments'`
+                  record's figure is segment entries removed (`contactsDetachedSegments`,
+                  PR #756 review round 1). The contact record itself survives at
+                  the processor (residual 8a).
                 */}
-                <Field label={t('fields.contactsDetached')}>
+                <Field
+                  label={
+                    row.subprocessorOutcome.detachWire === 'segments'
+                      ? t('fields.contactsDetachedSegments')
+                      : t('fields.contactsDetached')
+                  }
+                >
                   {row.subprocessorOutcome.contactsRemoved}
                 </Field>
                 {/*
@@ -234,7 +244,13 @@ export function EvidenceCard({
                   zero. An em-dash says the same thing on the surface where the
                   DSR answer is actually composed.
                 */}
-                <Field label={t('fields.contactsAlreadyAbsent')}>
+                <Field
+                  label={
+                    row.subprocessorOutcome.detachWire === 'segments'
+                      ? t('fields.contactsAlreadyAbsentSegments')
+                      : t('fields.contactsAlreadyAbsent')
+                  }
+                >
                   {row.subprocessorOutcome.contactsAlreadyAbsent ?? DASH}
                 </Field>
                 <Field label={t('fields.contactsFailed')}>
@@ -255,8 +271,16 @@ export function EvidenceCard({
                 (`only-dlitems` — a <dl> may directly contain only dt/dd groups,
                 div, script, template). It is the same note, one element out.
               */}
+              {/*
+                PR #756 review round 1 (pdpa M-1) — the note follows the wire that
+                wrote the record. A segment-wire row (`detachWire: 'segments'`, spec
+                140 s4 on) has figures Resend confirmed; an older row keeps the old
+                note, which says it is for records before the Segments detach.
+              */}
               <p className="text-xs text-[var(--aura-fg-secondary)]">
-                {t('fields.countsNote')}
+                {row.subprocessorOutcome.detachWire === 'segments'
+                  ? t('fields.countsNoteSegments')
+                  : t('fields.countsNote')}
               </p>
               {/*
                 Spec 140 s3 review round 2 (R2-A) — `not_attempted` is a re-drive

@@ -1,7 +1,8 @@
 /**
- * F119 PR-A — the member-standing decision at SEND time, shared by both
- * dispatch legs (`dispatchScheduledBroadcast`, `buildAudienceTick`) so the two
- * cannot drift: each used to carry its own copy of the same switch.
+ * F119 PR-A — the member-standing decision at SEND time. It was shared by
+ * both dispatch legs so the two could not drift; since spec 140 s4 deleted the
+ * legacy leg, `buildAudienceTick` is its only dispatch caller (`leg: 'import'`
+ * stays on the log lines), and the staff detail page reads the decision.
  *
  * It reads the standing through `readMemberSendStanding` (the one reader
  * submit, approve-as-submitted and the promotion share) and turns it into what
@@ -204,7 +205,7 @@ export async function deleteDraftBeforeRefusal(
   ids: {
     readonly tenantId: string;
     readonly broadcastId: string;
-    readonly leg: 'live' | 'import';
+    readonly leg: 'import';
     readonly refusal: 'erased' | 'standing' | 'terminal';
   },
   draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
@@ -245,11 +246,11 @@ export async function deleteDraftBeforeRefusal(
  * member's refusal, owning its one log line: on `undecided` it writes
  * `refused_draft_delete_unconfirmed` with the fields the standing line carries
  * (`probedStatus`, the DELETE `outcome`, `errClass`, and `err` on a throw).
- * Both legs' erased arms call this and nothing else. Never provider text.
+ * The tick's erased arm calls this and nothing else. Never provider text.
  */
 export async function deleteDraftBeforeErasedRefusal(
   gateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce'>,
-  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'live' | 'import' },
+  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'import' },
   draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
 ): Promise<DraftClearance> {
   const cleared = await deleteDraftBeforeRefusal(gateway, { ...ids, refusal: 'erased' }, draft);
@@ -310,12 +311,12 @@ export type StandingDraftErrClass =
  * anything else (a throw included) → `undeleted`, and the refusal goes ahead.
  *
  * Spec 140 s2c review round 2 (code-review #5) — `refusal` names the caller in
- * the log lines: `'standing'` (the default, both legs' refuse arms) or
- * `'terminal'` (the import leg's `failTerminally` choke point, not a refusal).
+ * the log lines: `'standing'` (the default, the tick's refuse arm) or
+ * `'terminal'` (the tick's `failTerminally` choke point, not a refusal).
  */
 export async function deleteDraftBeforeStandingRefusal(
   gateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce' | 'retrieveBroadcastOnce'>,
-  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'live' | 'import' },
+  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'import' },
   draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
   refusal: 'standing' | 'terminal' = 'standing',
 ): Promise<StandingDraftClearance> {
@@ -377,12 +378,12 @@ const PROBE_ERR_CLASS: Readonly<Record<string, StandingDraftErrClass>> = {
 };
 
 /**
- * Spec 139 P4 — the warn line a leg writes when the requester is not in the
- * tenant (`REQUESTER_NOT_FOUND`). Ids only. Written by the legs, not by
+ * Spec 139 P4 — the warn line the tick writes when the requester is not in the
+ * tenant (`REQUESTER_NOT_FOUND`). Ids only. Written by the tick, not by
  * `decideDispatchStanding`, so the staff detail page's read stays quiet; the
  * cron also counts it under `dispatchResolveFailedTotal{phase=standing}`.
  */
-export function recordRequesterNotFound(tenantSlug: string, broadcastId: string, leg: 'live' | 'import'): void {
+export function recordRequesterNotFound(tenantSlug: string, broadcastId: string, leg: 'import'): void {
   logger.warn({ tenantId: tenantSlug, broadcastId, leg }, 'broadcasts.dispatch.requester_not_found');
 }
 
@@ -391,7 +392,7 @@ export function recordRequesterNotFound(tenantSlug: string, broadcastId: string,
  * re-checked every 5 minutes, so a row per tick would bury the log. Ids only —
  * no member id, no address, no F8 reason.
  */
-export function recordDispatchHold(tenantSlug: string, broadcastId: string, leg: 'live' | 'import'): void {
+export function recordDispatchHold(tenantSlug: string, broadcastId: string, leg: 'import'): void {
   logger.info({ tenantId: tenantSlug, broadcastId, leg }, 'broadcasts.dispatch.standing_held');
   broadcastsMetrics.dispatchStandingHeldTotal(tenantSlug);
 }

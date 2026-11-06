@@ -243,14 +243,8 @@ export {
   type BuildAudienceTickError,
   type BuildAudienceTickOutput,
 } from './application/use-cases/build-audience-tick';
-export {
-  dispatchScheduledBroadcast,
-  type DispatchScheduledBroadcastError,
-  type DispatchScheduledBroadcastInput,
-  type DispatchScheduledBroadcastOutput,
-} from './application/use-cases/dispatch-scheduled-broadcast';
-// Moved out of `dispatch-scheduled-broadcast` in 108 Phase 9 so BOTH dispatch
-// paths can send the FR-021 notification. The import path had none.
+// The FR-021 dispatch-failure notification (moved out of the legacy dispatch use
+// case in 108 Phase 9; that leg was deleted in spec 140 s4).
 export {
   enqueueDispatchFailureNotification,
   type DispatchFailureNotificationDeps,
@@ -306,18 +300,12 @@ export {
 
 // --- F9 cross-module read (dashboard needs-attention, FR-002/AS-2) -------
 export { makeBroadcastApprovalCounter } from './infrastructure/broadcasts-deps';
-// 108 PR-C — the flag-derived resolver leg, read in the composition root only.
+// 108 PR-C — the flag-derived resolver leg; spec 140 s4 — the env ceiling.
 export {
   currentAudienceMode,
-  configuredAudienceCeiling,
   currentAudienceCeiling,
   makeResolveSegmentDeps,
 } from './infrastructure/broadcasts-deps';
-// 108 PR-C T085 — the one ceiling (Domain) + the split threshold it bounds.
-export {
-  audienceCeiling,
-  DELIVERABLE_RECIPIENTS_PER_TICK,
-} from './domain/audience-ceiling';
 export type { BroadcastApprovalCounter, MarketingQueueCounts } from './application/ports/broadcast-approval-counter';
 // F119 T116 / T117 / T119 — the staff dashboard (contracts/dashboard-and-notifications.md § 1):
 // per-stage counts, batched delivery results, time in stage and the stalled flag.
@@ -344,7 +332,6 @@ export {
   makeCancelBroadcastDeps,
   makeProxySubmitBroadcastDeps,
   makeClearHaltDeps,
-  makeDispatchScheduledBroadcastDeps,
   makeBuildAudienceTickDeps,
   makePruneExpiredDraftsDeps,
   makeSweepExpiredBroadcastsDeps,
@@ -358,7 +345,6 @@ export {
 } from './infrastructure/broadcasts-deps';
 export {
   isF71aUs1Enabled,
-  isF7ImportAudienceEnabled,
   f71aUs1DisabledReason,
   type F71aUs1DisabledReason,
   isF71aUs7Enabled,

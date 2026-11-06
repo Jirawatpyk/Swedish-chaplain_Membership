@@ -71,6 +71,7 @@ function makeRepoMocks(opts: {
     releaseAudienceImport: async () => 'cas_lost' as const, // unused here.
     releaseResendAudience: async () => 'cas_lost' as const, // unused here.
     readAlreadySentEvidenceInTx: async () => ({ broadcastRecorded: false, memberBroadcastCount: 0 }), // unused here.
+    hasUnverifiableCountAuditInTx: async () => false, // unused here.
     clearDispatchRetryClock: async () => {
       // no-op — F119 PR-E; unused here.
     },

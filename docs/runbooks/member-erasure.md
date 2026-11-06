@@ -82,7 +82,7 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    carries a `resend_broadcast_id`: under the row lock it deletes the Resend
    draft once, probes it once after a 404 (3 s later) or a 403, and cancels the
    row only when Resend's answers prove nothing can be sent (D-040); the
-   send-time gate refuses an erased member on both dispatch legs. Do **not** delete anything at
+   send-time gate refuses an erased member at dispatch. Do **not** delete anything at
    Resend by hand. The one case it cannot undo is an E-Blast Resend had
    **already accepted for sending** (residual **8c**). Find it from the
    evidence, not from memory:
@@ -394,13 +394,19 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    block closure of the controller-copy erasure.
 
    **(c) is new to this list and it is the one a DSR answer is most likely to get
-   wrong** (round 2 R2-2). The cascade calls
-   `DELETE /audiences/{id}/contacts/{email}`, which **DETACHES** the contact from
-   that audience — measured 2026-09-09: the call answers `{"deleted": true}`, the
-   audience-scoped read then 404s, and an audience-less `GET /contacts/{email}`
-   **still returns the contact at 200**. So the address remains in Resend's
-   contact store. The capability to delete it for real exists
-   (`deleteContactGlobally`) and is deliberately not called, because one Resend
+   wrong** (round 2 R2-2). Since spec 140 s4 the cascade calls
+   `DELETE /contacts/{email}/segments/{id}` (SDK `contacts.segments.remove`),
+   which **DETACHES** the contact from that segment (the old audience) — measured
+   2026-11-05: it answers `200 {"deleted": true}` only when the membership
+   existed, and `404` for a random segment, the wrong case or a non-member (the
+   cascade records that as `already_absent`). The earlier wire,
+   `DELETE /audiences/{id}/contacts/{email}`, was measured 2026-09-09 to detach
+   the same way: an audience-less `GET /contacts/{email}` **still returns the
+   contact at 200**. So the address remains in Resend's contact store. A global
+   delete (`DELETE /contacts/{email}`) was measured 2026-09-09 to delete the
+   contact for real; the gateway method that could make it was removed in spec
+   140 s4, and the DR4 contract guard fails any `DELETE /contacts/{email}`. It is
+   deliberately not made, because one Resend
    account is shared across tenants — see `processing-records.md` residual 8a for
    the owner, the review date and the revisit condition. **A DSR answer must say
    the address may remain in the processor's contact store.**
@@ -771,19 +777,36 @@ The cascade has two halves:
 
    | Payload key | Means |
    |---|---|
-   | `resend_contacts_removed_count` | pairs Resend answered `200 {"deleted":true}` for: each address is no longer in that audience, but it may already have been absent (below) |
-   | `resend_contacts_already_absent_count` | the processor answered 404 — a success, but **not** a removal. Absent on rows written before 2026-09-09, where the run could not tell |
+   | `resend_contacts_removed_count` | pairs Resend answered `200 {"deleted":true}` for. What that proves depends on when the row was written (below) |
+   | `resend_contacts_already_absent_count` | the processor answered 404 (or 410) — a success, but **not** a removal. Absent on rows written before 2026-09-09, where the run could not tell |
    | `resend_contacts_failed_count` | the call errored; remediate per § Sub-processor erasure propagation |
+   | `resend_detach_wire` | `'segments'` on every row written since spec 140 s4 (the detach is `DELETE /contacts/{email}/segments/{id}`). Absent on older rows, which used the `/audiences/{id}/contacts/{email}` wire |
 
-   **Resend answers 200 for a contact that was not in the audience** (MEASURED
-   5 Nov 2026, spec 140 slice 3 step 0.2, for an address that still exists as a
-   contact but was no longer in the segment; an address Resend has never held is
-   not measured). So the `detached` count can include contacts that were
-   already absent, and `already_absent` reads 0 for them: it counts only a 404.
-   The end state is what the DSR needs (the address is in none of those
-   audiences, given the address was pushed lowercase — see RoPA 8a), but the first number is not a record of what Resend held. When a
-   DSR asks, cite it as "audience detach requests Resend accepted", not as
-   memberships that existed. Do not add the second number to it.
+   **Read the first two counts by the row itself** (the detach wire changed in
+   spec 140 s4, and every row written since carries `resend_detach_wire:
+   'segments'`; the erasure evidence card reads the same key):
+   - **Before 2026-09-09:** there is no `already_absent` key; the run could not
+     tell the two apart.
+   - **From 2026-09-09, with no `resend_detach_wire` (the old
+     `/audiences/{id}/contacts/{email}` wire):** Resend answered 200 for a contact that was no longer in the
+     audience (MEASURED 5 Nov 2026, spec 140 slice 3 step 0.2; an address Resend
+     never held is not measured). So `removed` can include contacts that were
+     already absent, and `already_absent` reads about 0. Cite `removed` as
+     "audience detach requests Resend accepted", not as memberships that existed.
+   - **With `resend_detach_wire: 'segments'` (`DELETE /contacts/{email}/segments/{id}`):** Resend
+     answers `200 deleted:true` only when the membership existed, and 404 for an
+     unknown segment, the wrong case or a non-member (MEASURED 2026-11-05,
+     research.md slice 4 items 1 and 4). So `removed` counts memberships Resend
+     removed, and `already_absent` counts segments in which Resend held no
+     membership **for the lowercase address**. A contact stored in another case
+     (a push before spec 140 s3 R1-A, 2026-11-05, or a dashboard import) reads
+     `already_absent` and stays in the segment (RoPA 8a). A 5xx whose detach did
+     land and whose retry then answers 404 is counted `already_absent`: an
+     under-count, never a false removal.
+
+   In every period the end state is what the DSR needs (the address is in none of
+   those audiences, given it was pushed lowercase). Do not add the second number
+   to the first.
 
 **Why non-blocking** (security + DPO sign-off, plan-review 2026-06-20): the
 Resend-removal inputs are captured only in the first-pass atomic tx and are
@@ -809,8 +832,8 @@ runbook.
 > addresses with a stable per-`contact_id` **sentinel**. A US2d re-drive re-enters
 > the same tx and re-reads sentinels, and arm 2 paired the member's live audiences
 > with addresses that were never in them. This box used to say every such `DELETE`
-> misses and is counted `already_absent`. It was not: Resend answers 200
-> `deleted: true` to any segment-contact DELETE (MEASURED 5 Nov 2026), so each one
+> misses and is counted `already_absent`. It was not: on the old `/audiences` wire
+> (before spec 140 s4) Resend answered 200 `deleted: true` for a contact that was no longer in the audience (MEASURED 5 Nov 2026; an address it never held is not measured), so each one
 > was counted **`removed`** — the spec 140 DT4 re-verify saw a second erase record
 > `resend_contacts_removed_count: 2` for contacts already gone.
 >
@@ -932,6 +955,12 @@ When the alert fires:
      Either way, nothing reached Resend: search the Resend dashboard for the
      member's address from the DSR intake record and remove it from every
      audience it is still in.
+   - **`gatewayCode: detach_unconfirmed`** (`gatewayKind: permanent`; spec 140
+     slice 4) — Resend answered 200 to the detach without `deleted: true`. That
+     shape has never been measured (every measured 200 carried it, 2026-11-05),
+     so the pair is counted failed rather than removed. Check the member's address
+     in the Resend dashboard (Contacts, then its segments) and remove it from the
+     logged segment by hand.
    - **`gatewayKind: retryable`** (retries exhausted) — Resend answered a transient error
      on every attempt inside the call's 10 s budget (spec 140 s2a: up to four
      attempts; `subKind: timeout` = Resend did not answer within 10 s). A non-JSON answer (an edge's or proxy's HTML page,

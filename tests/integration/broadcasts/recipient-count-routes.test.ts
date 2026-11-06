@@ -18,9 +18,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { env } from '@/lib/env';
-import { isF7ImportAudienceEnabled } from '@/modules/broadcasts/infrastructure/feature-flags';
-import { DELIVERABLE_RECIPIENTS_PER_TICK } from '@/modules/broadcasts/domain/audience-ceiling';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -107,35 +104,12 @@ describe('108 PR-C T088 — recipient-count routes (live Neon, real gates)', () 
     const res = await memberCountGet(makeRequest('/api/broadcasts/recipient-count?segment=all_members', reqId()));
     expect(res.status).toBe(200);
     const body = await res.json();
-    // The ceiling restated from the FLAGS (FR-042 + review H-2: 50,000 only
-    // when batching AND the 1:N flag are both on), never from
-    // `currentAudienceCeiling()` itself — that comparison was a tautology
-    // (review BLOCKER); the composition root's own unit test pins the matrix.
-    //
-    // T095 (2026-09-08) added a second half: what the flags CONFIGURE was
-    // clamped to what one dispatch tick can push. **Phase 9b made that clamp
-    // conditional on batching**, because an audience above one tick is now
-    // SPLIT rather than refused — `DELIVERABLE_RECIPIENTS_PER_TICK` became the
-    // batch size. With batching ON (prod's state) the compose count therefore
-    // shows the configured ceiling again; with it OFF there is no split path,
-    // so the single-tick bound is still the real one and the clamp still binds.
-    //
-    // Restated here from the flags and the Domain constant, not read from the
-    // function under test — the tautology the review BLOCKER caught. That is
-    // also why this file failed on the pre-push hook rather than in CI: the
-    // rule is written out twice on purpose, so changing it in one place has to
-    // be a deliberate act in the other.
-    // Round 3 finding 3-4 — this restated `isF71aUs1Enabled()` while
-    // `configuredAudienceCeiling()` reads `isF7ImportAudienceEnabled()`. Under
-    // `.env.local` (pagination ON, 1:N ON, import OFF) it computed 50,000 and
-    // the route returned 500. It stayed green in CI only because both flags
-    // default false there and the two expressions happen to agree at 500 — so
-    // it was written to protect a flip and would have gone RED on that flip.
-    const configured =
-      isF7ImportAudienceEnabled() && env.features.contactMarketingRecipients ? 50_000 : 5_000;
-    const expectedCeiling = isF7ImportAudienceEnabled()
-      ? configured
-      : Math.min(configured, DELIVERABLE_RECIPIENTS_PER_TICK);
+    // Spec 140 s4 (DR3) — the ceiling is `BROADCAST_AUDIENCE_CEILING`, default
+    // 900, and no flag moves it. Written as the literal, never read from
+    // `currentAudienceCeiling()` — comparing the route against the function it
+    // calls was a tautology (108 review BLOCKER). `.env.local` does not set the
+    // variable; a run that sets it must expect its own value here.
+    const expectedCeiling = 900;
     // No `orphans` on the member body (review M-3): it is about OTHER members.
     //
     // And no `droppedByPreference` either, whenever the count is non-zero.

@@ -1,7 +1,7 @@
 /**
  * Spec 139 DE3 — a dispatch tick racing the erasure cascade sends NOTHING, on
- * live Postgres (Neon `dev`) through the real repo, the real cascade and both
- * real dispatch legs. Only Resend is a fake, and it models the arbitration
+ * live Postgres (Neon `dev`) through the real repo, the real cascade and the
+ * real dispatch tick. Only Resend is a fake, and it models the arbitration
  * MEASURED on the live account (2026-10-29, spec 138):
  *
  *   - `DELETE /broadcasts/{id}` succeeds only on a DRAFT (a queued or sent
@@ -9,18 +9,17 @@
  *   - `/send` works only on a draft; after a DELETE it answers 404, and so
  *     does GET.
  *
- * Both legs persist `resend_broadcast_id` BEFORE `/send`, so the cascade can
+ * The tick persists `resend_broadcast_id` BEFORE `/send`, so the cascade can
  * meet an `approved` row whose draft is minted but not yet sent. Until 139 it
  * skipped that row and the tick sent the erased member's pre-scrub E-Blast.
  * Now, under the row lock, it DELETEs the draft once and cancels the row:
  *
- *   1. legacy leg — the tick is parked between its persist and `/send`; the
- *      cascade deletes and cancels; the released `/send` 404s, the tick's
- *      re-read sees `cancelled` and answers a concurrent skip (P8). Nothing
- *      was accepted for sending.
- *   2. import leg, tick 2 — the same race through `confirmImport`'s mint,
- *      persist and send: the 404 is `sendLostToHold`'s concurrent skip.
- *   3. import leg, the RE-MINT window — the cascade holds the row lock while
+ *   1. import leg, tick 2 — the tick is parked between `confirmImport`'s
+ *      persist and `/send`; the cascade deletes and cancels; the released
+ *      `/send` 404s into `sendLostToHold`'s concurrent skip. Nothing was
+ *      accepted for sending. (Spec 140 s4 deleted the legacy leg; its case of
+ *      the same race was dropped, this one is its twin.)
+ *   2. import leg, the RE-MINT window — the cascade holds the row lock while
  *      the tick probes the inherited id it has just deleted (`not_found`
  *      twice), mints a fresh broadcast from the row and tries to persist it.
  *      That CAS waits on the cascade's lock, then sees `cancelled`, so the
@@ -40,19 +39,14 @@ import {
   asBroadcastId,
   buildAudienceTick,
   cancelInFlightBroadcastsForMember,
-  dispatchScheduledBroadcast,
   makeCancelInFlightBroadcastsForMemberDeps,
 } from '@/modules/broadcasts';
 import { asMemberId } from '@/modules/members';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
-import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
-import { emailTransactionalBridge } from '@/modules/broadcasts/infrastructure/email-transactional-bridge';
-import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
 import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
 import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
-import { plansBridge } from '@/modules/broadcasts/infrastructure/plans-bridge';
 import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
 import { broadcasts, type NewBroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -97,9 +91,6 @@ function fakeResend(opts: { parkSend?: ReturnType<typeof gate>; parkDelete?: Ret
     async createAudience() {
       calls.push('createAudience');
       return { audienceId: `aud-de3-${randomUUID().slice(0, 8)}` };
-    },
-    async addContactsToAudience() {
-      calls.push('addContactsToAudience');
     },
     async createContactImport() {
       calls.push('createContactImport');
@@ -168,7 +159,6 @@ function fakeResend(opts: { parkSend?: ReturnType<typeof gate>; parkDelete?: Ret
     async removeContactFromAudience() {
       return { kind: 'detached' as const };
     },
-    async deleteContactGlobally() {},
     async listAudiences() {
       return { audiences: [], truncated: false };
     },
@@ -256,44 +246,6 @@ describe('spec 139 DE3 — the erasure cascade vs a dispatch tick past its persi
       },
     );
 
-  const legacyDeps = (gateway: BroadcastsGatewayPort) => ({
-    tenant: tenant.ctx,
-    broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
-    audienceMode: 'primary_only' as const,
-    audienceCeiling: 5000,
-    broadcastsGateway: gateway,
-    // The audience is stubbed (this file is about the race, not the query); the
-    // standing reads below are the REAL bridges.
-    membersBridge: {
-      ...membersBridge,
-      async getMemberPrimaryContact() {
-        return 'sender@example.com' as never;
-      },
-      async getMembersBySegment() {
-        return [
-          {
-            memberId: randomUUID(),
-            displayName: 'Recipient Co',
-            primaryContactEmail: RECIPIENT as never,
-            tierCode: null,
-            broadcastsHaltedUntilAdminReview: false,
-          },
-        ];
-      },
-    },
-    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenant.ctx.slug),
-    eventAttendees: eventAttendeesStub,
-    audit: f7AuditAdapter,
-    clock: { now: () => new Date() },
-    fromEmail: 'noreply@test.invalid-but-test-only',
-    tenantDisplayName: 'Test Chamber',
-    locale: 'en' as const,
-    plansBridge,
-    emailTransactional: emailTransactionalBridge,
-    sendStanding: LIVE_STANDING,
-    brandChrome: NO_BRAND,
-  });
-
   const importDeps = (gateway: BroadcastsGatewayPort, reprobePauses: number[]) => ({
     tenant: tenant.ctx,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
@@ -345,28 +297,6 @@ describe('spec 139 DE3 — the erasure cascade vs a dispatch tick past its persi
     expect(resend.accepted).toEqual([]);
     expect(resend.calls).not.toContain('sendBroadcast');
     expect(await readRow(broadcastId)).toMatchObject({ status: 'cancelled', resendBroadcastId: null });
-  });
-
-  it('legacy leg: the cascade deletes the persisted draft and cancels the row; the released /send 404s into a concurrent skip — nothing is sent', async () => {
-    const { memberId, broadcastId } = await seed();
-    const parkSend = gate();
-    const resend = fakeResend({ parkSend });
-
-    const tickP = dispatchScheduledBroadcast(legacyDeps(resend.port) as never, { broadcastId: asBroadcastId(broadcastId) });
-    await parkSend.reached;
-    // The tick has persisted its draft and is at `/send`, holding no lock.
-    const persisted = (await readRow(broadcastId)).resendBroadcastId!;
-    expect(resend.state.get(persisted)).toBe('draft');
-
-    const cascaded = await eraseCascade(memberId, resend.port);
-    parkSend.open();
-    const tick = await tickP;
-
-    expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 1, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
-    expect(tick).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
-    expect(resend.accepted).toEqual([]);
-    expect(resend.state.get(persisted)).toBe('deleted');
-    expect(await readRow(broadcastId)).toMatchObject({ status: 'cancelled', cancellationReason: 'gdpr_erasure_request' });
   });
 
   it('import leg, tick 2: the cascade deletes the freshly persisted draft and cancels; the /send 404 is a concurrent skip — nothing is sent', async () => {

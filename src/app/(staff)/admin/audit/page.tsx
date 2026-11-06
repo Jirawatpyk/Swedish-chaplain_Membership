@@ -81,11 +81,13 @@ const NEVER_EMITTED_EVENT_TYPES: ReadonlySet<string> = new Set([
   // any recent window — which reads as "no violations", the most dangerous
   // possible wrong answer on a governance surface.
   'manager_denied_write',
-  // 108 Phase 9 — the six batch-path event types, read from the module that
+  // 108 Phase 9 — the six batch-path event types, and since spec 140 s4 the two
+  // only the deleted legacy dispatch leg emitted (`broadcast_resend_audience_drift`,
+  // `broadcast_dispatch_idempotency_conflict_pre_send`), read from the module that
   // owns the retirement rather than restated here. Same class as
-  // `manager_denied_write` one line up: the emitting use cases
-  // (`recordPartialSend`, `transitionToRetrying`, `acceptPartialDelivery`)
-  // have no callers left, so filtering on one of these can only ever return
+  // `manager_denied_write` one line up: their emitters (`recordPartialSend`,
+  // `transitionToRetrying`, `acceptPartialDelivery`, the legacy leg) are gone,
+  // so filtering on one of these can only ever return
   // zero rows — and on this page zero rows reads as "it never happened",
   // not as "this state can no longer be produced".
   ...RETIRED_F7_AUDIT_EVENT_TYPES,

@@ -385,9 +385,10 @@ describe('broadcasts repo — scrubContentForMemberInTx + tombstoneDeliveriesFor
   );
 
   it('scrubs failure_reason (raw gateway error can echo the author own reply_to/from_name)', async () => {
-    // 2026-06-19 /code-review #8: failure_reason is set from a raw gateway
-    // error message (dispatch-scheduled-broadcast.ts: shape.reason ?? e.message)
-    // that can embed the broadcast's reply_to_email / from_name — the author's
+    // 2026-06-19 /code-review #8: failure_reason was set from a raw gateway
+    // error message (the legacy dispatch leg, deleted in spec 140 s4:
+    // shape.reason ?? e.message), and rows it wrote can still
+    // embed the broadcast's reply_to_email / from_name — the author's
     // OWN PII, the same address the scrub redacts on that row. The scrub must
     // NULL it (migration 0224 whitelists the column under the GUC).
     const authorEmail = `author-fail-${randomUUID().slice(0, 8)}@example.com`;

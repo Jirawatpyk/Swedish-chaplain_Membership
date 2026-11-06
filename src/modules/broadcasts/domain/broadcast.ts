@@ -161,8 +161,8 @@ export interface Broadcast {
    * error message from the Resend gateway / app code. The bounded
    * counterpart used for alerting is the
    * `broadcasts.failed_to_dispatch.count.failure_reason` enum
-   * emitted by `phaseToFailureReason()` in
-   * `dispatch-scheduled-broadcast.ts` — dashboards alert on that
+   * emitted by the dispatch tick (`build-audience-tick.ts`; the legacy
+   * leg's `phaseToFailureReason()` went in spec 140 s4) — dashboards alert on that
    * enum; the `failureReason` column is for human triage in the
    * admin queue. Round 5 review: documented choice, not regression.
    */

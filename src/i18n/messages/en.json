@@ -518,9 +518,12 @@
           "invitationsRevoked": "Invitations revoked",
           "resendOutcome": "Outcome",
           "contactsDetached": "Detach requests accepted by Resend",
+          "contactsDetachedSegments": "Removed from Resend segments",
           "contactsAlreadyAbsent": "Already absent from audience",
+          "contactsAlreadyAbsentSegments": "Not in the Resend segment",
           "contactsFailed": "Contacts failed",
-          "countsNote": "Each contact is counted once. Resend accepts a detach request whether or not the address was in the audience, so the first figure may include addresses that were already absent. Cite it as detach requests Resend accepted; do not add the already-absent figure to it.",
+          "countsNote": "Earlier record (older Resend detach method): each contact is counted once. Resend accepted detach requests even for addresses that were no longer in the audience, so the first figure may include addresses that were already absent. Cite it as detach requests Resend accepted; do not add the already-absent figure to it.",
+          "countsNoteSegments": "The first figure counts segment entries Resend confirmed it removed. It is a minimum: a removal whose answer was lost is counted as not in the segment. Cite that figure; do not add the second figure to it. A copy of the address stored in another letter case is not removed and may still be in the segment, so if the member's address was ever imported by hand, or the member was on an E-Blast dispatched on or before 5 Nov 2026, search the Resend dashboard for it.",
           "notAttemptedNote": "Not attempted: the member's addresses were already scrubbed by an earlier pass, so this pass could send no detach request, and the first pass's detach may never have run. Search the Resend dashboard for the member's address from the DSR intake record and detach it by hand.",
           "detachFailedNote": "The detach did not finish for every audience: the address may still be in a Resend audience. Search the Resend dashboard for the member's address from the DSR intake record and detach it by hand."
         },

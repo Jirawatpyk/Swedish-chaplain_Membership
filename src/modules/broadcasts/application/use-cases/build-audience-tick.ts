@@ -4,22 +4,20 @@
  *
  * ## Why this exists
  *
- * `addContactsToAudience` is a serial `await` loop at a measured ~2.08 req/s
- * (`POST /contacts`, mean 481 ms — research § R9), so roughly 623 contacts is
- * all one 300 s function can drain. Everything this codebase grew to work
- * around that — the split threshold, per-batch manifests, one-wave dispatch,
- * cross-tick drift guards — exists only because the push is per-contact. The
- * import is a single multipart request, ~412 ms whether it carries one address
- * or fifty thousand, so size stops being an engineering constraint and becomes
- * a Resend plan limit.
+ * The legacy per-contact push was a serial `await` loop at a measured ~2.08
+ * req/s (`POST /contacts`, mean 481 ms — research § R9), so roughly 623
+ * contacts was all one 300 s function could drain. Everything this codebase
+ * grew to work around that — the split threshold, per-batch manifests,
+ * one-wave dispatch, cross-tick drift guards — existed only because the push
+ * was per-contact. The import is a single multipart request, ~412 ms whether
+ * it carries one address or fifty thousand, so size stops being an engineering
+ * constraint and becomes a Resend plan limit.
  *
- * ## Why it is a SEPARATE use case
+ * ## The only dispatch leg
  *
- * `dispatchScheduledBroadcast` is ~1,200 lines carrying orphan-audience reuse,
- * idempotency-conflict replay, the FR-021 retry budget and the batch hand-off.
- * Threading an `if (importEnabled)` through it would give every one of those
- * paths two shapes and make its 44-case suite the regression surface for both.
- * The cron picks one or the other by flag; neither knows the other exists.
+ * This began as a SEPARATE use case beside the legacy one, picked by the
+ * import-audience flag, so neither knew the other existed. Spec 140 s4 deleted
+ * the legacy leg and the flag: the dispatch cron drives only this.
  *
  * ## The two ticks
  *
@@ -61,6 +59,7 @@ import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { AuditPortInvariantError } from '../ports/audit-port';
+import { isAdapterInvariantError } from './_safe-audit-emit';
 import type { AuditEmitInput, AuditPort } from '../ports/audit-port';
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
@@ -251,7 +250,7 @@ export const MEMBER_FACING_FAILURE_REASONS = [
  * Round 4 L1 — the tokens a member-facing email may be asked to render.
  *
  * Exported as a TYPE because the legacy leg proved a `string` parameter is not
- * enough: `dispatchScheduledBroadcast` passed
+ * enough: the legacy dispatch use case passed
  * `retry_budget_exhausted_after_1h:${subKind}:${reason}` — a composite built for
  * the `failure_reason` column — straight into the email builder, where it is a
  * LOOKUP KEY. It matched nothing, fell to `generic`, and the member read
@@ -396,7 +395,7 @@ export interface ResolvedAudience {
  * comparing `e.kind` against ANY string literal compiles, so
  * `mapResolveError` matched `broadcast_audience_post_suppression_empty` — a
  * kind the resolver never returns, produced only by
- * `dispatchScheduledBroadcast` as its OUTPUT — and the resolver's real
+ * the legacy dispatch use case as its OUTPUT — and the resolver's real
  * `broadcast_empty_segment_blocked` fell through to `dispatch.server_error`.
  * The cron then classified an emptied audience as transient and re-claimed the
  * row every five minutes for ever, with no terminal state, no audit row and no
@@ -792,8 +791,9 @@ async function runLeasedTick(
   // sent to everyone again. So ask Resend — the verdicts and what each one
   // makes this tick do are `probeInheritedBroadcast`'s docblock.
   //
-  // Any inherited id is probed, including a LEGACY-leg row carried across a
-  // flag flip (its id from that leg's own pre-send attach, no import id): R5
+  // Any inherited id is probed, including a LEGACY-leg row carried across the
+  // spec 140 s4 deploy (its id from that leg's own pre-send attach, no import
+  // id): R5
   // gated such a row because this leg had no probe and its send was
   // unknowable here; with the probe it is knowable, so a carry-over the legacy
   // leg already sent is caught up instead of refused or re-sent. An EMPTY id
@@ -840,14 +840,18 @@ async function runLeasedTick(
   //
   // Reached only when nothing was handed to `/send`: the probe above returned
   // for a handed row.
-  const refused = await applySendStanding(deps, input, broadcast, probe);
-  if (refused !== null) return refused;
+  const gate = await applySendStanding(deps, input, broadcast, probe);
+  if ('stop' in gate) return gate.stop;
+  // Spec 140 s4 — the gate hands back the probe narrowed to a sendable one: a
+  // `cancelled` id was refused terminally inside it (DT2), so nothing past this
+  // line can see one, and the type says so.
+  const sendable = gate.sendable;
 
   return broadcast.audienceImportId === null
-    ? submitImport(deps, input, broadcast, probe)
+    ? submitImport(deps, input, broadcast)
     : confirmImport(deps, input, broadcast, broadcast.audienceImportId, now, {
         resendBroadcastId: inheritedBroadcastId,
-        observedResendStatus: probe === null ? null : probe.status,
+        observedResendStatus: sendable === null ? null : sendable.status,
       });
 }
 
@@ -890,7 +894,18 @@ function catchUpHanded(
  */
 type InheritedProbe =
   | { readonly handed: true; readonly status: 'queued' | 'sending' | 'sent'; readonly sentAt: string | null }
-  | { readonly handed: false; readonly status: 'draft' | 'cancelled' | null };
+  | { readonly handed: false; readonly status: 'draft' }
+  | { readonly handed: false; readonly status: 'cancelled' }
+  | { readonly handed: false; readonly status: null };
+
+/** The probe the standing gate is handed: Step 1a returned for a handed one. */
+type NotHandedProbe = Extract<InheritedProbe, { readonly handed: false }>;
+
+/**
+ * Spec 140 s4 — what the standing gate lets through: never `cancelled`, which
+ * it refuses terminally (DT2). The rest of the tick reads only this type.
+ */
+type SendableProbe = Exclude<NotHandedProbe, { readonly status: 'cancelled' }>;
 
 /**
  * S8 — ask Resend what became of the broadcast resource an earlier tick
@@ -961,6 +976,9 @@ async function probeInheritedBroadcast(
   try {
     retrieved = await deps.broadcastsGateway.retrieveBroadcast(resendBroadcastId);
   } catch (e) {
+    // `instanceof` on purpose, unchanged: a prefixed adapter error is not
+    // escalated on the probe. (The pre-send unverifiable row uses the shared
+    // `isAdapterInvariantError`.)
     if (e instanceof AuditPortInvariantError) throw e;
     const shape = classifyThrown(e);
     if (isRetryableThrow(shape.kind)) {
@@ -1014,9 +1032,9 @@ async function probeInheritedBroadcast(
 }
 
 /**
- * F119 PR-A — apply the send-time standing gate (`_dispatch-standing-gate.ts`,
- * shared with the legacy leg). `null` means "in good standing, carry on";
- * anything else is the tick's answer.
+ * F119 PR-A — apply the send-time standing gate (`_dispatch-standing-gate.ts`).
+ * The answers below are the gate's; `{ sendable }` / `{ stop }` at the end of
+ * this docblock is what this function returns.
  *
  * - `hold` (R1, a `suspended` membership) — `dispatch_held_member_suspended`:
  *   nothing sent, nobody told, no audit. Best-effort writes: the FR-021
@@ -1045,13 +1063,19 @@ async function probeInheritedBroadcast(
  * - anything else — a read that FAILED decides nothing: `dispatch.server_error`
  *   with phase `standing`, the row stays `approved` and the next tick asks
  *   again. Fail CLOSED: an unknown decision lands here too, never at the send.
+ *
+ * `{ sendable }` is "in good standing, carry on", with the probe narrowed to
+ * {@link SendableProbe}; `{ stop }` is the tick's answer.
  */
 async function applySendStanding(
   deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
-  probe: InheritedProbe | null,
-): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError> | null> {
+  probe: NotHandedProbe | null,
+): Promise<
+  | { readonly stop: Result<BuildAudienceTickOutput, BuildAudienceTickError> }
+  | { readonly sendable: SendableProbe | null }
+> {
   const standing = await decideDispatchStanding(
     deps.sendStanding,
     deps.tenant,
@@ -1071,53 +1095,55 @@ async function applySendStanding(
   // written: the id stays on the terminal row, where the erasure terminal pass
   // and `cleanup-audiences` reach it. A re-read row holding another id (a
   // sibling's persist) is decided by that id's own GET, as on every other path.
-  if ((standing.kind === 'send' || standing.kind === 'hold') && probe !== null && !probe.handed && probe.status === 'cancelled') {
-    return failTerminally(
-      deps,
-      input,
-      broadcast,
-      {
-        kind: 'audience_import_failed',
-        reason: 'provider_cancelled',
-        importId: broadcast.audienceImportId,
-        observed: null,
-        expected: null,
-      },
-      {
-        ...(broadcast.resendBroadcastId === null
-          ? {}
-          : { knownProbedStatus: { resendBroadcastId: broadcast.resendBroadcastId, status: 'cancelled' } }),
-        // Review round 1 (R1-E) — a suspended member cannot submit a new
-        // E-Blast now, so the email's quota line says when they can.
-        ...(standing.kind === 'hold' ? { notifyMemberStanding: 'held' } : {}),
-      },
-    );
-  }
-  if (standing.kind === 'send') return null;
-  if (standing.kind === 'hold') {
+  if (standing.kind === 'send' || standing.kind === 'hold') {
+    if (probe !== null && probe.status === 'cancelled') {
+      return {
+        stop: await failTerminally(
+          deps,
+          input,
+          broadcast,
+          {
+            kind: 'audience_import_failed',
+            reason: 'provider_cancelled',
+            importId: broadcast.audienceImportId,
+            observed: null,
+            expected: null,
+          },
+          {
+            ...(broadcast.resendBroadcastId === null
+              ? {}
+              : { knownProbedStatus: { resendBroadcastId: broadcast.resendBroadcastId, status: 'cancelled' } }),
+            // Review round 1 (R1-E) — a suspended member cannot submit a new
+            // E-Blast now, so the email's quota line says when they can.
+            ...(standing.kind === 'hold' ? { notifyMemberStanding: 'held' } : {}),
+          },
+        ),
+      };
+    }
+    if (standing.kind === 'send') return { sendable: probe };
     // Best-effort: a failed restart leaves the hold the decided answer. A lease
     // lost or running short while it ran is the tick's answer instead (review
     // round 2, CR#3), and so is a CAS the restart lost (round 3, CR#5): the
     // restart stopped where the next holder resumes.
-    const restarted = await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold', { bidIsDead: isDeadProbe(probe) });
-    if (isRestartStop(restarted)) return restartStopAnswer(restarted);
+    const restarted = await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold');
+    if (isRestartStop(restarted)) return { stop: restartStopAnswer(restarted) };
     // Review round 3 (CR#4) — only a tick that answers the hold records it and
     // resets the retry clock (outside every tx: the Step-1 lock tx has committed).
     recordDispatchHold(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
     await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed', deps.lease);
-    return ok({ kind: 'dispatch_held_member_suspended' });
+    return { stop: ok({ kind: 'dispatch_held_member_suspended' }) };
   }
   // Reached only for a NOT-handed probe (a handed row returned at Step 1a).
   const rowDraft =
     broadcast.resendBroadcastId === null
       ? null
-      : { resendBroadcastId: broadcast.resendBroadcastId, probedStatus: probe !== null && !probe.handed ? probe.status : null };
+      : { resendBroadcastId: broadcast.resendBroadcastId, probedStatus: probe === null ? null : probe.status };
   // Spec 140 s2b (A8) — both refusal arms DELETE the row's draft at Resend
   // (`deleteDraftBeforeRefusal`): an irreversible call, so the lease is checked
-  // first. Here, not inside the shared gate: the legacy leg holds no lease.
+  // first. Here, not inside the shared gate, which holds no lease of its own.
   if ((standing.kind === 'refuse' || standing.kind === 'refuse_erased') && rowDraft !== null && rowDraft.resendBroadcastId !== '') {
     const gated = await leaseGate(deps, input, 'deleteBroadcastOnce');
-    if (gated !== null) return gated;
+    if (gated !== null) return { stop: gated };
   }
   if (standing.kind === 'refuse') {
     const cleared = await deleteDraftBeforeStandingRefusal(
@@ -1128,7 +1154,7 @@ async function applySendStanding(
     // Review round 1 (reliability M-1) — a sibling tick sent the draft: the
     // mail is out, so no terminal write and no member email — a concurrent skip.
     if (cleared.kind === 'handed') {
-      return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+      return { stop: err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' }) };
     }
     // Spec 140 s2c (R1 #5) — the draft may still be at Resend: recorded before
     // the terminal write, so the drain reaches it once the row is terminal.
@@ -1141,36 +1167,38 @@ async function applySendStanding(
         reason: 'refused_draft_undeleted',
       });
     }
-    return failTerminally(
-      deps,
-      input,
-      broadcast,
-      {
-        kind: 'audience_import_failed',
-        reason: standing.reason,
-        importId: broadcast.audienceImportId,
-        observed: null,
-        expected: null,
-      },
-      {
-        payloadExtra:
-          cleared.kind === 'cleared'
-            ? { resendDraftOutcome: cleared.draftOutcome }
-            : { resendDraftOutcome: 'undeleted', resendDraftErrClass: cleared.errClass },
-        extraAudit: standingRefusalAuditEvent({
-          refusal: standing.refusal,
-          surface: 'dispatch',
-          tenantSlug: deps.tenant.slug,
-          memberId: broadcast.requestedByMemberId,
-          broadcastId: input.broadcastId as unknown as string,
-          actorUserId: 'system:cron',
-          actorRole: null,
-          requestId: null,
-        }),
-        // Spec 140 s2c — the gate's delete above IS this row's reclaim.
-        draftSettled: true,
-      },
-    );
+    return {
+      stop: await failTerminally(
+        deps,
+        input,
+        broadcast,
+        {
+          kind: 'audience_import_failed',
+          reason: standing.reason,
+          importId: broadcast.audienceImportId,
+          observed: null,
+          expected: null,
+        },
+        {
+          payloadExtra:
+            cleared.kind === 'cleared'
+              ? { resendDraftOutcome: cleared.draftOutcome }
+              : { resendDraftOutcome: 'undeleted', resendDraftErrClass: cleared.errClass },
+          extraAudit: standingRefusalAuditEvent({
+            refusal: standing.refusal,
+            surface: 'dispatch',
+            tenantSlug: deps.tenant.slug,
+            memberId: broadcast.requestedByMemberId,
+            broadcastId: input.broadcastId as unknown as string,
+            actorUserId: 'system:cron',
+            actorRole: null,
+            requestId: null,
+          }),
+          // Spec 140 s2c — the gate's delete above IS this row's reclaim.
+          draftSettled: true,
+        },
+      ),
+    };
   }
   if (standing.kind === 'refuse_erased') {
     // Review round 6 — the erased wrapper writes this arm's one log line.
@@ -1180,62 +1208,54 @@ async function applySendStanding(
       rowDraft,
     );
     if (cleared.kind === 'undecided') {
-      return err({ kind: 'dispatch.server_error', message: ERASED_DRAFT_NOT_DELETED, errClass: cleared.errClass, phase: 'standing' });
+      return { stop: err({ kind: 'dispatch.server_error', message: ERASED_DRAFT_NOT_DELETED, errClass: cleared.errClass, phase: 'standing' }) };
     }
-    return failTerminally(
-      deps,
-      input,
-      broadcast,
-      {
-        kind: 'audience_import_failed',
-        reason: standing.reason,
-        importId: broadcast.audienceImportId,
-        observed: null,
-        expected: null,
-      },
-      {
-        notifyMember: false,
-        payloadExtra: { standing: 'erased', resendDraftOutcome: cleared.draftOutcome },
-        concurrentLossIsSkip: true,
-        // Spec 140 s2c — the erased wrapper's delete above IS this row's reclaim.
-        draftSettled: true,
-      },
-    );
+    return {
+      stop: await failTerminally(
+        deps,
+        input,
+        broadcast,
+        {
+          kind: 'audience_import_failed',
+          reason: standing.reason,
+          importId: broadcast.audienceImportId,
+          observed: null,
+          expected: null,
+        },
+        {
+          notifyMember: false,
+          payloadExtra: { standing: 'erased', resendDraftOutcome: cleared.draftOutcome },
+          concurrentLossIsSkip: true,
+          // Spec 140 s2c — the erased wrapper's delete above IS this row's reclaim.
+          draftSettled: true,
+        },
+      ),
+    };
   }
   // Spec 139 P4 — a requester not in the tenant: nothing is sent, nothing
   // deleted, the row stays `approved` (runbook: cancel it by hand).
   if (standing.message === REQUESTER_NOT_FOUND) {
     recordRequesterNotFound(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
   }
-  return err({
-    kind: 'dispatch.server_error',
-    message: standing.message,
-    errClass: standing.errClass,
-    phase: 'standing',
-  });
+  return {
+    stop: err({
+      kind: 'dispatch.server_error',
+      message: standing.message,
+      errClass: standing.errClass,
+      phase: 'standing',
+    }),
+  };
 }
 
 /**
  * The three Resend-side ids a restart reads off the row (the broadcast id RAW —
- * `''` included), plus the requester, which an orphan row records (spec 140 s2c).
+ * `''` included). It carried the requester too, for the `dead_broadcast_kept`
+ * orphan row the restart wrote until spec 140 s4.
  */
 interface RowIds {
   readonly audienceId: string | null;
   readonly importId: string | null;
   readonly resendBroadcastId: string | null;
-  readonly requestedByMemberId: string;
-}
-
-/**
- * The probe called the row's broadcast id `cancelled`: it exists and can never
- * be sent (only a draft can — a non-draft `/send` answers 422, MEASURED
- * 2026-10-29), so a refused delete of it says nothing about a sibling tick.
- * NOT `not_found`: the adapter already treats a 404 delete as success, so after
- * a (twice-confirmed) `not_found` a REFUSED delete proves the resource exists
- * and is not a draft — perhaps queued — and the teardown must stop (round 5).
- */
-function isDeadProbe(probe: InheritedProbe | null): boolean {
-  return probe !== null && !probe.handed && probe.status === 'cancelled';
 }
 
 function rowIds(broadcast: Broadcast): RowIds {
@@ -1243,7 +1263,6 @@ function rowIds(broadcast: Broadcast): RowIds {
     audienceId: broadcast.resendAudienceId ?? null,
     importId: broadcast.audienceImportId,
     resendBroadcastId: broadcast.resendBroadcastId ?? null,
-    requestedByMemberId: broadcast.requestedByMemberId,
   };
 }
 
@@ -1280,8 +1299,9 @@ function recordOrphan(
  *
  * Reached only for a row nothing was handed to Resend for SENDING: the
  * inherited-id probe returns before this for `queued` / `sending` / `sent`
- * (and refuses an unreadable status), so any broadcast id on the row is one
- * the probe said this tick was `draft` / `cancelled` / gone.
+ * (and refuses an unreadable status), and the standing gate refuses a
+ * `cancelled` one terminally (DT2), so any broadcast id on the row is one the
+ * probe said this tick was `draft` or gone.
  *
  * **The row is the mutex** (2026-10-29). Since spec 140 s2b this tick holds
  * the row's dispatch lease and checks it before each delete below, but a
@@ -1335,7 +1355,6 @@ async function restartAudienceBuild(
   input: BuildAudienceTickInput,
   row: RowIds,
   why: RestartReason,
-  opts: { readonly bidIsDead: boolean },
 ): Promise<'restarted' | 'nothing' | 'failed' | 'cas_lost' | LeaseStop> {
   const { audienceId, importId, resendBroadcastId } = row;
   if (audienceId === null || audienceId === '') return 'nothing';
@@ -1399,22 +1418,12 @@ async function restartAudienceBuild(
     try {
       await deps.broadcastsGateway.deleteBroadcast(resendBroadcastId);
     } catch (e) {
-      // A refusal means "it may be out" — except for a `cancelled` id, which can
-      // never be sent, so its refused delete must not stop the restart (that
-      // would fail every tick for ever). A `not_found` id needs no exception:
-      // its delete 404s, which the adapter treats as success.
-      if (!opts.bidIsDead || isRetryableThrow(classifyThrown(e).kind)) return failed('delete_broadcast', e);
-      // Warn, not info: the cancelled resource stays at Resend (it cannot be
-      // deleted) and the release below drops its id from the row, so this
-      // line and the orphan row below are its only record.
-      logger.warn({ ...ids, err: errKind(e) }, `broadcasts.audience_import.${names.failed}_dead_broadcast_kept`);
-      // Spec 140 s2c — and its record: the drain settles it (`retained`).
-      await recordOrphan(deps, input, {
-        requestedByMemberId: row.requestedByMemberId,
-        resourceType: 'broadcast',
-        resourceId: resendBroadcastId,
-        reason: 'dead_broadcast_kept',
-      });
+      // A refusal means "it may be out", so the restart stops. A `not_found` id
+      // needs no exception: its delete 404s, which the adapter treats as
+      // success. (A `cancelled` id never reaches a restart: DT2 refuses it
+      // terminally first. Spec 140 s4 deleted the branch that once let one
+      // carry the teardown past a refused delete, `dead_broadcast_kept`.)
+      return failed('delete_broadcast', e);
     }
   }
   // 3. The audience.
@@ -1456,9 +1465,9 @@ async function restartAudienceBuild(
  * not_found "Audience not found"`, `POST /contacts/imports` `404 not_found
  * "Segment not found"` (both measured 2026-10-29). Neither call carries a
  * resource id into the adapter, so a 404 there classifies `permanent` with
- * `code: 'not_found'` (`classifyResendError` — the live legacy leg reads the
- * same throw and keeps its permanent arm; this reading is the import leg's
- * alone, at its one call site: `createBroadcast` in `confirmImport`, where the
+ * `code: 'not_found'` (`classifyResendError`; the legacy leg, deleted in spec
+ * 140 s4, kept its permanent arm). This reading is the tick's, at its one call
+ * site: `createBroadcast` in `confirmImport`, where the
  * audience came from an earlier tick). `http_404` is the adapter's fallback
  * code when Resend sends no `name`. (`createContactImport` always imports into
  * an audience this tick created, so its 404 keeps the permanent rule.)
@@ -1486,10 +1495,9 @@ async function selfHealMissingAudience(
   deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   row: RowIds,
-  bidIsDead: boolean,
   why: Exclude<RestartReason, 'hold'> = 'audience_missing',
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
-  const outcome = await restartAudienceBuild(deps, input, row, why, { bidIsDead });
+  const outcome = await restartAudienceBuild(deps, input, row, why);
   if (outcome === 'restarted') return ok({ kind: 'audience_restarted' });
   // Review round 2 (spec L-g) — a restart that lost the lease says so; a CAS
   // miss keeps the old label (round 3, CR#5).
@@ -1688,8 +1696,8 @@ function importReasonToFailureMetric(
 }
 
 /**
- * FR-021 / AS2 — the same 1-hour wall-clock budget the single-tick path enforces
- * (`dispatch-scheduled-broadcast.ts:77`).
+ * FR-021 / AS2 — the 1-hour wall-clock budget the single-tick legacy path
+ * enforced too (that path was deleted in spec 140 s4).
  *
  * **Round 3 finding 3-7 — this path had no budget at all.** The only time bound
  * on it was `IMPORT_STUCK_AFTER_MS`, and that is evaluated ONLY inside the
@@ -1925,7 +1933,6 @@ async function submitImport(
   deps: LeasedTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
-  probe: InheritedProbe | null,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   // A row that still carries an audience but no import is a tick 1 that died
   // after `attachAudienceId`, or a teardown (a hold, a self-heal) that stopped
@@ -1936,7 +1943,7 @@ async function submitImport(
   // orphan prevention needs on the Free plan's three audiences. Bounded: a
   // fresh audience's failures are budgeted (FR-021) or permanent.
   if ((broadcast.resendAudienceId ?? '') !== '') {
-    return selfHealMissingAudience(deps, input, rowIds(broadcast), isDeadProbe(probe), 'stale_audience');
+    return selfHealMissingAudience(deps, input, rowIds(broadcast), 'stale_audience');
   }
 
   const resolved = await deps.resolveRecipients(broadcast);
@@ -2050,6 +2057,130 @@ async function submitImport(
   });
 }
 
+/**
+ * PR #756 review round 2 (security L2) — `errorReason` on the unverifiable row is
+ * a CLOSED code. The deleted legacy leg wrote `errKind(e)` (an error CLASS name);
+ * this leg writes the classifier's code instead: the transport sub-kind on a
+ * retryable failure, else the classifier's kind when it is one of these, else
+ * `'other'`. Never the throw's text, which can carry a provider message or an
+ * address, into an append-only row.
+ */
+const UNVERIFIABLE_PERMANENT_REASONS = ['permanent', 'resource_missing', 'idempotency_conflict', 'unknown'] as const;
+type UnverifiableErrorReason =
+  | GatewayRetryableSubKind
+  | 'unclassified'
+  | (typeof UNVERIFIABLE_PERMANENT_REASONS)[number]
+  | 'other';
+
+function unverifiableErrorReason(failure: GatewayFailure): UnverifiableErrorReason {
+  if (failure.retryable) return failure.subKind ?? 'unclassified';
+  const known = UNVERIFIABLE_PERMANENT_REASONS.find((r) => r === failure.kind);
+  return known ?? 'other';
+}
+
+/**
+ * PR #756 review rounds 1 to 3 (code-review #1, #5; reliability L1) — the
+ * `broadcast_resend_drift_check_unverifiable` row: a dispatch attempt's audience
+ * count call FAILED, so the one check that can see a carried-over contact did
+ * not run. It records that failed count on the attempt, whether or not the
+ * attempt then sent (a send that fails, or a lease lost at the second gate,
+ * included). The deleted legacy leg wrote it on its own
+ * count failure; this is the only leg since spec 140 s4. Same payload keys as the
+ * legacy row plus the import id; ids, a count and a closed error code, no address
+ * and no provider text (the row is append-only and shown on the audit viewer).
+ *
+ * PER DRAFT, not per attempt (rounds 3 and 4): written once for each
+ * (`broadcastId`, `resendBroadcastId`), by the first attempt on that draft whose
+ * count failed (an advisory lock and an `EXISTS` read on `audit_log` in the same
+ * tx, then the insert). A draft re-minted after a restart is a different attempt
+ * and gets its own row, naming its own resources. The per-ATTEMPT signal is the
+ * `driftCheckUnverifiable` metric, which fires on every attempt at the count arm.
+ *
+ * Written BEFORE `/send` (round 3 reversed round 2's post-send placement: a kill
+ * after the send lost the row for good, an accepted-refusal send was recorded as
+ * this tick's, overlapping ticks could write two rows, and a throw from the
+ * post-send writes skipped it), after the send's lease gate, so a tick that lost
+ * its lease writes nothing. `resendBroadcastId` is the id about to be sent
+ * (minted or inherited; never null at this point).
+ *
+ * The send-started pattern: its own tenant-bound `withTx` (a null tx would take
+ * a pool connection with no `app.current_tenant`, where RLS writes nothing) and a
+ * RAW emit, so a failure is known. A storage failure is logged and counted, and
+ * the send goes ahead: refusing it on an audit blip would kill a legitimate send.
+ * A failure of the dedupe READ (the lock, the `EXISTS`, or the repo's
+ * `assertTenantBoundTx`, a plain Error) is treated as a storage failure too; that
+ * is acceptable here because `withTx` always binds the tx through `runInTenant`,
+ * so a binding refusal can only mean a wiring change the rest of the tick's
+ * writes would also refuse. A wiring bug in the AUDIT write
+ * (`isAdapterInvariantError`: an `AuditPortInvariantError` or the adapter's
+ * `f7AuditAdapter:`-prefixed Error) RETHROWS: nothing has been sent, so it fails
+ * closed and the row stays `approved`. (`broadcast_send_started`'s own rethrow
+ * after the send is pre-existing and out of this change's scope.)
+ *
+ * The caller re-runs the send's lease gate after it, whether a row was written,
+ * deduped or the tx failed (rounds 4 and 5): this tx ran between the gate and
+ * `/send`.
+ */
+async function recordUnverifiableCount(
+  deps: LeasedTickDeps,
+  input: BuildAudienceTickInput,
+  fields: {
+    readonly resendAudienceId: string;
+    readonly importId: string;
+    readonly resendBroadcastId: string;
+    readonly expectedRecipientCount: number;
+    readonly errorReason: UnverifiableErrorReason;
+  },
+): Promise<void> {
+  const broadcastId = input.broadcastId as unknown as string;
+  let written = false;
+  try {
+    await deps.broadcastsRepo.withTx(async (tx) => {
+      written = false;
+      if (
+        await deps.broadcastsRepo.hasUnverifiableCountAuditInTx(
+          tx,
+          deps.tenant.slug,
+          input.broadcastId,
+          fields.resendBroadcastId,
+        )
+      ) {
+        return;
+      }
+      written = true;
+      await deps.audit.emit(tx, {
+        eventType: 'broadcast_resend_drift_check_unverifiable',
+        tenantId: deps.tenant.slug,
+        actorUserId: 'system:cron',
+        summary: `Broadcast ${broadcastId}: the membership check could not be read on a dispatch attempt`,
+        payload: {
+          broadcastId,
+          resendBroadcastId: fields.resendBroadcastId,
+          resendAudienceId: fields.resendAudienceId,
+          expectedRecipientCount: fields.expectedRecipientCount,
+          errorReason: fields.errorReason,
+          importId: fields.importId,
+        },
+        requestId: null,
+      });
+    });
+    if (written) broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_resend_drift_check_unverifiable');
+  } catch (auditErr) {
+    // Pre-send: a wiring bug fails closed (see the docblock).
+    if (isAdapterInvariantError(auditErr)) throw auditErr;
+    logger.error(
+      {
+        err: errKind(auditErr),
+        tenantId: deps.tenant.slug,
+        broadcastId,
+        importId: fields.importId,
+      },
+      'broadcasts.audience_import.unverifiable_audit_emit_failed',
+    );
+    broadcastsMetrics.auditEmitFailed('broadcast_resend_drift_check_unverifiable', deps.tenant.slug);
+  }
+}
+
 /** Tick 2+ — poll, apply the completion rule, and only then send. */
 async function confirmImport(
   deps: LeasedTickDeps,
@@ -2064,11 +2195,12 @@ async function confirmImport(
    * minted twice), re-asserted through the sender's fence;
    * `observedResendStatus: null` (`not_found`, already re-probed once in Step 1a) is DEAD,
    * so a fresh resource replaces it. `cancelled` is refused terminally before
-   * this point (spec 140 DT2, `applySendStanding`), so it is never minted over.
+   * this point (spec 140 DT2, `applySendStanding`), so it is never minted over;
+   * the type ({@link SendableProbe}'s status) cannot carry it.
    */
   inherited: {
     readonly resendBroadcastId: string;
-    readonly observedResendStatus: 'draft' | 'cancelled' | null;
+    readonly observedResendStatus: SendableProbe['status'];
   },
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const polled = await viaGateway(() => deps.broadcastsGateway.getContactImport(importId));
@@ -2275,6 +2407,7 @@ async function confirmImport(
   // gone with the `not_found` arm it narrowed on: the list endpoint never 404s
   // (MEASURED), so a "missing audience" reaches this function only as a THROW,
   // which `viaGateway` has already turned into `!audienceCount.ok` below.
+  let countFailedReason: UnverifiableErrorReason | null = null;
   const countIsUsable =
     audienceCount.ok &&
     (audienceCount.value.complete || audienceCount.value.count > resolvedCount);
@@ -2307,13 +2440,19 @@ async function confirmImport(
       },
       'broadcasts.audience_import.membership_unverifiable',
     );
-    // Round 4 (reliability I-2, fourth strand) — the legacy leg emits this at
+    // Round 4 (reliability I-2, fourth strand) — the legacy leg emitted this at
     // its own unverifiable branch with a comment saying the catalogued alert at
     // `observability.md` § 22.3 (`drift_check_unverifiable > 1 / 1h`) needs a
     // data source. This leg had the log and not the metric, so that alert was
-    // blind here — and this is the branch a Resend blip lands in, on the leg
-    // that a flag flip makes live.
+    // blind here — and this is the branch a Resend blip lands in, on the only
+    // dispatch leg since spec 140 s4.
     broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
+    // PR #756 review rounds 1 to 4 — and the durable record the legacy leg wrote
+    // beside that metric, on the same half: a count call that FAILED. Written
+    // once per draft, before the send (`recordUnverifiableCount`).
+    // A page Resend could not finish reading is not a failure, so (as there) it
+    // gets the metric and the warn but no append-only row.
+    if (!audienceCount.ok) countFailedReason = unverifiableErrorReason(audienceCount.error);
   }
 
   // S8 — the double-send window, closed the way the legacy leg closed it (F4).
@@ -2330,16 +2469,17 @@ async function confirmImport(
   // THE SENDER'S FENCE (2026-10-29): every persist on this leg is fenced on
   // the import this tick confirmed, so a hold on an overlapping tick that
   // claimed the row (`restartAudienceBuild`) makes it lose and nothing is sent
-  // into the audience the hold is deleting. Nothing runs between the persist
-  // and `/send`: on a fresh mint the persist IS the fence; an inherited id is
-  // re-asserted through it.
+  // into the audience the hold is deleting. Between the persist and `/send` run
+  // only the send's lease gate and, on a failed count, the unverifiable row's
+  // own tx followed by the gate again (PR #756 review rounds 3 and 4): on a
+  // fresh mint the persist IS the fence; an inherited id is re-asserted through
+  // it.
   //
   // A DEAD inherited id is never sent to: `not_found` could only 404. A fresh
   // one is minted and replaces exactly that dead id
   // (`replacesResendBroadcastId`), still fenced. Spec 140 DT2: a `cancelled` id
-  // is NOT re-mintable (it was refused terminally before this point); should
-  // one ever arrive here it is reused, and its send's 422 is probed below and
-  // ends terminally, never a second resource.
+  // is NOT re-mintable; it was refused terminally before this point, and since
+  // spec 140 s4 `inherited`'s type cannot carry one.
   const inheritedId = inherited.resendBroadcastId;
   const inheritedDead = inheritedId !== '' && inherited.observedResendStatus === null;
   const minted = inheritedId === '' || inheritedDead;
@@ -2370,11 +2510,7 @@ async function confirmImport(
       // dead inherited id with it — `restartAudienceBuild` deletes it, 404 =
       // fine, and the release clears it) and build afresh next tick.
       if (isAudienceMissing(createdRb.error)) {
-        // Only `cancelled` may carry the teardown past a refused delete — the
-        // same rule as `isDeadProbe`; `inheritedDead` (a re-probed `not_found`
-        // only) answers the different question of minting. Since spec 140 DT2
-        // a `cancelled` id never reaches this point, so the flag is `false` here.
-        return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId }, inherited.observedResendStatus === 'cancelled');
+        return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId });
       }
       // Spec 140 s2c (DL5b) — a network failure, a timeout or a 5xx may have
       // minted a draft whose id we never received (one attempt, DL5a): an
@@ -2427,6 +2563,20 @@ async function confirmImport(
   // `_probe-refused-send.ts`), and the loser's 422 is probed below.
   const sendGated = await leaseGate(deps, input, 'sendBroadcast');
   if (sendGated !== null) return sendGated;
+  // PR #756 review rounds 3 to 5 — after the send's lease gate, before `/send`.
+  // The row's tx ran after the gate, so the gate runs again before the call
+  // (the gate-then-call invariant), whatever the tx did.
+  if (countFailedReason !== null) {
+    await recordUnverifiableCount(deps, input, {
+      resendAudienceId: audienceId,
+      importId,
+      resendBroadcastId,
+      expectedRecipientCount: resolvedCount,
+      errorReason: countFailedReason,
+    });
+    const regated = await leaseGate(deps, input, 'sendBroadcast');
+    if (regated !== null) return regated;
+  }
   const sent = await viaGateway(() =>
     deps.broadcastsGateway.sendBroadcast(
       resendBroadcastId,
@@ -2547,9 +2697,11 @@ interface SendHandOff {
   } | null;
   /**
    * What the probe answered on a NOT-handed row (`null`: nothing probed, or
-   * `not_found`). A handed row's status is `handedOnPriorTick.status`.
+   * `not_found`). A handed row's status is `handedOnPriorTick.status`. Kept,
+   * though the send path only ever sees `draft` or `null` here, because it
+   * carries that `draft` into the send audit payload's `observedResendStatus`.
    */
-  readonly notHandedStatus: 'draft' | 'cancelled' | null;
+  readonly notHandedStatus: SendableProbe['status'];
   /** What the probe of THIS tick's refused `/send` saw (`_probe-refused-send.ts`). */
   readonly acceptedOnRefusedSend: 'queued' | 'sending' | 'sent' | null;
 }
@@ -2795,7 +2947,9 @@ async function advanceToSending(
     broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_send_started');
   } catch (auditErr) {
     // A wiring bug must still surface — the fail-soft envelope is for transient
-    // storage hiccups (`_safe-audit-emit.ts` draws the same line).
+    // storage hiccups. Post-send, this keeps `instanceof` on purpose, unchanged:
+    // a prefixed adapter error is not escalated here. (The pre-send
+    // unverifiable row uses the shared `isAdapterInvariantError`.)
     if (auditErr instanceof AuditPortInvariantError) throw auditErr;
     logger.error(
       {
@@ -2824,7 +2978,7 @@ async function advanceToSending(
   // `audience_import_completed_at IS NULL`.
   //
   // So an operator following the runbook's drain query saw ZERO rows in flight,
-  // flipped the flag off, and handed the row to `dispatchScheduledBroadcast` —
+  // flipped the flag off, and handed the row to the legacy leg —
   // which never reads `audience_import_*` but DOES reuse `resend_audience_id`.
   // That is the "deliver to a half-built audience" outcome the runbook warns
   // about, reached BY FOLLOWING the runbook.
@@ -3251,12 +3405,11 @@ async function failTerminally(
   // and the dispatch dashboard shows nothing happening while broadcasts die.
   //
   // Round 4 F6 — GATED on the audit event type, which is what the legacy leg
-  // does (`dispatch-scheduled-broadcast.ts`: `if (eventType ===
-  // 'broadcast_failed_to_dispatch')`). Emitting unconditionally counted a
-  // Resend 404 toward `broadcasts.failed_to_dispatch.count` on this leg while
-  // the other leg deliberately excludes it, so the § 22.3 alert on that
-  // series (>10% over send_started) changed meaning at a flag flip. A flag
-  // flip must not redefine an alert.
+  // did (`if (eventType === 'broadcast_failed_to_dispatch')`, until spec 140 s4
+  // deleted it). Emitting unconditionally counted a Resend 404 toward
+  // `broadcasts.failed_to_dispatch.count` on this leg while the other leg
+  // deliberately excluded it, so the § 22.3 alert on that series (>10% over
+  // send_started) would have changed meaning at the cut-over.
   if (auditEventType === 'broadcast_failed_to_dispatch') {
     broadcastsMetrics.failedToDispatchCount(
       deps.tenant.slug,
@@ -3387,7 +3540,7 @@ async function onResolveFailure(
   //     this repo IS a production deploy, so cold starts cluster exactly there)
   //     died on its FIRST `resolve.server_error`, with a member email and a
   //     paging metric, never having had a second attempt.
-  //  2. It forked the two legs. `dispatchScheduledBroadcast` deliberately does
+  //  2. It forked the two legs. The legacy leg deliberately did
   //     not budget resolve failures (`route.ts`: "the counter is the alarm"),
   //     so the same fault became terminal on one leg and retryable on the other
   //     — decided by a flag, which is what a flag flip must never change.

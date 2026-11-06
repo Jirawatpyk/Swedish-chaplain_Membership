@@ -1,109 +1,93 @@
 /**
  * Phase 8 / Slice E — integration test: dispatch-failure transactional
- * notification on live Neon (FR-021 / AS2).
+ * notification on live Neon (FR-021 / AS2), through `buildAudienceTick`.
+ *
+ * Spec 140 s4 deleted the legacy dispatch leg this file used to drive; the two
+ * cases were ported to the import tick, the only dispatch leg (plan.md § Slice 4
+ * — plan review, row 7: ported, not deleted).
  *
  * Verifies the end-to-end Slice E flow:
- *   1. Seed a tenant + member + plan + approved broadcast whose current
- *      dispatch attempt FIRST failed 65 min ago (`dispatch_first_failed_at`,
- *      F119 PR-E / 0311 — the budget no longer counts from `scheduled_for`).
- *   2. Run `dispatchScheduledBroadcast` with a Resend gateway stub
- *      that throws `retryable`.
- *   3. Slice D budget logic kicks in → row transitions to
- *      `failed_to_dispatch` + `broadcast_failed_to_dispatch` audit row.
- *   4. Slice E `enqueueDispatchFailureNotification` enqueues an
- *      outbox row with `notification_type =
- *      'broadcast_failed_to_dispatch_notification'` to the member's
- *      primary contact email.
- *   5. Tenant isolation — tenant B's outbox is unaffected.
+ *   1. Seed two tenants, a live requesting member and an approved broadcast
+ *      whose current dispatch attempt FIRST failed 65 min ago
+ *      (`dispatch_first_failed_at`, F119 PR-E / 0311 — the budget counts from
+ *      the first retryable failure, read by `_dispatch-retry-epoch.ts`).
+ *   2. Run `buildAudienceTick` with a gateway fake whose `createAudience`
+ *      throws `retryable` (an extended Resend outage on tick 1).
+ *   3. The budget is spent → the row goes `failed_to_dispatch`.
+ *   4. `enqueueDispatchFailureNotification` enqueues an outbox row with
+ *      `notification_type = 'broadcast_failed_to_dispatch_notification'` to the
+ *      requesting member's primary contact.
+ *   5. Tenant isolation (Principle I) — tenant B's outbox is unchanged.
+ *
+ * **The gateway is a fake, never real Resend**: dev and prod share the Resend
+ * Broadcasts key.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 
+import { ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
-import {
-  asBroadcastId,
-  dispatchScheduledBroadcast,
-} from '@/modules/broadcasts';
+import { asBroadcastId } from '@/modules/broadcasts';
+import { buildAudienceTick, type BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
-import {
-  createTwoTestTenants,
-  type TestTenant,
-} from '../helpers/test-tenant';
+import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { seedLiveRequester } from '../helpers/seed-live-requester';
 import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
 import { plansBridge } from '@/modules/broadcasts/infrastructure/plans-bridge';
-import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { emailTransactionalBridge } from '@/modules/broadcasts/infrastructure/email-transactional-bridge';
+import { systemClock } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { makeDrizzleBroadcastOrphansRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-orphans-repo';
-import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
 
 /**
  * F119 PR-A — the send-time standing reads, REAL on both halves (the F3 halt
  * list + the F8 access bridge): the seeded requesting member is neither halted
- * nor has a renewal cycle, so both answer "in good standing" and the send runs.
+ * nor has a renewal cycle, so both answer "in good standing" and the tick runs.
  */
-const LIVE_STANDING = { membersBridge, membershipAccess: membershipAccessBridge };
+const LIVE_STANDING = { membersBridge, haltReadFresh: membersBridge, membershipAccess: membershipAccessBridge };
 
 /** F119 — dispatch deps require a brand port; these cases send with no brand configured. */
 const NO_BRAND_CHROME = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
 
 /**
- * Stub `BroadcastsGatewayPort` that throws `retryable` on every send
- * to simulate an extended Resend outage. Slice D's 1h budget should
- * convert this into a terminal `failed_to_dispatch`.
+ * A gateway whose tick-1 `createAudience` throws `retryable`: an extended
+ * Resend outage. Every other method records itself and throws — nothing past
+ * the audience create may run on these rows.
  */
-function makeRetryableGateway(): BroadcastsGatewayPort {
+function makeRetryableGateway(calls: string[]): BroadcastsGatewayPort {
+  const notUsed = (name: string) => async (): Promise<never> => {
+    calls.push(name);
+    throw new Error(`${name} is not used here`);
+  };
   return {
-    async createAudience(name) {
-      return { audienceId: `aud-test-${name.slice(0, 8)}` };
-    },
-    async addContactsToAudience() {},
-    // T086 — unused by this fixture; present so the stub still satisfies BroadcastsGatewayPort.
-    async createContactImport() { throw new Error('not used'); },
-    async getContactImport() { throw new Error('not used'); },
-    async createBroadcast() {
-      // UNIQUE per call, because Resend's are. This returned the constant
-      // `'bcast-test-1'` until F4, and got away with it only because the id was
-      // never persisted on a failing dispatch: `sendBroadcast` threw before the
-      // final `attachResendIds` tx ever ran. F4 persists it BEFORE the send, so
-      // the second test in this file wrote the same id onto a different row and
-      // hit `broadcasts_resend_broadcast_id_uniq` (migration 0064) — surfacing as
-      // an opaque `broadcast_failed_to_dispatch` two tests later. A fixture that
-      // mints duplicate ids is modelling a provider that cannot exist.
-      return { broadcastId: `bcast-test-${randomUUID()}` };
-    },
-    async sendBroadcast() {
+    async createAudience() {
+      calls.push('createAudience');
       throw {
         kind: 'retryable',
         subKind: 'server_5xx',
         reason: 'Resend 503 — service unavailable (test stub)',
       };
     },
-    async retrieveBroadcast() {
-      return { kind: 'not_found' as const };
-    },
-    async getAudienceContactCount() {
-      return { count: 0, complete: false };
-    },
-    async removeContactFromAudience() {
-      return { kind: 'detached' as const };},
-    async deleteContactGlobally() {},
-    async deleteAudience() {},
-    async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
-    async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
-    async deleteBroadcast() {},
-    async listAudiences() { return { audiences: [], truncated: false }; },
+    createContactImport: notUsed('createContactImport'),
+    getContactImport: notUsed('getContactImport'),
+    createBroadcast: notUsed('createBroadcast'),
+    sendBroadcast: notUsed('sendBroadcast'),
+    retrieveBroadcast: notUsed('retrieveBroadcast'),
+    getAudienceContactCount: notUsed('getAudienceContactCount'),
+    removeContactFromAudience: notUsed('removeContactFromAudience'),
+    deleteAudience: notUsed('deleteAudience'),
+    deleteBroadcastOnce: notUsed('deleteBroadcastOnce'),
+    retrieveBroadcastOnce: notUsed('retrieveBroadcastOnce'),
+    deleteBroadcast: notUsed('deleteBroadcast'),
+    listAudiences: notUsed('listAudiences'),
   };
 }
-
-const FROZEN_NOW = new Date('2026-06-15T05:00:00Z');
 
 /**
  * Spec 139 — the requester is a REAL live member: the send-standing gate
@@ -114,29 +98,20 @@ let requesterUser: TestUser;
 
 interface SeedSpec {
   readonly broadcastId: string;
-  readonly memberId: string;
-  readonly planId: string;
   readonly subject: string;
-  readonly scheduledForMinutesAgo: number; // negative offset from FROZEN_NOW
   /**
-   * F119 PR-E — when the attempt first failed (the FR-021 anchor). Omitted =
-   * NULL, i.e. no failure yet.
+   * F119 PR-E — when the attempt first failed (the FR-021 anchor), minutes
+   * before now. Omitted = NULL, i.e. no failure yet.
    */
   readonly firstFailedMinutesAgo?: number;
 }
 
-async function seedApprovedBroadcast(
-  tenant: TestTenant,
-  spec: SeedSpec,
-): Promise<void> {
-  const scheduledFor = new Date(
-    FROZEN_NOW.getTime() - spec.scheduledForMinutesAgo * 60 * 1000,
-  );
+async function seedApprovedBroadcast(tenant: TestTenant, spec: SeedSpec): Promise<void> {
   const firstFailedAt =
     spec.firstFailedMinutesAgo === undefined
       ? null
-      : new Date(FROZEN_NOW.getTime() - spec.firstFailedMinutesAgo * 60 * 1000).toISOString();
-  await seedLiveRequester(tenant.ctx, requesterUser.userId, spec.memberId);
+      : new Date(Date.now() - spec.firstFailedMinutesAgo * 60 * 1000).toISOString();
+  const requester = await seedLiveRequester(tenant.ctx, requesterUser.userId);
   await runInTenant(tenant.ctx, (tx) =>
     tx.execute(sql`
       INSERT INTO broadcasts (
@@ -146,12 +121,12 @@ async function seedApprovedBroadcast(
         reply_to_email, segment_type, segment_params,
         custom_recipient_emails, estimated_recipient_count, status,
         retention_years, scheduled_for, submitted_at, approved_at,
-        approved_by_user_id, created_at, updated_at, dispatch_first_failed_at
+        approved_by_user_id, dispatch_first_failed_at
       ) VALUES (
         ${tenant.ctx.slug},
         ${spec.broadcastId}::uuid,
-        ${spec.memberId}::uuid,
-        ${spec.planId},
+        ${requester.memberId}::uuid,
+        ${requester.planId},
         ${randomUUID()}::uuid,
         ${'member_self_service'},
         ${spec.subject},
@@ -162,25 +137,20 @@ async function seedApprovedBroadcast(
         ${'all_members'},
         NULL,
         NULL,
-        ${0},
+        ${1},
         ${'approved'}::broadcast_status,
         ${5},
-        ${scheduledFor.toISOString()}::timestamptz,
-        ${scheduledFor.toISOString()}::timestamptz,
-        ${scheduledFor.toISOString()}::timestamptz,
+        now() - interval '65 minutes',
+        now() - interval '65 minutes',
+        now() - interval '65 minutes',
         ${randomUUID()}::uuid,
-        ${scheduledFor.toISOString()}::timestamptz,
-        ${scheduledFor.toISOString()}::timestamptz,
         ${firstFailedAt}::timestamptz
       )
     `),
   );
 }
 
-async function countOutboxRows(
-  tenant: TestTenant,
-  notificationType?: string,
-): Promise<number> {
+async function countOutboxRows(tenant: TestTenant, notificationType?: string): Promise<number> {
   const where = notificationType
     ? and(
         eq(notificationsOutbox.tenantId, tenant.ctx.slug),
@@ -196,7 +166,51 @@ async function countOutboxRows(
   });
 }
 
-describe('Phase 8 / Slice E — dispatch-failure-notification integration (live Neon)', () => {
+/**
+ * The tick's deps on the REAL repo, audit adapter and outbox bridge. The
+ * requester's primary contact is stubbed to a known address so the FR-021 email
+ * is enqueued; every other members-bridge read delegates to the real bridge.
+ * The resolver is injected: this file tests the budget and the notification,
+ * not the audience query.
+ */
+function makeDeps(tenant: TestTenant, gateway: BroadcastsGatewayPort): BuildAudienceTickDeps {
+  return {
+    tenant: tenant.ctx,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
+    orphans: makeDrizzleBroadcastOrphansRepo(tenant.ctx.slug),
+    broadcastsGateway: gateway,
+    brandChrome: NO_BRAND_CHROME,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+    tickBudget: { tickStartedAt: Date.now() },
+    fromEmail: 'noreply@test.invalid-but-test-only',
+    tenantDisplayName: 'Test Chamber',
+    locale: 'en' as const,
+    resolveRecipients: async () =>
+      ok({ recipients: ['recipient@test-tenant.example'], estimatedCount: 1, orphans: [], droppedByPreference: 0 }),
+    membersBridge: {
+      ...membersBridge,
+      async getMemberPrimaryContact() {
+        return 'sender@test-tenant.example' as never;
+      },
+    },
+    emailTransactional: emailTransactionalBridge,
+    plansBridge,
+    sendStanding: LIVE_STANDING,
+  };
+}
+
+async function readRow(tenant: TestTenant, broadcastId: string) {
+  const rows = await runInTenant(tenant.ctx, async (tx) =>
+    tx
+      .select({ status: broadcasts.status, failureReason: broadcasts.failureReason })
+      .from(broadcasts)
+      .where(and(eq(broadcasts.tenantId, tenant.ctx.slug), eq(broadcasts.broadcastId, broadcastId))),
+  );
+  return rows[0];
+}
+
+describe('Phase 8 / Slice E — dispatch-failure-notification integration (live Neon, import tick)', () => {
   let tenantA: TestTenant;
   let tenantB: TestTenant;
 
@@ -214,86 +228,31 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
   });
 
   it('past-budget retryable failure → outbox row inserted with broadcast_failed_to_dispatch_notification + tenant isolation holds', async () => {
-    // Member primary contact returns null in this test (no F3 member row
-    // seeded — getMemberPrimaryContact returns null which short-circuits
-    // the email enqueue per Slice E best-effort guard). To test the
-    // happy enqueue path, stub the membersBridge inline via a custom
-    // deps assembly.
-    const broadcastId = '88888888-8888-8888-8888-888888888888';
-    const memberId = '99999999-9999-9999-9999-999999999999';
+    const broadcastId = randomUUID();
     await seedApprovedBroadcast(tenantA, {
       broadcastId,
-      memberId,
-      planId: 'plan-x',
       subject: 'Failed dispatch test',
-      scheduledForMinutesAgo: 65,
       firstFailedMinutesAgo: 65, // past the 1h budget, counted from the first failure
     });
 
-    const outboxCountBefore = await countOutboxRows(
-      tenantA,
-      'broadcast_failed_to_dispatch_notification',
-    );
+    const outboxCountBefore = await countOutboxRows(tenantA, 'broadcast_failed_to_dispatch_notification');
     const tenantBOutboxCountBefore = await countOutboxRows(tenantB);
 
-    // Custom membersBridge override: getMemberPrimaryContact returns
-    // a known email so Slice E enqueues the outbox row. Other methods
-    // delegate to the real bridge (won't be called in this path).
-    const stubMembersBridge = {
-      ...membersBridge,
-      async getMemberPrimaryContact() {
-        return 'sender@test-tenant.example' as never;
-      },
-      async getMembersBySegment() {
-        return [
-          {
-            memberId: 'm-1',
-            displayName: 'Test Member',
-            primaryContactEmail: 'recipient@test-tenant.example' as never,
-            tierCode: null,
-            broadcastsHaltedUntilAdminReview: false,
-          },
-        ];
-      },
-    };
-
-    const result = await dispatchScheduledBroadcast(
-      {
-        tenant: tenantA.ctx,
-        broadcastsRepo: makeDrizzleBroadcastsRepo(tenantA.ctx.slug),
-        orphans: makeDrizzleBroadcastOrphansRepo(tenantA.ctx.slug),
-        audienceMode: 'primary_only' as const,
-        audienceCeiling: 5000,
-        broadcastsGateway: makeRetryableGateway(),
-        membersBridge: stubMembersBridge,
-        marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantA.ctx.slug),
-        eventAttendees: eventAttendeesStub,
-        audit: f7AuditAdapter,
-        clock: { now: () => FROZEN_NOW },
-        fromEmail: 'noreply@test.invalid-but-test-only',
-        tenantDisplayName: 'Test Chamber',
-        locale: 'en' as const,
-        plansBridge,
-        emailTransactional: emailTransactionalBridge,
-        sendStanding: LIVE_STANDING,
-        brandChrome: NO_BRAND_CHROME,
-      },
-      { broadcastId: asBroadcastId(broadcastId) },
-    );
+    const calls: string[] = [];
+    const result = await buildAudienceTick(makeDeps(tenantA, makeRetryableGateway(calls)), {
+      broadcastId: asBroadcastId(broadcastId),
+    });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.kind).toBe('broadcast_failed_to_dispatch');
+      expect(result.error).toMatchObject({ kind: 'audience_import_failed', reason: 'retry_budget_exhausted' });
     }
+    expect(calls).toEqual(['createAudience']);
 
     // Outbox row was inserted for tenant A
-    const outboxCountAfter = await countOutboxRows(
-      tenantA,
-      'broadcast_failed_to_dispatch_notification',
-    );
-    expect(outboxCountAfter).toBe(outboxCountBefore + 1);
+    expect(await countOutboxRows(tenantA, 'broadcast_failed_to_dispatch_notification')).toBe(outboxCountBefore + 1);
 
-    // Tenant B's outbox is UNCHANGED
+    // Tenant B's outbox is UNCHANGED (Principle I, cross-tenant).
     expect(await countOutboxRows(tenantB)).toBe(tenantBOutboxCountBefore);
 
     // Verify the inserted row has the correct shape
@@ -304,10 +263,7 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
         .where(
           and(
             eq(notificationsOutbox.tenantId, tenantA.ctx.slug),
-            eq(
-              notificationsOutbox.notificationType,
-              'broadcast_failed_to_dispatch_notification' as never,
-            ),
+            eq(notificationsOutbox.notificationType, 'broadcast_failed_to_dispatch_notification' as never),
           ),
         )
         .limit(1),
@@ -317,114 +273,38 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
     const ctxData = outboxRows[0]?.contextData as Record<string, unknown>;
     expect(ctxData['broadcastId']).toBe(broadcastId);
     expect(ctxData['tenantDisplayName']).toBe('Test Chamber');
-    // Round 4 L1 — INVERTED, and this test pinned the defect on live Neon.
-    //
-    // It asserted the outbox payload's `reason` CONTAINS
-    // `retry_budget_exhausted_after_1h`, i.e. the composite
-    // `retry_budget_exhausted_after_1h:{subKind}:{message}` that the legacy leg
-    // builds for `broadcasts.failure_reason`. That string appears 0 times in
-    // `src/i18n/messages/`, so the email builder — which uses `reason` as a
-    // LOOKUP KEY — matched nothing and fell to `generic`: a member whose
-    // broadcast died to an hour of provider failures read only "a technical
-    // problem prevented delivery".
-    //
-    // The member-facing value is now the TOKEN. The composite is not lost; it
-    // stays where it is useful, which is what the second assertion pins.
-    expect(typeof ctxData['reason']).toBe('string');
+    // Round 4 L1 — the member-facing value is the TOKEN the email builder looks
+    // up (a composite matched no i18n key and fell to `generic`).
     expect(ctxData['reason']).toBe('retry_budget_exhausted');
 
-    // The forensic half, on the row rather than in the member's inbox — so this
-    // case now covers BOTH halves of the split instead of conflating them.
-    const failureReason = await runInTenant(tenantA.ctx, async (tx) => {
-      const rows = (await tx.execute(sql`
-        SELECT failure_reason FROM broadcasts
-        WHERE tenant_id = ${tenantA.ctx.slug} AND broadcast_id = ${broadcastId}::uuid`,
-      )) as unknown as Array<{ failure_reason: string | null }>;
-      return rows[0]?.failure_reason ?? null;
-    });
-    expect(failureReason).toContain('retry_budget_exhausted_after_1h');
+    const row = await readRow(tenantA, broadcastId);
+    expect(row?.status).toBe('failed_to_dispatch');
+    expect(row?.failureReason).toBe('retry_budget_exhausted');
   });
 
   it('within-budget retryable failure → NO outbox row (row stays approved)', async () => {
-    const broadcastId = 'aaaaaaaa-1111-2222-3333-444444444444';
-    const memberId = 'bbbbbbbb-1111-2222-3333-444444444444';
+    const broadcastId = randomUUID();
     await seedApprovedBroadcast(tenantA, {
       broadcastId,
-      memberId,
-      planId: 'plan-x',
       subject: 'Within-budget retry test',
-      scheduledForMinutesAgo: 30, // WITHIN the 1h budget
+      // No first failure yet: this failure stamps the clock, 0 ms into the hour.
     });
 
-    const outboxCountBefore = await countOutboxRows(
-      tenantA,
-      'broadcast_failed_to_dispatch_notification',
-    );
+    const outboxCountBefore = await countOutboxRows(tenantA, 'broadcast_failed_to_dispatch_notification');
 
-    const stubMembersBridge = {
-      ...membersBridge,
-      async getMemberPrimaryContact() {
-        return 'sender@test-tenant.example' as never;
-      },
-      async getMembersBySegment() {
-        return [
-          {
-            memberId: 'm-1',
-            displayName: 'Test Member',
-            primaryContactEmail: 'recipient@test-tenant.example' as never,
-            tierCode: null,
-            broadcastsHaltedUntilAdminReview: false,
-          },
-        ];
-      },
-    };
+    const calls: string[] = [];
+    const result = await buildAudienceTick(makeDeps(tenantA, makeRetryableGateway(calls)), {
+      broadcastId: asBroadcastId(broadcastId),
+    });
 
-    const result = await dispatchScheduledBroadcast(
-      {
-        tenant: tenantA.ctx,
-        broadcastsRepo: makeDrizzleBroadcastsRepo(tenantA.ctx.slug),
-        orphans: makeDrizzleBroadcastOrphansRepo(tenantA.ctx.slug),
-        audienceMode: 'primary_only' as const,
-        audienceCeiling: 5000,
-        broadcastsGateway: makeRetryableGateway(),
-        membersBridge: stubMembersBridge,
-        marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantA.ctx.slug),
-        eventAttendees: eventAttendeesStub,
-        audit: f7AuditAdapter,
-        clock: { now: () => FROZEN_NOW },
-        fromEmail: 'noreply@test.invalid-but-test-only',
-        tenantDisplayName: 'Test Chamber',
-        locale: 'en' as const,
-        plansBridge,
-        emailTransactional: emailTransactionalBridge,
-        sendStanding: LIVE_STANDING,
-        brandChrome: NO_BRAND_CHROME,
-      },
-      { broadcastId: asBroadcastId(broadcastId) },
-    );
-
-    // Within budget: row stays approved, gateway_retryable returned
+    // Within budget: transient, the row stays approved for the next tick.
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.kind).toBe('gateway_retryable');
+      expect(result.error).toMatchObject({ kind: 'dispatch.server_error', phase: 'gateway' });
     }
-    // No outbox row enqueued
-    expect(
-      await countOutboxRows(tenantA, 'broadcast_failed_to_dispatch_notification'),
-    ).toBe(outboxCountBefore);
+    expect(await countOutboxRows(tenantA, 'broadcast_failed_to_dispatch_notification')).toBe(outboxCountBefore);
 
-    // Verify the broadcast stayed in 'approved' status
-    const rows = await runInTenant(tenantA.ctx, async (tx) =>
-      tx
-        .select({ status: broadcasts.status })
-        .from(broadcasts)
-        .where(
-          and(
-            eq(broadcasts.tenantId, tenantA.ctx.slug),
-            eq(broadcasts.broadcastId, broadcastId),
-          ),
-        ),
-    );
-    expect(rows[0]?.status).toBe('approved');
+    const row = await readRow(tenantA, broadcastId);
+    expect(row?.status).toBe('approved');
   });
 });

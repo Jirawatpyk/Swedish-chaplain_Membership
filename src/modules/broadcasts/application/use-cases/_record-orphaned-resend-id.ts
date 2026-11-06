@@ -17,7 +17,7 @@ import type { BroadcastOrphansRepo, RecordOrphanInput } from '../ports/broadcast
 
 export async function recordOrphanBestEffort(
   orphans: Pick<BroadcastOrphansRepo, 'recordOrphanedResendId'>,
-  ctx: { readonly tenantId: string; readonly logPrefix: 'broadcasts.dispatch' | 'broadcasts.audience_import' },
+  ctx: { readonly tenantId: string; readonly logPrefix: 'broadcasts.audience_import' },
   input: RecordOrphanInput,
 ): Promise<void> {
   const fields = {

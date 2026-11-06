@@ -5,47 +5,78 @@
 // during the 2026-06-21 go-live verification, so a gateway test that builds an
 // over-long name or a double-wrapped `from` FAILS here exactly as it would in
 // production. Limits are pinned to observed Resend errors; see the design spec.
+//
+// Spec 140 s4 — it models the Segments surface the gateway calls (`segments.*`,
+// `broadcasts.create({ segmentId })`, `contacts.segments.remove`); the
+// deprecated `audiences` alias and `audienceId` are not modelled.
+import { onTestFinished } from 'vitest';
+
 const MAX_NAME_CP = 70;
+
+/**
+ * PR #756 review round 1 (code-review #5) — the id `segments.create` mints for its
+ * `n`th segment (1-based). UUID-shaped, as Resend's segment ids are, so a gateway
+ * path that asserts a segment id (`assertSegmentId`) accepts it as it would a real
+ * one; the old `aud_fake_N` form could only reach paths that do not.
+ */
+export function fakeSegmentId(n: number): string {
+  return `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+}
+
+/** A call the gateway must never make (spec 140 DR4), as the fake received it. */
+export interface ForbiddenCall {
+  readonly method: 'contacts.remove';
+  readonly args: readonly unknown[];
+}
 
 type ResendResult<T> = { data: T | null; error: { statusCode: number; message: string; name: string } | null };
 
 export interface ResendBroadcastsClientLike {
   readonly broadcasts: {
-    create(args: { audienceId: string; from: string; subject: string; html: string; replyTo: string; name: string }): Promise<ResendResult<{ id: string }>>;
+    create(args: { segmentId: string; from: string; subject: string; html: string; replyTo: string; name: string }): Promise<ResendResult<{ id: string }>>;
     send(id: string, opts?: unknown): Promise<ResendResult<{ id: string }>>;
     get(id: string): Promise<ResendResult<{ id: string }>>;
   };
-  readonly audiences: {
+  readonly segments: {
     create(args: { name: string }): Promise<ResendResult<{ id: string }>>;
     remove(id: string): Promise<ResendResult<{ deleted: boolean; id: string; object: string }>>;
     list(): Promise<ResendResult<{ object: 'list'; data: Array<{ id: string; name: string; created_at: string }> }>>;
   };
   readonly contacts: {
-    create(args: unknown): Promise<ResendResult<{ id: string }>>;
-    remove(args: unknown): Promise<ResendResult<{ deleted: boolean }>>;
+    /** Spec 140 DR4 — records, fails the test and throws: nothing in `src` may call the account-wide delete. */
+    remove(args: unknown): Promise<never>;
     list(args: unknown): Promise<ResendResult<{ data: unknown[] }>>;
+    readonly segments: {
+      remove(args: { email: string; segmentId: string }): Promise<ResendResult<{ object: 'contact_segment'; deleted: boolean }>>;
+    };
   };
 }
 
 export function createResendContractFake(opts: {
   audienceLimit?: number;
   /**
-   * When `true`, `contacts.remove({ audienceId, email })` returns a 404
-   * (`resource_missing`) for an audienceId that was NEVER created OR has
-   * already been deleted via `audiences.remove`. This models real Resend
-   * behaviour after an ephemeral audience is cleaned up (PR-2): the contact
-   * can no longer be removed because its audience is gone, and the gateway's
-   * `removeContactFromAudience` 404-tolerance path must treat that as "already
-   * erased". Default `false` preserves the original always-success behaviour
-   * for the existing gateway/contract consumers (PR-1) — only the
-   * erasure-after-cleanup integration test opts in.
+   * When `true`, `contacts.segments.remove({ email, segmentId })` returns a 404
+   * (`not_found`) for a segmentId that was NEVER created OR has already been
+   * deleted via `segments.remove`. Resend answers exactly that for a random
+   * segment (MEASURED 5 Nov 2026, research.md slice 4 step 0 item 1), and the
+   * gateway's `removeContactFromAudience` reads it as `already_absent`.
+   * Default `false` keeps the always-success detach for the other consumers;
+   * only the erasure-after-cleanup integration test opts in.
    */
-  contactsRemove404OnDeletedAudience?: boolean;
+  detach404OnUnknownSegment?: boolean;
+  /**
+   * PR #756 review round 1 (security L2) — default `true`: a forbidden call
+   * fails the test it happened in, from `onTestFinished`, even when the code
+   * under test swallowed the throw (the gateway's `boundedCall` turns a throw
+   * that is not a `GatewayThrowable` into a retryable). `false` only for the
+   * fake's own pin test, which asserts `forbiddenCalls` instead.
+   */
+  forbiddenCallsFailTest?: boolean;
 } = {}): {
   client: ResendBroadcastsClientLike;
   createdAudienceCount: () => number;
   /**
-   * The audience ids created via `audiences.create`, in creation order.
+   * The audience ids created via `segments.create`, in creation order.
    * Unlike `createdAudienceIds` (which is mutated on remove), this list is
    * append-only so the cross-member isolation test can assert the COUNT and
    * IDENTITY of audiences created across a dispatch run even if some were
@@ -54,25 +85,19 @@ export function createResendContractFake(opts: {
   createdAudienceIdsInOrder: () => readonly string[];
   /** F119 T031 — the `html` of the LAST `broadcasts.create` call (null before any). */
   lastCreatedBroadcastHtml: () => string | null;
-  /**
-   * The set of contact emails (lower-cased) recorded against `audienceId` via
-   * `contacts.create`. Returns an empty set for an unknown audience. The
-   * cross-member isolation test reads this to assert each broadcast's audience
-   * holds EXACTLY its own recipients (no cross-member PII leak).
-   */
-  getAudienceContacts: (audienceId: string) => ReadonlySet<string>;
+  /** Every forbidden call this fake received, in order (spec 140 DR4). */
+  forbiddenCalls: readonly ForbiddenCall[];
 } {
   const audienceLimit = opts.audienceLimit ?? Number.POSITIVE_INFINITY;
-  const remove404OnDeletedAudience =
-    opts.contactsRemove404OnDeletedAudience ?? false;
+  const detach404OnUnknownSegment = opts.detach404OnUnknownSegment ?? false;
+  const forbiddenCallsFailTest = opts.forbiddenCallsFailTest ?? true;
+  const forbiddenCalls: ForbiddenCall[] = [];
   let audienceCount = 0;
   const createdAudienceIds = new Set<string>();
   // Append-only creation log (never mutated on remove) — distinct from the
   // `createdAudienceIds` liveness set above.
   const createdAudienceIdsInOrder: string[] = [];
   let lastCreatedBroadcastHtml: string | null = null;
-  // audienceId → set of lower-cased contact emails added to it.
-  const audienceContacts = new Map<string, Set<string>>();
   // audienceId → display name (populated on create; NOT removed on remove so
   // createdAudienceIdsInOrder can still resolve names for diagnostics).
   const audienceNames = new Map<string, string>();
@@ -117,17 +142,16 @@ export function createResendContractFake(opts: {
       async send(id) { return { data: { id }, error: null }; },
       async get(_id) { return { data: null, error: { statusCode: 404, message: 'not found', name: 'not_found' } }; },
     },
-    audiences: {
+    segments: {
       async create(args) {
         if (audienceCount >= audienceLimit) {
           const limitLabel = Number.isFinite(audienceLimit) ? String(audienceLimit) : '3';
           return { data: null, error: { statusCode: 401, message: `Your plan includes ${limitLabel} segments. Upgrade to add more.`, name: 'restricted' } };
         }
         audienceCount += 1;
-        const id = `aud_fake_${audienceCount}`;
+        const id = fakeSegmentId(audienceCount);
         createdAudienceIds.add(id);
         createdAudienceIdsInOrder.push(id);
-        audienceContacts.set(id, new Set<string>());
         audienceNames.set(id, args.name);
         return { data: { id }, error: null };
       },
@@ -152,43 +176,43 @@ export function createResendContractFake(opts: {
         return { data: { object: 'list' as const, data }, error: null };
       },
     },
+    // Spec 140 s4 — no `contacts.create`: its only caller, the legacy
+    // per-contact push, was deleted with the legacy dispatch leg.
     contacts: {
-      async create(args: unknown) {
-        // Record (audienceId → lower-cased email) so a test can assert which
-        // contacts landed in which audience. The gateway's
-        // `addContactsToAudience` calls `sdk.contacts.create({ audienceId,
-        // email, ... })`, one contact per call.
-        const a = (args ?? {}) as { audienceId?: unknown; email?: unknown };
-        if (typeof a.audienceId === 'string' && typeof a.email === 'string') {
-          const set = audienceContacts.get(a.audienceId) ?? new Set<string>();
-          set.add(a.email.toLowerCase());
-          audienceContacts.set(a.audienceId, set);
+      async remove(...args: unknown[]) {
+        // Spec 140 DR4 — without a segment this is `DELETE /contacts/{email}`,
+        // the ACCOUNT-WIDE delete shared by every tenant. The gateway detaches
+        // through `contacts.segments.remove`; a call here is a defect, so it is
+        // recorded, fails the test (see `forbiddenCallsFailTest`), and throws
+        // rather than answering a plausible success.
+        forbiddenCalls.push({ method: 'contacts.remove', args });
+        if (forbiddenCallsFailTest) {
+          try {
+            onTestFinished(() => {
+              throw new Error('resend-contract-fake: the test called contacts.remove, the account-wide delete (spec 140 DR4)');
+            });
+          } catch {
+            // Outside a running test (a module-scope call): the throw below and
+            // `forbiddenCalls` still carry it.
+          }
         }
-        return { data: { id: `contact_fake_${randomId()}` }, error: null };
-      },
-      async remove(args: unknown) {
-        const a = (args ?? {}) as { audienceId?: unknown; email?: unknown };
-        // Opt-in only: model a deleted/never-created audience as a 404 so the
-        // erasure-after-cleanup test exercises the gateway's
-        // `removeContactFromAudience` `resource_missing` 404-tolerance path.
-        if (
-          remove404OnDeletedAudience &&
-          typeof a.audienceId === 'string' &&
-          !createdAudienceIds.has(a.audienceId)
-        ) {
-          return {
-            data: null,
-            error: { statusCode: 404, message: 'Audience not found', name: 'not_found' },
-          };
-        }
-        // Default (back-compat): succeed. Also drop the email from the recorded
-        // set when both fields are present, so a test can observe removal.
-        if (typeof a.audienceId === 'string' && typeof a.email === 'string') {
-          audienceContacts.get(a.audienceId)?.delete(a.email.toLowerCase());
-        }
-        return { data: { deleted: true }, error: null };
+        throw new Error('resend-contract-fake: contacts.remove is the account-wide contact delete (spec 140 DR4)');
       },
       async list() { return { data: { data: [] }, error: null }; },
+      segments: {
+        async remove(args) {
+          // Opt-in only: model a deleted/never-created segment as Resend's 404,
+          // so the erasure-after-cleanup test exercises the gateway's
+          // `already_absent` arm.
+          if (detach404OnUnknownSegment && !createdAudienceIds.has(args.segmentId)) {
+            return {
+              data: null,
+              error: { statusCode: 404, message: 'Audience not found', name: 'not_found' },
+            };
+          }
+          return { data: { object: 'contact_segment' as const, deleted: true }, error: null };
+        },
+      },
     },
   };
   return {
@@ -196,13 +220,6 @@ export function createResendContractFake(opts: {
     createdAudienceCount: () => audienceCount,
     createdAudienceIdsInOrder: () => [...createdAudienceIdsInOrder],
     lastCreatedBroadcastHtml: () => lastCreatedBroadcastHtml,
-    getAudienceContacts: (audienceId: string) =>
-      new Set(audienceContacts.get(audienceId) ?? new Set<string>()),
+    forbiddenCalls,
   };
-}
-
-/** Short random suffix for fake contact ids — avoids id collisions when many
- *  contacts are created in one test (purely cosmetic; ids are unused). */
-function randomId(): string {
-  return Math.random().toString(36).slice(2, 10);
 }

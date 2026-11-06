@@ -9,8 +9,9 @@
  * gate answered "in good standing" for a result it never understood. Each
  * switch now throws on it (`assertNever`), so the row is not made
  * dispatchable. The unknown kind is forced here through the one reader all
- * three share — and, since F119 PR-A, both dispatch legs, whose switches
- * answer a transient `dispatch.server_error` instead (nothing is sent).
+ * three share — and, since F119 PR-A, the dispatch tick, whose switch answers
+ * a transient `dispatch.server_error` instead (nothing is sent). Spec 140 s4
+ * deleted the legacy leg and its row of the table below.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,7 +25,6 @@ import { asTenantContext } from '@/modules/tenants';
 import { approveBroadcast } from '@/modules/broadcasts/application/use-cases/approve-broadcast';
 import { submitBroadcast } from '@/modules/broadcasts/application/use-cases/submit-broadcast';
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
-import { dispatchScheduledBroadcast } from '@/modules/broadcasts/application/use-cases/dispatch-scheduled-broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import {
   makeApprovalBroadcast,
@@ -91,14 +91,11 @@ describe('an unknown MemberSendStanding kind is never read as "may send"', () =>
   });
 
   /**
-   * F119 PR-A — the two SEND-time switches. An unknown kind did not decide the
-   * gate, so nothing is sent: the same transient answer a failed read gets
-   * (the row stays `approved`), and Resend is never called.
+   * F119 PR-A — the SEND-time switch. An unknown kind did not decide the gate,
+   * so nothing is sent: the same transient answer a failed read gets (the row
+   * stays `approved`), and Resend is never called.
    */
-  it.each([
-    ['dispatchScheduledBroadcast', dispatchScheduledBroadcast],
-    ['buildAudienceTick', buildAudienceTick],
-  ] as const)('%s → dispatch.server_error (phase standing), nothing sent, nothing written', async (_name, useCase) => {
+  it('buildAudienceTick → dispatch.server_error (phase standing), nothing sent, nothing written', async () => {
     const row = makeApprovalBroadcast({ status: 'approved' });
     const store = makeFakeApprovalStore({ broadcasts: [row] });
     const gatewayCalls: string[] = [];
@@ -106,17 +103,16 @@ describe('an unknown MemberSendStanding kind is never read as "may send"', () =>
       {},
       { get: (_t, prop) => (prop === 'then' ? undefined : async () => void gatewayCalls.push(String(prop))) },
     );
-    const r = await useCase(
+    const r = await buildAudienceTick(
       {
         tenant,
-        // Spec 140 s2b — the dispatch lease: the import leg claims (always
-        // granted here) and releases; the legacy leg reads no live lease.
+        // Spec 140 s2b — the dispatch lease: the tick claims (always granted
+        // here) and releases.
         broadcastsRepo: {
           ...store.broadcastsRepo,
           claimDispatchLease: async () => 'lease-token-test',
           checkDispatchLease: async () => 'held' as const,
           releaseDispatchLease: async () => true,
-          hasLiveDispatchLease: async () => false,
         },
         broadcastsGateway: gateway,
         sendStanding: makeFakeSendStanding(),

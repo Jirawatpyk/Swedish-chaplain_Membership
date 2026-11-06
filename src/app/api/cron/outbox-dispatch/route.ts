@@ -384,10 +384,11 @@ async function buildPayload(
     }
     case 'broadcast_failed_to_dispatch_notification': {
       // F7 US6 / Phase 8 — FR-021 / AS2 dispatch-failure transactional
-      // email enqueued from `enqueueDispatchFailureNotification` in
-      // dispatch-scheduled-broadcast.ts (1h budget exhausted OR
-      // permanent failure path, and — F119 PR-A — a send-time standing
-      // refusal on either dispatch leg). context_data carries the broadcast
+      // email enqueued from `enqueueDispatchFailureNotification`
+      // (`_enqueue-dispatch-failure-notification.ts`), called by the dispatch
+      // tick (`build-audience-tick.ts`: 1h budget exhausted OR permanent
+      // failure path, and — F119 PR-A — a send-time standing refusal).
+      // context_data carries the broadcast
       // identifiers + scheduled-for + reason; the build helper renders the
       // trilingual member-facing copy: the reason sentence, the quota line
       // (the slot is RELEASED — `reassuranceStanding` for the two standing

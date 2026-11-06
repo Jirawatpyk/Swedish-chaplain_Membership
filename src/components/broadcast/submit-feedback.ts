@@ -21,11 +21,10 @@ export interface SubmitFeedbackBody {
 /**
  * 108 PR-C T085 (FR-041 / FR-042) — interpolation values for a submit error.
  * The "audience too large" copy names the ceiling the server actually refused
- * against (`details.cap` on the 422 body — 500 since 2026-09-08, being
- * `min(configured, DELIVERABLE_RECIPIENTS_PER_TICK)`; the configured 5,000 /
- * 50,000 no longer reaches the wire), so the message can never claim a limit
- * the server did not apply. That property is why the clamp needed no copy
- * change in any of the three locales: every string interpolates
+ * against (`details.cap` on the 422 body — `BROADCAST_AUDIENCE_CEILING`,
+ * default 900, since spec 140 s4), so the message can never claim a limit
+ * the server did not apply. That property is why no ceiling change has needed
+ * a copy change in any of the three locales: every string interpolates
  * `{ceiling, number}` from this value.
  *
  * Review 2026-09-07 round 2 (i18n H4): next-intl does NOT throw on a missing
