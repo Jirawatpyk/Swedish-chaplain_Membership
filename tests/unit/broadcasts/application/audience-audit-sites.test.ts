@@ -27,6 +27,7 @@ const OUT_OF_REACH = [
   'a method name in a variable: gateway[name](id)',
   'a dynamic import, or a call through a barrel re-export under another name',
   'a call inside an arrow function or method: it is attributed to the nearest enclosing `function` declaration',
+  "a record call in a branch other than the delete's own: the scan checks only that it appears textually before the call in the same function",
 ] as const;
 
 type Method = 'deleteAudience' | 'createContactImport';
@@ -165,6 +166,6 @@ describe('spec 139 s2 DA2 — the segment calls are pinned, and the audited ones
   });
 
   it('names what the scan cannot see', () => {
-    expect(OUT_OF_REACH).toHaveLength(5);
+    expect(OUT_OF_REACH).toHaveLength(6);
   });
 });

@@ -253,6 +253,7 @@ e2e: none (cron and erasure server paths only; no UI).
 | cron item, adapter invariant error (review round 1, reliability LOW-2) | ERROR `broadcasts.audience_cleanup.audit_invariant` / `broadcasts.audience_reclaim.audit_invariant`, logged once by the row helper (review round 2, code-review #5; the tick restart's `broadcasts.audience_import.audit_invariant` too), no delete, counted `failed` | unit, both cron files and `build-audience-tick-audience-audit.test.ts` |
 | reclaim chunk start, remaining time fits one call but not call + audit wait (review round 2, code-review #2) | deferred (`deferredDeletes`), no delete | unit `reclaim-orphaned-audiences.test.ts` "a chunk is deferred when the time left fits one Resend call but not the call plus the audit lock wait" |
 | another tenant's row, or a NULL-tenant row with the same payload | not seen | integration cross-tenant |
+| an audit read on a tx bound to another tenant (review round 3) | `AuditPortInvariantError` → ERROR `*.audit_invariant`, rethrown, no Resend call | integration `audience-audit-rows.test.ts` "cross-tenant: %s with a tx bound to tenant B refuses tenant A's read as an invariant error" (both reads) |
 | a new `deleteAudience(` / `createContactImport(` call site | the source scan fails | unit source scan (positive control) |
 
 **Test plan:**
@@ -268,6 +269,7 @@ e2e: none (cron and erasure server paths only; no UI).
 | reclaim dedupes before the disclosure read (review round 1) | `reclaim-orphaned-audiences.test.ts` "a segment already recorded as deleted is neither re-recorded nor reported unattributed" | unit |
 | the dedupe's lock wait is bounded at 5 s (review round 1) | `audience-audit-rows.test.ts` "a read behind a held lock fails with a lock timeout (55P03, not an invariant error)" | integration |
 | a cron item's adapter invariant error logs ERROR `*.audit_invariant` (review round 1) | `cleanup-orphaned-audiences.test.ts`, `reclaim-orphaned-audiences.test.ts` "an adapter invariant error logs ERROR audit_invariant …" | unit |
+| a cross-tenant audience audit read is an invariant error, so the site fails closed (review round 3) | `audience-audit-rows.test.ts` "cross-tenant: %s with a tx bound to tenant B refuses tenant A's read as an invariant error" | integration |
 
 **Docs (DA5; pdpa H-1, architect M):**
 - **RoPA F7:** carries the pdpa wording: the rows are requests, not outcomes; a failed store is logged and counted; contacts are detached, not deleted.
