@@ -183,6 +183,21 @@ Where these rows and the sections above disagree, these rows win. Each row lands
 
 **Superseded by these rows:** R6's and S5's "the margin covers the INSERT wait" (T3 charges it at the chunk check again); S1's exact-`indexdef` comparison and its two cells.
 
+## Past the cap (round 4) fold-in (7 Nov 2026: code-review round 4 findings on PR #767)
+
+The maintainer chose to fix the small set past the review cap, then take a short look. Where these rows and the sections above disagree, these rows win. Each row lands before its GREEN commit (D-043).
+
+| Finding | Mechanism | Test (file, name) | Commit kind |
+|---|---|---|---|
+| P1 (CR4 #3, #7) | 0328's index check also requires access method `btree` (`pg_am.amname` via `pg_class.relam`), `indnatts = 2` (no INCLUDE columns), every `indcollation` entry 0 or the `default` collation, every `indclass` entry a default operator class (`pg_opclass.opcdefault`), and `indimmediate`. All of it comes from the one `SELECT … INTO` (per-key summaries by scalar subqueries over the `unnest`ed vectors); the RAISE names the key and the value that differed. Dev's live row, read with `pnpm db:query` on 7 Nov 2026: `btree`, `indnatts` 2, `indimmediate` true, `indcollation` 100 100 (`default`), `indclass` 3126 3126 (`text_ops`, default); `tenant_id` is `text`, key 2 is a `text` expression. `IF NOT EXISTS`, the pre-check, `lock_timeout` first and the restore last stay; `verify-schema.ts`'s canary checks the same facts. The positive control compares the schema-qualified table (`nspname.relname`) to `LIVE.tbl`. Dev keeps its index; `db:migrate` is not re-run | `audience-audit-rows.test.ts` "the index check passes on the live index, and on LIVE's values in place of the catalog read" (reads the new facts live too) and "the index check raises on a non-btree method, INCLUDE columns, a non-default collation or operator class, and a deferrable index" (read-only: literal values in place of the catalog read) | test (red) → fix |
+| P2 (CR4 #6, #1) | `RECLAIM_CHUNK_BUDGET_MS = RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` is exported from `reclaim-orphaned-audiences.ts` (not the barrel) and used at the chunk check. The `oneCallFitsBefore` docblock says the listing passes `RESEND_CALL_TIMEOUT_MS` and the reclaim delete chunk `RECLAIM_CHUNK_BUDGET_MS`, no longer the same value | the existing budget cells | refactor |
+| P3 (CR4 #4) | The older reclaim boundary cells pin the call-plus-audit-wait rule at its boundary with `RECLAIM_CHUNK_BUDGET_MS`: the moving-clock cell moves the clock to 1 ms short of the budget, the no-chunk cell's deadline is the budget − 1 ms, and the round-3 pair spells the constant, not the sum. Green before and after (a test retune) | `reclaim-orphaned-audiences.test.ts` "a chunk is not started once less than one call and its audit wait is left: its orphans are deferred, not failed", "a deadline already inside one call and its audit wait defers every orphan and deletes none" | test |
+| P4 (CR4 #9) | The `logger.error` spy in the stale-audience restart cell gets `.mockImplementation(() => undefined)`, the neighbouring harnesses' form | `build-audience-tick.test.ts` "tick 1 DELETES an audience left by a previous attempt …" | test |
+
+**Follow-ups, not fixed here:** CR4 #5 (the predicate is spelled in three places: 0328, the adapter's `ON CONFLICT … WHERE`, `verify-schema.ts`) and CR4 #8 (the `satisfies` guard on the tick harnesses checks only the literal, not the doubles built elsewhere).
+
+**Superseded by these rows:** T2's field list (P1 adds five facts); T3's spelled-out sum at the chunk check (P2 names it).
+
 ## Constitution Check
 - **I Privacy & Security:**
   - the index key includes the tenant;
