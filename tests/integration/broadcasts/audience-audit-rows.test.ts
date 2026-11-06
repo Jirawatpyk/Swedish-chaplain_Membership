@@ -389,6 +389,10 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
      * answers, field by field. `LIVE` is what dev's `pg_index` row answers
      * (read with `pnpm db:query` on 7 Nov 2026; the positive control below
      * re-reads it); `idx` stands for the index oid, NULL when there is none.
+     * Round 4 (code-review #3) adds the access method, `indnatts` (INCLUDE
+     * columns), `indimmediate`, and the keys whose collation is not the
+     * default one (`badColl`) or whose operator class is not a default one
+     * (`badOpc`), NULL when every key is fine.
      */
     interface IndexFacts {
       readonly idx: number | null;
@@ -399,6 +403,11 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       readonly key1: string | null;
       readonly key2: string | null;
       readonly pred: string | null;
+      readonly am: string | null;
+      readonly attCount: number | null;
+      readonly immediate: boolean | null;
+      readonly badColl: string | null;
+      readonly badOpc: string | null;
     }
     const LIVE: IndexFacts = {
       idx: 1,
@@ -409,6 +418,11 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       key1: 'tenant_id',
       key2: "(payload ->> 'resend_audience_id'::text)",
       pred: "event_type = 'broadcast_audience_deleted'::audit_event_type",
+      am: 'btree',
+      attCount: 2,
+      immediate: true,
+      badColl: null,
+      badOpc: null,
     };
 
     /** The check with its catalog read replaced by literal assignments of `facts`, so it reads no catalog. */
@@ -428,6 +442,11 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
           `v_key1 := ${text(facts.key1)};`,
           `v_key2 := ${text(facts.key2)};`,
           `v_pred := ${text(facts.pred)};`,
+          `v_am := ${text(facts.am)};`,
+          `v_att_count := ${lit(facts.attCount)};`,
+          `v_immediate := ${lit(facts.immediate)};`,
+          `v_bad_coll := ${text(facts.badColl)};`,
+          `v_bad_opc := ${text(facts.badOpc)};`,
         ].join(' '),
       );
     }
@@ -492,25 +511,39 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     const PREFIX = '0328: index audit_log_audience_deleted_once has another definition';
 
     it("the index check passes on the live index, and on LIVE's values in place of the catalog read", async () => {
-      // Positive control: dev's live row is what LIVE says.
+      // Positive control: dev's live row is what LIVE says (round 4,
+      // code-review #7: the table schema-qualified, as the check reads it).
       const live = (await db.execute(sql`
-        SELECT t.relname AS tbl, i.indisunique, i.indisvalid, i.indnkeyatts,
+        SELECT tn.nspname || '.' || t.relname AS tbl, i.indisunique, i.indisvalid, i.indnkeyatts,
                pg_get_indexdef(i.indexrelid, 1, true) AS key1, pg_get_indexdef(i.indexrelid, 2, true) AS key2,
-               pg_get_expr(i.indpred, i.indrelid, true) AS pred
+               pg_get_expr(i.indpred, i.indrelid, true) AS pred, am.amname::text AS am, i.indnatts, i.indimmediate,
+               (SELECT array_agg(coalesce(co.collname::text, k.o::text) ORDER BY k.n)
+                  FROM unnest(i.indcollation) WITH ORDINALITY k(o, n)
+                  LEFT JOIN pg_collation co ON co.oid = k.o) AS colls,
+               (SELECT array_agg(coalesce(opc.opcname::text, k.o::text) || CASE WHEN opc.opcdefault THEN '' ELSE ' (not default)' END ORDER BY k.n)
+                  FROM unnest(i.indclass) WITH ORDINALITY k(o, n)
+                  LEFT JOIN pg_opclass opc ON opc.oid = k.o) AS opcs
           FROM pg_index i
           JOIN pg_class c ON c.oid = i.indexrelid
+          JOIN pg_am am ON am.oid = c.relam
           JOIN pg_class t ON t.oid = i.indrelid
+          JOIN pg_namespace tn ON tn.oid = t.relnamespace
          WHERE c.relname = 'audit_log_audience_deleted_once' AND c.relnamespace = 'public'::regnamespace
       `)) as unknown as Array<Record<string, unknown>>;
       expect(live).toEqual([
         {
-          tbl: 'audit_log',
+          tbl: LIVE.tbl,
           indisunique: true,
           indisvalid: true,
           indnkeyatts: 2,
           key1: LIVE.key1,
           key2: LIVE.key2,
           pred: LIVE.pred,
+          am: LIVE.am,
+          indnatts: LIVE.attCount,
+          indimmediate: LIVE.immediate,
+          colls: ['default', 'default'],
+          opcs: ['text_ops', 'text_ops'],
         },
       ]);
       const check = indexCheckSql();
@@ -525,7 +558,22 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     it('the index check raises on another definition and on a missing index, naming what differed', async () => {
       const check = indexCheckSql();
       const cases: ReadonlyArray<readonly [Partial<IndexFacts>, string]> = [
-        [{ idx: null, tbl: null, isUnique: null, isValid: null, keyCount: null, key1: null, key2: null, pred: null }, 'no such index'],
+        [
+          {
+            idx: null,
+            tbl: null,
+            isUnique: null,
+            isValid: null,
+            keyCount: null,
+            key1: null,
+            key2: null,
+            pred: null,
+            am: null,
+            attCount: null,
+            immediate: null,
+          },
+          'no such index',
+        ],
         [{ tbl: 'public.other_table' }, 'table public.other_table'],
         [{ isUnique: false }, 'indisunique false'],
         [{ keyCount: 1 }, 'indnkeyatts 1'],
@@ -544,6 +592,26 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     it('the index check raises on an invalid index (indisvalid false)', async () => {
       const message = await raised(checkAgainst(indexCheckSql(), { ...LIVE, isValid: false }));
       expect(message).toContain(`${PREFIX}: indisvalid false`);
+    });
+
+    // Round 4 (code-review #3) — the same keys and predicate under another
+    // access method, with INCLUDE columns, a non-default collation or operator
+    // class, or as a deferrable index is another definition too.
+    it('the index check raises on a non-btree method, INCLUDE columns, a non-default collation or operator class, and a deferrable index', async () => {
+      const check = indexCheckSql();
+      const cases: ReadonlyArray<readonly [Partial<IndexFacts>, string]> = [
+        [{ am: 'hash' }, 'access method hash'],
+        [{ am: null }, 'access method (none)'],
+        [{ attCount: 3 }, 'indnatts 3'],
+        [{ badColl: 'key 2 C' }, 'collation key 2 C'],
+        [{ badOpc: 'key 2 text_pattern_ops' }, 'operator class key 2 text_pattern_ops'],
+        [{ immediate: false }, 'indimmediate false'],
+      ];
+      for (const [diff, named] of cases) {
+        const message = await raised(checkAgainst(check, { ...LIVE, ...diff }));
+        expect(message).toContain(PREFIX);
+        expect(message).toContain(named);
+      }
     });
 
     it('the pre-check raises on a duplicate key and names it as tenant/segment', async () => {
