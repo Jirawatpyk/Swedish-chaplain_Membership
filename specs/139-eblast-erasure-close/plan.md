@@ -569,6 +569,12 @@ Verdicts:
 - **Runs on `448c8b275`** (round 2 code): unit 3928, contract 3094, integration audience-audit-rows 11, audience-cleanup 5, audit/completeness 45, and `pnpm check` exit 0.
 - **Not run locally:** the full `pnpm test:coverage` (CI runs it).
 
+**Prod count (pdpa L-2; the maintainer's order on 6 Nov 2026).** A read-only transaction (`transaction_read_only = on`) against host `ep-bold-block`, at 12:00 UTC:
+- `broadcast_orphaned_resend_ids` holds 0 audience rows (0 unsettled) and 0 rows of any type;
+- `broadcasts` holds 0 rows.
+
+So prod holds no segment from before this slice that would need an audit row, and the no-backfill premise holds.
+
 **Dev litter:** each run of `audience-audit-rows` leaves `audit_log` rows with the summary `spec 139 s2 fixture`, some with `tenant_id IS NULL` (`audit_log` is append-only).
 
 
