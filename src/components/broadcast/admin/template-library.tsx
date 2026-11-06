@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { EmptyState } from '@/components/shell/empty-state';
 import {
   Badge,
   Card,
@@ -146,7 +147,7 @@ export function AdminTemplateLibrary({
   // Below 640px the rows are cards of their own, so the outer card's frame
   // drops away (AURA `flushBelow`), as the phone board draws it.
   return (
-    <Card flushBelow="sm" className="max-sm:p-0">
+    <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
       <div className="flex flex-col gap-[var(--aura-space-4)]">
         {/* flex-wrap keeps SV labels from overflowing on a 320px phone. */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -221,8 +222,10 @@ export function AdminTemplateLibrary({
               // template is a Starter); the page-level empty state only
               // covers "zero templates at all".
               <Tr>
-                <Td colSpan={6} label="" align="center" className="py-8 text-[var(--aura-fg-secondary)]">
-                  {t('filterEmpty')}
+                <Td colSpan={6} label="" align="center">
+                  {/* PR Q — AURA's EmptyState at the cell size. Not a live
+                      region: the sr-only count above announces the filter. */}
+                  <EmptyState title={t('filterEmpty')} size="sm" bordered={false} announce={false} />
                 </Td>
               </Tr>
             ) : (

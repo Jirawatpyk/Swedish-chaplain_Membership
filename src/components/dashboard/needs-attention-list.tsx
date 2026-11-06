@@ -14,6 +14,7 @@ import {
   TriangleAlertIcon,
   type LucideIcon,
 } from 'lucide-react';
+import { EmptyState } from '@/components/shell/empty-state';
 
 export interface NeedsAttentionItem {
   readonly id: string;
@@ -79,9 +80,7 @@ export function NeedsAttentionList({
           // Suppressed while anything is unavailable: an all-clear next to a
           // failed read is a claim the page cannot make.
           unavailable.length > 0 ? null : (
-            <p role="status" className="aura-text-body text-[var(--aura-fg-secondary)]">
-              {emptyLabel}
-            </p>
+            <EmptyState title={emptyLabel} size="sm" bordered={false} />
           )
         ) : (
           <ul className="divide-y divide-[var(--aura-border-default)] border-t border-[var(--aura-border-default)] aura-text-body">

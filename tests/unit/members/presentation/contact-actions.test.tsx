@@ -1,8 +1,8 @@
 /**
  * 122 US5b-1 (T554) — a contact's actions on the member detail page, as the
  * `Admin-member-detail` board draws them: a visible Edit, and for another
- * (non-primary) contact a visible "Make primary" plus a "⋯" menu holding
- * Remove. The primary contact cannot be removed or promoted, so it has
+ * (non-primary) contact a "⋯" menu holding Make primary and Remove; Edit is
+ * the one visible button on every contact (PR Q). The primary contact cannot be removed or promoted, so it has
  * neither. Promote and Remove each confirm in an AURA alert dialog with the
  * same copy and the same requests as before.
  */
@@ -57,14 +57,17 @@ describe('ContactActions (T554)', () => {
     expect(screen.queryByRole('button', { name: /more actions/i })).toBeNull();
   });
 
-  it('another contact: Edit, Make primary, and a ⋯ menu named for the contact that holds Remove', () => {
+  it('another contact: Edit as the one visible button; Make primary and Remove in a ⋯ menu named for the contact', () => {
+    // One rule for every contact (the maintainer, PR Q): Edit is the button,
+    // in the same place on each; the rarer role change and removal sit in ⋯.
     renderActions(false);
     expect(screen.getByRole('button', { name: new RegExp(A.edit) })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: new RegExp(A.promote) })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: new RegExp(A.promote) })).toBeNull();
     const more = screen.getByRole('button', { name: A.moreActions.replace('{name}', 'Ploy Srisuk') });
     fireEvent.click(more);
     const menu = screen.getByRole('menu');
-    expect(within(menu).getByRole('menuitem', { name: new RegExp(A.remove) })).toBeInTheDocument();
+    const items = within(menu).getAllByRole('menuitem').map((i) => i.textContent?.trim());
+    expect(items).toEqual([A.promote, A.remove]);
   });
 
   it('Remove confirms in an alert dialog, then DELETEs the contact and refreshes', async () => {
@@ -83,7 +86,8 @@ describe('ContactActions (T554)', () => {
   it('Make primary confirms in an alert dialog, then POSTs promote-primary', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
     renderActions(false);
-    fireEvent.click(screen.getByRole('button', { name: new RegExp(A.promote) }));
+    fireEvent.click(screen.getByRole('button', { name: A.moreActions.replace('{name}', 'Ploy Srisuk') }));
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: new RegExp(A.promote) }));
     const dialog = await screen.findByRole('alertdialog', {
       name: A.promoteTitle.replace('{name}', 'Ploy Srisuk'),
     });
@@ -93,21 +97,19 @@ describe('ContactActions (T554)', () => {
     );
   });
 
-  // UX review M7: several contacts each have an Edit and a Make primary, so
-  // each button carries the contact's name after its visible text (2.5.3).
-  it('Edit and Make primary are named for their contact', () => {
+  // UX review M7: several contacts each have an Edit, so the button carries
+  // the contact's name after its visible text (2.5.3); the ⋯ menu is named
+  // for the contact, so its items need no name of their own.
+  it('Edit is named for its contact', () => {
     renderActions(false);
     // jsdom pads the sr-only span with a space; a browser does not.
     expect(screen.getByRole('button', { name: new RegExp(`^${A.edit} ?, Ploy Srisuk$`) })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: new RegExp(`^${A.promote} ?, Ploy Srisuk$`) })).toBeInTheDocument();
   });
 
-  it('Edit and Make primary are AURA Buttons whose icons come through AURA', () => {
+  it('Edit is an AURA Button whose icon comes through AURA', () => {
     renderActions(false);
-    for (const name of [A.edit, A.promote]) {
-      const button = screen.getByRole('button', { name: new RegExp(`^${name} ?, Ploy Srisuk$`) });
-      expect(button).toHaveClass('aura-btn', 'aura-btn--secondary', 'aura-btn--sm', 'aura-btn--touch');
-      expect(button.querySelector('.aura-icon')).not.toBeNull();
-    }
+    const button = screen.getByRole('button', { name: new RegExp(`^${A.edit} ?, Ploy Srisuk$`) });
+    expect(button).toHaveClass('aura-btn', 'aura-btn--secondary', 'aura-btn--sm', 'aura-btn--touch');
+    expect(button.querySelector('.aura-icon')).not.toBeNull();
   });
 });

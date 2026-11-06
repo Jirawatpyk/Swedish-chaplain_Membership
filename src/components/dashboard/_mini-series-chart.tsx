@@ -63,6 +63,7 @@ import {
   getServerAllowMotion,
   subscribeMotionPreference,
 } from './use-motion-preference';
+import { EmptyState } from '@/components/shell/empty-state';
 
 const MiniSeriesCanvas = dynamic(
   () => import('./mini-series-canvas').then((m) => m.MiniSeriesCanvas),
@@ -145,7 +146,7 @@ export function MiniSeriesChart({
   return (
     <Card title={title} description={caption} headingLevel={2}>
       {!hasData ? (
-        <p className="aura-text-body text-[var(--aura-fg-secondary)]">{emptyLabel}</p>
+        <EmptyState title={emptyLabel} size="sm" bordered={false} announce={false} />
       ) : (
         <>
           <div className={CHART_HERO_ROW}>

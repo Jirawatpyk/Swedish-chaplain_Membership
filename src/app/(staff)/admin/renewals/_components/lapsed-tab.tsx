@@ -42,6 +42,7 @@ import {
   CycleExpiresCell,
 } from '@/components/renewals/cycle-cells';
 import { OutreachDialog } from './outreach-dialog';
+import { EmptyState } from '@/components/shell/empty-state';
 import type { PipelineRow } from '@/modules/renewals/client';
 
 type LapsedReasonKey =
@@ -118,8 +119,9 @@ export function LapsedTab({ rows }: LapsedTabProps) {
         <TBody>
           {rows.length === 0 ? (
             <Tr>
-              <Td colSpan={5} className="py-[var(--aura-space-6)] text-center text-[var(--aura-fg-secondary)]">
-                {tTable('noRows')}
+              <Td colSpan={5} label="">
+                {/* PR Q — AURA's EmptyState at the cell size. */}
+                <EmptyState title={tTable('noRows')} size="sm" bordered={false} announce={false} />
               </Td>
             </Tr>
           ) : (

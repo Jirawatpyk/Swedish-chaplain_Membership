@@ -3,8 +3,9 @@
  * (spec 122): the "Showing N of M" summary as its status line (first page
  * only — keyset pages have no offset; the page decides) and the First / Next
  * links. Rendered by the queue between the list and the bulk toolbar (T086a
- * V10). A forward-only keyset, so Previous stays disabled. A plain component:
- * the page passes its strings from its own translator.
+ * V10). A forward-only keyset, so there is no Previous (AURA 5.84 #197,
+ * `showPrevious={false}`). A plain component: the page passes its strings
+ * from its own translator.
  */
 import { CursorPagination } from '@/components/layout/cursor-pagination';
 
@@ -27,6 +28,7 @@ export function QueuePagination({
   return (
     <CursorPagination
       label={label}
+      showPrevious={false}
       status={status !== null ? <span className="tabular-nums">{status}</span> : null}
       firstHref={firstPageHref ?? undefined}
       nextHref={nextPageHref ?? undefined}

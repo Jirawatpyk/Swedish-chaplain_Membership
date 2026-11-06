@@ -133,6 +133,8 @@ describe('renderChangeRequestQueueView', () => {
     await renderView({ ...base, hasMore: true, nextHref: '/admin/change-requests?state=pending&cursor=c2' });
     // PR P review L6 — the nav is named for its list, not AURA's generic default.
     const nav = screen.getByRole('navigation', { name: 'Change request pages' });
+    // Forward-only keyset: no Previous step at all (AURA 5.84 #197).
+    expect(nav).not.toHaveTextContent(/previous/i);
     expect(nav).toHaveClass('aura-pagination', 'aura-pagination--cursor');
     expect(screen.getByRole('link', { name: 'Next page' })).toHaveAttribute(
       'href',

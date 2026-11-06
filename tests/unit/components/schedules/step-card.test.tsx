@@ -278,3 +278,21 @@ describe('<StepCard> email and task fields', () => {
     expect(screen.getByRole('button', { name: S.actions.removeStep })).toBeDisabled();
   });
 });
+
+describe('StepCard on AURA Card (PR Q)', () => {
+  it('sits in an AURA Card (a div) whose h3 still heads the step', () => {
+    renderCard();
+    const heading = screen.getByRole('heading', { level: 3 });
+    const card = heading.closest('.aura-card');
+    expect(card).not.toBeNull();
+    expect(card?.tagName).toBe('DIV');
+    // Round 2 — our wrapper keeps the page's line-height under AURA's 1.7 card body.
+    expect(heading.parentElement?.parentElement).toHaveClass('leading-normal');
+  });
+
+  it('keeps the 16px step padding the board draws, not AURA Card\'s 24px (parity item 4)', () => {
+    renderCard();
+    const card = screen.getByRole('heading', { level: 3 }).closest('.aura-card');
+    expect(card).toHaveClass('[--aura-card-padding:var(--aura-space-4)]');
+  });
+});

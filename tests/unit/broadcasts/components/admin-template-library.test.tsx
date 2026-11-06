@@ -266,3 +266,14 @@ describe('<AdminTemplateLibrary> — R2.1 H-test-4', () => {
     }
   });
 });
+
+describe('<AdminTemplateLibrary> — filter-empty row on AURA (PR Q)', () => {
+  it('is AURA’s small EmptyState in the one cell, not a second live region', () => {
+    renderLibrary(FIXTURE_ROWS.filter((row) => row.isSeeded));
+    fireEvent.click(screen.getByRole('button', { name: /admin-authored/i }));
+    const state = screen.getByText(enMessages.admin.broadcasts.templates.filterEmpty).closest('.aura-empty');
+    expect(state).toHaveClass('is-sm');
+    expect(state).not.toHaveAttribute('role');
+    expect(state?.closest('td')).not.toBeNull();
+  });
+});

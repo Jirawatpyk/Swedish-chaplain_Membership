@@ -170,13 +170,6 @@ export function BenefitUsageCard({
       actions={
         !compact && staffActions !== undefined ? (
           <div className="flex shrink-0 items-center gap-2">{staffActions}</div>
-        ) : staff && compact && previewHref !== undefined ? (
-          <Link
-            href={previewHref}
-            className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
-          >
-            {t('card.staffPreviewLink')}
-          </Link>
         ) : undefined
       }
       footer={
@@ -270,6 +263,18 @@ export function BenefitUsageCard({
           </div>
         )}
       </div>
+      {staff && compact && previewHref !== undefined ? (
+        // The member page's one rule: the card header holds actions (buttons)
+        // and the "see the full page" link sits at the card's foot, an accent
+        // text link with an arrow, like Timeline and Renewal & Health.
+        <Link
+          href={previewHref}
+          className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+        >
+          {t('card.staffPreviewLink')}
+          <Icon name={<ArrowRight />} size={16} />
+        </Link>
+      ) : null}
     </Card>
   );
 }

@@ -34,6 +34,9 @@ import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { Suspense } from 'react';
 import { Card } from '@jirawatpyk/aura-react/server';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { RefreshPageButton } from '@/components/shell/refresh-page-button';
+import { EmptyState } from '@/components/shell/empty-state';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import Link from 'next/link';
 import { MembershipInvoiceAlertSection } from '../_components/membership-invoice-alert-section';
@@ -130,14 +133,32 @@ export default async function PortalInvoicesPage({
   // differs. Extracted to a local helper so the three branches keep their
   // own log/discriminate logic but share ONE byte-identical card shape (a
   // copy drifting would give members three subtly different empty states).
-  const messageState = (message: string): React.ReactElement => (
+  // PR Q — the card body is AURA's EmptyState (frameless inside the Card);
+  // not-linked stays a quiet empty state. A failed read (review round 2) is the
+  // shared LoadErrorCard — its alert, danger tone and icon — with a "Try
+  // again" that refreshes in place, keeping the URL and its query. The errors
+  // translator is fetched only on that path.
+  const messageState = (title: string, description?: string): React.ReactElement => (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <Card>
-        <p className="m-0 py-8 text-center text-[var(--aura-fg-secondary)]">{message}</p>
+        <EmptyState title={title} {...(description ? { description } : {})} bordered={false} announce={false} />
       </Card>
     </DetailContainer>
   );
+  const loadFailedState = async (): Promise<React.ReactElement> => {
+    const tErrors = await getTranslations('errors');
+    return (
+      <DetailContainer>
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <Card>
+          <LoadErrorCard card={false} message={t('loadFailed')}>
+            <RefreshPageButton label={tErrors('loadError.retry')} />
+          </LoadErrorCard>
+        </Card>
+      </DetailContainer>
+    );
+  };
 
   // Resolve the member linked to this user — if none, surface the
   // "not linked" empty state instead of listing zero rows (which
@@ -163,9 +184,9 @@ export default async function PortalInvoicesPage({
         },
         '[portal-invoices-list] member lookup failed — rendering error state',
       );
-      return messageState(t('loadFailed'));
+      return loadFailedState();
     }
-    return messageState(t('notLinked'));
+    return messageState(t('notLinkedTitle'), t('notLinked'));
   }
   const member = memberResult.value;
 
@@ -234,7 +255,7 @@ export default async function PortalInvoicesPage({
       },
       '[portal-invoices-list] listInvoicesPaged threw — rendering error state',
     );
-    return messageState(t('loadFailed'));
+    return loadFailedState();
   }
   const rawRows = pageData.rows;
   const total = pageData.total;
@@ -319,8 +340,11 @@ export async function renderPortalInvoicesView({
       {alert}
       {/* Below 1024px, where the rows turn into cards, the card frame drops
           away: those rows are cards of their own (the `Invoices-mobile`
-          board), not cards in a card (AURA `flushBelow`, #93). */}
-      <Card flushBelow="lg">
+          board), not cards in a card (AURA `flushBelow`, #93). AURA keeps the
+          padding (and a transparent 1px border), so `max-lg:border-0 max-lg:p-0`
+          drop them too: the row cards then line up
+          with the banner above (docs/aura-adoption.md, list pages). */}
+      <Card flushBelow="lg" className="max-lg:border-0 max-lg:p-0">
         <div className="flex flex-col gap-4">
           {/* Reuse the admin InvoiceFilters client component for UI parity
               (same FilterBar row, debounced search and Clear filters), but
@@ -341,11 +365,14 @@ export async function renderPortalInvoicesView({
             {...(rows.length > 0 || hasActiveFilter ? { resultCount: total } : {})}
           />
           {rows.length === 0 ? (
-            <div className="py-12 text-center">
-              <p className="m-0 text-[var(--aura-fg-secondary)]">
-                {hasActiveFilter ? t('filters.noMatch') : t('empty')}
-              </p>
-            </div>
+            // PR Q — AURA's EmptyState. Not a live region: with a filter on,
+            // the FilterBar's result count already announces the zero.
+            <EmptyState
+              title={hasActiveFilter ? t('filters.noMatch') : t('empty')}
+              {...(hasActiveFilter ? {} : { description: t('emptyBody') })}
+              bordered={false}
+              announce={false}
+            />
           ) : (
             <>
               {/* 060-member-portal-d4 — dual-render. Both forms consume the

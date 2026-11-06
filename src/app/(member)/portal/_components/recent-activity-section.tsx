@@ -13,6 +13,9 @@ import { ArrowRight } from 'lucide-react';
 import { Card, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { AuraCardSkeleton } from '@/components/shell/aura-card-skeleton';
+import { EmptyState } from '@/components/shell/empty-state';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { RecentActivityList } from './recent-activity-list';
 
 /**
@@ -49,7 +52,7 @@ export async function RecentActivitySection({
   const ownContact = await resolveOwnContactId(deps.contactRepo, tenant, asMemberId(memberId), userId, requestId);
   if (!ownContact.ok) {
     logger.warn({ requestId, errKind: ownContact.error.code }, '[dashboard-recent-activity] own contact unresolved');
-    return unavailableCard(t('title'), t('loadFailed'));
+    return unavailableCard(t('title'), t('loadFailed'), (await getTranslations('errors'))('loadError.retry'));
   }
   const result = await timelineList(
     { memberId, limit: PREVIEW_LIMIT },
@@ -80,7 +83,7 @@ export async function RecentActivitySection({
       { requestId, errKind: errKind(rootCause(result.error)) },
       '[dashboard-recent-activity] timelineList failed',
     );
-    return unavailableCard(t('title'), t('loadFailed'));
+    return unavailableCard(t('title'), t('loadFailed'), (await getTranslations('errors'))('loadError.retry'));
   }
 
   const events = result.value.events
@@ -92,13 +95,18 @@ export async function RecentActivitySection({
     // row of the body, left-aligned under a hairline, as the board draws it.
     <Card title={t('title')} headingLevel={2}>
       {events.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          {/* activity.empty.title = "No activity yet" (nested key, existing G2 key) */}
-          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('empty.title')}</p>
-          <Link href="/portal/benefits" className={buttonClass({ variant: 'secondary' })}>
-            {t('emptyCta')}
-          </Link>
-        </div>
+        // activity.empty.title = "No activity yet" (nested key, existing G2 key);
+        // PR Q — AURA's EmptyState, frameless inside the card, the CTA its action.
+        <EmptyState
+          announce={false}
+          title={t('empty.title')}
+          bordered={false}
+          action={
+            <Link href="/portal/benefits" className={buttonClass({ variant: 'secondary', touchHeight: true })}>
+              {t('emptyCta')}
+            </Link>
+          }
+        />
       ) : (
         <div className="flex flex-col">
           <RecentActivityList events={events} />
@@ -131,10 +139,14 @@ export function RecentActivitySkeleton(): React.JSX.Element {
 }
 
 /** The B2 "unavailable" state — one card for a failed list read and for an unresolved viewer contact. */
-function unavailableCard(title: string, body: string) {
+function unavailableCard(title: string, body: string, retryLabel: string) {
   return (
     <Card title={title} headingLevel={2}>
-      <p className="py-8 text-center text-sm text-[var(--aura-fg-secondary)]">{body}</p>
+      {/* PR Q review round 2 — the shared LoadErrorCard, bare inside the card
+          (alert, danger tone, icon), with a "Try again" that refreshes in place. */}
+      <LoadErrorCard card={false} message={body}>
+        <RefreshPageButton label={retryLabel} />
+      </LoadErrorCard>
     </Card>
   );
 }

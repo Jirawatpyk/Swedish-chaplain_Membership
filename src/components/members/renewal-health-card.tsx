@@ -21,6 +21,7 @@ import type { CycleStatus } from '@/modules/renewals/client';
 import { CYCLE_STATUS_TONE } from '@/components/renewals/cycle-status-tone';
 import type { EngagementBand } from '@/modules/insights';
 import { RenewLapsedMemberDialog } from '@/components/members/renew-lapsed-member-dialog';
+import { EmptyState } from '@/components/shell/empty-state';
 
 export interface RenewalHealthCardProps {
   /**
@@ -116,7 +117,8 @@ export function RenewalHealthCard({
           )}
         </div>
       ) : status === null ? (
-        <p className="text-sm text-[var(--aura-fg-secondary)]">{t('empty')}</p>
+        // PR Q — AURA's EmptyState, small and frameless inside the card.
+        <EmptyState title={t('empty')} size="sm" bordered={false} announce={false} />
       ) : (
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
           <div className="flex flex-col gap-1">

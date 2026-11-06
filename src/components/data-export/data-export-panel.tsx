@@ -28,6 +28,7 @@ import { Button, Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react'
 import { Icon, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import type { ExportStatus } from '@/modules/insights';
 import { exportStatusTone } from '@/lib/export-status-variant';
+import { EmptyState } from '@/components/shell/empty-state';
 
 export interface DataExportRow {
   readonly jobId: string;
@@ -150,9 +151,9 @@ export function DataExportPanel({
           <span className="aura-text-mono uppercase tracking-[0.04em]">{labels.statusHeading}</span>
         </h3>
         {rows.length === 0 ? (
-          <p className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] py-6 text-center text-sm text-[var(--aura-fg-secondary)]">
-            {labels.empty}
-          </p>
+          // PR Q — AURA's EmptyState. Not a live region: the panel's own
+          // sr-only status above announces a request's outcome.
+          <EmptyState title={labels.empty} size="sm" announce={false} />
         ) : (
           <>
             {/* The boards draw the list without a box: AURA's frameless, centred

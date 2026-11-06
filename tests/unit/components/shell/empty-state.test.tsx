@@ -55,3 +55,22 @@ describe('<EmptyState> on AURA (spec 122 #86)', () => {
     expect(container.firstElementChild).not.toHaveClass('is-bordered');
   });
 });
+
+describe('<EmptyState> tone and size (PR Q)', () => {
+  it('passes tone="danger" through to AURA, with its alert icon when none is given', () => {
+    const { container } = render(<EmptyState title="Could not load" tone="danger" data-testid="e" />);
+    const root = container.firstElementChild;
+    expect(root).toHaveClass('aura-empty');
+    expect(root?.className).toMatch(/danger/);
+    expect(root).toHaveAttribute('data-testid', 'e');
+    expect(root?.querySelector('.aura-empty__icon svg')).not.toBeNull();
+  });
+
+  it('stays neutral and md by default, and takes size="sm"', () => {
+    const { container, rerender } = render(<EmptyState title="Nothing here" />);
+    expect(container.firstElementChild?.className).not.toMatch(/danger/);
+    expect(container.firstElementChild).not.toHaveClass('is-sm');
+    rerender(<EmptyState title="Nothing here" size="sm" />);
+    expect(container.firstElementChild).toHaveClass('is-sm');
+  });
+});

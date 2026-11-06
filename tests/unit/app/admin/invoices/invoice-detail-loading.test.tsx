@@ -16,6 +16,7 @@ import DetailLoading from '@/app/(staff)/admin/invoices/[invoiceId]/loading';
 import VoidLoading from '@/app/(staff)/admin/invoices/[invoiceId]/void/loading';
 import CreditNoteLoading from '@/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/loading';
 import NotFound from '@/app/(staff)/admin/invoices/[invoiceId]/not-found';
+import AdminCreditNoteNotFound from '@/app/(staff)/admin/credit-notes/[creditNoteId]/not-found';
 
 async function dom(el: () => Promise<ReactElement> | ReactElement): Promise<HTMLElement> {
   const host = document.createElement('div');
@@ -62,5 +63,20 @@ describe('invoice not found', () => {
     const host = await dom(NotFound);
     expect(host.querySelector('[data-testid="invoice-not-found"]')).not.toBeNull();
     expect(host.querySelector('a[href="/admin/invoices"]')).toHaveClass('aura-btn');
+  });
+
+  it.each([
+    ['invoice', NotFound, 'invoice-not-found', '/admin/invoices'],
+    ['credit note', AdminCreditNoteNotFound, 'admin-credit-note-not-found', '/admin/credit-notes'],
+  ] as const)('the %s not-found is an AURA Card holding AURA’s EmptyState, the way back its action (PR Q)', async (_, Page, testId, href) => {
+    const host = await dom(Page);
+    const card = host.querySelector(`[data-testid="${testId}"]`);
+    expect(card).toHaveClass('aura-card');
+    const state = card?.querySelector('.aura-empty');
+    expect(state).not.toBeNull();
+    expect(state?.querySelector('p.aura-empty__title')).toHaveTextContent('notFound');
+    expect(state?.querySelector(`.aura-empty__action a[href="${href}"]`)).toHaveClass('aura-btn');
+    // Round 1 — the file-question icon, as the E-Blast not-found, not the empty inbox.
+    expect(state?.querySelector('.aura-empty__icon svg.lucide-file-question-mark')).not.toBeNull();
   });
 });

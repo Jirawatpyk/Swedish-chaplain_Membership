@@ -909,3 +909,23 @@ summary,
   }
 }
 
+
+/* PR Q — the member page's Invoices card keeps its frame on a phone, so its
+   stacked rows are one list divided by rules, not framed cards in a card.
+   The query is the table's wrapper (`@container/invoices`): the table stacks
+   under 640px and `bleed` makes it the card's two paddings wider than the
+   wrapper, so the wrapper is under 592px then.
+   stand-in until AURA #204 (DataTable has no `stackStyle: 'list'`). */
+@layer components {
+  @container invoices (width < 592px) {
+    .member-invoices-list .aura-table__row {
+      margin: 0;
+      padding-inline: 0;
+      border-width: 0 0 1px;
+      border-radius: 0;
+    }
+    .member-invoices-list .aura-table__row:last-child { border-bottom-width: 0; }
+    /* AURA pulls the ⋯ 8px into the row's side padding, which is 0 here. */
+    .member-invoices-list .aura-table__td[data-card='actions'] { margin-inline-end: 0; }
+  }
+}

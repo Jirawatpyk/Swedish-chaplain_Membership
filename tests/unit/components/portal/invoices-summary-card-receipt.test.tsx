@@ -304,3 +304,10 @@ describe('<InvoicesSummaryCard> — row layout + variant (090 UX findings #1/#3/
     expect(downloadProps.invoice).toEqual([expect.objectContaining({ iconOnly: true })]);
   });
 });
+
+describe('<InvoicesSummaryCard> — empty list on AURA (PR Q)', () => {
+  it('is AURA’s frameless EmptyState inside the card', async () => {
+    const html = await renderCardWith([]);
+    expect(html).toMatch(/<div class="aura-empty">.*<p class="aura-empty__title">/);
+  });
+});

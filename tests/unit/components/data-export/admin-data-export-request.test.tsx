@@ -107,3 +107,16 @@ describe('AdminDataExportRequest in a narrow column', () => {
     expect(screen.getByRole('table', { name: 'Recent requests' })).toHaveClass('aura-tbl--stack-sm');
   });
 });
+
+describe('AdminDataExportRequest — empty list on AURA (PR Q)', () => {
+  it('is AURA’s small EmptyState, not a live region (the panel’s status line announces)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
+        <AdminDataExportRequest contacts={CONTACTS} rows={[]} labels={LABELS} baseUrl="/api/admin/members/m-1/data-export" />
+      </NextIntlClientProvider>,
+    );
+    const state = screen.getByText(LABELS.empty).closest('.aura-empty');
+    expect(state).toHaveClass('is-sm', 'is-bordered');
+    expect(state).not.toHaveAttribute('role');
+  });
+});

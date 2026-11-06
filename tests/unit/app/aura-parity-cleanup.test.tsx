@@ -376,3 +376,66 @@ describe('PR B consistency (maintainer, 2 Oct)', () => {
     }
   });
 });
+
+describe('PR Q — page-level states on the shared EmptyState (pages without a render test)', () => {
+  it.each([
+    // Round 2: invite's failed read and every edit-page state are LoadErrorCard.
+    ['src/app/(member)/portal/contacts/invite/page.tsx', 2],
+    ['src/app/(staff)/admin/renewals/page.tsx', 1],
+  ])('%s renders its states through <EmptyState> (%i), not a hand-built centred paragraph', (file, count) => {
+    const s = src(file);
+    expect(s).toContain("import { EmptyState } from '@/components/shell/empty-state';");
+    expect(s.match(/<EmptyState\b/g)?.length).toBe(count);
+    expect(s).not.toMatch(/className="py-(12|\[var\(--aura-space-8\)\]) text-center"/);
+  });
+
+
+  it('round 1 — the invite page states are no live region (the old ones had none) and carry their own icons', () => {
+    const s = src('src/app/(member)/portal/contacts/invite/page.tsx');
+    expect(s.match(/<EmptyState\b[^>]*announce=\{false\}/g)).toHaveLength(2);
+    expect(s).toContain(`<EmptyState icon={UserX} title={t('notLinkedTitle')} description={t('notLinked')}`);
+    expect(s).toContain(`<EmptyState icon={Lock} title={t('notPrimary')}`);
+  });
+
+  it('the renewals feature-off notice keeps its polite status region', () => {
+    expect(src('src/app/(staff)/admin/renewals/page.tsx')).toMatch(
+      /<div role="status" aria-live="polite">\s*<EmptyState icon=\{PowerOff\} title=\{t\('error\.featureDisabledTitle'\)\} description=\{t\('error\.featureDisabled'\)\}/,
+    );
+  });
+});
+
+describe('PR Q round 2 — failed reads on the render-less pages are LoadErrorCard with a refresh', () => {
+  it('the invite page’s failed read is LoadErrorCard with RefreshPageButton', () => {
+    expect(src('src/app/(member)/portal/contacts/invite/page.tsx')).toMatch(
+      /<LoadErrorCard message=\{t\('loadError'\)\}>\s*<RefreshPageButton label=\{\(await getTranslations\('errors'\)\)\('loadError\.retry'\)\} \/>/,
+    );
+  });
+
+  it('every edit-page loadError offers the refresh; notLinked does not; no URL rebuilt', () => {
+    const s = src('src/app/(member)/portal/edit/page.tsx');
+    expect(s).toMatch(/<LoadErrorCard message=\{message\}>\s*\{retryLabel \? <RefreshPageButton label=\{retryLabel\} \/> : null\}/);
+    expect(s.match(/loadFailed\(t\('pageTitle'\), t\('loadError'\), await retryLabel\(\)\)/g)).toHaveLength(4);
+    expect(s).not.toMatch(/loadFailed\(t\('pageTitle'\), t\('loadError'\)\)/);
+    expect(s.match(/loadFailed\(t\('pageTitle'\), t\('notLinked'\)\)/g)).toHaveLength(2);
+    expect(s).not.toMatch(/sameUrlHref|<Link\b/);
+  });
+});
+
+describe('PR Q parity item 1 — every empty dashboard card uses the same EmptyState', () => {
+  // The two chart cards moved to AURA's EmptyState; the other five kept a
+  // muted <p>, so an empty dashboard mixed two looks. All seven now match.
+  it.each([
+    ['src/components/dashboard/_mini-series-chart.tsx', false],
+    ['src/components/dashboard/activity-feed.tsx', false],
+    ['src/components/dashboard/insights-panel.tsx', true],
+    ['src/components/dashboard/needs-attention-list.tsx', true],
+  ])('%s renders its empty label through <EmptyState size="sm"> (announced: %s)', (file, announced) => {
+    const s = src(file);
+    expect(s).toContain("import { EmptyState } from '@/components/shell/empty-state';");
+    expect(s).toMatch(/<EmptyState\b[^>]*title=\{emptyLabel\}[^>]*size="sm"[^>]*bordered=\{false\}/);
+    expect(s).not.toMatch(/>\s*\{emptyLabel\}\s*<\/p>/);
+    // The two lists that announced their all-clear keep the status role.
+    if (announced) expect(s).not.toMatch(/<EmptyState\b[^>]*title=\{emptyLabel\}[^>]*announce=\{false\}/);
+    else expect(s).toMatch(/<EmptyState\b[^>]*title=\{emptyLabel\}[^>]*announce=\{false\}/);
+  });
+});

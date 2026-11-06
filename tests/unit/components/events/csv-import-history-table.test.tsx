@@ -63,6 +63,7 @@ const MESSAGES = {
           backToImport: 'Back to import',
           downloadErrorCsv: 'Download error CSV',
           cardSummary: '{source} · {processed} processed · {skipped} skipped · {failed} failed',
+          cardSummaryLabel: 'Summary',
           downloadErrorCsvAriaLabel: 'Download error CSV for import {recordId}',
           expiredBadge: 'Expired',
           expiredTooltip:
@@ -242,5 +243,12 @@ describe('<CsvImportHistoryTable> list pattern (US9b-2 parity)', () => {
     expect(
       screen.getByText('EventCreate · 8 processed · 1 skipped · 1 failed'),
     ).toBeInTheDocument();
+  });
+
+  it('names the summary column, so a screen reader never hears its key (R143)', () => {
+    renderTable([makeRow('completed', 0)]);
+    const headers = screen.getAllByRole('columnheader', { hidden: true }).map((h) => h.textContent?.trim());
+    expect(headers).toContain('Summary');
+    expect(headers).not.toContain('cardSummary');
   });
 });

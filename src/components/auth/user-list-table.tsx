@@ -9,7 +9,7 @@
  * Keeps the parent server component free of 'use client' noise.
  */
 import { useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import {
@@ -36,6 +36,7 @@ import {
   type MenuItem,
 } from '@jirawatpyk/aura-react';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+import { EmptyState } from '@/components/shell/empty-state';
 import { ChangeRoleDialog, CHANGE_ROLE_OPTIONS } from '@/components/auth/change-role-dialog';
 import { ROLE_BADGE_STYLE } from '@/components/auth/role-badge-style';
 // The deep path (rather than the `@/modules/auth` barrel) matches the
@@ -162,6 +163,10 @@ export function UserListTable({
   const t = useTranslations('admin.users');
   const tErrors = useTranslations('errors');
   const router = useRouter();
+  // A search or a filter that matches nobody is not an empty tenant (R143b):
+  // the same params `users-filters.tsx` writes.
+  const searchParams = useSearchParams();
+  const filtered = ['q', 'role', 'status'].some((k) => (searchParams.get(k) ?? '') !== '');
   const [pending, setPending] = useState<PendingAction>(null);
   const [roleChangeUser, setRoleChangeUser] = useState<UserRow | null>(null);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
@@ -593,8 +598,11 @@ export function UserListTable({
               })}
               {users.length === 0 ? (
                 <Tr>
-                  <Td colSpan={5} className="text-center text-[var(--aura-fg-secondary)]">
-                    {t('empty')}
+                  <Td colSpan={5}>
+                    {/* PR Q — AURA's EmptyState at the cell size. Not a live
+                        region: the table and the phone list both render it,
+                        so one announcer each would read it twice. */}
+                    <EmptyState title={t(filtered ? 'emptyFiltered' : 'empty')} description={t(filtered ? 'emptyFilteredBody' : 'emptyBody')} size="sm" bordered={false} announce={false} />
                   </Td>
                 </Tr>
               ) : null}
@@ -636,7 +644,11 @@ export function UserListTable({
               </li>
             );
           })}
-          {users.length === 0 ? <li className="text-center text-[var(--aura-fg-secondary)]">{t('empty')}</li> : null}
+          {users.length === 0 ? (
+            <li>
+              <EmptyState title={t(filtered ? 'emptyFiltered' : 'empty')} description={t(filtered ? 'emptyFilteredBody' : 'emptyBody')} size="sm" announce={false} />
+            </li>
+          ) : null}
         </ul>
       ) : null}
 

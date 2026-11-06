@@ -38,6 +38,7 @@ import {
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { Card, Icon, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import { cn } from '@/lib/utils';
+import { EmptyState } from '@/components/shell/empty-state';
 import {
   formatDate,
   formatSatangThb,
@@ -195,7 +196,8 @@ export function InvoicesSummaryView({
     // the body (left-aligned), as the board draws it.
     <Card title={t('summary.heading')} description={t('summary.description')} headingLevel={2}>
         {rows.length === 0 ? (
-          <p className="text-sm text-[var(--aura-fg-secondary)]">{t('empty')}</p>
+          // PR Q — AURA's EmptyState, frameless inside the card.
+          <EmptyState title={t('empty')} description={t('emptyBody')} bordered={false} announce={false} />
         ) : (
           <>
           <ul>

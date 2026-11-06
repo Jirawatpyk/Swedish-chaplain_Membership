@@ -294,8 +294,9 @@
     "contactConfirmBody": "Please confirm whether your name and email are published. Until you save, the directory shows your name only and hides your email.",
     "notPrimaryContact": "Only your company's primary contact can change whether their name and email are published.",
     "previewUnsaved": "Preview of unsaved changes",
-    "previewNotListed": "Not listed — your organisation won't appear in the directory.",
-    "previewEmpty": "No details selected — your organisation won't appear in the directory.",
+    "previewNotListed": "Not listed",
+    "previewHiddenBody": "Your organisation won't appear in the directory.",
+    "previewEmpty": "No details selected",
     "previewContactForm": "Contact via the chamber",
     "saved": "Directory listing saved.",
     "saveFailed": "Could not save. Please check your details and try again.",
@@ -688,7 +689,10 @@
     "users": {
       "title": "Users",
       "pageSubtitle": "Manage staff and member accounts, roles, and status.",
-      "empty": "No users yet. Invite the first one to get started.",
+      "empty": "No users yet",
+      "emptyBody": "Invite the first one to get started.",
+      "emptyFiltered": "No users match your filters",
+      "emptyFilteredBody": "Try another search, or clear the filters.",
       "erasedAccount": "Erased account",
       "filters": {
         "searchPlaceholder": "Search by email or display name",
@@ -3141,7 +3145,8 @@
           "erasedTooltip": "This attendee's personal data has been erased — they can no longer be invoiced.",
           "empty": {
             "none": "This event has no registered attendees yet.",
-            "allErased": "All attendees for this event have had their personal data erased and cannot be invoiced."
+            "allErased": "All attendees for this event have had their personal data erased and cannot be invoiced.",
+            "allErasedTitle": "No attendees to invoice"
           }
         },
         "buyer": {
@@ -4643,6 +4648,7 @@
       },
       "error": {
         "featureDisabled": "The renewals workflow is not yet enabled for this chamber.",
+        "featureDisabledTitle": "Renewals not enabled",
         "loadFailed": "Could not load the renewal pipeline.",
         "retry": "Try again",
         "retrying": "Retrying…",
@@ -6003,6 +6009,7 @@
           },
           "downloadErrorCsv": "Download error CSV",
           "cardSummary": "{source} · {processed} processed · {skipped} skipped · {failed} failed",
+          "cardSummaryLabel": "Summary",
           "downloadErrorCsvAriaLabel": "Download error CSV for import {recordId}",
           "expiredBadge": "Expired",
           "expiredTooltip": "The error CSV for this import expired after 30 days. Re-run the import to regenerate.",
@@ -6033,7 +6040,9 @@
         "searchPlaceholder": "attendee@example.com",
         "searchSubmit": "Search",
         "emptyPrompt": "Enter a data subject's email above to find every event registration that shares it.",
-        "noMatches": "No event registrations share this email. Nothing to erase.",
+        "emptyPromptTitle": "Search by email",
+        "noMatches": "No matching registrations",
+        "noMatchesBody": "No event registrations share this email, so there is nothing to erase.",
         "resultsCount": "{count, plural, =0 {No registrations found} one {1 registration found} other {# registrations found}}",
         "columns": {
           "event": "Event",
@@ -6199,7 +6208,8 @@
           },
           "recentDeliveries": {
             "title": "Recent deliveries",
-            "empty": "No recent deliveries yet. Trigger a Zap or press \"Send test event\" to see traffic.",
+            "empty": "No recent deliveries yet",
+            "emptyBody": "Trigger a Zap or press \"Send test event\" to see traffic.",
             "includeTestDeliveriesLabel": "Include test deliveries",
             "updating": "Updating recent deliveries…",
             "listSummary": "{count, plural, =0 {No recent deliveries} one {# delivery shown} other {# deliveries shown}}",
@@ -6751,9 +6761,11 @@
     "invoices": {
       "title": "Invoices",
       "subtitle": "Your company's invoices and tax receipts.",
-      "empty": "No invoices yet. Invoices will appear here once issued.",
+      "empty": "No invoices yet",
+      "emptyBody": "Invoices will appear here once issued.",
       "loadFailed": "We couldn't load your invoices right now. Please refresh the page or try again in a moment.",
       "notLinked": "Your account is not linked to a member. Please contact your administrator.",
+      "notLinkedTitle": "Account not linked",
       "loaded": "Invoices list loaded.",
       "columns": {
         "documentNumber": "Invoice No.",
@@ -7381,6 +7393,7 @@
     "profile": {
       "pageTitle": "My Profile",
       "notLinked": "Your account is not linked to a member. Please contact your administrator.",
+      "notLinkedTitle": "Account not linked",
       "loadError": "Could not load your profile. Please try again.",
       "editButton": "Edit Profile",
       "organisationSection": "Organisation",
@@ -7648,6 +7661,7 @@
     "invite": {
       "pageTitle": "Invite colleague",
       "notLinked": "Your account is not linked to a member.",
+      "notLinkedTitle": "Account not linked",
       "loadError": "Could not load your profile.",
       "notPrimary": "Only the primary contact can invite colleagues.",
       "formTitle": "Colleague details",
@@ -8807,7 +8821,7 @@
       "lastUsed": "Last used {date}",
       "activeHeading": "Included benefits",
       "staffPreviewTitle": "Benefits",
-      "staffPreviewLink": "Details",
+      "staffPreviewLink": "View benefits",
       "liveNote": "Updated on load · current year",
       "emptyTitle": "No tracked benefits",
       "fullBenefits": "Full benefits",
