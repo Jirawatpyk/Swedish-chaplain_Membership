@@ -361,3 +361,100 @@ describe('spec 139 s2 DA1 — tick 1 writes broadcast_audience_disclosed before 
     expect(h.rowsOf(DISCLOSED)).toHaveLength(1);
   });
 });
+
+const TICK2_ROW = {
+  resendAudienceId: 'aud-1',
+  audienceImportId: 'imp-1',
+  audienceImportSubmittedAt: new Date(NOW.getTime() - 600_000),
+};
+
+describe('spec 139 s2 DA2 — the restart teardown writes broadcast_audience_deleted before its delete gate', () => {
+  it.each([
+    ['hold', { row: { ...TICK2_ROW, resendAudienceId: 'aud-held' }, standing: { access: 'suspended' as const } }, 'aud-held'],
+    ['stale_audience', { row: { resendAudienceId: 'aud-stale' } }, 'aud-stale'],
+    [
+      'audience_missing',
+      { row: { ...TICK2_ROW, resendAudienceId: 'aud-gone' }, createBroadcastThrows: { kind: 'permanent', code: 'not_found' } },
+      'aud-gone',
+    ],
+  ] as const)('restart %s: the deleted row, then the delete_audience gate, then the delete', async (reason, o, audienceId) => {
+    const counted = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
+    const h = harness(o);
+    await h.run();
+    const at = h.events.indexOf(`audit:${DELETED}`);
+    expect(at).toBeGreaterThan(-1);
+    expect(h.events.slice(at - 1, at + 3)).toEqual([
+      `dedupe:${audienceId}`,
+      `audit:${DELETED}`,
+      `check:${CALL_HEADROOM_MS}:held`,
+      `gw:deleteAudience:${audienceId}`,
+    ]);
+    const rows = h.rowsOf(DELETED);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({
+      eventType: DELETED,
+      tenantId: tenant.slug,
+      actorUserId: 'system:cron',
+      requestId: null,
+      payload: {
+        broadcast_id: BROADCAST_ID,
+        related_member_id: 'm-1',
+        resend_audience_id: audienceId,
+        reason,
+        leg: 'import',
+        actor_role: 'system',
+      },
+    });
+    expect(JSON.stringify(rows[0])).not.toContain('@');
+    expect(counted).toHaveBeenCalledWith(tenant.slug, DELETED);
+  });
+
+  it('a second attempt on the same segment writes no second row (dedupe), and the delete still runs', async () => {
+    const prior: AuditRow = {
+      eventType: DELETED,
+      tenantId: tenant.slug,
+      actorUserId: 'system:cron',
+      requestId: null,
+      payload: { broadcast_id: BROADCAST_ID, related_member_id: 'm-1', resend_audience_id: 'aud-stale', reason: 'hold', leg: 'import', actor_role: 'system' },
+    };
+    const h = harness({ row: { resendAudienceId: 'aud-stale' }, priorAudits: [prior] });
+    await h.run();
+    expect(h.events).toContain('dedupe:aud-stale');
+    expect(h.rowsOf(DELETED)).toEqual([]);
+    expect(h.events).toContain('gw:deleteAudience:aud-stale');
+  });
+
+  it('the gate stops the delete: the row stays (it records the request) and no delete is made', async () => {
+    const h = harness({ row: { resendAudienceId: 'aud-stale' }, checks: ['lost'] });
+    await h.run();
+    expect(h.rowsOf(DELETED)).toHaveLength(1);
+    expect(h.events.some((e) => e.startsWith('gw:deleteAudience'))).toBe(false);
+  });
+
+  it('a lease lost at the import gate after the disclosed row: the next tick deletes that segment and records it (stale_audience)', async () => {
+    const first = harness({ checks: ['held', 'lost'] });
+    await first.run();
+    expect(first.rowsOf(DISCLOSED)).toHaveLength(1);
+    const next = harness({ row: { resendAudienceId: 'aud-new' }, priorAudits: first.audits });
+    await next.run();
+    expect(next.rowsOf(DELETED).map((r) => r.payload['reason'])).toEqual(['stale_audience']);
+    expect(next.events).toContain('gw:deleteAudience:aud-new');
+  });
+
+  it('a storage failure of the deleted row logs ERROR and counts it, and the delete still runs', async () => {
+    const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
+    const h = harness({ row: { resendAudienceId: 'aud-stale' }, auditThrows: { eventType: DELETED, kind: 'storage' } });
+    await h.run();
+    expect(h.events).toContain('gw:deleteAudience:aud-stale');
+    expect(errorLogged('broadcasts.audience_import.audience_audit_lost')).toEqual([
+      expect.objectContaining({ eventType: DELETED, resendAudienceId: 'aud-stale', err: 'Error', severity: 'critical' }),
+    ]);
+    expect(failed).toHaveBeenCalledWith(DELETED, tenant.slug);
+  });
+
+  it('an adapter invariant error is rethrown before the delete', async () => {
+    const h = harness({ row: { resendAudienceId: 'aud-stale' }, auditThrows: { eventType: DELETED, kind: 'invariant' } });
+    await expect(h.run()).rejects.toBeInstanceOf(AuditPortInvariantError);
+    expect(h.events.some((e) => e.startsWith('gw:deleteAudience'))).toBe(false);
+  });
+});
