@@ -284,6 +284,21 @@ In AO1, the structural-check cells are replaced by the single normalised-indexde
 
 Also: `pnpm check` exit 0 (red-first: 48 commits); unit + contract 587 files, 7747 passed; `audit/completeness` 45, `tx-tenant-binding-guard` 4, `audience-cleanup` 5.
 
+### Verify (the maintainer's `/verify`, 7 Nov 2026, on `e433385a1`): PASS
+
+:3401 from `wt/f142b`, Neon dev (0328 applied), the live Resend account, sink addresses only, throwaway tenant `test-645e0db9`.
+
+| Item | Evidence |
+|---|---|
+| AO6 hold, live Resend | Tick 1 → `import_submitted: 1`, real segment `3e20ce6a…`, one disclosed row (count 3). The requester was then suspended by a latest `renewal_cycles` row `awaiting_payment` with a future `expires_at` and a NULL `awaiting_entered_at`, not by the halt flag. Tick 2 → `held: 1`. Exactly one `broadcast_audience_deleted` row: `reason: 'hold'`, that segment, `related_member_id` = the requester, no `@`. The segment answers 404 at Resend, and the row's segment and import columns are cleared. Tick 3 → `held: 1` again, and still exactly 1 deleted row for the segment |
+| AO3 restart `stale_audience` | Row B: approved, holding a real segment `2e0e0355…`, no import id. One tick → `audience_restarted: 1`. One deleted row: `reason: 'stale_audience'`, row B, segment B. The segment answers 404 |
+| Index | Read-only: `pg_get_indexdef` = `CREATE UNIQUE INDEX audit_log_audience_deleted_once ON public.audit_log USING btree (tenant_id, ((payload ->> 'resend_audience_id'::text))) WHERE (event_type = 'broadcast_audience_deleted'::audit_event_type)`, `indisvalid` true, `indisunique` true |
+| Probe | A wrong Bearer → 401 |
+| Log | The dev log, ANSI stripped: 21 `INFO:` lines (the positive control), 0 `WARN:` / `ERROR:` lines, 0 `audience_audit_lost` / `audit_invariant` / `audience_audit_lock_timeout` lines |
+
+**Teardown:** the tenant, its rows and its renewal cycle are removed (0 `broadcasts` rows). At Resend, both segments were deleted by the code under test, and the 3 sink contacts were deleted by id. The account is back at 22 contacts, with only `General`.
+
+
 ## Rollout
 - Unflagged.
 - Migration 0328 runs on deploy, before the code serves.
