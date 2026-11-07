@@ -60,6 +60,7 @@ import {
   orphanStuckCutoff,
 } from '../../domain/value-objects/orphaned-resend-id';
 import { orphanStuckSql } from './_orphan-stuck-sql';
+import { AUDIENCE_DELETED_ID_EXPR_SQL, AUDIENCE_DELETED_PREDICATE_SQL } from './audience-audit-index';
 import { AUDIENCE_AUDIT_PAYLOAD_KEYS, AuditPortInvariantError } from '../../application/ports/audit-port';
 import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
@@ -1834,12 +1835,12 @@ export function makeDrizzleBroadcastsRepo(
      * See the port docblock. Spec 142: a lockless read (the dedupe is
      * migration 0328's index, written through `f7AuditAdapter.emitOnce`).
      * `tenant_id = ${tenantIdArg}` is load-bearing (the `audit_log` policy also
-     * admits `tenant_id IS NULL` rows). The payload key is written as the
-     * literal `payload->>'resend_audience_id'`
-     * (`AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId`, pinned by
-     * `audience-audit-sites.test.ts`), not a bound parameter, so the expression
-     * is migration 0328's index expression (review round 1, migration L1).
-     * Read only for a reclaimed segment with no disclosure.
+     * admits `tenant_id IS NULL` rows). The predicate and the payload key
+     * expression are migration 0328's own, spliced with `sql.raw` from
+     * `audience-audit-index.ts` (spec 143 TT1; pinned by
+     * `audience-audit-sites.test.ts`), never a bound parameter, so the read
+     * matches the index (review round 1, migration L1). Read only for a
+     * reclaimed segment with no disclosure.
      */
     async hasAudienceDeletedAuditInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string): Promise<boolean> {
       const tx = txUnknown as TenantTx;
@@ -1849,8 +1850,8 @@ export function makeDrizzleBroadcastsRepo(
           SELECT 1
           FROM audit_log
           WHERE tenant_id = ${tenantIdArg}
-            AND event_type = 'broadcast_audience_deleted'
-            AND payload->>'resend_audience_id' = ${resendAudienceId}::text
+            AND ${sql.raw(AUDIENCE_DELETED_PREDICATE_SQL)}
+            AND ${sql.raw(AUDIENCE_DELETED_ID_EXPR_SQL)} = ${resendAudienceId}::text
         ) AS found
       `)) as unknown as Array<{ found: boolean | 't' | 'f' }>;
       return rows[0]?.found === true || rows[0]?.found === 't';
