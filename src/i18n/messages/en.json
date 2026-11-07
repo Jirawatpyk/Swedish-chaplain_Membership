@@ -1472,7 +1472,8 @@
         "searchPlaceholderShort": "Company, contact, email or member no.",
         "sort": {
           "label": "Sort by",
-          "default": "Default order",
+          "announce": "Sorted: {option}",
+          "default": "Recent activity first",
           "memberNumberAsc": "Member No., lowest first",
           "memberNumberDesc": "Member No., highest first",
           "engagementDesc": "Engagement, healthiest first",
@@ -4492,7 +4493,8 @@
           "ascending": "Sorted ascending",
           "descending": "Sorted descending",
           "phoneLabel": "Sort by",
-          "expiresAsc": "Expires, soonest first",
+          "announce": "Sorted: {option}",
+          "expiresAsc": "Expires, earliest first",
           "expiresDesc": "Expires, latest first",
           "tierAsc": "Tier, lowest first",
           "tierDesc": "Tier, highest first"

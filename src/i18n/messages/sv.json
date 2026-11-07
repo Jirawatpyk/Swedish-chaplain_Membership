@@ -1472,7 +1472,8 @@
         "searchPlaceholderShort": "Företag, kontakt, e-post eller medlemsnr",
         "sort": {
           "label": "Sortera efter",
-          "default": "Standardordning",
+          "announce": "Sorterat: {option}",
+          "default": "Senaste aktivitet först",
           "memberNumberAsc": "Medlemsnr, lägst först",
           "memberNumberDesc": "Medlemsnr, högst först",
           "engagementDesc": "Engagemang, bäst först",
@@ -4492,6 +4493,7 @@
           "ascending": "Sorterat stigande",
           "descending": "Sorterat fallande",
           "phoneLabel": "Sortera efter",
+          "announce": "Sorterat: {option}",
           "expiresAsc": "Går ut, tidigast först",
           "expiresDesc": "Går ut, senast först",
           "tierAsc": "Nivå, lägst först",

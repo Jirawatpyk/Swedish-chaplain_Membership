@@ -180,10 +180,11 @@ export function PipelineTable({
       if (!sortHrefs) return;
       const url = new URL(sortHrefs.expires, 'http://x');
       url.searchParams.set('sort', value);
-      router.push(`${url.pathname}?${url.searchParams.toString()}`);
+      router.push(`${url.pathname}?${url.searchParams.toString()}`, { scroll: false });
     },
     [sortHrefs, router],
   );
+  const announceSort = useCallback((option: string) => t('sort.announce', { option }), [t]);
 
   const columns = useMemo<DataTableColumn<PipelineRow>[]>(
     () => [
@@ -324,49 +325,50 @@ export function PipelineTable({
           child beside the table. */}
       <Fragment key="result-count">{resultCount}</Fragment>
       <div className={CARD_SORT_CONTAINER}>
-      {sortable ? (
-        <CardSortSelect
-          label={t('sort.phoneLabel')}
-          value={sort ?? 'expires_at_asc'}
-          options={[
-            { value: 'expires_at_asc', label: t('sort.expiresAsc') },
-            { value: 'expires_at_desc', label: t('sort.expiresDesc') },
-            { value: 'tier_asc', label: t('sort.tierAsc') },
-            { value: 'tier_desc', label: t('sort.tierDesc') },
-          ]}
-          onChange={handleCardSort}
-        />
-      ) : null}
-      <AuraProvider strings={tableStrings}>
-        <DataTable<PipelineRow>
-          label={t('tableCaption')}
-          rows={rows}
-          columns={columns}
-          rowKey="cycleId"
-          manual
-          sort={tableSort}
-          onSortChange={handleSortChange}
-          rowHeight="auto"
-          stackBelow={640}
-          // Edge to edge inside the list card from 640px up (AURA 5.27, #130);
-          // the bulk bar and "Next 50" can follow, so it does not end the card.
-          bleed
-          empty={empty}
-          {...(enableSelection
-            ? {
-                selectable: true,
-                rangeSelect: true,
-                selected,
-                onSelectionChange: handleSelectionChange,
-                // An empty company would read "Select " (M-3).
-                rowSelectLabel: (row: PipelineRow) =>
-                  row.companyName
-                    ? t('selectRow', { company: row.companyName })
-                    : t('selectRowGeneric'),
-              }
-            : {})}
-        />
-      </AuraProvider>
+        {sortable && rows.length > 1 ? (
+          <CardSortSelect
+            label={t('sort.phoneLabel')}
+            value={sort ?? 'expires_at_asc'}
+            options={[
+              { value: 'expires_at_asc', label: t('sort.expiresAsc') },
+              { value: 'expires_at_desc', label: t('sort.expiresDesc') },
+              { value: 'tier_asc', label: t('sort.tierAsc') },
+              { value: 'tier_desc', label: t('sort.tierDesc') },
+            ]}
+            onChange={handleCardSort}
+            announce={announceSort}
+          />
+        ) : null}
+        <AuraProvider strings={tableStrings}>
+          <DataTable<PipelineRow>
+            label={t('tableCaption')}
+            rows={rows}
+            columns={columns}
+            rowKey="cycleId"
+            manual
+            sort={tableSort}
+            onSortChange={handleSortChange}
+            rowHeight="auto"
+            stackBelow={640}
+            // Edge to edge inside the list card from 640px up (AURA 5.27, #130);
+            // the bulk bar and "Next 50" can follow, so it does not end the card.
+            bleed
+            empty={empty}
+            {...(enableSelection
+              ? {
+                  selectable: true,
+                  rangeSelect: true,
+                  selected,
+                  onSelectionChange: handleSelectionChange,
+                  // An empty company would read "Select " (M-3).
+                  rowSelectLabel: (row: PipelineRow) =>
+                    row.companyName
+                      ? t('selectRow', { company: row.companyName })
+                      : t('selectRowGeneric'),
+                }
+              : {})}
+          />
+        </AuraProvider>
       </div>
       {outreachFor ? (
         <OutreachDialog

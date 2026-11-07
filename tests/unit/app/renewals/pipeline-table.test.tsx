@@ -614,38 +614,55 @@ describe('<PipelineTable> phone sort menu (AURA 5.87)', () => {
     expires: '/admin/renewals?urgency=t-30&sort=expires_at_desc',
     tier: '/admin/renewals?urgency=t-30&sort=tier_asc',
   };
+  const TWO_ROWS: ReadonlyArray<PipelineRow> = [
+    ONE_ROW[0]!,
+    { ...ONE_ROW[0]!, cycleId: 'cyc-2' as PipelineRow['cycleId'], memberId: 'mem-2', companyName: 'Beta Co' },
+  ];
+  const S = en.admin.renewals.table.sort;
+
   it('offers Expires and Tier both ways, with the active sort selected', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={EMPTY_ROWS} canMutate sort="expires_at_asc" sortHrefs={sortHrefs} />
+        <PipelineTable rows={TWO_ROWS} canMutate sort="expires_at_asc" sortHrefs={sortHrefs} />
       </NextIntlClientProvider>,
     );
-    const S = en.admin.renewals.table.sort;
     const select = nativeSelect(S.phoneLabel);
-    expect(select.closest('[data-card-sort]')).toHaveClass('@min-[592px]/cardsort:hidden');
+    expect(select.closest('[data-card-sort]')).toHaveClass('sm:@min-[592px]/cardsort:hidden');
     expect([...select.options].map((o) => o.textContent)).toEqual([S.expiresAsc, S.expiresDesc, S.tierAsc, S.tierDesc]);
     expect(select.value).toBe('expires_at_asc');
   });
 
-  it('choosing an order follows the page sort link with that sort', () => {
+  it('choosing an order follows the page sort link with that sort, then announces it once it has arrived', () => {
     routerPush.mockClear();
-    render(
+    const ui = (sort: 'expires_at_asc' | 'tier_desc') => (
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={EMPTY_ROWS} canMutate sort="expires_at_asc" sortHrefs={sortHrefs} />
-      </NextIntlClientProvider>,
+        <PipelineTable rows={TWO_ROWS} canMutate sort={sort} sortHrefs={sortHrefs} />
+      </NextIntlClientProvider>
     );
-    fireEvent.change(nativeSelect(en.admin.renewals.table.sort.phoneLabel), {
-      target: { value: 'tier_desc' },
-    });
-    expect(routerPush).toHaveBeenCalledWith('/admin/renewals?urgency=t-30&sort=tier_desc');
+    const { container, rerender } = render(ui('expires_at_asc'));
+    fireEvent.change(nativeSelect(S.phoneLabel), { target: { value: 'tier_desc' } });
+    expect(routerPush).toHaveBeenCalledWith('/admin/renewals?urgency=t-30&sort=tier_desc', { scroll: false });
+    // The menu shows the pick at once; nothing is announced until the URL catches up.
+    expect(nativeSelect(S.phoneLabel).value).toBe('tier_desc');
+    const status = container.querySelector('[data-card-sort-status]');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(status).toHaveTextContent('');
+    rerender(ui('tier_desc'));
+    expect(status).toHaveTextContent(S.announce.replace('{option}', S.tierDesc));
   });
 
-  it('shows no menu when the list is not sortable', () => {
-    render(
+  it('shows no menu when the list is not sortable or has one row', () => {
+    const { rerender } = render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={EMPTY_ROWS} canMutate />
+        <PipelineTable rows={TWO_ROWS} canMutate />
       </NextIntlClientProvider>,
     );
-    expect(screen.queryByRole('combobox', { name: en.admin.renewals.table.sort.phoneLabel })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: S.phoneLabel })).toBeNull();
+    rerender(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={ONE_ROW} canMutate sort="expires_at_asc" sortHrefs={sortHrefs} />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByRole('combobox', { name: S.phoneLabel })).toBeNull();
   });
 });

@@ -117,25 +117,42 @@ function nativeSelect(name: string): HTMLSelectElement {
   return native;
 }
 
+const row2 = { ...row, member_id: 'm2', member_number_display: 'TSCC-0004', company_name: 'Baltic Bay' } as MembersTableRow;
+
+function renderSortable(rows: MembersTableRow[] = [row, row2]) {
+  return render(
+    <NextIntlClientProvider locale="en" messages={messages}>
+      <MembersTable rows={rows} total={rows.length} enableSelection canEdit />
+    </NextIntlClientProvider>,
+  );
+}
+
 // AURA 5.87 takes the grid's sort headers out of the cards, so the phone has
 // its own visible "Sort by" menu, shown only while the cards show; it writes
 // the same `?sort=&order=&page=1` URL as the headers.
 describe('members phone sort menu (AURA 5.87)', () => {
+  const S = messages.admin.members.directory.sort;
+
   it('offers the two sortable columns both ways, shown only while the cards show', () => {
-    const { container } = renderTable();
-    const select = nativeSelect(messages.admin.members.directory.sort.label);
-    expect(select.closest('[data-card-sort]')).toHaveClass('@min-[592px]/cardsort:hidden');
+    const { container } = renderSortable();
+    const select = nativeSelect(S.label);
+    // Below `sm` the host card is flush, so the table always stacks there: the
+    // menu hides only from `sm` up AND a 592px wrapper (a11y review M1).
+    expect(select.closest('[data-card-sort]')).toHaveClass('sm:@min-[592px]/cardsort:hidden');
     expect(container.querySelector('.\\@container\\/cardsort')).not.toBeNull();
     const labels = [...select.querySelectorAll('option')].map((o) => o.textContent);
-    const S = messages.admin.members.directory.sort;
     expect(labels).toEqual([S.default, S.memberNumberAsc, S.memberNumberDesc, S.engagementDesc, S.engagementAsc]);
   });
 
-  it('choosing an order writes the same URL the headers write', () => {
+  it('choosing an order writes the same URL the headers write, without jumping to the top', () => {
     routerPush.mockClear();
-    renderTable();
-    const select = nativeSelect(messages.admin.members.directory.sort.label);
-    fireEvent.change(select, { target: { value: 'engagement:asc' } });
-    expect(routerPush).toHaveBeenCalledWith('/admin/members?sort=engagement&order=asc&page=1');
+    renderSortable();
+    fireEvent.change(nativeSelect(S.label), { target: { value: 'engagement:asc' } });
+    expect(routerPush).toHaveBeenCalledWith('/admin/members?sort=engagement&order=asc&page=1', { scroll: false });
+  });
+
+  it('shows no menu for a single row, as the grid offers no sort then', () => {
+    renderSortable([row]);
+    expect(screen.queryByRole('combobox', { name: S.label })).toBeNull();
   });
 });
