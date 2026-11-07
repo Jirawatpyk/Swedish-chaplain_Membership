@@ -8,11 +8,18 @@
  * `BuildAudienceTickDeps['audit']`, so a hand-picked partial double does not
  * compile. The `@ts-expect-error` checks are type-level: `pnpm typecheck` fails
  * when one no longer has an error to expect. The runtime cells pin the shared
- * double: it records, and the methods the tick does not use throw.
+ * double: its arrays hold the rows written with or without an override, its
+ * defaults refuse and dedupe as the adapter and index 0328 do, and the methods
+ * the tick does not use throw the error the tick's audit catches rethrow.
  */
 import { describe, expect, it } from 'vitest';
 
-import type { AudienceDeletedEmitInput, AuditEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
+import {
+  AuditPortInvariantError,
+  type AudienceDeletedEmitInput,
+  type AuditEmitInput,
+} from '@/modules/broadcasts/application/ports/audit-port';
+import { isAdapterInvariantError } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
 import { makeTickAuditDouble, type TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 /** Every port but `audit`, as a harness would stub them. */
@@ -67,6 +74,76 @@ describe('spec 143 TT2 — TickHarnessDeps requires the whole tick audit port', 
     await expect(audit.emitTyped(null, {} as never)).rejects.toThrow(/audit\.emitTyped is not used by the tick/);
     await expect(audit.emitMany?.(null, [])).rejects.toThrow(/audit\.emitMany is not used by the tick/);
     await expect(audit.emitManyTyped?.(null, [])).rejects.toThrow(/audit\.emitManyTyped is not used by the tick/);
+  });
+
+  // The tick's audit catches swallow a plain Error as a lost row and rethrow
+  // only an adapter invariant (`isAdapterInvariantError` in
+  // `writePreCallAuditRow`, `instanceof AuditPortInvariantError` in
+  // build-audience-tick.ts), so an unused method must throw that type to surface.
+  it('an unused method rejects with the error the tick rethrows', async () => {
+    const audit = makeTickAuditDouble();
+    const errors = [
+      await audit.emitTyped(null, {} as never).catch((e: unknown) => e),
+      await audit.emitMany?.(null, []).catch((e: unknown) => e),
+      await audit.emitManyTyped?.(null, []).catch((e: unknown) => e),
+    ];
+    expect(errors.map((e) => e instanceof AuditPortInvariantError)).toEqual([true, true, true]);
+    expect(errors.map((e) => isAdapterInvariantError(e))).toEqual([true, true, true]);
+  });
+
+  it('the default emit refuses broadcast_audience_deleted as the adapter does, and records nothing', async () => {
+    const audit = makeTickAuditDouble();
+    const e = await audit
+      .emit(null, { eventType: 'broadcast_audience_deleted', payload: { resend_audience_id: 'seg-1' } } as unknown as AuditEmitInput)
+      .catch((err: unknown) => err);
+
+    expect(e).toBeInstanceOf(AuditPortInvariantError);
+    expect((e as Error).message).toMatch(/written only through emitOnce/);
+    expect(audit.emitted).toEqual([]);
+  });
+
+  it('the default emitOnce dedupes on (tenantId, resend_audience_id) as index 0328 does', async () => {
+    const audit = makeTickAuditDouble();
+    const row = (tenantId: string, id: string) =>
+      ({ eventType: 'broadcast_audience_deleted', tenantId, payload: { resend_audience_id: id } }) as unknown as AudienceDeletedEmitInput;
+
+    const answers = [
+      await audit.emitOnce(null, row('t-a', 'seg-1')),
+      await audit.emitOnce(null, row('t-a', 'seg-1')),
+      await audit.emitOnce(null, row('t-b', 'seg-1')),
+      await audit.emitOnce(null, row('t-a', 'seg-2')),
+    ];
+
+    expect(answers).toEqual([true, false, true, true]);
+    expect(audit.emittedOnce.map((r) => r.payload['resend_audience_id'])).toEqual(['seg-1', 'seg-1', 'seg-2']);
+  });
+
+  it('an override still fills the arrays with what it wrote, and keeps its answer and its throw', async () => {
+    const audit = makeTickAuditDouble({
+      async emit(_tx, e) {
+        if (e.eventType === 'broadcast_failed_to_dispatch') throw new Error('audit insert failed');
+      },
+      async emitOnce(this: { emit(tx: unknown, e: AuditEmitInput): Promise<void> }, tx, e) {
+        if (e.payload.resend_audience_id === 'seg-dup') return false;
+        await this.emit(tx, { eventType: 'broadcast_send_started', payload: { via: 'emitOnce' } } as unknown as AuditEmitInput);
+        return true;
+      },
+    });
+    const deleted = (id: string) =>
+      ({ eventType: 'broadcast_audience_deleted', tenantId: 't-a', payload: { resend_audience_id: id } }) as unknown as AudienceDeletedEmitInput;
+
+    await audit.emit(null, { eventType: 'broadcast_send_started', payload: { a: 1 } } as unknown as AuditEmitInput);
+    await expect(
+      audit.emit(null, { eventType: 'broadcast_failed_to_dispatch', payload: {} } as unknown as AuditEmitInput),
+    ).rejects.toThrow('audit insert failed');
+    expect(await audit.emitOnce(null, deleted('seg-1'))).toBe(true);
+    expect(await audit.emitOnce(null, deleted('seg-dup'))).toBe(false);
+
+    expect(audit.emitted).toEqual([
+      { eventType: 'broadcast_send_started', payload: { a: 1 } },
+      { eventType: 'broadcast_send_started', payload: { via: 'emitOnce' } },
+    ]);
+    expect(audit.emittedOnce).toEqual([{ eventType: 'broadcast_audience_deleted', payload: { resend_audience_id: 'seg-1' } }]);
   });
 
   it('an override replaces the default, and its this is the double', async () => {
