@@ -15,13 +15,17 @@
  * `audience-audit-sites.test.ts` fails if the adapter or the repo spells the
  * text inline.
  *
- * Its one import is relative and has only type imports of its own: the
- * verify-schema script loads this module under plain tsx, with no path alias.
+ * It imports nothing: the verify-schema script loads this module under plain
+ * tsx, with no path alias (review round 2, code-review finding 7).
  */
-import { AUDIENCE_AUDIT_PAYLOAD_KEYS } from '../../application/ports/audit-port';
 
-/** The deleted row's segment key, as the index expression reads it. */
-export const AUDIENCE_DELETED_ID_EXPR_SQL = `payload->>'${AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId}'`;
+/**
+ * The deleted row's segment key, as the index expression reads it. A pinned
+ * literal rather than built from `AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId`,
+ * so this module stays dependency-free; `audience-audit-sites.test.ts` fails
+ * when the two disagree.
+ */
+export const AUDIENCE_DELETED_ID_EXPR_SQL = "payload->>'resend_audience_id'";
 
 /** The index key, and so the `ON CONFLICT` target. */
 export const AUDIENCE_DELETED_KEY_SQL = `(tenant_id, (${AUDIENCE_DELETED_ID_EXPR_SQL}))`;

@@ -21,6 +21,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { AUDIENCE_AUDIT_PAYLOAD_KEYS } from '@/modules/broadcasts/application/ports/audit-port';
 import {
   AUDIENCE_DELETED_ID_EXPR_SQL,
   AUDIENCE_DELETED_KEY_SQL,
@@ -346,6 +347,8 @@ describe('spec 143 TT1 — the deleted-row index text comes from audience-audit-
 
   it('the constants spell the resend_audience_id key and the deleted event', () => {
     expect(AUDIENCE_DELETED_ID_EXPR_SQL).toBe("payload->>'resend_audience_id'");
+    // The literal guarded against the payload key every writer uses (review round 2, code-review finding 7).
+    expect(AUDIENCE_DELETED_ID_EXPR_SQL).toBe(`payload->>'${AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId}'`);
     expect(AUDIENCE_DELETED_KEY_SQL).toBe("(tenant_id, (payload->>'resend_audience_id'))");
     expect(AUDIENCE_DELETED_PREDICATE_SQL).toBe("event_type = 'broadcast_audience_deleted'");
   });
