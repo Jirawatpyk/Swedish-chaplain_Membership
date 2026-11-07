@@ -198,10 +198,9 @@ export async function assertTenantBoundTx(
  * stays as it is (a lost row, per `_audience-audit`). The message keeps the
  * original text (tenant slugs only, no PII). Exported for the audit adapter.
  *
- * It probes on every call. Spec 143 (TT3) cached one passed probe per tx; the
- * maintainer reverted that in review round 2 (it saved at most one ~30 ms probe
- * per reclaimed segment, and its safety rested on a single-writer scan that
- * could not be made complete).
+ * It probes on every call, not once per tx: whether a tx is still bound to the
+ * tenant is read from `app.current_tenant` itself, so no cached answer can
+ * outlive a rebinding of the GUC. The cost is one SQL round trip per call.
  */
 export async function assertAudienceAuditTenantBoundTx(
   tx: TenantTx,
