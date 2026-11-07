@@ -395,21 +395,18 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     /**
      * Past the cap, closing change (the maintainer chose "compare the full
      * definition") — the check compares the live `pg_get_indexdef` text with
-     * ONE expected literal, both normalised by `NORMALISE` (the `public.`
+     * ONE expected literal, both normalised by `normaliseIndexDefSql` (the `public.`
      * schema qualifier dropped, whitespace collapsed), and requires
      * `indisvalid`. `pg_get_indexdef` prints the access method, UNIQUE, the
      * table, every key with any non-default operator class or COLLATE, INCLUDE,
      * NULLS NOT DISTINCT and the predicate, so a difference in any of them is
-     * a difference in the text. `LIVE_DEF` is dev's text, read with
-     * `pnpm db:query` on 7 Nov 2026; the positive control re-reads it. Spec
-     * 143 (TT1): it is `AUDIENCE_DELETED_INDEX_DEF`, the one TS source, so the
-     * positive control pins that constant to the live index.
+     * a difference in the text. The expected text is
+     * `AUDIENCE_DELETED_INDEX_DEF` (spec 143 TT1, the one TS source), dev's
+     * text as read with `pnpm db:query` on 7 Nov 2026; the positive control
+     * re-reads it, so it pins that constant to the live index. The migration
+     * spells `normaliseIndexDefSql` around its arguments.
      */
-    const LIVE_DEF = AUDIENCE_DELETED_INDEX_DEF;
-    /** The normalisation, as the migration must spell it around its argument (`normaliseIndexDefSql`). */
-    const NORMALISE = normaliseIndexDefSql;
     const normalised = (def: string) => def.replaceAll('public.', '').replace(/\s+/g, ' ').trim();
-    const sqlText = (v: string | null) => (v === null ? 'NULL' : `'${v.replaceAll("'", "''")}'`);
     /** A SQL string literal's body (quotes doubled) back to its value. */
     const unquote = (body: string) => body.replaceAll("''", "'");
 
@@ -433,7 +430,8 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     function checkAgainst(check: string, def: string | null, valid: boolean | null): string {
       const read = /SELECT\s+pg_get_indexdef\(i\.indexrelid\),\s*i\.indisvalid\s+INTO\s+v_def,\s*v_valid[^;]*;/;
       expect(read.test(check)).toBe(true);
-      return check.replace(read, `v_def := ${sqlText(def)}; v_valid := ${valid === null ? 'NULL' : String(valid)};`);
+      const defSql = def === null ? 'NULL' : sqlStringLiteral(def);
+      return check.replace(read, `v_def := ${defSql}; v_valid := ${valid === null ? 'NULL' : String(valid)};`);
     }
 
     /** Runs `block` in a rolled-back tx; answers the RAISE message, or null when it passed. */
@@ -498,8 +496,8 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     it("the migration's v_expected and normalisation are AUDIENCE_DELETED_INDEX_DEF and normaliseIndexDefSql (CR4 #5, TT1)", () => {
       expect(unquote(migrationLiteral())).toBe(AUDIENCE_DELETED_INDEX_DEF);
       const check = indexCheckSql();
-      expect(check).toContain(NORMALISE('v_def'));
-      expect(check).toContain(NORMALISE('v_expected'));
+      expect(check).toContain(normaliseIndexDefSql('v_def'));
+      expect(check).toContain(normaliseIndexDefSql('v_expected'));
     });
 
     it("the migration's CREATE has the key and the predicate of audience-audit-index.ts (TT1)", () => {
@@ -520,20 +518,20 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     });
 
     it('the index check and the canary pass on the live index, and the check on its text in place of the catalog read', async () => {
-      // Positive control: dev's live text and validity are what LIVE_DEF says.
+      // Positive control: dev's live text and validity are what AUDIENCE_DELETED_INDEX_DEF says.
       const live = (await db.execute(sql`
         SELECT pg_get_indexdef(indexrelid) AS d, indisvalid
           FROM pg_index WHERE indexrelid = to_regclass('public.audit_log_audience_deleted_once')
       `)) as unknown as Array<Record<string, unknown>>;
-      expect(live).toEqual([{ d: LIVE_DEF, indisvalid: true }]);
+      expect(live).toEqual([{ d: AUDIENCE_DELETED_INDEX_DEF, indisvalid: true }]);
       const check = indexCheckSql();
       expect(await raised(check)).toBeNull();
-      expect(await raised(checkAgainst(check, LIVE_DEF, true))).toBeNull();
+      expect(await raised(checkAgainst(check, AUDIENCE_DELETED_INDEX_DEF, true))).toBeNull();
       // The canary, the query db:verify runs, finds the index.
       const hit = (await db.execute(sql.raw(AUDIENCE_DELETED_INDEX_CANARY_SQL))) as unknown as unknown[];
       expect(hit).toHaveLength(1);
       // A schema qualifier on the enum type and other whitespace are not differences.
-      const reworded = LIVE_DEF.replace('::audit_event_type', '::public.audit_event_type').replace(' USING ', '\n   USING  ');
+      const reworded = AUDIENCE_DELETED_INDEX_DEF.replace('::audit_event_type', '::public.audit_event_type').replace(' USING ', '\n   USING  ');
       expect(await raised(checkAgainst(check, reworded, true))).toBeNull();
     });
 
@@ -541,8 +539,8 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       const check = indexCheckSql();
       const keys = "(tenant_id, ((payload ->> 'resend_audience_id'::text)))";
       const variant = (to: string, from = keys) => {
-        expect(LIVE_DEF).toContain(from);
-        return LIVE_DEF.replace(from, to);
+        expect(AUDIENCE_DELETED_INDEX_DEF).toContain(from);
+        return AUDIENCE_DELETED_INDEX_DEF.replace(from, to);
       };
       const cases: ReadonlyArray<readonly [string, string]> = [
         [variant(`${keys} NULLS NOT DISTINCT`), 'NULLS NOT DISTINCT'],
@@ -564,13 +562,13 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
         // carries its difference) and the normalised expected one.
         expect(message).toContain(`live [${normalised(def)}]`);
         expect(normalised(def)).toContain(marker);
-        expect(message).toContain(`expected [${normalised(LIVE_DEF)}]`);
+        expect(message).toContain(`expected [${normalised(AUDIENCE_DELETED_INDEX_DEF)}]`);
       }
     });
 
     it('the index check raises on an invalid index (indisvalid false) and on a missing one (the all-NULL row, CR #9)', async () => {
       const check = indexCheckSql();
-      expect(await raised(checkAgainst(check, LIVE_DEF, false))).toBe(`${PREFIX}: indisvalid false`);
+      expect(await raised(checkAgainst(check, AUDIENCE_DELETED_INDEX_DEF, false))).toBe(`${PREFIX}: indisvalid false`);
       // No pg_index row for the name: SELECT INTO leaves both variables NULL.
       expect(await raised(checkAgainst(check, null, null))).toBe(`${PREFIX}: no such index`);
     });

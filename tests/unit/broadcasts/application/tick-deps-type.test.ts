@@ -30,6 +30,7 @@ const OTHER_PORTS = {
   sendStanding: {},
   orphans: {},
   tickBudget: {},
+  pauseBeforeReprobe: undefined,
 } as const;
 
 const emit = async (_tx: unknown, _e: AuditEmitInput): Promise<void> => undefined;
@@ -46,5 +47,12 @@ describe('spec 143 TT2 — TickHarnessDeps requires emit and emitOnce on audit',
     const wrongEmitOnce: TickHarnessDeps = { ...OTHER_PORTS, audit: { emit, emitOnce: async () => undefined } };
 
     expect([full, noEmitOnce, wrongEmitOnce]).toHaveLength(3);
+  });
+
+  it('every key is required, the optional ones included (review round 1)', () => {
+    const { pauseBeforeReprobe: _omitted, ...withoutOptional } = OTHER_PORTS;
+    // @ts-expect-error — the optional pauseBeforeReprobe key is missing.
+    const missingOptional: TickHarnessDeps = { ...withoutOptional, audit: { emit, emitOnce } };
+    expect(missingOptional).toBeDefined();
   });
 });

@@ -114,9 +114,9 @@ export const f7AuditAdapter: F7AuditAdapter = {
    * The conflict target and its WHERE are literal SQL, never parameters: with
    * a parameter there Postgres cannot prove the index predicate and answers
    * 42P10. Spec 143 (TT1): both are migration 0328's key and predicate from
-   * `audience-audit-index.ts`, spliced with `sql.raw`. The VALUES row is bound like every other writer's, `event_type`
-   * included (review round 2, code-review #6): index inference reads only the
-   * conflict clause. Unlike the invoicing overdue adapter, nothing is
+   * `audience-audit-index.ts`, spliced with `sql.raw`. The VALUES row is bound
+   * like every other writer's, `event_type` included (review round 2,
+   * code-review #6): index inference reads only the conflict clause. Unlike the invoicing overdue adapter, nothing is
    * swallowed: a lost row must reach the caller's ERROR and counter.
    *
    * Every refusal is an `AuditPortInvariantError` raised before any write: a

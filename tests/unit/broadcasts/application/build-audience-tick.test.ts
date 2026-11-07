@@ -171,6 +171,8 @@ function makeDeps(opts: {
       brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
       // Spec 140 s2c - the orphan record; these cases do not read it.
       orphans: { async recordOrphanedResendId() {} },
+      // The real reprobe pause; every key is present (TickHarnessDeps, review round 1).
+      pauseBeforeReprobe: undefined,
       /**
        * Injected rather than composed here: the resolver's own dependency
        * graph (members bridge, unsubscribes, attendees, plans) is large, and
