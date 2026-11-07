@@ -35,6 +35,7 @@ import {
   makeFakeSendStanding,
   makeRecordingF7Audit,
 } from '../../../helpers/eblast-approval-fakes';
+import { makeTickAuditDouble, type TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 const tenant = asTenantContext('test-tenant');
 const ACTOR = '44444444-4444-4444-8444-444444444444';
@@ -103,29 +104,41 @@ describe('an unknown MemberSendStanding kind is never read as "may send"', () =>
       {},
       { get: (_t, prop) => (prop === 'then' ? undefined : async () => void gatewayCalls.push(String(prop))) },
     );
-    const r = await buildAudienceTick(
-      {
-        tenant,
-        // Spec 140 s2b — the dispatch lease: the tick claims (always granted
-        // here) and releases.
-        broadcastsRepo: {
-          ...store.broadcastsRepo,
-          claimDispatchLease: async () => 'lease-token-test',
-          checkDispatchLease: async () => 'held' as const,
-          releaseDispatchLease: async () => true,
-        },
-        broadcastsGateway: gateway,
-        sendStanding: makeFakeSendStanding(),
-        clock: { now: () => store.now },
-        tickBudget: { tickStartedAt: store.now.getTime() },
-      } as never,
-      { broadcastId: row.broadcastId },
-    );
+    const audit = makeTickAuditDouble();
+    // The shared tick harness type: every port key present, the audit double whole.
+    // The ports the standing phase never reaches are empty stubs.
+    const deps: TickHarnessDeps = {
+      tenant,
+      // Spec 140 s2b — the dispatch lease: the tick claims (always granted
+      // here) and releases.
+      broadcastsRepo: {
+        ...store.broadcastsRepo,
+        claimDispatchLease: async () => 'lease-token-test',
+        checkDispatchLease: async () => 'held' as const,
+        releaseDispatchLease: async () => true,
+      },
+      broadcastsGateway: gateway,
+      sendStanding: makeFakeSendStanding(),
+      clock: { now: () => store.now },
+      tickBudget: { tickStartedAt: store.now.getTime() },
+      audit,
+      brandChrome: {},
+      fromEmail: 'noreply@example.test',
+      tenantDisplayName: 'Example',
+      locale: 'en',
+      resolveRecipients: {},
+      membersBridge: {},
+      emailTransactional: {},
+      plansBridge: {},
+      orphans: {},
+    };
+    const r = await buildAudienceTick(deps as never, { broadcastId: row.broadcastId });
     expect(r).toEqual({
       ok: false,
       error: { kind: 'dispatch.server_error', message: 'member_standing_unrouted', errClass: 'gate', phase: 'standing' },
     });
     expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
     expect(gatewayCalls).toEqual([]);
+    expect([...audit.emitted, ...audit.emittedOnce]).toEqual([]);
   });
 });

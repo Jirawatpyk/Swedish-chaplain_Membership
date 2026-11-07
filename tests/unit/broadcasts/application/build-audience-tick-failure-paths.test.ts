@@ -41,7 +41,7 @@ import {
   BroadcastNotFoundError,
 } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
-import type { TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
+import { makeTickAuditDouble, type TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('44444444-4444-4444-8444-444444444444');
@@ -795,7 +795,8 @@ function makeDeps(opts: {
           return { kind: 'present' as const, status: opts.retrieveOnceStatus ?? ('draft' as const), sentAt: null };
         },
       },
-      audit: {
+      // The shared audit double, with this file's failures, tx tags and dedupe as overrides.
+      audit: makeTickAuditDouble({
         async emit(tx: unknown, e: { eventType: string; payload: Record<string, unknown>; actorUserId?: string; summary?: string }) {
           // Round 3 finding 3-8 — a failing audit INSERT. In production this
           // aborts the surrounding transaction (25P02), which is why WHICH tx it
@@ -826,7 +827,7 @@ function makeDeps(opts: {
           await this.emit(tx, { eventType: e.eventType, payload: { ...e.payload }, actorUserId: e.actorUserId, summary: e.summary });
           return true;
         },
-      },
+      }),
     },
   };
 }

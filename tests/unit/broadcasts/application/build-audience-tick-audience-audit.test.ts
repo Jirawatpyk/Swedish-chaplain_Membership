@@ -24,7 +24,7 @@ import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/bu
 import { AuditPortInvariantError, type AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
-import type { TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
+import { makeTickAuditDouble, type TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('66666666-6666-4666-8666-666666666666');
@@ -229,7 +229,8 @@ function harness(opts: Opts = {}) {
         return { kind: 'not_found' as const };
       },
     },
-    audit: {
+    // The shared audit double, with this file's failures and the index's dedupe as overrides.
+    audit: makeTickAuditDouble({
       async emit(_tx: unknown, e: AuditRow) {
         if (opts.auditThrows?.eventType === e.eventType) {
           events.push(`audit-failed:${e.eventType}`);
@@ -255,7 +256,7 @@ function harness(opts: Opts = {}) {
         audits.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, payload: { ...e.payload }, requestId: e.requestId ?? null });
         return true;
       },
-    },
+    }),
     membersBridge: {
       async getMemberPrimaryContact() {
         return 'member@example.com';

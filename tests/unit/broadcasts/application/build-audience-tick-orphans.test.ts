@@ -21,9 +21,8 @@ import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { RecordOrphanInput } from '@/modules/broadcasts/application/ports/broadcast-orphans-repo';
-import type { AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
-import type { TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
+import { makeTickAuditDouble, type TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('55555555-5555-4555-8555-555555555555');
@@ -69,9 +68,10 @@ interface Opts {
 function harness(opts: Opts = {}) {
   const events: string[] = [];
   const recorded: RecordOrphanInput[] = [];
-  const audits: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
-  /** Spec 142 review round 3 — the rows `emitOnce` wrote (the restart's deleted row). */
-  const deletedRows: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+  const audit = makeTickAuditDouble();
+  const audits = audit.emitted;
+  /** The rows `emitOnce` wrote (the restart's deleted row). */
+  const deletedRows = audit.emittedOnce;
   const memberEmails: unknown[] = [];
   const checks = opts.checks ?? ['held'];
   let checkIndex = 0;
@@ -233,18 +233,8 @@ function harness(opts: Opts = {}) {
         recorded.push(input);
       },
     },
-    // Spec 142 review round 3 (code-review #1) — the restart writes its
-    // deleted row through `emitOnce`; `TickHarnessDeps` makes a double without it a
-    // type error instead of a silent lost row.
-    audit: {
-      async emit(_tx: unknown, e: { eventType: string; payload: Record<string, unknown> }) {
-        audits.push({ eventType: e.eventType, payload: e.payload });
-      },
-      async emitOnce(_tx: unknown, e: AudienceDeletedEmitInput) {
-        deletedRows.push({ eventType: e.eventType, payload: { ...e.payload } });
-        return true;
-      },
-    },
+    // The shared audit double: `audits` and `deletedRows` are its recorders.
+    audit,
     membersBridge: {
       async getMemberPrimaryContact() {
         return 'member@example.com';

@@ -28,9 +28,8 @@ import { broadcastsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
-import type { AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 import { makeFakeSendStanding } from '../../../helpers/eblast-approval-fakes';
-import type { TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
+import { makeTickAuditDouble, type RecordedAuditRow, type TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('44444444-4444-4444-8444-444444444444');
@@ -48,9 +47,8 @@ interface Recorder {
   readonly attachedImports: string[];
   readonly completions: number[];
   readonly transitions: Array<{ status: string }>;
-  readonly audits: string[];
-  /** Spec 142 review round 3 — the rows `emitOnce` wrote (the restart's deleted row). */
-  readonly deletedRows: Array<{ eventType: string; payload: Record<string, unknown> }>;
+  /** The rows `emitOnce` wrote (the restart's deleted row). */
+  readonly deletedRows: readonly RecordedAuditRow[];
   /** Round 4 T2 — FR-021 sends, which this harness could not observe at all. */
   readonly memberEmails: Array<{ templateKey: string; reason: unknown }>;
 }
@@ -77,7 +75,7 @@ interface Recorder {
  * that class, made unrepresentable rather than caught one instance at a time.
  *
  * Spec 143 (TT2): the type is the shared `TickHarnessDeps`, which also types the
- * audit double as the port the tick uses (`emit` and `emitOnce`).
+ * audit double as the port the tick declares; `makeTickAuditDouble` builds it.
  */
 
 function makeDeps(opts: {
@@ -97,6 +95,7 @@ function makeDeps(opts: {
   /** The row's subject; default `Hello`. */
   readonly subject?: string;
 }): { deps: TickHarnessDeps; rec: Recorder } {
+  const audit = makeTickAuditDouble();
   const rec: Recorder = {
     createdAudiences: [],
     deletedAudiences: [],
@@ -107,8 +106,7 @@ function makeDeps(opts: {
     attachedImports: [],
     completions: [],
     transitions: [],
-    audits: [],
-    deletedRows: [],
+    deletedRows: audit.emittedOnce,
     memberEmails: [],
   };
 
@@ -306,18 +304,8 @@ function makeDeps(opts: {
           rec.sends.push(id);
         },
       },
-      // Spec 142 review round 3 (code-review #1) — the restart writes its
-      // deleted row through `emitOnce`; `TickHarnessDeps` makes a double without it a
-      // type error instead of a silent lost row.
-      audit: {
-        async emit(_tx: unknown, e: { eventType: string }) {
-          rec.audits.push(e.eventType);
-        },
-        async emitOnce(_tx: unknown, e: AudienceDeletedEmitInput) {
-          rec.deletedRows.push({ eventType: e.eventType, payload: { ...e.payload } });
-          return true;
-        },
-      },
+      // The shared audit double: the restart's deleted row lands in `rec.deletedRows`.
+      audit,
       // ── Round 4 T2 — the three ports this harness never had ────────────────
       //
       // Their absence was not a coverage gap, it was a SILENT one: the calls

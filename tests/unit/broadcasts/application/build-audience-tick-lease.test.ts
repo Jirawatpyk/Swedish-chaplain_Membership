@@ -25,10 +25,9 @@ import { broadcastsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
-import type { AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
-import type { TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
+import { makeTickAuditDouble, type TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('55555555-5555-4555-8555-555555555555');
@@ -88,8 +87,9 @@ function harness(opts: Opts = {}) {
   const writeLeases: Array<{ method: string; lease: unknown }> = [];
   const releases: unknown[] = [];
   const memberEmails: unknown[] = [];
-  /** Spec 142 review round 3 — the rows `emitOnce` wrote (the restart's deleted row). */
-  const deletedRows: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+  const audit = makeTickAuditDouble();
+  /** The rows `emitOnce` wrote (the restart's deleted row). */
+  const deletedRows = audit.emittedOnce;
   let checkIndex = 0;
   let attachAttempted = false;
   const checks = opts.checks ?? ['held'];
@@ -284,16 +284,8 @@ function harness(opts: Opts = {}) {
         return { kind: 'not_found' as const };
       },
     },
-    // Spec 142 review round 3 (code-review #1) — the restart writes its
-    // deleted row through `emitOnce`; `TickHarnessDeps` makes a double without it a
-    // type error instead of a silent lost row.
-    audit: {
-      async emit() {},
-      async emitOnce(_tx: unknown, e: AudienceDeletedEmitInput) {
-        deletedRows.push({ eventType: e.eventType, payload: { ...e.payload } });
-        return true;
-      },
-    },
+    // The shared audit double: the restart's deleted row lands in `deletedRows`.
+    audit,
     membersBridge: {
       async getMemberPrimaryContact() {
         return 'member@example.com';
