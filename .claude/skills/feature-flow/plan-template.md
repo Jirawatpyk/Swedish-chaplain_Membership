@@ -6,6 +6,8 @@ Spec: `specs/<nnn-name>/spec.md` · Size: M / L · Agreed by the user on: <date>
 
 What we will build and how, in a few paragraphs. Name the alternatives considered and why each was not taken.
 
+**Performance claims:** a step that claims a latency or round-trip saving names its measured before cost (number · source · date) and the workload it multiplies, or it is not in the plan (retro 2026-11-07, spec 143).
+
 **Paths kept compatible:** name each one and point at its usage line in `spec.md` § Premises (count · source · date lives there only, D-041). A path with no usage is a candidate for removal, not protection.
 
 ## Files and modules
