@@ -311,9 +311,10 @@ export function StepCard({
 
   return (
     // PR Q — AURA's Card (as a div: the h3 inside heads the step), its padding
-    // and frame in place of the hand-drawn ones. Not Card `title` + `titleId`:
-    // on `as="div"` that puts `aria-labelledby` on a generic element (stand-in
-    // until AURA #199). AURA's card body sets line-height 1.7; `leading-normal`
+    // and frame in place of the hand-drawn ones. The step keeps its own h3 and
+    // not Card `title`: the timing sentence and the reorder buttons share one
+    // row, which the Card header does not draw (since 5.86, #199, `title` on
+    // `as="div"` would be safe). AURA's card body sets line-height 1.7; `leading-normal`
     // keeps the page's 1.5 that this content inherited (review round 2).
     // The step keeps the board's 16px padding through AURA's own card
     // padding token, not its 24px default (PR Q parity item 4).

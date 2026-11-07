@@ -114,6 +114,10 @@ export function MemberInvoicesTable({
         </span>
       ),
     },
+    // Card-only column (AURA 5.85 #198 `grid: false`): the phone card's
+    // title, beside the grid's Number. Since 5.86 (#200) the grid leaves it
+    // out of aria-colcount / aria-colindex, so it can sit here.
+    { key: 'cardNumber', label: labels.number, mono: true, card: 'title', grid: false, render: (row) => row.number },
     {
       key: 'status',
       label: labels.status,
@@ -163,12 +167,6 @@ export function MemberInvoicesTable({
         );
       },
     },
-    // Card-only column (AURA 5.85 #198 `grid: false`): the phone card's
-    // title; never drawn in the grid. Stand-in until AURA #200: it sits LAST
-    // because AURA still counts grid:false columns in the grid's
-    // aria-colcount and each cell's aria-colindex, so placed before the
-    // visible columns it opened a gap.
-    { key: 'cardNumber', label: labels.number, mono: true, card: 'title', grid: false, render: (row) => row.number },
   ], [labels, canMutate]);
 
   return (
@@ -177,10 +175,7 @@ export function MemberInvoicesTable({
     // queries, thousands of px wide), so an unnamed query would read those.
     // No padding, frame or clipping, so the table still bleeds to the card's
     // edges.
-    // `member-invoices-list`: on a phone the stacked rows are one list
-    // divided by rules inside the framed Invoices card (globals.css,
-    // stand-in until AURA #204).
-    <div className="@container/invoices member-invoices-list">
+    <div className="@container/invoices">
       <DataTable<MemberInvoiceRow>
         label={labels.caption}
         rows={rows as MemberInvoiceRow[]}
@@ -189,6 +184,9 @@ export function MemberInvoicesTable({
         manual
         rowHeight="auto"
         stackBelow={640}
+        // On a phone the rows are one list divided by rules inside the framed
+        // Invoices card, not framed cards of their own (AURA 5.87 #204).
+        stackStyle="list"
         // Edge to edge inside the Invoices card, as every list table is.
         bleed
       />

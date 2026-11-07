@@ -42,8 +42,8 @@ export interface EmptyStateProps {
   readonly announce?: boolean;
   /**
    * PR Q — `danger` for a load FAILURE (the data couldn't be read), AURA's
-   * danger tint and icon colour; without an `icon` it draws AURA's
-   * triangle-alert instead of the inbox. Defaults to `neutral` (unchanged for
+   * danger tint and icon colour; without an `icon` AURA draws its
+   * triangle-alert instead of the inbox (5.86 #202). Defaults to `neutral` (unchanged for
    * every existing consumer). It stays quiet: a caller that must interrupt
    * wraps it in its own `role="alert"`.
    */
@@ -78,7 +78,9 @@ export function EmptyState({
       headingLevel={false}
       tone={tone}
       {...(size ? { size } : {})}
-      icon={Icon ? <Icon className={iconClassName} aria-hidden /> : tone === 'danger' ? 'triangle-alert' : undefined}
+      // Without an icon AURA picks it: the inbox, or triangle-alert for the
+      // danger tone (5.86 #202).
+      icon={Icon ? <Icon className={iconClassName} aria-hidden /> : undefined}
       title={title}
       description={description}
       action={action}
