@@ -116,17 +116,16 @@ export const f7AuditAdapter: F7AuditAdapter = {
    * 42P10. Spec 143 (TT1): both are migration 0328's key and predicate from
    * `audience-audit-index.ts`, spliced with `sql.raw`. The VALUES row is bound
    * like every other writer's, `event_type` included (review round 2,
-   * code-review #6): index inference reads only the conflict clause. Unlike the invoicing overdue adapter, nothing is
-   * swallowed: a lost row must reach the caller's ERROR and counter.
+   * code-review #6): index inference reads only the conflict clause. Unlike
+   * the invoicing overdue adapter, nothing is swallowed: a lost row must reach
+   * the caller's ERROR and counter.
    *
    * Every refusal is an `AuditPortInvariantError` raised before any write: a
    * null tx (a pool connection carries no `app.current_tenant`), a null
    * `tenantId` or an empty segment id (a NULL key never conflicts, so either
    * would allow duplicates), another event type (a cast past the input type),
-   * or a tx bound to another tenant (`assertAudienceAuditTenantBoundTx`). That
-   * check is the repo's own, so it shares the repo's per-tx proof: after the
-   * reclaim's disclosure read on the same tx and tenant it runs no second
-   * probe (spec 143 TT3).
+   * or a tx bound to another tenant (`assertAudienceAuditTenantBoundTx`, which
+   * probes on every call).
    */
   async emitOnce(txUnknown: unknown, event: AudienceDeletedEmitInput): Promise<boolean> {
     if (txUnknown === null || txUnknown === undefined) {

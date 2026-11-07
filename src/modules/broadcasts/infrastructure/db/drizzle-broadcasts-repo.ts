@@ -17,7 +17,7 @@
  */
 import { and, asc, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
-import { db, runInTenant, tenantSlugOf, TenantTxNotBoundError, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
+import { db, runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
 import {
@@ -198,59 +198,23 @@ export async function assertTenantBoundTx(
  * stays as it is (a lost row, per `_audience-audit`). The message keeps the
  * original text (tenant slugs only, no PII). Exported for the audit adapter.
  *
- * Spec 143 (TT3) — one probe per tx and slug. `runInTenant` sets
- * `app.current_tenant` once per tx, so once the probe has proven a tx bound to
- * a slug, a later call on the same tx with the same slug skips it (the
- * reclaim's two calls per segment, the disclosure read then `emitOnce` or the
- * existence read, now probe once). A different slug probes again and is
- * refused on a mismatch. Only a passed probe is cached: a refusal or a driver
- * error proves nothing, so the first call on every tx still fails closed. The
- * cache is keyed on the tx object and held weakly, so it ends with the tx.
- *
- * Review round 1 (code-review #1, #4) — the proof is kept only for a tx that
- * `runInTenant` opened. The probe is skipped only when (a) `lib/db.ts`'s
- * registry (`tenantSlugOf`, D-030) names the tx's tenant as the expected slug
- * and (b) this tx already passed one probe for that slug. Any object the
- * registry does not know, the bare `db` singleton among them, probes on every
- * call and is never cached (a pool connection's GUC is not the tx's). A tx the
- * registry names for another slug is refused after its probe, even when the
- * probe passes. The skip rests on an invariant: `runInTenant` is the only
- * writer of `app.current_tenant` in `src/`, once per tx, before `bindTenantTx`
- * (pinned by `tests/unit/lib/current-tenant-guc-single-writer.test.ts`), so a
- * registered tx's GUC cannot change after its probe.
+ * It probes on every call. Spec 143 (TT3) cached one passed probe per tx; the
+ * maintainer reverted that in review round 2 (it saved at most one ~30 ms probe
+ * per reclaimed segment, and its safety rested on a single-writer scan that
+ * could not be made complete).
  */
-const audienceAuditBoundTxs = new WeakMap<object, string>();
-
-/** The slug `runInTenant` registered for `tx`, or `null` for an object it did not open. */
-function runInTenantSlugOf(tx: TenantTx): string | null {
-  try {
-    return tenantSlugOf(tx);
-  } catch (e) {
-    if (e instanceof TenantTxNotBoundError) return null;
-    throw e;
-  }
-}
-
 export async function assertAudienceAuditTenantBoundTx(
   tx: TenantTx,
   expectedTenantId: string,
   callerName: string,
   eventType: 'broadcast_audience_deleted' | 'broadcast_audience_disclosed',
 ): Promise<void> {
-  const registered = runInTenantSlugOf(tx);
-  if (registered === expectedTenantId && audienceAuditBoundTxs.get(tx) === expectedTenantId) return;
   try {
     await assertTenantBoundTx(tx, expectedTenantId, callerName);
-    if (registered !== null && registered !== expectedTenantId) {
-      throw tenantBindingRefusal(
-        `${callerName}: tx tenant mismatch — repo bound to "${expectedTenantId}" but runInTenant opened the tx for "${registered}". Refusing to write to a different tenant's namespace.`,
-      );
-    }
   } catch (e) {
     if (e instanceof Error && tenantBindingRefusals.has(e)) throw new AuditPortInvariantError(eventType, e.message);
     throw e;
   }
-  if (registered === expectedTenantId) audienceAuditBoundTxs.set(tx, expectedTenantId);
 }
 
 /**
@@ -1901,9 +1865,7 @@ export function makeDrizzleBroadcastsRepo(
      * `audience-audit-index.ts` (spec 143 TT1; pinned by
      * `audience-audit-sites.test.ts`), never a bound parameter, so the read
      * matches the index (review round 1, migration L1). Read only for a
-     * reclaimed segment with no disclosure, after `findAudienceDisclosureInTx`
-     * on the same tx, so its tenant probe is skipped (spec 143 TT3,
-     * `assertAudienceAuditTenantBoundTx`).
+     * reclaimed segment with no disclosure.
      */
     async hasAudienceDeletedAuditInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string): Promise<boolean> {
       assertAudienceAuditTenantArg(tenantIdArg, ctx.slug, 'hasAudienceDeletedAuditInTx', 'broadcast_audience_deleted');
@@ -1924,10 +1886,7 @@ export function makeDrizzleBroadcastsRepo(
     /**
      * See the port docblock. Tenant-fenced as `hasAudienceDeletedAuditInTx`
      * (`assertAudienceAuditTenantBoundTx` and the explicit `tenant_id`
-     * predicate); it takes no lock: disclosed rows are append-only. In the
-     * reclaim it is the segment's first audience audit call on the tx, so it
-     * runs the tx's one tenant probe; the deleted-row write or read after it
-     * reuses that proof (spec 143 TT3).
+     * predicate); it takes no lock: disclosed rows are append-only.
      */
     async findAudienceDisclosureInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string) {
       assertAudienceAuditTenantArg(tenantIdArg, ctx.slug, 'findAudienceDisclosureInTx', 'broadcast_audience_disclosed');
