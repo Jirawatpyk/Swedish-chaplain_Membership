@@ -13,9 +13,11 @@
  *     at boundaries
  *   - tenant context threaded as `tenantId: TenantSlug` parameter (NOT
  *     constructor injection — explicit per-call binding is mandatory
- *     for cross-tenant safety). The two audience audit reads are the
- *     exception (spec 143 review round 2): they bind the repo's own
- *     tenant, the one their probe proves the tx bound to.
+ *     for cross-tenant safety). A tx-taking method may instead bind the
+ *     repo's own `ctx.slug` when `assertTenantBoundTx` (or
+ *     `assertAudienceAuditTenantBoundTx`) proves the tx is bound to it, as
+ *     `markAudienceDeletedInTx` and the audience audit reads do; the older
+ *     methods still take `tenantId`.
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
