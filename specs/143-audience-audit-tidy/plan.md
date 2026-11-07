@@ -20,7 +20,7 @@ PR #767 (spec 142, merged `9dd891e3c`) left three Low follow-ups. The maintainer
 
    The tx's tenant cannot change between those calls.
 
-**Size M** (audit write path, tenant guard; never S). **Spec:** `specs/143-audience-audit-tidy/`, short. No migration, and no runtime behaviour change except one fewer probe round trip.
+**Size M** (audit write path, tenant guard; never S). **Spec:** `specs/143-audience-audit-tidy/`, short. No migration, and no runtime behaviour change (the one planned difference, one fewer probe round trip, went with TT3 in review round 2).
 
 ## Approach
 **A. One TS source for the index text** (fixes 1). In `src/modules/broadcasts/infrastructure/db/audience-audit-index.ts`, add:
@@ -40,7 +40,7 @@ Callers:
 The `.sql` migration cannot import TS, so it stays a copy. The existing cell then asserts the migration's `v_expected` equals `AUDIENCE_DELETED_INDEX_DEF` (replacing the scrape-the-canary half) and that the CREATE text matches the key and predicate. The unit site scan (`audience-audit-sites.test.ts:321`) asserts the adapter and the repo use the constants rather than inline text. Net result: one TS source and one SQL copy, pinned to each other.
 
 **B. The harness deps type requires the audit port** (fixes 2, at the type root rather than per literal).
-- In each of the 5 harnesses, `DepsWithEveryPort` becomes `{ [K in keyof BuildAudienceTickDeps]: unknown } & { readonly audit: Pick<AuditPort, 'emit'> & AudienceDeletedAuditPort }`, typed once in a shared `tests/support/broadcasts/tick-deps-type.ts` (`TickHarnessDeps`). An audit double without `emitOnce`, or with the wrong shape, then fails typecheck wherever deps are built, `satisfies` or not.
+- In each of the 5 harnesses, `DepsWithEveryPort` becomes `{ [K in keyof BuildAudienceTickDeps]: unknown } & { readonly audit: Pick<AuditPort, 'emit'> & AudienceDeletedAuditPort }`, typed once in a shared `tests/support/broadcasts/tick-deps-type.ts` (`TickHarnessDeps`). An audit double without `emitOnce`, or with the wrong shape, then fails typecheck wherever deps are built, `satisfies` or not. **As built after review round 3 (W1, W2):** the audit slot is `BuildAudienceTickDeps['audit']` rather than the hand-picked type above, the harnesses share `makeTickAuditDouble`, and `member-send-standing-unknown-kind.test.ts` is the sixth caller.
 - Drop the now-redundant `satisfies` on the 3 literals.
 - **RED:** a type-level test in that support file's companion (an `// @ts-expect-error` cell) shows a deps object whose audit lacks `emitOnce` does not compile.
 
@@ -57,7 +57,7 @@ The `.sql` migration cannot import TS, so it stays a copy. The existing cell the
 - **new:** `src/modules/broadcasts/infrastructure/db/audience-audit-index.ts`
 - **changed:** `audit-adapter.ts`, `drizzle-broadcasts-repo.ts`, `scripts/verify-schema.ts`
 - **new:** `tests/support/broadcasts/tick-deps-type.ts`
-- **changed tests:** the 5 `tests/unit/broadcasts/application/build-audience-tick*.test.ts`, `audience-audit-sites.test.ts`, `tests/integration/broadcasts/audience-audit-rows.test.ts`, plus a new probe unit test (`audience-audit-tenant-probe.test.ts`, every-call probing after the revert)
+- **changed tests:** the 5 `tests/unit/broadcasts/application/build-audience-tick*.test.ts`, `audience-audit-sites.test.ts`, `tests/integration/broadcasts/audience-audit-rows.test.ts`, plus a new probe unit test (`audience-audit-tenant-probe.test.ts`, every-call probing after the revert); review round 3 added `tests/unit/broadcasts/infrastructure/audience-audit-index.test.ts` (the file-only pins) and typed `member-send-standing-unknown-kind.test.ts`
 - **docs:** `specs/143-audience-audit-tidy/{spec,plan}.md`, the changelog line, and 142 plan.md's listed follow-ups marked closed by 143
 
 ## Verification
