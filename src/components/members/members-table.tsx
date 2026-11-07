@@ -56,6 +56,7 @@ import type { PortalState } from '@/modules/members';
 // 056-members-table-compact — the flag now leads the Company cell.
 import { CountryDisplay } from './country-display';
 import { MEMBERS_COLUMN_CARD, MEMBERS_COLUMN_SIZES } from './members-table-columns';
+import { CARD_SORT_CONTAINER, CardSortSelect } from '@/components/shell/card-sort-select';
 
 export type MembersTableRow = {
   readonly member_id: string;
@@ -521,6 +522,27 @@ export function MembersTable({
     [activeSortKey, urlOrder, searchParams, router, pathname],
   );
 
+  // The phone's sort control (AURA 5.87 keeps the grid's sort headers out of
+  // the cards): the same `?sort=&order=&page=1` URL as the headers; "Default
+  // order" drops the sort.
+  const cardSortValue = activeSortKey ? `${activeSortKey}:${effectiveOrder(activeSortKey, urlOrder)}` : '';
+  const handleCardSort = useCallback(
+    (value: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      const [key, order] = value.split(':');
+      if (key === 'memberNumber' || key === 'engagement') {
+        params.set('sort', key);
+        params.set('order', order === 'desc' ? 'desc' : 'asc');
+      } else {
+        params.delete('sort');
+        params.delete('order');
+      }
+      params.set('page', '1');
+      router.push(`${pathname}?${params.toString()}`);
+    },
+    [searchParams, router, pathname],
+  );
+
   // ── Selection (admin only) ──────────────────────────────────────────────
   const selectableIds = useMemo(
     () => rows.filter(isMemberRowSelectable).map((r) => r.member_id),
@@ -863,6 +885,19 @@ export function MembersTable({
           </div>
         )
       )}
+      <div className={CARD_SORT_CONTAINER}>
+      <CardSortSelect
+        label={t('sort.label')}
+        value={cardSortValue}
+        options={[
+          { value: '', label: t('sort.default') },
+          { value: 'memberNumber:asc', label: t('sort.memberNumberAsc') },
+          { value: 'memberNumber:desc', label: t('sort.memberNumberDesc') },
+          { value: 'engagement:desc', label: t('sort.engagementDesc') },
+          { value: 'engagement:asc', label: t('sort.engagementAsc') },
+        ]}
+        onChange={handleCardSort}
+      />
       <AuraProvider strings={tableStrings}>
         <DataTable<MembersTableRow>
           label={t('tableCaption')}
@@ -904,6 +939,7 @@ export function MembersTable({
             : {})}
         />
       </AuraProvider>
+      </div>
     </div>
   );
 }

@@ -9,13 +9,14 @@
  * these tests pin the attributes AURA's card rules key on.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
 import { MembersTable, type MembersTableRow } from '@/components/members/members-table';
 
+const routerPush = vi.fn();
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ replace: vi.fn(), push: routerPush, refresh: vi.fn() }),
   usePathname: () => '/admin/members',
   useSearchParams: () => new URLSearchParams(),
 }));
@@ -106,5 +107,35 @@ describe('members table in the list card', () => {
     const { container } = renderTable();
     expect(container.querySelector('.aura-bleed')).not.toBeNull();
     expect(container.querySelector('.aura-bleed-end')).toBeNull();
+  });
+});
+
+/** AURA Select: the combobox button, and the native select behind it. */
+function nativeSelect(name: string): HTMLSelectElement {
+  const native = screen.getByRole('combobox', { name }).closest('.aura-select')?.querySelector('select');
+  if (!native) throw new Error(`no native select for ${name}`);
+  return native;
+}
+
+// AURA 5.87 takes the grid's sort headers out of the cards, so the phone has
+// its own visible "Sort by" menu, shown only while the cards show; it writes
+// the same `?sort=&order=&page=1` URL as the headers.
+describe('members phone sort menu (AURA 5.87)', () => {
+  it('offers the two sortable columns both ways, shown only while the cards show', () => {
+    const { container } = renderTable();
+    const select = nativeSelect(messages.admin.members.directory.sort.label);
+    expect(select.closest('[data-card-sort]')).toHaveClass('@min-[592px]/cardsort:hidden');
+    expect(container.querySelector('.\\@container\\/cardsort')).not.toBeNull();
+    const labels = [...select.querySelectorAll('option')].map((o) => o.textContent);
+    const S = messages.admin.members.directory.sort;
+    expect(labels).toEqual([S.default, S.memberNumberAsc, S.memberNumberDesc, S.engagementDesc, S.engagementAsc]);
+  });
+
+  it('choosing an order writes the same URL the headers write', () => {
+    routerPush.mockClear();
+    renderTable();
+    const select = nativeSelect(messages.admin.members.directory.sort.label);
+    fireEvent.change(select, { target: { value: 'engagement:asc' } });
+    expect(routerPush).toHaveBeenCalledWith('/admin/members?sort=engagement&order=asc&page=1');
   });
 });

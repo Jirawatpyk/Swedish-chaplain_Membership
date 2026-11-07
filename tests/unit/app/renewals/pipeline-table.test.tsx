@@ -22,8 +22,9 @@ import type { PipelineRow } from '@/modules/renewals/client';
 // `refresh` is required too: `OutreachDialog`'s onConfirm (exercised by
 // the review-fix-#5 finalFocus suite below) calls `router.refresh()` on
 // a successful "Record outreach" submit.
+const routerPush = vi.fn();
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: routerPush, refresh: vi.fn() }),
 }));
 
 /** The one AURA grid; there is no separate card list to disambiguate. */
@@ -595,5 +596,56 @@ describe('<PipelineTable> in the list card', () => {
     );
     expect(container.querySelector('.aura-bleed')).not.toBeNull();
     expect(container.querySelector('.aura-bleed-end')).toBeNull();
+  });
+});
+
+/** AURA Select: the combobox button, and the native select behind it. */
+function nativeSelect(name: string): HTMLSelectElement {
+  const native = screen.getByRole('combobox', { name }).closest('.aura-select')?.querySelector('select');
+  if (!native) throw new Error(`no native select for ${name}`);
+  return native;
+}
+
+// AURA 5.87 takes the grid's sort headers out of the cards: the phone gets a
+// visible "Sort by" menu, shown only while the cards show, built on the
+// page's own sort links (same tier and lens kept, the cursor dropped).
+describe('<PipelineTable> phone sort menu (AURA 5.87)', () => {
+  const sortHrefs = {
+    expires: '/admin/renewals?urgency=t-30&sort=expires_at_desc',
+    tier: '/admin/renewals?urgency=t-30&sort=tier_asc',
+  };
+  it('offers Expires and Tier both ways, with the active sort selected', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={EMPTY_ROWS} canMutate sort="expires_at_asc" sortHrefs={sortHrefs} />
+      </NextIntlClientProvider>,
+    );
+    const S = en.admin.renewals.table.sort;
+    const select = nativeSelect(S.phoneLabel);
+    expect(select.closest('[data-card-sort]')).toHaveClass('@min-[592px]/cardsort:hidden');
+    expect([...select.options].map((o) => o.textContent)).toEqual([S.expiresAsc, S.expiresDesc, S.tierAsc, S.tierDesc]);
+    expect(select.value).toBe('expires_at_asc');
+  });
+
+  it('choosing an order follows the page sort link with that sort', () => {
+    routerPush.mockClear();
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={EMPTY_ROWS} canMutate sort="expires_at_asc" sortHrefs={sortHrefs} />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.change(nativeSelect(en.admin.renewals.table.sort.phoneLabel), {
+      target: { value: 'tier_desc' },
+    });
+    expect(routerPush).toHaveBeenCalledWith('/admin/renewals?urgency=t-30&sort=tier_desc');
+  });
+
+  it('shows no menu when the list is not sortable', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={EMPTY_ROWS} canMutate />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByRole('combobox', { name: en.admin.renewals.table.sort.phoneLabel })).toBeNull();
   });
 });

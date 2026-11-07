@@ -51,6 +51,7 @@ import {
 // rationale (Turbopack 16 + F8 barrel + server-only deps).
 import type { CycleStatus, PipelineRow, PipelineSort } from '@/modules/renewals/client';
 import { PIPELINE_COLUMN_LAYOUT } from './pipeline-table-columns';
+import { CARD_SORT_CONTAINER, CardSortSelect } from '@/components/shell/card-sort-select';
 
 export interface PipelineTableProps {
   readonly rows: ReadonlyArray<PipelineRow>;
@@ -170,6 +171,19 @@ export function PipelineTable({
     [sortHrefs, activeSortKey, router],
   );
   const sortable = sortHrefs !== undefined;
+
+  // The phone's sort control (AURA 5.87 keeps the grid's sort headers out of
+  // the cards). It follows the page's own sort link with the chosen sort, so
+  // the tier, the lens and the dropped cursor stay exactly as the headers do.
+  const handleCardSort = useCallback(
+    (value: string) => {
+      if (!sortHrefs) return;
+      const url = new URL(sortHrefs.expires, 'http://x');
+      url.searchParams.set('sort', value);
+      router.push(`${url.pathname}?${url.searchParams.toString()}`);
+    },
+    [sortHrefs, router],
+  );
 
   const columns = useMemo<DataTableColumn<PipelineRow>[]>(
     () => [
@@ -309,6 +323,20 @@ export function PipelineTable({
           a keyed fragment keeps React from reading it as an unkeyed list
           child beside the table. */}
       <Fragment key="result-count">{resultCount}</Fragment>
+      <div className={CARD_SORT_CONTAINER}>
+      {sortable ? (
+        <CardSortSelect
+          label={t('sort.phoneLabel')}
+          value={sort ?? 'expires_at_asc'}
+          options={[
+            { value: 'expires_at_asc', label: t('sort.expiresAsc') },
+            { value: 'expires_at_desc', label: t('sort.expiresDesc') },
+            { value: 'tier_asc', label: t('sort.tierAsc') },
+            { value: 'tier_desc', label: t('sort.tierDesc') },
+          ]}
+          onChange={handleCardSort}
+        />
+      ) : null}
       <AuraProvider strings={tableStrings}>
         <DataTable<PipelineRow>
           label={t('tableCaption')}
@@ -339,6 +367,7 @@ export function PipelineTable({
             : {})}
         />
       </AuraProvider>
+      </div>
       {outreachFor ? (
         <OutreachDialog
           open
