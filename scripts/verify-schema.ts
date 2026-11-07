@@ -267,17 +267,17 @@ async function main(): Promise<void> {
         // Spec 142 (mig 0328) — the arbiter of `f7AuditAdapter.emitOnce`'s
         // `ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE
         // event_type = 'broadcast_audience_deleted'`. Without it that INSERT
-        // fails with 42P10, so every segment removal loses its row. Asserted
-        // structurally from `pg_index`, as 0328's own check reads it (spec 142
-        // review round 3): on public.audit_log, unique, VALID (an invalid index
-        // is not used for ON CONFLICT inference), two key columns, the key and
-        // the partial predicate (whitespace, parentheses and the enum type's
-        // schema qualifier stripped). `[[:space:]()]`, not `\s`: a backslash
-        // escape in this template literal would be lost. Round 4 (code-review
-        // #3): a btree, no INCLUDE columns, not deferrable, each key under
-        // collation 0 or the database default and a default operator class.
+        // fails with 42P10, so every segment removal loses its row. The same
+        // comparison as 0328's own check (the past-the-cap closing change of
+        // spec 142): the live `pg_get_indexdef` text and 0328's expected
+        // literal, both with the `public.` schema qualifier dropped and
+        // whitespace collapsed, are equal, and the index is VALID (an invalid
+        // index is not used for ON CONFLICT inference). The literal and the
+        // normalisation are byte-equal to 0328's; audience-audit-rows.test.ts
+        // reads both files and fails when they drift. `[[:space:]]`, not `\s`:
+        // a backslash escape in this template literal would be lost.
         name: 'audit_log_audience_deleted_once valid partial unique index on (tenant_id, payload->>resend_audience_id) (mig 0328)',
-        query: `SELECT 1 AS hit FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_am am ON am.oid = c.relam JOIN pg_class t ON t.oid = i.indrelid WHERE c.relname = 'audit_log_audience_deleted_once' AND c.relnamespace = 'public'::regnamespace AND t.relname = 'audit_log' AND t.relnamespace = 'public'::regnamespace AND am.amname = 'btree' AND i.indisunique AND i.indisvalid AND i.indimmediate AND i.indnkeyatts = 2 AND i.indnatts = 2 AND NOT EXISTS (SELECT 1 FROM unnest(i.indcollation) k(o) WHERE k.o <> 0 AND k.o IS DISTINCT FROM (SELECT d.oid FROM pg_collation d WHERE d.collname = 'default' AND d.collnamespace = 'pg_catalog'::regnamespace)) AND NOT EXISTS (SELECT 1 FROM unnest(i.indclass) k(o) LEFT JOIN pg_opclass opc ON opc.oid = k.o WHERE opc.opcdefault IS NOT TRUE) AND pg_get_indexdef(i.indexrelid, 1, true) = 'tenant_id' AND regexp_replace(pg_get_indexdef(i.indexrelid, 2, true), '[[:space:]()]', '', 'g') = 'payload->>''resend_audience_id''::text' AND regexp_replace(replace(pg_get_expr(i.indpred, i.indrelid, true), 'public.audit_event_type', 'audit_event_type'), '[[:space:]()]', '', 'g') = 'event_type=''broadcast_audience_deleted''::audit_event_type'`,
+        query: `SELECT 1 AS hit FROM pg_index i WHERE i.indexrelid = to_regclass('public.audit_log_audience_deleted_once') AND i.indisvalid AND btrim(regexp_replace(replace(pg_get_indexdef(i.indexrelid), 'public.', ''), '[[:space:]]+', ' ', 'g')) = btrim(regexp_replace(replace('CREATE UNIQUE INDEX audit_log_audience_deleted_once ON public.audit_log USING btree (tenant_id, ((payload ->> ''resend_audience_id''::text))) WHERE (event_type = ''broadcast_audience_deleted''::audit_event_type)', 'public.', ''), '[[:space:]]+', ' ', 'g'))`,
       },
       {
         // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure

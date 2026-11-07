@@ -64,106 +64,45 @@ CREATE UNIQUE INDEX IF NOT EXISTS "audit_log_audience_deleted_once"
   ON "audit_log" ("tenant_id", ("payload"->>'resend_audience_id'))
   WHERE "event_type" = 'broadcast_audience_deleted';--> statement-breakpoint
 
--- The index under the name must be this one, read structurally from pg_index
--- (review round 3, code-review #2 and #6), not as indexdef text: it is on
--- public.audit_log, unique, VALID (an invalid index enforces nothing and is
--- not used for ON CONFLICT inference), with two key columns, tenant_id and
--- payload->>'resend_audience_id', and the predicate. The expression and the
--- predicate are compared with whitespace and parentheses stripped, and the
--- predicate with any schema qualifier on the enum type dropped, so a
--- rendering difference is not a definition difference. The values are what
--- dev's pg_index row answers after the apply. A missing index raises too; the
--- message names every field that differed. One SELECT INTO reads the catalog.
--- Review round 4 (code-review #3): it is also a btree, with no INCLUDE columns
--- (indnatts = 2), not deferrable (indimmediate), each key under collation 0 or
--- the database default and a default operator class; v_bad_coll and v_bad_opc
--- name the keys that are not (NULL when none). Dev answers btree, 2, true,
--- default/default and text_ops/text_ops.
+-- The index under the name must be this one. Past the review cap, the
+-- maintainer chose to compare the full definition: review round 3 had read
+-- the definition structurally from pg_index instead of as indexdef text, and
+-- that read missed NULLS NOT DISTINCT and passed bpchar_ops (the default
+-- operator class of another type). pg_get_indexdef prints the access method,
+-- UNIQUE, the table, every key with any non-default operator class or
+-- COLLATE, INCLUDE, NULLS NOT DISTINCT and the predicate, so the live text,
+-- normalised (the `public.` schema qualifier dropped, whitespace collapsed),
+-- must equal v_expected normalised the same way, and the index must be VALID
+-- (an invalid index enforces nothing and is not used for ON CONFLICT
+-- inference). v_expected is dev's text after the apply, read on 7 Nov 2026;
+-- scripts/verify-schema.ts's canary holds the same literal and normalisation
+-- (an integration test compares the two files). DEFERRABLE is never printed,
+-- but only a constraint's index can be deferrable, and a constraint carries
+-- neither an expression key nor a WHERE, so this text cannot be one. No
+-- pg_index row for the name (none, or a relation that is not an index)
+-- leaves both variables NULL and raises.
 DO $$
 DECLARE
-  v_idx oid;
-  v_tbl text;
-  v_is_unique boolean;
-  v_is_valid boolean;
-  v_key_count integer;
-  v_key1 text;
-  v_key2 text;
-  v_pred text;
-  v_am text;
-  v_att_count integer;
-  v_immediate boolean;
-  v_bad_coll text;
-  v_bad_opc text;
-  differs text[] := ARRAY[]::text[];
+  v_def text;
+  v_valid boolean;
+  v_expected constant text := 'CREATE UNIQUE INDEX audit_log_audience_deleted_once ON public.audit_log USING btree (tenant_id, ((payload ->> ''resend_audience_id''::text))) WHERE (event_type = ''broadcast_audience_deleted''::audit_event_type)';
+  v_live text;
+  v_want text;
 BEGIN
-  SELECT i.indexrelid, tn.nspname || '.' || t.relname, i.indisunique, i.indisvalid, i.indnkeyatts,
-         pg_get_indexdef(i.indexrelid, 1, true), pg_get_indexdef(i.indexrelid, 2, true),
-         pg_get_expr(i.indpred, i.indrelid, true), am.amname, i.indnatts, i.indimmediate,
-         (SELECT string_agg('key ' || k.n || ' ' || coalesce(co.collname::text, k.o::text), ', ' ORDER BY k.n)
-            FROM unnest(i.indcollation) WITH ORDINALITY k(o, n)
-            LEFT JOIN pg_collation co ON co.oid = k.o
-           WHERE k.o <> 0
-             AND k.o IS DISTINCT FROM (SELECT d.oid FROM pg_collation d
-                                        WHERE d.collname = 'default'
-                                          AND d.collnamespace = 'pg_catalog'::regnamespace)),
-         (SELECT string_agg('key ' || k.n || ' ' || coalesce(opc.opcname::text, k.o::text), ', ' ORDER BY k.n)
-            FROM unnest(i.indclass) WITH ORDINALITY k(o, n)
-            LEFT JOIN pg_opclass opc ON opc.oid = k.o
-           WHERE opc.opcdefault IS NOT TRUE)
-    INTO v_idx, v_tbl, v_is_unique, v_is_valid, v_key_count, v_key1, v_key2, v_pred,
-         v_am, v_att_count, v_immediate, v_bad_coll, v_bad_opc
+  SELECT pg_get_indexdef(i.indexrelid), i.indisvalid INTO v_def, v_valid
     FROM pg_index i
-    JOIN pg_class c ON c.oid = i.indexrelid
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    JOIN pg_am am ON am.oid = c.relam
-    JOIN pg_class t ON t.oid = i.indrelid
-    JOIN pg_namespace tn ON tn.oid = t.relnamespace
-   WHERE n.nspname = 'public' AND c.relname = 'audit_log_audience_deleted_once';
-  IF v_idx IS NULL THEN
-    differs := differs || 'no such index'::text;
-  ELSE
-    IF v_tbl IS DISTINCT FROM 'public.audit_log' THEN
-      differs := differs || ('table ' || coalesce(v_tbl, '(none)'));
-    END IF;
-    IF v_is_unique IS NOT TRUE THEN
-      differs := differs || 'indisunique false'::text;
-    END IF;
-    IF v_is_valid IS NOT TRUE THEN
-      differs := differs || 'indisvalid false'::text;
-    END IF;
-    IF v_key_count IS DISTINCT FROM 2 THEN
-      differs := differs || ('indnkeyatts ' || coalesce(v_key_count::text, '(none)'));
-    END IF;
-    IF v_key1 IS DISTINCT FROM 'tenant_id' THEN
-      differs := differs || ('key 1 ' || coalesce(v_key1, '(none)'));
-    END IF;
-    IF regexp_replace(v_key2, '[[:space:]()]', '', 'g')
-       IS DISTINCT FROM 'payload->>''resend_audience_id''::text' THEN
-      differs := differs || ('key 2 ' || coalesce(v_key2, '(none)'));
-    END IF;
-    IF regexp_replace(replace(v_pred, 'public.audit_event_type', 'audit_event_type'), '[[:space:]()]', '', 'g')
-       IS DISTINCT FROM 'event_type=''broadcast_audience_deleted''::audit_event_type' THEN
-      differs := differs || ('predicate ' || coalesce(v_pred, '(none)'));
-    END IF;
-    IF v_am IS DISTINCT FROM 'btree' THEN
-      differs := differs || ('access method ' || coalesce(v_am, '(none)'));
-    END IF;
-    IF v_att_count IS DISTINCT FROM 2 THEN
-      differs := differs || ('indnatts ' || coalesce(v_att_count::text, '(none)'));
-    END IF;
-    IF v_immediate IS NOT TRUE THEN
-      differs := differs || 'indimmediate false'::text;
-    END IF;
-    IF v_bad_coll IS NOT NULL THEN
-      differs := differs || ('collation ' || v_bad_coll);
-    END IF;
-    IF v_bad_opc IS NOT NULL THEN
-      differs := differs || ('operator class ' || v_bad_opc);
-    END IF;
+   WHERE i.indexrelid = to_regclass('public.audit_log_audience_deleted_once');
+  IF v_def IS NULL THEN
+    RAISE EXCEPTION '0328: index audit_log_audience_deleted_once has another definition: no such index';
   END IF;
-  IF cardinality(differs) > 0 THEN
-    RAISE EXCEPTION '0328: index audit_log_audience_deleted_once has another definition: %',
-      array_to_string(differs, '; ');
+  v_live := btrim(regexp_replace(replace(v_def, 'public.', ''), '[[:space:]]+', ' ', 'g'));
+  v_want := btrim(regexp_replace(replace(v_expected, 'public.', ''), '[[:space:]]+', ' ', 'g'));
+  IF v_live IS DISTINCT FROM v_want THEN
+    RAISE EXCEPTION '0328: index audit_log_audience_deleted_once has another definition: live [%], expected [%]',
+      v_live, v_want;
+  END IF;
+  IF v_valid IS NOT TRUE THEN
+    RAISE EXCEPTION '0328: index audit_log_audience_deleted_once has another definition: indisvalid false';
   END IF;
 END $$;--> statement-breakpoint
 
