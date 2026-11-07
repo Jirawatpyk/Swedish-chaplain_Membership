@@ -190,6 +190,19 @@ export async function assertTenantBoundTx(
 }
 
 /**
+ * A single-row read (an aggregate or an EXISTS) answers exactly one row from
+ * Postgres. Any other count is a driver or pooler defect, so the read refuses
+ * it rather than mistake it for "nothing recorded".
+ */
+function exactlyOneRow<T>(rows: readonly T[], method: string): T {
+  const [row] = rows;
+  if (rows.length !== 1 || row === undefined) {
+    throw new Error(`${method}: expected exactly one row, got ${rows.length}`);
+  }
+  return row;
+}
+
+/**
  * Spec 139 s2, review round 3 (code-review #1) — `assertTenantBoundTx` for the
  * two audience audit reads and (spec 142) `f7AuditAdapter.emitOnce`, whose
  * refusal is an `AuditPortInvariantError`: the row helper then fails closed
@@ -1807,10 +1820,12 @@ export function makeDrizzleBroadcastsRepo(
           AND event_type = 'broadcast_concurrent_action_blocked'
           AND payload->>'resendOutcome' = 'already_sent'
       `)) as unknown as Array<{ broadcast_recorded: boolean | 't' | 'f'; member_count: number | string }>;
-      const row = rows[0];
+      // An aggregate always answers one row; anything else is a driver defect,
+      // and reading it as "no evidence" would let the caller append a second row.
+      const row = exactlyOneRow(rows, 'readAlreadySentEvidenceInTx');
       return {
-        broadcastRecorded: row?.broadcast_recorded === true || row?.broadcast_recorded === 't',
-        memberBroadcastCount: Number(row?.member_count ?? 0),
+        broadcastRecorded: row.broadcast_recorded === true || row.broadcast_recorded === 't',
+        memberBroadcastCount: Number(row.member_count),
       };
     },
 
@@ -1838,7 +1853,9 @@ export function makeDrizzleBroadcastsRepo(
             AND payload->>'resendBroadcastId' = ${resendBroadcastId}::text
         ) AS found
       `)) as unknown as Array<{ found: boolean | 't' | 'f' }>;
-      return rows[0]?.found === true || rows[0]?.found === 't';
+      // EXISTS always answers one row; see `readAlreadySentEvidenceInTx`.
+      const { found } = exactlyOneRow(rows, 'hasUnverifiableCountAuditInTx');
+      return found === true || found === 't';
     },
 
     /**
