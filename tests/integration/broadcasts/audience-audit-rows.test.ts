@@ -385,70 +385,48 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     }
 
     /**
-     * Review round 3 (code-review #2, #6) — what the check's one catalog read
-     * answers, field by field. `LIVE` is what dev's `pg_index` row answers
-     * (read with `pnpm db:query` on 7 Nov 2026; the positive control below
-     * re-reads it); `idx` stands for the index oid, NULL when there is none.
-     * Round 4 (code-review #3) adds the access method, `indnatts` (INCLUDE
-     * columns), `indimmediate`, and the keys whose collation is not the
-     * default one (`badColl`) or whose operator class is not a default one
-     * (`badOpc`), NULL when every key is fine.
+     * Past the cap, closing change (the maintainer chose "compare the full
+     * definition") — the check compares the live `pg_get_indexdef` text with
+     * ONE expected literal, both normalised by `NORMALISE` (the `public.`
+     * schema qualifier dropped, whitespace collapsed), and requires
+     * `indisvalid`. `pg_get_indexdef` prints the access method, UNIQUE, the
+     * table, every key with any non-default operator class or COLLATE, INCLUDE,
+     * NULLS NOT DISTINCT and the predicate, so a difference in any of them is
+     * a difference in the text. `LIVE_DEF` is dev's text, read with
+     * `pnpm db:query` on 7 Nov 2026; the positive control re-reads it.
      */
-    interface IndexFacts {
-      readonly idx: number | null;
-      readonly tbl: string | null;
-      readonly isUnique: boolean | null;
-      readonly isValid: boolean | null;
-      readonly keyCount: number | null;
-      readonly key1: string | null;
-      readonly key2: string | null;
-      readonly pred: string | null;
-      readonly am: string | null;
-      readonly attCount: number | null;
-      readonly immediate: boolean | null;
-      readonly badColl: string | null;
-      readonly badOpc: string | null;
-    }
-    const LIVE: IndexFacts = {
-      idx: 1,
-      tbl: 'public.audit_log',
-      isUnique: true,
-      isValid: true,
-      keyCount: 2,
-      key1: 'tenant_id',
-      key2: "(payload ->> 'resend_audience_id'::text)",
-      pred: "event_type = 'broadcast_audience_deleted'::audit_event_type",
-      am: 'btree',
-      attCount: 2,
-      immediate: true,
-      badColl: null,
-      badOpc: null,
-    };
+    const LIVE_DEF =
+      "CREATE UNIQUE INDEX audit_log_audience_deleted_once ON public.audit_log USING btree (tenant_id, ((payload ->> 'resend_audience_id'::text))) WHERE (event_type = 'broadcast_audience_deleted'::audit_event_type)";
+    /** The normalisation, as both files must spell it around their argument. */
+    const NORMALISE = (arg: string) => `btrim(regexp_replace(replace(${arg}, 'public.', ''), '[[:space:]]+', ' ', 'g'))`;
+    const normalised = (def: string) => def.replaceAll('public.', '').replace(/\s+/g, ' ').trim();
+    const sqlText = (v: string | null) => (v === null ? 'NULL' : `'${v.replaceAll("'", "''")}'`);
+    /** A SQL string literal's body (quotes doubled) back to its value. */
+    const unquote = (body: string) => body.replaceAll("''", "'");
 
-    /** The check with its catalog read replaced by literal assignments of `facts`, so it reads no catalog. */
-    function checkAgainst(check: string, facts: IndexFacts): string {
-      const read = /SELECT\s+i\.indexrelid\b[^;]*;/;
+    /** The migration's expected literal, as written between its quotes. */
+    function migrationLiteral(): string {
+      const m = /v_expected constant text := '((?:[^']|'')*)';/.exec(indexCheckSql());
+      expect(m).not.toBeNull();
+      return m![1]!;
+    }
+
+    /** The 0328 canary's query in scripts/verify-schema.ts, and the literal it compares with. */
+    function canary(): { query: string; literal: string } {
+      const source = readFileSync(join(process.cwd(), 'scripts', 'verify-schema.ts'), 'utf8');
+      const q = /name: 'audit_log_audience_deleted_once[^']*\(mig 0328\)',\s*query: `([^`]*)`/.exec(source);
+      expect(q).not.toBeNull();
+      const query = q![1]!;
+      const l = /replace\('(CREATE UNIQUE INDEX (?:[^']|'')*)', 'public\.', ''\)/.exec(query);
+      expect(l).not.toBeNull();
+      return { query, literal: l![1]! };
+    }
+
+    /** The check with its catalog read replaced by literal assignments, so it reads no catalog. */
+    function checkAgainst(check: string, def: string | null, valid: boolean | null): string {
+      const read = /SELECT\s+pg_get_indexdef\(i\.indexrelid\),\s*i\.indisvalid\s+INTO\s+v_def,\s*v_valid[^;]*;/;
       expect(read.test(check)).toBe(true);
-      const text = (v: string | null) => (v === null ? 'NULL' : `'${v.replaceAll("'", "''")}'`);
-      const lit = (v: number | boolean | null) => (v === null ? 'NULL' : String(v));
-      return check.replace(
-        read,
-        [
-          `v_idx := ${lit(facts.idx)}::oid;`,
-          `v_tbl := ${text(facts.tbl)};`,
-          `v_is_unique := ${lit(facts.isUnique)};`,
-          `v_is_valid := ${lit(facts.isValid)};`,
-          `v_key_count := ${lit(facts.keyCount)};`,
-          `v_key1 := ${text(facts.key1)};`,
-          `v_key2 := ${text(facts.key2)};`,
-          `v_pred := ${text(facts.pred)};`,
-          `v_am := ${text(facts.am)};`,
-          `v_att_count := ${lit(facts.attCount)};`,
-          `v_immediate := ${lit(facts.immediate)};`,
-          `v_bad_coll := ${text(facts.badColl)};`,
-          `v_bad_opc := ${text(facts.badOpc)};`,
-        ].join(' '),
-      );
+      return check.replace(read, `v_def := ${sqlText(def)}; v_valid := ${valid === null ? 'NULL' : String(valid)};`);
     }
 
     /** Runs `block` in a rolled-back tx; answers the RAISE message, or null when it passed. */
@@ -501,117 +479,80 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       expect(errLogFields(second).code).toBe('23505');
     });
 
-    // Review round 2 (code-review #1, #3) — the CREATE is IF NOT EXISTS again,
-    // so a re-run is a no-op, and the check after it fails the migration when
-    // the index under this name has another definition. Review round 3
-    // (code-review #2, #6) — the check is structural, against pg_index, and an
-    // invalid index fails it too. Every cell is read-only: the check reads the
-    // catalog only (or literal values in its place), and no index is created
-    // on the shared audit_log (the round 1 42P07 cell took its SHARE lock).
+    // Review round 2 (code-review #1, #3) — the CREATE is IF NOT EXISTS, so a
+    // re-run is a no-op, and the check after it fails the migration when the
+    // index under this name has another definition. Every cell is read-only:
+    // the check reads the catalog only (or literal values in its place), and
+    // no index is created on the shared audit_log.
     const PREFIX = '0328: index audit_log_audience_deleted_once has another definition';
 
-    it("the index check passes on the live index, and on LIVE's values in place of the catalog read", async () => {
-      // Positive control: dev's live row is what LIVE says (round 4,
-      // code-review #7: the table schema-qualified, as the check reads it).
+    it('the migration and the verify-schema canary compare with the same literal and the same normalisation (CR4 #5)', () => {
+      const literal = migrationLiteral();
+      expect(unquote(literal)).toBe(LIVE_DEF);
+      const check = indexCheckSql();
+      expect(check).toContain(NORMALISE('v_def'));
+      expect(check).toContain(NORMALISE('v_expected'));
+      const c = canary();
+      expect(c.literal).toBe(literal);
+      expect(c.query).toContain(NORMALISE('pg_get_indexdef(i.indexrelid)'));
+      expect(c.query).toContain(NORMALISE(`'${literal}'`));
+      expect(c.query).toContain('i.indisvalid');
+    });
+
+    it('the index check and the canary pass on the live index, and the check on its text in place of the catalog read', async () => {
+      // Positive control: dev's live text and validity are what LIVE_DEF says.
       const live = (await db.execute(sql`
-        SELECT tn.nspname || '.' || t.relname AS tbl, i.indisunique, i.indisvalid, i.indnkeyatts,
-               pg_get_indexdef(i.indexrelid, 1, true) AS key1, pg_get_indexdef(i.indexrelid, 2, true) AS key2,
-               pg_get_expr(i.indpred, i.indrelid, true) AS pred, am.amname::text AS am, i.indnatts, i.indimmediate,
-               (SELECT array_agg(coalesce(co.collname::text, k.o::text) ORDER BY k.n)
-                  FROM unnest(i.indcollation) WITH ORDINALITY k(o, n)
-                  LEFT JOIN pg_collation co ON co.oid = k.o) AS colls,
-               (SELECT array_agg(coalesce(opc.opcname::text, k.o::text) || CASE WHEN opc.opcdefault THEN '' ELSE ' (not default)' END ORDER BY k.n)
-                  FROM unnest(i.indclass) WITH ORDINALITY k(o, n)
-                  LEFT JOIN pg_opclass opc ON opc.oid = k.o) AS opcs
-          FROM pg_index i
-          JOIN pg_class c ON c.oid = i.indexrelid
-          JOIN pg_am am ON am.oid = c.relam
-          JOIN pg_class t ON t.oid = i.indrelid
-          JOIN pg_namespace tn ON tn.oid = t.relnamespace
-         WHERE c.relname = 'audit_log_audience_deleted_once' AND c.relnamespace = 'public'::regnamespace
+        SELECT pg_get_indexdef(indexrelid) AS d, indisvalid
+          FROM pg_index WHERE indexrelid = to_regclass('public.audit_log_audience_deleted_once')
       `)) as unknown as Array<Record<string, unknown>>;
-      expect(live).toEqual([
-        {
-          tbl: LIVE.tbl,
-          indisunique: true,
-          indisvalid: true,
-          indnkeyatts: 2,
-          key1: LIVE.key1,
-          key2: LIVE.key2,
-          pred: LIVE.pred,
-          am: LIVE.am,
-          indnatts: LIVE.attCount,
-          indimmediate: LIVE.immediate,
-          colls: ['default', 'default'],
-          opcs: ['text_ops', 'text_ops'],
-        },
-      ]);
+      expect(live).toEqual([{ d: LIVE_DEF, indisvalid: true }]);
       const check = indexCheckSql();
       expect(await raised(check)).toBeNull();
-      expect(await raised(checkAgainst(check, LIVE))).toBeNull();
-      // The enum type's schema qualifier is not a difference.
-      expect(
-        await raised(checkAgainst(check, { ...LIVE, pred: "event_type = 'broadcast_audience_deleted'::public.audit_event_type" })),
-      ).toBeNull();
+      expect(await raised(checkAgainst(check, LIVE_DEF, true))).toBeNull();
+      // The canary's own query, as db:verify runs it, finds the index.
+      const hit = (await db.execute(sql.raw(canary().query))) as unknown as unknown[];
+      expect(hit).toHaveLength(1);
+      // A schema qualifier on the enum type and other whitespace are not differences.
+      const reworded = LIVE_DEF.replace('::audit_event_type', '::public.audit_event_type').replace(' USING ', '\n   USING  ');
+      expect(await raised(checkAgainst(check, reworded, true))).toBeNull();
     });
 
-    it('the index check raises on another definition and on a missing index, naming what differed', async () => {
+    it('the index check raises on every other definition, quoting both normalised texts', async () => {
       const check = indexCheckSql();
-      const cases: ReadonlyArray<readonly [Partial<IndexFacts>, string]> = [
-        [
-          {
-            idx: null,
-            tbl: null,
-            isUnique: null,
-            isValid: null,
-            keyCount: null,
-            key1: null,
-            key2: null,
-            pred: null,
-            am: null,
-            attCount: null,
-            immediate: null,
-          },
-          'no such index',
-        ],
-        [{ tbl: 'public.other_table' }, 'table public.other_table'],
-        [{ isUnique: false }, 'indisunique false'],
-        [{ keyCount: 1 }, 'indnkeyatts 1'],
-        [{ key1: 'payload' }, 'key 1 payload'],
-        [{ key2: "(payload ->> 'broadcast_id'::text)" }, "key 2 (payload ->> 'broadcast_id'::text)"],
-        [{ pred: "event_type = 'broadcast_audience_disclosed'::audit_event_type" }, 'predicate'],
-        [{ pred: null }, 'predicate (none)'],
+      const keys = "(tenant_id, ((payload ->> 'resend_audience_id'::text)))";
+      const variant = (to: string, from = keys) => {
+        expect(LIVE_DEF).toContain(from);
+        return LIVE_DEF.replace(from, to);
+      };
+      const cases: ReadonlyArray<readonly [string, string]> = [
+        [variant(`${keys} NULLS NOT DISTINCT`), 'NULLS NOT DISTINCT'],
+        // bpchar_ops is the DEFAULT class of another type: a "default class" test passes it.
+        [variant("(tenant_id, ((payload ->> 'resend_audience_id'::text)) bpchar_ops)"), 'bpchar_ops'],
+        [variant("(tenant_id, ((payload ->> 'resend_audience_id'::text)) text_pattern_ops)"), 'text_pattern_ops'],
+        [variant(`(tenant_id, ((payload ->> 'resend_audience_id'::text)) COLLATE "C")`), 'COLLATE "C"'],
+        [variant(`${keys} INCLUDE (id)`), 'INCLUDE (id)'],
+        [variant("'broadcast_audience_disclosed'::audit_event_type", "'broadcast_audience_deleted'::audit_event_type"), 'broadcast_audience_disclosed'],
+        [variant(keys.replace('resend_audience_id', 'broadcast_id')), "'broadcast_id'"],
+        [variant('USING hash', 'USING btree'), 'USING hash'],
+        [variant('CREATE INDEX', 'CREATE UNIQUE INDEX'), 'CREATE INDEX'],
+        [variant('ON public.other_table', 'ON public.audit_log'), 'ON other_table'],
       ];
-      for (const [diff, named] of cases) {
-        const message = await raised(checkAgainst(check, { ...LIVE, ...diff }));
+      for (const [def, marker] of cases) {
+        const message = await raised(checkAgainst(check, def, true));
         expect(message).toContain(PREFIX);
-        expect(message).toContain(named);
+        // The message quotes the normalised live text (so the fixture really
+        // carries its difference) and the normalised expected one.
+        expect(message).toContain(`live [${normalised(def)}]`);
+        expect(normalised(def)).toContain(marker);
+        expect(message).toContain(`expected [${normalised(LIVE_DEF)}]`);
       }
     });
 
-    it('the index check raises on an invalid index (indisvalid false)', async () => {
-      const message = await raised(checkAgainst(indexCheckSql(), { ...LIVE, isValid: false }));
-      expect(message).toContain(`${PREFIX}: indisvalid false`);
-    });
-
-    // Round 4 (code-review #3) — the same keys and predicate under another
-    // access method, with INCLUDE columns, a non-default collation or operator
-    // class, or as a deferrable index is another definition too.
-    it('the index check raises on a non-btree method, INCLUDE columns, a non-default collation or operator class, and a deferrable index', async () => {
+    it('the index check raises on an invalid index (indisvalid false) and on a missing one (the all-NULL row, CR #9)', async () => {
       const check = indexCheckSql();
-      const cases: ReadonlyArray<readonly [Partial<IndexFacts>, string]> = [
-        [{ am: 'hash' }, 'access method hash'],
-        [{ am: null }, 'access method (none)'],
-        [{ attCount: 3 }, 'indnatts 3'],
-        [{ badColl: 'key 2 C' }, 'collation key 2 C'],
-        [{ badOpc: 'key 2 text_pattern_ops' }, 'operator class key 2 text_pattern_ops'],
-        [{ immediate: false }, 'indimmediate false'],
-      ];
-      for (const [diff, named] of cases) {
-        const message = await raised(checkAgainst(check, { ...LIVE, ...diff }));
-        expect(message).toContain(PREFIX);
-        expect(message).toContain(named);
-      }
+      expect(await raised(checkAgainst(check, LIVE_DEF, false))).toBe(`${PREFIX}: indisvalid false`);
+      // No pg_index row for the name: SELECT INTO leaves both variables NULL.
+      expect(await raised(checkAgainst(check, null, null))).toBe(`${PREFIX}: no such index`);
     });
 
     it('the pre-check raises on a duplicate key and names it as tenant/segment', async () => {
