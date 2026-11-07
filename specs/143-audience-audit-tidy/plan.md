@@ -67,3 +67,16 @@ The `.sql` migration cannot import TS, so it stays a copy. The existing cell the
 - No `/verify`: there is no runtime surface beyond one fewer probe. The live paths are unchanged, and the PR says so.
 - Reviews: `/code-review high`, plus `reliability-guardian` (the probe cache), within the D-043 cap.
 - Merge on the maintainer's word.
+
+## Evidence
+Build, 7 Nov 2026, on `143-audience-audit-tidy`.
+
+| Test | RED (commit, failing line) | GREEN |
+|---|---|---|
+| TT1 `audience-audit-sites.test.ts` (adapter / repo cells) | `5d27e5a79`: `expected '...' to match /from '\.\/db\/audience-audit-index'/` (2 failed, 21 passed) | `1d6b41422`: 23 passed |
+| TT1 `audience-audit-rows.test.ts` canary-source cell | `5d27e5a79`: `expected '/**\r\n * Quick schema verification a…' to match /from '\.\.\/src\/modules\/broadca…/` (1 failed, 26 passed) | `1d6b41422`: 27 passed; `pnpm db:verify` 32/32 canaries |
+| TT1 migration pins (`v_expected`, CREATE), green by construction | Mutation: whitespace added to `AUDIENCE_DELETED_PREDICATE_SQL` and `AUDIENCE_DELETED_INDEX_DEF` turned 4 cells red (the v_expected, CREATE, live positive control and variant cells); reverted | 27 passed |
+| TT2 `tick-deps-type.test.ts` | `92bec56e4`: `tick-deps-type.test.ts(42,5): error TS2578: Unused '@ts-expect-error' directive`, and (45,5) | `283e5863e`: tsc clean; 6 files, 321 tests |
+| TT2 the two unguarded harnesses | Did not compile against `TickHarnessDeps` (their `emitOnce` took a `Record` payload): `-audience-audit.test.ts(244,13)`, `-failure-paths.test.ts(819,15)` TS2322 | fixed in `283e5863e` |
+| TT3 `audience-audit-tenant-probe-cache.test.ts` | `d1e170cd1`: `AssertionError: expected 2 to be 1` on both reclaim sequences (2 failed, 4 passed) | `cbbfef3f9`: 6 passed; mutation (cache before the probe) turned the two "caches nothing" cells red; reverted |
+| TT3 cross-tenant integration | | `audience-audit-rows` + `tx-tenant-binding-guard`: 31 passed |
