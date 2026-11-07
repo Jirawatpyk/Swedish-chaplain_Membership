@@ -4,29 +4,34 @@
  *
  * `broadcast_audience_disclosed` records a recipient list handed to Resend
  * (tick 1, before `createContactImport`); `broadcast_audience_deleted` records
- * the delete of a segment that may hold recipients, once per segment (deduped
- * on `resend_audience_id` under the repo's advisory lock, in the same tx as
- * the insert; the first `reason` wins). The orphan reclaim writes its deleted
- * row only when this tenant's disclosed row names the segment, copying that
- * row's broadcast and requester (pdpa M-3: never filed under a guessed tenant
- * or member); a segment already recorded as deleted is skipped, and any other
- * gets a WARN and a counter.
+ * the delete of a segment that may hold recipients, once per (tenant,
+ * segment). Spec 142: that row is written only through
+ * `AudienceDeletedAuditPort.emitOnce`, whose `ON CONFLICT DO NOTHING` against
+ * migration 0328's partial unique index is the dedupe (the first `reason`
+ * wins); `emitOnce` answering false is a skip. Every deleted row is built by
+ * `audienceDeletedInput`. The orphan reclaim writes its deleted row only when
+ * this tenant's disclosed row names the segment, copying that row's broadcast
+ * and requester (pdpa M-3: never filed under a guessed tenant or member); a
+ * segment already recorded as deleted is skipped, and any other gets a WARN
+ * and a counter.
  *
  * Every row is written BEFORE its Resend call, in its own tenant-bound
  * `withTx` (never a null tx: that would take a pool connection with no
  * `app.current_tenant`, where RLS writes nothing), so it records a request,
- * not its outcome. On failure (the pre-send unverifiable row's pattern, spec
- * 140 s4):
+ * not its outcome. The envelope is `writePreCallAuditRow` (spec 142 AO4,
+ * shared with the pre-send unverifiable row); this file supplies its log
+ * lines. On failure:
  *   - an adapter invariant error (`isAdapterInvariantError`: a wiring bug) is
  *     logged at ERROR with `severity: 'critical'` (`<prefix>.audit_invariant`)
  *     and RETHROWN, so the call is never made (review round 2, code-review #5:
  *     logged here, so the tick restart has the line as well as the crons);
- *   - a lock timeout (SQLSTATE 55P03: the dedupe waited
- *     `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` for the segment's advisory lock) is not
- *     a known loss, because the holder may be writing this very row: the WARN
- *     `<prefix>.audience_audit_lock_timeout` and the counter below (the row may
- *     be missing), and the caller makes the call (review round 2, code-review
- *     #1 / #4, reliability LOW-1);
+ *   - a lock timeout (SQLSTATE 55P03: `emitOnce`'s INSERT waited
+ *     `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` on another tx's uncommitted insert of
+ *     the same key, spec 142) is not a known loss, because the holder may be
+ *     writing this very row: the WARN `<prefix>.audience_audit_lock_timeout`
+ *     and the counter below (the row may be missing), and the caller makes the
+ *     call (spec 139 s2 review round 2, code-review #1 / #4, reliability
+ *     LOW-1);
  *   - any other error is a lost record: logged at ERROR with
  *     `severity: 'critical'` (`<prefix>.audience_audit_lost`) and counted on
  *     `broadcasts_audit_emit_failed_total`, and the caller makes the call
@@ -44,20 +49,26 @@ import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 
-import type { AudienceDeleteReason, AuditPort, F7AuditPayloadShapes } from '../ports/audit-port';
+import type {
+  AudienceDeletedAuditPort,
+  AudienceDeletedEmitInput,
+  AudienceDeleteReason,
+  AuditPort,
+} from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
-import { isAdapterInvariantError } from './_safe-audit-emit';
+import { writePreCallAuditRow, type PreCallAuditRowDeps } from './_pre-call-audit-row';
 
-/** The ports a site needs to write an audience row. */
-export interface AudienceAuditDeps {
-  readonly tenant: TenantContext;
-  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx'>;
+/** The ports the disclosed row needs: the envelope's, plus its writer. */
+export interface AudienceAuditDeps extends PreCallAuditRowDeps {
   readonly audit: Pick<AuditPort, 'emit'>;
 }
 
-/** A delete site's ports: the dedupe read too. */
-export interface AudienceDeleteAuditDeps extends AudienceAuditDeps {
-  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'hasAudienceDeletedAuditInTx'>;
+/**
+ * A delete site's ports: the deleted row's one writer, `emitOnce` (spec 142;
+ * the index is the dedupe, so restart and cleanup read nothing first).
+ */
+export interface AudienceDeleteAuditDeps extends Omit<AudienceAuditDeps, 'audit'> {
+  readonly audit: Pick<AudienceDeletedAuditPort, 'emitOnce'>;
 }
 
 type AudienceEventType = 'broadcast_audience_disclosed' | 'broadcast_audience_deleted';
@@ -71,16 +82,17 @@ export type AudienceAuditLogPrefix =
 /** SQLSTATE `lock_not_available`: a `lock_timeout` wait ran out. */
 const LOCK_NOT_AVAILABLE = '55P03';
 
-/** Why `build` wrote nothing: deduped, or (reclaim) never disclosed here. */
+/** Why `write` wrote nothing: deduped (`emitOnce` false), or (reclaim) never disclosed here. */
 type NoRow = 'skip' | 'unattributed';
 
 /**
- * Write one row in its own tx. `build` runs inside that tx and answers the
- * payload, or why nothing is written. Answers what happened.
+ * Write one audience row through the shared envelope, with this file's log
+ * lines. `write` runs inside the row's tx and answers whether it wrote, or why
+ * it did not. Answers what happened.
  */
-async function writeAudienceRow<E extends AudienceEventType>(
-  deps: AudienceAuditDeps,
-  eventType: E,
+async function writeAudienceRow(
+  deps: PreCallAuditRowDeps,
+  eventType: AudienceEventType,
   logPrefix: AudienceAuditLogPrefix,
   ids: {
     readonly broadcastId: string | null;
@@ -88,48 +100,26 @@ async function writeAudienceRow<E extends AudienceEventType>(
     /** Log-only (the reclaim): the id parsed from the segment name, never on the record. */
     readonly segmentNameBroadcastId?: string;
   },
-  summary: (payload: F7AuditPayloadShapes[E]) => string,
-  build: (tx: unknown) => Promise<F7AuditPayloadShapes[E] | NoRow>,
+  write: (tx: unknown) => Promise<'written' | NoRow>,
 ): Promise<'written' | NoRow | 'lost'> {
-  let result: 'written' | NoRow;
-  try {
-    result = await deps.broadcastsRepo.withTx(async (tx): Promise<'written' | NoRow> => {
-      const payload = await build(tx);
-      if (payload === 'skip' || payload === 'unattributed') return payload;
-      await deps.audit.emit(tx, {
-        eventType,
-        tenantId: deps.tenant.slug,
-        actorUserId: 'system:cron',
-        summary: summary(payload),
-        payload: { ...payload },
-        requestId: null,
-      });
-      return 'written';
-    });
-  } catch (e) {
-    const where = {
-      tenantId: deps.tenant.slug,
-      broadcastId: ids.broadcastId,
-      resendAudienceId: ids.resendAudienceId,
-      ...(ids.segmentNameBroadcastId === undefined ? {} : { segmentNameBroadcastId: ids.segmentNameBroadcastId }),
-      eventType,
-    };
-    // A wiring bug fails closed: nothing has been sent or deleted yet.
-    if (isAdapterInvariantError(e)) {
-      logger.error({ ...where, err: errKind(e), severity: 'critical' }, `${logPrefix}.audit_invariant`);
-      throw e;
-    }
-    const fields = errLogFields(e);
-    if (fields.code === LOCK_NOT_AVAILABLE) {
-      logger.warn({ ...where, ...fields }, `${logPrefix}.audience_audit_lock_timeout`);
-    } else {
-      logger.error({ ...where, ...fields, severity: 'critical' }, `${logPrefix}.audience_audit_lost`);
-    }
-    broadcastsMetrics.auditEmitFailed(eventType, deps.tenant.slug);
-    return 'lost';
-  }
-  if (result === 'written') broadcastsMetrics.auditEmitCount(deps.tenant.slug, eventType);
-  return result;
+  const where = {
+    tenantId: deps.tenant.slug,
+    broadcastId: ids.broadcastId,
+    resendAudienceId: ids.resendAudienceId,
+    ...(ids.segmentNameBroadcastId === undefined ? {} : { segmentNameBroadcastId: ids.segmentNameBroadcastId }),
+    eventType,
+  };
+  return writePreCallAuditRow(deps, eventType, write, {
+    onInvariant: (e) => logger.error({ ...where, err: errKind(e), severity: 'critical' }, `${logPrefix}.audit_invariant`),
+    onLost: (e) => {
+      const fields = errLogFields(e);
+      if (fields.code === LOCK_NOT_AVAILABLE) {
+        logger.warn({ ...where, ...fields }, `${logPrefix}.audience_audit_lock_timeout`);
+      } else {
+        logger.error({ ...where, ...fields, severity: 'critical' }, `${logPrefix}.audience_audit_lost`);
+      }
+    },
+  });
 }
 
 /**
@@ -146,27 +136,62 @@ export async function recordAudienceDisclosed(
     readonly recipientCount: number;
   },
 ): Promise<void> {
-  await writeAudienceRow(
-    deps,
-    'broadcast_audience_disclosed',
-    'broadcasts.audience_import',
-    fields,
-    (p) => `Broadcast ${p.broadcast_id}: recipient list disclosure to Resend requested (${p.recipient_count} recipients)`,
-    async () => ({
-      broadcast_id: fields.broadcastId,
-      related_member_id: fields.relatedMemberId,
-      resend_audience_id: fields.resendAudienceId,
-      recipient_count: fields.recipientCount,
-      leg: 'import',
-      actor_role: 'system',
-    }),
-  );
+  await writeAudienceRow(deps, 'broadcast_audience_disclosed', 'broadcasts.audience_import', fields, async (tx) => {
+    await deps.audit.emit(tx, {
+      eventType: 'broadcast_audience_disclosed',
+      tenantId: deps.tenant.slug,
+      actorUserId: 'system:cron',
+      summary: `Broadcast ${fields.broadcastId}: recipient list disclosure to Resend requested (${fields.recipientCount} recipients)`,
+      payload: {
+        broadcast_id: fields.broadcastId,
+        related_member_id: fields.relatedMemberId,
+        resend_audience_id: fields.resendAudienceId,
+        recipient_count: fields.recipientCount,
+        leg: 'import',
+        actor_role: 'system',
+      },
+      requestId: null,
+    });
+    return 'written';
+  });
 }
 
 /**
- * DA2 — a segment is about to be deleted. Deduped: a segment that already has
- * this tenant's deleted row gets no second one (the delete still runs). Never
- * throws, except an adapter invariant error.
+ * Spec 142 (AO4) — the one builder of the deleted row, for every site. The
+ * segment id is required by type: a NULL key never conflicts in the index.
+ */
+function audienceDeletedInput(
+  tenant: TenantContext,
+  fields: {
+    readonly broadcastId: string;
+    readonly relatedMemberId: string;
+    readonly resendAudienceId: string;
+    readonly reason: AudienceDeleteReason;
+  },
+): AudienceDeletedEmitInput {
+  return {
+    eventType: 'broadcast_audience_deleted',
+    tenantId: tenant.slug,
+    actorUserId: 'system:cron',
+    summary: `Broadcast ${fields.broadcastId}: Resend segment removal requested (${fields.reason})`,
+    payload: {
+      broadcast_id: fields.broadcastId,
+      related_member_id: fields.relatedMemberId,
+      resend_audience_id: fields.resendAudienceId,
+      reason: fields.reason,
+      leg: 'import',
+      actor_role: 'system',
+    },
+    requestId: null,
+  };
+}
+
+/**
+ * DA2 — a segment is about to be deleted. Deduped by the index: a segment that
+ * already has this tenant's deleted row gets no second one (`emitOnce` answers
+ * false, a skip; the delete still runs). No read first (spec 142); the tenant
+ * binding is checked inside `emitOnce`. Never throws, except an adapter
+ * invariant error.
  */
 export async function recordAudienceDeleted(
   deps: AudienceDeleteAuditDeps,
@@ -178,28 +203,13 @@ export async function recordAudienceDeleted(
   },
   logPrefix: AudienceAuditLogPrefix,
 ): Promise<void> {
-  await writeAudienceRow(
-    deps,
-    'broadcast_audience_deleted',
-    logPrefix,
-    fields,
-    (p) => `Broadcast ${p.broadcast_id}: Resend segment removal requested (${p.reason})`,
-    async (tx) =>
-      (await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, fields.resendAudienceId))
-        ? 'skip'
-        : {
-            broadcast_id: fields.broadcastId,
-            related_member_id: fields.relatedMemberId,
-            resend_audience_id: fields.resendAudienceId,
-            reason: fields.reason,
-            leg: 'import',
-            actor_role: 'system',
-          },
+  await writeAudienceRow(deps, 'broadcast_audience_deleted', logPrefix, fields, async (tx) =>
+    (await deps.audit.emitOnce(tx, audienceDeletedInput(deps.tenant, fields))) ? 'written' : 'skip',
   );
 }
 
-/** The orphan reclaim's ports: the disclosure read too. */
-export interface ReclaimAudienceAuditDeps extends AudienceAuditDeps {
+/** The orphan reclaim's ports: the disclosure read and the lockless existence read too. */
+export interface ReclaimAudienceAuditDeps extends AudienceDeleteAuditDeps {
   readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'hasAudienceDeletedAuditInTx' | 'findAudienceDisclosureInTx'>;
 }
 
@@ -207,21 +217,28 @@ export interface ReclaimAudienceAuditDeps extends AudienceAuditDeps {
  * DA2 (pdpa M-3) — the orphan reclaim is about to delete a segment named for
  * this tenant. Only a segment this tenant DISCLOSED gets a deleted row
  * (`reason: 'orphan_reclaim'`), with the disclosure's broadcast and
- * requester; the dedupe, the read and the insert share one tx, the dedupe
- * first, so a segment that already has this tenant's deleted row is skipped
- * (no row, no WARN) whether or not it was disclosed. Any other segment with
- * no disclosed row was never filled by this deployment (one created before
- * spec 139 s2, or by the attach-failed reclaim): no row, the WARN
- * `broadcasts.audience_reclaim.delete_unattributed` (`deleteReason`, never
- * `reason`: the logger redacts that key) and its counter. The delete runs
- * either way. Never throws, except an adapter invariant error.
+ * requester. The disclosure read comes first, in the row's tx (review round 1,
+ * code-review #5):
+ *   - found: `emitOnce`. False (the key already has its row) is a skip, with
+ *     no WARN and no count. `emitOnce` is the tx's last statement, so its
+ *     `SET LOCAL lock_timeout` bounds its own INSERT only.
+ *   - not found: the lockless existence read. A segment already recorded as
+ *     deleted (e.g. cleanup's row for a pre-s2 segment whose delete keeps
+ *     failing) is a skip, with no WARN. Any other was never filled by this
+ *     deployment (one created before spec 139 s2, or by the attach-failed
+ *     reclaim): no row, the WARN
+ *     `broadcasts.audience_reclaim.delete_unattributed` (`deleteReason`, never
+ *     `reason`: the logger redacts that key) and its counter.
+ * The delete runs either way. Never throws, except an adapter invariant error.
  *
- * Review round 2 (code-review #1 / #4): a lock timeout on the dedupe ends the
- * tx before the disclosure read, so that segment writes no row and no
- * unattributed WARN on this run, only the `audience_audit_lock_timeout` WARN
- * and its counter, which are then the only trace of that delete. The delete
- * runs; if it fails, the next daily run lists the segment again and retries
- * the row (dedupe, disclosure read, then the row or the unattributed WARN).
+ * Spec 142: the existence read is lockless, so it does not order the reclaim
+ * against another writer of the row. The worst case is one false unattributed
+ * WARN (a row written after that read found nothing), which needs cleanup to
+ * act on a live row while the reclaim acts on a gone one. A lock timeout on
+ * the INSERT (55P03) writes no row and no unattributed WARN on this run, only
+ * the `audience_audit_lock_timeout` WARN and its counter, which are then the
+ * only trace of that delete. The delete runs; if it fails, the next daily run
+ * lists the segment again and retries the row.
  *
  * Review round 3 (code-review #5): `segmentNameBroadcastId` is the id parsed
  * from the segment name. It goes on the lost, lock-timeout and invariant lines
@@ -238,21 +255,24 @@ export async function recordReclaimedAudienceDeleted(
     'broadcast_audience_deleted',
     'broadcasts.audience_reclaim',
     { broadcastId: null, resendAudienceId, segmentNameBroadcastId },
-    (p) => `Broadcast ${p.broadcast_id}: Resend segment removal requested (${p.reason})`,
     async (tx) => {
-      // The dedupe first: a segment already recorded as deleted (e.g. cleanup's
-      // row for a segment whose delete keeps failing) is not unattributed.
-      if (await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, resendAudienceId)) return 'skip';
       const disclosed = await deps.broadcastsRepo.findAudienceDisclosureInTx(tx, deps.tenant.slug, resendAudienceId);
-      if (disclosed === null) return 'unattributed';
-      return {
-        broadcast_id: disclosed.broadcastId,
-        related_member_id: disclosed.relatedMemberId,
-        resend_audience_id: resendAudienceId,
-        reason: 'orphan_reclaim',
-        leg: 'import',
-        actor_role: 'system',
-      };
+      if (disclosed === null) {
+        // Not disclosed here: a segment already recorded as deleted is not
+        // unattributed.
+        const recorded = await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, resendAudienceId);
+        return recorded ? 'skip' : 'unattributed';
+      }
+      const wrote = await deps.audit.emitOnce(
+        tx,
+        audienceDeletedInput(deps.tenant, {
+          broadcastId: disclosed.broadcastId,
+          relatedMemberId: disclosed.relatedMemberId,
+          resendAudienceId,
+          reason: 'orphan_reclaim',
+        }),
+      );
+      return wrote ? 'written' : 'skip';
     },
   );
   if (written !== 'unattributed') return;

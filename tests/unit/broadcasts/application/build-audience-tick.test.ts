@@ -25,9 +25,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ok, err } from '@/lib/result';
 import { asTenantContext } from '@/modules/tenants';
 import { broadcastsMetrics } from '@/lib/metrics';
+import { logger } from '@/lib/logger';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import type { BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import type { AudienceDeletedAuditPort, AudienceDeletedEmitInput, AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import { makeFakeSendStanding } from '../../../helpers/eblast-approval-fakes';
 
 const tenant = asTenantContext('test-tenant');
@@ -47,6 +49,8 @@ interface Recorder {
   readonly completions: number[];
   readonly transitions: Array<{ status: string }>;
   readonly audits: string[];
+  /** Spec 142 review round 3 — the rows `emitOnce` wrote (the restart's deleted row). */
+  readonly deletedRows: Array<{ eventType: string; payload: Record<string, unknown> }>;
   /** Round 4 T2 — FR-021 sends, which this harness could not observe at all. */
   readonly memberEmails: Array<{ templateKey: string; reason: unknown }>;
 }
@@ -102,6 +106,7 @@ function makeDeps(opts: {
     completions: [],
     transitions: [],
     audits: [],
+    deletedRows: [],
     memberEmails: [],
   };
 
@@ -299,11 +304,18 @@ function makeDeps(opts: {
           rec.sends.push(id);
         },
       },
+      // Spec 142 review round 3 (code-review #1) — the restart writes its
+      // deleted row through `emitOnce`; `satisfies` makes a double without it a
+      // type error instead of a silent lost row.
       audit: {
         async emit(_tx: unknown, e: { eventType: string }) {
           rec.audits.push(e.eventType);
         },
-      },
+        async emitOnce(_tx: unknown, e: AudienceDeletedEmitInput) {
+          rec.deletedRows.push({ eventType: e.eventType, payload: { ...e.payload } });
+          return true;
+        },
+      } satisfies Pick<AuditPort, 'emit'> & AudienceDeletedAuditPort,
       // ── Round 4 T2 — the three ports this harness never had ────────────────
       //
       // Their absence was not a coverage gap, it was a SILENT one: the calls
@@ -515,12 +527,27 @@ describe('buildAudienceTick — the two happy ticks (T087)', () => {
     // never reused. It is deleted (no orphan on Resend Free's three) and the
     // next tick builds a fresh one.
     const { deps, rec } = makeDeps({ resendAudienceId: 'aud-existing' });
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
 
-    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+    try {
+      await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(rec.deletedAudiences).toEqual(['aud-existing']);
-    expect(rec.importsSubmitted).toEqual([]);
-    expect(rec.createdAudiences).toEqual([]);
+      expect(rec.deletedAudiences).toEqual(['aud-existing']);
+      expect(rec.importsSubmitted).toEqual([]);
+      expect(rec.createdAudiences).toEqual([]);
+      // Spec 142 review round 3 (code-review #1) — the restart's deleted row is
+      // written, not lost: a double without `emitOnce` sent it down the silent
+      // lost-row branch while this cell stayed green.
+      expect(rec.deletedRows).toEqual([
+        {
+          eventType: 'broadcast_audience_deleted',
+          payload: expect.objectContaining({ resend_audience_id: 'aud-existing', reason: 'stale_audience' }),
+        },
+      ]);
+      expect(error.mock.calls.map((c) => c[1])).not.toContain('broadcasts.audience_import.audience_audit_lost');
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it('tick 2: every clause passes → stamps completion, creates the broadcast, sends', async () => {

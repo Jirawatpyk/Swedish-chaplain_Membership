@@ -21,6 +21,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { AUDIENCE_AUDIT_PAYLOAD_KEYS } from '@/modules/broadcasts/application/ports/audit-port';
+
 const OUT_OF_REACH = [
   'a destructured method: const { deleteAudience } = gateway; deleteAudience(id)',
   'an alias: const del = gateway.deleteAudience; del(id)',
@@ -167,5 +169,166 @@ describe('spec 139 s2 DA2 — the segment calls are pinned, and the audited ones
 
   it('names what the scan cannot see', () => {
     expect(OUT_OF_REACH).toHaveLength(6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 142 (AO2, AO3) — the deleted row has one writer: `emitOnce`.
+// ---------------------------------------------------------------------------
+
+/**
+ * A plain emit of `broadcast_audience_deleted` would bypass migration 0328's
+ * arbiter: the index refuses its second row with a 23505, which the row helper
+ * logs as a lost row. So the event's literal may appear in code only in the
+ * files that declare it, read it or write it through `emitOnce`, and no
+ * emit-family call may carry it in its arguments. The deleted-row builder
+ * (`audienceDeletedInput`) may be called only inside the arguments of
+ * `emitOnce(`.
+ *
+ * Out of reach (as above): the literal built from parts, or held in a variable
+ * declared in an allowlisted file and passed on elsewhere; a call through an
+ * alias of `emit`.
+ */
+const DELETED_LITERAL = /['"`]broadcast_audience_deleted['"`]/;
+const DELETED_LITERAL_FILES = [
+  'src/modules/auth/infrastructure/db/schema.ts',
+  'src/modules/broadcasts/application/ports/audit-port.ts',
+  'src/modules/broadcasts/application/use-cases/_audience-audit.ts',
+  'src/modules/broadcasts/infrastructure/audit-adapter.ts',
+  'src/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo.ts',
+] as const;
+const EMIT_FAMILY = /\b(emit|emitTyped|emitMany|emitManyTyped|safeAuditEmit|safeAuditEmitTyped|emitOnce)\s*(?:<[^>()]*>)?\s*\(/g;
+
+/** The argument text of the call whose `(` is at `open`, up to its balanced `)`. */
+function argsAt(src: string, open: number): string {
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '(') depth++;
+    else if (src[i] === ')' && --depth === 0) return src.slice(open + 1, i);
+  }
+  return src.slice(open + 1);
+}
+
+interface EmitScan {
+  readonly emitCalls: number;
+  readonly emitOnceCalls: number;
+  readonly violations: string[];
+}
+
+function scanDeletedWriters(file: string, source: string): EmitScan {
+  const src = stripComments(source);
+  const violations: string[] = [];
+  let emitCalls = 0;
+  let emitOnceCalls = 0;
+  const onceArgs: Array<readonly [number, number]> = [];
+  for (const m of src.matchAll(EMIT_FAMILY)) {
+    const open = (m.index ?? 0) + m[0].length - 1;
+    const args = argsAt(src, open);
+    if (m[1] === 'emitOnce') {
+      emitOnceCalls++;
+      onceArgs.push([open, open + args.length + 1]);
+      continue;
+    }
+    emitCalls++;
+    if (DELETED_LITERAL.test(args) || /\baudienceDeletedInput\s*\(/.test(args)) {
+      violations.push(`${file}: ${m[1]}( carries the deleted row`);
+    }
+  }
+  if (DELETED_LITERAL.test(src) && !(DELETED_LITERAL_FILES as readonly string[]).includes(file)) {
+    violations.push(`${file}: names broadcast_audience_deleted outside the allowlist`);
+  }
+  for (const m of src.matchAll(/\baudienceDeletedInput\s*\(/g)) {
+    const at = m.index ?? 0;
+    const insideOnce = onceArgs.some(([from, to]) => at > from && at < to);
+    const isDeclaration = /function\s+$/.test(src.slice(Math.max(0, at - 20), at));
+    if (!insideOnce && !isDeclaration) violations.push(`${file}: audienceDeletedInput( outside emitOnce(`);
+  }
+  return { emitCalls, emitOnceCalls, violations };
+}
+
+function scanRepoDeletedWriters(): EmitScan & { readonly onceIn: string[] } {
+  const root = process.cwd();
+  const all = walk(join(root, 'src')).map((full) => {
+    const file = relative(root, full).split(sep).join('/');
+    return { file, scan: scanDeletedWriters(file, readFileSync(full, 'utf8')) };
+  });
+  return {
+    emitCalls: all.reduce((n, f) => n + f.scan.emitCalls, 0),
+    emitOnceCalls: all.reduce((n, f) => n + f.scan.emitOnceCalls, 0),
+    violations: all.flatMap((f) => f.scan.violations),
+    onceIn: all.filter((f) => f.scan.emitOnceCalls > 0).map((f) => f.file),
+  };
+}
+
+describe('spec 142 — the deleted row is written only through emitOnce', () => {
+  const found = scanRepoDeletedWriters();
+
+  it('positive control: the scan finds emit calls at all, and the deleted-row writer calls emitOnce', () => {
+    expect(found.emitCalls).toBeGreaterThan(20);
+    expect(found.onceIn).toContain('src/modules/broadcasts/application/use-cases/_audience-audit.ts');
+  });
+
+  it('no emit-family call carries broadcast_audience_deleted, and the literal stays in its files', () => {
+    expect(found.violations).toEqual([]);
+  });
+
+  it.each([
+    ['a plain emit with the literal', "async function x() { await audit.emit(tx, { eventType: 'broadcast_audience_deleted' }); }"],
+    ['a typed emit with a type argument', 'async function x() { await audit.emitTyped<E>(tx, { eventType: "broadcast_audience_deleted" }); }'],
+    ['a fail-soft emit', 'async function x() { await safeAuditEmit(deps, tx, { eventType: `broadcast_audience_deleted` }); }'],
+    ['a plain emit of the builder', 'async function x() { await audit.emit(tx, audienceDeletedInput(t, p)); }'],
+    ['the builder outside emitOnce', 'async function x() { const i = audienceDeletedInput(t, p); await audit.emitOnce(tx, i); }'],
+  ])('catch case: %s is a violation', (_label, source) => {
+    expect(scanDeletedWriters(`${UC}/_audience-audit.ts`, source).violations).not.toEqual([]);
+  });
+
+  it('catch case: the literal outside the allowlist is a violation; the builder inside emitOnce is not', () => {
+    expect(scanDeletedWriters('src/x.ts', "const e = 'broadcast_audience_deleted';").violations).not.toEqual([]);
+    expect(
+      scanDeletedWriters(
+        `${UC}/_audience-audit.ts`,
+        'function audienceDeletedInput(a, b) { return a; }\nasync function x() { await audit.emitOnce(tx, audienceDeletedInput(t, p)); }',
+      ).violations,
+    ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 1 (code-review #5, migration L1) — one key, written as a literal.
+// ---------------------------------------------------------------------------
+
+/**
+ * The deleted row's key is `payload->>'resend_audience_id'` in three places that
+ * must agree: migration 0328's index, `emitOnce`'s `ON CONFLICT` (a parameter
+ * there is a 42P10), and the reclaim's existence read. The read writes it as a
+ * literal too, not a bound parameter, so its expression is the index's own
+ * text. Each must carry `AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId`.
+ */
+describe('spec 142 — the deleted-row key is one literal', () => {
+  const root = process.cwd();
+  const read = (rel: string) => readFileSync(join(root, rel), 'utf8');
+  const keyExpr = `payload->>'${AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId}'`;
+
+  /** The source of the repo method `name`, from its declaration to the next method's. */
+  function methodBody(src: string, name: string, next: string): string {
+    const from = src.indexOf(`async ${name}(`);
+    const to = src.indexOf(`async ${next}(`, from + 1);
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    return src.slice(from, to);
+  }
+
+  it('the deleted-row key is the literal AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId in the read, the ON CONFLICT and 0328', () => {
+    const read_ = methodBody(
+      read('src/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo.ts'),
+      'hasAudienceDeletedAuditInTx',
+      'findAudienceDisclosureInTx',
+    );
+    expect(read_).toContain(`AND ${keyExpr} = `);
+    expect(read_).not.toContain('payload->>${');
+    expect(read('src/modules/broadcasts/infrastructure/audit-adapter.ts')).toContain(`ON CONFLICT (tenant_id, (${keyExpr}))`);
+    expect(read('drizzle/migrations/0328_audit_log_audience_deleted_once.sql')).toContain(
+      `("tenant_id", ("payload"->>'${AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId}'))`,
+    );
   });
 });

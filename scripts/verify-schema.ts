@@ -264,6 +264,22 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'broadcast_audience_disclosed') AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'broadcast_audience_deleted')`,
       },
       {
+        // Spec 142 (mig 0328) — the arbiter of `f7AuditAdapter.emitOnce`'s
+        // `ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE
+        // event_type = 'broadcast_audience_deleted'`. Without it that INSERT
+        // fails with 42P10, so every segment removal loses its row. The same
+        // comparison as 0328's own check (the past-the-cap closing change of
+        // spec 142): the live `pg_get_indexdef` text and 0328's expected
+        // literal, both with the `public.` schema qualifier dropped and
+        // whitespace collapsed, are equal, and the index is VALID (an invalid
+        // index is not used for ON CONFLICT inference). The literal and the
+        // normalisation are byte-equal to 0328's; audience-audit-rows.test.ts
+        // reads both files and fails when they drift. `[[:space:]]`, not `\s`:
+        // a backslash escape in this template literal would be lost.
+        name: 'audit_log_audience_deleted_once valid partial unique index on (tenant_id, payload->>resend_audience_id) (mig 0328)',
+        query: `SELECT 1 AS hit FROM pg_index i WHERE i.indexrelid = to_regclass('public.audit_log_audience_deleted_once') AND i.indisvalid AND btrim(regexp_replace(replace(pg_get_indexdef(i.indexrelid), 'public.', ''), '[[:space:]]+', ' ', 'g')) = btrim(regexp_replace(replace('CREATE UNIQUE INDEX audit_log_audience_deleted_once ON public.audit_log USING btree (tenant_id, ((payload ->> ''resend_audience_id''::text))) WHERE (event_type = ''broadcast_audience_deleted''::audit_event_type)', 'public.', ''), '[[:space:]]+', ' ', 'g'))`,
+      },
+      {
         // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure
         // indexes. The tax-point one is asserted by its expression: an index
         // of that name on another expression would silently stop matching

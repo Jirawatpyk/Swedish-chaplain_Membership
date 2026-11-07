@@ -25,6 +25,7 @@ import { broadcastsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick, type BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import type { AudienceDeletedAuditPort, AudienceDeletedEmitInput, AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
 
@@ -88,6 +89,8 @@ function harness(opts: Opts = {}) {
   const writeLeases: Array<{ method: string; lease: unknown }> = [];
   const releases: unknown[] = [];
   const memberEmails: unknown[] = [];
+  /** Spec 142 review round 3 — the rows `emitOnce` wrote (the restart's deleted row). */
+  const deletedRows: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
   let checkIndex = 0;
   let attachAttempted = false;
   const checks = opts.checks ?? ['held'];
@@ -282,7 +285,16 @@ function harness(opts: Opts = {}) {
         return { kind: 'not_found' as const };
       },
     },
-    audit: { async emit() {} },
+    // Spec 142 review round 3 (code-review #1) — the restart writes its
+    // deleted row through `emitOnce`; `satisfies` makes a double without it a
+    // type error instead of a silent lost row.
+    audit: {
+      async emit() {},
+      async emitOnce(_tx: unknown, e: AudienceDeletedEmitInput) {
+        deletedRows.push({ eventType: e.eventType, payload: { ...e.payload } });
+        return true;
+      },
+    } satisfies Pick<AuditPort, 'emit'> & AudienceDeletedAuditPort,
     membersBridge: {
       async getMemberPrimaryContact() {
         return 'member@example.com';
@@ -302,7 +314,7 @@ function harness(opts: Opts = {}) {
   };
   const run = () => buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
   const gatewayCalls = () => events.filter((e) => e.startsWith('gw:'));
-  return { run, events, writeLeases, releases, memberEmails, gatewayCalls };
+  return { run, events, writeLeases, releases, memberEmails, deletedRows, gatewayCalls };
 }
 
 const TICK2_ROW = { resendAudienceId: 'aud-1', audienceImportId: 'imp-1', audienceImportSubmittedAt: new Date(NOW.getTime() - 600_000) };
@@ -318,6 +330,20 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 const logged = (spy: ReturnType<typeof vi.spyOn>, event: string) => spy.mock.calls.some((c) => c[1] === event);
+
+/**
+ * Spec 142 review round 3 (code-review #1) — a restart that reached the
+ * audience step wrote its deleted row (once per run, for `audienceId`), and
+ * nothing went down the lost-row branch. A double without `emitOnce` threw a
+ * TypeError there, which the helper logs and swallows, so the cells stayed
+ * green.
+ */
+const expectDeletedRowWritten = (h: { deletedRows: ReadonlyArray<{ eventType: string; payload: Record<string, unknown> }> }, audienceId: string) => {
+  expect(h.deletedRows).toEqual([
+    { eventType: 'broadcast_audience_deleted', payload: expect.objectContaining({ resend_audience_id: audienceId }) },
+  ]);
+  expect(logged(error, 'broadcasts.audience_import.audience_audit_lost')).toBe(false);
+};
 
 describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
   it('claims in the step-1 lock tx, after the row lock, for LEASE_TTL_MS', async () => {
@@ -539,6 +565,8 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     await lost.run();
     expect(lost.gatewayCalls()).not.toContain('gw:deleteAudience:aud-stale');
     expect(lost.writeLeases.map((w) => w.method)).not.toContain('releaseResendAudience');
+    // The row is written before the audience step's lease check, so all three runs wrote it.
+    for (const run of [h, expiring, lost]) expectDeletedRowWritten(run, 'aud-stale');
   });
 
   it('the standing gate deletes the row\'s draft only after a held check (A8); a lost lease deletes nothing and is a skip', async () => {
@@ -645,6 +673,8 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     expect(held).not.toHaveBeenCalled();
     expect(logged(info, 'broadcasts.dispatch.standing_held')).toBe(false);
     expect(h.writeLeases.map((w) => w.method)).not.toContain('clearDispatchRetryClock');
+    // The row is written before the lease check that stops the delete.
+    expectDeletedRowWritten(h, 'aud-held');
   });
 
   it('the hold arm still answers dispatch_held_member_suspended when its restart completes', async () => {
@@ -657,6 +687,7 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     expect(held).toHaveBeenCalledTimes(1);
     const writes = h.events.filter((e) => e.startsWith('write:'));
     expect(writes.indexOf('write:clearDispatchRetryClock')).toBeGreaterThan(writes.indexOf('write:releaseResendAudience'));
+    expectDeletedRowWritten(h, 'aud-held');
   });
 
   // Review round 4 (code-review #4) — a 0-row release CAS probes the token,
@@ -679,6 +710,7 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     const h = harness({ row: { resendAudienceId: 'aud-stale', resendBroadcastId: 'rb-dead' }, probe: 'draft', checks: ['held', 'lost'] });
     const res = await h.run();
     expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' });
+    expectDeletedRowWritten(h, 'aud-stale');
   });
 
   // Review round 2 (reliability NIT) — the ERROR line names what failed and where the row was.

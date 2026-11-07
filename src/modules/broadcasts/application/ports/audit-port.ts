@@ -743,8 +743,9 @@ export interface F7AuditPayloadShapes {
     readonly recipient_count: number;
   };
   // Spec 139 s2 (DA2, DA3) — a segment that may hold recipients is about to be
-  // deleted (before the delete's lease gate). One row per segment: the delete
-  // sites dedupe on `resend_audience_id` (`hasAudienceDeletedAuditInTx`).
+  // deleted (before the delete's lease gate). One row per (tenant, segment):
+  // spec 142 writes it only through `AudienceDeletedAuditPort.emitOnce`, against
+  // 0328's partial unique index `audit_log_audience_deleted_once`.
   readonly broadcast_audience_deleted: AudienceAuditCommon & {
     readonly reason: AudienceDeleteReason;
   };
@@ -775,12 +776,25 @@ export const AUDIENCE_AUDIT_PAYLOAD_KEYS = {
 } as const satisfies Record<string, keyof AudienceAuditCommon>;
 
 /**
- * Spec 139 s2 review round 1 — how long the audience-audit dedupe waits for its
- * advisory lock (`hasAudienceDeletedAuditInTx`); the retention sweep's 5 s.
- * Review round 2 (code-review #2): here, not in the repo, so the reclaim's
- * chunk-start deadline check can charge it beside `RESEND_CALL_TIMEOUT_MS`.
+ * How long `emitOnce`'s INSERT waits on another transaction's uncommitted
+ * insert of the same (tenant, segment) key before it gives up with 55P03
+ * (`SET LOCAL lock_timeout`; the Neon pooler can drop `statement_timeout`).
+ * The retention sweep's 5 s. Spec 139 s2 review round 1 introduced it for the
+ * advisory lock that spec 142 removed; the INSERT still waits (plan review,
+ * 6 Nov 2026), so the bound stays. In practice the holder's transaction is a
+ * single INSERT, so the wait is milliseconds.
  */
 export const AUDIENCE_AUDIT_LOCK_TIMEOUT_MS = 5_000;
+
+/**
+ * Spec 142 (AO2) — the one input `emitOnce` takes: the deleted row, with a
+ * tenant. The segment id is required by the payload type
+ * (`AudienceAuditCommon.resend_audience_id`), because a NULL key never
+ * conflicts in a unique index and would silently allow duplicates.
+ */
+export interface AudienceDeletedEmitInput extends TypedAuditEmitInput<'broadcast_audience_deleted'> {
+  readonly tenantId: string;
+}
 
 /** Spec 139 s2 (DA3) — the fields both audience rows carry. */
 export interface AudienceAuditCommon {
@@ -877,7 +891,20 @@ export class AuditPortInvariantError extends Error {
   }
 }
 
+/**
+ * Spec 142 (review round 2, code-review #2) — the events the shared
+ * `AuditPort` writes: every F7 event but `broadcast_audience_deleted`, whose
+ * only writer is `AudienceDeletedAuditPort.emitOnce` (its `ON CONFLICT` is the
+ * dedupe). The adapter's runtime refusal stays behind this, for a cast.
+ */
+export type F7EmitEventType = Exclude<F7AuditEventType, 'broadcast_audience_deleted'>;
+
+/** The typed half of {@link F7EmitEventType}: the `emitTyped` / `emitManyTyped` events. */
+export type F7EmitTypedEventType = Exclude<keyof F7AuditPayloadShapes, 'broadcast_audience_deleted'>;
+
 export interface AuditEmitInput extends F7AuditEvent {
+  /** Spec 142 (review round 2) — never `broadcast_audience_deleted`; see {@link F7EmitEventType}. */
+  readonly eventType: F7EmitEventType;
   /**
    * Tenant slug. `null` is permitted ONLY for pre-tenant audit paths
    * where the route has not (or cannot) bind a tenant context — e.g.
@@ -936,8 +963,11 @@ export interface AuditPort {
    * through `emit`; only events with a declared `F7AuditPayloadShapes`
    * entry are eligible for `emitTyped`. Adding a new event to the
    * typed map immediately makes it available to `emitTyped`.
+   *
+   * Spec 142 (review round 2) — `E` excludes `broadcast_audience_deleted`
+   * ({@link F7EmitTypedEventType}); `AudienceDeletedAuditPort.emitOnce` writes it.
    */
-  emitTyped<E extends keyof F7AuditPayloadShapes>(
+  emitTyped<E extends F7EmitTypedEventType>(
     tx: unknown,
     event: TypedAuditEmitInput<E>,
   ): Promise<void>;
@@ -968,10 +998,44 @@ export interface AuditPort {
    * statement, all-or-nothing with the caller's tx, rows in order, an empty
    * array is a no-op.
    */
-  emitManyTyped?<E extends keyof F7AuditPayloadShapes>(
+  emitManyTyped?<E extends F7EmitTypedEventType>(
     tx: unknown,
     events: readonly TypedAuditEmitInput<E>[],
   ): Promise<void>;
+}
+
+/**
+ * Spec 142 (AO2; review round 1, CR #7) — the one writer of the
+ * `broadcast_audience_deleted` row, a port of its own so the shared
+ * `AuditPort` (and its ~200 test doubles) does not carry it. The delete sites
+ * (the tick restart, the cleanup and the reclaim) take it; `f7AuditAdapter`
+ * implements both ports, and its other methods refuse this event.
+ */
+export interface AudienceDeletedAuditPort {
+  /**
+   * The `broadcast_audience_deleted` row, at most once per (tenant, segment).
+   * `INSERT … ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE
+   * event_type = 'broadcast_audience_deleted' DO NOTHING RETURNING 1` against
+   * migration 0328's index: answers true when it wrote the row, false when the
+   * key already had one (the first `reason` wins).
+   *
+   * - The tx must be the caller's tenant-bound tx; a null tx, a null
+   *   `tenantId`, an empty segment id, another event type, or a tx bound to
+   *   another tenant is an `AuditPortInvariantError` raised before any write
+   *   (a NULL never conflicts, and a wrong-tenant row is a wiring bug), so the
+   *   caller fails closed.
+   * - The INSERT waits on another tx's uncommitted insert of the key: if that
+   *   commits, this answers false; if it rolls back, this writes and answers
+   *   true. The wait is bounded by `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS` and ends
+   *   in a 55P03 driver error.
+   * - That bound is a `SET LOCAL lock_timeout`, and it persists for the rest
+   *   of the caller's transaction (review round 1, code-review #2). So call
+   *   this in a transaction of its own (`writePreCallAuditRow` opens one per
+   *   row) and as its last lock-taking statement; a later lock wait in the
+   *   same transaction would otherwise inherit the 5 s bound.
+   * - Nothing is swallowed: any other storage error reaches the caller.
+   */
+  emitOnce(tx: unknown, event: AudienceDeletedEmitInput): Promise<boolean>;
 }
 
 /**

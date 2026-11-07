@@ -121,15 +121,13 @@ function harness(opts: Opts) {
         return fn(null);
       },
       async markAudienceDeletedInTx() {},
-      // Spec 139 s2 review round 1 (code-review #7) - the dedupe the terminal
-      // pass reads before its row; without it the row is a silent lost record.
-      async hasAudienceDeletedAuditInTx() {
-        return false;
-      },
     },
+    // Spec 142 (AO2) - the terminal pass writes its row through emitOnce (the
+    // index is the dedupe); without it the row is a silent lost record.
     audit: {
-      async emit(_tx: unknown, e: { eventType: string; payload: Record<string, unknown> }) {
+      async emitOnce(_tx: unknown, e: { eventType: string; payload: Record<string, unknown> }) {
         audited.push({ eventType: e.eventType, payload: e.payload });
+        return true;
       },
     },
     orphans: {

@@ -33,11 +33,13 @@
  *     `maxDuration`) covers the listing and the delete chunks. The gateway
  *     stops paging inside it; a chunk starts only while one bounded call
  *     (`RESEND_CALL_TIMEOUT_MS`; a chunk's deletes run in parallel, each with
- *     its 403 probe on the same signal) plus its audit row's lock wait
- *     (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, spec 139 s2 review round 2) still
- *     fits — both judged by `oneCallFitsBefore` (review round 1, R1-H; the
- *     listing pages charge the call alone) — and the orphans not reached
- *     are `deferredDeletes`. Nothing is resumed: the next daily run lists again
+ *     its 403 probe on the same signal) plus its audit row's INSERT wait
+ *     (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`; spec 139 s2 review round 2, restored
+ *     by spec 142 review round 3) still fits (`RECLAIM_CHUNK_BUDGET_MS`), judged
+ *     by `oneCallFitsBefore` (review round 1, R1-H; the listing pages charge
+ *     the call alone). The audit row's other DB work is held by the route's
+ *     `RECLAIM_DEADLINE_MARGIN_MS` — and the orphans not reached are
+ *     `deferredDeletes`. Nothing is resumed: the next daily run lists again
  *     from page one, and the deferred orphans are found and deleted then. A cut
  *     run is counted on `broadcasts_audience_reclaim_truncated_total{stage}`.
  *   - Spec 139 s2 (DA2, pdpa M-3): before each delete, the
@@ -46,8 +48,8 @@
  *     segment, with that row's broadcast and requester. A segment that already
  *     has its deleted row gets none; any other gets a WARN
  *     (`delete_unattributed`) and `broadcasts_audience_reclaim_delete_unattributed_total`.
- *     A storage failure is logged and counted and the delete goes ahead (a
- *     lock timeout as the WARN `audience_audit_lock_timeout`); an adapter
+ *     A storage failure is logged and counted and the delete goes ahead (an
+ *     INSERT lock timeout as the WARN `audience_audit_lock_timeout`); an adapter
  *     invariant error stops that orphan's delete (counted `failed`; the row
  *     helper logs the ERROR `audit_invariant`).
  *   - Per-item try/catch: a single delete failure does NOT abort the batch.
@@ -82,7 +84,7 @@ import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
 import { broadcastsMetrics } from '@/lib/metrics';
 import { RESEND_CALL_TIMEOUT_MS, oneCallFitsBefore, type BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
-import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, type AuditPort } from '../ports/audit-port';
+import { AUDIENCE_AUDIT_LOCK_TIMEOUT_MS, type AudienceDeletedAuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import { recordReclaimedAudienceDeleted } from './_audience-audit';
@@ -100,10 +102,10 @@ export interface ReclaimOrphanedAudiencesDeps {
   readonly clock: ClockPort;
   /**
    * Spec 139 s2 (DA2) — REQUIRED: the `broadcast_audience_deleted` row is
-   * written before a disclosed segment's delete. A composition that forgot it
-   * would delete with no record, silently.
+   * written before a disclosed segment's delete, through `emitOnce` (spec
+   * 142). A composition that forgot it would delete with no record, silently.
    */
-  readonly audit: Pick<AuditPort, 'emit'>;
+  readonly audit: Pick<AudienceDeletedAuditPort, 'emitOnce'>;
 }
 
 export interface ReclaimOrphanedAudiencesInput {
@@ -132,12 +134,27 @@ export interface ReclaimOrphanedAudiencesInput {
 
 /**
  * Spec 140 slice 3 (DT5) — how far before the route's `maxDuration` the
- * deadline sits. The last page and the last chunk each start with at least one
- * bounded call (`RESEND_CALL_TIMEOUT_MS`, 10 s) left and end by the deadline,
- * so this margin holds only what follows or is unbounded: the one DB read
- * between the listing and the deletes, the log and the response.
+ * deadline sits. The last page starts with at least one bounded call
+ * (`RESEND_CALL_TIMEOUT_MS`, 10 s) left; the last chunk with that call plus
+ * its audit row's INSERT wait (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`, 5 s, on
+ * another tx's uncommitted insert of the key), both charged at the chunk
+ * check (spec 142 review round 3, code-review #3). This margin holds what is
+ * not charged: the one DB read between the listing and the deletes, the log
+ * and the response, and each orphan's other audit-row DB work before its
+ * delete (the tenant probe and the disclosure and existence reads). Those
+ * have no statement bound, because the pooler drops `statement_timeout`
+ * (review round 2, code-review #5), so the 30 s covers their typical cost,
+ * not a worst case: a stalled read is not cut short here.
  */
 export const RECLAIM_DEADLINE_MARGIN_MS = 30_000;
+
+/**
+ * Spec 142 review round 4 (code-review #6) — what a delete chunk must still
+ * have before `deadlineAt` to start: one bounded Resend call plus its audit
+ * row's INSERT wait (review round 3, code-review #3). The listing's pages
+ * judge with `RESEND_CALL_TIMEOUT_MS` alone.
+ */
+export const RECLAIM_CHUNK_BUDGET_MS = RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS;
 
 export interface ReclaimOrphanedAudiencesOutput {
   /** Total Resend audiences returned by `listAudiences` (a minimum when `truncated`). */
@@ -413,17 +430,15 @@ export async function reclaimOrphanedAudiences(
 
   let deferredDeletes = 0;
   for (let i = 0; i < orphans.length; i += RECLAIM_CONCURRENCY) {
-    // Spec 140 DT5 — start a chunk only while one bounded call still fits (the
-    // gateway's listing pages judge with the same rule, review round 1 R1-H).
-    // Spec 139 s2 review round 2 (code-review #2) — each delete first writes its
-    // audit row, whose lock wait is bounded too: charge both.
-    if (
-      !oneCallFitsBefore(
-        input.deadlineAt,
-        deps.clock.now().getTime(),
-        RESEND_CALL_TIMEOUT_MS + AUDIENCE_AUDIT_LOCK_TIMEOUT_MS,
-      )
-    ) {
+    // Spec 140 DT5 — start a chunk only while its budget still fits before the
+    // deadline. The budget is RECLAIM_CHUNK_BUDGET_MS, not the one call the
+    // gateway's listing pages charge (they share oneCallFitsBefore, R1-H, with
+    // another budget). Spec 142 review round 3 (code-review #3) — each delete
+    // first writes its audit row, whose INSERT can wait up to
+    // AUDIENCE_AUDIT_LOCK_TIMEOUT_MS on another tx's uncommitted insert of the
+    // key, so the budget is that wait plus RESEND_CALL_TIMEOUT_MS. The row's
+    // other DB work (the tenant probe and two reads) is RECLAIM_DEADLINE_MARGIN_MS's.
+    if (!oneCallFitsBefore(input.deadlineAt, deps.clock.now().getTime(), RECLAIM_CHUNK_BUDGET_MS)) {
       deferredDeletes = orphans.length - i;
       broadcastsMetrics.audienceReclaimTruncated(deps.tenant.slug, 'deletes');
       logger.warn(
