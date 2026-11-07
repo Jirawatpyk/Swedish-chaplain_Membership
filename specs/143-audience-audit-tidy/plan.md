@@ -1,7 +1,7 @@
 # Plan: spec 143, the spec 142 follow-ups
 
 
-Spec: `specs/143-audience-audit-tidy/spec.md` · Size: M · Agreed by the user on: 7 Nov 2026 (plan mode). Test plan: TT1 → the constants module + the pinning cells in `audience-audit-rows.test.ts` and `audience-audit-sites.test.ts`; TT2 → the type-level cell for `tests/support/broadcasts/tick-deps-type.ts`; TT3 → the probe-cache unit cell + the existing cross-tenant integration cells.
+Spec: `specs/143-audience-audit-tidy/spec.md` · Size: M · Agreed by the user on: 7 Nov 2026 (plan mode). Test plan: TT1 → the constants module + the pinning cells in `audience-audit-rows.test.ts` and `audience-audit-sites.test.ts`; TT2 → the type-level cell for `tests/support/broadcasts/tick-deps-type.ts`; TT3 → reversed in review round 2 (see § Evidence V1); the probe test `audience-audit-tenant-probe.test.ts` pins every-call probing, and V2 (the two audience reads bind `ctx.slug`) is pinned by its bound-parameter cell.
 ## Context
 PR #767 (spec 142, merged `9dd891e3c`) left three Low follow-ups. The maintainer asked to fix them. Exploration on `9dd891e3c` (7 Nov 2026) corrected two of my own earlier claims: the copies number more than three, and the probe runs twice, not three times.
 
@@ -44,7 +44,7 @@ The `.sql` migration cannot import TS, so it stays a copy. The existing cell the
 - Drop the now-redundant `satisfies` on the 3 literals.
 - **RED:** a type-level test in that support file's companion (an `// @ts-expect-error` cell) shows a deps object whose audit lacks `emitOnce` does not compile.
 
-**C. One tenant probe per reclaim tx** (fixes 3).
+**C. One tenant probe per reclaim tx** (fixes 3). **Reversed in review round 2 (maintainer, 7 Nov 2026); not shipped.** The cache below was built, then removed: it saved at most one ~30 ms probe per reclaimed segment, and its safety rested on a single-writer scan that could not be made complete. What ships instead is per-call probing plus V2: `hasAudienceDeletedAuditInTx` and `findAudienceDisclosureInTx` take no tenant argument and bind `ctx.slug` (§ Evidence, round 2). The original approach, kept for the record:
 - `assertAudienceAuditTenantBoundTx` (`drizzle-broadcasts-repo.ts:200`) caches per tx: a module-local `WeakMap<tx, slug>` records a tx already proven bound to a slug. A later call on the same tx with the same slug skips the SQL probe; a different slug still probes and refuses.
 - The first call still probes, so the check still fails closed. `emitOnce` uses the same function (it is imported from the repo module), so it shares the cache.
 - Reclaim drops from 2 probes to 1 per segment. Restart and cleanup stay at 1.
@@ -57,15 +57,15 @@ The `.sql` migration cannot import TS, so it stays a copy. The existing cell the
 - **new:** `src/modules/broadcasts/infrastructure/db/audience-audit-index.ts`
 - **changed:** `audit-adapter.ts`, `drizzle-broadcasts-repo.ts`, `scripts/verify-schema.ts`
 - **new:** `tests/support/broadcasts/tick-deps-type.ts`
-- **changed tests:** the 5 `tests/unit/broadcasts/application/build-audience-tick*.test.ts`, `audience-audit-sites.test.ts`, `tests/integration/broadcasts/audience-audit-rows.test.ts`, plus a new probe-cache unit test
+- **changed tests:** the 5 `tests/unit/broadcasts/application/build-audience-tick*.test.ts`, `audience-audit-sites.test.ts`, `tests/integration/broadcasts/audience-audit-rows.test.ts`, plus a new probe unit test (`audience-audit-tenant-probe.test.ts`, every-call probing after the revert)
 - **docs:** `specs/143-audience-audit-tidy/{spec,plan}.md`, the changelog line, and 142 plan.md's listed follow-ups marked closed by 143
 
 ## Verification
 - `pnpm check`; contract tests; the `tests/unit/broadcasts` + `tests/unit/broadcast` + `tests/unit/scripts` units.
 - Integration by path: `audience-audit-rows`, `eblast-send-time-standing`, `audience-cleanup`, `unverifiable-count-audit`, `tx-tenant-binding-guard`, `audit/completeness`.
 - `pnpm db:verify` (the canary now reads the constant).
-- No `/verify`: there is no runtime surface beyond one fewer probe. The live paths are unchanged, and the PR says so.
-- Reviews: `/code-review high`, plus `reliability-guardian` (the probe cache), within the D-043 cap.
+- No `/verify`: after the TT3 revert there is no runtime behaviour change. The live paths are unchanged, and the PR says so.
+- Reviews: `/code-review high`, plus `reliability-guardian` (the probe cache, later reverted), within the D-043 cap.
 - Merge on the maintainer's word.
 
 ## Evidence
@@ -106,3 +106,15 @@ Findings of the second `/code-review high` round on PR 768. **The maintainer rev
 Totals after the fold-in: `tests/unit/broadcasts` 168 files, 2872 passed; `audience-audit-rows` + `tx-tenant-binding-guard` 31 passed; `pnpm db:verify` 32/32 canaries.
 
 **Low follow-up, not fixed here:** finding 8, the TT1 inline scan does not catch the index text written through Drizzle builder forms (for example `eq(auditLog.eventType, 'broadcast_audience_deleted')`) in the adapter or the repo; it matches raw SQL spellings only.
+
+### Review round 3 fold-in (D-043, targeted round 1 of 2)
+Findings of the third `/code-review high` round on PR 768, all Low; no runtime defect.
+
+| Fix | Kind | GREEN |
+|---|---|---|
+| W1 (finding 2) `member-send-standing-unknown-kind.test.ts` built tick deps `as never` with no audit double; it now builds `TickHarnessDeps` with every key and the shared double, and asserts no audit row | Test only | `4c3bc9ed7` |
+| W2 (finding 3) the harness audit slot is `BuildAudienceTickDeps['audit']`, not a hand-picked type; `makeTickAuditDouble(overrides?)` records `emit` / `emitOnce` and throws on the methods the tick does not use; the type test gains a no-`emitTyped` compile-error cell and two runtime cells | Test only | `4c3bc9ed7`; 7 changed unit files 327 passed |
+| W3 (finding 4) the file-only pins (migration `v_expected` and CREATE text, and the canary source) move to the unit test `audience-audit-index.test.ts`, so `pnpm test` catches drift; the live cells stay in the integration file | Test only | `8d9f6cedc`; `audience-audit-rows` 24 passed |
+| W4 (finding 5) the probe test drops the `bindTenantTx` registry setup the code no longer reads | Test only | `b5de8c7da`; 4 passed |
+| W5 (finding 6) review-history prose removed from the repo docblock and the harness header | Comment | `aa6e2e7c7` |
+| W6 (findings 1, 7) the plan's Approach C, the spec and the PR body say TT3 was reversed and V2 shipped; the changelog's scan claim is narrowed to raw SQL text in the adapter and the repo | Docs | this commit |
