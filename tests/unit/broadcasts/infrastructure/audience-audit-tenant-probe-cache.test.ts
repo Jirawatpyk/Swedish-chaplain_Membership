@@ -10,6 +10,15 @@
  * different slug probes again (and is refused on a mismatch); a refused or
  * failed probe proves nothing and caches nothing.
  *
+ * Review round 1 (code-review #1, #4): the proof is kept only for a tx that
+ * `runInTenant` opened, i.e. one registered with `bindTenantTx` under the
+ * expected slug. The bare `db` singleton, or any object nobody registered,
+ * probes on every call; a tx registered under another slug is refused. So
+ * `recordingTx` registers its tx where it models a `runInTenant` tx.
+ *
+ * Review round 1 (code-review #3): the two reads refuse a `tenantIdArg` other
+ * than the repo's own slug before any SQL.
+ *
  * The statements are rendered by a real Drizzle instance over `pg-proxy`, as
  * in `broadcast-retime-refusal-probe.test.ts`, so the probe count is the count
  * of `current_setting` statements the tx was sent. The cross-tenant cells on
@@ -19,6 +28,7 @@
 import { describe, expect, it } from 'vitest';
 import { drizzle } from 'drizzle-orm/pg-proxy';
 
+import { bindTenantTx } from '@/lib/db';
 import { AuditPortInvariantError, type AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
@@ -34,8 +44,13 @@ interface RecordingTx {
   probes(): number;
 }
 
-/** A tx whose GUC answers `tenants[i]` on the i-th probe (the last one after that); every other read finds nothing. */
-function recordingTx(...tenants: Array<string | null>): RecordingTx {
+/**
+ * A tx whose GUC answers `tenants[i]` on the i-th probe (the last one after
+ * that); every other read finds nothing. `registeredAs` is the slug
+ * `bindTenantTx` records for it, as `runInTenant` does; `null` leaves it
+ * unregistered, like the bare `db` singleton.
+ */
+function recordingTx(tenants: ReadonlyArray<string | null>, registeredAs: string | null): RecordingTx {
   const sent: string[] = [];
   let probe = 0;
   const tx = drizzle(async (sqlText) => {
@@ -49,6 +64,7 @@ function recordingTx(...tenants: Array<string | null>): RecordingTx {
     if (/SELECT EXISTS/i.test(sqlText)) return { rows: [{ found: false }] };
     return { rows: [] };
   });
+  if (registeredAs !== null) bindTenantTx(tx, registeredAs);
   return { tx, sent, probes: () => sent.filter((s) => s.includes("current_setting('app.current_tenant'")).length };
 }
 
@@ -78,7 +94,7 @@ const caught = (p: Promise<unknown>) =>
 
 describe('spec 143 TT3 — the audience audit tenant probe runs once per tx and slug', () => {
   it("a disclosed segment's reclaim (disclosure read, then emitOnce) probes once", async () => {
-    const t = recordingTx(TENANT_A);
+    const t = recordingTx([TENANT_A], TENANT_A);
     const repo = makeDrizzleBroadcastsRepo(TENANT_A);
     expect(await repo.findAudienceDisclosureInTx(t.tx, TENANT_A as never, AUDIENCE_ID)).toBeNull();
     expect(await f7AuditAdapter.emitOnce(t.tx, deletedInput(TENANT_A))).toBe(true);
@@ -91,7 +107,7 @@ describe('spec 143 TT3 — the audience audit tenant probe runs once per tx and 
   });
 
   it("an undisclosed segment's reclaim (disclosure read, then the existence read) probes once", async () => {
-    const t = recordingTx(TENANT_A);
+    const t = recordingTx([TENANT_A], TENANT_A);
     const repo = makeDrizzleBroadcastsRepo(TENANT_A);
     await repo.findAudienceDisclosureInTx(t.tx, TENANT_A as never, AUDIENCE_ID);
     expect(await repo.hasAudienceDeletedAuditInTx(t.tx, TENANT_A as never, AUDIENCE_ID)).toBe(false);
@@ -102,7 +118,7 @@ describe('spec 143 TT3 — the audience audit tenant probe runs once per tx and 
   });
 
   it('a second slug on the same tx probes again and is refused as an invariant error', async () => {
-    const t = recordingTx(TENANT_A);
+    const t = recordingTx([TENANT_A], TENANT_A);
     const repo = makeDrizzleBroadcastsRepo(TENANT_A);
     await repo.findAudienceDisclosureInTx(t.tx, TENANT_A as never, AUDIENCE_ID);
     const e = await caught(f7AuditAdapter.emitOnce(t.tx, deletedInput(TENANT_B)));
@@ -113,7 +129,7 @@ describe('spec 143 TT3 — the audience audit tenant probe runs once per tx and 
   });
 
   it('a refused first probe caches nothing: the next call probes again', async () => {
-    const t = recordingTx(TENANT_B, TENANT_A);
+    const t = recordingTx([TENANT_B, TENANT_A], TENANT_A);
     const repo = makeDrizzleBroadcastsRepo(TENANT_A);
     const e = await caught(repo.findAudienceDisclosureInTx(t.tx, TENANT_A as never, AUDIENCE_ID));
     expect(e).toBeInstanceOf(AuditPortInvariantError);
@@ -122,7 +138,7 @@ describe('spec 143 TT3 — the audience audit tenant probe runs once per tx and 
   });
 
   it('a tx with no tenant bound is refused on every call, never cached', async () => {
-    const t = recordingTx(null);
+    const t = recordingTx([null], null);
     const repo = makeDrizzleBroadcastsRepo(TENANT_A);
     for (let i = 0; i < 2; i++) {
       const e = await caught(repo.hasAudienceDeletedAuditInTx(t.tx, TENANT_A as never, AUDIENCE_ID));
@@ -133,11 +149,50 @@ describe('spec 143 TT3 — the audience audit tenant probe runs once per tx and 
   });
 
   it('another tx probes for itself', async () => {
-    const first = recordingTx(TENANT_A);
-    const second = recordingTx(TENANT_A);
+    const first = recordingTx([TENANT_A], TENANT_A);
+    const second = recordingTx([TENANT_A], TENANT_A);
     const repo = makeDrizzleBroadcastsRepo(TENANT_A);
     await repo.findAudienceDisclosureInTx(first.tx, TENANT_A as never, AUDIENCE_ID);
     await repo.findAudienceDisclosureInTx(second.tx, TENANT_A as never, AUDIENCE_ID);
     expect([first.probes(), second.probes()]).toEqual([1, 1]);
+  });
+});
+
+describe('review round 1 — only a tx runInTenant opened keeps its proof (code-review #1, #4)', () => {
+  it('an unregistered object (the bare db singleton) probes on every call, so nothing is cached for it', async () => {
+    const t = recordingTx([TENANT_A], null);
+    const repo = makeDrizzleBroadcastsRepo(TENANT_A);
+    await repo.findAudienceDisclosureInTx(t.tx, TENANT_A as never, AUDIENCE_ID);
+    expect(await f7AuditAdapter.emitOnce(t.tx, deletedInput(TENANT_A))).toBe(true);
+    expect(await repo.hasAudienceDeletedAuditInTx(t.tx, TENANT_A as never, AUDIENCE_ID)).toBe(false);
+    expect(t.probes()).toBe(3);
+  });
+
+  it('a tx runInTenant opened for another slug is refused, even when its GUC answers the expected one', async () => {
+    const t = recordingTx([TENANT_A], TENANT_B);
+    const repo = makeDrizzleBroadcastsRepo(TENANT_A);
+    for (const call of [
+      () => repo.findAudienceDisclosureInTx(t.tx, TENANT_A as never, AUDIENCE_ID),
+      () => f7AuditAdapter.emitOnce(t.tx, deletedInput(TENANT_A)),
+    ]) {
+      const e = await caught(call());
+      expect(e).toBeInstanceOf(AuditPortInvariantError);
+      expect((e as Error).message).toMatch(/tx tenant mismatch/);
+    }
+    expect(t.sent.some((s) => /INSERT INTO audit_log|FROM audit_log/.test(s))).toBe(false);
+  });
+});
+
+describe('review round 1 — the reads refuse a tenantIdArg other than the repo slug before any SQL (code-review #3)', () => {
+  it.each([
+    ['hasAudienceDeletedAuditInTx', 'broadcast_audience_deleted'],
+    ['findAudienceDisclosureInTx', 'broadcast_audience_disclosed'],
+  ] as const)('%s', async (method, eventType) => {
+    const t = recordingTx([TENANT_A], TENANT_A);
+    const repo = makeDrizzleBroadcastsRepo(TENANT_A);
+    const e = await caught(repo[method](t.tx, TENANT_B as never, AUDIENCE_ID));
+    expect(e).toBeInstanceOf(AuditPortInvariantError);
+    expect((e as AuditPortInvariantError).message).toContain(eventType);
+    expect(t.sent).toEqual([]);
   });
 });
