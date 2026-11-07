@@ -64,7 +64,7 @@ The `.sql` migration cannot import TS, so it stays a copy. The existing cell the
 - `pnpm check`; contract tests; the `tests/unit/broadcasts` + `tests/unit/broadcast` + `tests/unit/scripts` units.
 - Integration by path: `audience-audit-rows`, `eblast-send-time-standing`, `audience-cleanup`, `unverifiable-count-audit`, `tx-tenant-binding-guard`, `audit/completeness`.
 - `pnpm db:verify` (the canary now reads the constant).
-- No `/verify`: after the TT3 revert there is no runtime behaviour change. The live paths are unchanged, and the PR says so.
+- No `/verify`: after the TT3 revert the only runtime change is W8, which acts only on a result Postgres never returns for these single-row reads (a driver or pooler defect), so no live path can drive it; its unit cells are the evidence, and the PR says so.
 - Reviews: `/code-review high`, plus `reliability-guardian` (the probe cache, later reverted), within the D-043 cap.
 - Merge on the maintainer's word.
 
@@ -119,7 +119,23 @@ Findings of the third `/code-review high` round on PR 768, all Low; no runtime d
 | W5 (finding 6) review-history prose removed from the repo docblock and the harness header | Comment | `aa6e2e7c7` |
 | W6 (findings 1, 7) the plan's Approach C, the spec and the PR body say TT3 was reversed and V2 shipped; the changelog's scan claim is narrowed to raw SQL text in the adapter and the repo | Docs | `9445cc19d`, `3ad0f1c3e` |
 | W7 (architect LOW-2, pre-existing on `main`; the maintainer asked to fix it here, 7 Nov 2026) `readAlreadySentEvidenceInTx` and `hasUnverifiableCountAuditInTx` probed `ctx.slug` but bound the tenant argument in the advisory-lock key and the `tenant_id` predicate; both lose the argument and bind `ctx.slug`, as V2 did. The lock-key text is unchanged, so an equal slug gives the same key | Refactor, no RED commit (a deviation, see § Complexity Tracking): the cancel-in-flight callers passed `input.tenant.slug` and the tick passed `deps.tenant.slug`, which `makeBuildAudienceTickDeps` builds from the same `tenantId` as its `broadcastsRepo` (`broadcasts-deps.ts:1064`, `:1091`), so every non-throwing path bound the same value; the mismatch is now unrepresentable. Pinned by `tests/unit/broadcasts/infrastructure/evidence-reads-tenant-binding.test.ts` (lock SQL and predicate bind the repo tenant; a tx bound to another tenant is refused before any lock) | `33d4d3012`: `tests/unit/broadcasts` 170 files, 2880 passed; mutation on `2a3d98508` (each of the two lock keys, and the evidence predicate, bound to a constant instead of `ctx.slug`) turned the matching cell red, 1 failed / 2 passed each time; reverted; integration `already-sent-evidence` 8, `audience-import-repo` 28, `halt-flag-precondition` 7, `tx-tenant-binding-guard` 4, `eblast-send-time-standing` 19 |
-| W8 (round 4 finding 8, maintainer chose to fix here, 7 Nov 2026) `readAlreadySentEvidenceInTx` and `hasUnverifiableCountAuditInTx` read `rows[0]?.`, so an empty result (a driver or pooler defect; both are single-row SQL) read as "no evidence" and could let a caller append a second row. Each now throws unless it got exactly one row. Callers: the erasure cascade counts the throw as unexpected and withholds `member_erased` for the reconciler to retry; the tick's `writePreCallAuditRow` logs it as a lost row and writes nothing | `evidence-reads-tenant-binding.test.ts` "refuse a result that is not exactly one row" (4 cells), RED commit below | GREEN commit below |
+| W8 (round 4 finding 8, maintainer chose to fix here, 7 Nov 2026) `readAlreadySentEvidenceInTx` and `hasUnverifiableCountAuditInTx` read `rows[0]?.`, so an empty result (a driver or pooler defect; both are single-row SQL) read as "no evidence" and could let a caller append a second row. Each now throws unless it got exactly one row. Callers: the erasure cascade counts the throw as unexpected and withholds `member_erased` for the reconciler to retry; the tick's `writePreCallAuditRow` logs it as a lost row and writes nothing | `evidence-reads-tenant-binding.test.ts` "refuse a result that is not exactly one row" (4 cells), RED `022d38aa5`: 4 failed, `promise resolved "{ broadcastRecorded: false, …(1) }" instead of rejecting` | `773b27e1c`: 9 passed; `tests/unit/broadcasts` + lib + scripts + contract 684 files, 8922 passed; integration `already-sent-evidence` 8, `unverifiable-count-audit` 3, `audience-import-repo` 28, `eblast-send-time-standing` 19, `audience-audit-rows` 24 |
+
+### Review round 4 fold-in (D-043, targeted round 2 of 2; the cap is now spent)
+Findings of the fourth `/code-review high` round on PR 768, plus `spec-compliance-auditor` (COMPLIANT, no High or Medium; its four Lows fixed in `2582bb9ba`).
+
+| Finding | Disposition |
+|---|---|
+| 1 the double's unused-method stubs threw a plain `Error`, which the tick's fail-soft catch swallows | Fixed `8c2c27fe3`: they throw `AuditPortInvariantError` |
+| 2 overrides left `emitted` / `emittedOnce` empty, so "no row" checks were vacuous | Fixed `8c2c27fe3`: the arrays hold the rows the port reports written, overrides included |
+| 3 the default `emitOnce` never deduped | Fixed `8c2c27fe3`, `0aba2c342`: answers false on a repeat (tenant, audience id) key; a NULL key is not deduped, as the partial index admits it |
+| 4 the default `emit` accepted `broadcast_audience_deleted` | Fixed `8c2c27fe3`: refuses it, as the adapter does |
+| 5 no pin for the null-broadcast erasure read or an unset GUC | Fixed `945264552`; the recording tx answers the real one-row shapes |
+| 6 V2 and W7 had no RED commit on a tenancy change | Recorded as a deviation (§ Complexity Tracking) with a failing run against the old code; retro line and a plan-template rule |
+| 7 the migration-0328 scrape helpers were duplicated | Fixed `63259fdea`: `tests/support/broadcasts/migration-0328.ts` |
+| 8 the two evidence reads read an empty result as "no evidence" | Maintainer chose to fix here: W8 |
+| 9 the W7 row's caller claim did not cover the tick | Corrected with `broadcasts-deps.ts:1064`, `:1091` |
+| 10 the probe test header narrated review history | Fixed `e29e15e79` |
 
 ## Complexity Tracking
 
