@@ -23,7 +23,7 @@
 - **TT3.** On one tx, the tenant-binding check for the audience audit runs the SQL probe once per tenant slug. A second call on the same tx with the same slug skips the probe. A different slug probes again and is refused. The first call still fails closed with `AuditPortInvariantError`. Reclaim's probes per segment drop from 2 to 1.
 
 ## Out of scope
-- Switching broadcasts to D-030's `tenantSlugOf` WeakMap. It proves which tenant opened the tx, not the live GUC, and it would change the tenant-SQL-shape gate.
+- ~~Switching broadcasts to D-030's `tenantSlugOf` WeakMap~~ *Superseded by review round 1 (code-review findings 1 and 4).* The probe cache now skips a probe only for a tx that `runInTenant` registered (`tenantSlugOf`) with the expected slug, and that already passed one SQL probe. The bare `db` singleton and any unregistered object probe on every call. The SQL probe itself stays: the registry proves which tenant opened the tx, and the probe proves the live GUC. A scan pins `src/lib/db.ts` as the only writer of `app.current_tenant`.
 - Changing the migration 0328 file. It is applied, and only the tests that pin it change.
 
 ## Open questions
