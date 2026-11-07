@@ -651,6 +651,37 @@ describe('<PipelineTable> phone sort menu (AURA 5.87)', () => {
     expect(status).toHaveTextContent(S.announce.replace('{option}', S.tierDesc));
   });
 
+  // R144b: in the browser the round trip left focus on <body>. Once the new
+  // order has arrived, focus goes back to the menu, unless the user moved on.
+  it('puts focus back on the menu once the new order arrives, if it was lost', () => {
+    const ui = (sort: 'expires_at_asc' | 'tier_desc') => (
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={TWO_ROWS} canMutate sort={sort} sortHrefs={sortHrefs} />
+      </NextIntlClientProvider>
+    );
+    const { rerender } = render(ui('expires_at_asc'));
+    fireEvent.change(nativeSelect(S.phoneLabel), { target: { value: 'tier_desc' } });
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    rerender(ui('tier_desc'));
+    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: S.phoneLabel }));
+  });
+
+  it('leaves focus where the user moved it while the order was loading', () => {
+    const ui = (sort: 'expires_at_asc' | 'tier_desc') => (
+      <NextIntlClientProvider locale="en" messages={en}>
+        <button type="button">elsewhere</button>
+        <PipelineTable rows={TWO_ROWS} canMutate sort={sort} sortHrefs={sortHrefs} />
+      </NextIntlClientProvider>
+    );
+    const { rerender } = render(ui('expires_at_asc'));
+    fireEvent.change(nativeSelect(S.phoneLabel), { target: { value: 'tier_desc' } });
+    const elsewhere = screen.getByRole('button', { name: 'elsewhere' });
+    elsewhere.focus();
+    rerender(ui('tier_desc'));
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
   it('shows no menu when the list is not sortable or has one row', () => {
     const { rerender } = render(
       <NextIntlClientProvider locale="en" messages={en}>

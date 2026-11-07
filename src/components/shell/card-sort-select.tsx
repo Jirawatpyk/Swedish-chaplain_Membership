@@ -20,9 +20,11 @@
  * After a pick the menu shows the chosen option at once (the URL catches up a
  * server round trip later) and, once the new order has arrived, a polite live
  * region says so: the cards have no `aria-sort` header to tell a screen-reader
- * user that anything changed (WCAG 4.1.3).
+ * user that anything changed (WCAG 4.1.3). The round trip also drops focus to
+ * <body> in the browser (R144b), so focus goes back to the menu then, unless
+ * the user has moved on.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Select } from '@jirawatpyk/aura-react';
 
 /** The query container the menu reads; put it on the wrapper of the menu and its table. */
@@ -53,17 +55,28 @@ export function CardSortSelect({
   // React's "adjust state when a prop changes": once the URL-derived value
   // reaches the pick, the new order has arrived, so say so.
   const [seenValue, setSeenValue] = useState(value);
+  // Bumped when the order arrives; the effect below then restores focus.
+  const [arrivals, setArrivals] = useState(0);
   if (value !== seenValue) {
     setSeenValue(value);
     if (picked !== null && picked === value) {
       setPicked(null);
       const option = options.find((o) => o.value === value);
       setMessage(option ? announce(option.label) : '');
+      setArrivals((n) => n + 1);
     }
   }
 
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (arrivals === 0) return;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    wrapperRef.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus({ preventScroll: true });
+  }, [arrivals]);
+
   return (
-    <div data-card-sort="" className="mb-[var(--aura-space-3)] sm:@min-[592px]/cardsort:hidden">
+    <div ref={wrapperRef} data-card-sort="" className="mb-[var(--aura-space-3)] sm:@min-[592px]/cardsort:hidden">
       <Select
         touchHeight
         label={label}
