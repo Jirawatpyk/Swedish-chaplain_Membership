@@ -49,3 +49,17 @@ export function normaliseIndexDefSql(expr: string): string {
 export function sqlStringLiteral(text: string): string {
   return `'${text.replaceAll("'", "''")}'`;
 }
+
+/** The index's name, as migration 0328 creates it. */
+export const AUDIENCE_DELETED_INDEX_NAME = 'audit_log_audience_deleted_once';
+
+/**
+ * Review round 1 (code-review #5) — `scripts/verify-schema.ts`'s 0328 canary,
+ * the whole query: one row when the index exists, is VALID (an invalid index
+ * is not used for ON CONFLICT inference) and its normalised definition is
+ * `AUDIENCE_DELETED_INDEX_DEF`. The script runs it as it is, and
+ * `audience-audit-rows.test.ts` executes this same text on dev.
+ */
+export const AUDIENCE_DELETED_INDEX_CANARY_SQL =
+  `SELECT 1 AS hit FROM pg_index i WHERE i.indexrelid = to_regclass(${sqlStringLiteral(`public.${AUDIENCE_DELETED_INDEX_NAME}`)}) ` +
+  `AND i.indisvalid AND ${normaliseIndexDefSql('pg_get_indexdef(i.indexrelid)')} = ${normaliseIndexDefSql(sqlStringLiteral(AUDIENCE_DELETED_INDEX_DEF))}`;

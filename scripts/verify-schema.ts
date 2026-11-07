@@ -9,11 +9,7 @@
 
 import postgres from 'postgres';
 
-import {
-  AUDIENCE_DELETED_INDEX_DEF,
-  normaliseIndexDefSql,
-  sqlStringLiteral,
-} from '../src/modules/broadcasts/infrastructure/db/audience-audit-index';
+import { AUDIENCE_DELETED_INDEX_CANARY_SQL } from '../src/modules/broadcasts/infrastructure/db/audience-audit-index';
 
 async function main(): Promise<void> {
   const url =
@@ -277,11 +273,11 @@ async function main(): Promise<void> {
         // `pg_get_indexdef` text and the expected definition, both with the
         // `public.` schema qualifier dropped and whitespace collapsed, are
         // equal, and the index is VALID (an invalid index is not used for ON
-        // CONFLICT inference). Spec 143 (TT1): the definition and the
-        // normalisation come from audience-audit-index.ts, the one TS source;
-        // audience-audit-rows.test.ts pins 0328's copy and this text to it.
+        // CONFLICT inference). Spec 143 (TT1, review round 1): the whole query
+        // is audience-audit-index.ts's, the one TS source, and
+        // audience-audit-rows.test.ts executes it on dev.
         name: 'audit_log_audience_deleted_once valid partial unique index on (tenant_id, payload->>resend_audience_id) (mig 0328)',
-        query: `SELECT 1 AS hit FROM pg_index i WHERE i.indexrelid = to_regclass('public.audit_log_audience_deleted_once') AND i.indisvalid AND ${normaliseIndexDefSql('pg_get_indexdef(i.indexrelid)')} = ${normaliseIndexDefSql(sqlStringLiteral(AUDIENCE_DELETED_INDEX_DEF))}`,
+        query: AUDIENCE_DELETED_INDEX_CANARY_SQL,
       },
       {
         // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure
