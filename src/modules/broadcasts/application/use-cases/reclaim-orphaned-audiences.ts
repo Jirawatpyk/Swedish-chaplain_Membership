@@ -37,8 +37,7 @@
  *     (`AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`; spec 139 s2 review round 2, restored
  *     by spec 142 review round 3) still fits (`RECLAIM_CHUNK_BUDGET_MS`), judged
  *     by `oneCallFitsBefore` (review round 1, R1-H; the listing pages charge
- *     the call alone). The
- *     audit row's other DB work is held by the route's
+ *     the call alone). The audit row's other DB work is held by the route's
  *     `RECLAIM_DEADLINE_MARGIN_MS` — and the orphans not reached are
  *     `deferredDeletes`. Nothing is resumed: the next daily run lists again
  *     from page one, and the deferred orphans are found and deleted then. A cut
@@ -431,12 +430,14 @@ export async function reclaimOrphanedAudiences(
 
   let deferredDeletes = 0;
   for (let i = 0; i < orphans.length; i += RECLAIM_CONCURRENCY) {
-    // Spec 140 DT5 — start a chunk only while one bounded call still fits (the
-    // gateway's listing pages judge with the same rule, review round 1 R1-H).
-    // Spec 142 review round 3 (code-review #3) — each delete first writes its
-    // audit row, whose INSERT can wait up to AUDIENCE_AUDIT_LOCK_TIMEOUT_MS on
-    // another tx's uncommitted insert of the key: charge both. The row's other
-    // DB work (the tenant probe and two reads) is RECLAIM_DEADLINE_MARGIN_MS's.
+    // Spec 140 DT5 — start a chunk only while its budget still fits before the
+    // deadline. The budget is RECLAIM_CHUNK_BUDGET_MS, not the one call the
+    // gateway's listing pages charge (they share oneCallFitsBefore, R1-H, with
+    // another budget). Spec 142 review round 3 (code-review #3) — each delete
+    // first writes its audit row, whose INSERT can wait up to
+    // AUDIENCE_AUDIT_LOCK_TIMEOUT_MS on another tx's uncommitted insert of the
+    // key, so the budget is that wait plus RESEND_CALL_TIMEOUT_MS. The row's
+    // other DB work (the tenant probe and two reads) is RECLAIM_DEADLINE_MARGIN_MS's.
     if (!oneCallFitsBefore(input.deadlineAt, deps.clock.now().getTime(), RECLAIM_CHUNK_BUDGET_MS)) {
       deferredDeletes = orphans.length - i;
       broadcastsMetrics.audienceReclaimTruncated(deps.tenant.slug, 'deletes');

@@ -52,15 +52,17 @@ export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'ap
 export const RESEND_CALL_TIMEOUT_MS = 10_000;
 
 /**
- * Spec 140 s3 review round 1 (R1-H) — the ONE deadline rule of the orphan
- * reclaim: a call starts only while its whole budget (`callBudgetMs`) still
- * fits before `deadlineAt`. The use case's delete chunks and the gateway's
- * `listAudiences` pages both judge with it, with different budgets: the
- * gateway passes its `callTimeoutMs` (default `RESEND_CALL_TIMEOUT_MS`) and
- * `Date.now()`; the reclaim's delete chunk passes `RECLAIM_CHUNK_BUDGET_MS`
+ * Spec 140 s3 review round 1 (R1-H) — broadcasts' ONE deadline rule: work
+ * starts only while its whole budget (`callBudgetMs`) still fits before
+ * `deadlineAt`. Read the name as "this budget fits": each caller passes its
+ * own budget. The three callers: the gateway's `listAudiences` pages
+ * (resend-broadcasts-gateway.ts) pass their `callTimeoutMs` (default
+ * `RESEND_CALL_TIMEOUT_MS`) and `Date.now()`; the reclaim's delete chunk
+ * (reclaim-orphaned-audiences.ts) passes `RECLAIM_CHUNK_BUDGET_MS`
  * (`RESEND_CALL_TIMEOUT_MS` plus the audit row's INSERT wait,
  * `AUDIENCE_AUDIT_LOCK_TIMEOUT_MS`; spec 142 review rounds 3-4) and its
- * `ClockPort`. The two budgets are no longer the same value; the clocks are
+ * `ClockPort`; members' subprocessor-erasure-adapter.ts passes
+ * `RESEND_CALL_TIMEOUT_MS` and `Date.now()` before each pair. The clocks are
  * the same in production (`systemClock` is `new Date()`).
  */
 export function oneCallFitsBefore(deadlineAt: Date, nowMs: number, callBudgetMs: number): boolean {
