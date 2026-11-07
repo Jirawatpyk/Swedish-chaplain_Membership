@@ -119,3 +119,40 @@ describe('spec 143 — the evidence reads bind the repo tenant in the lock key a
     expect(t.sent.every((s) => s.sql.includes(PROBE))).toBe(true);
   });
 });
+
+/**
+ * Both reads are single-row SQL (an aggregate and an EXISTS), so Postgres
+ * always answers one row. Any other row count is a driver or pooler defect;
+ * reading it as "no evidence" would let a caller write a second append-only
+ * row, so each read refuses it instead.
+ */
+function answeringTx(readRows: readonly unknown[]) {
+  return drizzle(async (sqlText) => {
+    if (sqlText.includes(PROBE)) return { rows: [{ current_tenant: TENANT_A }] };
+    if (sqlText.includes('pg_advisory_xact_lock')) return { rows: [{ pg_advisory_xact_lock: '' }] };
+    return { rows: [...readRows] };
+  });
+}
+
+describe('spec 143 — the evidence reads refuse a result that is not exactly one row', () => {
+  const repo = makeDrizzleBroadcastsRepo(TENANT_A);
+  const query = { memberId: MEMBER_ID, broadcastId: asBroadcastId(BROADCAST_ID) };
+
+  it.each([
+    ['no row', []],
+    ['two rows', [{ broadcast_recorded: false, member_count: 0 }, { broadcast_recorded: false, member_count: 0 }]],
+  ])('readAlreadySentEvidenceInTx refuses %s', async (_label, rows) => {
+    await expect(repo.readAlreadySentEvidenceInTx(answeringTx(rows), query)).rejects.toThrow(
+      /readAlreadySentEvidenceInTx: expected exactly one row, got \d+/,
+    );
+  });
+
+  it.each([
+    ['no row', []],
+    ['two rows', [{ found: false }, { found: false }]],
+  ])('hasUnverifiableCountAuditInTx refuses %s', async (_label, rows) => {
+    await expect(
+      repo.hasUnverifiableCountAuditInTx(answeringTx(rows), asBroadcastId(BROADCAST_ID), RESEND_BROADCAST_ID),
+    ).rejects.toThrow(/hasUnverifiableCountAuditInTx: expected exactly one row, got \d+/);
+  });
+});
