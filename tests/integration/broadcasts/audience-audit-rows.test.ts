@@ -25,8 +25,7 @@
  * one (tenant, segment) key: the index refuses that (spec 142).
  */
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -56,6 +55,11 @@ import { asTenantContext } from '@/modules/tenants';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { seedLiveRequester } from '../helpers/seed-live-requester';
+import {
+  MIGRATION_0328_PATH,
+  migration0328IndexCheckSql,
+  migration0328PreCheckSql,
+} from '../../support/broadcasts/migration-0328';
 
 type AudienceEvent = 'broadcast_audience_disclosed' | 'broadcast_audience_deleted';
 
@@ -354,7 +358,6 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
   // Every duplicate attempt runs in a tx that is rolled back, so no run (a RED
   // one included) leaves a second row for one key on the dev branch.
   describe('spec 142 AO1 — migration 0328 (audit_log_audience_deleted_once)', () => {
-    const MIGRATION = join(process.cwd(), 'drizzle', 'migrations', '0328_audit_log_audience_deleted_once.sql');
     const ROLLBACK = new Error('rollback');
 
     /** Run `fn` on the owner connection and roll it back; answers what `fn` answered. */
@@ -369,24 +372,6 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
           if (e !== ROLLBACK) throw e;
         });
       return out;
-    }
-
-    /** The migration's `DO $$` pre-check, verbatim from the file. */
-    function preCheckSql(): string {
-      const block = readFileSync(MIGRATION, 'utf8')
-        .split('--> statement-breakpoint')
-        .find((s) => s.includes('DO $$') && s.includes('duplicate keys'));
-      expect(block).toBeDefined();
-      return block!;
-    }
-
-    /** The migration's index-definition check (the `DO $$` block after the CREATE), verbatim from the file. */
-    function indexCheckSql(): string {
-      const block = readFileSync(MIGRATION, 'utf8')
-        .split('--> statement-breakpoint')
-        .find((s) => s.includes('DO $$') && s.includes('has another definition'));
-      expect(block).toBeDefined();
-      return block!;
     }
 
     /**
@@ -437,7 +422,7 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
                     ${JSON.stringify(r.payload)}::jsonb, ${r.tenant}, 5)
           `);
         }
-        return tx.execute(sql.raw(preCheckSql())).then(
+        return tx.execute(sql.raw(migration0328PreCheckSql())).then(
           () => null,
           (e: unknown) => e,
         );
@@ -481,7 +466,7 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
           FROM pg_index WHERE indexrelid = to_regclass('public.audit_log_audience_deleted_once')
       `)) as unknown as Array<Record<string, unknown>>;
       expect(live).toEqual([{ d: AUDIENCE_DELETED_INDEX_DEF, indisvalid: true }]);
-      const check = indexCheckSql();
+      const check = migration0328IndexCheckSql();
       expect(await raised(check)).toBeNull();
       expect(await raised(checkAgainst(check, AUDIENCE_DELETED_INDEX_DEF, true))).toBeNull();
       // The canary, the query db:verify runs, finds the index.
@@ -493,7 +478,7 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     });
 
     it('the index check raises on every other definition, quoting both normalised texts', async () => {
-      const check = indexCheckSql();
+      const check = migration0328IndexCheckSql();
       const keys = "(tenant_id, ((payload ->> 'resend_audience_id'::text)))";
       const variant = (to: string, from = keys) => {
         expect(AUDIENCE_DELETED_INDEX_DEF).toContain(from);
@@ -524,14 +509,14 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     });
 
     it('the index check raises on an invalid index (indisvalid false) and on a missing one (the all-NULL row, CR #9)', async () => {
-      const check = indexCheckSql();
+      const check = migration0328IndexCheckSql();
       expect(await raised(checkAgainst(check, AUDIENCE_DELETED_INDEX_DEF, false))).toBe(`${PREFIX}: indisvalid false`);
       // No pg_index row for the name: SELECT INTO leaves both variables NULL.
       expect(await raised(checkAgainst(check, null, null))).toBe(`${PREFIX}: no such index`);
     });
 
     it('the pre-check raises on a duplicate key and names it as tenant/segment', async () => {
-      expect(existsSync(MIGRATION)).toBe(true);
+      expect(existsSync(MIGRATION_0328_PATH)).toBe(true);
       const audienceId = randomUUID();
       const payload = deletedPayload(audienceId, randomUUID(), randomUUID());
       const e = await preCheckOver([
@@ -544,7 +529,7 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     });
 
     it('the pre-check does not raise on rows whose key is NULL (no tenant, no segment key, a JSON null)', async () => {
-      expect(existsSync(MIGRATION)).toBe(true);
+      expect(existsSync(MIGRATION_0328_PATH)).toBe(true);
       const audienceId = randomUUID();
       const payload = deletedPayload(audienceId, randomUUID(), randomUUID());
       const { resend_audience_id: _drop, ...noKey } = payload;

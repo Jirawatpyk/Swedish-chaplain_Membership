@@ -17,27 +17,14 @@ import {
   AUDIENCE_DELETED_PREDICATE_SQL,
   normaliseIndexDefSql,
 } from '@/modules/broadcasts/infrastructure/db/audience-audit-index';
-
-const MIGRATION = join(process.cwd(), 'drizzle', 'migrations', '0328_audit_log_audience_deleted_once.sql');
-
-/** The migration's statement that contains every `marker`, verbatim from the file. */
-function migrationBlock(...markers: string[]): string {
-  const block = readFileSync(MIGRATION, 'utf8')
-    .split('--> statement-breakpoint')
-    .find((s) => markers.every((m) => s.includes(m)));
-  expect(block).toBeDefined();
-  return block!;
-}
-
-/** The index-definition check (the `DO $$` block after the CREATE). */
-const indexCheckSql = () => migrationBlock('DO $$', 'has another definition');
+import { migration0328Block, migration0328IndexCheckSql } from '../../../support/broadcasts/migration-0328';
 
 /** A SQL string literal's body (quotes doubled) back to its value. */
 const unquote = (body: string) => body.replaceAll("''", "'");
 
 describe('spec 143 TT1 — migration 0328 and verify-schema spell audience-audit-index.ts', () => {
   it("the migration's v_expected and normalisation are AUDIENCE_DELETED_INDEX_DEF and normaliseIndexDefSql (CR4 #5)", () => {
-    const check = indexCheckSql();
+    const check = migration0328IndexCheckSql();
     const m = /v_expected constant text := '((?:[^']|'')*)';/.exec(check);
     expect(m).not.toBeNull();
     expect(unquote(m![1]!)).toBe(AUDIENCE_DELETED_INDEX_DEF);
@@ -46,7 +33,7 @@ describe('spec 143 TT1 — migration 0328 and verify-schema spell audience-audit
   });
 
   it("the migration's CREATE has the key and the predicate of audience-audit-index.ts", () => {
-    const create = migrationBlock('CREATE UNIQUE INDEX IF NOT EXISTS').replaceAll('"', '').replace(/\s+/g, ' ');
+    const create = migration0328Block('CREATE UNIQUE INDEX IF NOT EXISTS').replaceAll('"', '').replace(/\s+/g, ' ');
     expect(create).toContain(
       `CREATE UNIQUE INDEX IF NOT EXISTS audit_log_audience_deleted_once ON audit_log ${AUDIENCE_DELETED_KEY_SQL} WHERE ${AUDIENCE_DELETED_PREDICATE_SQL};`,
     );
