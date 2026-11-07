@@ -49,7 +49,7 @@ import { broadcastsMetrics } from '@/lib/metrics';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { transition } from '../../domain/policies/broadcast-status-transitions';
 
-import type { AuditPort, F7AuditEventType } from '../ports/audit-port';
+import type { AuditPort, F7EmitEventType } from '../ports/audit-port';
 import type { BroadcastDeliveriesRepo } from '../ports/broadcast-deliveries-repo';
 import type {
   BroadcastsGatewayPort,
@@ -533,7 +533,7 @@ async function markFailedToDispatch(
 // without `deps.` would otherwise get a runtime TypeError caught by
 // the outer try/catch and surfaced as `reconcile.server_error`.
 function buildAudit(
-  eventType: F7AuditEventType,
+  eventType: F7EmitEventType,
   rest: {
     readonly tenantId: string;
     readonly actorUserId: string;

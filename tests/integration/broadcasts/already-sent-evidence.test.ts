@@ -75,7 +75,7 @@ describe('broadcasts repo — readAlreadySentEvidenceInTx (spec 139 residual 8c)
   async function readEvidence(tenant: TestTenant, memberId: string, broadcastId: string | null) {
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
     return repo.withTx((tx) =>
-      repo.readAlreadySentEvidenceInTx(tx, tenant.ctx.slug, {
+      repo.readAlreadySentEvidenceInTx(tx, {
         memberId,
         broadcastId: broadcastId === null ? null : asBroadcastId(broadcastId),
       }),
@@ -139,7 +139,7 @@ describe('broadcasts repo — readAlreadySentEvidenceInTx (spec 139 residual 8c)
     // when nothing is recorded, on the same tx.
     const redrive = (hold: boolean) =>
       repo.withTx(async (tx) => {
-        const seen = await repo.readAlreadySentEvidenceInTx(tx, tenantA.ctx.slug, { memberId, broadcastId });
+        const seen = await repo.readAlreadySentEvidenceInTx(tx, { memberId, broadcastId });
         if (hold) {
           firstRead();
           await released;
@@ -195,7 +195,7 @@ describe('broadcasts repo — readAlreadySentEvidenceInTx (spec 139 residual 8c)
         // The in-flight pass holds the broadcast's row lock (the `broadcasts:`
         // advisory lock + `FOR UPDATE`); the terminal pass takes none.
         if (pass === 'in_flight') await repo.lockForUpdate(tx, tenantA.ctx.slug, broadcastId);
-        const seen = await repo.readAlreadySentEvidenceInTx(tx, tenantA.ctx.slug, { memberId, broadcastId });
+        const seen = await repo.readAlreadySentEvidenceInTx(tx, { memberId, broadcastId });
         if (hold) {
           firstRead();
           await released;

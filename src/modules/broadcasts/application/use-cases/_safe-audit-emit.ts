@@ -26,7 +26,7 @@ import { AuditPortInvariantError } from '../ports/audit-port';
 import type {
   AuditPort,
   AuditEmitInput,
-  F7AuditPayloadShapes,
+  F7EmitTypedEventType,
   TypedAuditEmitInput,
 } from '../ports/audit-port';
 
@@ -126,7 +126,7 @@ export async function safeAuditEmit(
  * `safeAuditEmit` — but the type narrowing is preserved.
  */
 export async function safeAuditEmitTyped<
-  E extends keyof F7AuditPayloadShapes,
+  E extends F7EmitTypedEventType,
 >(
   audit: AuditPort,
   tx: unknown,

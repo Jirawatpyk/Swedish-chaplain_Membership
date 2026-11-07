@@ -20,10 +20,11 @@ import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
-import { buildAudienceTick, type BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
-import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
+import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import { AuditPortInvariantError, type AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
+import { makeTickAuditDouble, type TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('66666666-6666-4666-8666-666666666666');
@@ -33,8 +34,6 @@ const TOKEN = 'bbbbbbbb-0000-4000-8000-00000000000b';
 /** `_dispatch-lease.ts`'s values, spelled here so a drift there is a red test. */
 const CALL_HEADROOM_MS = 25_000;
 const IMPORT_HEADROOM_MS = 45_000;
-
-type DepsWithEveryPort = { [K in keyof BuildAudienceTickDeps]: unknown };
 
 interface AuditRow {
   readonly eventType: string;
@@ -100,7 +99,7 @@ function harness(opts: Opts = {}) {
     dispatchFirstFailedAt: null as Date | null,
     ...opts.row,
   };
-  const deps: DepsWithEveryPort = {
+  const deps: TickHarnessDeps = {
     tenant,
     clock: { now: () => NOW },
     tickBudget: { tickStartedAt: NOW.getTime() },
@@ -175,9 +174,9 @@ function harness(opts: Opts = {}) {
       async hasUnverifiableCountAuditInTx() {
         return false;
       },
-      // The dedupe, read over what this recorder holds (a second tick is
-      // seeded with the first tick's rows through `priorAudits`).
-      async hasAudienceDeletedAuditInTx(_tx: unknown, _t: unknown, audienceId: string) {
+      // Spec 142 (AO3) — the restart no longer reads this: the index is the
+      // arbiter (`emitOnce`). A read here would show up in the event order.
+      async hasAudienceDeletedAuditInTx(_tx: unknown, audienceId: string) {
         events.push(`dedupe:${audienceId}`);
         return audits.some(
           (a) => a.eventType === 'broadcast_audience_deleted' && a.payload['resend_audience_id'] === audienceId,
@@ -230,7 +229,8 @@ function harness(opts: Opts = {}) {
         return { kind: 'not_found' as const };
       },
     },
-    audit: {
+    // The shared audit double, with this file's failures and the index's dedupe as overrides.
+    audit: makeTickAuditDouble({
       async emit(_tx: unknown, e: AuditRow) {
         if (opts.auditThrows?.eventType === e.eventType) {
           events.push(`audit-failed:${e.eventType}`);
@@ -240,7 +240,23 @@ function harness(opts: Opts = {}) {
         events.push(`audit:${e.eventType}`);
         audits.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, payload: e.payload, requestId: e.requestId });
       },
-    },
+      // Spec 142 (AO2) — the index's answer, over what this recorder holds (a
+      // second tick is seeded with the first tick's rows through `priorAudits`).
+      async emitOnce(_tx: unknown, e: AudienceDeletedEmitInput): Promise<boolean> {
+        if (opts.auditThrows?.eventType === e.eventType) {
+          events.push(`audit-failed:${e.eventType}`);
+          if (opts.auditThrows.kind === 'invariant') throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
+          throw new Error('53300 too many connections');
+        }
+        events.push(`audit-once:${e.eventType}`);
+        const key = e.payload.resend_audience_id;
+        if (audits.some((a) => a.eventType === e.eventType && a.tenantId === e.tenantId && a.payload['resend_audience_id'] === key)) {
+          return false;
+        }
+        audits.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, payload: { ...e.payload }, requestId: e.requestId ?? null });
+        return true;
+      },
+    }),
     membersBridge: {
       async getMemberPrimaryContact() {
         return 'member@example.com';
@@ -392,14 +408,14 @@ describe('spec 139 s2 DA2 — the restart teardown writes broadcast_audience_del
     const counted = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
     const h = harness(o);
     await h.run();
-    const at = h.events.indexOf(`audit:${DELETED}`);
+    const at = h.events.indexOf(`audit-once:${DELETED}`);
     expect(at).toBeGreaterThan(-1);
-    expect(h.events.slice(at - 1, at + 3)).toEqual([
-      `dedupe:${audienceId}`,
-      `audit:${DELETED}`,
+    expect(h.events.slice(at, at + 3)).toEqual([
+      `audit-once:${DELETED}`,
       `check:${CALL_HEADROOM_MS}:held`,
       `gw:deleteAudience:${audienceId}`,
     ]);
+    expect(h.events.filter((e) => e.startsWith('dedupe:'))).toEqual([]);
     const rows = h.rowsOf(DELETED);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual({
@@ -428,11 +444,15 @@ describe('spec 139 s2 DA2 — the restart teardown writes broadcast_audience_del
       requestId: null,
       payload: { broadcast_id: BROADCAST_ID, related_member_id: 'm-1', resend_audience_id: 'aud-stale', reason: 'hold', leg: 'import', actor_role: 'system' },
     };
+    const counted = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
     const h = harness({ row: { resendAudienceId: 'aud-stale' }, priorAudits: [prior] });
     await h.run();
-    expect(h.events).toContain('dedupe:aud-stale');
+    expect(h.events).toContain(`audit-once:${DELETED}`);
+    expect(h.events.filter((e) => e.startsWith('dedupe:'))).toEqual([]);
     expect(h.rowsOf(DELETED)).toEqual([]);
     expect(h.events).toContain('gw:deleteAudience:aud-stale');
+    expect(counted).not.toHaveBeenCalledWith(tenant.slug, DELETED);
+    expect(errorLogged('broadcasts.audience_import.audience_audit_lost')).toEqual([]);
   });
 
   it('the gate stops the delete: the row stays (it records the request) and no delete is made', async () => {

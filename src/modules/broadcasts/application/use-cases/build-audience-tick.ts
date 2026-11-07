@@ -59,8 +59,7 @@ import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { AuditPortInvariantError } from '../ports/audit-port';
-import { isAdapterInvariantError } from './_safe-audit-emit';
-import type { AuditEmitInput, AuditPort } from '../ports/audit-port';
+import type { AudienceDeletedAuditPort, AuditEmitInput, AuditPort } from '../ports/audit-port';
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
   decideDispatchStanding,
@@ -103,6 +102,7 @@ import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import type { ResolvedOrphan, ResolveSegmentError } from './resolve-segment-recipients';
 import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 import { recordAudienceDeleted, recordAudienceDisclosed } from './_audience-audit';
+import { writePreCallAuditRow } from './_pre-call-audit-row';
 
 /**
  * FR-044 (f). Measured from the SUBMIT, not from `scheduled_for`: a broadcast
@@ -427,7 +427,8 @@ export interface BuildAudienceTickDeps {
    * chrome (fail-soft, metered) — a brand outage must never fail a send.
    */
   readonly brandChrome: BrandChromePort;
-  readonly audit: AuditPort;
+  /** Spec 142: the restart writes the audience deleted row through `emitOnce`. */
+  readonly audit: AuditPort & AudienceDeletedAuditPort;
   readonly clock: ClockPort;
   readonly fromEmail: string;
   readonly tenantDisplayName: string;
@@ -2118,10 +2119,10 @@ function unverifiableErrorReason(failure: GatewayFailure): UnverifiableErrorReas
  * count call FAILED, so the one check that can see a carried-over contact did
  * not run. It records that failed count on the attempt, whether or not the
  * attempt then sent (a send that fails, or a lease lost at the second gate,
- * included). The deleted legacy leg wrote it on its own
- * count failure; this is the only leg since spec 140 s4. Same payload keys as the
- * legacy row plus the import id; ids, a count and a closed error code, no address
- * and no provider text (the row is append-only and shown on the audit viewer).
+ * included). The deleted legacy leg wrote it on its own count failure; this is
+ * the only leg since spec 140 s4. Same payload keys as the legacy row plus the
+ * import id; ids, a count and a closed error code, no address and no provider
+ * text (the row is append-only and shown on the audit viewer).
  *
  * PER DRAFT, not per attempt (rounds 3 and 4): written once for each
  * (`broadcastId`, `resendBroadcastId`), by the first attempt on that draft whose
@@ -2137,19 +2138,20 @@ function unverifiableErrorReason(failure: GatewayFailure): UnverifiableErrorReas
  * its lease writes nothing. `resendBroadcastId` is the id about to be sent
  * (minted or inherited; never null at this point).
  *
- * The send-started pattern: its own tenant-bound `withTx` (a null tx would take
- * a pool connection with no `app.current_tenant`, where RLS writes nothing) and a
- * RAW emit, so a failure is known. A storage failure is logged and counted, and
- * the send goes ahead: refusing it on an audit blip would kill a legitimate send.
- * A failure of the dedupe READ (the lock, the `EXISTS`, or the repo's
- * `assertTenantBoundTx`, a plain Error) is treated as a storage failure too; that
- * is acceptable here because `withTx` always binds the tx through `runInTenant`,
- * so a binding refusal can only mean a wiring change the rest of the tick's
- * writes would also refuse. A wiring bug in the AUDIT write
- * (`isAdapterInvariantError`: an `AuditPortInvariantError` or the adapter's
- * `f7AuditAdapter:`-prefixed Error) RETHROWS: nothing has been sent, so it fails
- * closed and the row stays `approved`. (`broadcast_send_started`'s own rethrow
- * after the send is pre-existing and out of this change's scope.)
+ * The send-started pattern, through the shared pre-call envelope
+ * (`writePreCallAuditRow`, spec 142 AO4): its own tenant-bound `withTx` (a null
+ * tx would take a pool connection with no `app.current_tenant`, where RLS
+ * writes nothing) and a RAW emit, so a failure is known. A storage failure is
+ * logged and counted, and the send goes ahead: refusing it on an audit blip
+ * would kill a legitimate send. A failure of the dedupe READ (the lock, the
+ * `EXISTS`, or the repo's `assertTenantBoundTx`, a plain Error) is treated as a
+ * storage failure too; that is acceptable here because `withTx` always binds
+ * the tx through `runInTenant`, so a binding refusal can only mean a wiring
+ * change the rest of the tick's writes would also refuse. A wiring bug in the
+ * AUDIT write (`isAdapterInvariantError`: an `AuditPortInvariantError` or the
+ * adapter's `f7AuditAdapter:`-prefixed Error) RETHROWS: nothing has been sent,
+ * so it fails closed and the row stays `approved`. (`broadcast_send_started`'s
+ * own rethrow after the send is pre-existing and out of this change's scope.)
  *
  * The caller re-runs the send's lease gate after it, whether a row was written,
  * deduped or the tx failed (rounds 4 and 5): this tx ran between the gate and
@@ -2167,21 +2169,19 @@ async function recordUnverifiableCount(
   },
 ): Promise<void> {
   const broadcastId = input.broadcastId as unknown as string;
-  let written = false;
-  try {
-    await deps.broadcastsRepo.withTx(async (tx) => {
-      written = false;
+  await writePreCallAuditRow(
+    deps,
+    'broadcast_resend_drift_check_unverifiable',
+    async (tx): Promise<'written' | 'skip'> => {
       if (
         await deps.broadcastsRepo.hasUnverifiableCountAuditInTx(
           tx,
-          deps.tenant.slug,
           input.broadcastId,
           fields.resendBroadcastId,
         )
       ) {
-        return;
+        return 'skip';
       }
-      written = true;
       await deps.audit.emit(tx, {
         eventType: 'broadcast_resend_drift_check_unverifiable',
         tenantId: deps.tenant.slug,
@@ -2197,22 +2197,24 @@ async function recordUnverifiableCount(
         },
         requestId: null,
       });
-    });
-    if (written) broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_resend_drift_check_unverifiable');
-  } catch (auditErr) {
-    // Pre-send: a wiring bug fails closed (see the docblock).
-    if (isAdapterInvariantError(auditErr)) throw auditErr;
-    logger.error(
-      {
-        err: errKind(auditErr),
-        tenantId: deps.tenant.slug,
-        broadcastId,
-        importId: fields.importId,
-      },
-      'broadcasts.audience_import.unverifiable_audit_emit_failed',
-    );
-    broadcastsMetrics.auditEmitFailed('broadcast_resend_drift_check_unverifiable', deps.tenant.slug);
-  }
+      return 'written';
+    },
+    {
+      // Pre-send: a wiring bug fails closed (see the docblock), rethrown by the
+      // envelope with no line of its own here.
+      onInvariant: () => undefined,
+      onLost: (auditErr) =>
+        logger.error(
+          {
+            err: errKind(auditErr),
+            tenantId: deps.tenant.slug,
+            broadcastId,
+            importId: fields.importId,
+          },
+          'broadcasts.audience_import.unverifiable_audit_emit_failed',
+        ),
+    },
+  );
 }
 
 /** Tick 2+ — poll, apply the completion rule, and only then send. */

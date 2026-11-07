@@ -25,10 +25,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ok, err } from '@/lib/result';
 import { asTenantContext } from '@/modules/tenants';
 import { broadcastsMetrics } from '@/lib/metrics';
+import { logger } from '@/lib/logger';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
-import type { BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { makeFakeSendStanding } from '../../../helpers/eblast-approval-fakes';
+import { makeTickAuditDouble, type RecordedAuditRow, type TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('44444444-4444-4444-8444-444444444444');
@@ -46,7 +47,8 @@ interface Recorder {
   readonly attachedImports: string[];
   readonly completions: number[];
   readonly transitions: Array<{ status: string }>;
-  readonly audits: string[];
+  /** The rows `emitOnce` wrote (the restart's deleted row). */
+  readonly deletedRows: readonly RecordedAuditRow[];
   /** Round 4 T2 — FR-021 sends, which this harness could not observe at all. */
   readonly memberEmails: Array<{ templateKey: string; reason: unknown }>;
 }
@@ -71,8 +73,10 @@ interface Recorder {
  *
  * See `[[reference_unstubbed_port_method_is_an_unexercised_branch]]`: this is
  * that class, made unrepresentable rather than caught one instance at a time.
+ *
+ * Spec 143 (TT2): the type is the shared `TickHarnessDeps`, which also types the
+ * audit double as the port the tick declares; `makeTickAuditDouble` builds it.
  */
-type DepsWithEveryPort = { [K in keyof BuildAudienceTickDeps]: unknown };
 
 function makeDeps(opts: {
   /** Row already carries an import id → this tick is a POLL, not a submit. */
@@ -90,7 +94,8 @@ function makeDeps(opts: {
   readonly resolveFails?: 'too_large' | 'empty';
   /** The row's subject; default `Hello`. */
   readonly subject?: string;
-}): { deps: DepsWithEveryPort; rec: Recorder } {
+}): { deps: TickHarnessDeps; rec: Recorder } {
+  const audit = makeTickAuditDouble();
   const rec: Recorder = {
     createdAudiences: [],
     deletedAudiences: [],
@@ -101,7 +106,7 @@ function makeDeps(opts: {
     attachedImports: [],
     completions: [],
     transitions: [],
-    audits: [],
+    deletedRows: audit.emittedOnce,
     memberEmails: [],
   };
 
@@ -299,11 +304,8 @@ function makeDeps(opts: {
           rec.sends.push(id);
         },
       },
-      audit: {
-        async emit(_tx: unknown, e: { eventType: string }) {
-          rec.audits.push(e.eventType);
-        },
-      },
+      // The shared audit double: the restart's deleted row lands in `rec.deletedRows`.
+      audit,
       // ── Round 4 T2 — the three ports this harness never had ────────────────
       //
       // Their absence was not a coverage gap, it was a SILENT one: the calls
@@ -515,12 +517,27 @@ describe('buildAudienceTick — the two happy ticks (T087)', () => {
     // never reused. It is deleted (no orphan on Resend Free's three) and the
     // next tick builds a fresh one.
     const { deps, rec } = makeDeps({ resendAudienceId: 'aud-existing' });
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
 
-    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+    try {
+      await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(rec.deletedAudiences).toEqual(['aud-existing']);
-    expect(rec.importsSubmitted).toEqual([]);
-    expect(rec.createdAudiences).toEqual([]);
+      expect(rec.deletedAudiences).toEqual(['aud-existing']);
+      expect(rec.importsSubmitted).toEqual([]);
+      expect(rec.createdAudiences).toEqual([]);
+      // Spec 142 review round 3 (code-review #1) — the restart's deleted row is
+      // written, not lost: a double without `emitOnce` sent it down the silent
+      // lost-row branch while this cell stayed green.
+      expect(rec.deletedRows).toEqual([
+        {
+          eventType: 'broadcast_audience_deleted',
+          payload: expect.objectContaining({ resend_audience_id: 'aud-existing', reason: 'stale_audience' }),
+        },
+      ]);
+      expect(error.mock.calls.map((c) => c[1])).not.toContain('broadcasts.audience_import.audience_audit_lost');
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it('tick 2: every clause passes → stamps completion, creates the broadcast, sends', async () => {

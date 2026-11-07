@@ -65,7 +65,7 @@ import {
 import {
   type EmailLower,
 } from '../../domain/value-objects/email-lower';
-import type { AuditPort, F7AuditEventType } from '../ports/audit-port';
+import type { AuditPort, F7AuditEventType, F7EmitEventType } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
 import type { ImageAllowlistPort } from '../ports/image-allowlist-port';
@@ -330,7 +330,7 @@ function preconditionFromEvent(
 async function emitReject(
   deps: SubmitBroadcastDeps,
   input: SubmitBroadcastInput,
-  eventType: F7AuditEventType,
+  eventType: F7EmitEventType,
   payload: Record<string, unknown>,
 ): Promise<void> {
   try {
@@ -588,7 +588,7 @@ export async function submitBroadcast(
         message: `sanitizer_unavailable: ${sanitised.error.reason}`,
       });
     }
-    const eventType: F7AuditEventType =
+    const eventType: F7EmitEventType =
       sanitised.error.kind === 'broadcast_body_too_large'
         ? 'broadcast_body_too_large'
         : 'broadcast_body_unsafe_html';
@@ -750,7 +750,7 @@ export async function submitBroadcast(
         message: 'recipient resolution unavailable',
       });
     }
-    const eventType: F7AuditEventType =
+    const eventType: F7EmitEventType =
       resolved.error.kind === 'broadcast_audience_too_large'
         ? 'broadcast_audience_too_large'
         : 'broadcast_empty_segment_blocked';

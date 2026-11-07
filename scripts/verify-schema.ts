@@ -9,6 +9,8 @@
 
 import postgres from 'postgres';
 
+import { AUDIENCE_DELETED_INDEX_CANARY_SQL } from '../src/modules/broadcasts/infrastructure/db/audience-audit-index';
+
 async function main(): Promise<void> {
   const url =
     process.env.DATABASE_URL_UNPOOLED ??
@@ -262,6 +264,20 @@ async function main(): Promise<void> {
         // the call goes ahead with no record.
         name: 'audit_event_type broadcast_audience_disclosed + broadcast_audience_deleted (mig 0327)',
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'broadcast_audience_disclosed') AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'broadcast_audience_deleted')`,
+      },
+      {
+        // Spec 142 (mig 0328) — the arbiter of `f7AuditAdapter.emitOnce`'s
+        // `ON CONFLICT`. Without it that INSERT fails with 42P10, so every
+        // segment removal loses its row. The same comparison as 0328's own
+        // check (the past-the-cap closing change of spec 142): the live
+        // `pg_get_indexdef` text and the expected definition, both with the
+        // `public.` schema qualifier dropped and whitespace collapsed, are
+        // equal, and the index is VALID (an invalid index is not used for ON
+        // CONFLICT inference). Spec 143 (TT1, review round 1): the whole query
+        // is audience-audit-index.ts's, the one TS source, and
+        // audience-audit-rows.test.ts executes it on dev.
+        name: 'audit_log_audience_deleted_once valid partial unique index on (tenant_id, payload->>resend_audience_id) (mig 0328)',
+        query: AUDIENCE_DELETED_INDEX_CANARY_SQL,
       },
       {
         // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure

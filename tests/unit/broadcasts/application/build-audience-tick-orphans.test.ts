@@ -18,10 +18,11 @@ import { err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
-import { buildAudienceTick, type BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { RecordOrphanInput } from '@/modules/broadcasts/application/ports/broadcast-orphans-repo';
 import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
+import { makeTickAuditDouble, type TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('55555555-5555-4555-8555-555555555555');
@@ -31,7 +32,6 @@ const TOKEN = 'aaaaaaaa-0000-4000-8000-00000000000a';
 const MEMBER = 'm-1';
 const TICK2_ROW = { resendAudienceId: 'aud-1', audienceImportId: 'imp-1', audienceImportSubmittedAt: new Date(NOW.getTime() - 600_000) };
 
-type DepsWithEveryPort = { [K in keyof BuildAudienceTickDeps]: unknown };
 type DeleteOnce = 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other';
 type RetrieveOnce = { kind: 'present'; status: string; sentAt?: string | null } | { kind: 'not_found' } | { kind: 'retryable' };
 
@@ -68,7 +68,10 @@ interface Opts {
 function harness(opts: Opts = {}) {
   const events: string[] = [];
   const recorded: RecordOrphanInput[] = [];
-  const audits: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+  const audit = makeTickAuditDouble();
+  const audits = audit.emitted;
+  /** The rows `emitOnce` wrote (the restart's deleted row). */
+  const deletedRows = audit.emittedOnce;
   const memberEmails: unknown[] = [];
   const checks = opts.checks ?? ['held'];
   let checkIndex = 0;
@@ -97,7 +100,7 @@ function harness(opts: Opts = {}) {
     dispatchFirstFailedAt: null as Date | null,
     ...opts.row,
   };
-  const deps: DepsWithEveryPort = {
+  const deps: TickHarnessDeps = {
     tenant,
     clock: { now: () => NOW },
     tickBudget: { tickStartedAt: NOW.getTime() },
@@ -230,11 +233,8 @@ function harness(opts: Opts = {}) {
         recorded.push(input);
       },
     },
-    audit: {
-      async emit(_tx: unknown, e: { eventType: string; payload: Record<string, unknown> }) {
-        audits.push({ eventType: e.eventType, payload: e.payload });
-      },
-    },
+    // The shared audit double: `audits` and `deletedRows` are its recorders.
+    audit,
     membersBridge: {
       async getMemberPrimaryContact() {
         return 'member@example.com';
@@ -253,7 +253,7 @@ function harness(opts: Opts = {}) {
     pauseBeforeReprobe: async () => {},
   };
   const run = () => buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
-  return { run, events, recorded, audits, memberEmails };
+  return { run, events, recorded, audits, deletedRows, memberEmails };
 }
 
 beforeEach(() => {
@@ -372,6 +372,13 @@ describe('spec 140 s2c — the import leg records its orphans at the caller', ()
     const res = await h.run();
     expect(res.ok ? res.value : res.error).toEqual({ kind: 'dispatch_held_member_suspended' });
     expect(h.recorded).toEqual([]);
+    // Spec 142 review round 3 (code-review #1) — the restart's deleted row is
+    // written, not lost: a double without `emitOnce` sent it down the silent
+    // lost-row branch while this cell stayed green.
+    expect(h.deletedRows).toEqual([
+      { eventType: 'broadcast_audience_deleted', payload: expect.objectContaining({ resend_audience_id: 'aud-1' }) },
+    ]);
+    expect(vi.mocked(logger.error).mock.calls.map((c) => c[1])).not.toContain('broadcasts.audience_import.audience_audit_lost');
   });
 
   it('a lost audience attach whose delete fails → audience_leaked (resource_type audience)', async () => {

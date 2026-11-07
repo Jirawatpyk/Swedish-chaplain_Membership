@@ -886,8 +886,8 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
       repo.markAudienceImportCompleted(tx, slug, id, null)],
     // Spec 139 — a read, but the erasure cascade decides a write on it (the
     // derived count and the locked evidence check).
-    ['readAlreadySentEvidenceInTx', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never, id: ReturnType<typeof asBroadcastId>) =>
-      repo.readAlreadySentEvidenceInTx(tx, slug, { memberId: randomUUID(), broadcastId: id })],
+    ['readAlreadySentEvidenceInTx', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, _slug: never, id: ReturnType<typeof asBroadcastId>) =>
+      repo.readAlreadySentEvidenceInTx(tx, { memberId: randomUUID(), broadcastId: id })],
   ] as const)('cross-tenant: %s with a tenant-B tx refuses tenant A\'s row', async (_label, call) => {
     if (!RUN_INTEGRATION) return;
     const { raw, id } = await seedBuilding(); // owned by TEST_TENANT

@@ -24,7 +24,7 @@ import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/por
 import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
+import { AuditPortInvariantError, type AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -49,7 +49,7 @@ const NO_DRAIN_DEPS = {
   // Spec 140 s2d (#736a) — ids in, ids out.
   membersBridge: { async filterErasedMemberIds() { return []; } },
   // Spec 139 s2 — the deleted row before each delete; its cells are at the end.
-  audit: { async emit() {} },
+  audit: { async emitOnce() { return true; } },
 };
 const NO_ORPHAN_RUN = { listed: 0, settled: 0, undecided: 0, waiting: 0, deferred: 0, listFailed: false, erasedReadFailed: false, erasedShareFull: false };
 
@@ -398,7 +398,7 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
   const DELETED = 'broadcast_audience_deleted';
   const candidate = { broadcastId: 'bc-1111', resendAudienceId: 'aud-1111', requestedByMemberId: 'm-requester' };
 
-  /** A lock wait past `lock_timeout` as Drizzle throws it: the driver's 55P03 at `.cause`. */
+  /** An INSERT wait past `lock_timeout` as Drizzle throws it: the driver's 55P03 at `.cause`. */
   const lockTimeout = () =>
     Object.assign(new Error('Failed query'), {
       cause: Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }),
@@ -407,16 +407,16 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
   function harness(
     opts: {
       readonly alreadyDeleted?: boolean;
-      readonly auditThrows?: 'storage' | 'storage_sqlstate' | 'invariant';
-      readonly dedupeThrows?: 'lock_timeout';
+      readonly auditThrows?: 'storage' | 'storage_sqlstate' | 'invariant' | 'lock_timeout';
     } = {},
   ) {
     const events: string[] = [];
     const rows: Array<{ eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }> = [];
     const repo = makeRepo({ candidates: [candidate] });
-    repo.port.hasAudienceDeletedAuditInTx = async (_tx, _t, audienceId) => {
+    // Spec 142 (AO3) — cleanup no longer reads the dedupe: the index is the
+    // arbiter. A read here would show up in the event order.
+    repo.port.hasAudienceDeletedAuditInTx = async (_tx, audienceId) => {
       events.push(`dedupe:${audienceId}`);
-      if (opts.dedupeThrows === 'lock_timeout') throw lockTimeout();
       return opts.alreadyDeleted === true;
     };
     const gateway = makeGateway({});
@@ -425,18 +425,29 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
       events.push(`gw:deleteAudience:${id}`);
       return del(id);
     };
+    type Row = { eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> };
     const audit = {
-      async emit(_tx: unknown, e: { eventType: string; tenantId: string | null; actorUserId: string; requestId: string | null; payload: Record<string, unknown> }) {
-        if (opts.auditThrows === 'invariant') throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
-        if (opts.auditThrows === 'storage') throw new Error('53300 too many connections');
-        if (opts.auditThrows === 'storage_sqlstate') {
-          throw Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' });
-        }
+      // A plain emit of the deleted row would bypass the index's arbiter.
+      async emit(_tx: unknown, e: Row) {
         events.push(`audit:${e.eventType}`);
         rows.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, requestId: e.requestId, payload: e.payload });
       },
       async emitTyped(): Promise<never> {
         throw new Error('emitTyped is not used here');
+      },
+      // Spec 142 (AO2) — the one writer: answers false when the key already has its row.
+      async emitOnce(_tx: unknown, input: AudienceDeletedEmitInput): Promise<boolean> {
+        const e: Row = { ...input, payload: { ...input.payload } };
+        if (opts.auditThrows === 'invariant') throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
+        if (opts.auditThrows === 'storage') throw new Error('53300 too many connections');
+        if (opts.auditThrows === 'storage_sqlstate') {
+          throw Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' });
+        }
+        if (opts.auditThrows === 'lock_timeout') throw lockTimeout();
+        events.push(`audit-once:${e.eventType}`);
+        if (opts.alreadyDeleted === true) return false;
+        rows.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, requestId: e.requestId, payload: e.payload });
+        return true;
       },
     };
     const run = () =>
@@ -454,12 +465,12 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('a terminal row past the grace: the deleted row (terminal_cleanup, the requester), then the delete', async () => {
+  it('a terminal row past the grace: the deleted row through emitOnce (terminal_cleanup, the requester), then the delete', async () => {
     const counted = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
     const h = harness();
     const result = await h.run();
     expect(result.ok && result.value.deleted).toBe(1);
-    expect(h.events).toEqual(['dedupe:aud-1111', `audit:${DELETED}`, 'gw:deleteAudience:aud-1111']);
+    expect(h.events).toEqual([`audit-once:${DELETED}`, 'gw:deleteAudience:aud-1111']);
     expect(h.rows).toEqual([
       {
         eventType: DELETED,
@@ -480,10 +491,15 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
   });
 
   it('a segment that already has its deleted row (a restart wrote it) gets no second one; the delete still runs', async () => {
+    const counted = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
+    const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
     const h = harness({ alreadyDeleted: true });
     await h.run();
     expect(h.rows).toEqual([]);
-    expect(h.events).toEqual(['dedupe:aud-1111', 'gw:deleteAudience:aud-1111']);
+    expect(h.events).toEqual([`audit-once:${DELETED}`, 'gw:deleteAudience:aud-1111']);
+    expect(counted).not.toHaveBeenCalled();
+    expect(failed).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
   it('a storage failure of the row logs ERROR and counts it, and the delete still runs', async () => {
@@ -545,10 +561,12 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
 
   // Review round 2 (code-review #1/#4, reliability LOW-1) — a lock wait past
   // `lock_timeout` is not a known loss: another tx may be writing the row.
-  it('a lock timeout on the dedupe logs the WARN audience_audit_lock_timeout and counts it; no ERROR, the delete still runs', async () => {
+  // Spec 142: the wait is now the INSERT's, on another tx's uncommitted insert
+  // of the same key.
+  it('a lock timeout on the INSERT logs the WARN audience_audit_lock_timeout and counts it; no ERROR, the delete still runs', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
     const failed = vi.spyOn(broadcastsMetrics, 'auditEmitFailed');
-    const h = harness({ dedupeThrows: 'lock_timeout' });
+    const h = harness({ auditThrows: 'lock_timeout' });
     const result = await h.run();
     expect(result.ok && result.value).toMatchObject({ deleted: 1, failed: 0 });
     expect(h.gateway.deleteCalls).toEqual(['aud-1111']);

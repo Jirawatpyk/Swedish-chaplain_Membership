@@ -51,7 +51,7 @@ import {
 import type {
   AuditEmitInput,
   AuditPort,
-  F7AuditEventType,
+  F7EmitEventType,
 } from '../ports/audit-port';
 import type {
   BroadcastDeliveriesRepo,
@@ -698,7 +698,7 @@ export async function processWebhookEvent(
 // ---------------------------------------------------------------------------
 
 function f7Audit(args: {
-  readonly eventType: F7AuditEventType;
+  readonly eventType: F7EmitEventType;
   readonly tenantId: string;
   readonly actorUserId: string;
   readonly summary: string;
