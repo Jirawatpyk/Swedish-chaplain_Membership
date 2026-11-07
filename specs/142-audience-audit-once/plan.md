@@ -261,7 +261,17 @@ ALTER TABLE audit_log ENABLE TRIGGER audit_log_no_delete;
 ```
 The script refused any host but `ep-gentle-king-` (the dev branch).
 
-### Gates on the final code (`c051feabb`, 7 Nov 2026; spec-compliance H1)
+### Gates on the final code (`6670f932a`, 7 Nov 2026, after the past-cap closing change)
+
+Same results as on `c051feabb`:
+- `pnpm check`: exit 0 (red-first, 53 commits);
+- unit + contract: 587 files, 7747 passed;
+- integration by path, each exit 0: audience-audit-rows 25, eblast-send-time-standing 19, audience-cleanup 5, unverifiable-count-audit 3, tx-tenant-binding-guard 4, audit/completeness 45;
+- `db:verify`: 32/32.
+
+In AO1, the structural-check cells are replaced by the single normalised-indexdef comparison (plus `indisvalid`). Its cells cover a positive control on dev; NULLS NOT DISTINCT, a non-default opclass, a COLLATE, an INCLUDE, another predicate, an invalid index and a missing index each raising; and the migration literal byte-equal to the canary's.
+
+### Gates on `c051feabb` (superseded by the block above)
 
 | Done-when | Evidence on this head |
 |---|---|
