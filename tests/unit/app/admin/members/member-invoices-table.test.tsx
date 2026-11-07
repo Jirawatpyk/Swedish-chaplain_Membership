@@ -107,7 +107,7 @@ describe('MemberInvoicesTable (T556)', () => {
     const headers = visible.map((h) => h.textContent?.trim());
     expect(headers.slice(0, 7)).toEqual(['Number', 'Status', 'Issued', 'Due', 'Paid', 'Total', 'Remaining']);
     expect(visible[1]).toHaveAttribute('data-hide');
-    const cells = within(grid).getAllByRole('row')[1]!.querySelectorAll<HTMLElement>('[role=gridcell]');
+    const cells = within(grid).getAllByRole('row')[1]!.querySelectorAll<HTMLElement>('[role=gridcell]:not([data-grid="off"])');
     expect(cells[0]).toHaveTextContent('SC-2026-000123');
     expect(cells[1]).toHaveTextContent(issued.statusLabel);
     // The stacked pill under the number is the narrow-table fallback only.
@@ -174,10 +174,10 @@ describe('MemberInvoicesTable (T556)', () => {
     expect(total.closest('[class*="max-[639px]:text-start"]')).toBeNull();
   });
 
-  // PR Q review round 1 (a11y) — AURA still counts `grid: false` columns in
-  // aria-colcount / aria-colindex (stand-in until AURA #200), so the card-only
-  // columns sit last: the grid's visible headers number 1..N with no gap.
-  it('the visible grid headers run aria-colindex 1..N with no gap', () => {
+  // PR Q review round 1 (a11y), AURA 5.86 #200 — `grid: false` columns are out
+  // of aria-colcount / aria-colindex, so the card title can sit beside Number
+  // and the grid's visible headers still number 1..N of N.
+  it('the visible grid headers run aria-colindex 1..N of N with no gap', () => {
     render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
     const grid = screen.getByRole('grid', { name: labels.caption });
     const visible = within(grid)
@@ -185,18 +185,19 @@ describe('MemberInvoicesTable (T556)', () => {
       .filter((h) => h.getAttribute('data-grid') !== 'off')
       .map((h) => Number(h.getAttribute('aria-colindex')));
     expect(visible).toEqual(visible.map((_, i) => i + 1));
+    expect(Number(grid.getAttribute('aria-colcount'))).toBe(visible.length);
   });
 
   it('on a phone the rows are a divided list inside the Invoices card, not framed cards of their own', () => {
-    render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
-    const wrapper = screen.getByRole('grid').closest<HTMLElement>('.\\@container\\/invoices')!;
-    // The divided-list rule lives in globals.css on this class (AURA #204).
-    expect(wrapper).toHaveClass('member-invoices-list');
+    // AURA 5.87 #204: DataTable stackStyle="list" (no stand-in of ours).
+    const { container } = render(<MemberInvoicesTable rows={[issued]} labels={labels} canMutate />);
+    expect(container.querySelector('.aura-table--stack-list')).not.toBeNull();
+    expect(container.querySelector('.member-invoices-list')).toBeNull();
     const css = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8');
-    expect(css).toMatch(/@container invoices \(width < 592px\)\s*\{\s*\.member-invoices-list \.aura-table__row \{[^}]*border-width: 0 0 1px;[^}]*border-radius: 0;/);
-    // AURA pulls the ⋯ 8px into the row's side padding; with no padding it
-    // would overhang the card by 8px (R143b), so the stand-in zeroes it.
-    expect(css).toMatch(/\.member-invoices-list \.aura-table__td\[data-card='actions'\] \{ margin-inline-end: 0; \}/);
+    expect(css).not.toContain('member-invoices-list');
+    // AURA's list keeps the ⋯ cell's -8px end margin with 0 row padding, so
+    // it would overhang the table by 8px (R143b): stand-in until AURA #207.
+    expect(css).toMatch(/\.aura-table--stack-list \.aura-table__td\[data-card='actions'\] \{ margin-inline-end: 0; \}/);
   });
 
   it('the phone card still takes the number as its title and the status as its pill', () => {

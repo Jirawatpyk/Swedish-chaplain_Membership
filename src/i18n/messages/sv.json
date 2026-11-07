@@ -1469,7 +1469,16 @@
         "openMember": "Öppna medlem",
         "editMember": "Redigera medlem",
         "rowNotSelectable": "{company} är arkiverad och kan inte markeras",
-        "searchPlaceholderShort": "Företag, kontakt, e-post eller medlemsnr"
+        "searchPlaceholderShort": "Företag, kontakt, e-post eller medlemsnr",
+        "sort": {
+          "label": "Sortera efter",
+          "announce": "Sorterat: {option}",
+          "default": "Senaste aktivitet först",
+          "memberNumberAsc": "Medlemsnr, lägst först",
+          "memberNumberDesc": "Medlemsnr, högst först",
+          "engagementDesc": "Engagemang, bäst först",
+          "engagementAsc": "Engagemang, störst risk först"
+        }
       },
       "emptyStates": {
         "zero": {
@@ -4482,7 +4491,13 @@
         "sort": {
           "sortBy": "Sortera efter {column}",
           "ascending": "Sorterat stigande",
-          "descending": "Sorterat fallande"
+          "descending": "Sorterat fallande",
+          "phoneLabel": "Sortera efter",
+          "announce": "Sorterat: {option}",
+          "expiresAsc": "Går ut, tidigast först",
+          "expiresDesc": "Går ut, senast först",
+          "tierAsc": "Nivå, lägst först",
+          "tierDesc": "Nivå, högst först"
         },
         "status": {
           "upcoming": "Kommande",
@@ -6009,7 +6024,6 @@
           },
           "downloadErrorCsv": "Ladda ner fel-CSV",
           "cardSummary": "{source} · {processed} bearbetade · {skipped} hoppade över · {failed} misslyckade",
-          "cardSummaryLabel": "Sammanfattning",
           "downloadErrorCsvAriaLabel": "Ladda ner fel-CSV för importen {recordId}",
           "expiredBadge": "Utgången",
           "expiredTooltip": "Fel-CSV-filen för denna import utgick efter 30 dagar. Kör om importen för att återskapa filen.",

@@ -1469,7 +1469,16 @@
         "openMember": "เปิดข้อมูลสมาชิก",
         "editMember": "แก้ไขข้อมูลสมาชิก",
         "rowNotSelectable": "{company} ถูกเก็บถาวรแล้ว จึงเลือกไม่ได้",
-        "searchPlaceholderShort": "บริษัท ผู้ติดต่อ อีเมล หรือเลขสมาชิก"
+        "searchPlaceholderShort": "บริษัท ผู้ติดต่อ อีเมล หรือเลขสมาชิก",
+        "sort": {
+          "label": "เรียงตาม",
+          "announce": "เรียงแล้ว: {option}",
+          "default": "กิจกรรมล่าสุดก่อน",
+          "memberNumberAsc": "เลขสมาชิก น้อยไปมาก",
+          "memberNumberDesc": "เลขสมาชิก มากไปน้อย",
+          "engagementDesc": "การมีส่วนร่วม ดีที่สุดก่อน",
+          "engagementAsc": "การมีส่วนร่วม เสี่ยงที่สุดก่อน"
+        }
       },
       "emptyStates": {
         "zero": {
@@ -4482,7 +4491,13 @@
         "sort": {
           "sortBy": "เรียงตาม{column}",
           "ascending": "เรียงจากน้อยไปมาก",
-          "descending": "เรียงจากมากไปน้อย"
+          "descending": "เรียงจากมากไปน้อย",
+          "phoneLabel": "เรียงตาม",
+          "announce": "เรียงแล้ว: {option}",
+          "expiresAsc": "วันหมดอายุ เร็วที่สุดก่อน",
+          "expiresDesc": "วันหมดอายุ ช้าที่สุดก่อน",
+          "tierAsc": "ระดับ ต่ำไปสูง",
+          "tierDesc": "ระดับ สูงไปต่ำ"
         },
         "status": {
           "upcoming": "ใกล้ครบกำหนด",
@@ -6009,7 +6024,6 @@
           },
           "downloadErrorCsv": "ดาวน์โหลด CSV ของแถวผิดพลาด",
           "cardSummary": "{source} · ประมวลผล {processed} · ข้าม {skipped} · ล้มเหลว {failed}",
-          "cardSummaryLabel": "สรุป",
           "downloadErrorCsvAriaLabel": "ดาวน์โหลด CSV ของแถวผิดพลาดสำหรับการนำเข้า {recordId}",
           "expiredBadge": "หมดอายุแล้ว",
           "expiredTooltip": "ไฟล์ CSV ของแถวผิดพลาดสำหรับการนำเข้าครั้งนี้หมดอายุหลังจาก 30 วัน หากต้องการดาวน์โหลด ให้นำเข้าใหม่อีกครั้ง",

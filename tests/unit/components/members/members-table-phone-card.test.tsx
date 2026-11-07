@@ -9,13 +9,14 @@
  * these tests pin the attributes AURA's card rules key on.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
 import { MembersTable, type MembersTableRow } from '@/components/members/members-table';
 
+const routerPush = vi.fn();
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ replace: vi.fn(), push: routerPush, refresh: vi.fn() }),
   usePathname: () => '/admin/members',
   useSearchParams: () => new URLSearchParams(),
 }));
@@ -106,5 +107,52 @@ describe('members table in the list card', () => {
     const { container } = renderTable();
     expect(container.querySelector('.aura-bleed')).not.toBeNull();
     expect(container.querySelector('.aura-bleed-end')).toBeNull();
+  });
+});
+
+/** AURA Select: the combobox button, and the native select behind it. */
+function nativeSelect(name: string): HTMLSelectElement {
+  const native = screen.getByRole('combobox', { name }).closest('.aura-select')?.querySelector('select');
+  if (!native) throw new Error(`no native select for ${name}`);
+  return native;
+}
+
+const row2 = { ...row, member_id: 'm2', member_number_display: 'TSCC-0004', company_name: 'Baltic Bay' } as MembersTableRow;
+
+function renderSortable(rows: MembersTableRow[] = [row, row2]) {
+  return render(
+    <NextIntlClientProvider locale="en" messages={messages}>
+      <MembersTable rows={rows} total={rows.length} enableSelection canEdit />
+    </NextIntlClientProvider>,
+  );
+}
+
+// AURA 5.87 takes the grid's sort headers out of the cards, so the phone has
+// its own visible "Sort by" menu, shown only while the cards show; it writes
+// the same `?sort=&order=&page=1` URL as the headers.
+describe('members phone sort menu (AURA 5.87)', () => {
+  const S = messages.admin.members.directory.sort;
+
+  it('offers the two sortable columns both ways, shown only while the cards show', () => {
+    const { container } = renderSortable();
+    const select = nativeSelect(S.label);
+    // Below `sm` the host card is flush, so the table always stacks there: the
+    // menu hides only from `sm` up AND a 592px wrapper (a11y review M1).
+    expect(select.closest('[data-card-sort]')).toHaveClass('sm:@min-[592px]/cardsort:hidden');
+    expect(container.querySelector('.\\@container\\/cardsort')).not.toBeNull();
+    const labels = [...select.querySelectorAll('option')].map((o) => o.textContent);
+    expect(labels).toEqual([S.default, S.memberNumberAsc, S.memberNumberDesc, S.engagementDesc, S.engagementAsc]);
+  });
+
+  it('choosing an order writes the same URL the headers write, without jumping to the top', () => {
+    routerPush.mockClear();
+    renderSortable();
+    fireEvent.change(nativeSelect(S.label), { target: { value: 'engagement:asc' } });
+    expect(routerPush).toHaveBeenCalledWith('/admin/members?sort=engagement&order=asc&page=1', { scroll: false });
+  });
+
+  it('shows no menu for a single row, as the grid offers no sort then', () => {
+    renderSortable([row]);
+    expect(screen.queryByRole('combobox', { name: S.label })).toBeNull();
   });
 });

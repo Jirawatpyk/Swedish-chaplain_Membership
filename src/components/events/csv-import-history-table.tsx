@@ -259,10 +259,10 @@ export function CsvImportHistoryTable({
       },
       {
         key: 'cardSummary',
-        // A real name: the header stays in the accessibility tree while the
-        // cards show, and AURA reads the key when the label is empty (R143;
-        // the visible field label goes when AURA #205 hides it).
-        label: t('cardSummaryLabel'),
+        // No field label on the card, as the board draws it. Since 5.87 (#205)
+        // the grid's headers leave the accessibility tree while the cards
+        // show, and an empty label never reads as the key (R143).
+        label: '',
         grid: false,
         card: 'wide',
         render: (row) => (

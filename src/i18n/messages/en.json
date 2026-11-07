@@ -1469,7 +1469,16 @@
         "openMember": "Open member",
         "editMember": "Edit member",
         "rowNotSelectable": "{company} is archived and cannot be selected",
-        "searchPlaceholderShort": "Company, contact, email or member no."
+        "searchPlaceholderShort": "Company, contact, email or member no.",
+        "sort": {
+          "label": "Sort by",
+          "announce": "Sorted: {option}",
+          "default": "Recent activity first",
+          "memberNumberAsc": "Member No., lowest first",
+          "memberNumberDesc": "Member No., highest first",
+          "engagementDesc": "Engagement, healthiest first",
+          "engagementAsc": "Engagement, most at risk first"
+        }
       },
       "emptyStates": {
         "zero": {
@@ -4482,7 +4491,13 @@
         "sort": {
           "sortBy": "Sort by {column}",
           "ascending": "Sorted ascending",
-          "descending": "Sorted descending"
+          "descending": "Sorted descending",
+          "phoneLabel": "Sort by",
+          "announce": "Sorted: {option}",
+          "expiresAsc": "Expires, earliest first",
+          "expiresDesc": "Expires, latest first",
+          "tierAsc": "Tier, lowest first",
+          "tierDesc": "Tier, highest first"
         },
         "status": {
           "upcoming": "Upcoming",
@@ -6009,7 +6024,6 @@
           },
           "downloadErrorCsv": "Download error CSV",
           "cardSummary": "{source} · {processed} processed · {skipped} skipped · {failed} failed",
-          "cardSummaryLabel": "Summary",
           "downloadErrorCsvAriaLabel": "Download error CSV for import {recordId}",
           "expiredBadge": "Expired",
           "expiredTooltip": "The error CSV for this import expired after 30 days. Re-run the import to regenerate.",

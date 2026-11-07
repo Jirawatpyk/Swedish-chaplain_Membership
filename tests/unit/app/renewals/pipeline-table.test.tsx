@@ -22,8 +22,9 @@ import type { PipelineRow } from '@/modules/renewals/client';
 // `refresh` is required too: `OutreachDialog`'s onConfirm (exercised by
 // the review-fix-#5 finalFocus suite below) calls `router.refresh()` on
 // a successful "Record outreach" submit.
+const routerPush = vi.fn();
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: routerPush, refresh: vi.fn() }),
 }));
 
 /** The one AURA grid; there is no separate card list to disambiguate. */
@@ -595,5 +596,104 @@ describe('<PipelineTable> in the list card', () => {
     );
     expect(container.querySelector('.aura-bleed')).not.toBeNull();
     expect(container.querySelector('.aura-bleed-end')).toBeNull();
+  });
+});
+
+/** AURA Select: the combobox button, and the native select behind it. */
+function nativeSelect(name: string): HTMLSelectElement {
+  const native = screen.getByRole('combobox', { name }).closest('.aura-select')?.querySelector('select');
+  if (!native) throw new Error(`no native select for ${name}`);
+  return native;
+}
+
+// AURA 5.87 takes the grid's sort headers out of the cards: the phone gets a
+// visible "Sort by" menu, shown only while the cards show, built on the
+// page's own sort links (same tier and lens kept, the cursor dropped).
+describe('<PipelineTable> phone sort menu (AURA 5.87)', () => {
+  const sortHrefs = {
+    expires: '/admin/renewals?urgency=t-30&sort=expires_at_desc',
+    tier: '/admin/renewals?urgency=t-30&sort=tier_asc',
+  };
+  const TWO_ROWS: ReadonlyArray<PipelineRow> = [
+    ONE_ROW[0]!,
+    { ...ONE_ROW[0]!, cycleId: 'cyc-2' as PipelineRow['cycleId'], memberId: 'mem-2', companyName: 'Beta Co' },
+  ];
+  const S = en.admin.renewals.table.sort;
+
+  it('offers Expires and Tier both ways, with the active sort selected', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={TWO_ROWS} canMutate sort="expires_at_asc" sortHrefs={sortHrefs} />
+      </NextIntlClientProvider>,
+    );
+    const select = nativeSelect(S.phoneLabel);
+    expect(select.closest('[data-card-sort]')).toHaveClass('sm:@min-[592px]/cardsort:hidden');
+    expect([...select.options].map((o) => o.textContent)).toEqual([S.expiresAsc, S.expiresDesc, S.tierAsc, S.tierDesc]);
+    expect(select.value).toBe('expires_at_asc');
+  });
+
+  it('choosing an order follows the page sort link with that sort, then announces it once it has arrived', () => {
+    routerPush.mockClear();
+    const ui = (sort: 'expires_at_asc' | 'tier_desc') => (
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={TWO_ROWS} canMutate sort={sort} sortHrefs={sortHrefs} />
+      </NextIntlClientProvider>
+    );
+    const { container, rerender } = render(ui('expires_at_asc'));
+    fireEvent.change(nativeSelect(S.phoneLabel), { target: { value: 'tier_desc' } });
+    expect(routerPush).toHaveBeenCalledWith('/admin/renewals?urgency=t-30&sort=tier_desc', { scroll: false });
+    // The menu shows the pick at once; nothing is announced until the URL catches up.
+    expect(nativeSelect(S.phoneLabel).value).toBe('tier_desc');
+    const status = container.querySelector('[data-card-sort-status]');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(status).toHaveTextContent('');
+    rerender(ui('tier_desc'));
+    expect(status).toHaveTextContent(S.announce.replace('{option}', S.tierDesc));
+  });
+
+  // R144b: in the browser the round trip left focus on <body>. Once the new
+  // order has arrived, focus goes back to the menu, unless the user moved on.
+  it('puts focus back on the menu once the new order arrives, if it was lost', () => {
+    const ui = (sort: 'expires_at_asc' | 'tier_desc') => (
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={TWO_ROWS} canMutate sort={sort} sortHrefs={sortHrefs} />
+      </NextIntlClientProvider>
+    );
+    const { rerender } = render(ui('expires_at_asc'));
+    fireEvent.change(nativeSelect(S.phoneLabel), { target: { value: 'tier_desc' } });
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    rerender(ui('tier_desc'));
+    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: S.phoneLabel }));
+  });
+
+  it('leaves focus where the user moved it while the order was loading', () => {
+    const ui = (sort: 'expires_at_asc' | 'tier_desc') => (
+      <NextIntlClientProvider locale="en" messages={en}>
+        <button type="button">elsewhere</button>
+        <PipelineTable rows={TWO_ROWS} canMutate sort={sort} sortHrefs={sortHrefs} />
+      </NextIntlClientProvider>
+    );
+    const { rerender } = render(ui('expires_at_asc'));
+    fireEvent.change(nativeSelect(S.phoneLabel), { target: { value: 'tier_desc' } });
+    const elsewhere = screen.getByRole('button', { name: 'elsewhere' });
+    elsewhere.focus();
+    rerender(ui('tier_desc'));
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it('shows no menu when the list is not sortable or has one row', () => {
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={TWO_ROWS} canMutate />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByRole('combobox', { name: S.phoneLabel })).toBeNull();
+    rerender(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={ONE_ROW} canMutate sort="expires_at_asc" sortHrefs={sortHrefs} />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByRole('combobox', { name: S.phoneLabel })).toBeNull();
   });
 });

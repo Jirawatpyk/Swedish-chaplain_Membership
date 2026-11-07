@@ -1240,7 +1240,16 @@ test.describe(
       const dialog = page.getByRole('alertdialog');
       await expect(dialog).toBeVisible({ timeout: 5_000 });
 
+      // The scan covers the dialog this case is about. AURA's modal Dialog
+      // leaves the page behind it un-inert, so a whole-page scan also read the
+      // queue behind the scrim: on the real queue axe flags the Stage filter
+      // chips against the top bar's ⌘K search (target-size / target-offset,
+      // red on main since R143; R144), and on the fixture a row button the
+      // sticky bulk bar covers. That page is scanned with no dialog open in broadcast-axe
+      // (admin queue) and in the other scans in this file;
+      // the inert background is AURA #206.
       const results = await new AxeBuilder({ page })
+        .include('[role="alertdialog"]')
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
         .analyze();
       expect(results.violations).toEqual([]);
