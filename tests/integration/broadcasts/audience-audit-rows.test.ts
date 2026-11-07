@@ -48,9 +48,6 @@ import { makeBuildAudienceTickDeps } from '@/modules/broadcasts/infrastructure/b
 import {
   AUDIENCE_DELETED_INDEX_CANARY_SQL,
   AUDIENCE_DELETED_INDEX_DEF,
-  AUDIENCE_DELETED_KEY_SQL,
-  AUDIENCE_DELETED_PREDICATE_SQL,
-  normaliseIndexDefSql,
   sqlStringLiteral,
 } from '@/modules/broadcasts/infrastructure/db/audience-audit-index';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
@@ -407,24 +404,6 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
      * spells `normaliseIndexDefSql` around its arguments.
      */
     const normalised = (def: string) => def.replaceAll('public.', '').replace(/\s+/g, ' ').trim();
-    /** A SQL string literal's body (quotes doubled) back to its value. */
-    const unquote = (body: string) => body.replaceAll("''", "'");
-
-    /** The migration's expected literal, as written between its quotes. */
-    function migrationLiteral(): string {
-      const m = /v_expected constant text := '((?:[^']|'')*)';/.exec(indexCheckSql());
-      expect(m).not.toBeNull();
-      return m![1]!;
-    }
-
-    /** The migration's CREATE statement, with its identifier quotes dropped. */
-    function createSql(): string {
-      const block = readFileSync(MIGRATION, 'utf8')
-        .split('--> statement-breakpoint')
-        .find((s) => s.includes('CREATE UNIQUE INDEX IF NOT EXISTS'));
-      expect(block).toBeDefined();
-      return block!.replaceAll('"', '').replace(/\s+/g, ' ');
-    }
 
     /** The check with its catalog read replaced by literal assignments, so it reads no catalog. */
     function checkAgainst(check: string, def: string | null, valid: boolean | null): string {
@@ -491,31 +470,9 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     // no index is created on the shared audit_log.
     const PREFIX = '0328: index audit_log_audience_deleted_once has another definition';
 
-    // Spec 143 (TT1) — the migration is the one copy of audience-audit-index.ts's
-    // text; these pin it to the constants.
-    it("the migration's v_expected and normalisation are AUDIENCE_DELETED_INDEX_DEF and normaliseIndexDefSql (CR4 #5, TT1)", () => {
-      expect(unquote(migrationLiteral())).toBe(AUDIENCE_DELETED_INDEX_DEF);
-      const check = indexCheckSql();
-      expect(check).toContain(normaliseIndexDefSql('v_def'));
-      expect(check).toContain(normaliseIndexDefSql('v_expected'));
-    });
-
-    it("the migration's CREATE has the key and the predicate of audience-audit-index.ts (TT1)", () => {
-      const create = createSql();
-      expect(create).toContain(`CREATE UNIQUE INDEX IF NOT EXISTS audit_log_audience_deleted_once ON audit_log ${AUDIENCE_DELETED_KEY_SQL} WHERE ${AUDIENCE_DELETED_PREDICATE_SQL};`);
-    });
-
-    // Review round 1 (code-review #5): the script runs the module's canary
-    // query as it is, so the live cell below executes the script's own text
-    // and a typo in it (the to_regclass name included) fails that cell.
-    it('the verify-schema canary is AUDIENCE_DELETED_INDEX_CANARY_SQL from audience-audit-index.ts (TT1)', () => {
-      const source = readFileSync(join(process.cwd(), 'scripts', 'verify-schema.ts'), 'utf8');
-      expect(source).toMatch(/from '\.\.\/src\/modules\/broadcasts\/infrastructure\/db\/audience-audit-index'/);
-      expect(source).toContain('query: AUDIENCE_DELETED_INDEX_CANARY_SQL,');
-      // The query has no second copy in the script (its name line may name the index).
-      expect(source).not.toContain('CREATE UNIQUE INDEX audit_log_audience_deleted_once');
-      expect(source).not.toMatch(/to_regclass\('public\.audit_log_audience_deleted_once'\)/);
-    });
+    // Spec 143 (TT1) — the file-only pins (the migration's v_expected, its CREATE
+    // and the verify-schema canary against audience-audit-index.ts) are in
+    // tests/unit/broadcasts/infrastructure/audience-audit-index.test.ts.
 
     it('the index check and the canary pass on the live index, and the check on its text in place of the catalog read', async () => {
       // Positive control: dev's live text and validity are what AUDIENCE_DELETED_INDEX_DEF says.
