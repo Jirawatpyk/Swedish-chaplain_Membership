@@ -104,7 +104,7 @@ describe('spec 143 TT2 — TickHarnessDeps requires the whole tick audit port', 
 
   it('the default emitOnce dedupes on (tenantId, resend_audience_id) as index 0328 does', async () => {
     const audit = makeTickAuditDouble();
-    const row = (tenantId: string, id: string) =>
+    const row = (tenantId: string, id: string | null) =>
       ({ eventType: 'broadcast_audience_deleted', tenantId, payload: { resend_audience_id: id } }) as unknown as AudienceDeletedEmitInput;
 
     const answers = [
@@ -112,10 +112,13 @@ describe('spec 143 TT2 — TickHarnessDeps requires the whole tick audit port', 
       await audit.emitOnce(null, row('t-a', 'seg-1')),
       await audit.emitOnce(null, row('t-b', 'seg-1')),
       await audit.emitOnce(null, row('t-a', 'seg-2')),
+      // A NULL key does not collide in the partial unique index.
+      await audit.emitOnce(null, row('t-a', null)),
+      await audit.emitOnce(null, row('t-a', null)),
     ];
 
-    expect(answers).toEqual([true, false, true, true]);
-    expect(audit.emittedOnce.map((r) => r.payload['resend_audience_id'])).toEqual(['seg-1', 'seg-1', 'seg-2']);
+    expect(answers).toEqual([true, false, true, true, true, true]);
+    expect(audit.emittedOnce.map((r) => r.payload['resend_audience_id'])).toEqual(['seg-1', 'seg-1', 'seg-2', null, null]);
   });
 
   it('an override still fills the arrays with what it wrote, and keeps its answer and its throw', async () => {

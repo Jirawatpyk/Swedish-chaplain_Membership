@@ -92,6 +92,9 @@ export function makeTickAuditDouble(overrides: Partial<TickAuditPort> = {}): Tic
       let wrote: boolean;
       if (emitOnceOverride !== undefined) {
         wrote = await emitOnceOverride.call(this, tx, e);
+      } else if (e.payload.resend_audience_id == null) {
+        // A NULL key never collides in the unique index, so it is always written.
+        wrote = true;
       } else {
         const key = onceKey(e);
         wrote = !writtenOnceKeys.has(key);
