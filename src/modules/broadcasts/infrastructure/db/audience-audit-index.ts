@@ -10,8 +10,9 @@
  *
  * Callers: the adapter's `ON CONFLICT`, the repo's `hasAudienceDeletedAuditInTx`,
  * `scripts/verify-schema.ts`'s 0328 canary and `audience-audit-rows.test.ts`.
- * The `.sql` migration cannot import TS, so it keeps a copy; that test pins the
- * migration's CREATE and its `v_expected` to these constants, and
+ * The `.sql` migration cannot import TS, so it keeps a copy;
+ * `audience-audit-index.test.ts` pins the migration's CREATE and its
+ * `v_expected` to these constants, and
  * `audience-audit-sites.test.ts` fails if the adapter or the repo spells the
  * text inline.
  *

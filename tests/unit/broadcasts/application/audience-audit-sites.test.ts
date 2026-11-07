@@ -307,7 +307,7 @@ describe('spec 142 — the deleted row is written only through emitOnce', () => 
 /**
  * Migration 0328's index key and predicate are spelled once, in
  * `audience-audit-index.ts`, and three places must agree with them: the index
- * itself (pinned by `audience-audit-rows.test.ts`), `emitOnce`'s `ON CONFLICT`
+ * itself (pinned by `audience-audit-index.test.ts`), `emitOnce`'s `ON CONFLICT`
  * (a parameter there is a 42P10), and the reclaim's existence read (a bound
  * key would cost it the index). The adapter and the repo splice the constants
  * with `sql.raw` and never write the text inline; comments are stripped first,
