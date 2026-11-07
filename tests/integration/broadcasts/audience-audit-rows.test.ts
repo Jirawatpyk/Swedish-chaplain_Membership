@@ -45,6 +45,13 @@ import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/bu
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { isAdapterInvariantError } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
 import { makeBuildAudienceTickDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
+import {
+  AUDIENCE_DELETED_INDEX_DEF,
+  AUDIENCE_DELETED_KEY_SQL,
+  AUDIENCE_DELETED_PREDICATE_SQL,
+  normaliseIndexDefSql,
+  sqlStringLiteral,
+} from '@/modules/broadcasts/infrastructure/db/audience-audit-index';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
 import { asTenantContext } from '@/modules/tenants';
@@ -393,12 +400,13 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
      * table, every key with any non-default operator class or COLLATE, INCLUDE,
      * NULLS NOT DISTINCT and the predicate, so a difference in any of them is
      * a difference in the text. `LIVE_DEF` is dev's text, read with
-     * `pnpm db:query` on 7 Nov 2026; the positive control re-reads it.
+     * `pnpm db:query` on 7 Nov 2026; the positive control re-reads it. Spec
+     * 143 (TT1): it is `AUDIENCE_DELETED_INDEX_DEF`, the one TS source, so the
+     * positive control pins that constant to the live index.
      */
-    const LIVE_DEF =
-      "CREATE UNIQUE INDEX audit_log_audience_deleted_once ON public.audit_log USING btree (tenant_id, ((payload ->> 'resend_audience_id'::text))) WHERE (event_type = 'broadcast_audience_deleted'::audit_event_type)";
-    /** The normalisation, as both files must spell it around their argument. */
-    const NORMALISE = (arg: string) => `btrim(regexp_replace(replace(${arg}, 'public.', ''), '[[:space:]]+', ' ', 'g'))`;
+    const LIVE_DEF = AUDIENCE_DELETED_INDEX_DEF;
+    /** The normalisation, as the migration must spell it around its argument (`normaliseIndexDefSql`). */
+    const NORMALISE = normaliseIndexDefSql;
     const normalised = (def: string) => def.replaceAll('public.', '').replace(/\s+/g, ' ').trim();
     const sqlText = (v: string | null) => (v === null ? 'NULL' : `'${v.replaceAll("'", "''")}'`);
     /** A SQL string literal's body (quotes doubled) back to its value. */
@@ -411,16 +419,23 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       return m![1]!;
     }
 
-    /** The 0328 canary's query in scripts/verify-schema.ts, and the literal it compares with. */
-    function canary(): { query: string; literal: string } {
-      const source = readFileSync(join(process.cwd(), 'scripts', 'verify-schema.ts'), 'utf8');
-      const q = /name: 'audit_log_audience_deleted_once[^']*\(mig 0328\)',\s*query: `([^`]*)`/.exec(source);
-      expect(q).not.toBeNull();
-      const query = q![1]!;
-      const l = /replace\('(CREATE UNIQUE INDEX (?:[^']|'')*)', 'public\.', ''\)/.exec(query);
-      expect(l).not.toBeNull();
-      return { query, literal: l![1]! };
+    /** The migration's CREATE statement, with its identifier quotes dropped. */
+    function createSql(): string {
+      const block = readFileSync(MIGRATION, 'utf8')
+        .split('--> statement-breakpoint')
+        .find((s) => s.includes('CREATE UNIQUE INDEX IF NOT EXISTS'));
+      expect(block).toBeDefined();
+      return block!.replaceAll('"', '').replace(/\s+/g, ' ');
     }
+
+    /**
+     * Spec 143 (TT1) — the 0328 canary's comparison as scripts/verify-schema.ts
+     * builds it from `audience-audit-index.ts` (the source check below pins
+     * the script to this text).
+     */
+    const CANARY_MATCH =
+      `${normaliseIndexDefSql('pg_get_indexdef(i.indexrelid)')} = ${normaliseIndexDefSql(sqlStringLiteral(AUDIENCE_DELETED_INDEX_DEF))}`;
+    const CANARY_QUERY = `SELECT 1 AS hit FROM pg_index i WHERE i.indexrelid = to_regclass('public.audit_log_audience_deleted_once') AND i.indisvalid AND ${CANARY_MATCH}`;
 
     /** The check with its catalog read replaced by literal assignments, so it reads no catalog. */
     function checkAgainst(check: string, def: string | null, valid: boolean | null): string {
@@ -486,17 +501,28 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     // no index is created on the shared audit_log.
     const PREFIX = '0328: index audit_log_audience_deleted_once has another definition';
 
-    it('the migration and the verify-schema canary compare with the same literal and the same normalisation (CR4 #5)', () => {
-      const literal = migrationLiteral();
-      expect(unquote(literal)).toBe(LIVE_DEF);
+    // Spec 143 (TT1) — the migration is the one copy of audience-audit-index.ts's
+    // text; these pin it to the constants.
+    it("the migration's v_expected and normalisation are AUDIENCE_DELETED_INDEX_DEF and normaliseIndexDefSql (CR4 #5, TT1)", () => {
+      expect(unquote(migrationLiteral())).toBe(AUDIENCE_DELETED_INDEX_DEF);
       const check = indexCheckSql();
       expect(check).toContain(NORMALISE('v_def'));
       expect(check).toContain(NORMALISE('v_expected'));
-      const c = canary();
-      expect(c.literal).toBe(literal);
-      expect(c.query).toContain(NORMALISE('pg_get_indexdef(i.indexrelid)'));
-      expect(c.query).toContain(NORMALISE(`'${literal}'`));
-      expect(c.query).toContain('i.indisvalid');
+    });
+
+    it("the migration's CREATE has the key and the predicate of audience-audit-index.ts (TT1)", () => {
+      const create = createSql();
+      expect(create).toContain(`CREATE UNIQUE INDEX IF NOT EXISTS audit_log_audience_deleted_once ON audit_log ${AUDIENCE_DELETED_KEY_SQL} WHERE ${AUDIENCE_DELETED_PREDICATE_SQL};`);
+    });
+
+    it('the verify-schema canary builds its comparison from audience-audit-index.ts (TT1)', () => {
+      const source = readFileSync(join(process.cwd(), 'scripts', 'verify-schema.ts'), 'utf8');
+      expect(source).toMatch(/from '\.\.\/src\/modules\/broadcasts\/infrastructure\/db\/audience-audit-index'/);
+      expect(source).toContain(
+        "AND i.indisvalid AND ${normaliseIndexDefSql('pg_get_indexdef(i.indexrelid)')} = ${normaliseIndexDefSql(sqlStringLiteral(AUDIENCE_DELETED_INDEX_DEF))}`",
+      );
+      // The text no longer has a second copy in the script.
+      expect(source).not.toContain('CREATE UNIQUE INDEX audit_log_audience_deleted_once');
     });
 
     it('the index check and the canary pass on the live index, and the check on its text in place of the catalog read', async () => {
@@ -509,8 +535,8 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       const check = indexCheckSql();
       expect(await raised(check)).toBeNull();
       expect(await raised(checkAgainst(check, LIVE_DEF, true))).toBeNull();
-      // The canary's own query, as db:verify runs it, finds the index.
-      const hit = (await db.execute(sql.raw(canary().query))) as unknown as unknown[];
+      // The canary's comparison, as db:verify runs it, finds the index.
+      const hit = (await db.execute(sql.raw(CANARY_QUERY))) as unknown as unknown[];
       expect(hit).toHaveLength(1);
       // A schema qualifier on the enum type and other whitespace are not differences.
       const reworded = LIVE_DEF.replace('::audit_event_type', '::public.audit_event_type').replace(' USING ', '\n   USING  ');
