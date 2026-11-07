@@ -114,11 +114,11 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
 
   const deletedSeen = (tenant: TestTenant, audienceId: string) => {
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
-    return repo.withTx((tx) => repo.hasAudienceDeletedAuditInTx(tx, tenant.ctx.slug, audienceId));
+    return repo.withTx((tx) => repo.hasAudienceDeletedAuditInTx(tx, audienceId));
   };
   const disclosureOf = (tenant: TestTenant, audienceId: string) => {
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
-    return repo.withTx((tx) => repo.findAudienceDisclosureInTx(tx, tenant.ctx.slug, audienceId));
+    return repo.withTx((tx) => repo.findAudienceDisclosureInTx(tx, audienceId));
   };
 
   describe('hasAudienceDeletedAuditInTx', () => {
@@ -625,14 +625,13 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
   });
 
   it.each([
-    ['hasAudienceDeletedAuditInTx', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never) =>
-      repo.hasAudienceDeletedAuditInTx(tx, slug, randomUUID())],
-    ['findAudienceDisclosureInTx', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never) =>
-      repo.findAudienceDisclosureInTx(tx, slug, randomUUID())],
+    ['hasAudienceDeletedAuditInTx', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown) =>
+      repo.hasAudienceDeletedAuditInTx(tx, randomUUID())],
+    ['findAudienceDisclosureInTx', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown) =>
+      repo.findAudienceDisclosureInTx(tx, randomUUID())],
   ] as const)("cross-tenant: %s with a tx bound to tenant B refuses tenant A's read as an invariant error", async (_label, call) => {
     const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
-    const slug = tenantA.ctx.slug as never;
-    const e = await runInTenant(asTenantContext(tenantB.ctx.slug), (tx): Promise<unknown> => call(repo, tx, slug)).then(
+    const e = await runInTenant(asTenantContext(tenantB.ctx.slug), (tx): Promise<unknown> => call(repo, tx)).then(
       () => null,
       (err: unknown) => err,
     );

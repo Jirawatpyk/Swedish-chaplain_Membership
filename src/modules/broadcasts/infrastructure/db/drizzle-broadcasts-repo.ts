@@ -217,26 +217,6 @@ export async function assertAudienceAuditTenantBoundTx(
   }
 }
 
-/**
- * Review round 1 (code-review #3) — the two audience audit reads take the
- * tenant twice: the repo's own slug (the probe) and `tenantIdArg` (the
- * `tenant_id` predicate). A caller passing another tenant's slug is a wiring
- * bug, refused before any SQL.
- */
-function assertAudienceAuditTenantArg(
-  tenantIdArg: string,
-  repoSlug: string,
-  callerName: string,
-  eventType: 'broadcast_audience_deleted' | 'broadcast_audience_disclosed',
-): void {
-  if (tenantIdArg !== repoSlug) {
-    throw new AuditPortInvariantError(
-      eventType,
-      `${callerName}: tenantIdArg "${tenantIdArg}" is not the repo's tenant "${repoSlug}".`,
-    );
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Row → Domain mapping
 // ---------------------------------------------------------------------------
@@ -1859,23 +1839,24 @@ export function makeDrizzleBroadcastsRepo(
     /**
      * See the port docblock. Spec 142: a lockless read (the dedupe is
      * migration 0328's index, written through `f7AuditAdapter.emitOnce`).
-     * `tenant_id = ${tenantIdArg}` is load-bearing (the `audit_log` policy also
-     * admits `tenant_id IS NULL` rows). The predicate and the payload key
+     * `tenant_id = ${ctx.slug}` is load-bearing (the `audit_log` policy also
+     * admits `tenant_id IS NULL` rows); it is the repo's own tenant, the one
+     * the probe proved the tx bound to, so the read takes no tenant argument
+     * (spec 143 review round 2, code-review finding 6). The predicate and the payload key
      * expression are migration 0328's own, spliced with `sql.raw` from
      * `audience-audit-index.ts` (spec 143 TT1; pinned by
      * `audience-audit-sites.test.ts`), never a bound parameter, so the read
      * matches the index (review round 1, migration L1). Read only for a
      * reclaimed segment with no disclosure.
      */
-    async hasAudienceDeletedAuditInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string): Promise<boolean> {
-      assertAudienceAuditTenantArg(tenantIdArg, ctx.slug, 'hasAudienceDeletedAuditInTx', 'broadcast_audience_deleted');
+    async hasAudienceDeletedAuditInTx(txUnknown, resendAudienceId: string): Promise<boolean> {
       const tx = txUnknown as TenantTx;
       await assertAudienceAuditTenantBoundTx(tx, ctx.slug, 'hasAudienceDeletedAuditInTx', 'broadcast_audience_deleted');
       const rows = (await tx.execute(sql`
         SELECT EXISTS (
           SELECT 1
           FROM audit_log
-          WHERE tenant_id = ${tenantIdArg}
+          WHERE tenant_id = ${ctx.slug}
             AND ${sql.raw(AUDIENCE_DELETED_PREDICATE_SQL)}
             AND ${sql.raw(AUDIENCE_DELETED_ID_EXPR_SQL)} = ${resendAudienceId}::text
         ) AS found
@@ -1885,11 +1866,10 @@ export function makeDrizzleBroadcastsRepo(
 
     /**
      * See the port docblock. Tenant-fenced as `hasAudienceDeletedAuditInTx`
-     * (`assertAudienceAuditTenantBoundTx` and the explicit `tenant_id`
-     * predicate); it takes no lock: disclosed rows are append-only.
+     * (`assertAudienceAuditTenantBoundTx` and the explicit `tenant_id =
+     * ctx.slug` predicate); it takes no lock: disclosed rows are append-only.
      */
-    async findAudienceDisclosureInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string) {
-      assertAudienceAuditTenantArg(tenantIdArg, ctx.slug, 'findAudienceDisclosureInTx', 'broadcast_audience_disclosed');
+    async findAudienceDisclosureInTx(txUnknown, resendAudienceId: string) {
       const tx = txUnknown as TenantTx;
       await assertAudienceAuditTenantBoundTx(tx, ctx.slug, 'findAudienceDisclosureInTx', 'broadcast_audience_disclosed');
       const keys = AUDIENCE_AUDIT_PAYLOAD_KEYS;
@@ -1897,7 +1877,7 @@ export function makeDrizzleBroadcastsRepo(
         SELECT payload->>${keys.broadcastId}::text AS broadcast_id,
                payload->>${keys.relatedMemberId}::text AS related_member_id
         FROM audit_log
-        WHERE tenant_id = ${tenantIdArg}
+        WHERE tenant_id = ${ctx.slug}
           AND event_type = 'broadcast_audience_disclosed'
           AND payload->>${keys.resendAudienceId}::text = ${resendAudienceId}::text
           AND payload->>${keys.broadcastId}::text IS NOT NULL

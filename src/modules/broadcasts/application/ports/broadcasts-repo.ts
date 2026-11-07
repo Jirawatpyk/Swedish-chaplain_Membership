@@ -13,7 +13,9 @@
  *     at boundaries
  *   - tenant context threaded as `tenantId: TenantSlug` parameter (NOT
  *     constructor injection — explicit per-call binding is mandatory
- *     for cross-tenant safety)
+ *     for cross-tenant safety). The two audience audit reads are the
+ *     exception (spec 143 review round 2): they bind the repo's own
+ *     tenant, the one their probe proves the tx bound to.
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
@@ -826,13 +828,14 @@ export interface BroadcastsRepo {
    * accepted consequence: a `hold` row whose lease gate then stopped the
    * delete keeps `reason: 'hold'` after cleanup really deletes the segment).
    *
-   * Tenant-scoped by RLS AND an explicit `tenant_id` predicate (`audit_log`'s
-   * policy also admits `tenant_id IS NULL` rows); a tx bound to another tenant
+   * Tenant-scoped by RLS AND an explicit `tenant_id` predicate on the repo's
+   * own tenant, so it takes no tenant argument (`audit_log`'s policy also
+   * admits `tenant_id IS NULL` rows); a tx bound to another tenant
    * (or to none) is refused with an `AuditPortInvariantError` (spec 139 s2
    * review round 3), so the row helper fails closed and the Resend call is
    * never made. It takes no lock and sets no `lock_timeout`.
    */
-  hasAudienceDeletedAuditInTx(tx: unknown, tenantId: TenantSlug, resendAudienceId: string): Promise<boolean>;
+  hasAudienceDeletedAuditInTx(tx: unknown, resendAudienceId: string): Promise<boolean>;
 
   /**
    * Spec 139 s2 (DA2, pdpa M-3) — this tenant's `broadcast_audience_disclosed`
@@ -847,11 +850,7 @@ export interface BroadcastsRepo {
    * append-only, so the read needs none (spec 142 removed the per-segment lock
    * the reclaim's dedupe read used to take before it).
    */
-  findAudienceDisclosureInTx(
-    tx: unknown,
-    tenantId: TenantSlug,
-    resendAudienceId: string,
-  ): Promise<AudienceDisclosure | null>;
+  findAudienceDisclosureInTx(tx: unknown, resendAudienceId: string): Promise<AudienceDisclosure | null>;
 
   /**
    * F119 PR-E (migration 0311) — start the FR-021 retry clock: stamp

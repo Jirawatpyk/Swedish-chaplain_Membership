@@ -87,7 +87,7 @@ describe('spec 143 — the audience audit tenant probe runs on every call', () =
   it("a disclosed segment's reclaim (disclosure read, then emitOnce) probes twice", async () => {
     const t = recordingTx(TENANT_A);
     const repo = makeDrizzleBroadcastsRepo(TENANT_A);
-    expect(await repo.findAudienceDisclosureInTx(t.tx, TENANT_A as never, AUDIENCE_ID)).toBeNull();
+    expect(await repo.findAudienceDisclosureInTx(t.tx, AUDIENCE_ID)).toBeNull();
     expect(await f7AuditAdapter.emitOnce(t.tx, deletedInput(TENANT_A))).toBe(true);
     expect(t.probes()).toBe(2);
     // The rendered ON CONFLICT is migration 0328's key and predicate, as literal SQL.
@@ -100,20 +100,26 @@ describe('spec 143 — the audience audit tenant probe runs on every call', () =
   it("an undisclosed segment's reclaim (disclosure read, then the existence read) probes twice", async () => {
     const t = recordingTx(TENANT_A);
     const repo = makeDrizzleBroadcastsRepo(TENANT_A);
-    await repo.findAudienceDisclosureInTx(t.tx, TENANT_A as never, AUDIENCE_ID);
-    expect(await repo.hasAudienceDeletedAuditInTx(t.tx, TENANT_A as never, AUDIENCE_ID)).toBe(false);
+    await repo.findAudienceDisclosureInTx(t.tx, AUDIENCE_ID);
+    expect(await repo.hasAudienceDeletedAuditInTx(t.tx, AUDIENCE_ID)).toBe(false);
     expect(t.probes()).toBe(2);
     // The rendered read keeps the index's predicate and key expression as literal SQL.
     const read = t.sent.find((s) => /SELECT EXISTS/.test(s.sql));
     expect(read?.sql).toMatch(/WHERE tenant_id = \$1\s+AND event_type = 'broadcast_audience_deleted'\s+AND payload->>'resend_audience_id' = \$2::text/);
+    // Review round 2 (code-review finding 6): both reads bind the repo's own
+    // tenant; neither takes a tenant argument a caller could get wrong.
+    expect(read?.params).toEqual([TENANT_A, AUDIENCE_ID]);
+    const disclosure = t.sent.find((s) => /broadcast_audience_disclosed/.test(s.sql));
+    expect(disclosure?.sql).toMatch(/WHERE tenant_id = \$3\s/);
+    expect(disclosure?.params[2]).toBe(TENANT_A);
   });
 
   it('a tx bound to another tenant is refused as an invariant error on every call, before any audit SQL', async () => {
     const t = recordingTx(TENANT_B);
     const repo = makeDrizzleBroadcastsRepo(TENANT_A);
     for (const call of [
-      () => repo.findAudienceDisclosureInTx(t.tx, TENANT_A as never, AUDIENCE_ID),
-      () => repo.hasAudienceDeletedAuditInTx(t.tx, TENANT_A as never, AUDIENCE_ID),
+      () => repo.findAudienceDisclosureInTx(t.tx, AUDIENCE_ID),
+      () => repo.hasAudienceDeletedAuditInTx(t.tx, AUDIENCE_ID),
       () => f7AuditAdapter.emitOnce(t.tx, deletedInput(TENANT_A)),
     ]) {
       const e = await caught(call());
@@ -128,7 +134,7 @@ describe('spec 143 — the audience audit tenant probe runs on every call', () =
     const t = recordingTx(null);
     const repo = makeDrizzleBroadcastsRepo(TENANT_A);
     for (let i = 0; i < 2; i++) {
-      const e = await caught(repo.hasAudienceDeletedAuditInTx(t.tx, TENANT_A as never, AUDIENCE_ID));
+      const e = await caught(repo.hasAudienceDeletedAuditInTx(t.tx, AUDIENCE_ID));
       expect(e).toBeInstanceOf(AuditPortInvariantError);
       expect((e as Error).message).toMatch(/NOT inside a runInTenant scope/);
     }

@@ -395,7 +395,7 @@ describe('spec 143 TT1 — the deleted-row index text comes from audience-audit-
     const src = code(REPO);
     expect(src).toMatch(/from '\.\/audience-audit-index'/);
     const body = methodBody(src, 'hasAudienceDeletedAuditInTx', 'findAudienceDisclosureInTx');
-    expect(body).toContain('WHERE tenant_id = ${tenantIdArg}');
+    expect(body).toContain('WHERE tenant_id = ${ctx.slug}');
     expect(body).toContain('AND ${sql.raw(AUDIENCE_DELETED_PREDICATE_SQL)}');
     expect(body).toContain('AND ${sql.raw(AUDIENCE_DELETED_ID_EXPR_SQL)} = ${resendAudienceId}::text');
     for (const re of INLINE) expect(src).not.toMatch(re);

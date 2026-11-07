@@ -176,7 +176,7 @@ function harness(opts: Opts = {}) {
       },
       // Spec 142 (AO3) — the restart no longer reads this: the index is the
       // arbiter (`emitOnce`). A read here would show up in the event order.
-      async hasAudienceDeletedAuditInTx(_tx: unknown, _t: unknown, audienceId: string) {
+      async hasAudienceDeletedAuditInTx(_tx: unknown, audienceId: string) {
         events.push(`dedupe:${audienceId}`);
         return audits.some(
           (a) => a.eventType === 'broadcast_audience_deleted' && a.payload['resend_audience_id'] === audienceId,

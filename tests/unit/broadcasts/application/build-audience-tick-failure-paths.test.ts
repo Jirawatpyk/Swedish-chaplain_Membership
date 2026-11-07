@@ -585,7 +585,7 @@ function makeDeps(opts: {
         },
         // Spec 139 s2 — the deleted-row dedupe read; spec 142: the restart no
         // longer reads it (the `emitOnce` fake below answers from this recorder).
-        async hasAudienceDeletedAuditInTx(_tx: unknown, _t: unknown, audienceId: unknown) {
+        async hasAudienceDeletedAuditInTx(_tx: unknown, audienceId: unknown) {
           return rec.audits.some(
             (a) => a.eventType === 'broadcast_audience_deleted' && a.payload['resend_audience_id'] === audienceId,
           );
