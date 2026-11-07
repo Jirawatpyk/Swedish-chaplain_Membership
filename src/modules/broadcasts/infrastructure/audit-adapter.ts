@@ -32,6 +32,7 @@ import {
   type TypedAuditEmitInput,
 } from '../application/ports/audit-port';
 import { db, type TenantTx } from '@/lib/db';
+import { AUDIENCE_DELETED_KEY_SQL, AUDIENCE_DELETED_PREDICATE_SQL } from './db/audience-audit-index';
 import { assertAudienceAuditTenantBoundTx, setLocalLockTimeout } from './db/drizzle-broadcasts-repo';
 
 /** Spec 142 (review round 1, CR #7) — the F7 adapter implements both audit ports. */
@@ -112,16 +113,19 @@ export const f7AuditAdapter: F7AuditAdapter = {
    *
    * The conflict target and its WHERE are literal SQL, never parameters: with
    * a parameter there Postgres cannot prove the index predicate and answers
-   * 42P10. The VALUES row is bound like every other writer's, `event_type`
-   * included (review round 2, code-review #6): index inference reads only the
-   * conflict clause. Unlike the invoicing overdue adapter, nothing is
-   * swallowed: a lost row must reach the caller's ERROR and counter.
+   * 42P10. Spec 143 (TT1): both are migration 0328's key and predicate from
+   * `audience-audit-index.ts`, spliced with `sql.raw`. The VALUES row is bound
+   * like every other writer's, `event_type` included (review round 2,
+   * code-review #6): index inference reads only the conflict clause. Unlike
+   * the invoicing overdue adapter, nothing is swallowed: a lost row must reach
+   * the caller's ERROR and counter.
    *
    * Every refusal is an `AuditPortInvariantError` raised before any write: a
    * null tx (a pool connection carries no `app.current_tenant`), a null
    * `tenantId` or an empty segment id (a NULL key never conflicts, so either
    * would allow duplicates), another event type (a cast past the input type),
-   * or a tx bound to another tenant (`assertAudienceAuditTenantBoundTx`).
+   * or a tx bound to another tenant (`assertAudienceAuditTenantBoundTx`, which
+   * probes on every call).
    */
   async emitOnce(txUnknown: unknown, event: AudienceDeletedEmitInput): Promise<boolean> {
     if (txUnknown === null || txUnknown === undefined) {
@@ -144,7 +148,7 @@ export const f7AuditAdapter: F7AuditAdapter = {
     const rows = (await tx.execute(sql`
       INSERT INTO audit_log ${AUDIT_LOG_COLUMNS}
       VALUES ${auditRowValues(event)}
-      ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE event_type = 'broadcast_audience_deleted' DO NOTHING RETURNING 1
+      ON CONFLICT ${sql.raw(AUDIENCE_DELETED_KEY_SQL)} WHERE ${sql.raw(AUDIENCE_DELETED_PREDICATE_SQL)} DO NOTHING RETURNING 1
     `)) as unknown as readonly unknown[];
     return rows.length === 1;
   },

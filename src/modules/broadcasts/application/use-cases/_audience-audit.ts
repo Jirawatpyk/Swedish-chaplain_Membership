@@ -256,11 +256,11 @@ export async function recordReclaimedAudienceDeleted(
     'broadcasts.audience_reclaim',
     { broadcastId: null, resendAudienceId, segmentNameBroadcastId },
     async (tx) => {
-      const disclosed = await deps.broadcastsRepo.findAudienceDisclosureInTx(tx, deps.tenant.slug, resendAudienceId);
+      const disclosed = await deps.broadcastsRepo.findAudienceDisclosureInTx(tx, resendAudienceId);
       if (disclosed === null) {
         // Not disclosed here: a segment already recorded as deleted is not
         // unattributed.
-        const recorded = await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, deps.tenant.slug, resendAudienceId);
+        const recorded = await deps.broadcastsRepo.hasAudienceDeletedAuditInTx(tx, resendAudienceId);
         return recorded ? 'skip' : 'unattributed';
       }
       const wrote = await deps.audit.emitOnce(

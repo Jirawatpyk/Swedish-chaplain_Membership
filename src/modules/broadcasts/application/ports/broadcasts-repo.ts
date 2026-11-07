@@ -13,7 +13,13 @@
  *     at boundaries
  *   - tenant context threaded as `tenantId: TenantSlug` parameter (NOT
  *     constructor injection — explicit per-call binding is mandatory
- *     for cross-tenant safety)
+ *     for cross-tenant safety). A tx-taking method may instead bind the
+ *     repo's own `ctx.slug` when `assertTenantBoundTx` (or
+ *     `assertAudienceAuditTenantBoundTx`) proves the tx is bound to it, as
+ *     `markAudienceDeletedInTx`, the audience audit reads and the two
+ *     evidence reads (`readAlreadySentEvidenceInTx`,
+ *     `hasUnverifiableCountAuditInTx`) do; the older
+ *     methods still take `tenantId`.
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
@@ -780,15 +786,16 @@ export interface BroadcastsRepo {
    * member); `false` when `broadcastId` is `null`.
    *
    * With a `broadcastId`, the read first takes a transaction-scoped advisory
-   * lock on (tenant, broadcast) in the `broadcasts-evidence:` namespace, so a
-   * caller's check-then-insert on the SAME tx is serialised against a
-   * concurrent re-drive's: the second waits for the first to commit, then
-   * sees its row. Tenant-scoped by RLS AND an explicit `tenant_id` predicate
-   * (`audit_log`'s policy also admits `tenant_id IS NULL` rows).
+   * lock on (the repo's tenant, broadcast) in the `broadcasts-evidence:`
+   * namespace, so a caller's check-then-insert on the SAME tx is serialised
+   * against a concurrent re-drive's: the second waits for the first to
+   * commit, then sees its row. Tenant-scoped by RLS AND an explicit
+   * `tenant_id` predicate on the repo's own tenant, the one
+   * `assertTenantBoundTx` proves the tx bound to, so it takes no tenant
+   * argument (`audit_log`'s policy also admits `tenant_id IS NULL` rows).
    */
   readAlreadySentEvidenceInTx(
     tx: unknown,
-    tenantId: TenantSlug,
     query: { readonly memberId: string; readonly broadcastId: BroadcastId | null },
   ): Promise<{ readonly broadcastRecorded: boolean; readonly memberBroadcastCount: number }>;
 
@@ -799,19 +806,19 @@ export interface BroadcastsRepo {
    * first attempt on it whose audience count failed; a draft re-minted after a
    * restart gets its own row) and reads this in the SAME tx before inserting.
    *
-   * The read first takes a transaction-scoped advisory lock on (tenant,
-   * broadcast) in the `broadcasts-unverifiable:` namespace, as
+   * The read first takes a transaction-scoped advisory lock on (the repo's
+   * tenant, broadcast) in the `broadcasts-unverifiable:` namespace, as
    * `readAlreadySentEvidenceInTx` does, so a check-then-insert on the same tx is
    * serialised against other CALLERS OF THIS METHOD for that broadcast (the
    * dispatch lease already keeps a second tick out). The lock is per broadcast
    * while the dedupe is per (broadcast, draft): a second draft waits on the
    * first's tx, which is harmless at one short tx. Tenant-scoped by RLS AND an
-   * explicit `tenant_id` predicate (`audit_log`'s policy also admits
-   * `tenant_id IS NULL` rows).
+   * explicit `tenant_id` predicate on the repo's own tenant, as
+   * `readAlreadySentEvidenceInTx`, so it takes no tenant argument
+   * (`audit_log`'s policy also admits `tenant_id IS NULL` rows).
    */
   hasUnverifiableCountAuditInTx(
     tx: unknown,
-    tenantId: TenantSlug,
     broadcastId: BroadcastId,
     resendBroadcastId: string,
   ): Promise<boolean>;
@@ -826,13 +833,14 @@ export interface BroadcastsRepo {
    * accepted consequence: a `hold` row whose lease gate then stopped the
    * delete keeps `reason: 'hold'` after cleanup really deletes the segment).
    *
-   * Tenant-scoped by RLS AND an explicit `tenant_id` predicate (`audit_log`'s
-   * policy also admits `tenant_id IS NULL` rows); a tx bound to another tenant
+   * Tenant-scoped by RLS AND an explicit `tenant_id` predicate on the repo's
+   * own tenant, so it takes no tenant argument (`audit_log`'s policy also
+   * admits `tenant_id IS NULL` rows); a tx bound to another tenant
    * (or to none) is refused with an `AuditPortInvariantError` (spec 139 s2
    * review round 3), so the row helper fails closed and the Resend call is
    * never made. It takes no lock and sets no `lock_timeout`.
    */
-  hasAudienceDeletedAuditInTx(tx: unknown, tenantId: TenantSlug, resendAudienceId: string): Promise<boolean>;
+  hasAudienceDeletedAuditInTx(tx: unknown, resendAudienceId: string): Promise<boolean>;
 
   /**
    * Spec 139 s2 (DA2, pdpa M-3) — this tenant's `broadcast_audience_disclosed`
@@ -847,11 +855,7 @@ export interface BroadcastsRepo {
    * append-only, so the read needs none (spec 142 removed the per-segment lock
    * the reclaim's dedupe read used to take before it).
    */
-  findAudienceDisclosureInTx(
-    tx: unknown,
-    tenantId: TenantSlug,
-    resendAudienceId: string,
-  ): Promise<AudienceDisclosure | null>;
+  findAudienceDisclosureInTx(tx: unknown, resendAudienceId: string): Promise<AudienceDisclosure | null>;
 
   /**
    * F119 PR-E (migration 0311) — start the FR-021 retry clock: stamp

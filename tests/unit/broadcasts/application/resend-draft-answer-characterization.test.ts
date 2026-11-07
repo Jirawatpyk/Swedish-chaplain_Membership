@@ -146,7 +146,7 @@ async function runCascade(arm: 'in_flight' | 'terminal', d: D, g: G | null): Pro
       return { broadcastId };
     },
     findById: async () => ({ broadcastId, status: 'sending' }),
-    readAlreadySentEvidenceInTx: async (_tx: unknown, _t: unknown, q: { broadcastId: string | null }) => ({
+    readAlreadySentEvidenceInTx: async (_tx: unknown, q: { broadcastId: string | null }) => ({
       broadcastRecorded: q.broadcastId !== null && evidence.has(q.broadcastId),
       memberBroadcastCount: evidence.size,
     }),

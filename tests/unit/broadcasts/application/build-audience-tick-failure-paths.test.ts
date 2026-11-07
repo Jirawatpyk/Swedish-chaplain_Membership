@@ -34,14 +34,14 @@ import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastStatus } from '@/modules/broadcasts';
 import { buildAudienceTick, REPROBE_PAUSE_MS } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
-import type { BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
+import { AuditPortInvariantError, type AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 import {
   BroadcastConcurrentMutationError,
   BroadcastNotFoundError,
 } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
+import { makeTickAuditDouble, type TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('44444444-4444-4444-8444-444444444444');
@@ -184,18 +184,8 @@ interface Recorder {
   readonly sendKeys: string[];
 }
 
-/**
- * Round 4 T2 — every port KEY required, each VALUE still loose. Same guard as
- * `build-audience-tick.test.ts`, where three ports were missing outright and the
- * suite passed anyway. This harness already has all twelve; the type is here so
- * a port added to the use case fails BOTH files at compile time instead of one.
- *
- * It deliberately checks keys, not values — a full `BuildAudienceTickDeps`
- * annotation would force every double to implement its whole port, which is why
- * `unknown` was chosen in the first place. So it cannot catch a partial double,
- * only an absent port.
- */
-type DepsWithEveryPort = { [K in keyof BuildAudienceTickDeps]: unknown };
+// Round 4 T2 / spec 143 (TT2) — every port KEY required, each VALUE still loose, and the
+// audit double typed as the port the tick uses: the shared `TickHarnessDeps`.
 
 function makeDeps(opts: {
   readonly audienceImportId?: string | null;
@@ -357,7 +347,7 @@ function makeDeps(opts: {
   readonly deleteOnceOutcome?: 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other';
   /** Spec 140 s1 review round 1 — what `retrieveBroadcastOnce` reads after a 403; default: `draft`. */
   readonly retrieveOnceStatus?: 'draft' | 'queued' | 'sending' | 'sent' | 'cancelled';
-}): { deps: DepsWithEveryPort & { sendStanding: ReturnType<typeof makeFakeSendStanding> }; rec: Recorder & { readonly deleteOnce: Array<{ id: string; transitionsBefore: number }> } } {
+}): { deps: TickHarnessDeps & { sendStanding: ReturnType<typeof makeFakeSendStanding> }; rec: Recorder & { readonly deleteOnce: Array<{ id: string; transitionsBefore: number }> } } {
   let txSeq = 0;
   const deleteOnce: Array<{ id: string; transitionsBefore: number }> = [];
   const rec: Recorder & { readonly deleteOnce: typeof deleteOnce } = {
@@ -585,7 +575,7 @@ function makeDeps(opts: {
         // first tick's rows).
         // Round 4: keyed on (broadcastId, resendBroadcastId), so a re-minted draft
         // gets its own row.
-        async hasUnverifiableCountAuditInTx(_tx: unknown, _t: unknown, id: unknown, resendBroadcastId: unknown) {
+        async hasUnverifiableCountAuditInTx(_tx: unknown, id: unknown, resendBroadcastId: unknown) {
           return rec.audits.some(
             (a) =>
               a.eventType === 'broadcast_resend_drift_check_unverifiable' &&
@@ -595,7 +585,7 @@ function makeDeps(opts: {
         },
         // Spec 139 s2 — the deleted-row dedupe read; spec 142: the restart no
         // longer reads it (the `emitOnce` fake below answers from this recorder).
-        async hasAudienceDeletedAuditInTx(_tx: unknown, _t: unknown, audienceId: unknown) {
+        async hasAudienceDeletedAuditInTx(_tx: unknown, audienceId: unknown) {
           return rec.audits.some(
             (a) => a.eventType === 'broadcast_audience_deleted' && a.payload['resend_audience_id'] === audienceId,
           );
@@ -805,7 +795,8 @@ function makeDeps(opts: {
           return { kind: 'present' as const, status: opts.retrieveOnceStatus ?? ('draft' as const), sentAt: null };
         },
       },
-      audit: {
+      // The shared audit double, with this file's failures, tx tags and dedupe as overrides.
+      audit: makeTickAuditDouble({
         async emit(tx: unknown, e: { eventType: string; payload: Record<string, unknown>; actorUserId?: string; summary?: string }) {
           // Round 3 finding 3-8 — a failing audit INSERT. In production this
           // aborts the surrounding transaction (25P02), which is why WHICH tx it
@@ -829,14 +820,14 @@ function makeDeps(opts: {
         async emitOnce(
           this: { emit(tx: unknown, e: { eventType: string; payload: Record<string, unknown>; actorUserId?: string; summary?: string }): Promise<void> },
           tx: unknown,
-          e: { eventType: string; payload: Record<string, unknown>; actorUserId?: string; summary?: string },
+          e: AudienceDeletedEmitInput,
         ) {
-          const key = e.payload['resend_audience_id'];
+          const key = e.payload.resend_audience_id;
           if (rec.audits.some((a) => a.eventType === e.eventType && a.payload['resend_audience_id'] === key)) return false;
-          await this.emit(tx, e);
+          await this.emit(tx, { eventType: e.eventType, payload: { ...e.payload }, actorUserId: e.actorUserId, summary: e.summary });
           return true;
         },
-      },
+      }),
     },
   };
 }

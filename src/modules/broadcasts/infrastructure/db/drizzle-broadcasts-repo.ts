@@ -60,6 +60,7 @@ import {
   orphanStuckCutoff,
 } from '../../domain/value-objects/orphaned-resend-id';
 import { orphanStuckSql } from './_orphan-stuck-sql';
+import { AUDIENCE_DELETED_ID_EXPR_SQL, AUDIENCE_DELETED_PREDICATE_SQL } from './audience-audit-index';
 import { AUDIENCE_AUDIT_PAYLOAD_KEYS, AuditPortInvariantError } from '../../application/ports/audit-port';
 import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
@@ -189,6 +190,19 @@ export async function assertTenantBoundTx(
 }
 
 /**
+ * A single-row read (an aggregate or an EXISTS) answers exactly one row from
+ * Postgres. Any other count is a driver or pooler defect, so the read refuses
+ * it rather than mistake it for "nothing recorded".
+ */
+function exactlyOneRow<T>(rows: readonly T[], method: string): T {
+  const [row] = rows;
+  if (rows.length !== 1 || row === undefined) {
+    throw new Error(`${method}: expected exactly one row, got ${rows.length}`);
+  }
+  return row;
+}
+
+/**
  * Spec 139 s2, review round 3 (code-review #1) — `assertTenantBoundTx` for the
  * two audience audit reads and (spec 142) `f7AuditAdapter.emitOnce`, whose
  * refusal is an `AuditPortInvariantError`: the row helper then fails closed
@@ -196,6 +210,10 @@ export async function assertTenantBoundTx(
  * wiring bug as a lost row and making the call. A driver error on the probe
  * stays as it is (a lost row, per `_audience-audit`). The message keeps the
  * original text (tenant slugs only, no PII). Exported for the audit adapter.
+ *
+ * It probes on every call, not once per tx: whether a tx is still bound to the
+ * tenant is read from `app.current_tenant` itself, so no cached answer can
+ * outlive a rebinding of the GUC. The cost is one SQL round trip per call.
  */
 export async function assertAudienceAuditTenantBoundTx(
   tx: TenantTx,
@@ -1777,17 +1795,20 @@ export function makeDrizzleBroadcastsRepo(
      * payload's `broadcastId` + `memberId` + `resendOutcome`). The
      * `broadcasts-evidence:` lock key is disjoint from the row lock's
      * `broadcasts:` (`lockForUpdate`), so recording evidence never waits on a
-     * cascade or a dispatch tick holding the row. `tenant_id = ${tenantIdArg}`
+     * cascade or a dispatch tick holding the row. `tenant_id = ${ctx.slug}`
      * is load-bearing (the `audit_log` policy also admits `tenant_id IS NULL`
-     * rows). Rare path, so no index is claimed for it.
+     * rows); the lock key and the predicate bind the repo's own tenant, the
+     * one the probe proved the tx bound to, so the read takes no tenant
+     * argument (spec 143). The lock key text is unchanged, so an equal slug
+     * hashes to the same key as before. Rare path, so no index is claimed for it.
      */
-    async readAlreadySentEvidenceInTx(txUnknown, tenantIdArg: TenantSlug, query) {
+    async readAlreadySentEvidenceInTx(txUnknown, query) {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'readAlreadySentEvidenceInTx');
       const broadcastId = query.broadcastId === null ? null : (query.broadcastId as string);
       if (broadcastId !== null) {
         await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-evidence:' || ${tenantIdArg} || ':' || ${broadcastId}, 0))`,
+          sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-evidence:' || ${ctx.slug} || ':' || ${broadcastId}, 0))`,
         );
       }
       const rows = (await tx.execute(sql`
@@ -1795,62 +1816,71 @@ export function makeDrizzleBroadcastsRepo(
           COALESCE(bool_or(payload->>'broadcastId' = ${broadcastId}::text), false) AS broadcast_recorded,
           (count(DISTINCT payload->>'broadcastId') FILTER (WHERE payload->>'memberId' = ${query.memberId}::text))::int AS member_count
         FROM audit_log
-        WHERE tenant_id = ${tenantIdArg}
+        WHERE tenant_id = ${ctx.slug}
           AND event_type = 'broadcast_concurrent_action_blocked'
           AND payload->>'resendOutcome' = 'already_sent'
       `)) as unknown as Array<{ broadcast_recorded: boolean | 't' | 'f'; member_count: number | string }>;
-      const row = rows[0];
+      // An aggregate always answers one row; anything else is a driver defect,
+      // and reading it as "no evidence" would let the caller append a second row.
+      const row = exactlyOneRow(rows, 'readAlreadySentEvidenceInTx');
       return {
-        broadcastRecorded: row?.broadcast_recorded === true || row?.broadcast_recorded === 't',
-        memberBroadcastCount: Number(row?.member_count ?? 0),
+        broadcastRecorded: row.broadcast_recorded === true || row.broadcast_recorded === 't',
+        memberBroadcastCount: Number(row.member_count),
       };
     },
 
+    /**
+     * See the port docblock. Tenant-fenced as `readAlreadySentEvidenceInTx`:
+     * the lock key and the `tenant_id` predicate bind the repo's own tenant.
+     */
     async hasUnverifiableCountAuditInTx(
       txUnknown,
-      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       resendBroadcastId: string,
     ): Promise<boolean> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'hasUnverifiableCountAuditInTx');
       await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-unverifiable:' || ${tenantIdArg} || ':' || ${broadcastId as string}, 0))`,
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-unverifiable:' || ${ctx.slug} || ':' || ${broadcastId as string}, 0))`,
       );
       const rows = (await tx.execute(sql`
         SELECT EXISTS (
           SELECT 1
           FROM audit_log
-          WHERE tenant_id = ${tenantIdArg}
+          WHERE tenant_id = ${ctx.slug}
             AND event_type = 'broadcast_resend_drift_check_unverifiable'
             AND payload->>'broadcastId' = ${broadcastId as string}::text
             AND payload->>'resendBroadcastId' = ${resendBroadcastId}::text
         ) AS found
       `)) as unknown as Array<{ found: boolean | 't' | 'f' }>;
-      return rows[0]?.found === true || rows[0]?.found === 't';
+      // EXISTS always answers one row; see `readAlreadySentEvidenceInTx`.
+      const { found } = exactlyOneRow(rows, 'hasUnverifiableCountAuditInTx');
+      return found === true || found === 't';
     },
 
     /**
      * See the port docblock. Spec 142: a lockless read (the dedupe is
      * migration 0328's index, written through `f7AuditAdapter.emitOnce`).
-     * `tenant_id = ${tenantIdArg}` is load-bearing (the `audit_log` policy also
-     * admits `tenant_id IS NULL` rows). The payload key is written as the
-     * literal `payload->>'resend_audience_id'`
-     * (`AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId`, pinned by
-     * `audience-audit-sites.test.ts`), not a bound parameter, so the expression
-     * is migration 0328's index expression (review round 1, migration L1).
-     * Read only for a reclaimed segment with no disclosure.
+     * `tenant_id = ${ctx.slug}` is load-bearing (the `audit_log` policy also
+     * admits `tenant_id IS NULL` rows); it is the repo's own tenant, the one
+     * the probe proved the tx bound to, so the read takes no tenant argument
+     * (spec 143 review round 2, code-review finding 6). The predicate and the payload key
+     * expression are migration 0328's own, spliced with `sql.raw` from
+     * `audience-audit-index.ts` (spec 143 TT1; pinned by
+     * `audience-audit-sites.test.ts`), never a bound parameter, so the read
+     * matches the index (review round 1, migration L1). Read only for a
+     * reclaimed segment with no disclosure.
      */
-    async hasAudienceDeletedAuditInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string): Promise<boolean> {
+    async hasAudienceDeletedAuditInTx(txUnknown, resendAudienceId: string): Promise<boolean> {
       const tx = txUnknown as TenantTx;
       await assertAudienceAuditTenantBoundTx(tx, ctx.slug, 'hasAudienceDeletedAuditInTx', 'broadcast_audience_deleted');
       const rows = (await tx.execute(sql`
         SELECT EXISTS (
           SELECT 1
           FROM audit_log
-          WHERE tenant_id = ${tenantIdArg}
-            AND event_type = 'broadcast_audience_deleted'
-            AND payload->>'resend_audience_id' = ${resendAudienceId}::text
+          WHERE tenant_id = ${ctx.slug}
+            AND ${sql.raw(AUDIENCE_DELETED_PREDICATE_SQL)}
+            AND ${sql.raw(AUDIENCE_DELETED_ID_EXPR_SQL)} = ${resendAudienceId}::text
         ) AS found
       `)) as unknown as Array<{ found: boolean | 't' | 'f' }>;
       return rows[0]?.found === true || rows[0]?.found === 't';
@@ -1858,10 +1888,10 @@ export function makeDrizzleBroadcastsRepo(
 
     /**
      * See the port docblock. Tenant-fenced as `hasAudienceDeletedAuditInTx`
-     * (`assertTenantBoundTx` and the explicit `tenant_id` predicate); it takes
-     * no lock: disclosed rows are append-only.
+     * (`assertAudienceAuditTenantBoundTx` and the explicit `tenant_id =
+     * ctx.slug` predicate); it takes no lock: disclosed rows are append-only.
      */
-    async findAudienceDisclosureInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string) {
+    async findAudienceDisclosureInTx(txUnknown, resendAudienceId: string) {
       const tx = txUnknown as TenantTx;
       await assertAudienceAuditTenantBoundTx(tx, ctx.slug, 'findAudienceDisclosureInTx', 'broadcast_audience_disclosed');
       const keys = AUDIENCE_AUDIT_PAYLOAD_KEYS;
@@ -1869,7 +1899,7 @@ export function makeDrizzleBroadcastsRepo(
         SELECT payload->>${keys.broadcastId}::text AS broadcast_id,
                payload->>${keys.relatedMemberId}::text AS related_member_id
         FROM audit_log
-        WHERE tenant_id = ${tenantIdArg}
+        WHERE tenant_id = ${ctx.slug}
           AND event_type = 'broadcast_audience_disclosed'
           AND payload->>${keys.resendAudienceId}::text = ${resendAudienceId}::text
           AND payload->>${keys.broadcastId}::text IS NOT NULL

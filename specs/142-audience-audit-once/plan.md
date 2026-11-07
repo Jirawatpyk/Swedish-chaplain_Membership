@@ -194,7 +194,7 @@ The maintainer chose to fix the small set past the review cap, then take a short
 | P3 (CR4 #4) | The older reclaim boundary cells pin the call-plus-audit-wait rule at its boundary with `RECLAIM_CHUNK_BUDGET_MS`: the moving-clock cell moves the clock to 1 ms short of the budget, the no-chunk cell's deadline is the budget − 1 ms, and the round-3 pair spells the constant, not the sum. Green before and after (a test retune) | `reclaim-orphaned-audiences.test.ts` "a chunk is not started once less than one call and its audit wait is left: its orphans are deferred, not failed", "a deadline already inside one call and its audit wait defers every orphan and deletes none" | test |
 | P4 (CR4 #9) | The `logger.error` spy in the stale-audience restart cell gets `.mockImplementation(() => undefined)`, the neighbouring harnesses' form | `build-audience-tick.test.ts` "tick 1 DELETES an audience left by a previous attempt …" | test |
 
-**Follow-ups, not fixed here:** CR4 #5 (the predicate is spelled in three places: 0328, the adapter's `ON CONFLICT … WHERE`, `verify-schema.ts`) and CR4 #8 (the `satisfies` guard on the tick harnesses checks only the literal, not the doubles built elsewhere).
+**Follow-ups, not fixed here:** CR4 #5 (the predicate is spelled in three places: 0328, the adapter's `ON CONFLICT … WHERE`, `verify-schema.ts`) and CR4 #8 (the `satisfies` guard on the tick harnesses checks only the literal, not the doubles built elsewhere). *Closed by spec 143.*
 
 **Superseded by these rows:** T2's field list (P1 adds five facts); T3's spelled-out sum at the chunk check (P2 names it).
 

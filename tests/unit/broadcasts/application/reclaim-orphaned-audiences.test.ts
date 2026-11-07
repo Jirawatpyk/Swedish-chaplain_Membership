@@ -895,7 +895,7 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     // The referenced-audience read, stubbed explicitly: the row is gone, so
     // the segment is an orphan (no existence-only fallback).
     const repo = makeRepo({ existing: new Set<BroadcastId>(), referencedMap: new Map() });
-    repo.port.findAudienceDisclosureInTx = async (_tx, _t, audienceId) => {
+    repo.port.findAudienceDisclosureInTx = async (_tx, audienceId) => {
       events.push(`find:${audienceId}`);
       if (opts.disclosure === 'throws') throw new Error('57P01 terminating connection');
       return opts.disclosure ?? null;
@@ -903,7 +903,7 @@ describe('reclaimOrphanedAudiences — spec 139 s2: broadcast_audience_deleted o
     // Spec 142 (AO3) — the reclaim's lockless read: no lock, no lock_timeout.
     // Review round 1 (code-review #5): read only when no disclosure names the
     // segment, to tell "already recorded" from unattributed.
-    repo.port.hasAudienceDeletedAuditInTx = async (_tx, _t, audienceId) => {
+    repo.port.hasAudienceDeletedAuditInTx = async (_tx, audienceId) => {
       events.push(`dedupe:${audienceId}`);
       return opts.alreadyDeleted === true;
     };

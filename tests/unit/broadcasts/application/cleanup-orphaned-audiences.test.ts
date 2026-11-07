@@ -415,7 +415,7 @@ describe('cleanupOrphanedAudiences — spec 139 s2: broadcast_audience_deleted b
     const repo = makeRepo({ candidates: [candidate] });
     // Spec 142 (AO3) — cleanup no longer reads the dedupe: the index is the
     // arbiter. A read here would show up in the event order.
-    repo.port.hasAudienceDeletedAuditInTx = async (_tx, _t, audienceId) => {
+    repo.port.hasAudienceDeletedAuditInTx = async (_tx, audienceId) => {
       events.push(`dedupe:${audienceId}`);
       return opts.alreadyDeleted === true;
     };

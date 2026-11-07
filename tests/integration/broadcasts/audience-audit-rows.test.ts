@@ -25,8 +25,7 @@
  * one (tenant, segment) key: the index refuses that (spec 142).
  */
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -45,12 +44,22 @@ import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/bu
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { isAdapterInvariantError } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
 import { makeBuildAudienceTickDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
+import {
+  AUDIENCE_DELETED_INDEX_CANARY_SQL,
+  AUDIENCE_DELETED_INDEX_DEF,
+  sqlStringLiteral,
+} from '@/modules/broadcasts/infrastructure/db/audience-audit-index';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
 import { asTenantContext } from '@/modules/tenants';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { seedLiveRequester } from '../helpers/seed-live-requester';
+import {
+  MIGRATION_0328_PATH,
+  migration0328IndexCheckSql,
+  migration0328PreCheckSql,
+} from '../../support/broadcasts/migration-0328';
 
 type AudienceEvent = 'broadcast_audience_disclosed' | 'broadcast_audience_deleted';
 
@@ -106,11 +115,11 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
 
   const deletedSeen = (tenant: TestTenant, audienceId: string) => {
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
-    return repo.withTx((tx) => repo.hasAudienceDeletedAuditInTx(tx, tenant.ctx.slug, audienceId));
+    return repo.withTx((tx) => repo.hasAudienceDeletedAuditInTx(tx, audienceId));
   };
   const disclosureOf = (tenant: TestTenant, audienceId: string) => {
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
-    return repo.withTx((tx) => repo.findAudienceDisclosureInTx(tx, tenant.ctx.slug, audienceId));
+    return repo.withTx((tx) => repo.findAudienceDisclosureInTx(tx, audienceId));
   };
 
   describe('hasAudienceDeletedAuditInTx', () => {
@@ -349,7 +358,6 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
   // Every duplicate attempt runs in a tx that is rolled back, so no run (a RED
   // one included) leaves a second row for one key on the dev branch.
   describe('spec 142 AO1 — migration 0328 (audit_log_audience_deleted_once)', () => {
-    const MIGRATION = join(process.cwd(), 'drizzle', 'migrations', '0328_audit_log_audience_deleted_once.sql');
     const ROLLBACK = new Error('rollback');
 
     /** Run `fn` on the owner connection and roll it back; answers what `fn` answered. */
@@ -366,67 +374,28 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       return out;
     }
 
-    /** The migration's `DO $$` pre-check, verbatim from the file. */
-    function preCheckSql(): string {
-      const block = readFileSync(MIGRATION, 'utf8')
-        .split('--> statement-breakpoint')
-        .find((s) => s.includes('DO $$') && s.includes('duplicate keys'));
-      expect(block).toBeDefined();
-      return block!;
-    }
-
-    /** The migration's index-definition check (the `DO $$` block after the CREATE), verbatim from the file. */
-    function indexCheckSql(): string {
-      const block = readFileSync(MIGRATION, 'utf8')
-        .split('--> statement-breakpoint')
-        .find((s) => s.includes('DO $$') && s.includes('has another definition'));
-      expect(block).toBeDefined();
-      return block!;
-    }
-
     /**
      * Past the cap, closing change (the maintainer chose "compare the full
      * definition") — the check compares the live `pg_get_indexdef` text with
-     * ONE expected literal, both normalised by `NORMALISE` (the `public.`
+     * ONE expected literal, both normalised by `normaliseIndexDefSql` (the `public.`
      * schema qualifier dropped, whitespace collapsed), and requires
      * `indisvalid`. `pg_get_indexdef` prints the access method, UNIQUE, the
      * table, every key with any non-default operator class or COLLATE, INCLUDE,
      * NULLS NOT DISTINCT and the predicate, so a difference in any of them is
-     * a difference in the text. `LIVE_DEF` is dev's text, read with
-     * `pnpm db:query` on 7 Nov 2026; the positive control re-reads it.
+     * a difference in the text. The expected text is
+     * `AUDIENCE_DELETED_INDEX_DEF` (spec 143 TT1, the one TS source), dev's
+     * text as read with `pnpm db:query` on 7 Nov 2026; the positive control
+     * re-reads it, so it pins that constant to the live index. The migration
+     * spells `normaliseIndexDefSql` around its arguments.
      */
-    const LIVE_DEF =
-      "CREATE UNIQUE INDEX audit_log_audience_deleted_once ON public.audit_log USING btree (tenant_id, ((payload ->> 'resend_audience_id'::text))) WHERE (event_type = 'broadcast_audience_deleted'::audit_event_type)";
-    /** The normalisation, as both files must spell it around their argument. */
-    const NORMALISE = (arg: string) => `btrim(regexp_replace(replace(${arg}, 'public.', ''), '[[:space:]]+', ' ', 'g'))`;
     const normalised = (def: string) => def.replaceAll('public.', '').replace(/\s+/g, ' ').trim();
-    const sqlText = (v: string | null) => (v === null ? 'NULL' : `'${v.replaceAll("'", "''")}'`);
-    /** A SQL string literal's body (quotes doubled) back to its value. */
-    const unquote = (body: string) => body.replaceAll("''", "'");
-
-    /** The migration's expected literal, as written between its quotes. */
-    function migrationLiteral(): string {
-      const m = /v_expected constant text := '((?:[^']|'')*)';/.exec(indexCheckSql());
-      expect(m).not.toBeNull();
-      return m![1]!;
-    }
-
-    /** The 0328 canary's query in scripts/verify-schema.ts, and the literal it compares with. */
-    function canary(): { query: string; literal: string } {
-      const source = readFileSync(join(process.cwd(), 'scripts', 'verify-schema.ts'), 'utf8');
-      const q = /name: 'audit_log_audience_deleted_once[^']*\(mig 0328\)',\s*query: `([^`]*)`/.exec(source);
-      expect(q).not.toBeNull();
-      const query = q![1]!;
-      const l = /replace\('(CREATE UNIQUE INDEX (?:[^']|'')*)', 'public\.', ''\)/.exec(query);
-      expect(l).not.toBeNull();
-      return { query, literal: l![1]! };
-    }
 
     /** The check with its catalog read replaced by literal assignments, so it reads no catalog. */
     function checkAgainst(check: string, def: string | null, valid: boolean | null): string {
       const read = /SELECT\s+pg_get_indexdef\(i\.indexrelid\),\s*i\.indisvalid\s+INTO\s+v_def,\s*v_valid[^;]*;/;
       expect(read.test(check)).toBe(true);
-      return check.replace(read, `v_def := ${sqlText(def)}; v_valid := ${valid === null ? 'NULL' : String(valid)};`);
+      const defSql = def === null ? 'NULL' : sqlStringLiteral(def);
+      return check.replace(read, `v_def := ${defSql}; v_valid := ${valid === null ? 'NULL' : String(valid)};`);
     }
 
     /** Runs `block` in a rolled-back tx; answers the RAISE message, or null when it passed. */
@@ -453,7 +422,7 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
                     ${JSON.stringify(r.payload)}::jsonb, ${r.tenant}, 5)
           `);
         }
-        return tx.execute(sql.raw(preCheckSql())).then(
+        return tx.execute(sql.raw(migration0328PreCheckSql())).then(
           () => null,
           (e: unknown) => e,
         );
@@ -486,43 +455,34 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     // no index is created on the shared audit_log.
     const PREFIX = '0328: index audit_log_audience_deleted_once has another definition';
 
-    it('the migration and the verify-schema canary compare with the same literal and the same normalisation (CR4 #5)', () => {
-      const literal = migrationLiteral();
-      expect(unquote(literal)).toBe(LIVE_DEF);
-      const check = indexCheckSql();
-      expect(check).toContain(NORMALISE('v_def'));
-      expect(check).toContain(NORMALISE('v_expected'));
-      const c = canary();
-      expect(c.literal).toBe(literal);
-      expect(c.query).toContain(NORMALISE('pg_get_indexdef(i.indexrelid)'));
-      expect(c.query).toContain(NORMALISE(`'${literal}'`));
-      expect(c.query).toContain('i.indisvalid');
-    });
+    // Spec 143 (TT1) — the file-only pins (the migration's v_expected, its CREATE
+    // and the verify-schema canary against audience-audit-index.ts) are in
+    // tests/unit/broadcasts/infrastructure/audience-audit-index.test.ts.
 
     it('the index check and the canary pass on the live index, and the check on its text in place of the catalog read', async () => {
-      // Positive control: dev's live text and validity are what LIVE_DEF says.
+      // Positive control: dev's live text and validity are what AUDIENCE_DELETED_INDEX_DEF says.
       const live = (await db.execute(sql`
         SELECT pg_get_indexdef(indexrelid) AS d, indisvalid
           FROM pg_index WHERE indexrelid = to_regclass('public.audit_log_audience_deleted_once')
       `)) as unknown as Array<Record<string, unknown>>;
-      expect(live).toEqual([{ d: LIVE_DEF, indisvalid: true }]);
-      const check = indexCheckSql();
+      expect(live).toEqual([{ d: AUDIENCE_DELETED_INDEX_DEF, indisvalid: true }]);
+      const check = migration0328IndexCheckSql();
       expect(await raised(check)).toBeNull();
-      expect(await raised(checkAgainst(check, LIVE_DEF, true))).toBeNull();
-      // The canary's own query, as db:verify runs it, finds the index.
-      const hit = (await db.execute(sql.raw(canary().query))) as unknown as unknown[];
+      expect(await raised(checkAgainst(check, AUDIENCE_DELETED_INDEX_DEF, true))).toBeNull();
+      // The canary, the query db:verify runs, finds the index.
+      const hit = (await db.execute(sql.raw(AUDIENCE_DELETED_INDEX_CANARY_SQL))) as unknown as unknown[];
       expect(hit).toHaveLength(1);
       // A schema qualifier on the enum type and other whitespace are not differences.
-      const reworded = LIVE_DEF.replace('::audit_event_type', '::public.audit_event_type').replace(' USING ', '\n   USING  ');
+      const reworded = AUDIENCE_DELETED_INDEX_DEF.replace('::audit_event_type', '::public.audit_event_type').replace(' USING ', '\n   USING  ');
       expect(await raised(checkAgainst(check, reworded, true))).toBeNull();
     });
 
     it('the index check raises on every other definition, quoting both normalised texts', async () => {
-      const check = indexCheckSql();
+      const check = migration0328IndexCheckSql();
       const keys = "(tenant_id, ((payload ->> 'resend_audience_id'::text)))";
       const variant = (to: string, from = keys) => {
-        expect(LIVE_DEF).toContain(from);
-        return LIVE_DEF.replace(from, to);
+        expect(AUDIENCE_DELETED_INDEX_DEF).toContain(from);
+        return AUDIENCE_DELETED_INDEX_DEF.replace(from, to);
       };
       const cases: ReadonlyArray<readonly [string, string]> = [
         [variant(`${keys} NULLS NOT DISTINCT`), 'NULLS NOT DISTINCT'],
@@ -544,19 +504,19 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
         // carries its difference) and the normalised expected one.
         expect(message).toContain(`live [${normalised(def)}]`);
         expect(normalised(def)).toContain(marker);
-        expect(message).toContain(`expected [${normalised(LIVE_DEF)}]`);
+        expect(message).toContain(`expected [${normalised(AUDIENCE_DELETED_INDEX_DEF)}]`);
       }
     });
 
     it('the index check raises on an invalid index (indisvalid false) and on a missing one (the all-NULL row, CR #9)', async () => {
-      const check = indexCheckSql();
-      expect(await raised(checkAgainst(check, LIVE_DEF, false))).toBe(`${PREFIX}: indisvalid false`);
+      const check = migration0328IndexCheckSql();
+      expect(await raised(checkAgainst(check, AUDIENCE_DELETED_INDEX_DEF, false))).toBe(`${PREFIX}: indisvalid false`);
       // No pg_index row for the name: SELECT INTO leaves both variables NULL.
       expect(await raised(checkAgainst(check, null, null))).toBe(`${PREFIX}: no such index`);
     });
 
     it('the pre-check raises on a duplicate key and names it as tenant/segment', async () => {
-      expect(existsSync(MIGRATION)).toBe(true);
+      expect(existsSync(MIGRATION_0328_PATH)).toBe(true);
       const audienceId = randomUUID();
       const payload = deletedPayload(audienceId, randomUUID(), randomUUID());
       const e = await preCheckOver([
@@ -569,7 +529,7 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
     });
 
     it('the pre-check does not raise on rows whose key is NULL (no tenant, no segment key, a JSON null)', async () => {
-      expect(existsSync(MIGRATION)).toBe(true);
+      expect(existsSync(MIGRATION_0328_PATH)).toBe(true);
       const audienceId = randomUUID();
       const payload = deletedPayload(audienceId, randomUUID(), randomUUID());
       const { resend_audience_id: _drop, ...noKey } = payload;
@@ -607,14 +567,13 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
   });
 
   it.each([
-    ['hasAudienceDeletedAuditInTx', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never) =>
-      repo.hasAudienceDeletedAuditInTx(tx, slug, randomUUID())],
-    ['findAudienceDisclosureInTx', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never) =>
-      repo.findAudienceDisclosureInTx(tx, slug, randomUUID())],
+    ['hasAudienceDeletedAuditInTx', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown) =>
+      repo.hasAudienceDeletedAuditInTx(tx, randomUUID())],
+    ['findAudienceDisclosureInTx', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown) =>
+      repo.findAudienceDisclosureInTx(tx, randomUUID())],
   ] as const)("cross-tenant: %s with a tx bound to tenant B refuses tenant A's read as an invariant error", async (_label, call) => {
     const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
-    const slug = tenantA.ctx.slug as never;
-    const e = await runInTenant(asTenantContext(tenantB.ctx.slug), (tx): Promise<unknown> => call(repo, tx, slug)).then(
+    const e = await runInTenant(asTenantContext(tenantB.ctx.slug), (tx): Promise<unknown> => call(repo, tx)).then(
       () => null,
       (err: unknown) => err,
     );

@@ -22,6 +22,11 @@ import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { AUDIENCE_AUDIT_PAYLOAD_KEYS } from '@/modules/broadcasts/application/ports/audit-port';
+import {
+  AUDIENCE_DELETED_ID_EXPR_SQL,
+  AUDIENCE_DELETED_KEY_SQL,
+  AUDIENCE_DELETED_PREDICATE_SQL,
+} from '@/modules/broadcasts/infrastructure/db/audience-audit-index';
 
 const OUT_OF_REACH = [
   'a destructured method: const { deleteAudience } = gateway; deleteAudience(id)',
@@ -195,6 +200,8 @@ const DELETED_LITERAL_FILES = [
   'src/modules/broadcasts/application/ports/audit-port.ts',
   'src/modules/broadcasts/application/use-cases/_audience-audit.ts',
   'src/modules/broadcasts/infrastructure/audit-adapter.ts',
+  // Spec 143 (TT1): the index predicate's text, which no writer spreads.
+  'src/modules/broadcasts/infrastructure/db/audience-audit-index.ts',
   'src/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo.ts',
 ] as const;
 const EMIT_FAMILY = /\b(emit|emitTyped|emitMany|emitManyTyped|safeAuditEmit|safeAuditEmitTyped|emitOnce)\s*(?:<[^>()]*>)?\s*\(/g;
@@ -294,20 +301,40 @@ describe('spec 142 — the deleted row is written only through emitOnce', () => 
 });
 
 // ---------------------------------------------------------------------------
-// Review round 1 (code-review #5, migration L1) — one key, written as a literal.
+// Spec 143 (TT1) — the index text has one TS source.
 // ---------------------------------------------------------------------------
 
 /**
- * The deleted row's key is `payload->>'resend_audience_id'` in three places that
- * must agree: migration 0328's index, `emitOnce`'s `ON CONFLICT` (a parameter
- * there is a 42P10), and the reclaim's existence read. The read writes it as a
- * literal too, not a bound parameter, so its expression is the index's own
- * text. Each must carry `AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId`.
+ * Migration 0328's index key and predicate are spelled once, in
+ * `audience-audit-index.ts`, and three places must agree with them: the index
+ * itself (pinned by `audience-audit-index.test.ts`), `emitOnce`'s `ON CONFLICT`
+ * (a parameter there is a 42P10), and the reclaim's existence read (a bound
+ * key would cost it the index). The adapter and the repo splice the constants
+ * with `sql.raw` and never write the text inline; comments are stripped first,
+ * so a docblock may still quote it.
  */
-describe('spec 142 — the deleted-row key is one literal', () => {
+describe('spec 143 TT1 — the deleted-row index text comes from audience-audit-index.ts', () => {
   const root = process.cwd();
-  const read = (rel: string) => readFileSync(join(root, rel), 'utf8');
-  const keyExpr = `payload->>'${AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId}'`;
+  const code = (rel: string) => stripComments(readFileSync(join(root, rel), 'utf8'));
+  const ADAPTER = 'src/modules/broadcasts/infrastructure/audit-adapter.ts';
+  const REPO = 'src/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo.ts';
+  /**
+   * This index's text, anywhere in the two files (review round 1,
+   * code-review #6: its own key, predicate and name, in literal and bound
+   * spellings, not every `ON CONFLICT`).
+   */
+  const INLINE: readonly RegExp[] = [
+    /payload\s*->>\s*'resend_audience_id'/,
+    /event_type\s*=\s*(?:'|\$\{\s*['"`])broadcast_audience_deleted/,
+    /ON CONFLICT\s+ON CONSTRAINT\s+"?audit_log_audience_deleted_once/,
+    /ON CONFLICT\s*\(\s*tenant_id\s*,\s*\(?\s*payload/,
+  ];
+  /**
+   * What emitOnce's body and the existence read's body must not contain: the
+   * above, and the payload key as a bound parameter (`payload->>${...}`), which
+   * `findAudienceDisclosureInTx` legitimately uses for the disclosed rows.
+   */
+  const IN_BODY: readonly RegExp[] = [...INLINE, /payload\s*->>\s*\$\{/];
 
   /** The source of the repo method `name`, from its declaration to the next method's. */
   function methodBody(src: string, name: string, next: string): string {
@@ -318,17 +345,63 @@ describe('spec 142 — the deleted-row key is one literal', () => {
     return src.slice(from, to);
   }
 
-  it('the deleted-row key is the literal AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId in the read, the ON CONFLICT and 0328', () => {
-    const read_ = methodBody(
-      read('src/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo.ts'),
-      'hasAudienceDeletedAuditInTx',
-      'findAudienceDisclosureInTx',
+  it('the constants spell the resend_audience_id key and the deleted event', () => {
+    expect(AUDIENCE_DELETED_ID_EXPR_SQL).toBe("payload->>'resend_audience_id'");
+    // The literal guarded against the payload key every writer uses (review round 2, code-review finding 7).
+    expect(AUDIENCE_DELETED_ID_EXPR_SQL).toBe(`payload->>'${AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId}'`);
+    expect(AUDIENCE_DELETED_KEY_SQL).toBe("(tenant_id, (payload->>'resend_audience_id'))");
+    expect(AUDIENCE_DELETED_PREDICATE_SQL).toBe("event_type = 'broadcast_audience_deleted'");
+  });
+
+  it('the scan finds the inline text it forbids (positive control)', () => {
+    const inline = stripComments(
+      "sql`ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE event_type = 'broadcast_audience_deleted'` " +
+        'sql`ON CONFLICT ON CONSTRAINT audit_log_audience_deleted_once`',
     );
-    expect(read_).toContain(`AND ${keyExpr} = `);
-    expect(read_).not.toContain('payload->>${');
-    expect(read('src/modules/broadcasts/infrastructure/audit-adapter.ts')).toContain(`ON CONFLICT (tenant_id, (${keyExpr}))`);
-    expect(read('drizzle/migrations/0328_audit_log_audience_deleted_once.sql')).toContain(
-      `("tenant_id", ("payload"->>'${AUDIENCE_AUDIT_PAYLOAD_KEYS.resendAudienceId}'))`,
-    );
+    for (const re of INLINE) expect(re.test(inline)).toBe(true);
+    const commented = stripComments("/* ON CONFLICT (tenant_id) */\n// event_type = 'broadcast_audience_deleted'");
+    expect(INLINE.some((re) => re.test(commented))).toBe(false);
+  });
+
+  // Review round 1 (code-review #6): the scan is about this index's text, in
+  // its bound-parameter spellings too, and not about every ON CONFLICT.
+  it.each([
+    ['a bound predicate', "sql`WHERE event_type = ${'broadcast_audience_deleted'}::audit_event_type`"],
+    ['the index named as a constraint', 'sql`ON CONFLICT ON CONSTRAINT audit_log_audience_deleted_once DO NOTHING`'],
+    ['a key with a bound payload key', 'sql`ON CONFLICT (tenant_id, (payload->>${k})) DO NOTHING`'],
+  ])('catch case: %s is inline index text', (_name, fixture) => {
+    expect(INLINE.some((re) => re.test(stripComments(fixture)))).toBe(true);
+  });
+
+  it("catch case: a bound key inside emitOnce's or the existence read's body is inline index text", () => {
+    expect(IN_BODY.some((re) => re.test('AND payload->>${keys.resendAudienceId}::text = ${resendAudienceId}::text'))).toBe(true);
+  });
+
+  it("another table's ON CONFLICT, or another event's predicate, is not this index's text", () => {
+    expect(INLINE.some((re) => re.test('sql`INSERT INTO t (id) VALUES (${id}) ON CONFLICT (id) DO NOTHING`'))).toBe(false);
+    expect(INLINE.some((re) => re.test("sql`WHERE event_type = 'broadcast_audience_disclosed'`"))).toBe(false);
+  });
+
+  it("emitOnce's ON CONFLICT splices the key and the predicate, and the adapter writes neither inline", () => {
+    const src = code(ADAPTER);
+    expect(src).toMatch(/from '\.\/db\/audience-audit-index'/);
+    expect(src).toContain('ON CONFLICT ${sql.raw(AUDIENCE_DELETED_KEY_SQL)} WHERE ${sql.raw(AUDIENCE_DELETED_PREDICATE_SQL)} DO NOTHING');
+    for (const re of INLINE) expect(src).not.toMatch(re);
+    const from = src.indexOf('async emitOnce(');
+    const to = src.indexOf('\n};', from);
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    for (const re of IN_BODY) expect(src.slice(from, to)).not.toMatch(re);
+  });
+
+  it('the existence read splices the predicate and the key expression, and the repo writes neither inline', () => {
+    const src = code(REPO);
+    expect(src).toMatch(/from '\.\/audience-audit-index'/);
+    const body = methodBody(src, 'hasAudienceDeletedAuditInTx', 'findAudienceDisclosureInTx');
+    expect(body).toContain('WHERE tenant_id = ${ctx.slug}');
+    expect(body).toContain('AND ${sql.raw(AUDIENCE_DELETED_PREDICATE_SQL)}');
+    expect(body).toContain('AND ${sql.raw(AUDIENCE_DELETED_ID_EXPR_SQL)} = ${resendAudienceId}::text');
+    for (const re of INLINE) expect(src).not.toMatch(re);
+    for (const re of IN_BODY) expect(body).not.toMatch(re);
   });
 });
