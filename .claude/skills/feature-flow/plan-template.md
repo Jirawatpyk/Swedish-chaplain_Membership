@@ -36,6 +36,8 @@ If more than one writer can touch the same row (a cron that can overlap itself, 
 |---|---|---|
 | … | … | … |
 
+A row on a tenancy, audit-log, money, auth or guard surface names its RED commit, whatever the commit type: a `refactor:` that changes which tenant, actor or amount a query binds is a logic change. Without a RED commit, record a deviation in § Complexity Tracking with the failing run against the old code (retro 2026-11-07, spec 143).
+
 Also name the cross-tenant test (for a tenant-scoped surface) and the e2e specs to run on chromium + mobile-chrome.
 
 ## Constitution Check
