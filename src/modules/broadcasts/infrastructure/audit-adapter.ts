@@ -123,7 +123,10 @@ export const f7AuditAdapter: F7AuditAdapter = {
    * null tx (a pool connection carries no `app.current_tenant`), a null
    * `tenantId` or an empty segment id (a NULL key never conflicts, so either
    * would allow duplicates), another event type (a cast past the input type),
-   * or a tx bound to another tenant (`assertAudienceAuditTenantBoundTx`).
+   * or a tx bound to another tenant (`assertAudienceAuditTenantBoundTx`). That
+   * check is the repo's own, so it shares the repo's per-tx proof: after the
+   * reclaim's disclosure read on the same tx and tenant it runs no second
+   * probe (spec 143 TT3).
    */
   async emitOnce(txUnknown: unknown, event: AudienceDeletedEmitInput): Promise<boolean> {
     if (txUnknown === null || txUnknown === undefined) {

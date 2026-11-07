@@ -197,19 +197,32 @@ export async function assertTenantBoundTx(
  * wiring bug as a lost row and making the call. A driver error on the probe
  * stays as it is (a lost row, per `_audience-audit`). The message keeps the
  * original text (tenant slugs only, no PII). Exported for the audit adapter.
+ *
+ * Spec 143 (TT3) — one probe per tx and slug. `runInTenant` sets
+ * `app.current_tenant` once per tx, so once the probe has proven a tx bound to
+ * a slug, a later call on the same tx with the same slug skips it (the
+ * reclaim's two calls per segment, the disclosure read then `emitOnce` or the
+ * existence read, now probe once). A different slug probes again and is
+ * refused on a mismatch. Only a passed probe is cached: a refusal or a driver
+ * error proves nothing, so the first call on every tx still fails closed. The
+ * cache is keyed on the tx object and held weakly, so it ends with the tx.
  */
+const audienceAuditBoundTxs = new WeakMap<object, string>();
+
 export async function assertAudienceAuditTenantBoundTx(
   tx: TenantTx,
   expectedTenantId: string,
   callerName: string,
   eventType: 'broadcast_audience_deleted' | 'broadcast_audience_disclosed',
 ): Promise<void> {
+  if (audienceAuditBoundTxs.get(tx) === expectedTenantId) return;
   try {
     await assertTenantBoundTx(tx, expectedTenantId, callerName);
   } catch (e) {
     if (e instanceof Error && tenantBindingRefusals.has(e)) throw new AuditPortInvariantError(eventType, e.message);
     throw e;
   }
+  audienceAuditBoundTxs.set(tx, expectedTenantId);
 }
 
 // ---------------------------------------------------------------------------
@@ -1840,7 +1853,9 @@ export function makeDrizzleBroadcastsRepo(
      * `audience-audit-index.ts` (spec 143 TT1; pinned by
      * `audience-audit-sites.test.ts`), never a bound parameter, so the read
      * matches the index (review round 1, migration L1). Read only for a
-     * reclaimed segment with no disclosure.
+     * reclaimed segment with no disclosure, after `findAudienceDisclosureInTx`
+     * on the same tx, so its tenant probe is skipped (spec 143 TT3,
+     * `assertAudienceAuditTenantBoundTx`).
      */
     async hasAudienceDeletedAuditInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string): Promise<boolean> {
       const tx = txUnknown as TenantTx;
@@ -1859,8 +1874,11 @@ export function makeDrizzleBroadcastsRepo(
 
     /**
      * See the port docblock. Tenant-fenced as `hasAudienceDeletedAuditInTx`
-     * (`assertTenantBoundTx` and the explicit `tenant_id` predicate); it takes
-     * no lock: disclosed rows are append-only.
+     * (`assertAudienceAuditTenantBoundTx` and the explicit `tenant_id`
+     * predicate); it takes no lock: disclosed rows are append-only. In the
+     * reclaim it is the segment's first audience audit call on the tx, so it
+     * runs the tx's one tenant probe; the deleted-row write or read after it
+     * reuses that proof (spec 143 TT3).
      */
     async findAudienceDisclosureInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string) {
       const tx = txUnknown as TenantTx;
