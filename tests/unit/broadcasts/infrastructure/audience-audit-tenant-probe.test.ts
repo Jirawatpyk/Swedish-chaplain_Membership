@@ -6,13 +6,8 @@
  * and refuses a tx bound to another tenant (or to none) as an
  * `AuditPortInvariantError`, before any audit SQL. The reclaim's two calls
  * per segment (the disclosure read, then `emitOnce` or the existence read)
- * probe twice.
- *
- * Review round 2 (maintainer, 7 Nov 2026): TT3's per-tx probe cache was
- * reverted. It saved at most one ~30 ms probe per reclaimed segment, and its
- * safety rested on a single-writer scan of `app.current_tenant` that could not
- * be made complete. These cells pin the fail-closed probe it would have
- * skipped.
+ * probe twice. No call reuses an earlier call's probe on the same tx: each
+ * proves the binding again before its own SQL.
  *
  * The statements are rendered by a real Drizzle instance over `pg-proxy`, as
  * in `broadcast-retime-refusal-probe.test.ts`, so the probe count is the count
