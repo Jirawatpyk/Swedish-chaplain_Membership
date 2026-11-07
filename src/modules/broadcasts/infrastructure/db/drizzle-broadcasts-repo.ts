@@ -17,7 +17,7 @@
  */
 import { and, asc, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
-import { db, runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
+import { db, runInTenant, tenantSlugOf, TenantTxNotBoundError, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
 import {
@@ -206,8 +206,30 @@ export async function assertTenantBoundTx(
  * refused on a mismatch. Only a passed probe is cached: a refusal or a driver
  * error proves nothing, so the first call on every tx still fails closed. The
  * cache is keyed on the tx object and held weakly, so it ends with the tx.
+ *
+ * Review round 1 (code-review #1, #4) — the proof is kept only for a tx that
+ * `runInTenant` opened. The probe is skipped only when (a) `lib/db.ts`'s
+ * registry (`tenantSlugOf`, D-030) names the tx's tenant as the expected slug
+ * and (b) this tx already passed one probe for that slug. Any object the
+ * registry does not know, the bare `db` singleton among them, probes on every
+ * call and is never cached (a pool connection's GUC is not the tx's). A tx the
+ * registry names for another slug is refused after its probe, even when the
+ * probe passes. The skip rests on an invariant: `runInTenant` is the only
+ * writer of `app.current_tenant` in `src/`, once per tx, before `bindTenantTx`
+ * (pinned by `tests/unit/lib/current-tenant-guc-single-writer.test.ts`), so a
+ * registered tx's GUC cannot change after its probe.
  */
 const audienceAuditBoundTxs = new WeakMap<object, string>();
+
+/** The slug `runInTenant` registered for `tx`, or `null` for an object it did not open. */
+function runInTenantSlugOf(tx: TenantTx): string | null {
+  try {
+    return tenantSlugOf(tx);
+  } catch (e) {
+    if (e instanceof TenantTxNotBoundError) return null;
+    throw e;
+  }
+}
 
 export async function assertAudienceAuditTenantBoundTx(
   tx: TenantTx,
@@ -215,14 +237,40 @@ export async function assertAudienceAuditTenantBoundTx(
   callerName: string,
   eventType: 'broadcast_audience_deleted' | 'broadcast_audience_disclosed',
 ): Promise<void> {
-  if (audienceAuditBoundTxs.get(tx) === expectedTenantId) return;
+  const registered = runInTenantSlugOf(tx);
+  if (registered === expectedTenantId && audienceAuditBoundTxs.get(tx) === expectedTenantId) return;
   try {
     await assertTenantBoundTx(tx, expectedTenantId, callerName);
+    if (registered !== null && registered !== expectedTenantId) {
+      throw tenantBindingRefusal(
+        `${callerName}: tx tenant mismatch — repo bound to "${expectedTenantId}" but runInTenant opened the tx for "${registered}". Refusing to write to a different tenant's namespace.`,
+      );
+    }
   } catch (e) {
     if (e instanceof Error && tenantBindingRefusals.has(e)) throw new AuditPortInvariantError(eventType, e.message);
     throw e;
   }
-  audienceAuditBoundTxs.set(tx, expectedTenantId);
+  if (registered === expectedTenantId) audienceAuditBoundTxs.set(tx, expectedTenantId);
+}
+
+/**
+ * Review round 1 (code-review #3) — the two audience audit reads take the
+ * tenant twice: the repo's own slug (the probe) and `tenantIdArg` (the
+ * `tenant_id` predicate). A caller passing another tenant's slug is a wiring
+ * bug, refused before any SQL.
+ */
+function assertAudienceAuditTenantArg(
+  tenantIdArg: string,
+  repoSlug: string,
+  callerName: string,
+  eventType: 'broadcast_audience_deleted' | 'broadcast_audience_disclosed',
+): void {
+  if (tenantIdArg !== repoSlug) {
+    throw new AuditPortInvariantError(
+      eventType,
+      `${callerName}: tenantIdArg "${tenantIdArg}" is not the repo's tenant "${repoSlug}".`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1858,6 +1906,7 @@ export function makeDrizzleBroadcastsRepo(
      * `assertAudienceAuditTenantBoundTx`).
      */
     async hasAudienceDeletedAuditInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string): Promise<boolean> {
+      assertAudienceAuditTenantArg(tenantIdArg, ctx.slug, 'hasAudienceDeletedAuditInTx', 'broadcast_audience_deleted');
       const tx = txUnknown as TenantTx;
       await assertAudienceAuditTenantBoundTx(tx, ctx.slug, 'hasAudienceDeletedAuditInTx', 'broadcast_audience_deleted');
       const rows = (await tx.execute(sql`
@@ -1881,6 +1930,7 @@ export function makeDrizzleBroadcastsRepo(
      * reuses that proof (spec 143 TT3).
      */
     async findAudienceDisclosureInTx(txUnknown, tenantIdArg: TenantSlug, resendAudienceId: string) {
+      assertAudienceAuditTenantArg(tenantIdArg, ctx.slug, 'findAudienceDisclosureInTx', 'broadcast_audience_disclosed');
       const tx = txUnknown as TenantTx;
       await assertAudienceAuditTenantBoundTx(tx, ctx.slug, 'findAudienceDisclosureInTx', 'broadcast_audience_disclosed');
       const keys = AUDIENCE_AUDIT_PAYLOAD_KEYS;

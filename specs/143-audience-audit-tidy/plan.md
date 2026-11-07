@@ -80,3 +80,10 @@ Build, 7 Nov 2026, on `143-audience-audit-tidy`.
 | TT2 the two unguarded harnesses | Did not compile against `TickHarnessDeps` (their `emitOnce` took a `Record` payload): `-audience-audit.test.ts(244,13)`, `-failure-paths.test.ts(819,15)` TS2322 | fixed in `283e5863e` |
 | TT3 `audience-audit-tenant-probe-cache.test.ts` | `d1e170cd1`: `AssertionError: expected 2 to be 1` on both reclaim sequences (2 failed, 4 passed) | `cbbfef3f9`: 6 passed; mutation (cache before the probe) turned the two "caches nothing" cells red; reverted |
 | TT3 cross-tenant integration | | `audience-audit-rows` + `tx-tenant-binding-guard`: 31 passed |
+
+### Review round 1 fold-in (D-043)
+Findings of `/code-review high` on PR 768 (CR) and of `reliability-guardian`. Round 1 supersedes the spec's Out-of-scope line on `tenantSlugOf`: the probe cache now reads D-030's registry as a precondition (it never replaces the probe), because a cache keyed on any object also cached the bare `db` singleton.
+
+| Fix | RED (commit, failing line) | GREEN |
+|---|---|---|
+| U1 (CR 1, 4) the probe proof only for a tx `runInTenant` registered under the expected slug; any other object probes every call; a tx registered for another slug is refused. U3 (CR 3) the two reads refuse a foreign `tenantIdArg` before any SQL | `6ada65275`: `expected 1 to be 3` (unregistered object), `expected null to be an instance of AuditPortInvariantError` (registered for another slug; both reads' `tenantIdArg` cells); 4 failed, 6 passed | 10 passed |
