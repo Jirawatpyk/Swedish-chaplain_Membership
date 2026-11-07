@@ -46,6 +46,7 @@ import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/por
 import { isAdapterInvariantError } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
 import { makeBuildAudienceTickDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import {
+  AUDIENCE_DELETED_INDEX_CANARY_SQL,
   AUDIENCE_DELETED_INDEX_DEF,
   AUDIENCE_DELETED_KEY_SQL,
   AUDIENCE_DELETED_PREDICATE_SQL,
@@ -428,15 +429,6 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       return block!.replaceAll('"', '').replace(/\s+/g, ' ');
     }
 
-    /**
-     * Spec 143 (TT1) — the 0328 canary's comparison as scripts/verify-schema.ts
-     * builds it from `audience-audit-index.ts` (the source check below pins
-     * the script to this text).
-     */
-    const CANARY_MATCH =
-      `${normaliseIndexDefSql('pg_get_indexdef(i.indexrelid)')} = ${normaliseIndexDefSql(sqlStringLiteral(AUDIENCE_DELETED_INDEX_DEF))}`;
-    const CANARY_QUERY = `SELECT 1 AS hit FROM pg_index i WHERE i.indexrelid = to_regclass('public.audit_log_audience_deleted_once') AND i.indisvalid AND ${CANARY_MATCH}`;
-
     /** The check with its catalog read replaced by literal assignments, so it reads no catalog. */
     function checkAgainst(check: string, def: string | null, valid: boolean | null): string {
       const read = /SELECT\s+pg_get_indexdef\(i\.indexrelid\),\s*i\.indisvalid\s+INTO\s+v_def,\s*v_valid[^;]*;/;
@@ -515,14 +507,16 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       expect(create).toContain(`CREATE UNIQUE INDEX IF NOT EXISTS audit_log_audience_deleted_once ON audit_log ${AUDIENCE_DELETED_KEY_SQL} WHERE ${AUDIENCE_DELETED_PREDICATE_SQL};`);
     });
 
-    it('the verify-schema canary builds its comparison from audience-audit-index.ts (TT1)', () => {
+    // Review round 1 (code-review #5): the script runs the module's canary
+    // query as it is, so the live cell below executes the script's own text
+    // and a typo in it (the to_regclass name included) fails that cell.
+    it('the verify-schema canary is AUDIENCE_DELETED_INDEX_CANARY_SQL from audience-audit-index.ts (TT1)', () => {
       const source = readFileSync(join(process.cwd(), 'scripts', 'verify-schema.ts'), 'utf8');
       expect(source).toMatch(/from '\.\.\/src\/modules\/broadcasts\/infrastructure\/db\/audience-audit-index'/);
-      expect(source).toContain(
-        "AND i.indisvalid AND ${normaliseIndexDefSql('pg_get_indexdef(i.indexrelid)')} = ${normaliseIndexDefSql(sqlStringLiteral(AUDIENCE_DELETED_INDEX_DEF))}`",
-      );
-      // The text no longer has a second copy in the script.
+      expect(source).toContain('query: AUDIENCE_DELETED_INDEX_CANARY_SQL,');
+      // The query has no second copy in the script (its name line may name the index).
       expect(source).not.toContain('CREATE UNIQUE INDEX audit_log_audience_deleted_once');
+      expect(source).not.toMatch(/to_regclass\('public\.audit_log_audience_deleted_once'\)/);
     });
 
     it('the index check and the canary pass on the live index, and the check on its text in place of the catalog read', async () => {
@@ -535,8 +529,8 @@ describe('spec 139 s2 — the audience audit rows (live Neon)', () => {
       const check = indexCheckSql();
       expect(await raised(check)).toBeNull();
       expect(await raised(checkAgainst(check, LIVE_DEF, true))).toBeNull();
-      // The canary's comparison, as db:verify runs it, finds the index.
-      const hit = (await db.execute(sql.raw(CANARY_QUERY))) as unknown as unknown[];
+      // The canary, the query db:verify runs, finds the index.
+      const hit = (await db.execute(sql.raw(AUDIENCE_DELETED_INDEX_CANARY_SQL))) as unknown as unknown[];
       expect(hit).toHaveLength(1);
       // A schema qualifier on the enum type and other whitespace are not differences.
       const reworded = LIVE_DEF.replace('::audit_event_type', '::public.audit_event_type').replace(' USING ', '\n   USING  ');
