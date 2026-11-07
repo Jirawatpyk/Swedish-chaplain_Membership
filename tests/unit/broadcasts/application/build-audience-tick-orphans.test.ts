@@ -18,11 +18,12 @@ import { err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
-import { buildAudienceTick, type BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { RecordOrphanInput } from '@/modules/broadcasts/application/ports/broadcast-orphans-repo';
-import type { AudienceDeletedAuditPort, AudienceDeletedEmitInput, AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
+import type { AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
+import type { TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('55555555-5555-4555-8555-555555555555');
@@ -32,7 +33,6 @@ const TOKEN = 'aaaaaaaa-0000-4000-8000-00000000000a';
 const MEMBER = 'm-1';
 const TICK2_ROW = { resendAudienceId: 'aud-1', audienceImportId: 'imp-1', audienceImportSubmittedAt: new Date(NOW.getTime() - 600_000) };
 
-type DepsWithEveryPort = { [K in keyof BuildAudienceTickDeps]: unknown };
 type DeleteOnce = 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other';
 type RetrieveOnce = { kind: 'present'; status: string; sentAt?: string | null } | { kind: 'not_found' } | { kind: 'retryable' };
 
@@ -100,7 +100,7 @@ function harness(opts: Opts = {}) {
     dispatchFirstFailedAt: null as Date | null,
     ...opts.row,
   };
-  const deps: DepsWithEveryPort = {
+  const deps: TickHarnessDeps = {
     tenant,
     clock: { now: () => NOW },
     tickBudget: { tickStartedAt: NOW.getTime() },
@@ -234,7 +234,7 @@ function harness(opts: Opts = {}) {
       },
     },
     // Spec 142 review round 3 (code-review #1) — the restart writes its
-    // deleted row through `emitOnce`; `satisfies` makes a double without it a
+    // deleted row through `emitOnce`; `TickHarnessDeps` makes a double without it a
     // type error instead of a silent lost row.
     audit: {
       async emit(_tx: unknown, e: { eventType: string; payload: Record<string, unknown> }) {
@@ -244,7 +244,7 @@ function harness(opts: Opts = {}) {
         deletedRows.push({ eventType: e.eventType, payload: { ...e.payload } });
         return true;
       },
-    } satisfies Pick<AuditPort, 'emit'> & AudienceDeletedAuditPort,
+    },
     membersBridge: {
       async getMemberPrimaryContact() {
         return 'member@example.com';

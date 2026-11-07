@@ -20,10 +20,11 @@ import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
-import { buildAudienceTick, type BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
-import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
+import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import { AuditPortInvariantError, type AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
+import type { TickHarnessDeps } from '../../../support/broadcasts/tick-deps-type';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('66666666-6666-4666-8666-666666666666');
@@ -33,8 +34,6 @@ const TOKEN = 'bbbbbbbb-0000-4000-8000-00000000000b';
 /** `_dispatch-lease.ts`'s values, spelled here so a drift there is a red test. */
 const CALL_HEADROOM_MS = 25_000;
 const IMPORT_HEADROOM_MS = 45_000;
-
-type DepsWithEveryPort = { [K in keyof BuildAudienceTickDeps]: unknown };
 
 interface AuditRow {
   readonly eventType: string;
@@ -100,7 +99,7 @@ function harness(opts: Opts = {}) {
     dispatchFirstFailedAt: null as Date | null,
     ...opts.row,
   };
-  const deps: DepsWithEveryPort = {
+  const deps: TickHarnessDeps = {
     tenant,
     clock: { now: () => NOW },
     tickBudget: { tickStartedAt: NOW.getTime() },
@@ -242,18 +241,18 @@ function harness(opts: Opts = {}) {
       },
       // Spec 142 (AO2) — the index's answer, over what this recorder holds (a
       // second tick is seeded with the first tick's rows through `priorAudits`).
-      async emitOnce(_tx: unknown, e: AuditRow): Promise<boolean> {
+      async emitOnce(_tx: unknown, e: AudienceDeletedEmitInput): Promise<boolean> {
         if (opts.auditThrows?.eventType === e.eventType) {
           events.push(`audit-failed:${e.eventType}`);
           if (opts.auditThrows.kind === 'invariant') throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
           throw new Error('53300 too many connections');
         }
         events.push(`audit-once:${e.eventType}`);
-        const key = e.payload['resend_audience_id'];
+        const key = e.payload.resend_audience_id;
         if (audits.some((a) => a.eventType === e.eventType && a.tenantId === e.tenantId && a.payload['resend_audience_id'] === key)) {
           return false;
         }
-        audits.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, payload: e.payload, requestId: e.requestId });
+        audits.push({ eventType: e.eventType, tenantId: e.tenantId, actorUserId: e.actorUserId, payload: { ...e.payload }, requestId: e.requestId ?? null });
         return true;
       },
     },
