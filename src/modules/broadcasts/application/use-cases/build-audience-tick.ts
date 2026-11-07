@@ -2176,7 +2176,6 @@ async function recordUnverifiableCount(
       if (
         await deps.broadcastsRepo.hasUnverifiableCountAuditInTx(
           tx,
-          deps.tenant.slug,
           input.broadcastId,
           fields.resendBroadcastId,
         )

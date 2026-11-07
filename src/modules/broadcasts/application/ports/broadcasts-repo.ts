@@ -16,7 +16,9 @@
  *     for cross-tenant safety). A tx-taking method may instead bind the
  *     repo's own `ctx.slug` when `assertTenantBoundTx` (or
  *     `assertAudienceAuditTenantBoundTx`) proves the tx is bound to it, as
- *     `markAudienceDeletedInTx` and the audience audit reads do; the older
+ *     `markAudienceDeletedInTx`, the audience audit reads and the two
+ *     evidence reads (`readAlreadySentEvidenceInTx`,
+ *     `hasUnverifiableCountAuditInTx`) do; the older
  *     methods still take `tenantId`.
  *
  * Pure interface — no framework imports (Constitution Principle III).
@@ -784,15 +786,16 @@ export interface BroadcastsRepo {
    * member); `false` when `broadcastId` is `null`.
    *
    * With a `broadcastId`, the read first takes a transaction-scoped advisory
-   * lock on (tenant, broadcast) in the `broadcasts-evidence:` namespace, so a
-   * caller's check-then-insert on the SAME tx is serialised against a
-   * concurrent re-drive's: the second waits for the first to commit, then
-   * sees its row. Tenant-scoped by RLS AND an explicit `tenant_id` predicate
-   * (`audit_log`'s policy also admits `tenant_id IS NULL` rows).
+   * lock on (the repo's tenant, broadcast) in the `broadcasts-evidence:`
+   * namespace, so a caller's check-then-insert on the SAME tx is serialised
+   * against a concurrent re-drive's: the second waits for the first to
+   * commit, then sees its row. Tenant-scoped by RLS AND an explicit
+   * `tenant_id` predicate on the repo's own tenant, the one
+   * `assertTenantBoundTx` proves the tx bound to, so it takes no tenant
+   * argument (`audit_log`'s policy also admits `tenant_id IS NULL` rows).
    */
   readAlreadySentEvidenceInTx(
     tx: unknown,
-    tenantId: TenantSlug,
     query: { readonly memberId: string; readonly broadcastId: BroadcastId | null },
   ): Promise<{ readonly broadcastRecorded: boolean; readonly memberBroadcastCount: number }>;
 
@@ -803,19 +806,19 @@ export interface BroadcastsRepo {
    * first attempt on it whose audience count failed; a draft re-minted after a
    * restart gets its own row) and reads this in the SAME tx before inserting.
    *
-   * The read first takes a transaction-scoped advisory lock on (tenant,
-   * broadcast) in the `broadcasts-unverifiable:` namespace, as
+   * The read first takes a transaction-scoped advisory lock on (the repo's
+   * tenant, broadcast) in the `broadcasts-unverifiable:` namespace, as
    * `readAlreadySentEvidenceInTx` does, so a check-then-insert on the same tx is
    * serialised against other CALLERS OF THIS METHOD for that broadcast (the
    * dispatch lease already keeps a second tick out). The lock is per broadcast
    * while the dedupe is per (broadcast, draft): a second draft waits on the
    * first's tx, which is harmless at one short tx. Tenant-scoped by RLS AND an
-   * explicit `tenant_id` predicate (`audit_log`'s policy also admits
-   * `tenant_id IS NULL` rows).
+   * explicit `tenant_id` predicate on the repo's own tenant, as
+   * `readAlreadySentEvidenceInTx`, so it takes no tenant argument
+   * (`audit_log`'s policy also admits `tenant_id IS NULL` rows).
    */
   hasUnverifiableCountAuditInTx(
     tx: unknown,
-    tenantId: TenantSlug,
     broadcastId: BroadcastId,
     resendBroadcastId: string,
   ): Promise<boolean>;

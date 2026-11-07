@@ -575,7 +575,7 @@ function makeDeps(opts: {
         // first tick's rows).
         // Round 4: keyed on (broadcastId, resendBroadcastId), so a re-minted draft
         // gets its own row.
-        async hasUnverifiableCountAuditInTx(_tx: unknown, _t: unknown, id: unknown, resendBroadcastId: unknown) {
+        async hasUnverifiableCountAuditInTx(_tx: unknown, id: unknown, resendBroadcastId: unknown) {
           return rec.audits.some(
             (a) =>
               a.eventType === 'broadcast_resend_drift_check_unverifiable' &&

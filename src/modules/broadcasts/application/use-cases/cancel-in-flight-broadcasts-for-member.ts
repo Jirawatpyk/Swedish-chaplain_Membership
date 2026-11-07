@@ -581,7 +581,7 @@ export async function cancelInFlightBroadcastsForMember(
       observed: { readonly status: BroadcastStatus | null; readonly resendStatus: 'queued' | 'sending' | 'sent' | null },
     ): Promise<void> => {
       const emitted = await deps.broadcastsRepo.withTx(async (tx): Promise<boolean> => {
-        const seen = await deps.broadcastsRepo.readAlreadySentEvidenceInTx(tx, input.tenant.slug, {
+        const seen = await deps.broadcastsRepo.readAlreadySentEvidenceInTx(tx, {
           memberId: input.memberId as string,
           broadcastId: broadcast.broadcastId,
         });
@@ -1114,7 +1114,7 @@ export async function cancelInFlightBroadcastsForMember(
     if (erasure) {
       try {
         const evidence = await deps.broadcastsRepo.withTx((tx) =>
-          deps.broadcastsRepo.readAlreadySentEvidenceInTx(tx, input.tenant.slug, {
+          deps.broadcastsRepo.readAlreadySentEvidenceInTx(tx, {
             memberId: input.memberId as string,
             broadcastId: null,
           }),
@@ -1124,7 +1124,7 @@ export async function cancelInFlightBroadcastsForMember(
         // once per broadcast, unless that broadcast already has evidence.
         for (const broadcastId of handedOrphanBroadcastIds) {
           const seen = await deps.broadcastsRepo.withTx((tx) =>
-            deps.broadcastsRepo.readAlreadySentEvidenceInTx(tx, input.tenant.slug, {
+            deps.broadcastsRepo.readAlreadySentEvidenceInTx(tx, {
               memberId: input.memberId as string,
               broadcastId: asBroadcastId(broadcastId),
             }),

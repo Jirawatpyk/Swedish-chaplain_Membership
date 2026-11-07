@@ -1782,17 +1782,20 @@ export function makeDrizzleBroadcastsRepo(
      * payload's `broadcastId` + `memberId` + `resendOutcome`). The
      * `broadcasts-evidence:` lock key is disjoint from the row lock's
      * `broadcasts:` (`lockForUpdate`), so recording evidence never waits on a
-     * cascade or a dispatch tick holding the row. `tenant_id = ${tenantIdArg}`
+     * cascade or a dispatch tick holding the row. `tenant_id = ${ctx.slug}`
      * is load-bearing (the `audit_log` policy also admits `tenant_id IS NULL`
-     * rows). Rare path, so no index is claimed for it.
+     * rows); the lock key and the predicate bind the repo's own tenant, the
+     * one the probe proved the tx bound to, so the read takes no tenant
+     * argument (spec 143). The lock key text is unchanged, so an equal slug
+     * hashes to the same key as before. Rare path, so no index is claimed for it.
      */
-    async readAlreadySentEvidenceInTx(txUnknown, tenantIdArg: TenantSlug, query) {
+    async readAlreadySentEvidenceInTx(txUnknown, query) {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'readAlreadySentEvidenceInTx');
       const broadcastId = query.broadcastId === null ? null : (query.broadcastId as string);
       if (broadcastId !== null) {
         await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-evidence:' || ${tenantIdArg} || ':' || ${broadcastId}, 0))`,
+          sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-evidence:' || ${ctx.slug} || ':' || ${broadcastId}, 0))`,
         );
       }
       const rows = (await tx.execute(sql`
@@ -1800,7 +1803,7 @@ export function makeDrizzleBroadcastsRepo(
           COALESCE(bool_or(payload->>'broadcastId' = ${broadcastId}::text), false) AS broadcast_recorded,
           (count(DISTINCT payload->>'broadcastId') FILTER (WHERE payload->>'memberId' = ${query.memberId}::text))::int AS member_count
         FROM audit_log
-        WHERE tenant_id = ${tenantIdArg}
+        WHERE tenant_id = ${ctx.slug}
           AND event_type = 'broadcast_concurrent_action_blocked'
           AND payload->>'resendOutcome' = 'already_sent'
       `)) as unknown as Array<{ broadcast_recorded: boolean | 't' | 'f'; member_count: number | string }>;
@@ -1811,22 +1814,25 @@ export function makeDrizzleBroadcastsRepo(
       };
     },
 
+    /**
+     * See the port docblock. Tenant-fenced as `readAlreadySentEvidenceInTx`:
+     * the lock key and the `tenant_id` predicate bind the repo's own tenant.
+     */
     async hasUnverifiableCountAuditInTx(
       txUnknown,
-      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       resendBroadcastId: string,
     ): Promise<boolean> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'hasUnverifiableCountAuditInTx');
       await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-unverifiable:' || ${tenantIdArg} || ':' || ${broadcastId as string}, 0))`,
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-unverifiable:' || ${ctx.slug} || ':' || ${broadcastId as string}, 0))`,
       );
       const rows = (await tx.execute(sql`
         SELECT EXISTS (
           SELECT 1
           FROM audit_log
-          WHERE tenant_id = ${tenantIdArg}
+          WHERE tenant_id = ${ctx.slug}
             AND event_type = 'broadcast_resend_drift_check_unverifiable'
             AND payload->>'broadcastId' = ${broadcastId as string}::text
             AND payload->>'resendBroadcastId' = ${resendBroadcastId}::text

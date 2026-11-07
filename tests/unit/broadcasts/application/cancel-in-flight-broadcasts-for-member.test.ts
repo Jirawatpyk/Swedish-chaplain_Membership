@@ -164,7 +164,7 @@ function makeDeps(overrides: {
       overrides.findByIdImpl ? overrides.findByIdImpl(broadcastId) : { broadcastId, status: 'sending' },
     ),
     readAlreadySentEvidenceInTx: vi.fn(
-      async (_tx: unknown, _t: unknown, query: { memberId: string; broadcastId: string | null }) => {
+      async (_tx: unknown, query: { memberId: string; broadcastId: string | null }) => {
         // Read on the emit's tx, or a concurrent re-drive could slip between them.
         calls.push(`evidence:${query.broadcastId ?? 'count'}${openTx > 0 ? '' : ':no-tx'}`);
         if (query.broadcastId === null && overrides.evidenceCountThrows === true) throw new Error('Neon: count failed');
@@ -851,7 +851,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
       expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 2, resendDraftsCleared: 0, resendCopiesRetained: 0, deferredCount: 0, audienceOrphansStuckCount: 0 } });
       expect(deps.calls).toEqual(['evidence:count']);
-      expect(deps.broadcastsRepo.readAlreadySentEvidenceInTx).toHaveBeenCalledWith(expect.anything(), tenant.slug, { memberId, broadcastId: null });
+      expect(deps.broadcastsRepo.readAlreadySentEvidenceInTx).toHaveBeenCalledWith(expect.anything(), { memberId, broadcastId: null });
     });
 
     it('P7 — the archive mode never reads the evidence: its count is 0', async () => {
