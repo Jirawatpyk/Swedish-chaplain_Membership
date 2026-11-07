@@ -23,7 +23,6 @@
 import { describe, expect, it } from 'vitest';
 import { drizzle } from 'drizzle-orm/pg-proxy';
 
-import { bindTenantTx } from '@/lib/db';
 import { AuditPortInvariantError, type AudienceDeletedEmitInput } from '@/modules/broadcasts/application/ports/audit-port';
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
@@ -40,12 +39,7 @@ interface RecordingTx {
   probes(): number;
 }
 
-/**
- * A tx whose GUC answers `tenant` on every probe; every other read finds
- * nothing. A tx with a tenant is registered with `bindTenantTx`, as
- * `runInTenant` registers every tx it opens; one with none is not, like the
- * bare `db` singleton.
- */
+/** A tx whose GUC answers `tenant` on every probe; every other read finds nothing. */
 function recordingTx(tenant: string | null): RecordingTx {
   const sent: Array<{ sql: string; params: readonly unknown[] }> = [];
   const tx = drizzle(async (sqlText, params) => {
@@ -55,7 +49,6 @@ function recordingTx(tenant: string | null): RecordingTx {
     if (/SELECT EXISTS/i.test(sqlText)) return { rows: [{ found: false }] };
     return { rows: [] };
   });
-  if (tenant !== null) bindTenantTx(tx, tenant);
   return { tx, sent, probes: () => sent.filter((s) => s.sql.includes(PROBE)).length };
 }
 
