@@ -318,13 +318,23 @@ describe('spec 143 TT1 — the deleted-row index text comes from audience-audit-
   const code = (rel: string) => stripComments(readFileSync(join(root, rel), 'utf8'));
   const ADAPTER = 'src/modules/broadcasts/infrastructure/audit-adapter.ts';
   const REPO = 'src/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo.ts';
+  /**
+   * This index's text, anywhere in the two files (review round 1,
+   * code-review #6: its own key, predicate and name, in literal and bound
+   * spellings, not every `ON CONFLICT`).
+   */
   const INLINE: readonly RegExp[] = [
     /payload\s*->>\s*'resend_audience_id'/,
-    /event_type\s*=\s*'broadcast_audience_deleted'/,
-    /ON CONFLICT\s*\(/,
+    /event_type\s*=\s*(?:'|\$\{\s*['"`])broadcast_audience_deleted/,
+    /ON CONFLICT\s+ON CONSTRAINT\s+"?audit_log_audience_deleted_once/,
+    /ON CONFLICT\s*\(\s*tenant_id\s*,\s*\(?\s*payload/,
   ];
-  /** What emitOnce's body and the existence read's body must not contain. */
-  const IN_BODY: readonly RegExp[] = INLINE;
+  /**
+   * What emitOnce's body and the existence read's body must not contain: the
+   * above, and the payload key as a bound parameter (`payload->>${...}`), which
+   * `findAudienceDisclosureInTx` legitimately uses for the disclosed rows.
+   */
+  const IN_BODY: readonly RegExp[] = [...INLINE, /payload\s*->>\s*\$\{/];
 
   /** The source of the repo method `name`, from its declaration to the next method's. */
   function methodBody(src: string, name: string, next: string): string {
@@ -343,7 +353,8 @@ describe('spec 143 TT1 — the deleted-row index text comes from audience-audit-
 
   it('the scan finds the inline text it forbids (positive control)', () => {
     const inline = stripComments(
-      "sql`ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE event_type = 'broadcast_audience_deleted'`",
+      "sql`ON CONFLICT (tenant_id, (payload->>'resend_audience_id')) WHERE event_type = 'broadcast_audience_deleted'` " +
+        'sql`ON CONFLICT ON CONSTRAINT audit_log_audience_deleted_once`',
     );
     for (const re of INLINE) expect(re.test(inline)).toBe(true);
     const commented = stripComments("/* ON CONFLICT (tenant_id) */\n// event_type = 'broadcast_audience_deleted'");
@@ -374,6 +385,11 @@ describe('spec 143 TT1 — the deleted-row index text comes from audience-audit-
     expect(src).toMatch(/from '\.\/db\/audience-audit-index'/);
     expect(src).toContain('ON CONFLICT ${sql.raw(AUDIENCE_DELETED_KEY_SQL)} WHERE ${sql.raw(AUDIENCE_DELETED_PREDICATE_SQL)} DO NOTHING');
     for (const re of INLINE) expect(src).not.toMatch(re);
+    const from = src.indexOf('async emitOnce(');
+    const to = src.indexOf('\n};', from);
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    for (const re of IN_BODY) expect(src.slice(from, to)).not.toMatch(re);
   });
 
   it('the existence read splices the predicate and the key expression, and the repo writes neither inline', () => {
@@ -384,5 +400,6 @@ describe('spec 143 TT1 — the deleted-row index text comes from audience-audit-
     expect(body).toContain('AND ${sql.raw(AUDIENCE_DELETED_PREDICATE_SQL)}');
     expect(body).toContain('AND ${sql.raw(AUDIENCE_DELETED_ID_EXPR_SQL)} = ${resendAudienceId}::text');
     for (const re of INLINE) expect(src).not.toMatch(re);
+    for (const re of IN_BODY) expect(body).not.toMatch(re);
   });
 });
