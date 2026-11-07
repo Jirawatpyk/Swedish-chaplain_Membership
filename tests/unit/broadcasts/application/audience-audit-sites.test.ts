@@ -323,6 +323,8 @@ describe('spec 143 TT1 — the deleted-row index text comes from audience-audit-
     /event_type\s*=\s*'broadcast_audience_deleted'/,
     /ON CONFLICT\s*\(/,
   ];
+  /** What emitOnce's body and the existence read's body must not contain. */
+  const IN_BODY: readonly RegExp[] = INLINE;
 
   /** The source of the repo method `name`, from its declaration to the next method's. */
   function methodBody(src: string, name: string, next: string): string {
@@ -346,6 +348,25 @@ describe('spec 143 TT1 — the deleted-row index text comes from audience-audit-
     for (const re of INLINE) expect(re.test(inline)).toBe(true);
     const commented = stripComments("/* ON CONFLICT (tenant_id) */\n// event_type = 'broadcast_audience_deleted'");
     expect(INLINE.some((re) => re.test(commented))).toBe(false);
+  });
+
+  // Review round 1 (code-review #6): the scan is about this index's text, in
+  // its bound-parameter spellings too, and not about every ON CONFLICT.
+  it.each([
+    ['a bound predicate', "sql`WHERE event_type = ${'broadcast_audience_deleted'}::audit_event_type`"],
+    ['the index named as a constraint', 'sql`ON CONFLICT ON CONSTRAINT audit_log_audience_deleted_once DO NOTHING`'],
+    ['a key with a bound payload key', 'sql`ON CONFLICT (tenant_id, (payload->>${k})) DO NOTHING`'],
+  ])('catch case: %s is inline index text', (_name, fixture) => {
+    expect(INLINE.some((re) => re.test(stripComments(fixture)))).toBe(true);
+  });
+
+  it("catch case: a bound key inside emitOnce's or the existence read's body is inline index text", () => {
+    expect(IN_BODY.some((re) => re.test('AND payload->>${keys.resendAudienceId}::text = ${resendAudienceId}::text'))).toBe(true);
+  });
+
+  it("another table's ON CONFLICT, or another event's predicate, is not this index's text", () => {
+    expect(INLINE.some((re) => re.test('sql`INSERT INTO t (id) VALUES (${id}) ON CONFLICT (id) DO NOTHING`'))).toBe(false);
+    expect(INLINE.some((re) => re.test("sql`WHERE event_type = 'broadcast_audience_disclosed'`"))).toBe(false);
   });
 
   it("emitOnce's ON CONFLICT splices the key and the predicate, and the adapter writes neither inline", () => {
