@@ -10,28 +10,25 @@
  * fallback is the bare `<RenewalsSectionTabs>` (no badges) so it stays off the
  * blocking render and is CLS-safe (only the badges appear once resolved).
  *
- * Reuses EXISTING reads — no new use-case or repo method is authored:
+ * Each badge is a TRUE count (#765), never the length of a capped list read:
  *
- *   - `pendingReviewCount` — `loadPendingReactivationReview` (same use-case the
- *     "Pending review" view itself renders from). The badge uses the HONEST
- *     open-count (`countOpenPendingReviewCycles`, shipped in #301): cycles that
- *     carry the async reject-with-refund marker are already decided and render
- *     read-only, so counting them would overstate the badge.
+ *   - `pendingReviewCount` — `cyclesRepo.countPendingReview().open`: the same
+ *     set the "Pending review" view lists (erased members excluded), minus the
+ *     cycles that carry the async reject-with-refund marker — those are already
+ *     decided and render read-only, so counting them would overstate the badge.
  *   - `tasksCount` — `escalationTaskRepo.countMatching` with the SAME
  *     `statusFilter: ['open']` shape the Tasks page's overdue-banner count uses
  *     (without the overdue-only narrowing) — the total open-task queue size.
- *   - `tierUpgradeCount` — `tierUpgradeRepo.listForAdminQueue` (the exact call
- *     the Tier-upgrades page makes), taking `.items.length` — bounded by the
- *     same `limit: 50` the page itself uses.
+ *   - `tierUpgradeCount` — `tierUpgradeRepo.countForAdminQueue`, the same set
+ *     the Tier-upgrades queue pages through.
  *
  * The three reads run concurrently via `Promise.allSettled` so ONE load failure
  * degrades ONLY that badge to hidden (count 0) rather than blanking all three —
  * each rejection is logged with a distinct errorId for SRE triage.
  */
 import { logger } from '@/lib/logger';
-import { loadPendingReactivationReview, makeRenewalsDeps } from '@/modules/renewals';
+import { makeRenewalsDeps } from '@/modules/renewals';
 import { RenewalsSectionTabs } from './renewals-section-tabs';
-import { countOpenPendingReviewCycles } from '../_lib/pending-review-open-count';
 
 export interface SectionTabCounts {
   readonly pendingReviewCount: number;
@@ -66,23 +63,20 @@ export async function loadSectionTabCounts(
   const deps = makeRenewalsDeps(tenantSlug);
   const [pendingReviewResult, tasksResult, tierUpgradeResult] =
     await Promise.allSettled([
-      loadPendingReactivationReview(deps, { tenantId: tenantSlug }),
+      // #765 — true counts, not the length of a capped list read.
+      deps.cyclesRepo.countPendingReview(tenantSlug),
       deps.escalationTaskRepo.countMatching(tenantSlug, {
         statusFilter: ['open'],
       }),
-      deps.tierUpgradeRepo.listForAdminQueue(tenantSlug, { limit: 50 }),
+      deps.tierUpgradeRepo.countForAdminQueue(tenantSlug),
     ]);
 
   let pendingReviewCount = 0;
   if (pendingReviewResult.status === 'fulfilled') {
-    if (pendingReviewResult.value.ok) {
-      // Count only cycles still awaiting a decision. Cycles carrying the async
-      // reject-with-refund marker are ALREADY decided (rejected; refund
-      // settling) and render read-only, so counting them overstates the badge.
-      pendingReviewCount = countOpenPendingReviewCycles(
-        pendingReviewResult.value.value.cycles,
-      );
-    }
+    // Count only cycles still awaiting a decision. Cycles carrying the async
+    // reject-with-refund marker are ALREADY decided (rejected; refund
+    // settling) and render read-only, so counting them overstates the badge.
+    pendingReviewCount = pendingReviewResult.value.open;
   } else {
     logger.error(
       {
@@ -116,7 +110,7 @@ export async function loadSectionTabCounts(
 
   let tierUpgradeCount = 0;
   if (tierUpgradeResult.status === 'fulfilled') {
-    tierUpgradeCount = tierUpgradeResult.value.items.length;
+    tierUpgradeCount = tierUpgradeResult.value;
   } else {
     logger.error(
       {

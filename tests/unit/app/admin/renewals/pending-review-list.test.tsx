@@ -43,7 +43,7 @@ vi.mock('@/lib/toast', () => ({
 }));
 function renderList(
   rows: ReadonlyArray<PendingReviewRow>,
-  props?: { canApprove?: boolean },
+  props?: { canApprove?: boolean; totalCount?: number },
 ) {
   return render(
     <NextIntlClientProvider
@@ -54,7 +54,11 @@ function renderList(
           as the focus-return landmark; mirror it so the finalFocus resolver's
           `document.getElementById('main-content')` fallback resolves. */}
       <main id="main-content" tabIndex={-1} />
-      <PendingReviewList rows={rows} canApprove={props?.canApprove ?? false} />
+      <PendingReviewList
+        rows={rows}
+        canApprove={props?.canApprove ?? false}
+        {...(props?.totalCount !== undefined ? { totalCount: props.totalCount } : {})}
+      />
     </NextIntlClientProvider>,
   );
 }
@@ -410,5 +414,25 @@ describe('<PendingReviewList> on AURA', () => {
   it('the empty list is an AURA empty state', () => {
     renderList([]);
     expect(screen.getByText('Nothing awaiting review').closest('.aura-empty')).not.toBeNull();
+  });
+});
+
+// #765 — the list still shows its first rows only, but never hides the rest
+// silently: when the queue is longer, a notice gives the true total.
+describe('<PendingReviewList> — capped list notice (#765)', () => {
+  it('says how many of the total are shown when the queue is longer than the list', () => {
+    renderList([UNMARKED], { totalCount: 230 });
+    const notice = screen.getByTestId('pending-review-capped');
+    expect(notice).toHaveTextContent('Showing the first 1 of 230');
+  });
+
+  it('shows no notice when every cycle is listed', () => {
+    renderList([UNMARKED, MARKED], { totalCount: 2 });
+    expect(screen.queryByTestId('pending-review-capped')).toBeNull();
+  });
+
+  it('shows no notice when the count is unknown', () => {
+    renderList([UNMARKED]);
+    expect(screen.queryByTestId('pending-review-capped')).toBeNull();
   });
 });

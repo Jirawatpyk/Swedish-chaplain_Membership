@@ -503,7 +503,7 @@ export interface RenewalCycleRepo {
    * badge and the "showing the first N of M" notice. The same set the queue
    * lists (`pending_admin_reactivation`, GDPR-erased members excluded);
    * `open` drops the cycles whose reject-with-refund already started (decided,
-   * refund settling — `countOpenPendingReviewCycles`'s rule, now in SQL).
+   * refund settling: they render read-only, so the badge leaves them out).
    */
   countPendingReview(
     tenantId: string,

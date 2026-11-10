@@ -169,6 +169,11 @@ export default async function MemberDetailPage({
     const n = Number.parseInt(invYearRaw, 10);
     return Number.isFinite(n) && n >= 2020 && n <= 2100 ? n : undefined;
   })();
+  // #765 — the invoices card pages 20 at a time; a bad or missing value is page 1.
+  const invPage = (() => {
+    const raw = typeof sp.invPage === 'string' ? Number.parseInt(sp.invPage, 10) : Number.NaN;
+    return Number.isInteger(raw) && raw >= 1 ? raw : 1;
+  })();
   const invQ = (() => {
     if (!invQRaw) return undefined;
     const trimmed = invQRaw.trim().slice(0, 64);
@@ -504,6 +509,7 @@ export default async function MemberDetailPage({
             statusFilter={invStatus}
             fiscalYearFilter={invYear}
             searchFilter={invQ}
+            page={invPage}
           />
         </Suspense>
       ) : null,

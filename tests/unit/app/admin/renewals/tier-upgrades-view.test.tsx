@@ -52,4 +52,29 @@ describe('renderTierUpgradesView', () => {
     expect(alert).toHaveTextContent(T.error_state.subtitle);
     expect(screen.getByRole('button', { name: T.error_state.retry })).toBeInTheDocument();
   });
+
+  // #765 — the queue pages by a cursor; the pager sits under the queue and
+  // goes away with it when the read fails.
+  it('puts the pager under the queue, and drops it when the read failed', async () => {
+    const { rerender } = await renderView({
+      sectionTabs: null,
+      queue: <p>QUEUE</p>,
+      pagination: <nav aria-label="PAGER" />,
+    });
+    const queue = screen.getByText('QUEUE');
+    const pager = screen.getByRole('navigation', { name: 'PAGER' });
+    expect(queue.compareDocumentPosition(pager) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const failed = (await renderTierUpgradesView({
+      sectionTabs: null,
+      queue: null,
+      loadFailed: true,
+      pagination: <nav aria-label="PAGER" />,
+    })) as ReactElement;
+    rerender(
+      <NextIntlClientProvider locale="en" messages={en}>
+        {failed}
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByRole('navigation', { name: 'PAGER' })).toBeNull();
+  });
 });

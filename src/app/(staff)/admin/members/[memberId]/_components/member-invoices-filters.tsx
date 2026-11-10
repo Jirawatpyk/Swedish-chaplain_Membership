@@ -18,6 +18,7 @@ import { useCallback, useMemo, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button, Select, TextField } from '@jirawatpyk/aura-react';
+import { MEMBER_INVOICES_PAGE_PARAM } from './member-invoices-pagination';
 
 const STATUSES = [
   'all',
@@ -58,6 +59,8 @@ export function MemberInvoicesFilters() {
       else next.delete('invStatus');
       if (nextYear.trim()) next.set('invYear', nextYear.trim());
       else next.delete('invYear');
+      // #765 — a new filter starts the card's pager again at page 1.
+      next.delete(MEMBER_INVOICES_PAGE_PARAM);
       const qs = next.toString();
       startTransition(() => {
         router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });

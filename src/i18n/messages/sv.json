@@ -1793,6 +1793,9 @@
           "statusLabel": "Status"
         },
         "draftPlaceholder": "(utkast)",
+        "pagination": {
+          "label": "Fakturasidor"
+        },
         "cols": {
           "number": "Nummer",
           "status": "Status",
@@ -4386,6 +4389,7 @@
         "sectionSubtitle": "Dessa medlemmar betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Öppna varje post för att godkänna eller avslå med återbetalning.",
         "emptyTitle": "Inget väntar på granskning",
         "emptyDescription": "Inga återaktiveringar väntar för närvarande på ett administratörsbeslut.",
+        "cappedNotice": "Visar de första {shown} av {total}, med tidigast utgångsdatum först. Fatta beslut om dessa för att se resten.",
         "backToPipeline": "Tillbaka till pipelinen",
         "columns": {
           "member": "Medlem",
@@ -4782,6 +4786,11 @@
         "needsActionCountSr": "{count, plural, one {# medlem kräver åtgärd} other {# medlemmar kräver åtgärd}}"
       },
       "atRisk": {
+        "showMore": {
+          "action": "Visa fler",
+          "failed": "Det gick inte att läsa in fler medlemmar.",
+          "shown": "Visar {shown} av {total}"
+        },
         "title": "Medlemmar i riskzon",
         "help": {
           "ariaLabel": "Om medlemmar i riskzon",
@@ -5094,6 +5103,10 @@
         "title": "Kö för medlemsnivåhöjning",
         "subtitle": "Medlemmar som kvalificerar för en uppgradering baserat på deklarerad omsättning eller betalda fakturor.",
         "tableCaption": "Lista över medlemmar som kvalificerar för en nivåhöjning.",
+        "pagination": {
+          "label": "Sidor med förslag om nivåhöjning",
+          "showingFirst": "Visar 50 per sida"
+        },
         "fee_excl_vat": "{fee} exkl. moms",
         "fees_exclude_vat": "Avgifterna anges exklusive moms.",
         "breadcrumbs": {

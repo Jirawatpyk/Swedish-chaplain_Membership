@@ -32,6 +32,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import {
+  Alert,
   Badge,
   Button,
   EmptyState,
@@ -95,6 +96,12 @@ export interface PendingReviewListProps {
    * an Approve CTA that would just 403 at the (admin-only) reactivate route.
    */
   readonly canApprove?: boolean;
+  /**
+   * #765 — the TRUE size of the queue. The list shows its first rows only
+   * (oldest expiry first, `PENDING_REVIEW_DEFAULT_PAGE_SIZE`), so when the
+   * queue is longer a notice says so instead of hiding the rest silently.
+   */
+  readonly totalCount?: number;
 }
 
 /** B2 — an inline-Approve launch target: which cycle + the row's focus resolver. */
@@ -106,6 +113,7 @@ interface ApproveTarget {
 export function PendingReviewList({
   rows,
   canApprove = false,
+  totalCount,
 }: PendingReviewListProps) {
   const t = useTranslations('admin.renewals.pendingReview');
   // B2 — reuse the cycle-detail Approve copy VERBATIM so the wording stays
@@ -228,6 +236,13 @@ export function PendingReviewList({
 
   return (
     <>
+      {totalCount !== undefined && totalCount > rows.length ? (
+        <div className="mb-[var(--aura-space-3)]">
+          <Alert tone="info" role="note" data-testid="pending-review-capped">
+            {t('cappedNotice', { shown: rows.length, total: totalCount })}
+          </Alert>
+        </div>
+      ) : null}
       <Table
         caption={t('sectionTitle')}
         captionHidden

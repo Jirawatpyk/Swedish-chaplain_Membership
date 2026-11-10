@@ -1793,6 +1793,9 @@
           "statusLabel": "Status"
         },
         "draftPlaceholder": "(draft)",
+        "pagination": {
+          "label": "Invoice pages"
+        },
         "cols": {
           "number": "Number",
           "status": "Status",
@@ -4386,6 +4389,7 @@
         "sectionSubtitle": "These members paid to reactivate a lapsed membership but auto-reactivation is blocked. Open each one to approve or reject with a refund.",
         "emptyTitle": "Nothing awaiting review",
         "emptyDescription": "No reactivations are currently pending an admin decision.",
+        "cappedNotice": "Showing the first {shown} of {total}, the oldest expiry first. Decide these to see the rest.",
         "backToPipeline": "Back to pipeline",
         "columns": {
           "member": "Member",
@@ -4782,6 +4786,11 @@
         "needsActionCountSr": "{count, plural, one {# member needs action} other {# members need action}}"
       },
       "atRisk": {
+        "showMore": {
+          "action": "Show more",
+          "failed": "Couldn't load more members.",
+          "shown": "Showing {shown} of {total}"
+        },
         "title": "At-risk members",
         "help": {
           "ariaLabel": "About at-risk members",
@@ -5094,6 +5103,10 @@
         "title": "Tier upgrade queue",
         "subtitle": "Members eligible for an upgrade based on declared turnover or paid invoice volume.",
         "tableCaption": "List of members eligible for a tier upgrade.",
+        "pagination": {
+          "label": "Tier-upgrade suggestion pages",
+          "showingFirst": "Showing 50 per page"
+        },
         "fee_excl_vat": "{fee} excl. VAT",
         "fees_exclude_vat": "Fees exclude VAT.",
         "breadcrumbs": {

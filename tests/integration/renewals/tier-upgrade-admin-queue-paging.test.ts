@@ -137,8 +137,8 @@ describe('#765 — tier-upgrade admin queue keyset paging (live Neon)', () => {
 
   beforeAll(async () => {
     admin = await createActiveTestUser('admin');
-    a = await createTestTenant('test-tierq-a');
-    b = await createTestTenant('test-tierq-b');
+    a = await createTestTenant();
+    b = await createTestTenant();
     await seedPlans(a, admin);
     await seedPlans(b, admin);
     seeded = await seedSuggestions(a, 55);

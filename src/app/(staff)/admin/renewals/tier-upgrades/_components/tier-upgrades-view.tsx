@@ -20,9 +20,16 @@ export interface TierUpgradesViewProps {
   readonly queue: ReactNode;
   /** The queue read failed: say so rather than show an empty queue (I-UX-1). */
   readonly loadFailed?: boolean;
+  /** #765 — the cursor pager under the queue, when there is more than one page. */
+  readonly pagination?: ReactNode;
 }
 
-export async function renderTierUpgradesView({ sectionTabs, queue, loadFailed = false }: TierUpgradesViewProps) {
+export async function renderTierUpgradesView({
+  sectionTabs,
+  queue,
+  loadFailed = false,
+  pagination = null,
+}: TierUpgradesViewProps) {
   const t = await getTranslations('admin.renewals.tier_upgrades');
   return (
     // One card on a desktop (board Admin-tier-upgrades); on a phone the rows
@@ -42,7 +49,10 @@ export async function renderTierUpgradesView({ sectionTabs, queue, loadFailed = 
             {t('error_state.subtitle')}
           </Alert>
         ) : (
-          queue
+          <>
+            {queue}
+            {pagination}
+          </>
         )}
       </div>
     </Card>
