@@ -1232,24 +1232,29 @@ test.describe(
       test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
 
       await openQueueAndSelectBoth(page);
-      await page
+      // A handle, not a locator: once the trigger is inert a role locator no
+      // longer finds it.
+      const trigger = await page
         .getByRole('region', { name: BULK_BAR })
         .getByRole('button', { name: /approve selected/i })
-        .click();
+        .elementHandle();
+      await trigger!.click();
 
       const dialog = page.getByRole('alertdialog');
       await expect(dialog).toBeVisible({ timeout: 5_000 });
 
-      // The scan covers the dialog this case is about. AURA's modal Dialog
-      // leaves the page behind it un-inert, so a whole-page scan also read the
-      // queue behind the scrim: on the real queue axe flags the Stage filter
-      // chips against the top bar's ⌘K search (target-size / target-offset,
-      // red on main since R143; R144), and on the fixture a row button the
-      // sticky bulk bar covers. That page is scanned with no dialog open in broadcast-axe
-      // (admin queue) and in the other scans in this file;
-      // the inert background is AURA #206.
+      // A whole-page scan with the dialog open. Since AURA 5.88 (#206) the page
+      // behind a modal is `inert` (applied at the next idle moment, ≤ 200 ms),
+      // so axe no longer reaches the queue behind the scrim (R143/R144: the
+      // Stage chips against ⌘K, a row button under the bulk bar). Wait for the
+      // background to go inert before scanning. AURA keeps live regions (the
+      // bulk bar's status line, the queue's status) and inerts their siblings
+      // instead, so `#main-content` itself is never inert: wait on the
+      // trigger, a sibling of the kept status line.
+      await expect
+        .poll(() => trigger!.evaluate((el) => el.closest('[inert]') !== null))
+        .toBe(true);
       const results = await new AxeBuilder({ page })
-        .include('[role="alertdialog"]')
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
         .analyze();
       expect(results.violations).toEqual([]);

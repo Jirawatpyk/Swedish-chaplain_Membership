@@ -431,6 +431,11 @@ export function PaySheet({
         onClose={() => handleOpenChange(false)}
         side="right"
         size="md"
+        // AURA 5.88 makes the page behind an open Drawer inert (#206). Stripe's
+        // 3-D Secure challenge is a body-level layer (`data-react-aria-top-layer`,
+        // R145); 5.89 keeps late body nodes and Stripe frames live, and this
+        // names the layer here too, on the money screen (handoff addendum 109).
+        keepOutside="[data-react-aria-top-layer]"
         title={t('title')}
         description={
           <span className="block truncate font-mono text-xs">
