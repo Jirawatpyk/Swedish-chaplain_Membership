@@ -11,9 +11,10 @@
  * `#member-invoices-heading` so following it lands on this card, which sits
  * far down the member page, not at the top.
  */
-import { useEffect } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
-import { Pagination } from '@jirawatpyk/aura-react';
+import { useEffect, useTransition } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Pagination, Spinner } from '@jirawatpyk/aura-react';
+import { useTranslations } from 'next-intl';
 
 export const MEMBER_INVOICES_PAGE_PARAM = 'invPage';
 export const MEMBER_INVOICES_ANCHOR = 'member-invoices-heading';
@@ -37,6 +38,12 @@ export function MemberInvoicesPagination({
 }): React.ReactElement {
   const pathname = usePathname();
   const params = useSearchParams();
+  const router = useRouter();
+  const t = useTranslations('admin.members.invoices.pagination');
+  // #85 — the card sits in a Suspense with no key, so on a page change React
+  // keeps the old card and shows no fallback: a slow click looked dead. The
+  // link is followed in a transition, and the pager says so while it runs.
+  const [pending, startTransition] = useTransition();
   const getHref = (target: number): string => {
     const next = new URLSearchParams(params.toString());
     if (target <= 1) next.delete(MEMBER_INVOICES_PAGE_PARAM);
@@ -54,14 +61,39 @@ export function MemberInvoicesPagination({
     if (!heading) return;
     if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
     heading.focus({ preventScroll: true });
+    // The link is followed with `scroll: false`, so bring the card's heading
+    // into view here (the hash would have, on a full navigation).
+    heading.scrollIntoView?.({ block: 'start' });
   }, [page]);
   return (
     <div
+      aria-busy={pending || undefined}
+      className="flex flex-col items-center gap-[var(--aura-space-2)]"
       onClickCapture={(e) => {
-        if ((e.target as HTMLElement).closest('a[href]')) focusHeadingOnRender = true;
+        const link = (e.target as HTMLElement).closest('a[href]');
+        if (!link) return;
+        focusHeadingOnRender = true;
+        // A modified click (new tab, new window) keeps the browser's own handling.
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        e.preventDefault();
+        const href = link.getAttribute('href');
+        if (href) startTransition(() => router.push(href, { scroll: false }));
       }}
     >
       <Pagination pageCount={pageCount} page={page} getHref={getHref} label={label} />
+      {/* Polite, mounted before its text changes (WCAG 4.1.3). */}
+      <span
+        role="status"
+        data-testid="member-invoices-page-loading"
+        className="inline-flex items-center gap-[var(--aura-space-2)] text-sm text-[var(--aura-fg-secondary)]"
+      >
+        {pending ? (
+          <>
+            <Spinner size="sm" />
+            {t('loading')}
+          </>
+        ) : null}
+      </span>
     </div>
   );
 }

@@ -805,7 +805,7 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     expect(results.violations).toEqual([]);
   });
 
-  test('axe-core WCAG 2.1/2.2 AA scan — fixed-bottom bulk toolbar, 1 row selected (plain tab order)', async ({
+  test('axe-core WCAG 2.1/2.2 AA scan — sticky bulk toolbar, 1 row selected (plain tab order)', async ({
     page,
   }) => {
     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
@@ -864,13 +864,19 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     await page.keyboard.press('Tab');
     await expect(approveButton).toBeFocused();
 
-    // Scan from the top of the page. Selecting the row scrolls it into view,
-    // and where that leaves the page decides whether the halt banner's button
-    // sits half under the sticky top bar — which axe then reports as
-    // `target-size` on the banner, not on this toolbar (R106, PR #693: the
-    // larger bar clearance moved the scroll on mobile-chrome). The toolbar is
-    // fixed, so it is scanned at any scroll position.
-    await page.evaluate(() => window.scrollTo(0, 0));
+    // Where the page sits decides what the two sticky bars cover. At scroll 0
+    // the Stage chips sit low in the 900px viewport and the bulk bar (AURA's
+    // floating sticky card from 640px) overlaps them, which axe reports as
+    // `target-size` on a chip (R143, R147). Mid-page scroll instead left the
+    // halt banner's button half under the sticky top bar (R106, PR #693). So
+    // bring the Stage chips to the middle of the viewport — clear of both bars,
+    // as a user sees them — before scanning. The toolbar is sticky, so it is
+    // scanned at any scroll position.
+    await page.evaluate(() => {
+      document
+        .querySelector('.aura-tag[data-status]')
+        ?.scrollIntoView({ block: 'center' });
+    });
     await expect(toolbar).toBeVisible();
 
     const results = await new AxeBuilder({ page })
