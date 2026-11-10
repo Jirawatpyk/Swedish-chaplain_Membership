@@ -17,6 +17,7 @@
  */
 import { useEffect } from 'react';
 import { Pagination, type CursorPaginationProps } from '@jirawatpyk/aura-react';
+import { isPlainClick } from '@/lib/plain-click';
 
 export type CursorPaginationLinksProps = Omit<
   CursorPaginationProps,
@@ -33,9 +34,10 @@ export type CursorPaginationLinksProps = Omit<
  */
 let followedHref: string | null = null;
 
-function withoutHash(href: string): string {
-  const i = href.indexOf('#');
-  return i === -1 ? href : href.slice(0, i);
+/** Path + query of an href, resolved against this page (relative or absolute). */
+function pathAndQuery(href: string): string {
+  const url = new URL(href, window.location.href);
+  return url.pathname + url.search;
 }
 
 export function CursorPagination({
@@ -45,7 +47,7 @@ export function CursorPagination({
   useEffect(() => {
     if (followedHref === null) return;
     const here = window.location.pathname + window.location.search;
-    const matches = withoutHash(followedHref) === here;
+    const matches = pathAndQuery(followedHref) === here;
     followedHref = null;
     if (!matches) return;
     const target = document.getElementById(focusTargetId);
@@ -58,7 +60,7 @@ export function CursorPagination({
     <div
       onClickCapture={(e) => {
         // A modified click opens another tab or window; this page stays put.
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        if (!isPlainClick(e)) return;
         const href = (e.target as HTMLElement).closest('a[href]')?.getAttribute('href');
         if (href) followedHref = href;
       }}

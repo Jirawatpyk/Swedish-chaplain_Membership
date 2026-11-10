@@ -50,10 +50,21 @@ describe('member invoices pager focus (#765)', () => {
 
   it('follows a page link client-side and says the page is loading meanwhile (#85)', () => {
     push.mockImplementation(() => new Promise(() => {}));
-    render(ui(2));
+    const { rerender } = render(ui(2));
     const link = screen.getByRole('navigation', { name: 'Invoice pages' }).querySelector('a[href*="invPage=3"]');
     fireEvent.click(link as HTMLElement);
     expect(push).toHaveBeenCalledWith(expect.stringContaining('invPage=3'), { scroll: false });
     expect(screen.getByTestId('member-invoices-page-loading')).toHaveTextContent(/loading/i);
+    rerender(ui(3)); // the navigation lands, which uses up the focus flag
+  });
+  it('ignores a click on the current page, so a later page change keeps focus put (#775)', () => {
+    const { rerender } = render(ui(2));
+    const current = screen.getByRole('navigation', { name: 'Invoice pages' }).querySelector('a[aria-current="page"]');
+    expect(current).not.toBeNull();
+    fireEvent.click(current as HTMLElement);
+    expect(push).not.toHaveBeenCalled();
+    // A filter change drops invPage: the page moves to 1 with no pager link followed.
+    rerender(ui(1));
+    expect(document.activeElement).toBe(document.body);
   });
 });

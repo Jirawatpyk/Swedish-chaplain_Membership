@@ -15,6 +15,7 @@ import { useEffect, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Pagination, Spinner } from '@jirawatpyk/aura-react';
 import { useTranslations } from 'next-intl';
+import { isPlainClick } from '@/lib/plain-click';
 
 export const MEMBER_INVOICES_PAGE_PARAM = 'invPage';
 export const MEMBER_INVOICES_ANCHOR = 'member-invoices-heading';
@@ -71,11 +72,14 @@ export function MemberInvoicesPagination({
         aria-busy={pending || undefined}
         onClickCapture={(e) => {
           // A modified click (new tab, new window) keeps the browser's own handling.
-          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+          if (!isPlainClick(e)) return;
           const link = (e.target as HTMLElement).closest('a[href]');
           const href = link?.getAttribute('href');
           if (!href) return;
           e.preventDefault();
+          // The current page's link changes nothing: arming the focus flag
+          // here would leave it set until a later filter change moved focus.
+          if (link?.getAttribute('aria-current') === 'page') return;
           focusHeadingOnRender = true;
           startTransition(() => router.push(href, { scroll: false }));
         }}
