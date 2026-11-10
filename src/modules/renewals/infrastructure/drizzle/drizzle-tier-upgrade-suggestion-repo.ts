@@ -10,7 +10,12 @@
  * Pure Infrastructure — only `@/lib/db` + tenants barrel imports
  * (Constitution Principle III).
  */
-import { and, eq, sql, desc, isNull, inArray } from 'drizzle-orm';
+import { and, eq, sql, desc, inArray } from 'drizzle-orm';
+import {
+  decodeTierQueueCursor,
+  encodeTierQueueCursor,
+  InvalidTierQueueCursorError,
+} from '../../application/lib/tier-queue-cursor';
 import { db, runInTenant } from '@/lib/db';
 import type { TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
@@ -197,6 +202,13 @@ function assertNonNull<T>(
 export function makeDrizzleTierUpgradeSuggestionRepo(
   tenant: TenantContext,
 ): TierUpgradeSuggestionRepo {
+  /**
+   * #765 — the admin queue's states, shared by `listForAdminQueue` and
+   * `countForAdminQueue` so the tab badge always counts the rows the queue
+   * pages through. Each caller fences `tenant_id` in its own `.where(`.
+   */
+  const ADMIN_QUEUE_STATES = sql`${tierUpgradeSuggestions.status} IN ('open','accepted_pending_apply')`;
+
   return {
     async insertOpen(
       tx: TenantTx,
@@ -551,16 +563,31 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
     },
 
     async listForAdminQueue(tenantId, args) {
+      // #765 — a real keyset page on `(created_at DESC, suggestion_id DESC)`.
+      // The next-page key is `created_at` as full-precision text (`to_char`,
+      // microseconds): a JS Date keeps only milliseconds and would repeat or
+      // drop rows sharing a millisecond at the boundary (PR #760 lesson).
+      const after =
+        args?.cursor !== undefined ? decodeTierQueueCursor(args.cursor) : null;
+      if (args?.cursor !== undefined && after === null) {
+        throw new InvalidTierQueueCursorError();
+      }
       return runInTenant(tenant, async (tx) => {
         const txDb = tx as unknown as typeof db;
         const limit = Math.min(Math.max(args?.limit ?? 50, 1), 200);
         const rows = await txDb
-          .select()
+          .select({
+            row: tierUpgradeSuggestions,
+            cursorKey: sql<string>`to_char(${tierUpgradeSuggestions.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+          })
           .from(tierUpgradeSuggestions)
           .where(
             and(
               eq(tierUpgradeSuggestions.tenantId, tenant.slug),
-              sql`${tierUpgradeSuggestions.status} IN ('open','accepted_pending_apply')`,
+              ADMIN_QUEUE_STATES,
+              after === null
+                ? undefined
+                : sql`(${tierUpgradeSuggestions.createdAt}, ${tierUpgradeSuggestions.suggestionId}) < (${after.createdAt}::timestamptz, ${after.suggestionId}::uuid)`,
             ),
           )
           .orderBy(
@@ -569,15 +596,29 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
           )
           .limit(limit + 1);
         void tenantId;
-        const items = rows.slice(0, limit).map(rowToDomain);
+        const kept = rows.slice(0, limit);
+        const last = kept[kept.length - 1];
         const nextCursor =
-          rows.length > limit ? rows[limit]!.suggestionId : null;
-        // Reference unused param to keep symmetry — cursor pagination
-        // is a Phase 7 polish item; for MVP queue size <50 the
-        // first-page response is sufficient.
-        void args;
-        void isNull;
-        return { items, nextCursor };
+          rows.length > limit && last !== undefined
+            ? encodeTierQueueCursor({
+                createdAt: last.cursorKey,
+                suggestionId: last.row.suggestionId,
+              })
+            : null;
+        return { items: kept.map((r) => rowToDomain(r.row)), nextCursor };
+      });
+    },
+
+    async countForAdminQueue(tenantId) {
+      // #765 — the Renewals tab badge; the same WHERE as the list above.
+      return runInTenant(tenant, async (tx) => {
+        const txDb = tx as unknown as typeof db;
+        const rows = await txDb
+          .select({ value: sql<number>`count(*)::int` })
+          .from(tierUpgradeSuggestions)
+          .where(and(eq(tierUpgradeSuggestions.tenantId, tenant.slug), ADMIN_QUEUE_STATES));
+        void tenantId;
+        return Number(rows[0]?.value ?? 0);
       });
     },
 

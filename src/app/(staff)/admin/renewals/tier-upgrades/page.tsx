@@ -21,7 +21,8 @@ import { logger } from '@/lib/logger';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
-import { makeRenewalsDeps } from '@/modules/renewals';
+import { decodeTierQueueCursor, makeRenewalsDeps } from '@/modules/renewals';
+import { CursorPagination } from '@/components/layout/cursor-pagination';
 import { TierUpgradeQueueClient } from './_components/tier-upgrade-queue';
 import { parseTierUpgradeEvidenceView } from './_lib/tier-upgrade-queue-item';
 import { renderTierUpgradesView } from './_components/tier-upgrades-view';
@@ -38,7 +39,15 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('title'), description: t('subtitle') };
 }
 
-export default async function TierUpgradeQueuePage() {
+/** #765 — the queue page size; the cursor pager takes over past it. */
+const QUEUE_PAGE_SIZE = 50;
+const QUEUE_PATH = '/admin/renewals/tier-upgrades';
+
+export default async function TierUpgradeQueuePage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   if (!env.features.f8Renewals) {
     notFound();
   }
@@ -60,13 +69,21 @@ export default async function TierUpgradeQueuePage() {
   let queueItems: Awaited<
     ReturnType<typeof deps.tierUpgradeRepo.listForAdminQueue>
   >['items'] = [];
+  // #765 — a real keyset cursor; one that doesn't decode (a stale or edited
+  // link) falls back to the first page rather than an error.
+  const sp = (await searchParams) ?? {};
+  const rawCursor = typeof sp['cursor'] === 'string' ? sp['cursor'] : undefined;
+  const cursor =
+    rawCursor !== undefined && decodeTierQueueCursor(rawCursor) !== null ? rawCursor : undefined;
+  let nextCursor: string | null = null;
   let hasError = false;
   try {
     const queue = await deps.tierUpgradeRepo.listForAdminQueue(
       tenantCtx.slug,
-      { limit: 50 },
+      { limit: QUEUE_PAGE_SIZE, ...(cursor !== undefined ? { cursor } : {}) },
     );
     queueItems = queue.items;
+    nextCursor = queue.nextCursor;
   } catch (e) {
     // Phase 7 review-fix I-UX-1: render explicit error state instead of
     // silently rendering empty-state copy (which would mislead admin
@@ -163,6 +180,20 @@ export default async function TierUpgradeQueuePage() {
       </Suspense>
     ),
     loadFailed: hasError,
+    pagination:
+      hasError || (nextCursor === null && cursor === undefined) ? null : (
+        <CursorPagination
+          label={t('pagination.label')}
+          showFirst
+          showPrevious={false}
+          firstHref={cursor !== undefined ? QUEUE_PATH : undefined}
+          hasFirst={cursor !== undefined}
+          status={t('pagination.showingFirst', { count: QUEUE_PAGE_SIZE })}
+          nextHref={
+            nextCursor !== null ? `${QUEUE_PATH}?cursor=${encodeURIComponent(nextCursor)}` : undefined
+          }
+        />
+      ),
     queue: hasError ? null : (
       <TierUpgradeQueueClient
         items={queueItems.map((s) => {

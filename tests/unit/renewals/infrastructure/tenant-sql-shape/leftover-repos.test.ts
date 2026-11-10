@@ -38,6 +38,7 @@ const {
 const { makeDrizzleTierUpgradeSuggestionRepo } = await import(
   '@/modules/renewals/infrastructure/drizzle/drizzle-tier-upgrade-suggestion-repo'
 );
+const { encodeTierQueueCursor } = await import('@/modules/renewals');
 const { makeDrizzlePlanLookupForRenewal } = await import(
   '@/modules/renewals/infrastructure/ports-adapters/plan-lookup-for-renewal-drizzle'
 );
@@ -79,10 +80,23 @@ describe('renewals leftovers — tenant predicate on every statement (130 s7)', 
       transitionStatus: [tx, T, 'suggestion-1', anyWith({ to: 'dismissed', expectedFrom: 'open', expectedFromIn: undefined })],
       listOrphanedPending: [T],
       listForAdminQueue: [T, { limit: 10 }],
+      // #765 — the keyset page and the count share the list's WHERE.
+      countForAdminQueue: [T],
       bulkGetSuppressedMembers: [tx, ['member-1'], '2026-01-01T00:00:00.000Z'],
       bulkInsertOpenIfAbsent: [tx, [ANY]],
     });
     expect(rec.statements.length).toBeGreaterThanOrEqual(10);
+    expect(violationsOf(rec.statements)).toEqual([]);
+  });
+
+  it('tier-upgrade admin queue — the keyset page after a cursor is fenced too', async () => {
+    rec.statements.length = 0;
+    const cursor = encodeTierQueueCursor({
+      createdAt: '2026-11-10T03:04:05.123456Z',
+      suggestionId: '0b5f6a8e-2d47-4c1a-9f3e-7a1b2c3d4e5f',
+    });
+    await makeDrizzleTierUpgradeSuggestionRepo(CTX).listForAdminQueue(T, { limit: 10, cursor });
+    expect(rec.statements.length).toBeGreaterThanOrEqual(1);
     expect(violationsOf(rec.statements)).toEqual([]);
   });
 

@@ -16,7 +16,7 @@ import {
   successResponse,
   requireRenewalAdminContext,
 } from '@/lib/renewals-route-helpers';
-import { makeRenewalsDeps } from '@/modules/renewals';
+import { decodeTierQueueCursor, makeRenewalsDeps } from '@/modules/renewals';
 
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
@@ -76,6 +76,16 @@ export async function GET(request: NextRequest) {
   const limit = Number.isFinite(rawLimit)
     ? Math.min(Math.max(rawLimit, 1), MAX_LIMIT)
     : DEFAULT_LIMIT;
+
+  // #765 — the cursor is a real keyset now; one this route can't decode
+  // (including the old row-id cursor) is a client error, not a first page.
+  if (cursorParam !== null && decodeTierQueueCursor(cursorParam) === null) {
+    return errorResponse({
+      status: 400,
+      code: 'invalid_cursor',
+      correlationId: ctx.correlationId,
+    });
+  }
 
   try {
     const queue = await deps.tierUpgradeRepo.listForAdminQueue(

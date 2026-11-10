@@ -686,6 +686,14 @@ export {
   type ReconcilePendingReactivationsError,
 } from './application/use-cases/reconcile-pending-reactivations';
 
+// #765 — the tier-upgrade admin queue's keyset cursor (route, page, repo).
+export {
+  decodeTierQueueCursor,
+  encodeTierQueueCursor,
+  InvalidTierQueueCursorError,
+  type TierQueueCursorKey,
+} from './application/lib/tier-queue-cursor';
+
 // 070 F8 item #18 — read-only "Pending review" discovery list for the
 // `/admin/renewals` dashboard.
 export {

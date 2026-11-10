@@ -126,6 +126,24 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
   // own snapshot ref handed to `SnoozeDialog` as `finalFocus`.
   const snoozeTriggerRef = useRef<HTMLButtonElement | null>(null);
 
+  // #765 — "Show more": the band's next 20 rows, appended, from the API's
+  // own `next_cursor` (the tab counts were already true; only the rows were
+  // capped at 20). Cleared on a band change, and keyed per band + load so a
+  // late response from another band or load is dropped.
+  const loadKey = `${activeBand}:${refetchKey}`;
+  const [more, setMore] = useState<{
+    key: string;
+    items: ReadonlyArray<ApiRow>;
+    cursor: string | null;
+    pending: boolean;
+    failed: boolean;
+  } | null>(null);
+  const moreHere = more !== null && more.key === loadKey ? more : null;
+  // After an append, focus moves to the first new row's link (keyboard and
+  // screen-reader users continue where the list grew, not at the button).
+  const focusIndexRef = useRef<number | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     const url = `/api/admin/renewals/at-risk?band=${encodeURIComponent(activeBand)}&limit=20`;
@@ -181,6 +199,13 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
     </div>
   );
 
+  useEffect(() => {
+    const index = focusIndexRef.current;
+    if (index === null) return;
+    focusIndexRef.current = null;
+    listRef.current?.querySelector<HTMLElement>(`[data-at-risk-row="${index}"]`)?.focus();
+  }, [moreHere]);
+
   if (data?.feature_disabled) {
     return (
       <section
@@ -196,6 +221,37 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
 
   const company = (m: ApiRow) => m.company_name ?? t('table.unknownCompany');
 
+  const shownItems: ReadonlyArray<ApiRow> = data ? [...data.items, ...(moreHere?.items ?? [])] : [];
+  const nextCursor = moreHere ? moreHere.cursor : (data?.next_cursor ?? null);
+  const bandTotal = data?.summary ? data.summary[activeBand] : null;
+
+  const showMore = () => {
+    if (nextCursor === null || moreHere?.pending) return;
+    const key = loadKey;
+    const prior = moreHere?.items ?? [];
+    setMore({ key, items: prior, cursor: nextCursor, pending: true, failed: false });
+    const url = `/api/admin/renewals/at-risk?band=${encodeURIComponent(activeBand)}&limit=20&cursor=${encodeURIComponent(nextCursor)}`;
+    fetch(url)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`http_${res.status}`);
+        return (await res.json()) as ApiResponse;
+      })
+      .then((json) => {
+        // The first new row; an empty page (rows left the band since) falls
+        // back to the last row shown, as the button may now go away.
+        const before = (data?.items.length ?? 0) + prior.length;
+        focusIndexRef.current = json.items.length > 0 ? before : Math.max(0, before - 1);
+        setMore((cur) =>
+          cur && cur.key === key
+            ? { key, items: [...prior, ...json.items], cursor: json.next_cursor, pending: false, failed: false }
+            : cur,
+        );
+      })
+      .catch(() => {
+        setMore((cur) => (cur && cur.key === key ? { ...cur, pending: false, failed: true } : cur));
+      });
+  };
+
   const rows = loading ? (
     <WidgetSkeleton />
   ) : error ? (
@@ -208,7 +264,7 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
         </Button>
       }
     />
-  ) : !data || data.items.length === 0 ? (
+  ) : !data || shownItems.length === 0 ? (
     <EmptyState
       icon="circle-check"
       title={t('emptyState')}
@@ -225,76 +281,95 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
   ) : (
     // Board `Admin-renewals-needs-action`: Company, Risk score, Last
     // computed and Actions; each row a card on a phone.
-    <Table caption={t('title')} captionHidden stackBelow="sm" stackStyle="cards" align="middle" bleed>
-      <THead>
-        <Tr>
-          <Th>{t('table.company')}</Th>
-          <Th>{t('table.score')}</Th>
-          <Th>{t('table.lastComputed')}</Th>
-          <Th>{t('table.actions')}</Th>
-        </Tr>
-      </THead>
-      <TBody>
-        {data.items.map((m) => (
-          <Tr key={m.member_id}>
-            <Td card="title">
-              <Link
-                href={`/admin/members/${m.member_id}`}
-                className="font-medium text-[var(--aura-fg-accent)] hover:underline"
-              >
-                {company(m)}
-              </Link>
-            </Td>
-            <Td>
-              <RiskScoreBadge
-                score={m.risk_score}
-                band={m.risk_score_band}
-                activeMax={data.summary.active_max}
-              />
-            </Td>
-            <Td className="tabular-nums text-[var(--aura-fg-secondary)]">
-              {m.risk_score_last_computed_at
-                ? // Phase 6 review I2 — locale-pinned formatter
-                  formatLocalisedTimestamp(m.risk_score_last_computed_at, locale)
-                : '—'}
-            </Td>
-            <Td card="action">
-              {/* Contact stays for a manager (FR-033 + FR-052a's one manager
-                  mutation); Snooze is admin-only. Each button is the lifted
-                  dialog's focus-return target. */}
-              <div className="flex gap-[var(--aura-space-2)] sm:justify-end">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  touchHeight
-                  aria-label={t('actions.contactAriaLabel', { company: company(m) })}
-                  onClick={(e) => {
-                    outreachTriggerRef.current = e.currentTarget;
-                    setOutreachFor({ memberId: m.member_id, companyName: m.company_name });
-                  }}
+    <div ref={listRef} className="flex flex-col gap-[var(--aura-space-3)]">
+      <Table caption={t('title')} captionHidden stackBelow="sm" stackStyle="cards" align="middle" bleed>
+        <THead>
+          <Tr>
+            <Th>{t('table.company')}</Th>
+            <Th>{t('table.score')}</Th>
+            <Th>{t('table.lastComputed')}</Th>
+            <Th>{t('table.actions')}</Th>
+          </Tr>
+        </THead>
+        <TBody>
+          {shownItems.map((m, index) => (
+            <Tr key={m.member_id}>
+              <Td card="title">
+                <Link
+                  data-at-risk-row={index}
+                  href={`/admin/members/${m.member_id}`}
+                  className="font-medium text-[var(--aura-fg-accent)] hover:underline"
                 >
-                  {t('actions.contact')}
-                </Button>
-                {canSnooze ? (
+                  {company(m)}
+                </Link>
+              </Td>
+              <Td>
+                <RiskScoreBadge
+                  score={m.risk_score}
+                  band={m.risk_score_band}
+                  activeMax={data.summary.active_max}
+                />
+              </Td>
+              <Td className="tabular-nums text-[var(--aura-fg-secondary)]">
+                {m.risk_score_last_computed_at
+                  ? // Phase 6 review I2 — locale-pinned formatter
+                    formatLocalisedTimestamp(m.risk_score_last_computed_at, locale)
+                  : '—'}
+              </Td>
+              <Td card="action">
+                {/* Contact stays for a manager (FR-033 + FR-052a's one manager
+                    mutation); Snooze is admin-only. Each button is the lifted
+                    dialog's focus-return target. */}
+                <div className="flex gap-[var(--aura-space-2)] sm:justify-end">
                   <Button
                     size="sm"
                     variant="secondary"
                     touchHeight
-                    aria-label={t('actions.snoozeAriaLabel', { company: company(m) })}
+                    aria-label={t('actions.contactAriaLabel', { company: company(m) })}
                     onClick={(e) => {
-                      snoozeTriggerRef.current = e.currentTarget;
-                      setSnoozeFor({ memberId: m.member_id, companyName: m.company_name });
+                      outreachTriggerRef.current = e.currentTarget;
+                      setOutreachFor({ memberId: m.member_id, companyName: m.company_name });
                     }}
                   >
-                    {t('actions.snooze')}
+                    {t('actions.contact')}
                   </Button>
-                ) : null}
-              </div>
-            </Td>
-          </Tr>
-        ))}
-      </TBody>
-    </Table>
+                  {canSnooze ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      touchHeight
+                      aria-label={t('actions.snoozeAriaLabel', { company: company(m) })}
+                      onClick={(e) => {
+                        snoozeTriggerRef.current = e.currentTarget;
+                        setSnoozeFor({ memberId: m.member_id, companyName: m.company_name });
+                      }}
+                    >
+                      {t('actions.snooze')}
+                    </Button>
+                  ) : null}
+                </div>
+              </Td>
+            </Tr>
+          ))}
+        </TBody>
+      </Table>
+      {nextCursor !== null || moreHere?.failed ? (
+        <div className="flex flex-col items-start gap-[var(--aura-space-2)]">
+          {moreHere?.failed ? <Alert tone="danger" title={t('showMore.failed')} /> : null}
+          {/* One button that stays mounted through load, failure and retry,
+              so keyboard focus never falls to the page (WCAG 2.4.3). */}
+          <Button size="sm" touchHeight variant="secondary" loading={moreHere?.pending ?? false} onClick={showMore}>
+            {moreHere?.failed ? t('actions.retry') : t('showMore.action')}
+          </Button>
+        </div>
+      ) : null}
+      {/* Polite count, updated after each append (WCAG 4.1.3). */}
+      <span role="status" aria-live="polite" className="sr-only" data-testid="at-risk-shown-status">
+        {moreHere && moreHere.items.length > 0 && bandTotal !== null
+          ? t('showMore.shown', { shown: shownItems.length, total: bandTotal })
+          : ''}
+      </span>
+    </div>
   );
 
   // The band filters: AURA tabs with each band's count (once loaded); only
@@ -332,7 +407,11 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
         value={activeBand}
         onChange={(id) => {
           const band = BANDS.find((b) => b === id);
-          if (band) setActiveBand(band);
+          if (band) {
+            setActiveBand(band);
+            // R146 — a band change always starts again from the first page.
+            setMore(null);
+          }
         }}
       />
 

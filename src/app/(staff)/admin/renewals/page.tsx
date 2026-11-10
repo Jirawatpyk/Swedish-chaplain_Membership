@@ -777,6 +777,7 @@ async function PendingReviewSection({
   const deps = makeRenewalsDeps(tenantSlug);
 
   let cycles: LoadPendingReactivationReviewOutput['cycles'];
+  let totalCount: number;
   // memberId → {companyName, memberNumber, memberId}, resolved in ONE batched
   // member read (no N+1). B4 — richer shape drives the company LINK + SCCM cell.
   let memberInfo: ReadonlyMap<string, PendingReviewMemberInfo>;
@@ -798,6 +799,7 @@ async function PendingReviewSection({
       );
     }
     cycles = result.value.cycles;
+    totalCount = result.value.totalCount;
 
     // Batch-enrich member facts (company + member-number) in a SINGLE
     // tenant-scoped read AND resolve the SCCM prefix (a separate RLS-safe
@@ -905,7 +907,7 @@ async function PendingReviewSection({
         <h2 className="text-base font-semibold">{t('sectionTitle')}</h2>
         <p className="text-sm text-muted-foreground">{t('sectionSubtitle')}</p>
       </div>
-      <PendingReviewList rows={rows} canApprove={canApprove} />
+      <PendingReviewList rows={rows} canApprove={canApprove} totalCount={totalCount} />
     </>
   );
 }

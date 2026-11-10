@@ -36,6 +36,7 @@ import {
 import type { TenantContext } from '@/modules/tenants';
 import { Card, EmptyState, buttonClass } from '@jirawatpyk/aura-react/server';
 import { MemberInvoicesFilters } from './member-invoices-filters';
+import { MemberInvoicesPagination } from './member-invoices-pagination';
 import { MemberInvoicesTable, type MemberInvoiceRow } from './member-invoices-table';
 import { resolveMemberInvoiceDisplayNumber } from './resolve-invoice-display-number';
 import { formatDatePreset } from '@/lib/format-date-localised';
@@ -56,6 +57,8 @@ interface MemberInvoicesSectionProps {
   readonly statusFilter?: string | undefined;
   /** G-U7F — fiscal-year filter from URL (`?invYear=2026`). */
   readonly fiscalYearFilter?: number | undefined;
+  /** #765 — the 1-based page from `?invPage=`; past the end it shows the last page. */
+  readonly page?: number | undefined;
   /** G-U7F — document-number substring search from URL (`?invQ=`). */
   readonly searchFilter?: string | undefined;
 }
@@ -65,6 +68,9 @@ interface MemberInvoicesSectionProps {
  * invoices (unfiltered): fewer fit on one screen and need no filtering.
  */
 export const INVOICE_FILTER_THRESHOLD = 10;
+
+/** #765 — invoices per page in the card (the user's choice, 6 Nov 2026). */
+export const MEMBER_INVOICES_PAGE_SIZE = 20;
 
 /**
  * The Remaining column — the amount still owed (#77). `issued` is the one
@@ -99,6 +105,7 @@ export async function MemberInvoicesSection({
   statusFilter,
   fiscalYearFilter,
   searchFilter,
+  page: requestedPage = 1,
 }: MemberInvoicesSectionProps): Promise<React.ReactElement> {
   const t = await getTranslations('admin.members.invoices');
   const locale = await getLocale();
@@ -108,7 +115,8 @@ export async function MemberInvoicesSection({
   // empty-CTA without filter noise). Year derivation was moved to
   // the filter component (now a free-text number input; no dropdown
   // options needed).
-  const allYearsResult = await listInvoicesByMember(
+  // #765 review — started here, awaited beside the page read below.
+  const allYearsPromise = listInvoicesByMember(
     makeListInvoicesByMemberDeps(tenant.slug),
     { tenantId: tenant.slug, memberId, pageSize: 1, offset: 0, status: 'all' },
   );
@@ -132,18 +140,27 @@ export async function MemberInvoicesSection({
           | 'partially_credited')
       : 'all';
 
-  const result = await listInvoicesByMember(
-    makeListInvoicesByMemberDeps(tenant.slug),
-    {
+  // #765 — one page of 20 (it read the first 100 and showed no pager, so a
+  // member with more silently lost the rest while the header count said 67).
+  const readPage = (pageNumber: number) =>
+    listInvoicesByMember(makeListInvoicesByMemberDeps(tenant.slug), {
       tenantId: tenant.slug,
       memberId,
-      pageSize: 100,
-      offset: 0,
+      pageSize: MEMBER_INVOICES_PAGE_SIZE,
+      offset: (pageNumber - 1) * MEMBER_INVOICES_PAGE_SIZE,
       status: narrowedStatus,
       ...(fiscalYearFilter !== undefined ? { fiscalYear: fiscalYearFilter } : {}),
       ...(searchFilter ? { search: searchFilter } : {}),
-    },
-  );
+    });
+  let page = Math.max(1, Math.floor(requestedPage));
+  const [allYearsResult, firstRead] = await Promise.all([allYearsPromise, readPage(page)]);
+  let result = firstRead;
+  // A page past the end (a stale link, or the last invoice on it voided away)
+  // shows the last page instead of an empty card.
+  if (result.ok && result.value.rows.length === 0 && result.value.total > 0 && page > 1) {
+    page = Math.ceil(result.value.total / MEMBER_INVOICES_PAGE_SIZE);
+    result = await readPage(page);
+  }
 
   // Surface repo failures to the parent error boundary instead of
   // silently rendering an empty state — an admin on a renewal call
@@ -196,6 +213,7 @@ export async function MemberInvoicesSection({
       rows={tableRows}
       canMutate={canMutate}
       hasFilter={hasFilter}
+      page={page}
       // A filter already in the URL keeps its row, so it can be cleared.
       showFilters={hasFilter || (allYearsResult.ok && allYearsResult.value.total > INVOICE_FILTER_THRESHOLD)}
     />
@@ -213,9 +231,12 @@ export async function MemberInvoicesCard({
   canMutate,
   hasFilter,
   showFilters,
+  page = 1,
 }: {
   readonly memberId: string;
   readonly total: number;
+  /** #765 — the page shown; the pager appears once `total` needs more than one. */
+  readonly page?: number;
   readonly rows: readonly MemberInvoiceRow[];
   readonly canMutate: boolean;
   readonly hasFilter: boolean;
@@ -290,6 +311,15 @@ export async function MemberInvoicesCard({
             }}
           />
         )}
+        {tableRows.length > 0 && total > MEMBER_INVOICES_PAGE_SIZE ? (
+          <div className="mt-[var(--aura-space-4)]">
+            <MemberInvoicesPagination
+              page={page}
+              pageCount={Math.ceil(total / MEMBER_INVOICES_PAGE_SIZE)}
+              label={t('pagination.label')}
+            />
+          </div>
+        ) : null}
       </div>
     </Card>
   );

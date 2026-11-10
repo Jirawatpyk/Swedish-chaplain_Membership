@@ -38,25 +38,35 @@ export interface LoadPendingReactivationReviewInput {
 }
 
 export interface LoadPendingReactivationReviewOutput {
+  /** The first `pageSize` cycles, oldest expiry first. */
   readonly cycles: ReadonlyArray<RenewalCycle>;
+  /** #765 — every cycle in the queue, beyond the cap too. */
+  readonly totalCount: number;
+  /** #765 — of those, the ones still awaiting a decision (no reject-refund started). */
+  readonly openCount: number;
 }
 
 export async function loadPendingReactivationReview(
   deps: Pick<RenewalsDeps, 'cyclesRepo'>,
   input: LoadPendingReactivationReviewInput,
 ): Promise<Result<LoadPendingReactivationReviewOutput, never>> {
-  const page = await deps.cyclesRepo.list(input.tenantId, {
-    statusFilter: ['pending_admin_reactivation'],
-    pageSize: input.pageSize ?? PENDING_REVIEW_DEFAULT_PAGE_SIZE,
-    // Oldest pending first — those closest to the 30-day auto-timeout
-    // boundary need attention first (matches the reconcile cron order).
-    sort: 'expires_at_asc',
-    // COMP-1 H4 — this is an OPERATIONAL admin discovery queue, so drop
-    // cycles whose member was GDPR-erased. `markCycleCompleteFromInvoice-
-    // Paid` routes a paid erased member's cycle to
-    // `pending_admin_reactivation`, so without this flag the erased
-    // (anonymised '[erased]') member surfaces in the review list.
-    excludeErasedMembers: true,
-  });
-  return ok({ cycles: page.items });
+  // #765 — the list keeps its first-200 cap; the true counts come from one
+  // COUNT with the same predicate, read alongside.
+  const [page, counts] = await Promise.all([
+    deps.cyclesRepo.list(input.tenantId, {
+      statusFilter: ['pending_admin_reactivation'],
+      pageSize: input.pageSize ?? PENDING_REVIEW_DEFAULT_PAGE_SIZE,
+      // Oldest pending first — those closest to the 30-day auto-timeout
+      // boundary need attention first (matches the reconcile cron order).
+      sort: 'expires_at_asc',
+      // COMP-1 H4 — this is an OPERATIONAL admin discovery queue, so drop
+      // cycles whose member was GDPR-erased. `markCycleCompleteFromInvoice-
+      // Paid` routes a paid erased member's cycle to
+      // `pending_admin_reactivation`, so without this flag the erased
+      // (anonymised '[erased]') member surfaces in the review list.
+      excludeErasedMembers: true,
+    }),
+    deps.cyclesRepo.countPendingReview(input.tenantId),
+  ]);
+  return ok({ cycles: page.items, totalCount: counts.total, openCount: counts.open });
 }

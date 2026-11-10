@@ -157,6 +157,10 @@ export interface TierUpgradeSuggestionRepo {
    * Phase 7 T193 — admin queue listing. Returns suggestions in `open`
    * OR `accepted_pending_apply` state for the admin dashboard,
    * ordered by `(created_at DESC, suggestion_id DESC)`.
+   *
+   * #765 — `cursor` is a keyset cursor from `encodeTierQueueCursor`
+   * (`application/lib/tier-queue-cursor.ts`); the page starts strictly after
+   * it. A cursor that does not decode throws `InvalidTierQueueCursorError`.
    */
   listForAdminQueue(
     tenantId: string,
@@ -165,6 +169,12 @@ export interface TierUpgradeSuggestionRepo {
     readonly items: ReadonlyArray<TierUpgradeSuggestion>;
     readonly nextCursor: string | null;
   }>;
+
+  /**
+   * #765 — how many suggestions the admin queue holds (the same set
+   * `listForAdminQueue` pages through), for the Renewals tab badge.
+   */
+  countForAdminQueue(tenantId: string): Promise<number>;
 
   /**
    * F8 Phase 10 T262 batched-write — bulk suppression check.
