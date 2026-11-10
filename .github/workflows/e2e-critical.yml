@@ -70,7 +70,9 @@ jobs:
   e2e:
     name: e2e @critical (${{ matrix.project }})
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.59 has no chromium build for ubuntu-26.04 (ubuntu-latest
+    # from Nov 2026); unpin when Playwright supports it.
+    runs-on: ubuntu-24.04
     strategy:
       # One project's red must not cancel the other: both reports are wanted.
       fail-fast: false
