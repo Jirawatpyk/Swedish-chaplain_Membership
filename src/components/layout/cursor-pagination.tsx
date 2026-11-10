@@ -10,8 +10,8 @@
  *
  * #84 — following First / Next re-renders the page through the route's
  * `loading.tsx`, which unmounts this pager, so focus fell to `<body>` (WCAG
- * 2.4.3). A followed link now sets a module flag (module scope, not a ref: the
- * pager remounts), and once the next page renders focus moves to
+ * 2.4.3). A followed link's href is kept at module scope (not a ref: the pager
+ * remounts), and once that page renders focus moves to
  * `focusTargetId` — by default `#main-content`, AppShell's skip-link target —
  * and it is scrolled to the top of the list's page.
  */
@@ -26,15 +26,28 @@ export type CursorPaginationLinksProps = Omit<
   readonly focusTargetId?: string;
 };
 
-let focusTargetOnRender = false;
+/**
+ * The href of the link just followed (path + query), or null. Focus moves only
+ * when the page that renders is that href, so a stale value (the destination
+ * rendered no pager, or an error page) never pulls focus on a later list.
+ */
+let followedHref: string | null = null;
+
+function withoutHash(href: string): string {
+  const i = href.indexOf('#');
+  return i === -1 ? href : href.slice(0, i);
+}
 
 export function CursorPagination({
   focusTargetId = 'main-content',
   ...props
 }: CursorPaginationLinksProps): React.ReactElement {
   useEffect(() => {
-    if (!focusTargetOnRender) return;
-    focusTargetOnRender = false;
+    if (followedHref === null) return;
+    const here = window.location.pathname + window.location.search;
+    const matches = withoutHash(followedHref) === here;
+    followedHref = null;
+    if (!matches) return;
     const target = document.getElementById(focusTargetId);
     if (!target) return;
     if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
@@ -44,7 +57,10 @@ export function CursorPagination({
   return (
     <div
       onClickCapture={(e) => {
-        if ((e.target as HTMLElement).closest('a[href]')) focusTargetOnRender = true;
+        // A modified click opens another tab or window; this page stays put.
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        const href = (e.target as HTMLElement).closest('a[href]')?.getAttribute('href');
+        if (href) followedHref = href;
       }}
     >
       <Pagination mode="cursor" {...props} />

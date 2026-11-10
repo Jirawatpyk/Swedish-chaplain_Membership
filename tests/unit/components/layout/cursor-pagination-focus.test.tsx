@@ -26,8 +26,25 @@ describe('CursorPagination keeps focus (#84)', () => {
     const next = screen.getByRole('navigation', { name: 'Pages' }).querySelector('a[href="/list?cursor=a"]');
     expect(next).not.toBeNull();
     fireEvent.click(next as HTMLElement);
+    window.history.pushState({}, '', '/list?cursor=a');
     rerender(ui('/list?cursor=b'));
     expect(document.activeElement).toBe(document.getElementById('main-content'));
+  });
+
+  it('does not move focus when the page that renders is not the followed link (stale follow)', () => {
+    const { rerender } = render(ui('/list?cursor=a'));
+    fireEvent.click(screen.getByRole('navigation', { name: 'Pages' }).querySelector('a[href="/list?cursor=a"]') as HTMLElement);
+    window.history.pushState({}, '', '/elsewhere');
+    rerender(ui('/list?cursor=c'));
+    expect(document.activeElement).not.toBe(document.getElementById('main-content'));
+  });
+
+  it('ignores a modified click (new tab)', () => {
+    const { rerender } = render(ui('/list?cursor=a'));
+    fireEvent.click(screen.getByRole('navigation', { name: 'Pages' }).querySelector('a[href="/list?cursor=a"]') as HTMLElement, { ctrlKey: true });
+    window.history.pushState({}, '', '/list?cursor=a');
+    rerender(ui('/list?cursor=d'));
+    expect(document.activeElement).not.toBe(document.getElementById('main-content'));
   });
 
   it('leaves focus alone on a first render', () => {

@@ -66,22 +66,24 @@ export function MemberInvoicesPagination({
     heading.scrollIntoView?.({ block: 'start' });
   }, [page]);
   return (
-    <div
-      aria-busy={pending || undefined}
-      className="flex flex-col items-center gap-[var(--aura-space-2)]"
-      onClickCapture={(e) => {
-        const link = (e.target as HTMLElement).closest('a[href]');
-        if (!link) return;
-        focusHeadingOnRender = true;
-        // A modified click (new tab, new window) keeps the browser's own handling.
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
-        e.preventDefault();
-        const href = link.getAttribute('href');
-        if (href) startTransition(() => router.push(href, { scroll: false }));
-      }}
-    >
-      <Pagination pageCount={pageCount} page={page} getHref={getHref} label={label} />
-      {/* Polite, mounted before its text changes (WCAG 4.1.3). */}
+    <div className="flex flex-col items-center gap-[var(--aura-space-2)]">
+      <div
+        aria-busy={pending || undefined}
+        onClickCapture={(e) => {
+          // A modified click (new tab, new window) keeps the browser's own handling.
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+          const link = (e.target as HTMLElement).closest('a[href]');
+          const href = link?.getAttribute('href');
+          if (!href) return;
+          e.preventDefault();
+          focusHeadingOnRender = true;
+          startTransition(() => router.push(href, { scroll: false }));
+        }}
+      >
+        <Pagination pageCount={pageCount} page={page} getHref={getHref} label={label} />
+      </div>
+      {/* Polite, mounted before its text changes, and outside the busy
+          subtree so it is announced while the page loads (WCAG 4.1.3). */}
       <span
         role="status"
         data-testid="member-invoices-page-loading"
