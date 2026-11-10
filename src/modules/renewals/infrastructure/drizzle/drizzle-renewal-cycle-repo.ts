@@ -1081,6 +1081,28 @@ export function makeDrizzleRenewalCycleRepo(
       });
     },
 
+    async countPendingReview(_tenantId: string) {
+      // #765 — the badge count behind the pending-review list; the same
+      // predicate as `list({ statusFilter: ['pending_admin_reactivation'],
+      // excludeErasedMembers: true })`, without its 200-row cap.
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select({
+            total: sql<number>`count(*)::int`,
+            open: sql<number>`count(*) FILTER (WHERE ${renewalCycles.rejectRefundInitiatedAt} IS NULL)::int`,
+          })
+          .from(renewalCycles)
+          .where(
+            and(
+              eq(renewalCycles.tenantId, tenant.slug),
+              eq(renewalCycles.status, 'pending_admin_reactivation'),
+              MEMBER_NOT_ERASED_SQL,
+            ),
+          );
+        return { total: Number(rows[0]?.total ?? 0), open: Number(rows[0]?.open ?? 0) };
+      });
+    },
+
     async list(
       _tenantId: string,
       opts: ListRenewalCyclesOpts,

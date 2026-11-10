@@ -499,6 +499,17 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCyclePage>;
 
   /**
+   * #765 — the TRUE size of the "Pending review" queue, for the Renewals tab
+   * badge and the "showing the first N of M" notice. The same set the queue
+   * lists (`pending_admin_reactivation`, GDPR-erased members excluded);
+   * `open` drops the cycles whose reject-with-refund already started (decided,
+   * refund settling — `countOpenPendingReviewCycles`'s rule, now in SQL).
+   */
+  countPendingReview(
+    tenantId: string,
+  ): Promise<{ readonly total: number; readonly open: number }>;
+
+  /**
    * Atomic transition with optional anchor updates. Throws
    * `CycleTransitionConflictError` if the source row is no longer at
    * the expected `from` status (advisory-lock-style optimistic lock).
