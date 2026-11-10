@@ -4389,7 +4389,7 @@
         "sectionSubtitle": "These members paid to reactivate a lapsed membership but auto-reactivation is blocked. Open each one to approve or reject with a refund.",
         "emptyTitle": "Nothing awaiting review",
         "emptyDescription": "No reactivations are currently pending an admin decision.",
-        "cappedNotice": "Showing the first {shown} of {total}, the oldest expiry first. Decide these to see the rest.",
+        "cappedNotice": "Showing the first {shown, number} of {total, number}, the oldest expiry first. Decide these to see the rest.",
         "backToPipeline": "Back to pipeline",
         "columns": {
           "member": "Member",
@@ -5105,7 +5105,7 @@
         "tableCaption": "List of members eligible for a tier upgrade.",
         "pagination": {
           "label": "Tier-upgrade suggestion pages",
-          "showingFirst": "Showing 50 per page"
+          "showingFirst": "Showing {count} per page"
         },
         "fee_excl_vat": "{fee} excl. VAT",
         "fees_exclude_vat": "Fees exclude VAT.",

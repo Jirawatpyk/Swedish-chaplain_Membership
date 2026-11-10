@@ -188,7 +188,7 @@ export default async function TierUpgradeQueuePage({
           showPrevious={false}
           firstHref={cursor !== undefined ? QUEUE_PATH : undefined}
           hasFirst={cursor !== undefined}
-          status={t('pagination.showingFirst')}
+          status={t('pagination.showingFirst', { count: QUEUE_PAGE_SIZE })}
           nextHref={
             nextCursor !== null ? `${QUEUE_PATH}?cursor=${encodeURIComponent(nextCursor)}` : undefined
           }

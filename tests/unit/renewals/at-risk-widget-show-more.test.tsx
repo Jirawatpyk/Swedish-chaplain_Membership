@@ -86,4 +86,16 @@ describe('AtRiskWidget — Show more (#765)', () => {
     fireEvent.click(screen.getByRole('button', { name: en.admin.renewals.atRisk.actions.retry }));
     expect(await screen.findByText('Member 22')).toBeInTheDocument();
   });
+  it('keeps focus on the one button through a failed load and its retry (WCAG 2.4.3)', async () => {
+    renderWidget();
+    expect(await screen.findByText('Member 20')).toBeInTheDocument();
+    fetchMock.mockImplementationOnce(async () => new Response('{}', { status: 500 }));
+    const button = screen.getByRole('button', { name: M.action });
+    button.focus();
+    fireEvent.click(button);
+    expect(await screen.findByText(M.failed)).toBeInTheDocument();
+    const retry = screen.getByRole('button', { name: en.admin.renewals.atRisk.actions.retry });
+    expect(retry).toBe(button);
+    expect(document.activeElement).toBe(button);
+  });
 });

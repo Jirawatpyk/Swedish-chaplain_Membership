@@ -4389,7 +4389,7 @@
         "sectionSubtitle": "Dessa medlemmar betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Öppna varje post för att godkänna eller avslå med återbetalning.",
         "emptyTitle": "Inget väntar på granskning",
         "emptyDescription": "Inga återaktiveringar väntar för närvarande på ett administratörsbeslut.",
-        "cappedNotice": "Visar de första {shown} av {total}, med tidigast utgångsdatum först. Fatta beslut om dessa för att se resten.",
+        "cappedNotice": "Visar de första {shown, number} av {total, number}, med tidigast utgångsdatum först. Fatta beslut om dessa för att se resten.",
         "backToPipeline": "Tillbaka till pipelinen",
         "columns": {
           "member": "Medlem",
@@ -5105,7 +5105,7 @@
         "tableCaption": "Lista över medlemmar som kvalificerar för en nivåhöjning.",
         "pagination": {
           "label": "Sidor med förslag om nivåhöjning",
-          "showingFirst": "Visar 50 per sida"
+          "showingFirst": "Visar {count} per sida"
         },
         "fee_excl_vat": "{fee} exkl. moms",
         "fees_exclude_vat": "Avgifterna anges exklusive moms.",

@@ -115,7 +115,8 @@ export async function MemberInvoicesSection({
   // empty-CTA without filter noise). Year derivation was moved to
   // the filter component (now a free-text number input; no dropdown
   // options needed).
-  const allYearsResult = await listInvoicesByMember(
+  // #765 review — started here, awaited beside the page read below.
+  const allYearsPromise = listInvoicesByMember(
     makeListInvoicesByMemberDeps(tenant.slug),
     { tenantId: tenant.slug, memberId, pageSize: 1, offset: 0, status: 'all' },
   );
@@ -152,7 +153,8 @@ export async function MemberInvoicesSection({
       ...(searchFilter ? { search: searchFilter } : {}),
     });
   let page = Math.max(1, Math.floor(requestedPage));
-  let result = await readPage(page);
+  const [allYearsResult, firstRead] = await Promise.all([allYearsPromise, readPage(page)]);
+  let result = firstRead;
   // A page past the end (a stale link, or the last invoice on it voided away)
   // shows the last page instead of an empty card.
   if (result.ok && result.value.rows.length === 0 && result.value.total > 0 && page > 1) {

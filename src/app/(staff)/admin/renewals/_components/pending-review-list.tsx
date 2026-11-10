@@ -236,6 +236,9 @@ export function PendingReviewList({
 
   return (
     <>
+      {/* #765 — `totalCount` counts every listed cycle, settling refunds
+          included (they are rows here too); the tab badge counts only the
+          open ones, so the two numbers can differ by design. */}
       {totalCount !== undefined && totalCount > rows.length ? (
         <div className="mb-[var(--aura-space-3)]">
           <Alert tone="info" role="note" data-testid="pending-review-capped">

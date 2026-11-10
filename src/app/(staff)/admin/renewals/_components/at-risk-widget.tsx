@@ -204,7 +204,7 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
     if (index === null) return;
     focusIndexRef.current = null;
     listRef.current?.querySelector<HTMLElement>(`[data-at-risk-row="${index}"]`)?.focus();
-  }, [moreHere?.items.length]);
+  }, [moreHere]);
 
   if (data?.feature_disabled) {
     return (
@@ -237,7 +237,10 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
         return (await res.json()) as ApiResponse;
       })
       .then((json) => {
-        focusIndexRef.current = (data?.items.length ?? 0) + prior.length;
+        // The first new row; an empty page (rows left the band since) falls
+        // back to the last row shown, as the button may now go away.
+        const before = (data?.items.length ?? 0) + prior.length;
+        focusIndexRef.current = json.items.length > 0 ? before : Math.max(0, before - 1);
         setMore((cur) =>
           cur && cur.key === key
             ? { key, items: [...prior, ...json.items], cursor: json.next_cursor, pending: false, failed: false }
@@ -352,21 +355,12 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
       </Table>
       {nextCursor !== null || moreHere?.failed ? (
         <div className="flex flex-col items-start gap-[var(--aura-space-2)]">
-          {moreHere?.failed ? (
-            <Alert
-              tone="danger"
-              title={t('showMore.failed')}
-              action={
-                <Button size="sm" touchHeight variant="secondary" onClick={showMore}>
-                  {t('actions.retry')}
-                </Button>
-              }
-            />
-          ) : (
-            <Button size="sm" touchHeight variant="secondary" loading={moreHere?.pending ?? false} onClick={showMore}>
-              {t('showMore.action')}
-            </Button>
-          )}
+          {moreHere?.failed ? <Alert tone="danger" title={t('showMore.failed')} /> : null}
+          {/* One button that stays mounted through load, failure and retry,
+              so keyboard focus never falls to the page (WCAG 2.4.3). */}
+          <Button size="sm" touchHeight variant="secondary" loading={moreHere?.pending ?? false} onClick={showMore}>
+            {moreHere?.failed ? t('actions.retry') : t('showMore.action')}
+          </Button>
         </div>
       ) : null}
       {/* Polite count, updated after each append (WCAG 4.1.3). */}

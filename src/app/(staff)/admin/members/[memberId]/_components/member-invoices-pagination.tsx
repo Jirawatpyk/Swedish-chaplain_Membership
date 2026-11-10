@@ -11,11 +11,19 @@
  * `#member-invoices-heading` so following it lands on this card, which sits
  * far down the member page, not at the top.
  */
+import { useEffect } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Pagination } from '@jirawatpyk/aura-react';
 
 export const MEMBER_INVOICES_PAGE_PARAM = 'invPage';
 export const MEMBER_INVOICES_ANCHOR = 'member-invoices-heading';
+
+/**
+ * Set when a pager link is followed, read once the new page renders. Module
+ * scope, not a ref: the route's `loading.tsx` can unmount this pager while the
+ * next page loads, and a remounted pager must still know a page link moved it.
+ */
+let focusHeadingOnRender = false;
 
 export function MemberInvoicesPagination({
   page,
@@ -36,5 +44,24 @@ export function MemberInvoicesPagination({
     const qs = next.toString();
     return `${pathname}${qs ? `?${qs}` : ''}#${MEMBER_INVOICES_ANCHOR}`;
   };
-  return <Pagination pageCount={pageCount} page={page} getHref={getHref} label={label} />;
+  // The hash scrolls the card's heading into view; focus goes there too, so a
+  // keyboard or screen-reader user lands on the card that changed instead of
+  // a pager link (or the page body) under 20 rows (WCAG 2.4.3).
+  useEffect(() => {
+    if (!focusHeadingOnRender) return;
+    focusHeadingOnRender = false;
+    const heading = document.getElementById(MEMBER_INVOICES_ANCHOR);
+    if (!heading) return;
+    if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+    heading.focus({ preventScroll: true });
+  }, [page]);
+  return (
+    <div
+      onClickCapture={(e) => {
+        if ((e.target as HTMLElement).closest('a[href]')) focusHeadingOnRender = true;
+      }}
+    >
+      <Pagination pageCount={pageCount} page={page} getHref={getHref} label={label} />
+    </div>
+  );
 }
