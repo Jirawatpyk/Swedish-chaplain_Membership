@@ -195,9 +195,9 @@ describe('MemberInvoicesTable (T556)', () => {
     expect(container.querySelector('.member-invoices-list')).toBeNull();
     const css = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8');
     expect(css).not.toContain('member-invoices-list');
-    // AURA's list keeps the ⋯ cell's -8px end margin with 0 row padding, so
-    // it would overhang the table by 8px (R143b): stand-in until AURA #207.
-    expect(css).toMatch(/\.aura-table--stack-list \.aura-table__td\[data-card='actions'\] \{ margin-inline-end: 0; \}/);
+    // AURA 5.88 #207 zeroes the list-style actions cell's side margin itself,
+    // so no Chamber-OS override of it may come back.
+    expect(css).not.toMatch(/\.aura-table--stack-list[^{]*data-card='actions'/);
   });
 
   it('the phone card still takes the number as its title and the status as its pill', () => {

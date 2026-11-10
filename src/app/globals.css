@@ -909,11 +909,3 @@ summary,
   }
 }
 
-/* AURA 5.87 `DataTable stackStyle="list"` sets each stacked row's side padding
-   to 0 but keeps the actions cell's -8px end margin (meant for the framed
-   card's padding), so the ⋯ hangs 8px past the table and the scroller
-   scrolls sideways (member invoices at 390: 317/309).
-   stand-in until AURA #207 */
-@layer components {
-  .aura-table--stack-list .aura-table__td[data-card='actions'] { margin-inline-end: 0; }
-}
