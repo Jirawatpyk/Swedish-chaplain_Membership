@@ -128,8 +128,8 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
 
   // #765 — "Show more": the band's next 20 rows, appended, from the API's
   // own `next_cursor` (the tab counts were already true; only the rows were
-  // capped at 20). Kept per band + load, so a band change or a retry starts
-  // again from the first page.
+  // capped at 20). Cleared on a band change, and keyed per band + load so a
+  // late response from another band or load is dropped.
   const loadKey = `${activeBand}:${refetchKey}`;
   const [more, setMore] = useState<{
     key: string;
@@ -407,7 +407,11 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
         value={activeBand}
         onChange={(id) => {
           const band = BANDS.find((b) => b === id);
-          if (band) setActiveBand(band);
+          if (band) {
+            setActiveBand(band);
+            // R146 — a band change always starts again from the first page.
+            setMore(null);
+          }
         }}
       />
 

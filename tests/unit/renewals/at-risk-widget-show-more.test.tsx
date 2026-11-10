@@ -98,4 +98,16 @@ describe('AtRiskWidget — Show more (#765)', () => {
     expect(retry).toBe(button);
     expect(document.activeElement).toBe(button);
   });
+  it('a band change and back starts again from the first page (R146)', async () => {
+    renderWidget();
+    expect(await screen.findByText('Member 20')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: M.action }));
+    expect(await screen.findByText('Member 22')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /critical/i }));
+    expect(await screen.findByText('Member 90')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /at-risk|at risk/i }));
+    expect(await screen.findByText('Member 20')).toBeInTheDocument();
+    expect(screen.queryByText('Member 21')).toBeNull();
+    expect(screen.getByRole('button', { name: M.action })).toBeInTheDocument();
+  });
 });
