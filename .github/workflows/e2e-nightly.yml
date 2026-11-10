@@ -48,7 +48,9 @@ concurrency:
 jobs:
   e2e:
     name: e2e nightly (chromium, shard ${{ matrix.shard }}/4)
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.59 has no chromium build for ubuntu-26.04 (ubuntu-latest
+    # from Nov 2026); unpin when Playwright supports it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 350
     permissions:
       contents: read
