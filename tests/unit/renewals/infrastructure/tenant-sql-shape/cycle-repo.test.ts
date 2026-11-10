@@ -69,6 +69,8 @@ describe('renewal cycle repo — tenant predicate on every statement (130 s2)', 
       findLatestCyclesForMembers: [T, ['member-1']],
       findLatestCycleForMember: [T, 'member-1'],
       list: [T, page],
+      // #765 — the true pending-review count behind the Renewals tab badge.
+      countPendingReview: [T],
       updateFrozenPlan: [tx, T, 'cycle-1', ANY],
       refreezeOpenCycleForPlanChangeInTx: [tx, T, 'cycle-1', ANY],
       linkInvoice: [tx, T, 'cycle-1', 'inv-1'],
