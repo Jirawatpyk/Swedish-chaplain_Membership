@@ -973,6 +973,82 @@ describe('<EventFeeForm>', () => {
     expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success, undefined);
   });
 
+  // #90 (R150) — the browser submits a form when Enter is pressed in one of
+  // its inputs. Here that would issue a tax document with no confirm step, so
+  // Enter in a field is cancelled; only the button submits. jsdom does not
+  // perform implicit submission, so the cancelled keydown is the evidence.
+  describe('Enter in a field never submits (#90)', () => {
+    async function completeAsPaidForm() {
+      const fetchMock = mockFetchRegistrations([matchedRegistration]);
+      vi.stubGlobal('fetch', fetchMock);
+      renderForm({ initialEventId: 'ev-1' });
+      fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+      expect(
+        screen.getByRole('radio', { name: new RegExp(modeMessages.alreadyPaid.label) }),
+      ).toBeChecked();
+      return fetchMock;
+    }
+
+    it('Enter in the event picker, the amount, the payment date and a mode radio is cancelled', async () => {
+      const fetchMock = await completeAsPaidForm();
+      const fields = [
+        screen.getByRole('combobox', { name: new RegExp(enMessages.admin.invoices.eventFeeForm.eventPicker.label) }),
+        screen.getByLabelText(/Amount/),
+        screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`)),
+        screen.getByRole('radio', { name: new RegExp(modeMessages.alreadyPaid.label) }),
+      ];
+      for (const field of fields) {
+        expect(fireEvent.keyDown(field, { key: 'Enter' })).toBe(false);
+      }
+      expect(
+        fetchMock.mock.calls.some((c) => String(c[0]) === '/api/invoices/event-draft'),
+      ).toBe(false);
+    });
+
+    it('Enter in a manual buyer field is cancelled', async () => {
+      vi.stubGlobal('fetch', mockFetchRegistrations([nonMemberRegistration]));
+      renderForm({ initialEventId: 'ev-1' });
+      fireEvent.click(await screen.findByRole('button', { name: /Bob/ }));
+      expect(fireEvent.keyDown(screen.getByLabelText(/Legal name/), { key: 'Enter' })).toBe(false);
+      expect(fireEvent.keyDown(screen.getByLabelText('Tax ID (optional)'), { key: 'Enter' })).toBe(false);
+    });
+
+    it('Enter still picks an event from the open list, and submits nothing', async () => {
+      const fetchMock = mockFetchRegistrations([matchedRegistration]);
+      vi.stubGlobal('fetch', fetchMock);
+      renderForm();
+      const picker = screen.getByRole('combobox', {
+        name: new RegExp(enMessages.admin.invoices.eventFeeForm.eventPicker.label),
+      });
+      picker.focus();
+      fireEvent.keyDown(picker, { key: 'ArrowDown' });
+      fireEvent.keyDown(picker, { key: 'Enter' });
+      expect(await screen.findByRole('button', { name: /Alice/ })).toBeInTheDocument();
+      expect(
+        fetchMock.mock.calls.some((c) => String(c[0]) === '/api/invoices/event-draft'),
+      ).toBe(false);
+    });
+
+    it('Enter on the submit button is left alone', async () => {
+      await completeAsPaidForm();
+      const button = screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      });
+      expect(fireEvent.keyDown(button, { key: 'Enter' })).toBe(true);
+    });
+
+    it('an Enter that commits IME composition is left alone', async () => {
+      await completeAsPaidForm();
+      expect(
+        fireEvent.keyDown(screen.getByLabelText(/Amount/), { key: 'Enter', isComposing: true }),
+      ).toBe(true);
+      // Safari reports the IME commit as keyCode 229 with isComposing false.
+      expect(
+        fireEvent.keyDown(screen.getByLabelText(/Amount/), { key: 'Enter', keyCode: 229 }),
+      ).toBe(true);
+    });
+  });
+
   it('Cluster 5 (Finding 1 — event follow-up): issue-as-paid email_dispatch="skipped_no_email" → success toast carries the no-email warning description', async () => {
     const fetchMock = mockFetchRegistrations([matchedRegistration]);
     vi.stubGlobal('fetch', fetchMock);
