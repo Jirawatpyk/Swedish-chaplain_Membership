@@ -567,9 +567,12 @@ export function EventFeeForm({
   function pickEvent(next: string) {
     const option =
       events.find((e) => e.eventId === next) ?? eventSearch.results.find((e) => e.eventId === next) ?? null;
-    setPickedEvent(option);
     // AURA clears its own text on a pick without calling onSearch('').
     eventSearch.reset();
+    // #91 — AURA reports a pick of the event already chosen too; that
+    // changes nothing, so it must not reset the attendee and payment fields.
+    if (next === eventId) return;
+    setPickedEvent(option);
     handleEventChange(next);
   }
 
@@ -1027,17 +1030,24 @@ export function EventFeeForm({
             AURA's own field does after a blur or close. */}
         <div
           onFocusCapture={() => eventSearch.reset()}
+          // #91 — AURA drops its text on blur without calling onSearch(''); a
+          // stale unmatched query would hide the chosen event from the field.
+          onBlurCapture={() => eventSearch.reset()}
           onKeyDownCapture={(e) => {
             if (e.key === 'Escape') eventSearch.reset();
           }}
           onPointerDownCapture={(e) => {
-            // The chevron and clear buttons: AURA drops its query on both.
+            // The chevron button: AURA drops its query on it.
             if (e.target instanceof Element && e.target.closest('button')) eventSearch.reset();
           }}
         >
         <Combobox
           id="eventId"
           label={t('eventPicker.label')}
+          // #91 (R151) — clearing the event resets the whole form (attendee,
+          // amount, buyer, payment fields), so neither Escape nor a clear
+          // button may do it; to change it, open the list and pick another.
+          clearable={false}
           options={eventOptions}
           // #54 — AURA lists at most `limit` (default 200) options. The page
           // loads 200 and may append the deep-linked event as the 201st, so
