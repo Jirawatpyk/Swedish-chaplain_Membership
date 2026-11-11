@@ -33,10 +33,10 @@
  */
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CheckIcon, Users } from 'lucide-react';
-import { Badge } from '@jirawatpyk/aura-react';
+import { Badge, TextField } from '@jirawatpyk/aura-react';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ErrorState } from '@/components/shell/error-state';
@@ -285,6 +285,9 @@ export const ATTENDEE_PAGE_SIZE = 200;
  */
 export const ATTENDEE_LOAD_CAP = 2000;
 
+/** #89 — a list longer than this gets a filter above it. */
+export const ATTENDEE_FILTER_THRESHOLD = 20;
+
 type DetailPage = {
   registrations?: readonly AttendeeRow[];
   pagination?: { totalCount?: number };
@@ -320,6 +323,8 @@ export function EventAttendeePickerLoader({
   const showReal = useMinDelay(300, state.kind !== 'loading');
   const autoSelected = useRef(false);
   const cutId = `attendee-picker-cut-${eventId}`;
+  const filterId = useId();
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -386,21 +391,111 @@ export function EventAttendeePickerLoader({
       />
     );
   }
-  const cut = state.total > state.rows.length;
+  return (
+    <LoadedAttendees
+      rows={state.rows}
+      total={state.total}
+      query={query}
+      onQuery={setQuery}
+      filterId={filterId}
+      cutId={cutId}
+      selectedRegistrationId={selectedRegistrationId}
+      autoSelectRegistrationId={autoSelectRegistrationId}
+      onSelect={onSelect}
+      labelId={labelId}
+    />
+  );
+}
+
+/**
+ * The loaded list: the "Showing N of M" line when the load was cut, a note
+ * when a deep link's registration is not in the list (#89, UX L6), and, for
+ * more than `ATTENDEE_FILTER_THRESHOLD` rows, a filter by name and company
+ * (#89). The picked row stays listed while it filters, and the count is said
+ * to screen readers.
+ */
+function LoadedAttendees({
+  rows,
+  total,
+  query,
+  onQuery,
+  filterId,
+  cutId,
+  selectedRegistrationId,
+  autoSelectRegistrationId,
+  onSelect,
+  labelId,
+}: {
+  readonly rows: readonly AttendeeRow[];
+  readonly total: number;
+  readonly query: string;
+  readonly onQuery: (q: string) => void;
+  readonly filterId: string;
+  readonly cutId: string;
+  readonly selectedRegistrationId: string | null;
+  readonly autoSelectRegistrationId: string | null;
+  readonly onSelect: (row: AttendeeRow) => void;
+  readonly labelId?: string | undefined;
+}) {
+  const t = useTranslations('admin.invoices.eventFeeForm.attendeePicker');
+  const cut = total > rows.length;
+  const showFilter = rows.length > ATTENDEE_FILTER_THRESHOLD;
+  const needle = showFilter ? query.trim().toLocaleLowerCase() : '';
+  const { shown, matches } = useMemo(() => {
+    if (needle === '') return { shown: rows, matches: rows.length };
+    const isMatch = (r: AttendeeRow) =>
+      r.attendeeName.toLocaleLowerCase().includes(needle) ||
+      (r.attendeeCompany ?? '').toLocaleLowerCase().includes(needle);
+    return {
+      // The picked row stays listed, so the selection never disappears.
+      shown: rows.filter((r) => r.registrationId === selectedRegistrationId || isMatch(r)),
+      matches: rows.filter(isMatch).length,
+    };
+  }, [rows, needle, selectedRegistrationId]);
+  const linkNotFound =
+    autoSelectRegistrationId !== null &&
+    !rows.some((r) => r.registrationId === autoSelectRegistrationId && !r.isPseudonymised);
   return (
     <div className="flex flex-col gap-[var(--aura-space-2)]">
-      {cut ? (
-        <p id={cutId} className="text-sm text-[var(--aura-fg-secondary)]" data-testid="attendee-picker-cut">
-          {t('cut', { shown: state.rows.length, total: state.total })}
+      {linkNotFound ? (
+        <p className="text-sm text-[var(--aura-fg-secondary)]" data-testid="attendee-picker-link-not-found">
+          {t('linkNotFound')}
         </p>
       ) : null}
-      <EventAttendeePicker
-        rows={state.rows}
-        selectedRegistrationId={selectedRegistrationId}
-        onSelect={onSelect}
-        labelId={labelId}
-        describedById={cut ? cutId : undefined}
-      />
+      {cut ? (
+        <p id={cutId} className="text-sm text-[var(--aura-fg-secondary)]" data-testid="attendee-picker-cut">
+          {t('cut', { shown: rows.length, total })}
+        </p>
+      ) : null}
+      {showFilter ? (
+        <TextField
+          id={filterId}
+          type="search"
+          inputMode="search"
+          autoComplete="off"
+          touchHeight
+          label={t('filter.label')}
+          placeholder={t('filter.placeholder')}
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+        />
+      ) : null}
+      {/* The filter's count, for screen readers (the list itself changes silently). */}
+      <p role="status" className="sr-only">
+        {needle !== '' ? t('filter.count', { shown: shown.length, total: rows.length }) : ''}
+      </p>
+      {needle !== '' && matches === 0 ? (
+        <p className="text-sm text-[var(--aura-fg-secondary)]">{t('filter.noMatch')}</p>
+      ) : null}
+      {shown.length > 0 || needle === '' ? (
+        <EventAttendeePicker
+          rows={shown}
+          selectedRegistrationId={selectedRegistrationId}
+          onSelect={onSelect}
+          labelId={labelId}
+          describedById={cut ? cutId : undefined}
+        />
+      ) : null}
     </div>
   );
 }

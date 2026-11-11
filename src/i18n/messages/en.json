@@ -3121,6 +3121,8 @@
         "title": "New invoice draft",
         "description": "Select a member and plan. You can preview before issuing.",
         "cancel": "Back to list",
+        "memberLinkUnusable": "The member from your link can't be invoiced: it is archived or was not found. Pick a member below.",
+        "registrationLinkUnusable": "The registration from your link was not found. Pick the event and the attendee below.",
         "type": {
           "legend": "What is this invoice for?",
           "label": "Invoice type",
@@ -3148,6 +3150,13 @@
           "cut": "Showing {shown} of {total} attendees.",
           "loadFailedTitle": "Attendees didn't load",
           "loadFailed": "Check your connection and try again.",
+          "linkNotFound": "The registration from your link isn't in this event's list, or its personal data has been erased. Pick an attendee below.",
+          "filter": {
+            "label": "Filter attendees",
+            "placeholder": "Name or company",
+            "count": "{shown} of {total} attendees",
+            "noMatch": "No attendees match."
+          },
           "loading": "Loading attendees…",
           "selectEventFirst": "Select an event to choose an attendee.",
           "matchBadge": {

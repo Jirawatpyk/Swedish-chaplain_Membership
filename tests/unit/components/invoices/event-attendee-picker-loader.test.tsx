@@ -103,3 +103,48 @@ describe('EventAttendeePickerLoader reads past the first page (#82)', () => {
     expect(fn).toHaveBeenCalledTimes(ATTENDEE_LOAD_CAP / ATTENDEE_PAGE_SIZE);
   });
 });
+
+// #89 — a filter above a long attendee list, and a word when a deep link's
+// registration is not in the list.
+describe('EventAttendeePickerLoader filter and deep-link note (#89)', () => {
+  const filterLabel = () => picker.filter?.label ?? '<missing attendeePicker.filter.label>';
+
+  it('a list of 20 or fewer has no filter', async () => {
+    stubPages(20);
+    renderLoader();
+    await waitFor(() => expect(document.querySelectorAll('li > button').length).toBe(20), { timeout: 3000 });
+    expect(screen.queryByRole('searchbox', { name: filterLabel() })).toBeNull();
+  });
+
+  it('filters a longer list by name, keeps the picked row, says the count, and says when nothing matches', async () => {
+    stubPages(30);
+    renderLoader('reg-5');
+    const box = await screen.findByRole('searchbox', { name: filterLabel() }, { timeout: 3000 });
+    fireEvent.change(box, { target: { value: 'attendee 2' } });
+    // "Attendee 2" and "Attendee 20".."Attendee 29", plus the picked "Attendee 5".
+    const names = [...document.querySelectorAll('li > button')].map((b) => b.getAttribute('aria-label')?.split(',')[0]);
+    expect(names).toContain('Attendee 5');
+    expect(names.filter((n) => n !== 'Attendee 5')).toHaveLength(11);
+    expect(document.body).toHaveTextContent('12 of 30 attendees');
+    fireEvent.change(box, { target: { value: 'zzz-nobody' } });
+    expect(screen.getByText(picker.filter?.noMatch ?? '<missing attendeePicker.filter.noMatch>')).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: '' } });
+    expect(document.querySelectorAll('li > button').length).toBe(30);
+  });
+
+  it('says when the linked registration is not in this event\'s list', async () => {
+    stubPages(10);
+    renderLoader('reg-not-here');
+    expect(
+      await screen.findByText(picker.linkNotFound ?? '<missing attendeePicker.linkNotFound>', {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing when the linked registration is listed', async () => {
+    stubPages(10);
+    renderLoader('reg-3');
+    await waitFor(() => expect(document.querySelectorAll('li > button').length).toBe(10), { timeout: 3000 });
+    expect(screen.queryByText(picker.linkNotFound ?? '<missing attendeePicker.linkNotFound>')).toBeNull();
+  });
+});
+

@@ -22,7 +22,7 @@ import {
 } from '@/lib/events-admin-deps';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, buttonClass } from '@jirawatpyk/aura-react/server';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { asMemberId, getMember } from '@/modules/members';
@@ -35,6 +35,7 @@ import { drizzleTenantSettingsRepo } from '@/modules/invoicing';
 import type { EventOption } from './_components/event-fee-form';
 import { toEventOption, withDeepLinkedEvent } from './_lib/event-options';
 import { MEMBER_PRELOAD_LIMIT, toMemberOption, withDeepLinkedMember } from './_lib/member-options';
+import { deepLinkNotices } from './_lib/deep-link-notices';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
 const UUID_RE =
@@ -218,6 +219,15 @@ export default async function NewInvoiceDraftPage({
     }
   }
 
+  const notices = deepLinkNotices({
+    initialMemberId,
+    members,
+    // With F6 off there is no Event tab to say it on.
+    initialRegistrationId: env.features.f6EventCreate ? initialRegistrationId : undefined,
+    initialEventId,
+    events,
+  });
+
   return (
     <FormContainer align="start">
       <PageHeader
@@ -231,6 +241,12 @@ export default async function NewInvoiceDraftPage({
           </Link>
         }
       />
+      {/* #89 (UX L6) — a deep link that cannot be used says so. */}
+      {notices.map((n) => (
+        <Alert key={n} tone="info" role="status" data-testid={`invoice-new-${n}`}>
+          {t(n)}
+        </Alert>
+      ))}
       {/* Spec 122 US8 (T807, `Admin-invoice-new`) — the switcher draws the
           board's cards: "What is this invoice for?", then the chosen form. */}
       <InvoiceCreateSwitcher
