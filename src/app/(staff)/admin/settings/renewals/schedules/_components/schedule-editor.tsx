@@ -38,6 +38,7 @@ import { StepCard } from './step-card';
 import { ReminderTimeline } from './reminder-timeline';
 import { composeUniqueStepId, composeTemplateId } from './step-id-composer';
 import { formatDatePreset } from '@/lib/format-date-localised';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 
 // ---------------------------------------------------------------------------
 // Wire-shape types — match the route-handler JSON contract.
@@ -233,6 +234,11 @@ export function ScheduleEditor({
     byBucketRef.current = byBucket;
   }, [byBucket]);
   const [activeBucket, setActiveBucket] = useState<TierBucket>(defaultBucket);
+  // PR M (#40) — keep the last step clear of the save bar from 640px, as the
+  // other viewport bars do. Only the active tier's bar is mounted and it
+  // remounts on a tier change, so the selector names the tier: a new selector
+  // re-runs the measure on the new bar.
+  useActionBarScrollPadding(true, `.schedule-actions--${activeBucket}`);
   const [pending, startTransition] = useTransition();
   const [saveError, setSaveError] = useState<string | null>(null);
   // C1 (`.superpowers/sdd/followup-reminder-uxwave-brief.md`) — unsaved-
@@ -590,7 +596,7 @@ export function ScheduleEditor({
               edgeBelow="sm"
               label={t('saveBarLabel')}
               status={status}
-              className="chamber-viewport-actionbar schedule-actions"
+              className={`chamber-viewport-actionbar schedule-actions schedule-actions--${b}`}
             >
               <Button
                 variant="secondary"

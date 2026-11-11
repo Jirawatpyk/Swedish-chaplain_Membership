@@ -1794,7 +1794,8 @@
         },
         "draftPlaceholder": "(utkast)",
         "pagination": {
-          "label": "Fakturasidor"
+          "label": "Fakturasidor",
+          "loading": "Läser in sidan…"
         },
         "cols": {
           "number": "Nummer",

@@ -10,6 +10,7 @@ import { LayoutTemplate } from 'lucide-react';
 import { QueueTable } from '@/components/broadcast/admin/queue-table';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
 import { QueuePagination } from '@/components/broadcast/admin/queue-pagination';
+
 import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banner';
 import { OverdueBanner } from '@/components/broadcast/admin/overdue-banner';
 import { isDefaultBroadcastView } from './_lib/is-default-view';
@@ -33,6 +34,9 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { isYmd, tenantDayRangeUtc } from '@/lib/tenant-day-range';
 import { unstable_cache } from 'next/cache';
+
+/** R148 — where a pager link lands focus. */
+const QUEUE_LIST_ID = 'eblast-queue-list';
 
 /**
  * R6 staff-review W-P2 fix — cache the PERCENTILE_CONT SLA stats
@@ -407,7 +411,13 @@ export default async function AdminBroadcastsPage({
       {/* Spec 122 US12b — the filters and the list in one AURA card, frameless
           on a phone (the cards stand on the page gutter), as every list. */}
       <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
-        <div className="flex flex-col gap-[var(--aura-space-4)]">
+        {/* R148 — a page link lands here: the SLA card and the halt banner
+            above it would otherwise fill the first screen. */}
+        <div
+          id={QUEUE_LIST_ID}
+          tabIndex={-1}
+          className="flex flex-col gap-[var(--aura-space-4)] outline-none"
+        >
           <QueueFilters
             memberOptions={memberOptions}
             stageCounts={stageChips.kind === 'ok' ? stageChips.counts : null}
@@ -440,6 +450,7 @@ export default async function AdminBroadcastsPage({
                 }
                 firstPageHref={firstPageHref}
                 nextPageHref={nextPageHref}
+                focusTargetId={QUEUE_LIST_ID}
               />
             }
           />

@@ -32,9 +32,14 @@ function pipelineGrid(page: import('@playwright/test').Page) {
   return page.locator('#work-queue-panel').getByRole('grid', { name: /renewal pipeline/i });
 }
 
-/** Body rows (a header row holds no gridcell) — the cards when stacked. */
+/**
+ * Member rows — the cards when stacked. A member row has the company link; the
+ * header row has none, and neither has the empty-bucket row ("No members in
+ * this bucket."), which also holds a gridcell and so was counted as a card
+ * when the bucket was empty late in a run (R147).
+ */
 function pipelineRows(page: import('@playwright/test').Page) {
-  return pipelineGrid(page).getByRole('row').filter({ has: page.getByRole('gridcell') });
+  return pipelineGrid(page).getByRole('row').filter({ has: page.getByRole('link') });
 }
 
 async function hasHorizontalScroll(page: import('@playwright/test').Page): Promise<boolean> {

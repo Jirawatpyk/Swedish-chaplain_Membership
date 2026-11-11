@@ -805,7 +805,7 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     expect(results.violations).toEqual([]);
   });
 
-  test('axe-core WCAG 2.1/2.2 AA scan — fixed-bottom bulk toolbar, 1 row selected (plain tab order)', async ({
+  test('axe-core WCAG 2.1/2.2 AA scan — sticky bulk toolbar, 1 row selected (plain tab order)', async ({
     page,
   }) => {
     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
@@ -864,12 +864,24 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     await page.keyboard.press('Tab');
     await expect(approveButton).toBeFocused();
 
-    // Scan from the top of the page. Selecting the row scrolls it into view,
-    // and where that leaves the page decides whether the halt banner's button
-    // sits half under the sticky top bar — which axe then reports as
-    // `target-size` on the banner, not on this toolbar (R106, PR #693: the
-    // larger bar clearance moved the scroll on mobile-chrome). The toolbar is
-    // fixed, so it is scanned at any scroll position.
+    // Where the page sits decides what the two sticky bars cover. At scroll 0
+    // in a 900px viewport the bulk bar (AURA's floating sticky card from
+    // 640px) overlaps the Stage chips (R143, R147); any mid-page scroll puts a
+    // halt-banner button half under the sticky top bar instead (R106, R148).
+    // So scan at scroll 0, where nothing sits under the top bar, in a viewport
+    // tall enough that the bulk bar clears the chips. KNOWN GAP (PR #775):
+    // on a short screen the floating bar can still cover low chips; a focused
+    // chip is kept clear by root `scroll-padding-bottom`.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const chipsBottom = await page
+      .locator('.aura-tag[data-status]')
+      .last()
+      .evaluate((el) => el.getBoundingClientRect().bottom + window.scrollY);
+    const barHeight = await toolbar.evaluate((el) => el.getBoundingClientRect().height);
+    await page.setViewportSize({
+      width: 1280,
+      height: Math.max(900, Math.ceil(chipsBottom + barHeight + 48)),
+    });
     await page.evaluate(() => window.scrollTo(0, 0));
     await expect(toolbar).toBeVisible();
 
