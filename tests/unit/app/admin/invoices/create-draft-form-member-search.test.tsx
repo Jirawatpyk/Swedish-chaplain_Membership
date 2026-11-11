@@ -105,4 +105,19 @@ describe('CreateDraftForm — the member picker searches the server (#82)', () =
     await new Promise((r) => setTimeout(r, 400));
     expect(searchCalls(fn)).toHaveLength(0);
   });
+
+  // #89 (UX L1) — with server search on, the field says typing reaches every member.
+  it('hints that typing searches all members only when the server search is on', () => {
+    stubFetch(() => listOf([]));
+    const { unmount } = renderForm(true);
+    expect(document.getElementById('memberId')).toHaveAccessibleDescription(
+      expect.stringContaining(picker.searchHint ?? '<missing memberPicker.searchHint>'),
+    );
+    unmount();
+    renderForm(false);
+    expect(document.getElementById('memberId')).not.toHaveAccessibleDescription(
+      expect.stringContaining(picker.searchHint ?? '<missing memberPicker.searchHint>'),
+    );
+  });
 });
+

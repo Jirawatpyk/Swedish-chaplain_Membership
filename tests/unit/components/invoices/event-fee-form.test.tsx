@@ -304,6 +304,17 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     expect(await screen.findByText(picker.searchFailed ?? '<missing eventPicker.searchFailed>', NOTE)).toBeInTheDocument();
   });
 
+  // #89 (UX L2) — with server search on, the field says typing reaches older events.
+  it('hints that typing searches older events only when the server search is on', () => {
+    stubFetch(() => listOf([]));
+    const { unmount } = renderForm();
+    const hint = picker.searchHint ?? '<missing eventPicker.searchHint>';
+    expect(document.getElementById('eventId')).toHaveAccessibleDescription(expect.stringContaining(hint));
+    unmount();
+    renderForm({ eventSearchBefore: null });
+    expect(document.getElementById('eventId')).not.toHaveAccessibleDescription(expect.stringContaining(hint));
+  });
+
   it('fewer than a full page preloaded (every event is listed) → typing filters locally, no server search', async () => {
     const fn = stubFetch(() => listOf([oldEvent]));
     renderForm({ eventSearchBefore: null });

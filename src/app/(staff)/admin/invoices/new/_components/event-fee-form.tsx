@@ -1033,9 +1033,13 @@ export function EventFeeForm({
           loadingText={t('eventPicker.searching')}
           placeholder={noEvents ? t('eventPicker.noEvents') : t('eventPicker.placeholder')}
           emptyText={eventPickerEmptyText()}
+          // #89 (UX L2) — a failed search says so; otherwise, with server
+          // search on, the hint says typing reaches older events too.
           {...(eventSearch.failed && eventOptions.length > 0
             ? { hint: t('eventPicker.searchFailed') }
-            : {})}
+            : eventSearchBefore !== null
+              ? { hint: t('eventPicker.searchHint') }
+              : {})}
           disabled={noEvents}
         />
         </div>

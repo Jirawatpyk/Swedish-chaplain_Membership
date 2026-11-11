@@ -418,9 +418,13 @@ export function CreateDraftForm({
                 : {})}
               placeholder={noMembers ? tPicker('noBillableMembers') : tPicker('placeholder')}
               emptyText={memberSearch.failed ? tPicker('searchFailed') : tPicker('empty')}
+              // #89 (UX L1) — a failed search says so; otherwise, with server
+              // search on, the hint says typing reaches every member.
               {...(memberSearch.failed && memberOptions.length > 0
                 ? { hint: tPicker('searchFailed') }
-                : {})}
+                : memberSearchEnabled
+                  ? { hint: tPicker('searchHint') }
+                  : {})}
               disabled={noMembers}
             />
             {/* #82 (UX M2) — with local matches shown, AURA announces their

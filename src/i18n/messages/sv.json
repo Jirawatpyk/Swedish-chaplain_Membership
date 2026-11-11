@@ -3139,6 +3139,7 @@
           "noEvents": "Inga evenemang tillgängliga",
           "fromLink": "Från din länk (finns inte i listan över senaste)",
           "fromLinkArchived": "Från din länk (arkiverat evenemang)",
+          "searchHint": "Skriv ett namn för att även söka bland äldre evenemang.",
           "searching": "Söker evenemang…",
           "searchFailed": "Evenemangssökningen misslyckades. Försök igen."
         },
@@ -3295,6 +3296,7 @@
           "empty": "Inga medlemmar matchar.",
           "noActiveMembers": "Inga aktiva medlemmar",
           "noBillableMembers": "Inga fakturerbara medlemmar",
+          "searchHint": "Skriv ett namn för att söka bland alla medlemmar.",
           "searching": "Söker medlemmar…",
           "searchFailed": "Medlemssökningen misslyckades. Försök igen."
         },
@@ -3807,6 +3809,8 @@
           "statusLabel": "Steg",
           "memberLabel": "Medlem",
           "memberAll": "Alla medlemmar",
+          "memberArchived": "{name} (arkiverad)",
+          "memberUnknown": "Okänd medlem",
           "submittedRange": "Inskickad",
           "reset": "Återställ filter",
           "upcomingSends": "Kommande utskick",
