@@ -51,6 +51,12 @@ describe('E-Blast queue member filter (#82)', () => {
     expect(rec.statements[0]!.sql).toMatch(/select\s+member_id::text AS member_id,\s*company_name,\s*status/i);
   });
 
+  it('#89 (PDPA I-6) — erased members are not offered, selected or not', async () => {
+    rec.statements.length = 0;
+    await readQueueMemberFilterOptions({ slug: T } as never, ID);
+    expect(rec.statements[0]!.sql).toMatch(/AND\s+erased_at\s+IS\s+NULL/i);
+  });
+
   it('without a selected member, only the non-archived ones', async () => {
     rec.statements.length = 0;
     await readQueueMemberFilterOptions({ slug: T } as never, undefined);

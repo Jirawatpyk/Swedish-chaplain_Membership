@@ -15,6 +15,9 @@ vi.mock('@/modules/events', async (importOriginal) => ({
   makeEventRegistrationLookupForTenant: () => ({ findById }),
 }));
 
+const warn = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/logger', () => ({ logger: { warn, error: vi.fn(), info: vi.fn() } }));
+
 const { runLoadRegistrationForErase } = await import('@/lib/events-admin-deps');
 
 const EVENT = '00000000-0000-4000-8000-000000000001';
@@ -49,5 +52,22 @@ describe('runLoadRegistrationForErase', () => {
     await expect(runLoadRegistrationForErase('swecham', REG)).resolves.toBeNull();
     findById.mockResolvedValueOnce({ ok: false, error: { code: 'db' } });
     await expect(runLoadRegistrationForErase('swecham', REG)).resolves.toBeNull();
+  });
+
+  it('logs a repo error (no attendee data), so a failed erasure lookup is not a silent 404', async () => {
+    warn.mockReset();
+    findById.mockResolvedValueOnce({ ok: false, error: { code: 'db_error' } });
+    await runLoadRegistrationForErase('swecham', REG);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const [fields] = warn.mock.calls[0]!;
+    expect(fields).toMatchObject({ event: 'admin_erase_pii_lookup_failed', tenant_slug: 'swecham' });
+    expect(JSON.stringify(fields)).not.toMatch(/attendee|name|email/i);
+  });
+
+  it('a miss is not logged', async () => {
+    warn.mockReset();
+    findById.mockResolvedValueOnce({ ok: true, value: null });
+    await runLoadRegistrationForErase('swecham', REG);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

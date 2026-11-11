@@ -266,6 +266,24 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     return input;
   }
 
+  // #89 review (UX H1) — the deep link names one registration on one event;
+  // after switching to another event the picker must not say the link's
+  // registration is missing from that event's list.
+  it('a deep-linked registration is looked for only on its own event, not on one switched to', async () => {
+    stubFetch(() => listOf([]));
+    renderForm({
+      events: [...events, { eventId: 'ev-2', label: 'Second Mixer (2026-07-01)' }],
+      initialEventId: 'ev-1',
+      initialRegistrationId: 'ffffffff-9999-4999-8999-ffffffffffff',
+    });
+    expect(await screen.findByTestId('attendee-picker-link-not-found', {}, { timeout: 3000 })).toBeInTheDocument();
+    const input = document.getElementById('eventId') as HTMLInputElement;
+    fireEvent.click(input);
+    fireEvent.click(await screen.findByRole('option', { name: /Second Mixer/ }));
+    await waitFor(() => expect(document.querySelectorAll('li > button').length).toBeGreaterThan(0), { timeout: 3000 });
+    expect(screen.queryByTestId('attendee-picker-link-not-found')).toBeNull();
+  });
+
   it('typing searches once after the debounce, and an event outside the loaded list can be picked', async () => {
     const fn = stubFetch(() => listOf([oldEvent]));
     renderForm();

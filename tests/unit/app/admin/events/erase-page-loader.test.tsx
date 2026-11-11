@@ -63,6 +63,12 @@ describe('erase page loader (#89)', () => {
     });
   });
 
+  it('accepts an uppercase event id in the path (Postgres prints uuids lowercase)', async () => {
+    deps.runLoadRegistrationForErase.mockResolvedValueOnce({ eventId: EVENT, attendeeName: 'P', isPseudonymised: false });
+    await open(EVENT.toUpperCase());
+    expect(view.renderErasePageBody).toHaveBeenCalledTimes(1);
+  });
+
   it('404s a registration that does not exist in the tenant', async () => {
     deps.runLoadRegistrationForErase.mockResolvedValueOnce(null);
     await expect(open()).rejects.toThrow('NEXT_NOT_FOUND');

@@ -146,5 +146,27 @@ describe('EventAttendeePickerLoader filter and deep-link note (#89)', () => {
     await waitFor(() => expect(document.querySelectorAll('li > button').length).toBe(10), { timeout: 3000 });
     expect(screen.queryByText(picker.linkNotFound ?? '<missing attendeePicker.linkNotFound>')).toBeNull();
   });
+
+  // #89 review (a11y H1) — the filter sits inside the event-fee form; Enter in
+  // it must not submit the form (which can issue a tax document as paid).
+  it('Enter in the filter does not submit the surrounding form', async () => {
+    stubPages(30);
+    renderLoader();
+    const box = await screen.findByRole('searchbox', { name: filterLabel() }, { timeout: 3000 });
+    // fireEvent returns false when a handler called preventDefault().
+    expect(fireEvent.keyDown(box, { key: 'Enter' })).toBe(false);
+  });
+
+  // #89 review (a11y M1 / UX M1) — the announced count is the matches, and a
+  // filter matching nobody says so in the live region, even with a row pinned.
+  it('announces the match count, not the pinned row, and "No attendees match" in the live region', async () => {
+    stubPages(30);
+    renderLoader('reg-5');
+    const box = await screen.findByRole('searchbox', { name: filterLabel() }, { timeout: 3000 });
+    fireEvent.change(box, { target: { value: 'zzz-nobody' } });
+    const statuses = screen.getAllByRole('status').map((s) => s.textContent);
+    expect(statuses).toContain(picker.filter?.noMatch);
+    expect(statuses.join(' ')).not.toMatch(/1 of 30/);
+  });
 });
 

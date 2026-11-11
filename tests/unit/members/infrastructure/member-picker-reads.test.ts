@@ -49,6 +49,12 @@ describe('memberPickerOptionsInTx', () => {
   });
 });
 
+it('memberPickerOptionsInTx: no statuses is no members, never every status (fail closed)', async () => {
+  const r = recordingDb();
+  expect(await memberPickerOptionsInTx(r.db as never, T, { statuses: [], limit: 100 })).toEqual([]);
+  expect(r.statements).toHaveLength(0);
+});
+
 describe('memberCompanyNamesByIdsInTx', () => {
   it('reads company names by id, fenced to the tenant, not erased', async () => {
     const r = recordingDb();
