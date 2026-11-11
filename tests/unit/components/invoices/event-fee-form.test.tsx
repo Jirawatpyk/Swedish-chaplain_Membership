@@ -1005,6 +1005,14 @@ describe('<EventFeeForm>', () => {
       ).toBe(false);
     });
 
+    it('Enter in a manual buyer field is cancelled', async () => {
+      vi.stubGlobal('fetch', mockFetchRegistrations([nonMemberRegistration]));
+      renderForm({ initialEventId: 'ev-1' });
+      fireEvent.click(await screen.findByRole('button', { name: /Bob/ }));
+      expect(fireEvent.keyDown(screen.getByLabelText(/Legal name/), { key: 'Enter' })).toBe(false);
+      expect(fireEvent.keyDown(screen.getByLabelText('Tax ID (optional)'), { key: 'Enter' })).toBe(false);
+    });
+
     it('Enter on the submit button is left alone', async () => {
       await completeAsPaidForm();
       const button = screen.getByRole('button', {
@@ -1017,6 +1025,10 @@ describe('<EventFeeForm>', () => {
       await completeAsPaidForm();
       expect(
         fireEvent.keyDown(screen.getByLabelText(/Amount/), { key: 'Enter', isComposing: true }),
+      ).toBe(true);
+      // Safari reports the IME commit as keyCode 229 with isComposing false.
+      expect(
+        fireEvent.keyDown(screen.getByLabelText(/Amount/), { key: 'Enter', keyCode: 229 }),
       ).toBe(true);
     });
   });
