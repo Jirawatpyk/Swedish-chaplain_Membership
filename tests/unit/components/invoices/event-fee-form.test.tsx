@@ -266,6 +266,24 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     return input;
   }
 
+  // #89 review (UX H1) — the deep link names one registration on one event;
+  // after switching to another event the picker must not say the link's
+  // registration is missing from that event's list.
+  it('a deep-linked registration is looked for only on its own event, not on one switched to', async () => {
+    stubFetch(() => listOf([]));
+    renderForm({
+      events: [...events, { eventId: 'ev-2', label: 'Second Mixer (2026-07-01)' }],
+      initialEventId: 'ev-1',
+      initialRegistrationId: 'ffffffff-9999-4999-8999-ffffffffffff',
+    });
+    expect(await screen.findByTestId('attendee-picker-link-not-found', {}, { timeout: 3000 })).toBeInTheDocument();
+    const input = document.getElementById('eventId') as HTMLInputElement;
+    fireEvent.click(input);
+    fireEvent.click(await screen.findByRole('option', { name: /Second Mixer/ }));
+    await waitFor(() => expect(document.querySelectorAll('li > button').length).toBeGreaterThan(0), { timeout: 3000 });
+    expect(screen.queryByTestId('attendee-picker-link-not-found')).toBeNull();
+  });
+
   it('typing searches once after the debounce, and an event outside the loaded list can be picked', async () => {
     const fn = stubFetch(() => listOf([oldEvent]));
     renderForm();
@@ -302,6 +320,17 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     renderForm();
     typeInPicker('Nothing');
     expect(await screen.findByText(picker.searchFailed ?? '<missing eventPicker.searchFailed>', NOTE)).toBeInTheDocument();
+  });
+
+  // #89 (UX L2) — with server search on, the field says typing reaches older events.
+  it('hints that typing searches older events only when the server search is on', () => {
+    stubFetch(() => listOf([]));
+    const { unmount } = renderForm();
+    const hint = picker.searchHint ?? '<missing eventPicker.searchHint>';
+    expect(document.getElementById('eventId')).toHaveAccessibleDescription(expect.stringContaining(hint));
+    unmount();
+    renderForm({ eventSearchBefore: null });
+    expect(document.getElementById('eventId')).not.toHaveAccessibleDescription(expect.stringContaining(hint));
   });
 
   it('fewer than a full page preloaded (every event is listed) → typing filters locally, no server search', async () => {
@@ -370,8 +399,14 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     stubFetch(() => new Response('{}', { status: 500 }));
     renderForm();
     typeInPicker('Gala');
-    // With loaded matches on show, the failure is the field's hint, not the note.
-    expect(await screen.findByText(picker.searchFailed ?? '', { selector: ':not(.aura-combo__status)' })).toBeInTheDocument();
+    // With loaded matches on show, the failure is the field's hint, not the
+    // note, and (#89 a11y M3) a status line says it to screen readers.
+    await waitFor(() =>
+      expect(document.getElementById('eventId')).toHaveAccessibleDescription(
+        expect.stringContaining(picker.searchFailed ?? '<missing>'),
+      ),
+    );
+    expect(screen.getAllByRole('status').some((s) => s.textContent === picker.searchFailed)).toBe(true);
     expect(screen.getByRole('option', { name: /Annual Gala/ })).toBeInTheDocument();
   });
 

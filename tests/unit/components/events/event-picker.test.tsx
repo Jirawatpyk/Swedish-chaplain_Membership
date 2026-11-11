@@ -210,5 +210,59 @@ describe('EventPicker on AURA Combobox (US9b-2)', () => {
       screen.getByText(enMessages.admin.events.import.eventPicker.loadErrorDetail),
     ).toBeVisible();
   });
+
+  // #89 — the picker loads the newest 100 events (the list route's ceiling).
+  // With a full page loaded, typed text searches the server for older ones,
+  // bounded to events starting at or before the oldest loaded one.
+  it('searches the server for events older than the newest 100, and keeps the picked one', async () => {
+    const hundred = Array.from({ length: 100 }, (_, i) => ({
+      eventId: `ev-${i}`,
+      name: `Recent Mixer ${i}`,
+      startDate: new Date(Date.UTC(2026, 10, 1) - i * 86_400_000).toISOString(),
+    }));
+    const oldest = hundred[99]!.startDate;
+    const OLD = { eventId: 'ev-old', name: 'Old Gala 2019', startDate: '2019-05-01T11:00:00.000Z' };
+    const fetchMock = vi.fn(async (url: string) => {
+      const u = new URL(url, 'http://x');
+      const body = u.searchParams.has('q') ? { items: [OLD] } : { items: hundred };
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(wrap(<Harness onChange={onChange} />));
+    const field = screen.getByRole('combobox', { name: 'Event' });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await user.click(field);
+    await user.type(field, 'Old Gala');
+    const option = await screen.findByRole('option', { name: /Old Gala 2019/ }, { timeout: 2000 });
+    const searchCall = fetchMock.mock.calls.map((c) => new URL(c[0], 'http://x')).find((u) => u.searchParams.has('q'))!;
+    expect(searchCall.pathname).toBe('/api/admin/events');
+    expect(searchCall.searchParams.get('q')).toBe('Old Gala');
+    expect(searchCall.searchParams.get('startedOnOrBefore')).toBe(oldest);
+    await user.click(option);
+    expect(onChange).toHaveBeenLastCalledWith('ev-old');
+    expect((field as HTMLInputElement).value).toContain('Old Gala 2019');
+  });
+
+  it('does not search the server when fewer than 100 events exist (all are loaded)', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ items: [AGM, GALA] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(wrap(<Harness />));
+    const field = screen.getByRole('combobox', { name: 'Event' });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await user.click(field);
+    await user.type(field, 'Gala');
+    expect(await screen.findByRole('option', { name: /Midsummer Gala/ })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 

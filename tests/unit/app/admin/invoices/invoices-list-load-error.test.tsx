@@ -56,10 +56,12 @@ function decodeEntities(html: string): string {
 
 // --- mocks ----------------------------------------------------------------
 
-const { errorSpy, warnSpy, listInvoicesPagedMock } = vi.hoisted(() => ({
+const { errorSpy, warnSpy, listInvoicesPagedMock, tableProps, memberNamesMock } = vi.hoisted(() => ({
   errorSpy: vi.fn(),
   warnSpy: vi.fn(),
   listInvoicesPagedMock: vi.fn(),
+  tableProps: vi.fn(),
+  memberNamesMock: vi.fn(),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -111,6 +113,9 @@ vi.mock('@/modules/payments', () => ({
   makeListSucceededPaymentMethodsDeps: () => ({}),
 }));
 vi.mock('@/modules/members', () => ({ directorySearch: vi.fn() }));
+vi.mock('@/lib/members-picker-deps', () => ({
+  runListMemberNamesByIds: (...args: unknown[]) => memberNamesMock(...args),
+}));
 vi.mock('@/modules/members/members-deps', () => ({ buildMembersDeps: () => ({}) }));
 vi.mock('@/modules/renewals', () => ({
   loadAutoRenewalQueueContext: vi.fn(),
@@ -125,7 +130,10 @@ vi.mock('@/modules/invoicing/infrastructure/db', () => ({ creditNotes: {} }));
 // Client components (next-intl react-client hooks have no provider under
 // renderToStaticMarkup) — irrelevant to what these tests assert.
 vi.mock('@/app/(staff)/admin/invoices/_components/invoice-table', () => ({
-  InvoicesTable: () => null,
+  InvoicesTable: (props: unknown) => {
+    tableProps(props);
+    return null;
+  },
 }));
 vi.mock('@/app/(staff)/admin/invoices/_components/invoice-filters', () => ({
   InvoiceFilters: () => null,
@@ -145,6 +153,8 @@ async function renderPage(searchParams: Record<string, string> = {}): Promise<st
 const LOAD_FAILED = "Couldn't load invoices. Please try again.";
 
 beforeEach(() => {
+  memberNamesMock.mockReset();
+  memberNamesMock.mockResolvedValue(new Map());
   errorSpy.mockClear();
   warnSpy.mockClear();
   listInvoicesPagedMock.mockReset();
@@ -258,5 +268,49 @@ describe('AdminInvoicesPage — one clock for the overdue filter', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// #89 — a draft's buyer name comes from a by-id read, not from the members
+// directory's first 100 rows (it asked for 500 and the clamp gave 100).
+describe('AdminInvoicesPage — draft buyer names by id', () => {
+  const draft = (invoiceId: string, memberId: string) => ({
+    invoiceId,
+    status: 'draft',
+    invoiceSubject: 'membership',
+    memberId,
+    memberIdentitySnapshot: null,
+    issueDate: null,
+    dueDate: null,
+    total: null,
+    creditedTotal: { satang: 0n },
+    pdf: null,
+    receiptPdf: null,
+    receiptDocumentNumberRaw: null,
+    createdAt: new Date('2026-06-01T03:00:00Z'),
+  });
+
+  it('reads the names of the drafts on this page by id, once, and shows them', async () => {
+    const { directorySearch } = await import('@/modules/members');
+    tableProps.mockClear();
+    memberNamesMock.mockReset();
+    memberNamesMock.mockResolvedValue(new Map([['m-101', 'ZPS Corporation Co., Ltd.']]));
+    listInvoicesPagedMock.mockResolvedValue({
+      ok: true,
+      value: { rows: [draft('inv-1', 'm-101'), draft('inv-2', 'm-101'), draft('inv-3', 'm-gone')], total: 3 },
+    });
+    await renderPage({ status: 'draft' });
+    expect(memberNamesMock).toHaveBeenCalledTimes(1);
+    expect(memberNamesMock).toHaveBeenCalledWith('tenant-a', ['m-101', 'm-gone']);
+    expect(directorySearch).not.toHaveBeenCalled();
+    const rows = (tableProps.mock.calls.at(-1)![0] as { rows: { invoiceId: string; memberName: string }[] }).rows;
+    expect(rows.map((r) => r.memberName)).toEqual(['ZPS Corporation Co., Ltd.', 'ZPS Corporation Co., Ltd.', '—']);
+  });
+
+  it('asks for no names when every row has its snapshot', async () => {
+    memberNamesMock.mockReset();
+    listInvoicesPagedMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+    await renderPage({});
+    expect(memberNamesMock).not.toHaveBeenCalled();
   });
 });

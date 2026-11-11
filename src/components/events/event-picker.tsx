@@ -20,8 +20,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { Combobox, Icon, IconButton, linkClass } from '@jirawatpyk/aura-react';
+import { Combobox, Icon, IconButton, comboboxFilter, linkClass, type ComboboxOption } from '@jirawatpyk/aura-react';
 import { formatDatePreset } from '@/lib/format-date-localised';
+import { useEventSearch } from '@/hooks/use-event-search';
+
+/** The list route's page ceiling; a full page means older events may exist. */
+const EVENT_LOAD_PAGE_SIZE = 100;
 
 export interface EventPickerOption {
   readonly eventId: string;
@@ -181,10 +185,9 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
       setLoading(true);
       setError(null);
       try {
-        // Page size 100 covers SweCham's typical ~12-event-per-year
-        // cadence with headroom. Pagination affordance is deferred to
-        // v1.x — chambers with >100 events need a search query upstream.
-        const res = await fetch('/api/admin/events?pageSize=100');
+        // The newest 100 (the route's ceiling). #89 — when a full page comes
+        // back, typed text also searches the server for older events.
+        const res = await fetch(`/api/admin/events?pageSize=${EVENT_LOAD_PAGE_SIZE}`);
         if (!res.ok) {
           // R2-S-2 (Round 2 — silent-failure-hunter): log status code
           // so dev debugging can distinguish 429 vs 500 vs kill-switch.
@@ -259,9 +262,22 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
     });
   }, [registerAddEvent]);
 
+  // #89 — a full page of loaded events may hide older ones: typed text then
+  // searches the server, bounded to events starting at or before the oldest
+  // loaded one (the list is newest first). Fewer than a page: all are loaded.
+  const searchBefore = useMemo(() => {
+    if (props.events !== undefined || fetchedEvents.length < EVENT_LOAD_PAGE_SIZE) return null;
+    return fetchedEvents.reduce((min, e) => (e.startDate < min ? e.startDate : min), fetchedEvents[0]!.startDate);
+  }, [props.events, fetchedEvents]);
+  const eventSearch = useEventSearch(searchBefore);
+  // The event picked from a search, so its label survives when the results change.
+  const [pickedFromSearch, setPickedFromSearch] = useState<EventPickerOption | null>(null);
+
   const selected = useMemo(
-    () => events.find((e) => e.eventId === props.value) ?? null,
-    [events, props.value],
+    () =>
+      events.find((e) => e.eventId === props.value) ??
+      (pickedFromSearch?.eventId === props.value ? pickedFromSearch : null),
+    [events, props.value, pickedFromSearch],
   );
 
   // Compute filename-hint suggestion when the upload's filename changes.
@@ -297,15 +313,30 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
 
   // Each option reads "name — date", so the closed field shows the date
   // as the cmdk trigger did; the name and raw date stay search terms.
-  const options = useMemo(
-    () =>
-      events.map((event) => ({
-        value: event.eventId,
-        label: `${event.name} — ${formatDatePreset(event.startDate, locale, 'medium')}`,
-        keywords: [event.name, event.startDate],
-      })),
-    [events, locale],
-  );
+  const { typed, results: searchResults, loading: searching, failed: searchFailed } = eventSearch;
+  const { options, localMatchCount } = useMemo(() => {
+    const toOption = (event: EventPickerOption): ComboboxOption => ({
+      value: event.eventId,
+      label: `${event.name} — ${formatDatePreset(event.startDate, locale, 'medium')}`,
+      keywords: [event.name, event.startDate],
+    });
+    if (searchBefore === null) return { options: events.map(toOption), localMatchCount: 0 };
+    if (typed === '') {
+      // AURA shows the value's label from the options, so an event picked
+      // from a search stays listed while nothing is typed.
+      const extra =
+        selected !== null && !events.some((e) => e.eventId === selected.eventId) ? [selected] : [];
+      return { options: [...extra, ...events].map(toOption), localMatchCount: 0 };
+    }
+    // With `onSearch` AURA shows the options as given: loaded events match at
+    // once with its own filter, the server's older ones follow.
+    const local = events.map(toOption).filter((o) => comboboxFilter(o, typed));
+    // Server results that are loaded events are left out even when AURA's
+    // filter missed them locally, so no event is listed twice.
+    const loadedIds = new Set(events.map((e) => e.eventId));
+    const server = searchResults.filter((r) => !loadedIds.has(r.eventId)).map(toOption);
+    return { options: [...local, ...server], localMatchCount: local.length };
+  }, [events, locale, searchBefore, typed, searchResults, selected]);
 
   return (
     <div className="flex flex-col gap-[var(--aura-space-2)]">
@@ -315,7 +346,18 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
         className="flex items-start gap-[var(--aura-space-2)]"
         data-testid="event-picker-field-row"
       >
-        <div className="min-w-0 flex-1">
+        <div
+          className="min-w-0 flex-1"
+          // A focus starts with no typed text, as AURA's own field does after
+          // a blur or close; Escape, the chevron and the clear button drop it.
+          onFocusCapture={() => eventSearch.reset()}
+          onKeyDownCapture={(e) => {
+            if (e.key === 'Escape') eventSearch.reset();
+          }}
+          onPointerDownCapture={(e) => {
+            if (e.target instanceof Element && e.target.closest('button')) eventSearch.reset();
+          }}
+        >
           <Combobox
             touchHeight
             label={props.label}
@@ -343,6 +385,10 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
                     : ''}
                 </span>
                 {props.hint !== undefined ? <span className="block">{props.hint}</span> : null}
+                {/* #89 review (UX M2) — the search past the loaded events, or its failure. */}
+                {searchBefore !== null ? (
+                  <span className="block">{searchFailed ? t('searchFailed') : t('searchHint')}</span>
+                ) : null}
               </span>
             }
             required
@@ -350,18 +396,40 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
             options={options}
             value={selected?.eventId ?? null}
             onChange={(eventId) => {
-              const event = events.find((e) => e.eventId === eventId) ?? null;
+              const event =
+                events.find((e) => e.eventId === eventId) ??
+                searchResults.find((e) => e.eventId === eventId) ??
+                null;
+              if (event !== null && !events.some((e) => e.eventId === event.eventId)) {
+                setPickedFromSearch(event);
+              }
+              // AURA clears its own text on a pick without calling onSearch('').
+              eventSearch.reset();
               props.onChange(event?.eventId ?? null, event);
             }}
+            {...(searchBefore !== null
+              ? {
+                  onSearch: eventSearch.onSearch,
+                  // A loaded page plus search results can pass AURA's 200.
+                  limit: Math.max(200, options.length),
+                }
+              : {})}
             // Clearing returns to the existing "no event" state; Confirm
             // stays gated on an event, as before.
             clearable
-            loading={loading}
-            loadingText={t('loading')}
-            emptyText={error ?? t('emptyState')}
+            // AURA hides every option while loading, so a search shows as
+            // loading only while nothing loaded matches yet.
+            loading={loading || (searching && localMatchCount === 0)}
+            loadingText={loading ? t('loading') : t('searching')}
+            emptyText={error ?? (searchFailed ? t('searchFailed') : t('emptyState'))}
             // A failed load shows on the field itself, not only in the open list.
             error={error ?? undefined}
           />
+          {/* With loaded events matching, AURA announces their count, not that
+              the older-events search failed: say it here. */}
+          <p role="status" className="sr-only">
+            {searchFailed && localMatchCount > 0 ? t('searchFailed') : ''}
+          </p>
         </div>
         <div className="mt-[var(--event-picker-box-offset,1.625rem)] flex h-[2.625rem] items-center">
           <IconButton

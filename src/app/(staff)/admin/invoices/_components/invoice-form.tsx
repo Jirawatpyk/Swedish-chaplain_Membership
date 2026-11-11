@@ -398,6 +398,7 @@ export function CreateDraftForm({
           >
             <Combobox
               id="memberId"
+              touchHeight
               label={t('fields.memberId')}
               options={memberOptions}
               // AURA lists at most `limit` (default 200) options; list every
@@ -418,9 +419,13 @@ export function CreateDraftForm({
                 : {})}
               placeholder={noMembers ? tPicker('noBillableMembers') : tPicker('placeholder')}
               emptyText={memberSearch.failed ? tPicker('searchFailed') : tPicker('empty')}
-              {...(memberSearch.failed && memberOptions.length > 0
+              // #89 (UX L1) — a failed search says so; otherwise, with server
+              // search on, the hint says typing reaches every member.
+              {...(memberSearch.failed
                 ? { hint: tPicker('searchFailed') }
-                : {})}
+                : memberSearchEnabled
+                  ? { hint: tPicker('searchHint') }
+                  : {})}
               disabled={noMembers}
             />
             {/* #82 (UX M2) — with local matches shown, AURA announces their

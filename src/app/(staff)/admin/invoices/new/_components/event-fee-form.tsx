@@ -551,7 +551,11 @@ export function EventFeeForm({
     // Loaded events match at once, with AURA's own filter (label and
     // description, Thai-aware); the server's older ones follow.
     const local = events.map(toOption).filter((o) => comboboxFilter(o, eventTyped));
-    const server = eventResults.filter((r) => !local.some((o) => o.value === r.eventId)).map(toOption);
+    // Server results that are loaded events are left out even when AURA's
+    // filter missed them locally (it and ILIKE can disagree), so no event is
+    // listed twice.
+    const loadedIds = new Set(events.map((e) => e.eventId));
+    const server = eventResults.filter((r) => !loadedIds.has(r.eventId)).map(toOption);
     return { eventOptions: [...local, ...server], localMatchCount: local.length };
   }, [events, eventTyped, eventResults, eventId, pickedEvent]);
 
@@ -1033,11 +1037,20 @@ export function EventFeeForm({
           loadingText={t('eventPicker.searching')}
           placeholder={noEvents ? t('eventPicker.noEvents') : t('eventPicker.placeholder')}
           emptyText={eventPickerEmptyText()}
-          {...(eventSearch.failed && eventOptions.length > 0
+          // #89 (UX L2) — a failed search says so; otherwise, with server
+          // search on, the hint says typing reaches older events too.
+          {...(eventSearch.failed
             ? { hint: t('eventPicker.searchFailed') }
-            : {})}
+            : eventSearchBefore !== null
+              ? { hint: t('eventPicker.searchHint') }
+              : {})}
           disabled={noEvents}
         />
+        {/* #89 review (a11y M3) — with loaded events matching, AURA announces
+            their count, not that the older-events search failed: say it here. */}
+        <p role="status" className="sr-only">
+          {eventSearch.failed && localMatchCount > 0 ? t('eventPicker.searchFailed') : ''}
+        </p>
         </div>
 
         {/* 2. Attendee picker */}
@@ -1051,9 +1064,15 @@ export function EventFeeForm({
             <EventAttendeePickerLoader
               key={eventId}
               eventId={eventId}
-              selectedRegistrationId={attendee?.registrationId ?? initialRegistrationId ?? null}
+              // #89 review (UX H1) — the deep link names a registration on ONE
+              // event; on any other event it is neither highlighted nor looked for.
+              selectedRegistrationId={
+                attendee?.registrationId ?? (eventId === initialEventId ? (initialRegistrationId ?? null) : null)
+              }
               onSelect={handleAttendeeSelect}
-              autoSelectRegistrationId={attendee === null ? (initialRegistrationId ?? null) : null}
+              autoSelectRegistrationId={
+                attendee === null && eventId === initialEventId ? (initialRegistrationId ?? null) : null
+              }
               labelId="attendee-picker-label"
             />
           </div>

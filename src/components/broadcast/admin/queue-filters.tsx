@@ -34,6 +34,7 @@ import {
   type BroadcastStatus,
 } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import { MARKETING_TURN_STATUSES } from '@/modules/broadcasts/domain/stage/whose-turn';
+import { queueMemberIdParam } from '@/lib/queue-member-id';
 
 // Default-view filter — mirrors `page.tsx` `statusRaw` resolution so
 // the visual checkbox state matches what the server actually filters
@@ -103,6 +104,8 @@ export interface QueueFiltersProps {
   readonly memberOptions: ReadonlyArray<{
     readonly memberId: string;
     readonly displayName: string;
+    /** #89 — only the selected member can be archived; its option says so. */
+    readonly archived?: boolean;
   }>;
   /**
    * F119 T116 (FR-025) — rows per status for the tenant, shown on each chip.
@@ -180,7 +183,10 @@ export function QueueFilters({
           : DEFAULT_STATUS,
     [currentStatusAll, urlStatus],
   );
-  const currentMemberId = searchParams.get('memberId') ?? '';
+  // #89 — the value the server filters by: a UUID, lowercased; anything else
+  // is ignored there, so it is "All members" here too.
+  const rawMemberId = searchParams.get('memberId') ?? '';
+  const currentMemberId = queueMemberIdParam(rawMemberId) ?? '';
   const currentFromDate = searchParams.get('fromDate') ?? '';
   const currentToDate = searchParams.get('toDate') ?? '';
   // FR-030 — the chip counts are per stage for the WHOLE tenant (the FR-025
@@ -292,7 +298,7 @@ export function QueueFilters({
     () =>
       urlStatus.length > 0 ||
       currentStatusAll ||
-      Boolean(currentMemberId) ||
+      Boolean(rawMemberId) ||
       Boolean(currentFromDate) ||
       Boolean(currentToDate) ||
       Boolean(currentSort) ||
@@ -300,7 +306,7 @@ export function QueueFilters({
     [
       urlStatus.length,
       currentStatusAll,
-      currentMemberId,
+      rawMemberId,
       currentFromDate,
       currentToDate,
       currentSort,
@@ -518,7 +524,15 @@ export function QueueFilters({
         onChange={(v) => pushUrl({ memberId: v || null })}
         options={[
           { value: '', label: t('memberAll') },
-          ...memberOptions.map((m) => ({ value: m.memberId, label: m.displayName })),
+          ...memberOptions.map((m) => ({
+            value: m.memberId,
+            label: m.archived ? t('memberArchived', { name: m.displayName }) : m.displayName,
+          })),
+          // A well-formed id that matches no member still filters the queue,
+          // so the filter names it rather than read "All members".
+          ...(currentMemberId !== '' && !memberOptions.some((m) => m.memberId === currentMemberId)
+            ? [{ value: currentMemberId, label: t('memberUnknown') }]
+            : []),
         ]}
       />
 

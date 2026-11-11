@@ -103,3 +103,71 @@ describe('EventAttendeePickerLoader reads past the first page (#82)', () => {
     expect(fn).toHaveBeenCalledTimes(ATTENDEE_LOAD_CAP / ATTENDEE_PAGE_SIZE);
   });
 });
+
+// #89 — a filter above a long attendee list, and a word when a deep link's
+// registration is not in the list.
+describe('EventAttendeePickerLoader filter and deep-link note (#89)', () => {
+  const filterLabel = () => picker.filter?.label ?? '<missing attendeePicker.filter.label>';
+
+  it('a list of 20 or fewer has no filter', async () => {
+    stubPages(20);
+    renderLoader();
+    await waitFor(() => expect(document.querySelectorAll('li > button').length).toBe(20), { timeout: 3000 });
+    expect(screen.queryByRole('searchbox', { name: filterLabel() })).toBeNull();
+  });
+
+  it('filters a longer list by name, keeps the picked row, says the count, and says when nothing matches', async () => {
+    stubPages(30);
+    renderLoader('reg-5');
+    const box = await screen.findByRole('searchbox', { name: filterLabel() }, { timeout: 3000 });
+    fireEvent.change(box, { target: { value: 'attendee 2' } });
+    // "Attendee 2" and "Attendee 20".."Attendee 29", plus the picked "Attendee 5".
+    const names = [...document.querySelectorAll('li > button')].map((b) => b.getAttribute('aria-label')?.split(',')[0]);
+    expect(names).toContain('Attendee 5');
+    expect(names.filter((n) => n !== 'Attendee 5')).toHaveLength(11);
+    // The announced count is the matches (11), not the pinned row.
+    expect(document.body).toHaveTextContent('11 of 30 attendees');
+    fireEvent.change(box, { target: { value: 'zzz-nobody' } });
+    expect(screen.getAllByText(picker.filter?.noMatch ?? '<missing attendeePicker.filter.noMatch>').length).toBeGreaterThan(0);
+    fireEvent.change(box, { target: { value: '' } });
+    expect(document.querySelectorAll('li > button').length).toBe(30);
+  });
+
+  it('says when the linked registration is not in this event\'s list', async () => {
+    stubPages(10);
+    renderLoader('reg-not-here');
+    expect(
+      await screen.findByText(picker.linkNotFound ?? '<missing attendeePicker.linkNotFound>', {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing when the linked registration is listed', async () => {
+    stubPages(10);
+    renderLoader('reg-3');
+    await waitFor(() => expect(document.querySelectorAll('li > button').length).toBe(10), { timeout: 3000 });
+    expect(screen.queryByText(picker.linkNotFound ?? '<missing attendeePicker.linkNotFound>')).toBeNull();
+  });
+
+  // #89 review (a11y H1) — the filter sits inside the event-fee form; Enter in
+  // it must not submit the form (which can issue a tax document as paid).
+  it('Enter in the filter does not submit the surrounding form', async () => {
+    stubPages(30);
+    renderLoader();
+    const box = await screen.findByRole('searchbox', { name: filterLabel() }, { timeout: 3000 });
+    // fireEvent returns false when a handler called preventDefault().
+    expect(fireEvent.keyDown(box, { key: 'Enter' })).toBe(false);
+  });
+
+  // #89 review (a11y M1 / UX M1) — the announced count is the matches, and a
+  // filter matching nobody says so in the live region, even with a row pinned.
+  it('announces the match count, not the pinned row, and "No attendees match" in the live region', async () => {
+    stubPages(30);
+    renderLoader('reg-5');
+    const box = await screen.findByRole('searchbox', { name: filterLabel() }, { timeout: 3000 });
+    fireEvent.change(box, { target: { value: 'zzz-nobody' } });
+    const statuses = screen.getAllByRole('status').map((s) => s.textContent);
+    expect(statuses).toContain(picker.filter?.noMatch);
+    expect(statuses.join(' ')).not.toMatch(/1 of 30/);
+  });
+});
+

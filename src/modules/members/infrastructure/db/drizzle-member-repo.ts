@@ -277,9 +277,10 @@ function buildDirectoryConds(filter: DirectoryFilter): SQL[] {
  * search + its COUNT, and the needs-invite chip count. Previously the erased
  * exclusion, status OR-set and q-filter were hand-assembled per caller; a
  * third caller made that a drift risk with a GDPR-shaped failure mode (a
- * count that includes erased tombstones).
+ * count that includes erased tombstones). #89: the invoice picker's slim
+ * preload (`member-picker-reads.ts`) shares it too.
  */
-function buildDirectoryWhere(
+export function buildDirectoryWhere(
   filter: DirectoryFilter | DirectoryOffsetFilter,
   tenantId: string,
 ): SQL {

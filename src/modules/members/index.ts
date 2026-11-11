@@ -483,6 +483,17 @@ export { countActiveMembersOnPlanInTx } from './infrastructure/db/count-active-m
 // runInTenant tx (Principle I).
 export { memberVatRegistrantByIdsInTx } from './infrastructure/db/member-vat-registrant';
 
+// #89 — the invoice pickers' slim reads: the /admin/invoices/new preload (four
+// fields, no contact rows) and the invoices list's draft buyer names by id.
+// Same free-function-through-the-barrel pattern; callers thread their own
+// runInTenant tx (Principle I).
+export {
+  memberPickerOptionsInTx,
+  memberCompanyNamesByIdsInTx,
+  type MemberPickerRow,
+  type MemberPickerStatus,
+} from './infrastructure/db/member-picker-reads';
+
 // COMP-1 US3-A — narrow erasure-status read for the member-detail ErasedBanner.
 // Same free-function-through-the-barrel narrow-read pattern as the
 // countActiveMembersOnPlan / memberVatRegistrantByIdsInTx pair above (avoids

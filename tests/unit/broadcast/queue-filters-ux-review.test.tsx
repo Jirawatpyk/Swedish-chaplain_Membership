@@ -62,14 +62,14 @@ afterEach(cleanup);
 describe('Upcoming sends preset (UX review M3, H5)', () => {
   it('turning it off drops sort, from and status only — the member and date filters stay', () => {
     nav.searchParams.current = new URLSearchParams(
-      'status=approved&sort=scheduled_for&from=now&memberId=m-1&fromDate=2026-09-01',
+      'status=approved&sort=scheduled_for&from=now&memberId=3f2b8c1e-9a4d-4e5f-8b6a-1c2d3e4f5a6b&fromDate=2026-09-01',
     );
     render(filters());
     fireEvent.click(upcomingButton());
     expect(nav.replaceMock).toHaveBeenCalledTimes(1);
     const url = new URL(nav.replaceMock.mock.calls[0]![0] as string, 'http://x');
     expect(url.pathname).toBe('/admin/broadcasts');
-    expect(url.searchParams.get('memberId')).toBe('m-1');
+    expect(url.searchParams.get('memberId')).toBe('3f2b8c1e-9a4d-4e5f-8b6a-1c2d3e4f5a6b');
     expect(url.searchParams.get('fromDate')).toBe('2026-09-01');
     expect(url.searchParams.has('sort')).toBe(false);
     expect(url.searchParams.has('from')).toBe(false);
@@ -145,7 +145,7 @@ describe('Reset matches its neighbours (UX review LOW)', () => {
 describe('chip counts under a filter they do not see (FR-030)', () => {
   const stageGroup = () => screen.getByRole('group', { name: /^stage$/i });
 
-  it.each([['fromDate=2026-09-01'], ['toDate=2026-09-30'], ['memberId=m-1'], ['status=approved&sort=scheduled_for&from=now']])(
+  it.each([['fromDate=2026-09-01'], ['toDate=2026-09-30'], ['memberId=3f2b8c1e-9a4d-4e5f-8b6a-1c2d3e4f5a6b'], ['status=approved&sort=scheduled_for&from=now']])(
     '%s → the Stage group is described as counting every E-Blast',
     (query) => {
       nav.searchParams.current = new URLSearchParams(query);
@@ -193,12 +193,12 @@ describe('the "Submitted" date range (parity, 19 Oct)', () => {
   });
 
   it('shows the range from the URL, and "Any time" drops both days and the cursor', () => {
-    nav.searchParams.current = new URLSearchParams('memberId=m-1&fromDate=2026-09-01&toDate=2026-09-10&cursor=abc');
+    nav.searchParams.current = new URLSearchParams('memberId=3f2b8c1e-9a4d-4e5f-8b6a-1c2d3e4f5a6b&fromDate=2026-09-01&toDate=2026-09-10&cursor=abc');
     render(filters());
     const range = screen.getByRole('button', { name: /^Submitted: 1\s?–\s?10 Sept 2026$/ });
     fireEvent.click(range);
     fireEvent.click(screen.getByRole('button', { name: 'Any time' }));
-    expect(nav.replaceMock).toHaveBeenLastCalledWith('/admin/broadcasts?memberId=m-1', { scroll: false });
+    expect(nav.replaceMock).toHaveBeenLastCalledWith('/admin/broadcasts?memberId=3f2b8c1e-9a4d-4e5f-8b6a-1c2d3e4f5a6b', { scroll: false });
   });
 });
 
@@ -241,7 +241,7 @@ describe('the global filter pattern (spec 122 US12b)', () => {
   });
 
   it('the Filters button counts the filters that are on (a stage, a member, each date)', () => {
-    nav.searchParams.current = new URLSearchParams('status=sent&memberId=m-1&fromDate=2026-09-01');
+    nav.searchParams.current = new URLSearchParams('status=sent&memberId=3f2b8c1e-9a4d-4e5f-8b6a-1c2d3e4f5a6b&fromDate=2026-09-01');
     render(filters());
     const bar = screen.getByRole('region', { name: 'Broadcast queue filters' });
     // (Reset is "Reset filters" too, so the sheet button is found by its popup.)

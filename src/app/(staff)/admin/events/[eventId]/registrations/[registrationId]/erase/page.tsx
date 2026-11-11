@@ -2,8 +2,8 @@
  * Admin erase-PII page (F6 Phase 10 T112 / FR-032a).
  *
  * Server component that:
- *   1. Loads the registration via `runLoadEventDetail` to confirm the
- *      registration exists in the path's eventId for THIS tenant
+ *   1. Reads the registration by id (`runLoadRegistrationForErase`, #89)
+ *      to confirm it exists in the path's eventId for THIS tenant
  *      (RLS-enforced) + read the attendee name for the dialog body.
  *   2. Renders a back-link to the event detail + the `ErasePiiDialog`
  *      auto-opened so admins arriving via deep-link don't need an
@@ -28,7 +28,7 @@ import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
-import { runLoadEventDetail } from '@/lib/events-admin-deps';
+import { runLoadRegistrationForErase } from '@/lib/events-admin-deps';
 import { DetailContainer } from '@/components/layout';
 import { renderErasePageBody } from './_components/erase-page-view';
 
@@ -81,17 +81,12 @@ export default async function ErasePiiPage({
     notFound();
   }
 
-  let result: Awaited<ReturnType<typeof runLoadEventDetail>>;
+  // #89 — read the registration by id (it used to be looked for in the first
+  // 500 rows of the event detail, so a later row 404'd and could not be
+  // erased). The tenant fence is the lookup's RLS plus its tenant predicate.
+  let registration: Awaited<ReturnType<typeof runLoadRegistrationForErase>>;
   try {
-    result = await runLoadEventDetail(tenantCtx.slug, {
-      eventId,
-      page: 1,
-      pageSize: 500, // wide enough to find the target row in normal events
-      unmatchedOnly: false,
-      matchTypeFilter: null,
-      q: null,
-      paymentStatusFilter: null,
-    });
+    registration = await runLoadRegistrationForErase(tenantCtx.slug, registrationId);
   } catch (e) {
     logger.error(
       {
@@ -110,18 +105,13 @@ export default async function ErasePiiPage({
         eventId,
         registrationId,
       },
-      '[F6] runLoadEventDetail threw on erase page',
+      '[F6] runLoadRegistrationForErase threw on erase page',
     );
     notFound();
   }
 
-  if (!result.ok) {
-    notFound();
-  }
-  const registration = result.value.registrations.find(
-    (r) => r.registrationId === registrationId,
-  );
-  if (!registration) {
+  // Missing in this tenant, or it belongs to another event (path mismatch).
+  if (registration === null || registration.eventId.toLowerCase() !== eventId.toLowerCase()) {
     notFound();
   }
   if (registration.isPseudonymised) {

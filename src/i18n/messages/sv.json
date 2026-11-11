@@ -3121,6 +3121,8 @@
         "title": "Nytt fakturautkast",
         "description": "Välj medlem och paket. Förhandsgranska före utfärdande.",
         "cancel": "Tillbaka",
+        "memberLinkUnusable": "Medlemmen från din länk kan inte användas här: den är arkiverad, hittades inte eller kunde inte läsas in. Välj en medlem nedan.",
+        "registrationLinkUnusable": "Registreringen från din länk hittades inte eller kunde inte läsas in. Välj evenemanget och deltagaren nedan.",
         "type": {
           "legend": "Vad avser denna faktura?",
           "label": "Fakturatyp",
@@ -3139,6 +3141,7 @@
           "noEvents": "Inga evenemang tillgängliga",
           "fromLink": "Från din länk (finns inte i listan över senaste)",
           "fromLinkArchived": "Från din länk (arkiverat evenemang)",
+          "searchHint": "Skriv ett namn för att även söka bland äldre evenemang.",
           "searching": "Söker evenemang…",
           "searchFailed": "Evenemangssökningen misslyckades. Försök igen."
         },
@@ -3147,6 +3150,13 @@
           "cut": "Visar {shown} av {total} deltagare.",
           "loadFailedTitle": "Deltagarna kunde inte laddas",
           "loadFailed": "Kontrollera anslutningen och försök igen.",
+          "linkNotFound": "Registreringen från din länk finns inte i evenemangets lista, eller så har personuppgifterna raderats. Välj en deltagare nedan.",
+          "filter": {
+            "label": "Filtrera deltagare",
+            "placeholder": "Namn eller företag",
+            "count": "{shown} av {total} deltagare",
+            "noMatch": "Inga deltagare matchar."
+          },
           "loading": "Laddar deltagare…",
           "selectEventFirst": "Välj ett evenemang för att välja en deltagare.",
           "matchBadge": {
@@ -3295,6 +3305,7 @@
           "empty": "Inga medlemmar matchar.",
           "noActiveMembers": "Inga aktiva medlemmar",
           "noBillableMembers": "Inga fakturerbara medlemmar",
+          "searchHint": "Skriv ett namn för att söka bland alla medlemmar.",
           "searching": "Söker medlemmar…",
           "searchFailed": "Medlemssökningen misslyckades. Försök igen."
         },
@@ -3807,6 +3818,8 @@
           "statusLabel": "Steg",
           "memberLabel": "Medlem",
           "memberAll": "Alla medlemmar",
+          "memberArchived": "{name} (arkiverad)",
+          "memberUnknown": "Okänd medlem",
           "submittedRange": "Inskickad",
           "reset": "Återställ filter",
           "upcomingSends": "Kommande utskick",
@@ -5953,6 +5966,9 @@
           "placeholder": "Välj ett evenemang…",
           "emptyState": "Inget evenemang matchar. Skapa ett först eller förfina sökningen.",
           "loadErrorDetail": "Kunde inte hämta evenemang. Uppdatera och försök igen.",
+          "searching": "Söker evenemang…",
+          "searchFailed": "Evenemangssökningen misslyckades. Försök igen.",
+          "searchHint": "Skriv ett namn för att även söka bland äldre evenemang.",
           "filenameMatchHint": "Auto-föreslagen från filnamnet: {eventName}",
           "createNewCta": "Skapa nytt evenemang",
           "refreshAriaLabel": "Uppdatera evenemangslistan",

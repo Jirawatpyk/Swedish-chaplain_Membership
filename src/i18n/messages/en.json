@@ -3121,6 +3121,8 @@
         "title": "New invoice draft",
         "description": "Select a member and plan. You can preview before issuing.",
         "cancel": "Back to list",
+        "memberLinkUnusable": "The member from your link can't be used here: they are archived, weren't found, or couldn't be loaded. Pick a member below.",
+        "registrationLinkUnusable": "The registration from your link wasn't found or couldn't be loaded. Pick the event and the attendee below.",
         "type": {
           "legend": "What is this invoice for?",
           "label": "Invoice type",
@@ -3139,6 +3141,7 @@
           "noEvents": "No events available",
           "fromLink": "From your link (not in the recent list)",
           "fromLinkArchived": "From your link (archived event)",
+          "searchHint": "Type a name to search older events too.",
           "searching": "Searching events…",
           "searchFailed": "Event search failed. Try again."
         },
@@ -3147,6 +3150,13 @@
           "cut": "Showing {shown} of {total} attendees.",
           "loadFailedTitle": "Attendees didn't load",
           "loadFailed": "Check your connection and try again.",
+          "linkNotFound": "The registration from your link isn't in this event's list, or its personal data has been erased. Pick an attendee below.",
+          "filter": {
+            "label": "Filter attendees",
+            "placeholder": "Name or company",
+            "count": "{shown} of {total} attendees",
+            "noMatch": "No attendees match."
+          },
           "loading": "Loading attendees…",
           "selectEventFirst": "Select an event to choose an attendee.",
           "matchBadge": {
@@ -3295,6 +3305,7 @@
           "empty": "No members match.",
           "noActiveMembers": "No active members",
           "noBillableMembers": "No billable members",
+          "searchHint": "Type a name to search all members.",
           "searching": "Searching members…",
           "searchFailed": "Member search failed. Try again."
         },
@@ -3807,6 +3818,8 @@
           "statusLabel": "Stage",
           "memberLabel": "Member",
           "memberAll": "All members",
+          "memberArchived": "{name} (archived)",
+          "memberUnknown": "Unknown member",
           "submittedRange": "Submitted",
           "reset": "Reset filters",
           "upcomingSends": "Upcoming sends",
@@ -5953,6 +5966,9 @@
           "placeholder": "Choose an event…",
           "emptyState": "No events match. Create one first or refine the search.",
           "loadErrorDetail": "Could not load events. Refresh and try again.",
+          "searching": "Searching events…",
+          "searchFailed": "Event search failed. Try again.",
+          "searchHint": "Type a name to search older events too.",
           "filenameMatchHint": "Auto-suggested from filename: {eventName}",
           "createNewCta": "Create new event",
           "refreshAriaLabel": "Refresh events list",
