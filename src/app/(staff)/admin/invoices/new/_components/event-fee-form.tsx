@@ -1005,10 +1005,12 @@ export function EventFeeForm({
         noValidate
         // #90 (R150) — Enter in any input would submit the form implicitly,
         // and an as-paid submit issues a tax document with no confirm step.
-        // Bubbling, so AURA's own Enter handling (pick an option, commit a
-        // date) runs first; only the browser's implicit submit is cancelled.
-        // Buttons and textareas are untouched, and an IME commit passes.
-        onKeyDown={(e) => {
+        // Capture phase, so a child that stops the event can't skip it; the
+        // AURA Combobox still picks an option on Enter — it doesn't read
+        // defaultPrevented. Only the browser's
+        // implicit submit is cancelled. Buttons and textareas are untouched,
+        // and an IME commit passes.
+        onKeyDownCapture={(e) => {
           if (
             e.key === 'Enter' &&
             // Safari reports an IME commit as keyCode 229 (AURA skips it too).

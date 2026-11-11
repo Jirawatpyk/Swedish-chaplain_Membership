@@ -487,7 +487,9 @@ function LoadedAttendees({
           // #89 review (a11y H1) — the filter sits inside the event-fee form:
           // Enter here must not submit it (that can issue a tax document).
           onKeyDown={(e) => {
-            if (e.key === 'Enter') e.preventDefault();
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+              e.preventDefault();
+            }
           }}
         />
       ) : null}

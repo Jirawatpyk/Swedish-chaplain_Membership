@@ -1013,6 +1013,22 @@ describe('<EventFeeForm>', () => {
       expect(fireEvent.keyDown(screen.getByLabelText('Tax ID (optional)'), { key: 'Enter' })).toBe(false);
     });
 
+    it('Enter still picks an event from the open list, and submits nothing', async () => {
+      const fetchMock = mockFetchRegistrations([matchedRegistration]);
+      vi.stubGlobal('fetch', fetchMock);
+      renderForm();
+      const picker = screen.getByRole('combobox', {
+        name: new RegExp(enMessages.admin.invoices.eventFeeForm.eventPicker.label),
+      });
+      picker.focus();
+      fireEvent.keyDown(picker, { key: 'ArrowDown' });
+      fireEvent.keyDown(picker, { key: 'Enter' });
+      expect(await screen.findByRole('button', { name: /Alice/ })).toBeInTheDocument();
+      expect(
+        fetchMock.mock.calls.some((c) => String(c[0]) === '/api/invoices/event-draft'),
+      ).toBe(false);
+    });
+
     it('Enter on the submit button is left alone', async () => {
       await completeAsPaidForm();
       const button = screen.getByRole('button', {
