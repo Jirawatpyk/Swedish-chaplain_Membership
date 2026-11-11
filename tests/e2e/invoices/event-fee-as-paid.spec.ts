@@ -167,6 +167,14 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     // Submit — the as-paid label, then the success toast (PDF render + blob
     // upload happen inside the second POST, so allow a generous budget).
     await page.getByRole('button', { name: 'Record payment & issue receipt' }).click();
+    // #92 — a confirm dialog summarises what will be issued; nothing is sent
+    // until its confirm is clicked.
+    const confirm = page.getByRole('alertdialog', {
+      name: 'Record the payment and issue the document?',
+    });
+    await expect(confirm).toContainText('Tax Invoice/Receipt / ใบกำกับภาษี/ใบเสร็จรับเงิน');
+    await expect(confirm).toContainText('1,070.00');
+    await confirm.getByTestId('confirm-as-paid').click();
     await expect(
       page.locator('.aura-toaster').getByText('Payment recorded — receipt issued'),
     ).toBeVisible({ timeout: 45_000 });
@@ -368,6 +376,25 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
         `${state.label}: no critical axe violations`,
       ).toEqual([]);
     }
+
+    // #92 — the as-paid confirm dialog itself: open it from the paid default
+    // and scan the page with it open.
+    await openEventFeeForm(page, fixture.registrationIds.paidTin, AS_PAID_ATTENDEES.paidTin);
+    await expect(page.getByTestId('as-paid-fields')).toBeVisible();
+    await fillBuyer(page, { taxId: FAKE_TIN });
+    await page.getByRole('button', { name: 'Record payment & issue receipt' }).click();
+    await expect(
+      page.getByRole('alertdialog', { name: 'Record the payment and issue the document?' }),
+    ).toBeVisible();
+    const dialogResults = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze();
+    expect(
+      dialogResults.violations
+        .filter((v) => v.impact === 'critical')
+        .map((v) => ({ id: v.id, nodes: v.nodes.length })),
+      'as-paid confirm dialog: no critical axe violations',
+    ).toEqual([]);
   });
 
   test('future payment date → inline i18n error (noValidate path); input keeps the ISO CE value', async ({
@@ -419,6 +446,10 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     });
 
     await page.getByRole('button', { name: 'Record payment & issue receipt' }).click();
+    await page
+      .getByRole('alertdialog', { name: 'Record the payment and issue the document?' })
+      .getByTestId('confirm-as-paid')
+      .click();
 
     // Error toast with the mapped code copy + the draft-remains description.
     // 064 remediation S6 — the copy now promises only what is true (the

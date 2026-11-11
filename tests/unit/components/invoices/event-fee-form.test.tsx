@@ -121,6 +121,14 @@ function mockFetchRegistrations(rows: readonly unknown[]) {
   });
 }
 
+/** #92 — an as-paid submit opens a confirm first; click its confirm, if open. */
+function confirmAsPaidDialog() {
+  const dialog = screen.queryByRole('alertdialog', {
+    name: enMessages.admin.invoices.eventFeeForm.confirmAsPaid.title,
+  });
+  if (dialog) fireEvent.click(within(dialog).getByTestId('confirm-as-paid'));
+}
+
 function renderForm(
   opts: {
     initialEventId?: string;
@@ -741,6 +749,8 @@ describe('<EventFeeForm>', () => {
       }),
     );
 
+    confirmAsPaidDialog();
+
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-9'));
 
     const postCall = fetchMock.mock.calls.find(
@@ -814,6 +824,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     expect(
       await screen.findByText(
@@ -847,6 +858,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     await screen.findByText(
       enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
@@ -878,6 +890,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     await screen.findByText(
       enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
@@ -910,6 +923,8 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+
+    confirmAsPaidDialog();
 
     expect(
       await screen.findByText(
@@ -958,6 +973,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-11'));
     const issueCall = fetchMock.mock.calls.find((c) =>
@@ -1019,6 +1035,11 @@ describe('<EventFeeForm>', () => {
         expect(screen.queryByRole('alertdialog', { name: confirmMsgs.title })).toBeNull(),
       );
       expect(draftCalls(fetchMock)).toHaveLength(0);
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue }),
+        ),
+      );
     });
 
     it('confirm sends the draft and then issue-as-paid, once', async () => {
@@ -1212,6 +1233,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-13'));
     // Still a SUCCESS toast (the operation succeeded), now with a non-blocking
@@ -1241,6 +1263,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     // The draft EXISTS — the UI must not pretend nothing was created: the
     // toast says the draft remains (honest copy: created + visible in the
@@ -1281,6 +1304,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-31'));
     expect(toastError).toHaveBeenCalledWith(
@@ -1312,6 +1336,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
     await waitFor(() => expect(toastError).toHaveBeenCalled());
 
     const options = toastError.mock.calls[0]![1] as {
@@ -1358,6 +1383,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-22'));
     expect(toastError).toHaveBeenCalledTimes(1);
@@ -1391,6 +1417,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-23'));
     expect(toastWarning).toHaveBeenCalledTimes(1);
@@ -1427,6 +1454,7 @@ describe('<EventFeeForm>', () => {
           name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
         }),
       );
+      confirmAsPaidDialog();
       await waitFor(() => expect(pushMock).toHaveBeenCalledWith(`/admin/invoices/inv-2${4 + i}`));
       expect(toastWarning).toHaveBeenLastCalledWith(asPaidMessages.errors.unconfirmed, { duration: Infinity });
       expect(toastError).not.toHaveBeenCalled();
@@ -1453,6 +1481,7 @@ describe('<EventFeeForm>', () => {
           name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
         }),
       );
+      confirmAsPaidDialog();
       await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1));
       // A navigation while offline falls onto the browser's offline page and
       // loses the toast (#48), so it waits.
@@ -1481,6 +1510,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-28'));
     expect(toastError).toHaveBeenCalledWith(
       asPaidMessages.errors.codeFallback.replace('{code}', 'HTTP_413'),
@@ -1508,6 +1538,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-26'));
     expect(toastWarning).toHaveBeenCalledWith(enMessages.errors.readOnlyMode, {
@@ -1533,6 +1564,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     // Honest copy: the draft remains (visible in the list) — never the bare
     // unknown toast that pretends nothing was created.
@@ -1568,6 +1600,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
@@ -1652,6 +1685,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-31'));
     const issueCall = fetchMock.mock.calls.find((c) =>
@@ -1679,6 +1713,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-32'));
     const issueCall = fetchMock.mock.calls.find((c) =>
@@ -1865,6 +1900,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     expect(
       await screen.findByText(
@@ -1891,6 +1927,7 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
+    confirmAsPaidDialog();
 
     expect(
       await screen.findByText(
@@ -2013,6 +2050,7 @@ describe('<EventFeeForm> on AURA (T807)', () => {
       async () => new Response(JSON.stringify({ error: { code: 'duplicate' }, existing_invoice_id: null }), { status: 409 }),
     );
     fireEvent.click(screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue }));
+    confirmAsPaidDialog();
     const dialog = await screen.findByRole('alertdialog', {
       name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
     });

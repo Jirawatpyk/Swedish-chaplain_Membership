@@ -55,7 +55,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import {
@@ -98,6 +98,12 @@ import { useEventSearch } from './use-event-search';
 import { bangkokTodayIso } from '@/lib/bangkok-today';
 import { formatSatangAmount } from '@/lib/format-thb';
 import { formatVatRateBps } from '@/lib/format-vat-rate';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
+import { MoneyDialogFooter } from '../../_components/money-dialog-footer';
+
+/** #92 — the confirm dialog returns focus here on Cancel. */
+const SUBMIT_BUTTON_ID = 'event-fee-submit';
 
 export type EventOption = {
   readonly eventId: string;
@@ -478,6 +484,8 @@ export function EventFeeForm({
   const locale = useLocale();
   // (S25 — the shared record-payment labels moved into AsPaidPaymentFields.)
   const tAsPaid = useTranslations('admin.invoices.issueAsPaid');
+  const tConfirm = useTranslations('admin.invoices.eventFeeForm.confirmAsPaid');
+  const tPay = useTranslations('admin.invoices.pay');
   const tErrors = useTranslations('errors');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -530,6 +538,11 @@ export function EventFeeForm({
   const eventSearch = useEventSearch(eventSearchBefore);
   const { typed: eventTyped, results: eventResults, loading: eventSearching } = eventSearch;
   const [pickedEvent, setPickedEvent] = useState<EventOption | null>(null);
+  // #92 — "Already paid" issues a numbered tax document that only a credit
+  // note can undo, so the submit button opens this confirm first.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const pendingBodyRef = useRef<Record<string, unknown> | null>(null);
+  const confirmSubmittedRef = useRef(false);
   const { eventOptions, localMatchCount } = useMemo(() => {
     const toOption = (e: EventOption): ComboboxOption => ({
       value: e.eventId,
@@ -674,6 +687,12 @@ export function EventFeeForm({
     resolveDocType(attendee, matched, buyer.taxId),
     effectiveMode,
   );
+  // The badge's text, also named in the #92 confirm summary.
+  const docTypeLabel =
+    taxAtPayment && docType === 'taxInvoice' ? t('docType.bill088') : t(`docType.${docType}`);
+  const eventLabel =
+    events.find((e) => e.eventId === eventId)?.label ??
+    (pickedEvent?.eventId === eventId ? pickedEvent.label : '—');
 
   // 064 H-1 — non-blocking ภ.พ.30 closed-period warning (spec §3.2): the
   // backdated payment date falls in a VAT month whose filing deadline has
@@ -895,6 +914,28 @@ export function EventFeeForm({
       };
     }
 
+    if (effectiveMode === 'already_paid') {
+      // #92 — nothing is sent until the admin confirms the summary.
+      pendingBodyRef.current = body;
+      confirmSubmittedRef.current = false;
+      setConfirmOpen(true);
+      return;
+    }
+    send(body);
+  }
+
+  function confirmAsPaid() {
+    const body = pendingBodyRef.current;
+    // Once per opening: a double click must not create a second draft.
+    if (body === null || confirmSubmittedRef.current) return;
+    confirmSubmittedRef.current = true;
+    pendingBodyRef.current = null;
+    // The dialog stays open (its confirm spinning) until the request settles;
+    // a failure then closes it so the error toast and its Retry are seen.
+    send(body, () => setConfirmOpen(false));
+  }
+
+  function send(body: Record<string, unknown>, onSettled?: () => void) {
     startTransition(async () => {
       // S4 (064 remediation) — the WHOLE two-step submit is guarded: a
       // network-level rejection can no longer escape as an unhandled
@@ -981,9 +1022,28 @@ export function EventFeeForm({
         } else {
           toast.error(t('errors.unknown'));
         }
+      } finally {
+        onSettled?.();
       }
     });
   }
+
+  // Focus after the confirm closes: back to the submit button on Cancel or
+  // Escape; once a submit has started the page navigates, so #main-content.
+  const confirmFinalFocus = useCallback(
+    (): HTMLElement | null =>
+      resolveDialogFinalFocus({
+        closedViaSuccess: confirmSubmittedRef.current,
+        trigger: document.getElementById(SUBMIT_BUTTON_ID),
+        fallback: null,
+        mainContent: document.getElementById('main-content'),
+      }),
+    [],
+  );
+  const duplicateFinalFocus = useCallback(
+    (): HTMLElement | null => document.getElementById(SUBMIT_BUTTON_ID),
+    [],
+  );
 
   // Enable submit as soon as an attendee is chosen — field-level validation
   // (amount range, non-member buyer, payment date) runs ON submit and
@@ -1230,9 +1290,7 @@ export function EventFeeForm({
                 }
                 data-testid="doc-type-badge"
               >
-                {taxAtPayment && docType === 'taxInvoice'
-                  ? t('docType.bill088')
-                  : t(`docType.${docType}`)}
+                {docTypeLabel}
               </Badge>
             </div>
             <dl className="flex flex-col gap-1 text-sm">
@@ -1275,6 +1333,7 @@ export function EventFeeForm({
           {/* As the membership form and Record payment: plus for a draft,
               check when the payment is recorded and the receipt issued. */}
           <Button
+            id={SUBMIT_BUTTON_ID}
             type="submit"
             variant="primary"
             icon={effectiveMode === 'already_paid' ? 'check' : 'plus'}
@@ -1299,6 +1358,7 @@ export function EventFeeForm({
       <Dialog
         open={duplicateOpen}
         onClose={() => setDuplicateOpen(false)}
+        finalFocus={duplicateFinalFocus}
         role="alertdialog"
         title={t('duplicateDialog.title')}
         description={t('duplicateDialog.description')}
@@ -1315,6 +1375,84 @@ export function EventFeeForm({
           </>
         }
       />
+
+      {/* #92 — the confirm before an as-paid issue: a summary of what will be
+          issued, Cancel first (ux-standards § 6). Its confirm is a click, never
+          a form submit, so Enter in the form can't reach it. */}
+      <Dialog
+        open={confirmOpen}
+        onClose={() => {
+          if (!pending) setConfirmOpen(false);
+        }}
+        dismissible={!pending}
+        finalFocus={confirmFinalFocus}
+        role="alertdialog"
+        size="lg"
+        title={tConfirm('title')}
+        description={tConfirm('description')}
+        footer={
+          <MoneyDialogFooter
+            state={{
+              pending,
+              canConfirm: !pending,
+              // Only formatted while open: it opens after validation, so the
+              // amount is in range then (a huge typed amount would throw).
+              confirmLabel: confirmOpen
+                ? tConfirm('confirm', { total: formatSatangAmount(totalSatang) })
+                : '',
+              onConfirm: confirmAsPaid,
+            }}
+            cancelLabel={tConfirm('cancel')}
+            onCancel={() => setConfirmOpen(false)}
+            confirmVariant="primary"
+            confirmIcon="check"
+            confirmTestId="confirm-as-paid"
+            autoFocusCancel
+          />
+        }
+      >
+        {confirmOpen && (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-[var(--aura-space-4)] gap-y-[var(--aura-space-2)] text-sm">
+          <dt className="text-[var(--aura-fg-secondary)]">{tConfirm('document')}</dt>
+          <dd className="min-w-0">{docTypeLabel}</dd>
+          <dt className="text-[var(--aura-fg-secondary)]">{tConfirm('event')}</dt>
+          <dd className="min-w-0 break-words">{eventLabel}</dd>
+          <dt className="text-[var(--aura-fg-secondary)]">{tConfirm('attendee')}</dt>
+          <dd className="min-w-0 break-words">{attendee?.attendeeName ?? '—'}</dd>
+          <dt className="text-[var(--aura-fg-secondary)]">{tConfirm('buyer')}</dt>
+          <dd className="min-w-0 break-words">
+            {matched ? attendee?.attendeeName : buyer.legalName.trim()}
+            {!matched && buyer.taxId.trim() !== '' && (
+              <span className="block text-[var(--aura-fg-secondary)]">
+                {tConfirm('taxId')} {buyer.taxId.trim()}
+              </span>
+            )}
+          </dd>
+          <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.total')}</dt>
+          <dd className="tabular-nums font-medium">{formatSatangAmount(totalSatang)}</dd>
+          {split !== null && vatRateBps !== null && (
+            <>
+              <dt className="text-[var(--aura-fg-secondary)]">{t('vatPreview.subtotal')}</dt>
+              <dd className="tabular-nums">{formatSatangAmount(split.subtotal)}</dd>
+              <dt className="text-[var(--aura-fg-secondary)]">
+                {t('vatPreview.vat', { rate: formatVatRateBps(vatRateBps, locale) })}
+              </dt>
+              <dd className="tabular-nums">{formatSatangAmount(split.vat)}</dd>
+            </>
+          )}
+          <dt className="text-[var(--aura-fg-secondary)]">{tConfirm('paymentDate')}</dt>
+          <dd>{formatLocalisedDate(paymentDate, locale)}</dd>
+          <dt className="text-[var(--aura-fg-secondary)]">{tConfirm('paymentMethod')}</dt>
+          <dd>{tPay(`methods.${paymentMethod}`)}</dd>
+          {paymentReference.trim() !== '' && (
+            <>
+              <dt className="text-[var(--aura-fg-secondary)]">{tConfirm('reference')}</dt>
+              <dd className="min-w-0 break-words">{paymentReference.trim()}</dd>
+            </>
+          )}
+        </dl>
+        )}
+      </Dialog>
     </>
   );
 }
