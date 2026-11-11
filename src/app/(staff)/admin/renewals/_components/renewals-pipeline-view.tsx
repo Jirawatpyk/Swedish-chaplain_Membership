@@ -14,6 +14,7 @@ import { getTranslations } from 'next-intl/server';
 import { Card, EmptyState } from '@jirawatpyk/aura-react/server';
 import { ErrorCardActions } from '@/components/shell/error-card-actions';
 import { CursorPagination } from '@/components/layout/cursor-pagination';
+
 import type { PipelineSort, PipelineSummary, TierBucket, UrgencyBucket } from '@/modules/renewals';
 import type { PipelineRow } from '@/modules/renewals/client';
 import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
@@ -25,6 +26,9 @@ import { TierFilterSelect } from './tier-filter-select';
 import { LapsedTab } from './lapsed-tab';
 import { PipelineWithBulk } from './pipeline-with-bulk';
 import { WorkQueueTabs } from './work-queue-tabs';
+
+/** R148 — where a pager link lands focus. */
+const PIPELINE_LIST_ID = 'renewals-pipeline-list';
 
 export interface RenewalsPipelineViewProps {
   /** The THB money band (the page's Suspense island). */
@@ -147,7 +151,9 @@ export async function renderPipelineLens({
   const resultCountLabel = <ResultCountLabel count={rows.length} {...lensProps} />;
 
   return (
-    <div className="flex flex-col gap-3">
+    // R148 — a page link lands on the list, not the page top: at 390 the KPI
+    // cards above it fill more than a screen.
+    <div id={PIPELINE_LIST_ID} tabIndex={-1} className="flex flex-col gap-3 outline-none">
       {/* Board `Admin-renewals`: the stage chips, then the Tier select at the
           row's end; `-mobile`: the Urgency and Tier selects side by side. */}
       <div className="grid grid-cols-2 items-end gap-[var(--aura-space-3)] sm:flex sm:justify-between">
@@ -207,6 +213,7 @@ export async function renderPipelineLens({
           hasFirst={firstHref !== null}
           status={nextHref ? t('table.pagination.showingFirst') : null}
           nextHref={nextHref ?? undefined}
+          focusTargetId={PIPELINE_LIST_ID}
         />
       ) : null}
     </div>

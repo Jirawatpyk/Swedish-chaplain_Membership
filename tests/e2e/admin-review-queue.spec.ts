@@ -865,18 +865,24 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     await expect(approveButton).toBeFocused();
 
     // Where the page sits decides what the two sticky bars cover. At scroll 0
-    // the Stage chips sit low in the 900px viewport and the bulk bar (AURA's
-    // floating sticky card from 640px) overlaps them, which axe reports as
-    // `target-size` on a chip (R143, R147). Mid-page scroll instead left the
-    // halt banner's button half under the sticky top bar (R106, PR #693). So
-    // bring the Stage chips to the middle of the viewport — clear of both bars,
-    // as a user sees them — before scanning. The toolbar is sticky, so it is
-    // scanned at any scroll position.
-    await page.evaluate(() => {
-      document
-        .querySelector('.aura-tag[data-status]')
-        ?.scrollIntoView({ block: 'center' });
+    // in a 900px viewport the bulk bar (AURA's floating sticky card from
+    // 640px) overlaps the Stage chips (R143, R147); any mid-page scroll puts a
+    // halt-banner button half under the sticky top bar instead (R106, R148).
+    // So scan at scroll 0, where nothing sits under the top bar, in a viewport
+    // tall enough that the bulk bar clears the chips. KNOWN GAP (PR #775):
+    // on a short screen the floating bar can still cover low chips; a focused
+    // chip is kept clear by root `scroll-padding-bottom`.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const chipsBottom = await page
+      .locator('.aura-tag[data-status]')
+      .last()
+      .evaluate((el) => el.getBoundingClientRect().bottom + window.scrollY);
+    const barHeight = await toolbar.evaluate((el) => el.getBoundingClientRect().height);
+    await page.setViewportSize({
+      width: 1280,
+      height: Math.max(900, Math.ceil(chipsBottom + barHeight + 48)),
     });
+    await page.evaluate(() => window.scrollTo(0, 0));
     await expect(toolbar).toBeVisible();
 
     const results = await new AxeBuilder({ page })
