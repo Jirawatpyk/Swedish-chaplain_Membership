@@ -399,8 +399,14 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     stubFetch(() => new Response('{}', { status: 500 }));
     renderForm();
     typeInPicker('Gala');
-    // With loaded matches on show, the failure is the field's hint, not the note.
-    expect(await screen.findByText(picker.searchFailed ?? '', { selector: ':not(.aura-combo__status)' })).toBeInTheDocument();
+    // With loaded matches on show, the failure is the field's hint, not the
+    // note, and (#89 a11y M3) a status line says it to screen readers.
+    await waitFor(() =>
+      expect(document.getElementById('eventId')).toHaveAccessibleDescription(
+        expect.stringContaining(picker.searchFailed ?? '<missing>'),
+      ),
+    );
+    expect(screen.getAllByRole('status').some((s) => s.textContent === picker.searchFailed)).toBe(true);
     expect(screen.getByRole('option', { name: /Annual Gala/ })).toBeInTheDocument();
   });
 
