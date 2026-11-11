@@ -1794,7 +1794,8 @@
         },
         "draftPlaceholder": "(draft)",
         "pagination": {
-          "label": "Invoice pages"
+          "label": "Invoice pages",
+          "loading": "Loading page…"
         },
         "cols": {
           "number": "Number",

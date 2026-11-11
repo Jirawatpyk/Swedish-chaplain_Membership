@@ -1794,7 +1794,8 @@
         },
         "draftPlaceholder": "(ร่าง)",
         "pagination": {
-          "label": "หน้าของใบแจ้งหนี้"
+          "label": "หน้าของใบแจ้งหนี้",
+          "loading": "กำลังโหลดหน้า…"
         },
         "cols": {
           "number": "เลขที่",

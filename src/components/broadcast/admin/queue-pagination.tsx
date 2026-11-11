@@ -14,6 +14,7 @@ export function QueuePagination({
   status,
   firstPageHref,
   nextPageHref,
+  focusTargetId,
 }: {
   /** The nav's accessible name. */
   readonly label: string;
@@ -23,6 +24,8 @@ export function QueuePagination({
   readonly firstPageHref: string | null;
   /** The next keyset page, or null on the last page. */
   readonly nextPageHref: string | null;
+  /** Where focus goes after a page link (R148: the list, not the page top). */
+  readonly focusTargetId?: string;
 }): React.ReactElement | null {
   if (nextPageHref === null && firstPageHref === null) return null;
   return (
@@ -32,6 +35,7 @@ export function QueuePagination({
       status={status !== null ? <span className="tabular-nums">{status}</span> : null}
       firstHref={firstPageHref ?? undefined}
       nextHref={nextPageHref ?? undefined}
+      {...(focusTargetId !== undefined ? { focusTargetId } : {})}
     />
   );
 }
