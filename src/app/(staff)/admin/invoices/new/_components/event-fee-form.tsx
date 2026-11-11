@@ -1003,6 +1003,20 @@ export function EventFeeForm({
         // method="post" — CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx
         method="post"
         noValidate
+        // #90 (R150) — Enter in any input would submit the form implicitly,
+        // and an as-paid submit issues a tax document with no confirm step.
+        // Bubbling, so AURA's own Enter handling (pick an option, commit a
+        // date) runs first; only the browser's implicit submit is cancelled.
+        // Buttons and textareas are untouched, and an IME commit passes.
+        onKeyDown={(e) => {
+          if (
+            e.key === 'Enter' &&
+            !e.nativeEvent.isComposing &&
+            e.target instanceof HTMLInputElement
+          ) {
+            e.preventDefault();
+          }
+        }}
         className="flex flex-col gap-[var(--aura-space-6)]"
       >
         {/* 1. Event picker — #732: a focus starts with no typed text, as
