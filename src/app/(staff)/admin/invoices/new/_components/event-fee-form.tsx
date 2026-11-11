@@ -1011,7 +1011,9 @@ export function EventFeeForm({
         onKeyDown={(e) => {
           if (
             e.key === 'Enter' &&
+            // Safari reports an IME commit as keyCode 229 (AURA skips it too).
             !e.nativeEvent.isComposing &&
+            e.keyCode !== 229 &&
             e.target instanceof HTMLInputElement
           ) {
             e.preventDefault();
