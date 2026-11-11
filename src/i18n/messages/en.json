@@ -3290,7 +3290,9 @@
           "placeholder": "Pick a member…",
           "search": "Search members…",
           "empty": "No members match.",
-          "noActiveMembers": "No active members"
+          "noActiveMembers": "No active members",
+          "searching": "Searching members…",
+          "searchFailed": "Member search failed. Try again."
         },
         "planInfo": {
           "annualFee": "Annual fee: {amount} THB (before VAT)",

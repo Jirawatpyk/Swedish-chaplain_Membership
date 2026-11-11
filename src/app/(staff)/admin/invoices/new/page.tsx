@@ -25,7 +25,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import { directorySearch } from '@/modules/members';
+import { asMemberId, directorySearch, getMember } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolvePlanName } from '@/lib/resolve-plan-name';
 import { type MemberOption, type PlanOption } from '../_components/invoice-form';
@@ -33,7 +33,8 @@ import { InvoiceCreateSwitcher } from './_components/invoice-create-switcher';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing';
 import type { EventOption } from './_components/event-fee-form';
 import { toEventOption, withDeepLinkedEvent } from './_lib/event-options';
-import { formatCalendarYear } from '@/lib/format-date-localised';
+import { MEMBER_PRELOAD_LIMIT, toMemberOption, withDeepLinkedMember } from './_lib/member-options';
+import { requestIdFromHeaders } from '@/lib/request-id';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -50,7 +51,7 @@ export default async function NewInvoiceDraftPage({
 }) {
   const t = await getTranslations('admin.invoices.new');
   const locale = await getLocale();
-  await requirePagePermission('invoicing.write');
+  const { user } = await requirePagePermission('invoicing.write');
 
   // Deep-link pre-fill from F3 member detail page CTA. UUID-validated
   // here so a malformed query string can't smuggle an attacker-chosen
@@ -95,30 +96,37 @@ export default async function NewInvoiceDraftPage({
   // Corporate / 2026)" instead of the raw "regular" slug.
   const planNameById = new Map<string, string>(plans.map((p) => [p.planId, p.label]));
 
-  // Active members — ceiling 500 covers SweCham 2026 count (~131)
-  // with comfortable headroom for mid-year growth. Tenants larger
-  // than this need server-paged search in a follow-up polish
-  // (tracked as F4 Phase 10 smart-chamber feature #2).
+  // #82 — the directory read returns at most MEMBER_PRELOAD_LIMIT rows (its
+  // clamp; this used to ask for 500 and got 100). A full preload turns the
+  // picker's server search on, so any member can be found.
   const membersDeps = buildMembersDeps(tenantCtx);
   const membersResult = await directorySearch(membersDeps, {
-    limit: 500,
+    limit: MEMBER_PRELOAD_LIMIT,
     // Inactive members are billable — create-invoice-draft only rejects
     // `archived` (member_archived), and the directory default itself is
     // ['active','inactive']. Active-only here silently blocked invoicing a
     // lapsed-but-not-archived member (incl. deep-links with their memberId).
     status: ['active', 'inactive'] as const,
   });
-  const members: readonly MemberOption[] = membersResult.ok
-    ? membersResult.value.items.map((r) => {
-        const planLabel = planNameById.get(r.member.planId) ?? r.member.planId;
-        return {
-          memberId: r.member.memberId,
-          label: `${r.member.companyName} (${planLabel} / ${formatCalendarYear(r.member.planYear, locale)})`,
-          currentPlanId: r.member.planId,
-          currentPlanYear: r.member.planYear,
-        };
-      })
+  const preloadedMembers: readonly MemberOption[] = membersResult.ok
+    ? membersResult.value.items.map((r) => toMemberOption(r.member, planNameById, locale))
     : [];
+  const memberSearchEnabled = preloadedMembers.length >= MEMBER_PRELOAD_LIMIT;
+  // A `?memberId=` past the preload is read by id and added, so the "New
+  // invoice" link on a member page always lands on that member. An archived
+  // member stays out (FR-037 refuses to bill one).
+  let deepLinkedMember: MemberOption | null = null;
+  if (initialMemberId && !preloadedMembers.some((m) => m.memberId === initialMemberId)) {
+    const found = await getMember(
+      asMemberId(initialMemberId),
+      { actorUserId: user.id, requestId: requestIdFromHeaders(hdrs) },
+      membersDeps,
+    );
+    if (found.ok && found.value.member.status !== 'archived') {
+      deepLinkedMember = toMemberOption(found.value.member, planNameById, locale);
+    }
+  }
+  const members = withDeepLinkedMember(preloadedMembers, deepLinkedMember);
 
   // Events — only when the F6 integration is live (the event-fee tab is
   // hidden behind real attendee data; with F6 off the selector still shows
@@ -226,6 +234,7 @@ export default async function NewInvoiceDraftPage({
           board's cards: "What is this invoice for?", then the chosen form. */}
       <InvoiceCreateSwitcher
         members={members}
+        memberSearchEnabled={memberSearchEnabled}
         plans={plans}
         events={events}
         eventSearchBefore={eventSearchBefore}

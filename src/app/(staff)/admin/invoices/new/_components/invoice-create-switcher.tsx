@@ -25,6 +25,7 @@ type InvoiceType = 'membership' | 'event';
 
 export function InvoiceCreateSwitcher({
   members,
+  memberSearchEnabled = false,
   plans,
   events,
   initialMemberId,
@@ -35,6 +36,8 @@ export function InvoiceCreateSwitcher({
   vatRateBps,
 }: {
   readonly members: readonly MemberOption[];
+  /** #82 — see `CreateDraftForm`'s `memberSearchEnabled`. */
+  readonly memberSearchEnabled?: boolean;
   readonly plans: readonly PlanOption[];
   readonly events: readonly EventOption[];
   readonly initialMemberId?: string | undefined;
@@ -81,6 +84,7 @@ export function InvoiceCreateSwitcher({
       {type === 'membership' ? (
         <CreateDraftForm
           members={members}
+          memberSearchEnabled={memberSearchEnabled}
           plans={plans}
           {...(initialMemberId ? { initialMemberId } : {})}
         />
