@@ -24,19 +24,24 @@ vi.mock('@/lib/db', async (importOriginal) => {
 const { SHAPE_TENANT: T, tenantPredicateViolations, tenantScopedTables } = await import(
   '../../helpers/tenant-sql-shape'
 );
-const { queueMemberIdParam, readQueueMemberFilterOptions } = await import('@/lib/admin-broadcast-queue');
+const { QUEUE_MEMBER_FILTER_CAP, queueMemberIdParam, readQueueMemberFilterOptions } = await import(
+  '@/lib/admin-broadcast-queue'
+);
 
 const ID = '3f2b8c1e-9a4d-4e5f-8b6a-1c2d3e4f5a6b';
 
 describe('E-Blast queue member filter (#82)', () => {
-  it('reads every non-archived member plus the selected one, fenced, with no row cap', async () => {
+  it('reads every non-archived member plus the selected one, fenced, under a high cap', async () => {
     rec.statements.length = 0;
     await readQueueMemberFilterOptions({ slug: T } as never, ID);
     expect(rec.statements).toHaveLength(1);
     const s = rec.statements[0]!;
     expect(tenantPredicateViolations(s, tenantScopedTables()).violations).toEqual([]);
     expect(s.sql).toMatch(/status\s*<>\s*'archived'/i);
-    expect(s.sql).not.toMatch(/limit/i);
+    // The tenant fence ANDs the whole OR: another tenant's id cannot slip in.
+    expect(s.sql).toMatch(/tenant_id\s*=\s*\$\d+\s+AND\s*\(status/i);
+    expect(s.sql).toMatch(/limit/i);
+    expect(s.params).toContain(QUEUE_MEMBER_FILTER_CAP);
     expect(s.params).toContain(ID);
   });
 
@@ -48,7 +53,8 @@ describe('E-Blast queue member filter (#82)', () => {
 
   it('a memberId param counts only when it is a UUID', () => {
     expect(queueMemberIdParam(ID)).toBe(ID);
-    expect(queueMemberIdParam(ID.toUpperCase())).toBe(ID.toUpperCase());
+    // Lowercased, as Postgres prints a uuid (the option match is on text).
+    expect(queueMemberIdParam(ID.toUpperCase())).toBe(ID);
     expect(queueMemberIdParam('not-a-uuid')).toBeUndefined();
     expect(queueMemberIdParam("x' OR 1=1")).toBeUndefined();
     expect(queueMemberIdParam(undefined)).toBeUndefined();
