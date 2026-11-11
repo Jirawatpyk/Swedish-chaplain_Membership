@@ -1031,13 +1031,17 @@ export function EventFeeForm({
             if (e.key === 'Escape') eventSearch.reset();
           }}
           onPointerDownCapture={(e) => {
-            // The chevron and clear buttons: AURA drops its query on both.
+            // The chevron button: AURA drops its query on it.
             if (e.target instanceof Element && e.target.closest('button')) eventSearch.reset();
           }}
         >
         <Combobox
           id="eventId"
           label={t('eventPicker.label')}
+          // #91 (R151) — clearing the event resets the whole form (attendee,
+          // amount, buyer, payment fields), so neither Escape nor a clear
+          // button may do it; another event is picked by typing its name.
+          clearable={false}
           options={eventOptions}
           // #54 — AURA lists at most `limit` (default 200) options. The page
           // loads 200 and may append the deep-linked event as the 201st, so

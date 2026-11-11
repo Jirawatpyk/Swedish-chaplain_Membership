@@ -973,6 +973,31 @@ describe('<EventFeeForm>', () => {
     expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success, undefined);
   });
 
+  // #91 (R151) — clearing the event resets the whole form (attendee, amount,
+  // buyer, payment fields), so the picker never clears: Escape keeps it and
+  // there is no clear button. Another event is picked by typing its name.
+  describe('the event picker never clears the chosen event (#91)', () => {
+    it('Escape with the list closed keeps the event, the attendee and the amount', async () => {
+      vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+      renderForm({ initialEventId: 'ev-1' });
+      fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+      const picker = screen.getByRole('combobox', {
+        name: new RegExp(enMessages.admin.invoices.eventFeeForm.eventPicker.label),
+      });
+      fireEvent.keyDown(picker, { key: 'Escape' });
+      expect(screen.getByTestId('matched-buyer-readonly')).toBeInTheDocument();
+      expect((screen.getByLabelText(/Amount/) as HTMLInputElement).value).toBe('1000');
+      expect((picker as HTMLInputElement).value).toBe('Annual Gala (2026-06-01)');
+    });
+
+    it('has no clear button', async () => {
+      vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+      renderForm({ initialEventId: 'ev-1' });
+      await screen.findByRole('button', { name: /Alice/ });
+      expect(screen.queryByRole('button', { name: /^Clear/ })).toBeNull();
+    });
+  });
+
   // #90 (R150) — the browser submits a form when Enter is pressed in one of
   // its inputs. Here that would issue a tax document with no confirm step, so
   // Enter in a field is cancelled; only the button submits. jsdom does not
