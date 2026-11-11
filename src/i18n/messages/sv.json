@@ -3144,6 +3144,9 @@
         },
         "attendeePicker": {
           "label": "Deltagare",
+          "cut": "Visar {shown} av {total} deltagare.",
+          "loadFailedTitle": "Deltagarna kunde inte laddas",
+          "loadFailed": "Kontrollera anslutningen och försök igen.",
           "loading": "Laddar deltagare…",
           "selectEventFirst": "Välj ett evenemang för att välja en deltagare.",
           "matchBadge": {
@@ -3290,7 +3293,10 @@
           "placeholder": "Välj medlem…",
           "search": "Sök medlemmar…",
           "empty": "Inga medlemmar matchar.",
-          "noActiveMembers": "Inga aktiva medlemmar"
+          "noActiveMembers": "Inga aktiva medlemmar",
+          "noBillableMembers": "Inga fakturerbara medlemmar",
+          "searching": "Söker medlemmar…",
+          "searchFailed": "Medlemssökningen misslyckades. Försök igen."
         },
         "planInfo": {
           "annualFee": "Årsavgift: {amount} THB (före moms)",

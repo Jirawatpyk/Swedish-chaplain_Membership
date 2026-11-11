@@ -31,12 +31,14 @@ import {
   Combobox,
   Dialog,
   buttonClass,
+  comboboxFilter,
   type ComboboxOption,
 } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { addMonthsUtc } from '@/lib/dates';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { formatSatangAmount } from '@/lib/format-thb';
+import { useMemberSearch } from './use-member-search';
 
 export type MemberOption = {
   readonly memberId: string;
@@ -218,10 +220,16 @@ function RenewalContextLoader({ memberId }: { readonly memberId: string }) {
 
 export function CreateDraftForm({
   members,
+  memberSearchEnabled = false,
   plans,
   initialMemberId,
 }: {
   readonly members: readonly MemberOption[];
+  /**
+   * #82 — the page preloaded a full page of members (the directory read's
+   * clamp), so typed text also searches the server for the rest.
+   */
+  readonly memberSearchEnabled?: boolean;
   readonly plans: readonly PlanOption[];
   /**
    * Pre-fill the member picker from a `?memberId=` deep-link (e.g.
@@ -250,12 +258,43 @@ export function CreateDraftForm({
       ? initialMemberId
       : '';
   });
-  const selectedMember = members.find((m) => m.memberId === memberId);
+  // #82 — typed text searches the server once the preload is full, so a
+  // member past the first 100 can be found. The picked member is remembered
+  // so its label and plan survive when the results change.
+  const planLabels = useMemo(() => new Map(plans.map((p) => [p.planId, p.label])), [plans]);
+  const memberSearch = useMemberSearch(memberSearchEnabled, planLabels, locale);
+  const { typed: memberTyped, results: memberResults, loading: memberSearching } = memberSearch;
+  const [pickedMember, setPickedMember] = useState<MemberOption | null>(null);
+  const selectedMember =
+    members.find((m) => m.memberId === memberId) ??
+    (pickedMember?.memberId === memberId ? pickedMember : undefined);
 
-  const memberOptions: ComboboxOption[] = useMemo(
-    () => members.map((m) => ({ value: m.memberId, label: m.label })),
-    [members],
-  );
+  const { memberOptions, localMemberMatches } = useMemo(() => {
+    const toOption = (m: MemberOption): ComboboxOption => ({ value: m.memberId, label: m.label });
+    if (!memberSearchEnabled || memberTyped === '') {
+      // AURA shows the value's label from the options, so a member picked
+      // from an earlier search stays listed while nothing is typed.
+      const extra =
+        pickedMember && pickedMember.memberId === memberId && !members.some((m) => m.memberId === memberId)
+          ? [pickedMember]
+          : [];
+      return { memberOptions: [...extra, ...members].map(toOption), localMemberMatches: 0 };
+    }
+    // Loaded members match at once with AURA's own filter; the server's
+    // results for the rest follow.
+    const local = members.map(toOption).filter((o) => comboboxFilter(o, memberTyped));
+    const server = memberResults.filter((r) => !local.some((o) => o.value === r.memberId)).map(toOption);
+    return { memberOptions: [...local, ...server], localMemberMatches: local.length };
+  }, [memberSearchEnabled, members, memberTyped, memberResults, memberId, pickedMember]);
+
+  function pickMember(next: string) {
+    const option =
+      members.find((m) => m.memberId === next) ?? memberResults.find((m) => m.memberId === next) ?? null;
+    setPickedMember(option);
+    // AURA clears its own text on a pick without calling onSearch('').
+    memberSearch.reset();
+    setMemberId(next);
+  }
 
   // Derived from selected member — never a form state.
   const planId = selectedMember?.currentPlanId ?? '';
@@ -345,16 +384,51 @@ export function CreateDraftForm({
           AURA's member combobox, the read-only plan block, the renewal note. */}
       <Card title={tType('membership')} headingLevel={2}>
         <div className="flex flex-col gap-[var(--aura-space-4)]">
-          <Combobox
-            id="memberId"
-            label={t('fields.memberId')}
-            options={memberOptions}
-            value={memberId || null}
-            onChange={(v) => setMemberId(v ?? '')}
-            placeholder={noMembers ? tPicker('noActiveMembers') : tPicker('placeholder')}
-            emptyText={tPicker('empty')}
-            disabled={noMembers}
-          />
+          {/* #82 — a focus starts with no typed text, as AURA's own field
+              does after a blur or close. */}
+          <div
+            onFocusCapture={() => memberSearch.reset()}
+            onKeyDownCapture={(e) => {
+              if (e.key === 'Escape') memberSearch.reset();
+            }}
+            onPointerDownCapture={(e) => {
+              // The chevron and clear buttons: AURA drops its query on both.
+              if (e.target instanceof Element && e.target.closest('button')) memberSearch.reset();
+            }}
+          >
+            <Combobox
+              id="memberId"
+              label={t('fields.memberId')}
+              options={memberOptions}
+              // AURA lists at most `limit` (default 200) options; list every
+              // preloaded one plus a deep-linked or picked one.
+              limit={Math.max(200, memberOptions.length)}
+              value={memberId || null}
+              onChange={(v) => pickMember(v ?? '')}
+              // With `onSearch` AURA stops filtering and shows the options as
+              // given (the memo above filters and adds results).
+              {...(memberSearchEnabled
+                ? {
+                    onSearch: memberSearch.onSearch,
+                    // AURA hides every option while loading, so only while
+                    // nothing loaded matches yet.
+                    loading: memberSearching && localMemberMatches === 0,
+                    loadingText: tPicker('searching'),
+                  }
+                : {})}
+              placeholder={noMembers ? tPicker('noBillableMembers') : tPicker('placeholder')}
+              emptyText={memberSearch.failed ? tPicker('searchFailed') : tPicker('empty')}
+              {...(memberSearch.failed && memberOptions.length > 0
+                ? { hint: tPicker('searchFailed') }
+                : {})}
+              disabled={noMembers}
+            />
+            {/* #82 (UX M2) — with local matches shown, AURA announces their
+                count, not that the server search failed: say it here. */}
+            <p role="status" className="sr-only">
+              {memberSearch.failed && localMemberMatches > 0 ? tPicker('searchFailed') : ''}
+            </p>
+          </div>
 
           {selectedMember && (
             <div className="flex flex-wrap items-start justify-between gap-[var(--aura-space-3)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-[var(--aura-space-4)]">

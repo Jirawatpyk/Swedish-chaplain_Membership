@@ -122,6 +122,48 @@ export function upcomingFrom(token: string | undefined): Date | undefined {
   return token === 'now' ? new Date() : undefined;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * #82 — a `?memberId=` counts only when it is a UUID; anything else is ignored.
+ * Lowercased, as Postgres prints a uuid, so the text match on the selected
+ * option agrees with the uuid match on the queue.
+ */
+export function queueMemberIdParam(raw: unknown): string | undefined {
+  return typeof raw === 'string' && UUID_RE.test(raw) ? raw.toLowerCase() : undefined;
+}
+
+/** #82 — a ceiling far above a chamber's member count, so one page render stays bounded. */
+export const QUEUE_MEMBER_FILTER_CAP = 2000;
+
+/**
+ * #82 — the member filter's options: every member who is not archived (an
+ * inactive member can have E-Blasts), plus the selected one even when
+ * archived, so the filter shows the member it filters by. A chamber's member
+ * list fits one select; `QUEUE_MEMBER_FILTER_CAP` bounds it, and the selected
+ * member sorts first so a cap never drops it.
+ */
+export async function readQueueMemberFilterOptions(
+  tenant: TenantContext,
+  selectedMemberId: string | undefined,
+): Promise<Array<{ memberId: string; displayName: string }>> {
+  const rows = (await runInTenant(tenant, async (tx) =>
+    tx.execute(sql`
+      SELECT member_id::text AS member_id, company_name
+      FROM members
+      WHERE tenant_id = ${tenant.slug}
+        AND (status <> 'archived'${
+          selectedMemberId !== undefined ? sql` OR member_id::text = ${selectedMemberId}` : sql``
+        })
+      ORDER BY ${selectedMemberId !== undefined ? sql`(member_id::text = ${selectedMemberId}) DESC, ` : sql``}company_name ASC
+      LIMIT ${QUEUE_MEMBER_FILTER_CAP}
+    `),
+  )) as unknown as Array<{ member_id: string; company_name: string }>;
+  const options = rows.map((r) => ({ memberId: r.member_id, displayName: r.company_name }));
+  // The selected one was sorted first for the cap; the select lists by name.
+  return options.sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+
 async function readMemberNames(tenant: TenantContext, memberIds: readonly string[]): Promise<Map<string, string>> {
   const names = new Map<string, string>();
   if (memberIds.length === 0) return names;

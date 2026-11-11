@@ -371,8 +371,12 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
           // boundary so the comparison stays case-insensitive.
           // `attendee_name` has no lowered column → keep `ilike` there
           // (the trigram GIN on attendee_name still serves substring).
-          const lowerPattern = `%${input.emailSearch.toLowerCase()}%`;
-          const pattern = `%${input.emailSearch}%`;
+          // #82 — `\`, `%` and `_` in the typed text match literally
+          // (Postgres' default LIKE escape is `\`), as in the events and
+          // members repos.
+          const literal = input.emailSearch.replace(/[\\%_]/g, '\\$&');
+          const lowerPattern = `%${literal.toLowerCase()}%`;
+          const pattern = `%${literal}%`;
           searchFilter = or(
             like(eventRegistrations.attendeeEmailLower, lowerPattern),
             ilike(eventRegistrations.attendeeName, pattern),

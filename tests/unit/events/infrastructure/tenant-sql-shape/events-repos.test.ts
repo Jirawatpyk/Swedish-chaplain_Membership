@@ -41,6 +41,9 @@ const { drizzleEventAttendeesQueryStrict } = await import(
 const { makeDrizzleEventsRepository } = await import(
   '@/modules/events/infrastructure/drizzle-events-repository'
 );
+const { makeDrizzleRegistrationsRepository } = await import(
+  '@/modules/events/infrastructure/drizzle-registrations-repository'
+);
 
 const TABLES = tenantScopedTables();
 const DAY = new Date('2026-01-01T00:00:00.000Z');
@@ -102,6 +105,28 @@ describe('events repos — tenant predicate on every statement (130 s7)', () => 
       expect(s.params).toContain('%50\\%\\_off\\\\%');
       expect(s.sql).toMatch(/"start_date" <= \$/);
       expect(s.params).toContain('2025-01-31T10:00:00.000Z');
+    }
+  });
+
+  // #82 — the invoice attendee picker searches an event's registrations by
+  // email or name: `\`, `%` and `_` in the typed text match literally.
+  it('registrations by event with a search: fenced, and LIKE wildcards in the text are literal', async () => {
+    rec.statements.length = 0;
+    await makeDrizzleRegistrationsRepository(rec.db as never).findByEventId({
+      tenantId: T,
+      eventId: 'event-1',
+      unmatchedOnly: false,
+      matchTypeFilter: null,
+      emailSearch: 'A_b%C\\',
+      offset: 0,
+      pageSize: 25,
+    } as never);
+    const searched = rec.statements.filter((s) => /like/i.test(s.sql));
+    expect(searched.length).toBeGreaterThan(0);
+    expect(violationsOf(rec.statements)).toEqual([]);
+    for (const s of searched) {
+      expect(s.params).toContain('%a\\_b\\%c\\\\%');
+      expect(s.params).toContain('%A\\_b\\%C\\\\%');
     }
   });
 

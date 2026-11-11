@@ -27,7 +27,14 @@ import {
   membersBridge,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
-import { isUpcomingPreset, loadAdminBroadcastQueue, queueSortFor, upcomingFrom } from '@/lib/admin-broadcast-queue';
+import {
+  isUpcomingPreset,
+  loadAdminBroadcastQueue,
+  queueMemberIdParam,
+  queueSortFor,
+  readQueueMemberFilterOptions,
+  upcomingFrom,
+} from '@/lib/admin-broadcast-queue';
 import { readEblastStageChips } from '@/lib/eblast-waiting-count';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -159,6 +166,8 @@ export default async function AdminBroadcastsPage({
 
   const tenant = resolveTenantFromRequest();
   const params = await searchParams;
+  // #82 — a `memberId` that is not a UUID is ignored, never sent to SQL.
+  const memberIdFilter = queueMemberIdParam(params.memberId);
 
   // Status filter resolution — three cases (D1 sentinel pattern):
   //   1) `?status_all=1` (sentinel): explicit "show every status" →
@@ -199,7 +208,7 @@ export default async function AdminBroadcastsPage({
       statusFilter: status,
       pageSize: 50,
       sort,
-      ...(params.memberId !== undefined && { memberId: params.memberId }),
+      ...(memberIdFilter !== undefined && { memberId: memberIdFilter }),
       ...(params.cursor !== undefined && { cursor: params.cursor }),
       ...(scheduledFrom !== undefined && { scheduledFrom }),
       ...(submitted.fromInclusive !== undefined && { submittedFrom: submitted.fromInclusive }),
@@ -222,7 +231,7 @@ export default async function AdminBroadcastsPage({
     statusFilter: status,
     allStatuses: BROADCAST_STATUSES,
     narrowed: queueViewNarrowed({
-      ...(params.memberId !== undefined && { memberId: params.memberId }),
+      ...(memberIdFilter !== undefined && { memberId: memberIdFilter }),
       ...(scheduledFrom !== undefined && { scheduledFrom }),
       submitted,
     }),
@@ -285,21 +294,9 @@ export default async function AdminBroadcastsPage({
     );
   }
 
-  // Member options for filter dropdown (≤200 for SweCham MVP)
-  const memberOptionsRows = (await runInTenant(tenant, async (tx) =>
-    tx.execute(sql`
-      SELECT member_id::text AS member_id, company_name
-      FROM members
-      WHERE tenant_id = ${tenant.slug}
-        AND status = 'active'
-      ORDER BY company_name ASC
-      LIMIT 200
-    `),
-  )) as unknown as Array<{ member_id: string; company_name: string }>;
-  const memberOptions = memberOptionsRows.map((r) => ({
-    memberId: r.member_id,
-    displayName: r.company_name,
-  }));
+  // #82 — every member who is not archived, plus the filtered one (even when
+  // archived), so the filter never reads "All members" while it filters.
+  const memberOptions = await readQueueMemberFilterOptions(tenant, memberIdFilter);
 
   // Pending count for header subtitle.
   // Round-4 CRIT-A: routed through `runInTenant` so RLS+FORCE on
