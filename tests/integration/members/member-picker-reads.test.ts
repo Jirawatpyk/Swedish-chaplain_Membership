@@ -58,6 +58,8 @@ async function seedMember(
       planId: PLAN_ID,
       planYear: 2026,
       status,
+      // `members_archived_at_iff_archived` (migration 0009): archived ⇔ archived_at set.
+      archivedAt: status === 'archived' ? new Date() : null,
       erasedAt: erased ? new Date() : null,
     });
   });
