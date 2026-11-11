@@ -3144,6 +3144,7 @@
         },
         "attendeePicker": {
           "label": "Deltagare",
+          "cut": "Visar de första {shown} av {total} deltagare.",
           "loading": "Laddar deltagare…",
           "selectEventFirst": "Välj ett evenemang för att välja en deltagare.",
           "matchBadge": {

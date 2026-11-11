@@ -263,10 +263,23 @@ export function EventAttendeePicker({
  * select so the parent can pre-fill the amount + branch the buyer section.
  *
  * The parent MUST key this component by `eventId` (`key={eventId}`) so a new
- * event selection REMOUNTS the loader — `rows` resets to `null` (loading)
+ * event selection REMOUNTS the loader — `loaded` resets to `null` (loading)
  * via the initial-state, avoiding a synchronous `setState` inside the effect
  * (which would trigger a cascading re-render; ESLint react-hooks rule).
  */
+/** The detail route's page ceiling. */
+export const ATTENDEE_PAGE_SIZE = 200;
+/**
+ * #82 — how many attendees the picker loads at most (10 pages). A chamber
+ * event is far below this; past it the list says it is cut.
+ */
+export const ATTENDEE_LOAD_CAP = 2000;
+
+type DetailPage = {
+  registrations?: readonly AttendeeRow[];
+  pagination?: { totalCount?: number };
+};
+
 export function EventAttendeePickerLoader({
   eventId,
   selectedRegistrationId,
@@ -280,28 +293,40 @@ export function EventAttendeePickerLoader({
   readonly onError: () => void;
   readonly labelId?: string | undefined;
 }) {
-  const [rows, setRows] = useState<readonly AttendeeRow[] | null>(null);
+  const t = useTranslations('admin.invoices.eventFeeForm.attendeePicker');
+  const [loaded, setLoaded] = useState<{ rows: readonly AttendeeRow[]; total: number } | null>(null);
   // W2 — keep the skeleton visible ≥300ms so a fast fetch doesn't flash it
   // (ux-standards §2.3). `ready` is "rows have loaded".
-  const showReal = useMinDelay(300, rows !== null);
+  const showReal = useMinDelay(300, loaded !== null);
 
   useEffect(() => {
     let cancelled = false;
+    const pageUrl = (page: number) =>
+      `/api/admin/events/${encodeURIComponent(eventId)}?pageSize=${ATTENDEE_PAGE_SIZE}&page=${page}`;
+    const fetchPage = async (page: number): Promise<DetailPage> => {
+      const res = await fetch(pageUrl(page));
+      if (!res.ok) throw new Error(`attendee page ${page} responded ${res.status}`);
+      return (await res.json()) as DetailPage;
+    };
     (async () => {
       try {
-        // pageSize 200 = the F6 detail-endpoint ceiling; SweCham events are
-        // well under this. Pagination of the picker itself is a follow-up.
-        const res = await fetch(
-          `/api/admin/events/${encodeURIComponent(eventId)}?pageSize=200`,
+        // #82 — the route pages at 200; read every page (up to the cap) so
+        // an attendee past the first 200, or a deep-linked one, is listed.
+        const first = await fetchPage(1);
+        const firstRows = first.registrations ?? [];
+        const total = first.pagination?.totalCount ?? firstRows.length;
+        const pages = Math.min(
+          Math.ceil(total / ATTENDEE_PAGE_SIZE),
+          ATTENDEE_LOAD_CAP / ATTENDEE_PAGE_SIZE,
         );
-        if (!res.ok) {
-          if (!cancelled) onError();
-          return;
-        }
-        const body = (await res.json()) as {
-          registrations?: readonly AttendeeRow[];
-        };
-        if (!cancelled) setRows(body.registrations ?? []);
+        const rest = await Promise.all(
+          Array.from({ length: Math.max(0, pages - 1) }, (_, i) => fetchPage(i + 2)),
+        );
+        const seen = new Set<string>();
+        const rows = [firstRows, ...rest.map((p) => p.registrations ?? [])]
+          .flat()
+          .filter((r) => (seen.has(r.registrationId) ? false : (seen.add(r.registrationId), true)));
+        if (!cancelled) setLoaded({ rows, total });
       } catch {
         if (!cancelled) onError();
       }
@@ -311,13 +336,20 @@ export function EventAttendeePickerLoader({
     };
   }, [eventId, onError]);
 
-  if (rows === null || !showReal) return <EventAttendeePickerSkeleton />;
+  if (loaded === null || !showReal) return <EventAttendeePickerSkeleton />;
   return (
-    <EventAttendeePicker
-      rows={rows}
-      selectedRegistrationId={selectedRegistrationId}
-      onSelect={onSelect}
-      labelId={labelId}
-    />
+    <div className="flex flex-col gap-[var(--aura-space-2)]">
+      {loaded.total > loaded.rows.length ? (
+        <p className="text-sm text-[var(--aura-fg-secondary)]" data-testid="attendee-picker-cut">
+          {t('cut', { shown: loaded.rows.length, total: loaded.total })}
+        </p>
+      ) : null}
+      <EventAttendeePicker
+        rows={loaded.rows}
+        selectedRegistrationId={selectedRegistrationId}
+        onSelect={onSelect}
+        labelId={labelId}
+      />
+    </div>
   );
 }

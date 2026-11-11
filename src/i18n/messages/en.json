@@ -3144,6 +3144,7 @@
         },
         "attendeePicker": {
           "label": "Attendee",
+          "cut": "Showing the first {shown} of {total} attendees.",
           "loading": "Loading attendees…",
           "selectEventFirst": "Select an event to choose an attendee.",
           "matchBadge": {
