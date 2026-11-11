@@ -153,6 +153,8 @@ async function renderPage(searchParams: Record<string, string> = {}): Promise<st
 const LOAD_FAILED = "Couldn't load invoices. Please try again.";
 
 beforeEach(() => {
+  memberNamesMock.mockReset();
+  memberNamesMock.mockResolvedValue(new Map());
   errorSpy.mockClear();
   warnSpy.mockClear();
   listInvoicesPagedMock.mockReset();

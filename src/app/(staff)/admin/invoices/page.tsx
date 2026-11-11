@@ -37,8 +37,7 @@ import {
   listSucceededPaymentMethods,
   makeListSucceededPaymentMethodsDeps,
 } from '@/modules/payments';
-import { directorySearch } from '@/modules/members';
-import { buildMembersDeps } from '@/modules/members/members-deps';
+import { runListMemberNamesByIds } from '@/lib/members-picker-deps';
 import {
   loadAutoRenewalQueueContext,
   makeAutoRenewalQueueContextDeps,
@@ -278,8 +277,8 @@ export default async function AdminInvoicesPage({
   // even if the admin never separately picked `?status=draft`. The
   // `listInvoicesPaged` use-case forces this too (protects every OTHER
   // caller), but keeping it in sync HERE matters for this page's own
-  // downstream reads that branch on `includeDrafts` (`needsMemberDirectory`
-  // below) rather than only the outbound repo call.
+  // downstream reads that branch on `includeDrafts` (the drafts hint below)
+  // rather than only the outbound repo call.
   const includeDrafts = statusFilter === 'draft' || originFilter === 'auto_renewal';
   // Verdict F1 — the review queue is `origin='auto_renewal' AND status='draft'`
   // (the definition the comment above and `listInvoicesPaged` both already
@@ -400,12 +399,9 @@ export default async function AdminInvoicesPage({
       </TableContainer>
     );
   };
-  // W6 fix — `directorySearch` is only used to resolve member names
-  // for DRAFT invoices (which have no memberIdentitySnapshot yet per
-  // FR-038). Non-draft rows all carry the frozen snapshot, so the
-  // 500-row member scan is wasted work on the default view. We skip
-  // it unless drafts could appear in the result set — keeping SC-005
-  // (p95 < 500ms @ 5k invoices) achievable on the hot path.
+  // W6 fix — member names are read only for rows with no frozen
+  // memberIdentitySnapshot (drafts, FR-038), by id (#89), so the default view
+  // pays nothing extra (SC-005, p95 < 500ms @ 5k invoices).
   let invoicesResult: Awaited<ReturnType<typeof listInvoicesPaged>>;
   try {
     invoicesResult = await listInvoicesPaged(makeListInvoicesDeps(tenantCtx.slug), {
@@ -576,30 +572,23 @@ export default async function AdminInvoicesPage({
     }
   }
 
-  const memberNameById = new Map<string, string>();
-  // Only run the member directory scan when the result set may include
-  // drafts (tabs/filters that enable them) OR when any returned row is
-  // missing a snapshot (defence-in-depth for legacy rows).
-  const needsMemberDirectory =
-    includeDrafts ||
-    (invoicesResult.ok &&
-      invoicesResult.value.rows.some((r) => !r.memberIdentitySnapshot));
-  if (needsMemberDirectory) {
-    const membersResult = await directorySearch(
-      { tenant: tenantCtx, memberRepo: buildMembersDeps(tenantCtx).memberRepo },
-      // Ceiling 500 — snapshot fallback only (detail + list use the
-      // frozen memberIdentitySnapshot first per FR-038, this map is a
-      // belt-and-suspenders fallback for pre-issue drafts on tenants
-      // within the 500-member window). See F4 Phase 10 smart feature
-      // #2 for server-paged search at scale.
-      { status: ['active', 'inactive', 'archived'], limit: 500 },
-    );
-    if (membersResult.ok) {
-      for (const row of membersResult.value.items) {
-        memberNameById.set(row.member.memberId, row.member.companyName);
-      }
-    }
-  }
+  // #89 — the buyer name of a row with no frozen identity snapshot (drafts,
+  // FR-038; or a legacy row) is read BY ID for the members on this page. It
+  // used to come from a members-directory scan that asked for 500 and was
+  // clamped to the first 100, so a draft for any later member showed "—".
+  const snapshotlessMemberIds = invoicesResult.ok
+    ? [
+        ...new Set(
+          invoicesResult.value.rows
+            .filter((r) => !r.memberIdentitySnapshot && r.memberId !== null)
+            .map((r) => r.memberId as string),
+        ),
+      ]
+    : [];
+  const memberNameById: ReadonlyMap<string, string> =
+    snapshotlessMemberIds.length > 0
+      ? await runListMemberNamesByIds(tenantCtx.slug, snapshotlessMemberIds)
+      : new Map();
 
   // 054-event-fee-invoices Task 14 — buyer-subtitle event names.
   // Collect the DISTINCT event ids from the event rows on THIS page, then
@@ -626,10 +615,8 @@ export default async function AdminInvoicesPage({
 
   // Prefer the frozen snapshot on issued/paid/void invoices (FR-038) —
   // it's the legal source of truth and always present. Fall back to the
-  // live directory map only for drafts (no snapshot yet). Ultimate
-  // fallback to a placeholder if directorySearch's 100-row window
-  // didn't include the member (rare — tenant with >100 active members
-  // AND an old draft).
+  // by-id name read only for drafts (no snapshot yet); a placeholder when
+  // the member is gone (erased) or the read failed.
   // T109 — derive presentation-only `overdue` status per FR-028.
   // `status` stays the stored value for non-derived consumers; the
   // `overdue` variant is injected ONLY when the read-time rule

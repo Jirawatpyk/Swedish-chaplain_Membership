@@ -25,7 +25,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import { asMemberId, directorySearch, getMember } from '@/modules/members';
+import { asMemberId, getMember } from '@/modules/members';
+import { runListMemberPickerOptions } from '@/lib/members-picker-deps';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolvePlanName } from '@/lib/resolve-plan-name';
 import { type MemberOption, type PlanOption } from '../_components/invoice-form';
@@ -96,21 +97,21 @@ export default async function NewInvoiceDraftPage({
   // Corporate / 2026)" instead of the raw "regular" slug.
   const planNameById = new Map<string, string>(plans.map((p) => [p.planId, p.label]));
 
-  // #82 — the directory read returns at most MEMBER_PRELOAD_LIMIT rows (its
-  // clamp; this used to ask for 500 and got 100). A full preload turns the
-  // picker's server search on, so any member can be found.
+  // #82 / #89 — the preload is a slim read (the four fields an option shows,
+  // no contact rows) of at most MEMBER_PRELOAD_LIMIT members, in the
+  // directory's default order. A full preload turns the picker's server
+  // search on, so any member can be found.
   const membersDeps = buildMembersDeps(tenantCtx);
-  const membersResult = await directorySearch(membersDeps, {
-    limit: MEMBER_PRELOAD_LIMIT,
-    // Inactive members are billable — create-invoice-draft only rejects
-    // `archived` (member_archived), and the directory default itself is
-    // ['active','inactive']. Active-only here silently blocked invoicing a
-    // lapsed-but-not-archived member (incl. deep-links with their memberId).
-    status: ['active', 'inactive'] as const,
-  });
-  const preloadedMembers: readonly MemberOption[] = membersResult.ok
-    ? membersResult.value.items.map((r) => toMemberOption(r.member, planNameById, locale))
-    : [];
+  const preloadedMembers: readonly MemberOption[] = (
+    await runListMemberPickerOptions(tenantCtx.slug, {
+      limit: MEMBER_PRELOAD_LIMIT,
+      // Inactive members are billable — create-invoice-draft only rejects
+      // `archived` (member_archived). Active-only here silently blocked
+      // invoicing a lapsed-but-not-archived member (incl. deep-links with
+      // their memberId).
+      statuses: ['active', 'inactive'],
+    })
+  ).map((m) => toMemberOption(m, planNameById, locale));
   const memberSearchEnabled = preloadedMembers.length >= MEMBER_PRELOAD_LIMIT;
   // A `?memberId=` past the preload is read by id and added, so the "New
   // invoice" link on a member page always lands on that member. An archived

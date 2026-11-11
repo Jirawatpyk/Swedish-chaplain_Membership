@@ -184,6 +184,32 @@ export async function runResolveRegistrationEventId(
 }
 
 /**
+ * #89 — the erase page's read of one registration by id under the caller's
+ * tenant RLS (it used to scan the first 500 rows of the event detail, so a
+ * registration past row 500 404'd and could not be erased). Returns only what
+ * the page needs: the event it belongs to (the page 404s a path mismatch), the
+ * attendee name for the dialog, and whether the PII is already pseudonymised.
+ * A miss or a repo error is `null`; the page 404s.
+ */
+export async function runLoadRegistrationForErase(
+  tenantSlug: string,
+  registrationId: string,
+): Promise<{ eventId: string; attendeeName: string; isPseudonymised: boolean } | null> {
+  const ctx = asTenantContext(tenantSlug);
+  return runInTenant(ctx, async (tx) => {
+    const lookup = makeEventRegistrationLookupForTenant(tx);
+    const result = await lookup.findById(asTenantId(tenantSlug), asRegistrationId(registrationId));
+    if (!result.ok || result.value === null) return null;
+    const reg = result.value;
+    return {
+      eventId: String(reg.eventId),
+      attendeeName: reg.attendee.name,
+      isPseudonymised: reg.piiPseudonymisedAt !== null,
+    };
+  });
+}
+
+/**
  * 054-event-fee-invoices Task 14 — resolve a batch of event ids to their
  * `{ name, startDateIso }` under the caller's tenant RLS. Used by the
  * `/admin/invoices` list to render the buyer-subtitle line (event name +
