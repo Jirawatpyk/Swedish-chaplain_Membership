@@ -3243,6 +3243,20 @@
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again."
         },
+        "confirmAsPaid": {
+          "title": "Record the payment and issue the document?",
+          "description": "This records the payment and issues a numbered tax document. It can't be undone — only a credit note can cancel it.",
+          "document": "Document",
+          "event": "Event",
+          "attendee": "Attendee",
+          "buyer": "Billed to",
+          "taxId": "Tax ID",
+          "paymentDate": "Payment date",
+          "paymentMethod": "Payment method",
+          "reference": "Reference",
+          "confirm": "Record payment & issue · {total} THB",
+          "cancel": "Cancel"
+        },
         "duplicateDialog": {
           "title": "An invoice already exists",
           "description": "An event-fee invoice already exists for this attendee.",

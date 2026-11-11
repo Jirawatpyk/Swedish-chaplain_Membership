@@ -19,7 +19,7 @@
  * role=radio element itself.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import fc from 'fast-check';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
@@ -971,6 +971,93 @@ describe('<EventFeeForm>', () => {
       paymentMethod: 'bank_transfer',
     });
     expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success, undefined);
+  });
+
+  // #92 — "Already paid" records the payment and issues a numbered tax
+  // document that only a credit note can undo, so the submit button opens a
+  // confirm dialog with a summary; only its confirm button sends anything.
+  describe('as-paid asks for confirmation first (#92)', () => {
+    const confirmMsgs = enMessages.admin.invoices.eventFeeForm.confirmAsPaid;
+
+    async function openConfirm() {
+      const fetchMock = mockFetchRegistrations([matchedRegistration]);
+      vi.stubGlobal('fetch', fetchMock);
+      renderForm({ initialEventId: 'ev-1' });
+      fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+      fireEvent.click(
+        screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue }),
+      );
+      return fetchMock;
+    }
+    const draftCalls = (fetchMock: ReturnType<typeof vi.fn>) =>
+      fetchMock.mock.calls.filter((c) => String(c[0]) === '/api/invoices/event-draft');
+
+    it('the submit button opens the confirm dialog and sends nothing', async () => {
+      const fetchMock = await openConfirm();
+      expect(await screen.findByRole('alertdialog', { name: confirmMsgs.title })).toBeInTheDocument();
+      expect(draftCalls(fetchMock)).toHaveLength(0);
+    });
+
+    it('the dialog summarises what will be issued', async () => {
+      await openConfirm();
+      const dialog = await screen.findByRole('alertdialog', { name: confirmMsgs.title });
+      const badge = screen.getByTestId('doc-type-badge').textContent ?? '';
+      expect(dialog).toHaveTextContent(badge);
+      expect(dialog).toHaveTextContent('Annual Gala');
+      expect(dialog).toHaveTextContent('1,000.00');
+      expect(dialog).toHaveTextContent(enMessages.admin.invoices.pay.methods.bank_transfer);
+      expect(
+        within(dialog).getByRole('button', { name: confirmMsgs.confirm.replace('{total}', '1,000.00') }),
+      ).toBeInTheDocument();
+    });
+
+    it('Cancel closes it and sends nothing', async () => {
+      const fetchMock = await openConfirm();
+      const dialog = await screen.findByRole('alertdialog', { name: confirmMsgs.title });
+      fireEvent.click(within(dialog).getByRole('button', { name: confirmMsgs.cancel }));
+      await waitFor(() =>
+        expect(screen.queryByRole('alertdialog', { name: confirmMsgs.title })).toBeNull(),
+      );
+      expect(draftCalls(fetchMock)).toHaveLength(0);
+    });
+
+    it('confirm sends the draft and then issue-as-paid, once', async () => {
+      const fetchMock = await openConfirm();
+      fetchMock.mockImplementationOnce(
+        async () => new Response(JSON.stringify({ invoice_id: 'inv-92' }), { status: 201 }),
+      );
+      fetchMock.mockImplementationOnce(
+        async () => new Response(JSON.stringify({ invoice_id: 'inv-92' }), { status: 200 }),
+      );
+      const dialog = await screen.findByRole('alertdialog', { name: confirmMsgs.title });
+      const confirm = within(dialog).getByRole('button', {
+        name: confirmMsgs.confirm.replace('{total}', '1,000.00'),
+      });
+      fireEvent.click(confirm);
+      fireEvent.click(confirm);
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-92'));
+      expect(draftCalls(fetchMock)).toHaveLength(1);
+      expect(
+        fetchMock.mock.calls.filter((c) => String(c[0]).includes('/issue-as-paid')),
+      ).toHaveLength(1);
+    });
+
+    it('a future payment date shows the inline error and no dialog', async () => {
+      vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+      renderForm({ initialEventId: 'ev-1' });
+      fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+      fireEvent.change(
+        screen.getByLabelText(new RegExp(`^${enMessages.admin.invoices.pay.fields.date}`)),
+        { target: { value: '2999-01-01' } },
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue }),
+      );
+      expect(
+        await screen.findByText(enMessages.admin.invoices.eventFeeForm.payment.errors.dateFuture),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('alertdialog', { name: confirmMsgs.title })).toBeNull();
+    });
   });
 
   // #91 (R151) — clearing the event resets the whole form (attendee, amount,
