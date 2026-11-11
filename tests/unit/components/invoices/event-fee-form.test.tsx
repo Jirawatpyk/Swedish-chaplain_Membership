@@ -1023,7 +1023,9 @@ describe('<EventFeeForm>', () => {
       expect(dialog).toHaveTextContent('1,000.00');
       expect(dialog).toHaveTextContent(enMessages.admin.invoices.pay.methods.bank_transfer);
       expect(
-        within(dialog).getByRole('button', { name: confirmMsgs.confirm.replace('{total}', '1,000.00') }),
+        within(dialog).getByRole('button', { name: confirmMsgs.confirm
+          .replace('{action}', enMessages.admin.invoices.eventFeeForm.recordAndIssue)
+          .replace('{total}', '1,000.00') }),
       ).toBeInTheDocument();
     });
 
@@ -1052,7 +1054,9 @@ describe('<EventFeeForm>', () => {
       );
       const dialog = await screen.findByRole('alertdialog', { name: confirmTitle() });
       const confirm = within(dialog).getByRole('button', {
-        name: confirmMsgs.confirm.replace('{total}', '1,000.00'),
+        name: confirmMsgs.confirm
+          .replace('{action}', enMessages.admin.invoices.eventFeeForm.recordAndIssue)
+          .replace('{total}', '1,000.00'),
       });
       fireEvent.click(confirm);
       fireEvent.click(confirm);
@@ -1130,6 +1134,27 @@ describe('<EventFeeForm>', () => {
         ),
       );
       expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('a 409 while confirming: the duplicate notice opens and takes focus', async () => {
+      const fetchMock = await openConfirm();
+      fetchMock.mockImplementationOnce(
+        async () =>
+          new Response(JSON.stringify({ existing_invoice_id: null }), { status: 409 }),
+      );
+      fireEvent.click(
+        within(await screen.findByRole('alertdialog', { name: confirmTitle() })).getByTestId(
+          'confirm-as-paid',
+        ),
+      );
+      expect(
+        await screen.findByRole('alertdialog', {
+          name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
+        }),
+      ).toBeInTheDocument();
+      await waitFor(() =>
+        expect(document.activeElement?.id).toBe('event-fee-duplicate-close'),
+      );
     });
 
     it('a future payment date shows the inline error and no dialog', async () => {

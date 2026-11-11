@@ -170,7 +170,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     // #92 — a confirm dialog summarises what will be issued; nothing is sent
     // until its confirm is clicked.
     const confirm = page.getByRole('alertdialog', {
-      name: 'Record the payment and issue the document?',
+      name: /^Record the payment and issue the document for /,
     });
     await expect(confirm).toContainText('Tax Invoice/Receipt / ใบกำกับภาษี/ใบเสร็จรับเงิน');
     await expect(confirm).toContainText('1,070.00');
@@ -384,7 +384,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
     await fillBuyer(page, { taxId: FAKE_TIN });
     await page.getByRole('button', { name: 'Record payment & issue receipt' }).click();
     await expect(
-      page.getByRole('alertdialog', { name: 'Record the payment and issue the document?' }),
+      page.getByRole('alertdialog', { name: /^Record the payment and issue the document for / }),
     ).toBeVisible();
     const dialogResults = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -447,7 +447,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
 
     await page.getByRole('button', { name: 'Record payment & issue receipt' }).click();
     await page
-      .getByRole('alertdialog', { name: 'Record the payment and issue the document?' })
+      .getByRole('alertdialog', { name: /^Record the payment and issue the document for / })
       .getByTestId('confirm-as-paid')
       .click();
 
