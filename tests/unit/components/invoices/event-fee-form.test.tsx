@@ -1067,6 +1067,27 @@ describe('<EventFeeForm>', () => {
       ).toHaveLength(1);
     });
 
+    it('a non-member with a tax ID: the summary labels it without "(optional)" (R153)', async () => {
+      vi.stubGlobal('fetch', mockFetchRegistrations([nonMemberRegistration]));
+      renderForm({ initialEventId: 'ev-1' });
+      fireEvent.click(await screen.findByRole('button', { name: /Bob/ }));
+      fireEvent.change(screen.getByLabelText(/Legal name/), { target: { value: 'Bob Guest Co.' } });
+      fireEvent.change(screen.getByLabelText(/Address/), { target: { value: '99 Rama IV' } });
+      fireEvent.change(screen.getByLabelText('Tax ID (optional)'), {
+        target: { value: '1234567890123' },
+      });
+      fireEvent.click(screen.getByText(modeMessages.alreadyPaid.label));
+      fireEvent.click(
+        screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue }),
+      );
+      const dialog = await screen.findByRole('alertdialog', {
+        name: confirmMsgs.title.replace('{attendee}', 'Bob (guest)'),
+      });
+      expect(within(dialog).getByText(confirmMsgs.taxId)).toBeInTheDocument();
+      expect(dialog).toHaveTextContent('1234567890123');
+      expect(dialog).not.toHaveTextContent('(optional)');
+    });
+
     it('a matched VAT-registrant member: the dialog names the tax invoice/receipt and bills the member record', async () => {
       vi.stubGlobal(
         'fetch',

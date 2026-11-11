@@ -3251,6 +3251,7 @@
           "attendee": "Deltagare",
           "buyer": "Faktureras till",
           "buyerFromMember": "Medlemmen i registret – namn och skatteuppgifter hämtas från medlemsregistret",
+          "taxId": "Skatte-ID",
           "confirm": "{action} · {total} THB",
           "cancel": "Avbryt"
         },

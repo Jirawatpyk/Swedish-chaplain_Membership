@@ -1487,7 +1487,7 @@ export function EventFeeForm({
               </dd>
               {!matched && buyer.taxId.trim() !== '' && (
                 <>
-                  <dt className={CONFIRM_DT}>{t('buyer.taxId')}</dt>
+                  <dt className={CONFIRM_DT}>{tConfirm('taxId')}</dt>
                   <dd className={`${CONFIRM_DD} tabular-nums`}>{buyer.taxId.trim()}</dd>
                 </>
               )}

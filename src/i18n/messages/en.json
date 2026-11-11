@@ -3251,6 +3251,7 @@
           "attendee": "Attendee",
           "buyer": "Billed to",
           "buyerFromMember": "The member on record — the name and tax details come from the member record",
+          "taxId": "Tax ID",
           "confirm": "{action} · {total} THB",
           "cancel": "Cancel"
         },
