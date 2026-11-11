@@ -7,7 +7,10 @@
 # browser download (Playwright's CDN) never failed; only the system-library
 # step (apt) did. So the two are split:
 #   1. the browser download, retried;
-#   2. the system libraries, retried with a longer back-off;
+#   2. the system libraries, two tries of at most 5 minutes each: with the
+#      mirror's DNS down, every apt URL waits ~20 s, so one unbounded try
+#      took ~10 minutes and three of them used up the job's 45-minute
+#      budget before any test ran (#782's first run);
 #   3. if apt is still down, check that Chromium launches anyway (the
 #      ubuntu-24.04 image already ships most of its libraries). It launches:
 #      a warning, and the job goes on. It does not: the job fails, named.
@@ -32,14 +35,21 @@ if ! retry "browser download" "15 30" pnpm exec playwright install chromium; the
   exit 1
 fi
 
-if retry "system libraries" "30 60" pnpm exec playwright install-deps chromium; then
+# One bounded try. A timed-out try can leave apt-get running and holding
+# the dpkg lock, so the next try stops it first.
+install_deps() {
+  sudo pkill -x apt-get 2>/dev/null || true
+  timeout --kill-after=15 300 pnpm exec playwright install-deps chromium
+}
+
+if retry "system libraries" "30" install_deps; then
   exit 0
 fi
 
 if node -e "require('playwright').chromium.launch().then((b) => b.close()).catch((e) => { console.error(e.message); process.exit(1); })"; then
-  echo "::warning title=apt mirror unavailable::playwright install-deps failed 3 times, but Chromium launches with the libraries already on the runner. Continuing."
+  echo "::warning title=apt mirror unavailable::playwright install-deps failed twice, but Chromium launches with the libraries already on the runner. Continuing."
   exit 0
 fi
 
-echo "::error title=Chromium libraries missing::playwright install-deps failed 3 times (apt mirror unreachable?) and Chromium does not launch without them."
+echo "::error title=Chromium libraries missing::playwright install-deps failed twice (apt mirror unreachable?) and Chromium does not launch without them."
 exit 1
