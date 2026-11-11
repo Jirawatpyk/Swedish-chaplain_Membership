@@ -324,6 +324,36 @@ async function upsertLinkedPrimaryContact(
   });
 }
 
+// PR U — upper bounds on each slow step, so a stall fails fast with its name
+// (a normal run renders and uploads one PDF in a few seconds).
+const RENDER_DEADLINE_MS = 60_000;
+const UPLOAD_DEADLINE_MS = 60_000;
+const HEAD_DEADLINE_MS = 30_000;
+
+/**
+ * Run `fn` and reject with a named error if it has not settled in `ms`. The
+ * stalled call is not cancelled; the script exits on the rejection.
+ */
+async function withDeadline<T>(label: string, ms: number, fn: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `seed-e2e-portal-invoices: ${label} did not finish in ${ms} ms (Blob or render stalled)`,
+          ),
+        ),
+      ms,
+    );
+  });
+  try {
+    return await Promise.race([fn(), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Render one fixture PDF + upload it to Vercel Blob. The pdf routes proxy
  * `fetch(blobUrl)`, so a placeholder key would 404 from Blob and the route
@@ -332,22 +362,35 @@ async function upsertLinkedPrimaryContact(
 async function renderAndUpload(
   input: Parameters<typeof reactPdfRenderAdapter.render>[0],
   blobKey: string,
+  label: string,
 ): Promise<SeedPdf> {
-  const rendered = await reactPdfRenderAdapter.render(input);
-  await vercelBlobAdapter.uploadPdf({
-    key: blobKey,
-    body: rendered.bytes,
-    contentType: 'application/pdf',
-  });
+  const t0 = Date.now();
+  const rendered = await withDeadline(`render ${label}`, RENDER_DEADLINE_MS, () =>
+    reactPdfRenderAdapter.render(input),
+  );
+  const t1 = Date.now();
+  await withDeadline(`Blob upload ${label}`, UPLOAD_DEADLINE_MS, () =>
+    vercelBlobAdapter.uploadPdf({
+      key: blobKey,
+      body: rendered.bytes,
+      contentType: 'application/pdf',
+    }),
+  );
+  console.log(`  rendered ${label} in ${t1 - t0}ms; uploaded in ${Date.now() - t1}ms`);
   return { blobKey, sha256: rendered.sha256 };
 }
 
 /** True when any non-null key has no object in Blob (a `head` miss). */
-async function anyBlobMissing(keys: ReadonlyArray<string | null>): Promise<boolean> {
+async function anyBlobMissing(
+  keys: ReadonlyArray<string | null>,
+  number: string,
+): Promise<boolean> {
   for (const key of keys) {
     if (key === null) continue;
     try {
-      await vercelBlobAdapter.signDownloadUrl(key);
+      await withDeadline(`Blob head ${number}`, HEAD_DEADLINE_MS, () =>
+        vercelBlobAdapter.signDownloadUrl(key),
+      );
     } catch (e) {
       if (e instanceof BlobKeyNotFoundError) return true;
       throw e;
@@ -409,6 +452,7 @@ async function renderFixturePdfs(
       invoiceSubject: 'membership',
     },
     mainPdfBlobKey(ctx.slug, seed),
+    `${seed.number} main`,
   );
   if (seed.status === 'issued') return { mainPdf, receiptPdf: null };
   const receiptPdf = await renderAndUpload(
@@ -421,6 +465,7 @@ async function renderFixturePdfs(
       invoiceSubject: 'membership',
     },
     receiptPdfBlobKey(ctx.slug, seed),
+    `${seed.number} receipt`,
   );
   return { mainPdf, receiptPdf };
 }
@@ -478,8 +523,12 @@ async function seedInvoicesIfMissing(
   adminUserId: string,
   seeds: readonly E2ePortalInvoiceSeed[] = E2E_PORTAL_INVOICE_SEEDS,
 ): Promise<void> {
-  await runInTenant(ctx, async (tx) => {
-    for (const s of seeds) {
+  // PR U — the PDF render and the Blob upload run OUTSIDE any transaction. A
+  // stalled upload once held the tx idle until the Neon pooler closed it
+  // (`write CONNECTION_CLOSED`, ~6.5 min, #775), which named the database
+  // instead of the step that hung. Each step is now bounded by `withDeadline`.
+  for (const s of seeds) {
+    const found = await runInTenant(ctx, async (tx) => {
       const existing = await tx
         .select({
           invoiceId: invoices.invoiceId,
@@ -501,36 +550,40 @@ async function seedInvoicesIfMissing(
           ),
         )
         .limit(1);
-      const found = existing[0];
-      if (found && fixtureNeedsReseed(found)) {
-        await deleteStaleFixture(tx, ctx, found.invoiceId, s.number);
-      } else if (found) {
-        console.log(`  invoice ${s.number} already present — invoice_id=${found.invoiceId}`);
-        // #78 (R141) — a present row whose PDF object is gone (the local Blob
-        // store was swapped on 2026-11-04) answers `blob_missing`. Re-render
-        // and re-upload to the row's own deterministic keys; an object that is
-        // still there is left as it is (`uploadPdf` does not overwrite). No DB
-        // write, so the row's stored sha256 may then differ from the new bytes
-        // — fine for dev fixture data, never for a real tax document.
-        const rowKeys = [found.pdfBlobKey, found.receiptPdfBlobKey];
-        if (await anyBlobMissing(rowKeys)) {
-          await renderFixturePdfs(ctx, s);
-          // The re-upload goes to today's deterministic keys; a row written
-          // under an older key shape would still miss. Say so, don't hide it.
-          if (await anyBlobMissing(rowKeys)) {
-            console.warn(
-              `  ${s.number}: PDF still missing after re-upload — the row's key differs from today's; delete the fixture (scripts/cleanup-e2e-seed.ts) and re-run`,
-            );
-          } else {
-            console.log(`  re-uploaded missing PDF for ${s.number}`);
-          }
-        }
-        continue;
-      }
+      return existing[0] ?? null;
+    });
 
-      // Render + upload BEFORE inserting so the persisted blob keys always
-      // point at retrievable objects; a failed upload rolls the tx back.
-      const { mainPdf, receiptPdf } = await renderFixturePdfs(ctx, s);
+    if (found && !fixtureNeedsReseed(found)) {
+      console.log(`  invoice ${s.number} already present — invoice_id=${found.invoiceId}`);
+      // #78 (R141) — a present row whose PDF object is gone (the local Blob
+      // store was swapped on 2026-11-04) answers `blob_missing`. Re-render
+      // and re-upload to the row's own deterministic keys; an object that is
+      // still there is left as it is (`uploadPdf` does not overwrite). No DB
+      // write, so the row's stored sha256 may then differ from the new bytes
+      // — fine for dev fixture data, never for a real tax document.
+      const rowKeys = [found.pdfBlobKey, found.receiptPdfBlobKey];
+      if (await anyBlobMissing(rowKeys, s.number)) {
+        await renderFixturePdfs(ctx, s);
+        // The re-upload goes to today's deterministic keys; a row written
+        // under an older key shape would still miss. Say so, don't hide it.
+        if (await anyBlobMissing(rowKeys, s.number)) {
+          console.warn(
+            `  ${s.number}: PDF still missing after re-upload — the row's key differs from today's; delete the fixture (scripts/cleanup-e2e-seed.ts) and re-run`,
+          );
+        } else {
+          console.log(`  re-uploaded missing PDF for ${s.number}`);
+        }
+      }
+      continue;
+    }
+
+    // Render + upload BEFORE inserting so the persisted blob keys always point
+    // at retrievable objects. A failed upload throws before the tx opens; an
+    // upload whose insert then fails leaves a dev-only object at a
+    // deterministic key, which the next run re-uses.
+    const { mainPdf, receiptPdf } = await renderFixturePdfs(ctx, s);
+    await runInTenant(ctx, async (tx) => {
+      if (found) await deleteStaleFixture(tx, ctx, found.invoiceId, s.number);
       await tx.insert(invoices).values(
         buildE2ePortalInvoiceRow({
           seed: s,
@@ -556,10 +609,10 @@ async function seedInvoicesIfMissing(
         totalSatang: subtotalSatang,
         position: 1,
       });
+    });
 
-      console.log(`  seeded invoice ${s.number} (${s.status}) + PDF ${mainPdf.blobKey}`);
-    }
-  });
+    console.log(`  seeded invoice ${s.number} (${s.status}) + PDF ${mainPdf.blobKey}`);
+  }
 }
 
 // --- Main ---------------------------------------------------------------------
