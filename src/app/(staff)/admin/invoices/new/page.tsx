@@ -59,7 +59,7 @@ export default async function NewInvoiceDraftPage({
   const sp = await searchParams;
   const memberIdParam = typeof sp.memberId === 'string' ? sp.memberId : undefined;
   const initialMemberId =
-    memberIdParam && UUID_RE.test(memberIdParam) ? memberIdParam : undefined;
+    memberIdParam && UUID_RE.test(memberIdParam) ? memberIdParam.toLowerCase() : undefined;
 
   // Event-fee deep-link from the F6 attendee table ("Create invoice" CTA).
   // UUID-validated here (same defence as ?memberId) so a malformed query
