@@ -122,6 +122,37 @@ export function upcomingFrom(token: string | undefined): Date | undefined {
   return token === 'now' ? new Date() : undefined;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** #82 — a `?memberId=` counts only when it is a UUID; anything else is ignored. */
+export function queueMemberIdParam(raw: unknown): string | undefined {
+  return typeof raw === 'string' && UUID_RE.test(raw) ? raw : undefined;
+}
+
+/**
+ * #82 — the member filter's options: every member who is not archived (an
+ * inactive member can have E-Blasts), plus the selected one even when
+ * archived, so the filter shows the member it filters by. No row cap: a
+ * chamber's member list is small enough for one select.
+ */
+export async function readQueueMemberFilterOptions(
+  tenant: TenantContext,
+  selectedMemberId: string | undefined,
+): Promise<Array<{ memberId: string; displayName: string }>> {
+  const rows = (await runInTenant(tenant, async (tx) =>
+    tx.execute(sql`
+      SELECT member_id::text AS member_id, company_name
+      FROM members
+      WHERE tenant_id = ${tenant.slug}
+        AND (status <> 'archived'${
+          selectedMemberId !== undefined ? sql` OR member_id::text = ${selectedMemberId}` : sql``
+        })
+      ORDER BY company_name ASC
+    `),
+  )) as unknown as Array<{ member_id: string; company_name: string }>;
+  return rows.map((r) => ({ memberId: r.member_id, displayName: r.company_name }));
+}
+
 async function readMemberNames(tenant: TenantContext, memberIds: readonly string[]): Promise<Map<string, string>> {
   const names = new Map<string, string>();
   if (memberIds.length === 0) return names;
