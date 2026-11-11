@@ -45,6 +45,12 @@ describe('E-Blast queue member filter (#82)', () => {
     expect(s.params).toContain(ID);
   });
 
+  it('#89 — reads each member\'s status, so an archived selected member can be labelled', async () => {
+    rec.statements.length = 0;
+    await readQueueMemberFilterOptions({ slug: T } as never, ID);
+    expect(rec.statements[0]!.sql).toMatch(/select\s+member_id::text AS member_id,\s*company_name,\s*status/i);
+  });
+
   it('without a selected member, only the non-archived ones', async () => {
     rec.statements.length = 0;
     await readQueueMemberFilterOptions({ slug: T } as never, undefined);
