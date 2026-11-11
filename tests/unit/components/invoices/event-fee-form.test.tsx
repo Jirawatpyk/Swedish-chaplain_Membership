@@ -121,12 +121,12 @@ function mockFetchRegistrations(rows: readonly unknown[]) {
   });
 }
 
-/** #92 — an as-paid submit opens a confirm first; click its confirm, if open. */
+/** #92 — an as-paid submit opens a confirm first; it must be open, click its confirm. */
 function confirmAsPaidDialog() {
-  const dialog = screen.queryByRole('alertdialog', {
-    name: enMessages.admin.invoices.eventFeeForm.confirmAsPaid.title,
+  const dialog = screen.getByRole('alertdialog', {
+    name: new RegExp(`^${enMessages.admin.invoices.eventFeeForm.confirmAsPaid.title.split('{')[0]}`),
   });
-  if (dialog) fireEvent.click(within(dialog).getByTestId('confirm-as-paid'));
+  fireEvent.click(within(dialog).getByTestId('confirm-as-paid'));
 }
 
 function renderForm(
@@ -924,7 +924,6 @@ describe('<EventFeeForm>', () => {
       }),
     );
 
-    confirmAsPaidDialog();
 
     expect(
       await screen.findByText(
@@ -994,6 +993,7 @@ describe('<EventFeeForm>', () => {
   // confirm dialog with a summary; only its confirm button sends anything.
   describe('as-paid asks for confirmation first (#92)', () => {
     const confirmMsgs = enMessages.admin.invoices.eventFeeForm.confirmAsPaid;
+    const confirmTitle = () => confirmMsgs.title.replace('{attendee}', 'Alice (member)');
 
     async function openConfirm() {
       const fetchMock = mockFetchRegistrations([matchedRegistration]);
@@ -1010,13 +1010,13 @@ describe('<EventFeeForm>', () => {
 
     it('the submit button opens the confirm dialog and sends nothing', async () => {
       const fetchMock = await openConfirm();
-      expect(await screen.findByRole('alertdialog', { name: confirmMsgs.title })).toBeInTheDocument();
+      expect(await screen.findByRole('alertdialog', { name: confirmTitle() })).toBeInTheDocument();
       expect(draftCalls(fetchMock)).toHaveLength(0);
     });
 
     it('the dialog summarises what will be issued', async () => {
       await openConfirm();
-      const dialog = await screen.findByRole('alertdialog', { name: confirmMsgs.title });
+      const dialog = await screen.findByRole('alertdialog', { name: confirmTitle() });
       const badge = screen.getByTestId('doc-type-badge').textContent ?? '';
       expect(dialog).toHaveTextContent(badge);
       expect(dialog).toHaveTextContent('Annual Gala');
@@ -1029,10 +1029,10 @@ describe('<EventFeeForm>', () => {
 
     it('Cancel closes it and sends nothing', async () => {
       const fetchMock = await openConfirm();
-      const dialog = await screen.findByRole('alertdialog', { name: confirmMsgs.title });
+      const dialog = await screen.findByRole('alertdialog', { name: confirmTitle() });
       fireEvent.click(within(dialog).getByRole('button', { name: confirmMsgs.cancel }));
       await waitFor(() =>
-        expect(screen.queryByRole('alertdialog', { name: confirmMsgs.title })).toBeNull(),
+        expect(screen.queryByRole('alertdialog', { name: confirmTitle() })).toBeNull(),
       );
       expect(draftCalls(fetchMock)).toHaveLength(0);
       await waitFor(() =>
@@ -1050,7 +1050,7 @@ describe('<EventFeeForm>', () => {
       fetchMock.mockImplementationOnce(
         async () => new Response(JSON.stringify({ invoice_id: 'inv-92' }), { status: 200 }),
       );
-      const dialog = await screen.findByRole('alertdialog', { name: confirmMsgs.title });
+      const dialog = await screen.findByRole('alertdialog', { name: confirmTitle() });
       const confirm = within(dialog).getByRole('button', {
         name: confirmMsgs.confirm.replace('{total}', '1,000.00'),
       });
@@ -1061,6 +1061,75 @@ describe('<EventFeeForm>', () => {
       expect(
         fetchMock.mock.calls.filter((c) => String(c[0]).includes('/issue-as-paid')),
       ).toHaveLength(1);
+    });
+
+    it('a matched VAT-registrant member: the dialog names the tax invoice/receipt and bills the member record', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockFetchRegistrations([{ ...matchedRegistration, buyerIsVatRegistrant: true }]),
+      );
+      renderForm({ initialEventId: 'ev-1' });
+      fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+      fireEvent.click(
+        screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue }),
+      );
+      const dialog = await screen.findByRole('alertdialog', {
+        name: confirmMsgs.title.replace('{attendee}', 'Alice (member)'),
+      });
+      expect(dialog).toHaveTextContent(enMessages.admin.invoices.eventFeeForm.docType.taxInvoiceReceipt);
+      expect(dialog).toHaveTextContent(confirmMsgs.buyerFromMember);
+    });
+
+    it('a matched non-registrant member: the dialog names a receipt', async () => {
+      vi.stubGlobal(
+        'fetch',
+        mockFetchRegistrations([{ ...matchedRegistration, buyerIsVatRegistrant: false }]),
+      );
+      renderForm({ initialEventId: 'ev-1' });
+      fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+      fireEvent.click(
+        screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue }),
+      );
+      const dialog = await screen.findByRole('alertdialog', {
+        name: confirmMsgs.title.replace('{attendee}', 'Alice (member)'),
+      });
+      expect(dialog).toHaveTextContent(enMessages.admin.invoices.eventFeeForm.docType.receipt);
+    });
+
+    it('the issue-as-paid body carries the date, method and reference the dialog showed', async () => {
+      const fetchMock = await openConfirm();
+      fetchMock.mockImplementationOnce(
+        async () => new Response(JSON.stringify({ invoice_id: 'inv-93' }), { status: 201 }),
+      );
+      fetchMock.mockImplementationOnce(
+        async () => new Response(JSON.stringify({ invoice_id: 'inv-93' }), { status: 200 }),
+      );
+      const dialog = await screen.findByRole('alertdialog', { name: confirmTitle() });
+      expect(dialog).toHaveTextContent(enMessages.admin.invoices.pay.fields.date);
+      fireEvent.click(within(dialog).getByTestId('confirm-as-paid'));
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-93'));
+      const issueCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/issue-as-paid'));
+      expect(JSON.parse((issueCall![1] as RequestInit).body as string)).toEqual({
+        paymentDate: bangkokToday(),
+        paymentMethod: 'bank_transfer',
+      });
+    });
+
+    it('a refused draft keeps the form: the dialog closes and focus returns to the submit button', async () => {
+      const fetchMock = await openConfirm();
+      fetchMock.mockImplementationOnce(
+        async () =>
+          new Response(JSON.stringify({ error: { code: 'invalid_amount' } }), { status: 422 }),
+      );
+      const dialog = await screen.findByRole('alertdialog', { name: confirmTitle() });
+      fireEvent.click(within(dialog).getByTestId('confirm-as-paid'));
+      await waitFor(() => expect(screen.queryByRole('alertdialog', { name: confirmTitle() })).toBeNull());
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue }),
+        ),
+      );
+      expect(pushMock).not.toHaveBeenCalled();
     });
 
     it('a future payment date shows the inline error and no dialog', async () => {
@@ -1900,7 +1969,6 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
-    confirmAsPaidDialog();
 
     expect(
       await screen.findByText(
@@ -1927,7 +1995,6 @@ describe('<EventFeeForm>', () => {
         name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
       }),
     );
-    confirmAsPaidDialog();
 
     expect(
       await screen.findByText(

@@ -3244,17 +3244,14 @@
           "unknown": "Ett okänt fel inträffade. Försök igen."
         },
         "confirmAsPaid": {
-          "title": "Registrera betalningen och utfärda dokumentet?",
-          "description": "Betalningen registreras och ett numrerat skattedokument utfärdas. Det kan inte ångras – bara en kreditnota kan annullera det.",
+          "title": "Registrera betalningen och utfärda dokumentet för {attendee}?",
+          "description": "Betalningen registreras och dokumentet ovan utfärdas med nästa nummer. När det är utfärdat kan det inte ångras eller tas bort.",
           "document": "Dokument",
           "event": "Evenemang",
           "attendee": "Deltagare",
           "buyer": "Faktureras till",
-          "taxId": "Skatte-ID",
-          "paymentDate": "Betalningsdatum",
-          "paymentMethod": "Betalningssätt",
-          "reference": "Referens",
-          "confirm": "Registrera betalning och utfärda · {total} THB",
+          "buyerFromMember": "Medlemmen i registret – namn och skatteuppgifter hämtas från medlemsregistret",
+          "confirm": "{action} · {total} THB",
           "cancel": "Avbryt"
         },
         "duplicateDialog": {
