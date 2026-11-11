@@ -5953,6 +5953,8 @@
           "placeholder": "Välj ett evenemang…",
           "emptyState": "Inget evenemang matchar. Skapa ett först eller förfina sökningen.",
           "loadErrorDetail": "Kunde inte hämta evenemang. Uppdatera och försök igen.",
+          "searching": "Söker evenemang…",
+          "searchFailed": "Evenemangssökningen misslyckades. Försök igen.",
           "filenameMatchHint": "Auto-föreslagen från filnamnet: {eventName}",
           "createNewCta": "Skapa nytt evenemang",
           "refreshAriaLabel": "Uppdatera evenemangslistan",

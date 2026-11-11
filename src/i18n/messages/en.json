@@ -5953,6 +5953,8 @@
           "placeholder": "Choose an event…",
           "emptyState": "No events match. Create one first or refine the search.",
           "loadErrorDetail": "Could not load events. Refresh and try again.",
+          "searching": "Searching events…",
+          "searchFailed": "Event search failed. Try again.",
           "filenameMatchHint": "Auto-suggested from filename: {eventName}",
           "createNewCta": "Create new event",
           "refreshAriaLabel": "Refresh events list",
