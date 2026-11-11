@@ -992,9 +992,37 @@ describe('<EventFeeForm>', () => {
 
     it('has no clear button', async () => {
       vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
-      renderForm({ initialEventId: 'ev-1' });
+      const { container } = renderForm({ initialEventId: 'ev-1' });
       await screen.findByRole('button', { name: /Alice/ });
       expect(screen.queryByRole('button', { name: /^Clear/ })).toBeNull();
+      expect(container.querySelector('.aura-combo__clear')).toBeNull();
+    });
+
+    it('picking the chosen event again keeps the attendee and the amount', async () => {
+      vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+      renderForm({ initialEventId: 'ev-1' });
+      fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+      const picker = screen.getByRole('combobox', {
+        name: new RegExp(enMessages.admin.invoices.eventFeeForm.eventPicker.label),
+      });
+      picker.focus();
+      fireEvent.keyDown(picker, { key: 'ArrowDown' });
+      fireEvent.keyDown(picker, { key: 'Enter' });
+      expect(screen.getByTestId('matched-buyer-readonly')).toBeInTheDocument();
+      expect((screen.getByLabelText(/Amount/) as HTMLInputElement).value).toBe('1000');
+    });
+
+    it('typed text that matches nothing is dropped on blur, so the field shows the chosen event', async () => {
+      vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
+      renderForm({ initialEventId: 'ev-1' });
+      await screen.findByRole('button', { name: /Alice/ });
+      const picker = screen.getByRole('combobox', {
+        name: new RegExp(enMessages.admin.invoices.eventFeeForm.eventPicker.label),
+      }) as HTMLInputElement;
+      picker.focus();
+      fireEvent.change(picker, { target: { value: 'zzz' } });
+      fireEvent.blur(picker);
+      await waitFor(() => expect(picker.value).toBe('Annual Gala (2026-06-01)'));
     });
   });
 
