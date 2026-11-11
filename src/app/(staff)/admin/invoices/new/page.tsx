@@ -243,7 +243,8 @@ export default async function NewInvoiceDraftPage({
       />
       {/* #89 (UX L6) — a deep link that cannot be used says so. */}
       {notices.map((n) => (
-        <Alert key={n} tone="info" role="status" data-testid={`invoice-new-${n}`}>
+        // A standing notice rendered with the page, not a live update (AURA: role="note").
+        <Alert key={n} tone="info" role="note" data-testid={`invoice-new-${n}`}>
           {t(n)}
         </Alert>
       ))}

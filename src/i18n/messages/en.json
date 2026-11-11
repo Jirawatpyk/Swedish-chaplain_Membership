@@ -3121,8 +3121,8 @@
         "title": "New invoice draft",
         "description": "Select a member and plan. You can preview before issuing.",
         "cancel": "Back to list",
-        "memberLinkUnusable": "The member from your link can't be invoiced: it is archived or was not found. Pick a member below.",
-        "registrationLinkUnusable": "The registration from your link was not found. Pick the event and the attendee below.",
+        "memberLinkUnusable": "The member from your link can't be used here: they are archived, weren't found, or couldn't be loaded. Pick a member below.",
+        "registrationLinkUnusable": "The registration from your link wasn't found or couldn't be loaded. Pick the event and the attendee below.",
         "type": {
           "legend": "What is this invoice for?",
           "label": "Invoice type",
@@ -5968,6 +5968,7 @@
           "loadErrorDetail": "Could not load events. Refresh and try again.",
           "searching": "Searching events…",
           "searchFailed": "Event search failed. Try again.",
+          "searchHint": "Type a name to search older events too.",
           "filenameMatchHint": "Auto-suggested from filename: {eventName}",
           "createNewCta": "Create new event",
           "refreshAriaLabel": "Refresh events list",

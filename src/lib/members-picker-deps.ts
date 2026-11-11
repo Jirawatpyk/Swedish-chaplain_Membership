@@ -2,9 +2,9 @@
  * #89 — composition wrappers over the members barrel's slim picker reads.
  *
  * Each opens one `runInTenant` (Principle I) and degrades a failed read to an
- * empty answer with a warn: the new-invoice picker then has no preload (it
- * still searches the server) and the invoices list shows "—" for a draft's
- * buyer, as it did when the directory read failed. `asTenantContext` runs
+ * empty answer with a warn: the new-invoice picker then has no preload (and,
+ * with less than a full page, no server search) and the invoices list shows
+ * "—" for a draft's buyer, as it did when the directory read failed. `asTenantContext` runs
  * outside the try, so a malformed slug (a caller bug) throws.
  */
 import 'server-only';
@@ -29,7 +29,7 @@ export async function runListMemberPickerOptions(
   } catch (e) {
     logger.warn(
       { event: 'members_picker_options_read_failed', tenant_slug: tenantSlug, err: errKind(e) },
-      '[#89] member picker preload failed — the picker falls back to server search only',
+      '[#89] member picker preload failed — the picker opens with no members',
     );
     return [];
   }

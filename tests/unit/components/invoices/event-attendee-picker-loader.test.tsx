@@ -125,9 +125,10 @@ describe('EventAttendeePickerLoader filter and deep-link note (#89)', () => {
     const names = [...document.querySelectorAll('li > button')].map((b) => b.getAttribute('aria-label')?.split(',')[0]);
     expect(names).toContain('Attendee 5');
     expect(names.filter((n) => n !== 'Attendee 5')).toHaveLength(11);
-    expect(document.body).toHaveTextContent('12 of 30 attendees');
+    // The announced count is the matches (11), not the pinned row.
+    expect(document.body).toHaveTextContent('11 of 30 attendees');
     fireEvent.change(box, { target: { value: 'zzz-nobody' } });
-    expect(screen.getByText(picker.filter?.noMatch ?? '<missing attendeePicker.filter.noMatch>')).toBeInTheDocument();
+    expect(screen.getAllByText(picker.filter?.noMatch ?? '<missing attendeePicker.filter.noMatch>').length).toBeGreaterThan(0);
     fireEvent.change(box, { target: { value: '' } });
     expect(document.querySelectorAll('li > button').length).toBe(30);
   });

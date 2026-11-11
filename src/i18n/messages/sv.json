@@ -3121,8 +3121,8 @@
         "title": "Nytt fakturautkast",
         "description": "Välj medlem och paket. Förhandsgranska före utfärdande.",
         "cancel": "Tillbaka",
-        "memberLinkUnusable": "Medlemmen från din länk kan inte faktureras: den är arkiverad eller hittades inte. Välj en medlem nedan.",
-        "registrationLinkUnusable": "Registreringen från din länk hittades inte. Välj evenemanget och deltagaren nedan.",
+        "memberLinkUnusable": "Medlemmen från din länk kan inte användas här: den är arkiverad, hittades inte eller kunde inte läsas in. Välj en medlem nedan.",
+        "registrationLinkUnusable": "Registreringen från din länk hittades inte eller kunde inte läsas in. Välj evenemanget och deltagaren nedan.",
         "type": {
           "legend": "Vad avser denna faktura?",
           "label": "Fakturatyp",
@@ -3150,7 +3150,7 @@
           "cut": "Visar {shown} av {total} deltagare.",
           "loadFailedTitle": "Deltagarna kunde inte laddas",
           "loadFailed": "Kontrollera anslutningen och försök igen.",
-          "linkNotFound": "Registreringen från din länk finns inte i evenemangets lista, eller så har dess personuppgifter raderats. Välj en deltagare nedan.",
+          "linkNotFound": "Registreringen från din länk finns inte i evenemangets lista, eller så har personuppgifterna raderats. Välj en deltagare nedan.",
           "filter": {
             "label": "Filtrera deltagare",
             "placeholder": "Namn eller företag",
@@ -5968,6 +5968,7 @@
           "loadErrorDetail": "Kunde inte hämta evenemang. Uppdatera och försök igen.",
           "searching": "Söker evenemang…",
           "searchFailed": "Evenemangssökningen misslyckades. Försök igen.",
+          "searchHint": "Skriv ett namn för att även söka bland äldre evenemang.",
           "filenameMatchHint": "Auto-föreslagen från filnamnet: {eventName}",
           "createNewCta": "Skapa nytt evenemang",
           "refreshAriaLabel": "Uppdatera evenemangslistan",

@@ -585,10 +585,6 @@ export default async function AdminInvoicesPage({
         ),
       ]
     : [];
-  const memberNameById: ReadonlyMap<string, string> =
-    snapshotlessMemberIds.length > 0
-      ? await runListMemberNamesByIds(tenantCtx.slug, snapshotlessMemberIds)
-      : new Map();
 
   // 054-event-fee-invoices Task 14 — buyer-subtitle event names.
   // Collect the DISTINCT event ids from the event rows on THIS page, then
@@ -597,21 +593,23 @@ export default async function AdminInvoicesPage({
   // lib composition layer, never a JOIN inside F4 listPaged). The lookup is
   // skipped entirely when the page has no event rows (the default all-
   // membership view), so the common path pays zero extra DB cost.
-  const eventNameById = new Map<string, { name: string; startDateIso: string }>();
+  const eventIds = new Set<string>();
   if (invoicesResult.ok) {
-    const eventIds = new Set<string>();
     for (const r of invoicesResult.value.rows) {
       if (r.invoiceSubject === 'event' && r.eventId !== null) {
         eventIds.add(r.eventId);
       }
     }
-    if (eventIds.size > 0) {
-      const resolved = await runListEventNamesByIds(tenantCtx.slug, [...eventIds]);
-      for (const [id, meta] of resolved) {
-        eventNameById.set(id, meta);
-      }
-    }
   }
+  // The two name reads are independent: one round trip of wall time, not two.
+  const [memberNameById, eventNameById] = await Promise.all([
+    snapshotlessMemberIds.length > 0
+      ? runListMemberNamesByIds(tenantCtx.slug, snapshotlessMemberIds)
+      : Promise.resolve<ReadonlyMap<string, string>>(new Map()),
+    eventIds.size > 0
+      ? runListEventNamesByIds(tenantCtx.slug, [...eventIds])
+      : Promise.resolve<ReadonlyMap<string, { name: string; startDateIso: string }>>(new Map()),
+  ]);
 
   // Prefer the frozen snapshot on issued/paid/void invoices (FR-038) —
   // it's the legal source of truth and always present. Fall back to the

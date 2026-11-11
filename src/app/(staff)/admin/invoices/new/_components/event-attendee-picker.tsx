@@ -36,7 +36,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CheckIcon, Users } from 'lucide-react';
-import { Badge, TextField } from '@jirawatpyk/aura-react';
+import { Alert, Badge, TextField } from '@jirawatpyk/aura-react';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ErrorState } from '@/components/shell/error-state';
@@ -443,12 +443,16 @@ function LoadedAttendees({
   const needle = showFilter ? query.trim().toLocaleLowerCase() : '';
   const { shown, matches } = useMemo(() => {
     if (needle === '') return { shown: rows, matches: rows.length };
+    // An erased row cannot be picked (its name is a hash), so a filter leaves
+    // it out; the picked row stays listed, so the selection never disappears.
     const isMatch = (r: AttendeeRow) =>
-      r.attendeeName.toLocaleLowerCase().includes(needle) ||
-      (r.attendeeCompany ?? '').toLocaleLowerCase().includes(needle);
+      !r.isPseudonymised &&
+      (r.attendeeName.toLocaleLowerCase().includes(needle) ||
+        (r.attendeeCompany ?? '').toLocaleLowerCase().includes(needle));
     return {
-      // The picked row stays listed, so the selection never disappears.
-      shown: rows.filter((r) => r.registrationId === selectedRegistrationId || isMatch(r)),
+      shown: rows.filter(
+        (r) => (r.registrationId === selectedRegistrationId && !r.isPseudonymised) || isMatch(r),
+      ),
       matches: rows.filter(isMatch).length,
     };
   }, [rows, needle, selectedRegistrationId]);
@@ -457,10 +461,11 @@ function LoadedAttendees({
     !rows.some((r) => r.registrationId === autoSelectRegistrationId && !r.isPseudonymised);
   return (
     <div className="flex flex-col gap-[var(--aura-space-2)]">
+      {/* Appears after the load, so AURA's info tone (a status region) says it. */}
       {linkNotFound ? (
-        <p className="text-sm text-[var(--aura-fg-secondary)]" data-testid="attendee-picker-link-not-found">
+        <Alert tone="info" data-testid="attendee-picker-link-not-found">
           {t('linkNotFound')}
-        </p>
+        </Alert>
       ) : null}
       {cut ? (
         <p id={cutId} className="text-sm text-[var(--aura-fg-secondary)]" data-testid="attendee-picker-cut">
@@ -478,14 +483,27 @@ function LoadedAttendees({
           placeholder={t('filter.placeholder')}
           value={query}
           onChange={(e) => onQuery(e.target.value)}
+          enterKeyHint="search"
+          // #89 review (a11y H1) — the filter sits inside the event-fee form:
+          // Enter here must not submit it (that can issue a tax document).
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.preventDefault();
+          }}
         />
       ) : null}
-      {/* The filter's count, for screen readers (the list itself changes silently). */}
+      {/* The filter's result, for screen readers (the list changes silently):
+          the matches, or that nothing matches — never the pinned row. */}
       <p role="status" className="sr-only">
-        {needle !== '' ? t('filter.count', { shown: shown.length, total: rows.length }) : ''}
+        {needle === ''
+          ? ''
+          : matches === 0
+            ? t('filter.noMatch')
+            : t('filter.count', { shown: matches, total: rows.length })}
       </p>
       {needle !== '' && matches === 0 ? (
-        <p className="text-sm text-[var(--aura-fg-secondary)]">{t('filter.noMatch')}</p>
+        <p className="text-sm text-[var(--aura-fg-secondary)]" aria-hidden="true">
+          {t('filter.noMatch')}
+        </p>
       ) : null}
       {shown.length > 0 || needle === '' ? (
         <EventAttendeePicker

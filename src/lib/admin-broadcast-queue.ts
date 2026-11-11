@@ -128,7 +128,8 @@ export { queueMemberIdParam } from './queue-member-id';
 export const QUEUE_MEMBER_FILTER_CAP = 2000;
 
 /**
- * #82 — the member filter's options: every member who is not archived (an
+ * #82 — the member filter's options: every member who is not archived or
+ * erased (#89; an erased member's company is the "[erased]" sentinel) (an
  * inactive member can have E-Blasts), plus the selected one even when
  * archived, so the filter shows the member it filters by. A chamber's member
  * list fits one select; `QUEUE_MEMBER_FILTER_CAP` bounds it, and the selected
@@ -143,6 +144,7 @@ export async function readQueueMemberFilterOptions(
       SELECT member_id::text AS member_id, company_name, status
       FROM members
       WHERE tenant_id = ${tenant.slug}
+        AND erased_at IS NULL
         AND (status <> 'archived'${
           selectedMemberId !== undefined ? sql` OR member_id::text = ${selectedMemberId}` : sql``
         })

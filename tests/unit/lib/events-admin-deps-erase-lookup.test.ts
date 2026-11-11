@@ -60,7 +60,7 @@ describe('runLoadRegistrationForErase', () => {
     await runLoadRegistrationForErase('swecham', REG);
     expect(warn).toHaveBeenCalledTimes(1);
     const [fields] = warn.mock.calls[0]!;
-    expect(fields).toMatchObject({ event: 'admin_erase_pii_lookup_failed', tenant_slug: 'swecham' });
+    expect(fields).toMatchObject({ event: 'f6_registration_by_id_read_failed', tenant_slug: 'swecham' });
     expect(JSON.stringify(fields)).not.toMatch(/attendee|name|email/i);
   });
 

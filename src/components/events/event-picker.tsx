@@ -331,7 +331,10 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
     // With `onSearch` AURA shows the options as given: loaded events match at
     // once with its own filter, the server's older ones follow.
     const local = events.map(toOption).filter((o) => comboboxFilter(o, typed));
-    const server = searchResults.filter((r) => !local.some((o) => o.value === r.eventId)).map(toOption);
+    // Server results that are loaded events are left out even when AURA's
+    // filter missed them locally, so no event is listed twice.
+    const loadedIds = new Set(events.map((e) => e.eventId));
+    const server = searchResults.filter((r) => !loadedIds.has(r.eventId)).map(toOption);
     return { options: [...local, ...server], localMatchCount: local.length };
   }, [events, locale, searchBefore, typed, searchResults, selected]);
 
@@ -382,6 +385,10 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
                     : ''}
                 </span>
                 {props.hint !== undefined ? <span className="block">{props.hint}</span> : null}
+                {/* #89 review (UX M2) — the search past the loaded events, or its failure. */}
+                {searchBefore !== null ? (
+                  <span className="block">{searchFailed ? t('searchFailed') : t('searchHint')}</span>
+                ) : null}
               </span>
             }
             required
@@ -418,6 +425,11 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
             // A failed load shows on the field itself, not only in the open list.
             error={error ?? undefined}
           />
+          {/* With loaded events matching, AURA announces their count, not that
+              the older-events search failed: say it here. */}
+          <p role="status" className="sr-only">
+            {searchFailed && localMatchCount > 0 ? t('searchFailed') : ''}
+          </p>
         </div>
         <div className="mt-[var(--event-picker-box-offset,1.625rem)] flex h-[2.625rem] items-center">
           <IconButton

@@ -36,6 +36,7 @@ import { asTenantContext } from '@/modules/tenants';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import {
   asTenantId,
   memberVatRegistrantByIdsInTx,
@@ -171,15 +172,29 @@ export async function runResolveRegistrationEventId(
   tenantSlug: string,
   registrationId: string,
 ): Promise<string | null> {
+  const reg = await findRegistrationInTenant(tenantSlug, registrationId);
+  return reg === null ? null : String(reg.eventId);
+}
+
+/**
+ * The one tenant-fenced by-id registration read behind both wrappers above and
+ * below (RLS through `runInTenant`, plus the repo's own `tenant_id`
+ * predicate). A miss is `null`; a repo error is `null` too, logged by event
+ * and tenant only (no attendee data), so it is never a silent 404 (#89).
+ */
+async function findRegistrationInTenant(tenantSlug: string, registrationId: string) {
   const ctx = asTenantContext(tenantSlug);
   return runInTenant(ctx, async (tx) => {
     const lookup = makeEventRegistrationLookupForTenant(tx);
-    const result = await lookup.findById(
-      asTenantId(tenantSlug),
-      asRegistrationId(registrationId),
-    );
-    if (!result.ok || result.value === null) return null;
-    return String(result.value.eventId);
+    const result = await lookup.findById(asTenantId(tenantSlug), asRegistrationId(registrationId));
+    if (!result.ok) {
+      logger.warn(
+        { event: 'f6_registration_by_id_read_failed', tenant_slug: tenantSlug, err: errKind(result.error) },
+        '[F6] registration by-id read failed — answered as not found',
+      );
+      return null;
+    }
+    return result.value;
   });
 }
 
@@ -195,18 +210,13 @@ export async function runLoadRegistrationForErase(
   tenantSlug: string,
   registrationId: string,
 ): Promise<{ eventId: string; attendeeName: string; isPseudonymised: boolean } | null> {
-  const ctx = asTenantContext(tenantSlug);
-  return runInTenant(ctx, async (tx) => {
-    const lookup = makeEventRegistrationLookupForTenant(tx);
-    const result = await lookup.findById(asTenantId(tenantSlug), asRegistrationId(registrationId));
-    if (!result.ok || result.value === null) return null;
-    const reg = result.value;
-    return {
-      eventId: String(reg.eventId),
-      attendeeName: reg.attendee.name,
-      isPseudonymised: reg.piiPseudonymisedAt !== null,
-    };
-  });
+  const reg = await findRegistrationInTenant(tenantSlug, registrationId);
+  if (reg === null) return null;
+  return {
+    eventId: String(reg.eventId),
+    attendeeName: reg.attendee.name,
+    isPseudonymised: reg.piiPseudonymisedAt !== null,
+  };
 }
 
 /**

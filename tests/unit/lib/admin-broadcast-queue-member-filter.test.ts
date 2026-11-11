@@ -39,7 +39,7 @@ describe('E-Blast queue member filter (#82)', () => {
     expect(tenantPredicateViolations(s, tenantScopedTables()).violations).toEqual([]);
     expect(s.sql).toMatch(/status\s*<>\s*'archived'/i);
     // The tenant fence ANDs the whole OR: another tenant's id cannot slip in.
-    expect(s.sql).toMatch(/tenant_id\s*=\s*\$\d+\s+AND\s*\(status/i);
+    expect(s.sql).toMatch(/tenant_id\s*=\s*\$\d+\s+AND\s+erased_at\s+IS\s+NULL\s+AND\s*\(status/i);
     expect(s.sql).toMatch(/limit/i);
     expect(s.params).toContain(QUEUE_MEMBER_FILTER_CAP);
     expect(s.params).toContain(ID);
