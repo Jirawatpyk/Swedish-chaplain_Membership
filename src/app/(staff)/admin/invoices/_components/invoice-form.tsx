@@ -416,13 +416,18 @@ export function CreateDraftForm({
                     loadingText: tPicker('searching'),
                   }
                 : {})}
-              placeholder={noMembers ? tPicker('noActiveMembers') : tPicker('placeholder')}
+              placeholder={noMembers ? tPicker('noBillableMembers') : tPicker('placeholder')}
               emptyText={memberSearch.failed ? tPicker('searchFailed') : tPicker('empty')}
               {...(memberSearch.failed && memberOptions.length > 0
                 ? { hint: tPicker('searchFailed') }
                 : {})}
               disabled={noMembers}
             />
+            {/* #82 (UX M2) — with local matches shown, AURA announces their
+                count, not that the server search failed: say it here. */}
+            <p role="status" className="sr-only">
+              {memberSearch.failed && localMemberMatches > 0 ? tPicker('searchFailed') : ''}
+            </p>
           </div>
 
           {selectedMember && (

@@ -190,8 +190,13 @@ describe('<EventAttendeePicker>', () => {
 });
 
 describe('<EventAttendeePickerSkeleton>', () => {
-  it('renders a shimmer placeholder', () => {
-    render(<EventAttendeePickerSkeleton />);
+  it('renders a shimmer placeholder, and says it is loading for screen readers (#82)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <EventAttendeePickerSkeleton />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Loading attendees…');
     const skeleton = screen.getByTestId('attendee-picker-skeleton');
     // The shared pulse block, never the legacy kit's skeleton.
     expect(skeleton.querySelector('[data-slot="skeleton"]')).toBeNull();

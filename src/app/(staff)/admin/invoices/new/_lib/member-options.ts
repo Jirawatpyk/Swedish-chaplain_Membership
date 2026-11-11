@@ -34,8 +34,9 @@ export function toMemberOption(
 }
 
 /**
- * The options with the deep-linked member added at the end when the preload
- * does not hold it. Unchanged (same reference) otherwise.
+ * The options with the deep-linked member added first when the preload does
+ * not hold it (where the picked one sits, UX L5). Unchanged (same reference)
+ * otherwise.
  */
 export function withDeepLinkedMember(
   members: readonly MemberOption[],
@@ -43,5 +44,5 @@ export function withDeepLinkedMember(
 ): readonly MemberOption[] {
   if (deepLinked === null) return members;
   if (members.some((m) => m.memberId === deepLinked.memberId)) return members;
-  return [...members, deepLinked];
+  return [deepLinked, ...members];
 }

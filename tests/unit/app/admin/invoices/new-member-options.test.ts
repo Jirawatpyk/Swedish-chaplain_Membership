@@ -24,9 +24,9 @@ describe('new-invoice member options (#82)', () => {
     expect(a).toMatchObject({ currentPlanId: 'regular', currentPlanYear: 2026 });
   });
 
-  it('adds a deep-linked member outside the preload once, at the end', () => {
+  it('adds a deep-linked member outside the preload once, first', () => {
     const list = [a];
-    expect(withDeepLinkedMember(list, b)).toEqual([a, b]);
+    expect(withDeepLinkedMember(list, b)).toEqual([b, a]);
     expect(withDeepLinkedMember(list, a)).toBe(list);
     expect(withDeepLinkedMember(list, null)).toBe(list);
   });

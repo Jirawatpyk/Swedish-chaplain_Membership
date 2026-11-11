@@ -89,6 +89,14 @@ describe('CreateDraftForm — the member picker searches the server (#82)', () =
     expect(await screen.findByText(picker.searchFailed ?? '<missing searchFailed>', NOTE)).toBeInTheDocument();
   });
 
+  it('a failed server search with local matches showing is said to screen readers (UX M2)', async () => {
+    stubFetch(() => new Response('{}', { status: 500 }));
+    renderForm(true);
+    typeInPicker('Acme');
+    expect(await screen.findByRole('option', { name: /Acme/ })).toBeInTheDocument();
+    await screen.findByText(picker.searchFailed ?? '<missing>', { selector: 'p.sr-only[role="status"]' });
+  });
+
   it('with less than a full preload, typing filters locally and asks the server nothing', async () => {
     const fn = stubFetch(() => listOf([late]));
     renderForm(false);

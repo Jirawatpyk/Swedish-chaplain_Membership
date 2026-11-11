@@ -33,12 +33,13 @@
  */
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CheckIcon, Users } from 'lucide-react';
 import { Badge } from '@jirawatpyk/aura-react';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { EmptyState } from '@/components/shell/empty-state';
+import { ErrorState } from '@/components/shell/error-state';
 import { useMinDelay } from '@/hooks/use-min-delay';
 import { cn } from '@/lib/utils';
 
@@ -94,9 +95,13 @@ function matchBadgeKind(row: AttendeeRow): MatchBadgeKind {
 }
 
 export function EventAttendeePickerSkeleton() {
+  const t = useTranslations('admin.invoices.eventFeeForm.attendeePicker');
+  // W1 — hide this skeleton block from the a11y tree locally (the shared
+  // <Skeleton> primitive is NOT modified; 500+ call-sites are out of scope).
+  // #82 (UX L8) — so say it is loading, for screen readers.
   return (
-    // W1 — hide this skeleton block from the a11y tree locally (the shared
-    // <Skeleton> primitive is NOT modified; 500+ call-sites are out of scope).
+    <>
+    <p role="status" className="sr-only">{t('loading')}</p>
     <div
       className="flex flex-col gap-2"
       data-testid="attendee-picker-skeleton"
@@ -114,6 +119,7 @@ export function EventAttendeePickerSkeleton() {
         </div>
       ))}
     </div>
+    </>
   );
 }
 
@@ -128,10 +134,13 @@ export function EventAttendeePicker({
   selectedRegistrationId,
   onSelect,
   labelId,
+  describedById,
 }: {
   readonly rows: readonly AttendeeRow[];
   readonly selectedRegistrationId: string | null;
   readonly onSelect: (row: AttendeeRow) => void;
+  /** #82 — the "Showing N of M" line when the list is cut. */
+  readonly describedById?: string | undefined;
   /**
    * S2 — id of the visible `<Label>` for this list. When provided the list
    * is `aria-labelledby` it; otherwise it falls back to a self-contained
@@ -158,6 +167,7 @@ export function EventAttendeePicker({
     <ul
       className="flex flex-col gap-2"
       {...(labelId ? { 'aria-labelledby': labelId } : { 'aria-label': t('label') })}
+      {...(describedById ? { 'aria-describedby': describedById } : {})}
     >
       {rows.map((row) => {
         const kind = matchBadgeKind(row);
@@ -219,7 +229,7 @@ export function EventAttendeePicker({
         });
 
         return (
-          <li key={row.registrationId}>
+          <li key={row.registrationId} data-registration-id={row.registrationId}>
             {disabled ? (
               // B1 — a `<button aria-disabled>` (NOT native `disabled`, so it
               // stays in the tab order + a11y tree). `aria-disabled` is valid
@@ -283,21 +293,33 @@ type DetailPage = {
 export function EventAttendeePickerLoader({
   eventId,
   selectedRegistrationId,
+  autoSelectRegistrationId = null,
   onSelect,
-  onError,
   labelId,
 }: {
   readonly eventId: string;
   readonly selectedRegistrationId: string | null;
+  /**
+   * #82 (UX M3) — a deep-linked registration: once the list loads it is
+   * picked (so the buyer and amount fill in, not only the highlight) and
+   * scrolled into view.
+   */
+  readonly autoSelectRegistrationId?: string | null;
   readonly onSelect: (row: AttendeeRow) => void;
-  readonly onError: () => void;
   readonly labelId?: string | undefined;
 }) {
   const t = useTranslations('admin.invoices.eventFeeForm.attendeePicker');
-  const [loaded, setLoaded] = useState<{ rows: readonly AttendeeRow[]; total: number } | null>(null);
+  const [state, setState] = useState<
+    | { readonly kind: 'loading' }
+    | { readonly kind: 'failed' }
+    | { readonly kind: 'ok'; readonly rows: readonly AttendeeRow[]; readonly total: number }
+  >({ kind: 'loading' });
+  const [attempt, setAttempt] = useState(0);
   // W2 — keep the skeleton visible ≥300ms so a fast fetch doesn't flash it
-  // (ux-standards §2.3). `ready` is "rows have loaded".
-  const showReal = useMinDelay(300, loaded !== null);
+  // (ux-standards §2.3). `ready` is "the load settled".
+  const showReal = useMinDelay(300, state.kind !== 'loading');
+  const autoSelected = useRef(false);
+  const cutId = `attendee-picker-cut-${eventId}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -309,46 +331,75 @@ export function EventAttendeePickerLoader({
       return (await res.json()) as DetailPage;
     };
     (async () => {
+      let first: DetailPage;
       try {
-        // #82 — the route pages at 200; read every page (up to the cap) so
-        // an attendee past the first 200, or a deep-linked one, is listed.
-        const first = await fetchPage(1);
-        const firstRows = first.registrations ?? [];
-        const total = first.pagination?.totalCount ?? firstRows.length;
-        const pages = Math.min(
-          Math.ceil(total / ATTENDEE_PAGE_SIZE),
-          ATTENDEE_LOAD_CAP / ATTENDEE_PAGE_SIZE,
-        );
-        const rest = await Promise.all(
-          Array.from({ length: Math.max(0, pages - 1) }, (_, i) => fetchPage(i + 2)),
-        );
-        const seen = new Set<string>();
-        const rows = [firstRows, ...rest.map((p) => p.registrations ?? [])]
-          .flat()
-          .filter((r) => (seen.has(r.registrationId) ? false : (seen.add(r.registrationId), true)));
-        if (!cancelled) setLoaded({ rows, total });
+        first = await fetchPage(1);
       } catch {
-        if (!cancelled) onError();
+        // #82 (UX M1) — an inline error with Retry, never a skeleton that
+        // stays forever.
+        if (!cancelled) setState({ kind: 'failed' });
+        return;
       }
+      // #82 — the route pages at 200; read every page (up to the cap) so an
+      // attendee past the first 200, or a deep-linked one, is listed. A page
+      // that fails drops only its rows; the "Showing N of M" line says so.
+      const firstRows = first.registrations ?? [];
+      const total = first.pagination?.totalCount ?? firstRows.length;
+      const pages = Math.min(Math.ceil(total / ATTENDEE_PAGE_SIZE), ATTENDEE_LOAD_CAP / ATTENDEE_PAGE_SIZE);
+      const rest = await Promise.allSettled(
+        Array.from({ length: Math.max(0, pages - 1) }, (_, i) => fetchPage(i + 2)),
+      );
+      const seen = new Set<string>();
+      const rows = [firstRows, ...rest.map((p) => (p.status === 'fulfilled' ? (p.value.registrations ?? []) : []))]
+        .flat()
+        .filter((r) => (seen.has(r.registrationId) ? false : (seen.add(r.registrationId), true)));
+      if (!cancelled) setState({ kind: 'ok', rows, total });
     })();
     return () => {
       cancelled = true;
     };
-  }, [eventId, onError]);
+  }, [eventId, attempt]);
 
-  if (loaded === null || !showReal) return <EventAttendeePickerSkeleton />;
+  // #82 (UX M3) — pick the deep-linked attendee once, and bring it into view.
+  useEffect(() => {
+    if (state.kind !== 'ok' || !showReal || autoSelected.current || autoSelectRegistrationId === null) return;
+    autoSelected.current = true;
+    const row = state.rows.find((r) => r.registrationId === autoSelectRegistrationId && !r.isPseudonymised);
+    if (!row) return;
+    onSelect(row);
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    document
+      .querySelector(`[data-registration-id="${CSS.escape(row.registrationId)}"]`)
+      ?.scrollIntoView?.({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+  }, [state, showReal, autoSelectRegistrationId, onSelect]);
+
+  if (!showReal || state.kind === 'loading') return <EventAttendeePickerSkeleton />;
+  if (state.kind === 'failed') {
+    return (
+      <ErrorState
+        title={t('loadFailedTitle')}
+        description={t('loadFailed')}
+        onRetry={() => {
+          setState({ kind: 'loading' });
+          setAttempt((n) => n + 1);
+        }}
+      />
+    );
+  }
+  const cut = state.total > state.rows.length;
   return (
     <div className="flex flex-col gap-[var(--aura-space-2)]">
-      {loaded.total > loaded.rows.length ? (
-        <p className="text-sm text-[var(--aura-fg-secondary)]" data-testid="attendee-picker-cut">
-          {t('cut', { shown: loaded.rows.length, total: loaded.total })}
+      {cut ? (
+        <p id={cutId} className="text-sm text-[var(--aura-fg-secondary)]" data-testid="attendee-picker-cut">
+          {t('cut', { shown: state.rows.length, total: state.total })}
         </p>
       ) : null}
       <EventAttendeePicker
-        rows={loaded.rows}
+        rows={state.rows}
         selectedRegistrationId={selectedRegistrationId}
         onSelect={onSelect}
         labelId={labelId}
+        describedById={cut ? cutId : undefined}
       />
     </div>
   );

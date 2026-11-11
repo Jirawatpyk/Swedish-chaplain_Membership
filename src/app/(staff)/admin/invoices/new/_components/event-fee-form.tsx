@@ -613,10 +613,6 @@ export function EventFeeForm({
     setPaymentDateError(null);
   }, []);
 
-  const handlePickerError = useCallback(() => {
-    toast.error(t('errors.unknown'));
-  }, [t]);
-
   const matched = attendee !== null && isMatchedMember(attendee);
   const amountNum = Number(amountThb);
   const amountValid = amountThb !== '' && Number.isFinite(amountNum);
@@ -1057,7 +1053,7 @@ export function EventFeeForm({
               eventId={eventId}
               selectedRegistrationId={attendee?.registrationId ?? initialRegistrationId ?? null}
               onSelect={handleAttendeeSelect}
-              onError={handlePickerError}
+              autoSelectRegistrationId={attendee === null ? (initialRegistrationId ?? null) : null}
               labelId="attendee-picker-label"
             />
           </div>
