@@ -3243,6 +3243,18 @@
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
         },
+        "confirmAsPaid": {
+          "title": "Registrera betalningen och utfärda dokumentet för {attendee}?",
+          "description": "Betalningen registreras och dokumentet ovan utfärdas med nästa nummer. När det är utfärdat kan det inte ångras eller tas bort.",
+          "document": "Dokument",
+          "event": "Evenemang",
+          "attendee": "Deltagare",
+          "buyer": "Faktureras till",
+          "buyerFromMember": "Medlemmen i registret – namn och skatteuppgifter hämtas från medlemsregistret",
+          "taxId": "Skatte-ID",
+          "confirm": "{action} · {total} THB",
+          "cancel": "Avbryt"
+        },
         "duplicateDialog": {
           "title": "En faktura finns redan",
           "description": "En evenemangsfaktura finns redan för denna deltagare.",
