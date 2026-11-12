@@ -3,7 +3,8 @@
  * layer in `keepOutside`, so the challenge stays clickable while the Drawer
  * makes the page behind it inert (#206). AURA's built-in keep list and its
  * "late body children stay live" contract cover it today (handoff addendum
- * 109, R145); this pins our known layer in our own code, on the money screen.
+ * 109, R145), and since 5.90 the built-in list names this selector too; this
+ * keeps an explicit pin in our own code, on the money screen.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

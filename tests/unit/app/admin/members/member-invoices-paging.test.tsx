@@ -7,7 +7,8 @@
  * - a page past the end shows the last page, not an empty card;
  * - the pager shows only past 20 invoices, its links keep the card's filters,
  *   set `invPage` (dropped for page 1) and land on the card's heading;
- * - a filter change starts again at page 1 (covered in the filters test).
+ * - a filter change starts again at page 1 (covered in the filters test);
+ * - below 640px the compact "Page X of Y" is read aloud (AURA #210, 5.90).
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactElement } from 'react';
@@ -98,6 +99,21 @@ describe('member invoices card paging (#765)', () => {
     expect(next.getAttribute('href')).toBe('/admin/members/m-1?invStatus=issued&invPage=3#member-invoices-heading');
     const first = within(nav).getByRole('link', { name: /^1$|page 1/i });
     expect(first.getAttribute('href')).toBe('/admin/members/m-1?invStatus=issued#member-invoices-heading');
+  });
+
+  it('lets screen readers read the compact "Page X of Y" status (AURA 5.90, #210)', async () => {
+    const el = (await MemberInvoicesSection({ ...base, page: 2 })) as CardEl;
+    const card = (await MemberInvoicesCard({
+      ...(el.props as unknown as Parameters<typeof MemberInvoicesCard>[0]),
+    })) as ReactElement;
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        {card}
+      </NextIntlClientProvider>,
+    );
+    const nav = screen.getByRole('navigation', { name: enMessages.admin.members.invoices.pagination.label });
+    const compact = within(nav).getByText(/page 2 of 4/i);
+    expect(compact.closest('[aria-hidden="true"]')).toBeNull();
   });
 
   it('shows no pager at 20 invoices or fewer', async () => {
