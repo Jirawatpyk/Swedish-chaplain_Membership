@@ -835,6 +835,40 @@ describe('<EventFeeForm>', () => {
     expect(
       fetchMock.mock.calls.find((c) => String(c[0]).includes('/issue-as-paid')),
     ).toBeUndefined();
+    // #92 follow-up review M-1/M-2: in as-paid mode the existing invoice may
+    // be a draft that was never issued or paid, with its first details.
+    expect(
+      screen.getByRole('alertdialog', {
+        name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
+      }),
+    ).toHaveTextContent(enMessages.admin.invoices.eventFeeForm.duplicateDialog.asPaidHint);
+  });
+
+  it('409 in bill-first mode: the duplicate notice has no as-paid hint', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    fireEvent.click(screen.getByText(modeMessages.billFirst.label));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('radio', { name: new RegExp(modeMessages.billFirst.label) }),
+      ).toBeChecked(),
+    );
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(JSON.stringify({ error: { code: 'duplicate' } }), { status: 409 }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Create event-fee draft/ }));
+    const dialog = await screen.findByRole('alertdialog', {
+      name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
+    });
+    expect(dialog).toHaveTextContent(
+      enMessages.admin.invoices.eventFeeForm.duplicateDialog.description,
+    );
+    expect(dialog).not.toHaveTextContent(
+      enMessages.admin.invoices.eventFeeForm.duplicateDialog.asPaidHint,
+    );
   });
 
   it('409 with existing_invoice_id → duplicate dialog renders a "View invoice" link', async () => {
@@ -1109,6 +1143,7 @@ describe('<EventFeeForm>', () => {
         await waitFor(() => expect(toastWarning).toHaveBeenCalledWith(feeErrors.draftUnconfirmed));
         expect(toastError).not.toHaveBeenCalled();
         expect(pushMock).not.toHaveBeenCalled();
+        expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/issue-as-paid'))).toBe(false);
         await waitFor(() =>
           expect(screen.queryByRole('alertdialog', { name: confirmTitle() })).toBeNull(),
         );

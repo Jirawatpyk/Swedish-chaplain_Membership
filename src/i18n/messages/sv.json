@@ -3259,6 +3259,7 @@
         "duplicateDialog": {
           "title": "En faktura finns redan",
           "description": "En evenemangsfaktura finns redan för denna deltagare.",
+          "asPaidHint": "Den kan fortfarande vara ett utkast som inte har utfärdats eller betalats, med de uppgifter den först skapades med. Öppna den och kontrollera: utfärda den och registrera betalningen där, eller ta bort utkastet och börja om.",
           "viewInvoice": "Visa faktura",
           "cancel": "Stäng"
         },
