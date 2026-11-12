@@ -53,24 +53,6 @@ export interface Reach {
   readonly item: number | null | undefined;
 }
 
-/** `**`, `*` and `\[` `\]` escapes, as eslint's minimatch reads a glob; everything else literal. */
-export function globToRegExp(glob: string): RegExp {
-  let re = '';
-  for (let i = 0; i < glob.length; i += 1) {
-    const c = glob[i] as string;
-    if (c === '\\' && i + 1 < glob.length) {
-      re += `\\${glob[i + 1]}`;
-      i += 1;
-    } else if (c === '*' && glob[i + 1] === '*') {
-      re += '.*';
-      i += 1;
-      if (glob[i + 1] === '/') i += 1;
-    } else if (c === '*') re += '[^/]*';
-    else re += /[.+^${}()|[\]]/.test(c) ? `\\${c}` : c;
-  }
-  return new RegExp(`^${re}$`);
-}
-
 /** Comments replaced by spaces, newlines kept, so line numbers still match the source. */
 export function blankComments(source: string): string {
   return source
@@ -212,11 +194,6 @@ describe('AURA internal-class ratchet (spec 122 parity rule)', () => {
       ]) {
         expect(findReaches('f.tsx', `${line}\n`), line).toHaveLength(1);
       }
-    });
-    it('reads escaped brackets in a glob as literal characters', () => {
-      const re = globToRegExp('src/app/(member)/portal/invoices/\\[invoiceId\\]/*.tsx');
-      expect(re.test('src/app/(member)/portal/invoices/[invoiceId]/page.tsx')).toBe(true);
-      expect(re.test('src/app/(member)/portal/invoices/[invoiceId]/_components/x.tsx')).toBe(false);
     });
   });
 });
