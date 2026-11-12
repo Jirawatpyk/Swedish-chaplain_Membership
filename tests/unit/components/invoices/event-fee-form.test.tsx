@@ -25,17 +25,24 @@ import fc from 'fast-check';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
 
-const { pushMock, toastSuccess, toastError, toastWarning } = vi.hoisted(() => ({
+const { pushMock, toastSuccess, toastError, toastWarning, toastDismiss } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
   toastWarning: vi.fn(),
+  toastDismiss: vi.fn(),
 }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, replace: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock('@/lib/toast', () => ({
-  toast: { success: toastSuccess, error: toastError, warning: toastWarning, info: vi.fn() },
+  toast: {
+    success: toastSuccess,
+    error: toastError,
+    warning: toastWarning,
+    info: vi.fn(),
+    dismiss: toastDismiss,
+  },
 }));
 
 import {
@@ -574,6 +581,7 @@ describe('<EventFeeForm>', () => {
     toastSuccess.mockReset();
     toastError.mockReset();
     toastWarning.mockReset();
+    toastDismiss.mockReset();
   });
   afterEach(() => {
     vi.useFakeTimers();
@@ -1152,7 +1160,10 @@ describe('<EventFeeForm>', () => {
       ])('%s: a warning that a retry is safe, no error, and the form can try again', async (_n, res) => {
         const fetchMock = await confirmWith(res as () => Promise<Response>);
         await waitFor(() =>
-          expect(toastWarning).toHaveBeenCalledWith(feeErrors.draftUnconfirmed, { duration: Infinity }),
+          expect(toastWarning).toHaveBeenCalledWith(feeErrors.draftUnconfirmed, {
+            duration: Infinity,
+            id: 'event-fee-draft-unconfirmed',
+          }),
         );
         expect(toastError).not.toHaveBeenCalled();
         expect(pushMock).not.toHaveBeenCalled();
@@ -1165,6 +1176,24 @@ describe('<EventFeeForm>', () => {
         const again = await screen.findByRole('alertdialog', { name: confirmTitle() });
         fireEvent.click(confirmButton(again));
         await waitFor(() => expect(draftCalls(fetchMock)).toHaveLength(2));
+      });
+
+      // R154 note: the earlier warning must not sit behind the retry's answer.
+      it('the next answer clears the earlier warning (abort, then a 409 duplicate)', async () => {
+        const fetchMock = await confirmWith(() => Promise.reject(new TypeError('Failed to fetch')));
+        await waitFor(() => expect(toastWarning).toHaveBeenCalled());
+        expect(toastDismiss).not.toHaveBeenCalled();
+        await waitFor(() => expect(document.activeElement).toBe(submitButton()));
+        fetchMock.mockImplementationOnce(
+          async () =>
+            new Response(JSON.stringify({ error: { code: 'duplicate' } }), { status: 409 }),
+        );
+        fireEvent.click(submitButton());
+        fireEvent.click(confirmButton(await screen.findByRole('alertdialog', { name: confirmTitle() })));
+        await screen.findByRole('alertdialog', {
+          name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
+        });
+        expect(toastDismiss).toHaveBeenCalledWith('event-fee-draft-unconfirmed');
       });
 
       it('the read-only 503: the write-freeze warning, nothing changed', async () => {
@@ -1854,7 +1883,7 @@ describe('<EventFeeForm>', () => {
     await waitFor(() =>
       expect(toastWarning).toHaveBeenCalledWith(
         enMessages.admin.invoices.eventFeeForm.errors.draftUnconfirmed,
-        { duration: Infinity },
+        { duration: Infinity, id: 'event-fee-draft-unconfirmed' },
       ),
     );
     expect(toastError).not.toHaveBeenCalled();
