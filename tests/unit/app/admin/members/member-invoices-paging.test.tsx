@@ -112,7 +112,7 @@ describe('member invoices card paging (#765)', () => {
       </NextIntlClientProvider>,
     );
     const nav = screen.getByRole('navigation', { name: enMessages.admin.members.invoices.pagination.label });
-    const compact = within(nav).getByText(/page 2 of/i);
+    const compact = within(nav).getByText(/page 2 of 4/i);
     expect(compact.closest('[aria-hidden="true"]')).toBeNull();
   });
 
