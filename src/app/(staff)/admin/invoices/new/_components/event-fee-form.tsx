@@ -104,6 +104,9 @@ import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-f
 import { MoneyDialogFooter } from '../../_components/money-dialog-footer';
 
 /** #92 — the confirm dialog returns focus here on Cancel. */
+/** #92 follow-up: the draft step's "couldn't confirm" warning — kept until
+ * dismissed, and cleared once a later draft request gets an answer. */
+const DRAFT_UNCONFIRMED_TOAST = { id: 'event-fee-draft-unconfirmed', duration: Infinity } as const;
 const SUBMIT_BUTTON_ID = 'event-fee-submit';
 const DUPLICATE_CLOSE_ID = 'event-fee-duplicate-close';
 const CONFIRM_DT = 'text-[var(--aura-fg-secondary)]';
@@ -995,10 +998,14 @@ export function EventFeeForm({
         try {
           res = await fetch('/api/invoices/event-draft', init);
         } catch {
-          // Stays until dismissed, like the issue step's unconfirmed warning.
-          toast.warning(t('errors.draftUnconfirmed'), { duration: Infinity });
+          // Stays until dismissed, like the issue step's unconfirmed warning;
+          // one id, so a repeat replaces it in place.
+          toast.warning(t('errors.draftUnconfirmed'), DRAFT_UNCONFIRMED_TOAST);
           return;
         }
+        // An answer came back: an earlier "couldn't confirm" no longer holds
+        // (R154: it sat behind the retry's duplicate notice).
+        toast.dismiss(DRAFT_UNCONFIRMED_TOAST.id);
         if (res.status === 201) {
           // 065 M-1 — the 201 body parse gets its OWN guard: a 201 means
           // the draft EXISTS server-side, but a broken/truncated body
@@ -1050,7 +1057,7 @@ export function EventFeeForm({
           return;
         }
         if (isUnknownOutcome(res.status, readProblemCode(payload))) {
-          toast.warning(t('errors.draftUnconfirmed'), { duration: Infinity });
+          toast.warning(t('errors.draftUnconfirmed'), DRAFT_UNCONFIRMED_TOAST);
           return;
         }
         const code = (payload as { error?: { code?: string } })?.error?.code;
