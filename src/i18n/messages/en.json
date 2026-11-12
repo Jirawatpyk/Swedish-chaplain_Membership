@@ -3259,7 +3259,7 @@
         "duplicateDialog": {
           "title": "An invoice already exists",
           "description": "An event-fee invoice already exists for this attendee.",
-          "asPaidHint": "It may still be a draft that hasn't been issued or paid, with the details it was first created with. Open it to check: issue it and record the payment there, or delete the draft to start again.",
+          "descriptionAsPaid": "An event-fee invoice already exists for this attendee. If it is still a draft that hasn't been issued or paid, it keeps the details it was first created with: open it to issue it and record the payment, or delete the draft to start again.",
           "viewInvoice": "View invoice",
           "cancel": "Close"
         },

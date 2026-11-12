@@ -48,6 +48,7 @@ import {
   type EventOption,
   type IssuanceMode,
 } from '@/app/(staff)/admin/invoices/new/_components/event-fee-form';
+import { MONEY_POST_TIMEOUT_MS } from '@/app/(staff)/admin/invoices/_components/unknown-outcome';
 import enMessages from '@/i18n/messages/en.json';
 import svMessages from '@/i18n/messages/sv.json';
 
@@ -841,7 +842,7 @@ describe('<EventFeeForm>', () => {
       screen.getByRole('alertdialog', {
         name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
       }),
-    ).toHaveTextContent(enMessages.admin.invoices.eventFeeForm.duplicateDialog.asPaidHint);
+    ).toHaveTextContent(enMessages.admin.invoices.eventFeeForm.duplicateDialog.descriptionAsPaid);
   });
 
   it('409 in bill-first mode: the duplicate notice has no as-paid hint', async () => {
@@ -867,7 +868,7 @@ describe('<EventFeeForm>', () => {
       enMessages.admin.invoices.eventFeeForm.duplicateDialog.description,
     );
     expect(dialog).not.toHaveTextContent(
-      enMessages.admin.invoices.eventFeeForm.duplicateDialog.asPaidHint,
+      enMessages.admin.invoices.eventFeeForm.duplicateDialog.descriptionAsPaid,
     );
   });
 
@@ -1123,12 +1124,17 @@ describe('<EventFeeForm>', () => {
         return fetchMock;
       }
 
-      it('the draft POST carries a timeout signal', async () => {
+      it('the draft POST carries the money-dialog timeout signal', async () => {
+        const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
         const fetchMock = await confirmWith(
           async () => new Response(JSON.stringify({ invoice_id: 'inv-92' }), { status: 201 }),
         );
         await waitFor(() => expect(draftCalls(fetchMock)).toHaveLength(1));
-        expect((draftCalls(fetchMock)[0]![1] as RequestInit).signal).toBeInstanceOf(AbortSignal);
+        expect(timeoutSpy).toHaveBeenCalledWith(MONEY_POST_TIMEOUT_MS);
+        expect((draftCalls(fetchMock)[0]![1] as RequestInit).signal).toBe(
+          timeoutSpy.mock.results[0]!.value,
+        );
+        timeoutSpy.mockRestore();
       });
 
       it.each([
@@ -1138,9 +1144,16 @@ describe('<EventFeeForm>', () => {
           'a 504 page',
           async () => new Response('<html>Gateway Timeout</html>', { status: 504 }),
         ],
+        [
+          'an internal_error 500',
+          async () =>
+            new Response(JSON.stringify({ error: { code: 'internal_error' } }), { status: 500 }),
+        ],
       ])('%s: a warning that a retry is safe, no error, and the form can try again', async (_n, res) => {
         const fetchMock = await confirmWith(res as () => Promise<Response>);
-        await waitFor(() => expect(toastWarning).toHaveBeenCalledWith(feeErrors.draftUnconfirmed));
+        await waitFor(() =>
+          expect(toastWarning).toHaveBeenCalledWith(feeErrors.draftUnconfirmed, { duration: Infinity }),
+        );
         expect(toastError).not.toHaveBeenCalled();
         expect(pushMock).not.toHaveBeenCalled();
         expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/issue-as-paid'))).toBe(false);
@@ -1165,6 +1178,15 @@ describe('<EventFeeForm>', () => {
           }),
         );
         expect(toastError).not.toHaveBeenCalled();
+      });
+
+      it('a named 500 (lookup_failed, refused before any write) stays an error', async () => {
+        await confirmWith(
+          async () =>
+            new Response(JSON.stringify({ error: { code: 'lookup_failed' } }), { status: 500 }),
+        );
+        await waitFor(() => expect(toastError).toHaveBeenCalled());
+        expect(toastWarning).not.toHaveBeenCalled();
       });
 
       it('a named refusal keeps its own copy', async () => {
@@ -1832,6 +1854,7 @@ describe('<EventFeeForm>', () => {
     await waitFor(() =>
       expect(toastWarning).toHaveBeenCalledWith(
         enMessages.admin.invoices.eventFeeForm.errors.draftUnconfirmed,
+        { duration: Infinity },
       ),
     );
     expect(toastError).not.toHaveBeenCalled();
