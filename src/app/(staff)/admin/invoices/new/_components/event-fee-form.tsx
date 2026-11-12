@@ -91,6 +91,7 @@ import {
 // deep import of the pure-constants codes module (client-safe; the barrel's
 // runtime graph is server-only).
 import { AS_PAID_ERROR_CODES } from './as-paid-error-codes';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal, readProblemCode } from '@/lib/http/read-only-refusal';
 import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from '../../_components/unknown-outcome';
 import { useEventSearch } from './use-event-search';
@@ -490,6 +491,7 @@ export function EventFeeForm({
   const tConfirm = useTranslations('admin.invoices.eventFeeForm.confirmAsPaid');
   const tPay = useTranslations('admin.invoices.pay');
   const tErrors = useTranslations('errors');
+  const readOnlyToast = useReadOnlyToast();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -507,9 +509,6 @@ export function EventFeeForm({
   const [buyerErrors, setBuyerErrors] = useState<NonMemberBuyerErrors>({});
   const [amountError, setAmountError] = useState<string | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
-  // #92 follow-up review M-1/M-2: a 409 in as-paid mode may point at a draft
-  // that was never issued or paid (a lost draft answer, then a retry).
-  const [duplicateFromAsPaid, setDuplicateFromAsPaid] = useState(false);
   const [duplicateInvoiceId, setDuplicateInvoiceId] = useState<string | null>(null);
 
   // Issuance mode — the admin's EXPLICIT pick. While null, the effective
@@ -984,16 +983,20 @@ export function EventFeeForm({
         // one non-void event invoice per registration
         // (`invoices_event_registration_uniq`), so a second try gets the 409
         // duplicate notice with the existing draft. The copy says exactly that.
+        // Built before the catch: a throw here means nothing was sent, so it
+        // must not read as a lost answer.
+        const init: RequestInit = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
+        };
         let res: Response;
         try {
-          res = await fetch('/api/invoices/event-draft', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
-          });
+          res = await fetch('/api/invoices/event-draft', init);
         } catch {
-          toast.warning(t('errors.draftUnconfirmed'));
+          // Stays until dismissed, like the issue step's unconfirmed warning.
+          toast.warning(t('errors.draftUnconfirmed'), { duration: Infinity });
           return;
         }
         if (res.status === 201) {
@@ -1037,20 +1040,17 @@ export function EventFeeForm({
             (dupBody as { existing_invoice_id?: string | null }).existing_invoice_id ?? null,
           );
           duplicateOpeningRef.current = true;
-          setDuplicateFromAsPaid(effectiveMode === 'already_paid');
           setDuplicateOpen(true);
           return;
         }
         const payload: unknown = await res.json().catch(() => ({}));
         if (isReadOnlyRefusal(res.status, payload)) {
           // The write freeze refused it: nothing was written.
-          toast.warning(tErrors('readOnlyMode'), {
-            description: tErrors('readOnlyNothingChanged'),
-          });
+          readOnlyToast();
           return;
         }
         if (isUnknownOutcome(res.status, readProblemCode(payload))) {
-          toast.warning(t('errors.draftUnconfirmed'));
+          toast.warning(t('errors.draftUnconfirmed'), { duration: Infinity });
           return;
         }
         const code = (payload as { error?: { code?: string } })?.error?.code;
@@ -1434,11 +1434,14 @@ export function EventFeeForm({
         finalFocus={duplicateFinalFocus}
         role="alertdialog"
         title={t('duplicateDialog.title')}
-        description={
-          duplicateFromAsPaid
-            ? `${t('duplicateDialog.description')} ${t('duplicateDialog.asPaidHint')}`
-            : t('duplicateDialog.description')
-        }
+        // #92 follow-up review M-1/M-2: in as-paid mode the existing invoice
+        // may be a draft never issued or paid, with its first details. The
+        // dialog is modal, so the mode can't change while it is open.
+        description={t(
+          effectiveMode === 'already_paid'
+            ? 'duplicateDialog.descriptionAsPaid'
+            : 'duplicateDialog.description',
+        )}
         footer={
           <>
             <Button
