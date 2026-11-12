@@ -25,17 +25,24 @@ import fc from 'fast-check';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
 
-const { pushMock, toastSuccess, toastError, toastWarning } = vi.hoisted(() => ({
+const { pushMock, toastSuccess, toastError, toastWarning, toastDismiss } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
   toastWarning: vi.fn(),
+  toastDismiss: vi.fn(),
 }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, replace: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock('@/lib/toast', () => ({
-  toast: { success: toastSuccess, error: toastError, warning: toastWarning, info: vi.fn() },
+  toast: {
+    success: toastSuccess,
+    error: toastError,
+    warning: toastWarning,
+    info: vi.fn(),
+    dismiss: toastDismiss,
+  },
 }));
 
 import {
@@ -48,6 +55,7 @@ import {
   type EventOption,
   type IssuanceMode,
 } from '@/app/(staff)/admin/invoices/new/_components/event-fee-form';
+import { MONEY_POST_TIMEOUT_MS } from '@/app/(staff)/admin/invoices/_components/unknown-outcome';
 import enMessages from '@/i18n/messages/en.json';
 import svMessages from '@/i18n/messages/sv.json';
 
@@ -573,6 +581,7 @@ describe('<EventFeeForm>', () => {
     toastSuccess.mockReset();
     toastError.mockReset();
     toastWarning.mockReset();
+    toastDismiss.mockReset();
   });
   afterEach(() => {
     vi.useFakeTimers();
@@ -835,6 +844,40 @@ describe('<EventFeeForm>', () => {
     expect(
       fetchMock.mock.calls.find((c) => String(c[0]).includes('/issue-as-paid')),
     ).toBeUndefined();
+    // #92 follow-up review M-1/M-2: in as-paid mode the existing invoice may
+    // be a draft that was never issued or paid, with its first details.
+    expect(
+      screen.getByRole('alertdialog', {
+        name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
+      }),
+    ).toHaveTextContent(enMessages.admin.invoices.eventFeeForm.duplicateDialog.descriptionAsPaid);
+  });
+
+  it('409 in bill-first mode: the duplicate notice has no as-paid hint', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+    fireEvent.click(screen.getByText(modeMessages.billFirst.label));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('radio', { name: new RegExp(modeMessages.billFirst.label) }),
+      ).toBeChecked(),
+    );
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(JSON.stringify({ error: { code: 'duplicate' } }), { status: 409 }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Create event-fee draft/ }));
+    const dialog = await screen.findByRole('alertdialog', {
+      name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
+    });
+    expect(dialog).toHaveTextContent(
+      enMessages.admin.invoices.eventFeeForm.duplicateDialog.description,
+    );
+    expect(dialog).not.toHaveTextContent(
+      enMessages.admin.invoices.eventFeeForm.duplicateDialog.descriptionAsPaid,
+    );
   });
 
   it('409 with existing_invoice_id → duplicate dialog renders a "View invoice" link', async () => {
@@ -1065,6 +1108,124 @@ describe('<EventFeeForm>', () => {
       expect(
         fetchMock.mock.calls.filter((c) => String(c[0]).includes('/issue-as-paid')),
       ).toHaveLength(1);
+    });
+
+    // #92 follow-up (UX M3): the draft POST may commit and still lose its
+    // answer. A retry is safe (one non-void event invoice per registration:
+    // the retry gets the 409 duplicate notice), so the copy says so.
+    describe('the draft step reads an unknown outcome as unknown', () => {
+      const feeErrors = enMessages.admin.invoices.eventFeeForm.errors;
+      const confirmButton = (dialog: HTMLElement) =>
+        within(dialog).getByRole('button', {
+          name: confirmMsgs.confirm
+            .replace('{action}', enMessages.admin.invoices.eventFeeForm.recordAndIssue)
+            .replace('{total}', '1,000.00'),
+        });
+      const submitButton = () =>
+        screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue });
+
+      async function confirmWith(draftResponse: () => Promise<Response>) {
+        const fetchMock = await openConfirm();
+        fetchMock.mockImplementationOnce(draftResponse);
+        const dialog = await screen.findByRole('alertdialog', { name: confirmTitle() });
+        fireEvent.click(confirmButton(dialog));
+        return fetchMock;
+      }
+
+      it('the draft POST carries the money-dialog timeout signal', async () => {
+        const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+        const fetchMock = await confirmWith(
+          async () => new Response(JSON.stringify({ invoice_id: 'inv-92' }), { status: 201 }),
+        );
+        await waitFor(() => expect(draftCalls(fetchMock)).toHaveLength(1));
+        expect(timeoutSpy).toHaveBeenCalledWith(MONEY_POST_TIMEOUT_MS);
+        expect((draftCalls(fetchMock)[0]![1] as RequestInit).signal).toBe(
+          timeoutSpy.mock.results[0]!.value,
+        );
+        timeoutSpy.mockRestore();
+      });
+
+      it.each([
+        ['a network failure', () => Promise.reject(new TypeError('Failed to fetch'))],
+        ['a timeout', () => Promise.reject(new DOMException('timed out', 'TimeoutError'))],
+        [
+          'a 504 page',
+          async () => new Response('<html>Gateway Timeout</html>', { status: 504 }),
+        ],
+        [
+          'an internal_error 500',
+          async () =>
+            new Response(JSON.stringify({ error: { code: 'internal_error' } }), { status: 500 }),
+        ],
+      ])('%s: a warning that a retry is safe, no error, and the form can try again', async (_n, res) => {
+        const fetchMock = await confirmWith(res as () => Promise<Response>);
+        await waitFor(() =>
+          expect(toastWarning).toHaveBeenCalledWith(feeErrors.draftUnconfirmed, {
+            duration: Infinity,
+            id: 'event-fee-draft-unconfirmed',
+          }),
+        );
+        expect(toastError).not.toHaveBeenCalled();
+        expect(pushMock).not.toHaveBeenCalled();
+        expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/issue-as-paid'))).toBe(false);
+        await waitFor(() =>
+          expect(screen.queryByRole('alertdialog', { name: confirmTitle() })).toBeNull(),
+        );
+        await waitFor(() => expect(document.activeElement).toBe(submitButton()));
+        fireEvent.click(submitButton());
+        const again = await screen.findByRole('alertdialog', { name: confirmTitle() });
+        fireEvent.click(confirmButton(again));
+        await waitFor(() => expect(draftCalls(fetchMock)).toHaveLength(2));
+      });
+
+      // R154 note: the earlier warning must not sit behind the retry's answer.
+      it('the next answer clears the earlier warning (abort, then a 409 duplicate)', async () => {
+        const fetchMock = await confirmWith(() => Promise.reject(new TypeError('Failed to fetch')));
+        await waitFor(() => expect(toastWarning).toHaveBeenCalled());
+        expect(toastDismiss).not.toHaveBeenCalled();
+        await waitFor(() => expect(document.activeElement).toBe(submitButton()));
+        fetchMock.mockImplementationOnce(
+          async () =>
+            new Response(JSON.stringify({ error: { code: 'duplicate' } }), { status: 409 }),
+        );
+        fireEvent.click(submitButton());
+        fireEvent.click(confirmButton(await screen.findByRole('alertdialog', { name: confirmTitle() })));
+        await screen.findByRole('alertdialog', {
+          name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
+        });
+        expect(toastDismiss).toHaveBeenCalledWith('event-fee-draft-unconfirmed');
+      });
+
+      it('the read-only 503: the write-freeze warning, nothing changed', async () => {
+        await confirmWith(
+          async () =>
+            new Response(JSON.stringify({ error: 'read-only-mode' }), { status: 503 }),
+        );
+        await waitFor(() =>
+          expect(toastWarning).toHaveBeenCalledWith(enMessages.errors.readOnlyMode, {
+            description: enMessages.errors.readOnlyNothingChanged,
+          }),
+        );
+        expect(toastError).not.toHaveBeenCalled();
+      });
+
+      it('a named 500 (lookup_failed, refused before any write) stays an error', async () => {
+        await confirmWith(
+          async () =>
+            new Response(JSON.stringify({ error: { code: 'lookup_failed' } }), { status: 500 }),
+        );
+        await waitFor(() => expect(toastError).toHaveBeenCalled());
+        expect(toastWarning).not.toHaveBeenCalled();
+      });
+
+      it('a named refusal keeps its own copy', async () => {
+        await confirmWith(
+          async () =>
+            new Response(JSON.stringify({ error: { code: 'invalid_amount' } }), { status: 422 }),
+        );
+        await waitFor(() => expect(toastError).toHaveBeenCalledWith(feeErrors.invalid_amount, expect.anything()));
+        expect(toastWarning).not.toHaveBeenCalled();
+      });
     });
 
     it('a non-member with a tax ID: the summary labels it without "(optional)" (R153)', async () => {
@@ -1701,7 +1862,9 @@ describe('<EventFeeForm>', () => {
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
-  it('S4: network rejection on the FIRST (event-draft) POST → plain unknown-error toast, no navigation', async () => {
+  // #92 follow-up: a rejection used to read as a plain error; the draft may
+  // have committed, so it now reads as unknown with a safe retry.
+  it('S4: network rejection on the FIRST (event-draft) POST → unknown-outcome warning, no navigation', async () => {
     const fetchMock = mockFetchRegistrations([matchedRegistration]);
     vi.stubGlobal('fetch', fetchMock);
     renderForm({ initialEventId: 'ev-1' });
@@ -1718,10 +1881,12 @@ describe('<EventFeeForm>', () => {
     confirmAsPaidDialog();
 
     await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith(
-        enMessages.admin.invoices.eventFeeForm.errors.unknown,
+      expect(toastWarning).toHaveBeenCalledWith(
+        enMessages.admin.invoices.eventFeeForm.errors.draftUnconfirmed,
+        { duration: Infinity, id: 'event-fee-draft-unconfirmed' },
       ),
     );
+    expect(toastError).not.toHaveBeenCalled();
     expect(pushMock).not.toHaveBeenCalled();
   });
 

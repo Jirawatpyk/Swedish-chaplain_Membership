@@ -91,6 +91,7 @@ import {
 // deep import of the pure-constants codes module (client-safe; the barrel's
 // runtime graph is server-only).
 import { AS_PAID_ERROR_CODES } from './as-paid-error-codes';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyRefusal, readProblemCode } from '@/lib/http/read-only-refusal';
 import { isUnknownOutcome, MONEY_POST_TIMEOUT_MS } from '../../_components/unknown-outcome';
 import { useEventSearch } from './use-event-search';
@@ -102,6 +103,9 @@ import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import { MoneyDialogFooter } from '../../_components/money-dialog-footer';
 
+/** #92 follow-up: the draft step's "couldn't confirm" warning — kept until
+ * dismissed, and cleared once a later draft request gets an answer. */
+const DRAFT_UNCONFIRMED_TOAST = { id: 'event-fee-draft-unconfirmed', duration: Infinity } as const;
 /** #92 — the confirm dialog returns focus here on Cancel. */
 const SUBMIT_BUTTON_ID = 'event-fee-submit';
 const DUPLICATE_CLOSE_ID = 'event-fee-duplicate-close';
@@ -490,6 +494,7 @@ export function EventFeeForm({
   const tConfirm = useTranslations('admin.invoices.eventFeeForm.confirmAsPaid');
   const tPay = useTranslations('admin.invoices.pay');
   const tErrors = useTranslations('errors');
+  const readOnlyToast = useReadOnlyToast();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -976,11 +981,31 @@ export function EventFeeForm({
       // draft-remains info (and we still land on the surviving draft).
       let createdInvoiceId: string | null = null;
       try {
-        const res = await fetch('/api/invoices/event-draft', {
+        // #92 follow-up: the draft may commit and still lose its answer
+        // (a timeout, a dropped connection, a 504 page). A retry is safe:
+        // one non-void event invoice per registration
+        // (`invoices_event_registration_uniq`), so a second try gets the 409
+        // duplicate notice with the existing draft. The copy says exactly that.
+        // Built before the catch: a throw here means nothing was sent, so it
+        // must not read as a lost answer.
+        const init: RequestInit = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-        });
+          signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
+        };
+        let res: Response;
+        try {
+          res = await fetch('/api/invoices/event-draft', init);
+        } catch {
+          // Stays until dismissed, like the issue step's unconfirmed warning;
+          // one id, so a repeat replaces it in place.
+          toast.warning(t('errors.draftUnconfirmed'), DRAFT_UNCONFIRMED_TOAST);
+          return;
+        }
+        // An answer came back: an earlier "couldn't confirm" no longer holds
+        // (R154: it sat behind the retry's duplicate notice).
+        toast.dismiss(DRAFT_UNCONFIRMED_TOAST.id);
         if (res.status === 201) {
           // 065 M-1 — the 201 body parse gets its OWN guard: a 201 means
           // the draft EXISTS server-side, but a broken/truncated body
@@ -1025,7 +1050,16 @@ export function EventFeeForm({
           setDuplicateOpen(true);
           return;
         }
-        const payload = await res.json().catch(() => ({}));
+        const payload: unknown = await res.json().catch(() => ({}));
+        if (isReadOnlyRefusal(res.status, payload)) {
+          // The write freeze refused it: nothing was written.
+          readOnlyToast();
+          return;
+        }
+        if (isUnknownOutcome(res.status, readProblemCode(payload))) {
+          toast.warning(t('errors.draftUnconfirmed'), DRAFT_UNCONFIRMED_TOAST);
+          return;
+        }
         const code = (payload as { error?: { code?: string } })?.error?.code;
         const known = code
           ? // Only map codes we have copy for; otherwise fall back.
@@ -1407,7 +1441,14 @@ export function EventFeeForm({
         finalFocus={duplicateFinalFocus}
         role="alertdialog"
         title={t('duplicateDialog.title')}
-        description={t('duplicateDialog.description')}
+        // #92 follow-up review M-1/M-2: in as-paid mode the existing invoice
+        // may be a draft never issued or paid, with its first details. The
+        // dialog is modal, so the mode can't change while it is open.
+        description={t(
+          effectiveMode === 'already_paid'
+            ? 'duplicateDialog.descriptionAsPaid'
+            : 'duplicateDialog.description',
+        )}
         footer={
           <>
             <Button
