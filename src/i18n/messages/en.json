@@ -3230,6 +3230,7 @@
         "success": "Draft created",
         "errors": {
           "noAttendee": "Select an attendee first.",
+          "draftUnconfirmed": "We couldn't confirm whether the invoice was created. Try again: if it was created, you'll be shown the existing invoice and nothing new is created.",
           "registration_not_found": "That attendee could not be found.",
           "member_archived": "This member has been archived and cannot be invoiced. Restore the member first.",
           "event_not_found": "That event could not be found.",

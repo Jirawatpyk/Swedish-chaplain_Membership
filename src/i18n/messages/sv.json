@@ -3230,6 +3230,7 @@
         "success": "Utkast skapat",
         "errors": {
           "noAttendee": "Välj en deltagare först.",
+          "draftUnconfirmed": "Vi kunde inte bekräfta om fakturan skapades. Försök igen – om den redan skapades visas den befintliga fakturan och ingen ny skapas.",
           "registration_not_found": "Den deltagaren kunde inte hittas.",
           "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",
           "event_not_found": "Det evenemanget kunde inte hittas.",

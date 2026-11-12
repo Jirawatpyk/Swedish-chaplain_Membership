@@ -1067,6 +1067,81 @@ describe('<EventFeeForm>', () => {
       ).toHaveLength(1);
     });
 
+    // #92 follow-up (UX M3): the draft POST may commit and still lose its
+    // answer. A retry is safe (one non-void event invoice per registration:
+    // the retry gets the 409 duplicate notice), so the copy says so.
+    describe('the draft step reads an unknown outcome as unknown', () => {
+      const feeErrors = enMessages.admin.invoices.eventFeeForm.errors;
+      const confirmButton = (dialog: HTMLElement) =>
+        within(dialog).getByRole('button', {
+          name: confirmMsgs.confirm
+            .replace('{action}', enMessages.admin.invoices.eventFeeForm.recordAndIssue)
+            .replace('{total}', '1,000.00'),
+        });
+      const submitButton = () =>
+        screen.getByRole('button', { name: enMessages.admin.invoices.eventFeeForm.recordAndIssue });
+
+      async function confirmWith(draftResponse: () => Promise<Response>) {
+        const fetchMock = await openConfirm();
+        fetchMock.mockImplementationOnce(draftResponse);
+        const dialog = await screen.findByRole('alertdialog', { name: confirmTitle() });
+        fireEvent.click(confirmButton(dialog));
+        return fetchMock;
+      }
+
+      it('the draft POST carries a timeout signal', async () => {
+        const fetchMock = await confirmWith(
+          async () => new Response(JSON.stringify({ invoice_id: 'inv-92' }), { status: 201 }),
+        );
+        await waitFor(() => expect(draftCalls(fetchMock)).toHaveLength(1));
+        expect((draftCalls(fetchMock)[0]![1] as RequestInit).signal).toBeInstanceOf(AbortSignal);
+      });
+
+      it.each([
+        ['a network failure', () => Promise.reject(new TypeError('Failed to fetch'))],
+        ['a timeout', () => Promise.reject(new DOMException('timed out', 'TimeoutError'))],
+        [
+          'a 504 page',
+          async () => new Response('<html>Gateway Timeout</html>', { status: 504 }),
+        ],
+      ])('%s: a warning that a retry is safe, no error, and the form can try again', async (_n, res) => {
+        const fetchMock = await confirmWith(res as () => Promise<Response>);
+        await waitFor(() => expect(toastWarning).toHaveBeenCalledWith(feeErrors.draftUnconfirmed));
+        expect(toastError).not.toHaveBeenCalled();
+        expect(pushMock).not.toHaveBeenCalled();
+        await waitFor(() =>
+          expect(screen.queryByRole('alertdialog', { name: confirmTitle() })).toBeNull(),
+        );
+        await waitFor(() => expect(document.activeElement).toBe(submitButton()));
+        fireEvent.click(submitButton());
+        const again = await screen.findByRole('alertdialog', { name: confirmTitle() });
+        fireEvent.click(confirmButton(again));
+        await waitFor(() => expect(draftCalls(fetchMock)).toHaveLength(2));
+      });
+
+      it('the read-only 503: the write-freeze warning, nothing changed', async () => {
+        await confirmWith(
+          async () =>
+            new Response(JSON.stringify({ error: 'read-only-mode' }), { status: 503 }),
+        );
+        await waitFor(() =>
+          expect(toastWarning).toHaveBeenCalledWith(enMessages.errors.readOnlyMode, {
+            description: enMessages.errors.readOnlyNothingChanged,
+          }),
+        );
+        expect(toastError).not.toHaveBeenCalled();
+      });
+
+      it('a named refusal keeps its own copy', async () => {
+        await confirmWith(
+          async () =>
+            new Response(JSON.stringify({ error: { code: 'invalid_amount' } }), { status: 422 }),
+        );
+        await waitFor(() => expect(toastError).toHaveBeenCalledWith(feeErrors.invalid_amount, expect.anything()));
+        expect(toastWarning).not.toHaveBeenCalled();
+      });
+    });
+
     it('a non-member with a tax ID: the summary labels it without "(optional)" (R153)', async () => {
       vi.stubGlobal('fetch', mockFetchRegistrations([nonMemberRegistration]));
       renderForm({ initialEventId: 'ev-1' });
