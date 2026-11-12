@@ -435,6 +435,8 @@ export function PaySheet({
         // 3-D Secure challenge is a body-level layer (`data-react-aria-top-layer`,
         // R145); 5.89 keeps late body nodes and Stripe frames live, and this
         // names the layer here too, on the money screen (handoff addendum 109).
+        // 5.90 adds this selector to AURA's built-in keep list; the prop stays
+        // as an explicit pin, so a change to the default can't reach 3DS.
         keepOutside="[data-react-aria-top-layer]"
         title={t('title')}
         description={
