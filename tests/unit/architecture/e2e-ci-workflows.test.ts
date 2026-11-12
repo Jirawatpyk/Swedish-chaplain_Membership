@@ -167,7 +167,13 @@ describe('.github/workflows/e2e-critical.yml', () => {
     expect(server).toMatch(/next start --port 3100/);
     expect(server).toMatch(/http:\/\/localhost:3100\/api\/health/);
     expect(code).not.toMatch(/\bpnpm dev\b|next dev/);
-    expect(code).toContain('pnpm exec playwright install --with-deps chromium');
+    // The install goes through a script that retries and survives an apt
+    // mirror outage (11 Nov 2026, #781); it still installs the browser
+    // and its system libraries.
+    expect(code).toContain('run: bash .github/ci/install-chromium.sh');
+    const install = read(join(process.cwd(), '.github', 'ci', 'install-chromium.sh'));
+    expect(install).toContain('pnpm exec playwright install chromium');
+    expect(install).toContain('pnpm exec playwright install-deps chromium');
   });
 
   it('runs @critical for exactly ONE matrix project per job, attached, --workers=1, keeping traces of failures', () => {

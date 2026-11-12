@@ -234,7 +234,9 @@ jobs:
 
       # Pixel 5 (mobile-chrome) is Chromium too, so one browser serves both.
       - name: Install Chromium for Playwright
-        run: pnpm exec playwright install --with-deps chromium
+        # Retries, and tolerates an apt mirror outage when Chromium already
+        # launches (11 Nov 2026, #781). See the script header.
+        run: bash .github/ci/install-chromium.sh
 
       # `retries` stays what playwright.config.ts sets under CI. The project
       # arrives through env (no `${{ }}` inside `run:`); its report, JSON and
