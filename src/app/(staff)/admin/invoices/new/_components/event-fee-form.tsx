@@ -507,6 +507,9 @@ export function EventFeeForm({
   const [buyerErrors, setBuyerErrors] = useState<NonMemberBuyerErrors>({});
   const [amountError, setAmountError] = useState<string | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
+  // #92 follow-up review M-1/M-2: a 409 in as-paid mode may point at a draft
+  // that was never issued or paid (a lost draft answer, then a retry).
+  const [duplicateFromAsPaid, setDuplicateFromAsPaid] = useState(false);
   const [duplicateInvoiceId, setDuplicateInvoiceId] = useState<string | null>(null);
 
   // Issuance mode — the admin's EXPLICIT pick. While null, the effective
@@ -1034,6 +1037,7 @@ export function EventFeeForm({
             (dupBody as { existing_invoice_id?: string | null }).existing_invoice_id ?? null,
           );
           duplicateOpeningRef.current = true;
+          setDuplicateFromAsPaid(effectiveMode === 'already_paid');
           setDuplicateOpen(true);
           return;
         }
@@ -1430,7 +1434,11 @@ export function EventFeeForm({
         finalFocus={duplicateFinalFocus}
         role="alertdialog"
         title={t('duplicateDialog.title')}
-        description={t('duplicateDialog.description')}
+        description={
+          duplicateFromAsPaid
+            ? `${t('duplicateDialog.description')} ${t('duplicateDialog.asPaidHint')}`
+            : t('duplicateDialog.description')
+        }
         footer={
           <>
             <Button
