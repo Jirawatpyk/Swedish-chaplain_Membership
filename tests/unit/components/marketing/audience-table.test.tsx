@@ -121,22 +121,23 @@ describe('AudienceTable — read-only viewer (cycle 15, FR-034/FR-035)', () => {
 /**
  * The content box the table lives in at a 1440-px viewport, read from the
  * tokens that build it rather than hard-coded: the expanded staff sidebar
- * (`SIDEBAR_WIDTH`), the `TableContainer` gutters (`--page-padding-x`) and
+ * (AURA's `--aura-sidenav-width`, the width the AURA shell's SideNav draws), the `TableContainer` gutters (`--page-padding-x`) and
  * the `Card` gutters (`--card-padding`), less a 16-px allowance for a
  * classic vertical scrollbar.
  */
 function contentWidthAt(viewport: number): number {
   const REM = 16;
   const css = readFileSync(resolve(process.cwd(), 'src/app/globals.css'), 'utf8');
-  const sidebar = readFileSync(resolve(process.cwd(), 'src/components/ui/sidebar.tsx'), 'utf8');
   const rem = (re: RegExp, src: string): number => {
     const m = re.exec(src);
     if (!m?.[1]) throw new Error(`token not found: ${re}`);
     return Number(m[1]) * REM;
   };
-  const sidebarWidth = rem(/const SIDEBAR_WIDTH = "([\d.]+)rem"/, sidebar);
   // The gutter reads AURA's spacing token (`var(--aura-space-6)` = 24px).
   const auraCss = readFileSync(resolve(process.cwd(), 'node_modules/@jirawatpyk/aura-tokens/aura.css'), 'utf8');
+  const sidebarPx = /--aura-sidenav-width:\s*([\d.]+)px/.exec(auraCss)?.[1];
+  if (!sidebarPx) throw new Error('token not found: --aura-sidenav-width');
+  const sidebarWidth = Number(sidebarPx);
   const spaceStep = /--page-padding-x:\s*var\(--aura-space-(\d+)\)/.exec(css)?.[1];
   if (!spaceStep) throw new Error('token not found: --page-padding-x');
   const pagePaddingPx = new RegExp(`--aura-space-${spaceStep}:\\s*([\\d.]+)px`).exec(auraCss)?.[1];
@@ -181,8 +182,8 @@ describe('AudienceTable — phone cards follow board Admin-marketing-audience-mo
 
 describe('AudienceTable — fits the staff content area at 1440 px', () => {
   it('the budget is read from real tokens (positive control)', () => {
-    // 1440 − 256 sidebar − 2×24 page − 2×24 card − 16 scrollbar.
-    expect(contentWidthAt(1440)).toBe(1072);
+    // 1440 − 240 AURA SideNav − 2×24 page − 2×24 card − 16 scrollbar.
+    expect(contentWidthAt(1440)).toBe(1088);
   });
 
   it.each([true, false])('canMarketing=%s → min-width fits without horizontal scroll', (canMarketing) => {

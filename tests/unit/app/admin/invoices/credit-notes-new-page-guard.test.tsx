@@ -103,10 +103,6 @@ vi.mock('@/components/layout', () => ({
 vi.mock('@/components/layout/page-header', () => ({
   PageHeader: () => null,
 }));
-vi.mock('@/components/ui/card', () => ({
-  Card: ({ children }: { children?: unknown }) => children as ReactElement,
-  CardContent: ({ children }: { children?: unknown }) => children as ReactElement,
-}));
 vi.mock(
   '@/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/_components/credit-note-form',
   () => ({

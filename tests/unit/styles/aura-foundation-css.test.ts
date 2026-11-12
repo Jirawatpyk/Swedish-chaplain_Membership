@@ -210,34 +210,3 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     expect(offenders).toEqual([]);
   });
 });
-
-describe('legacy kit inputs in dark mode (spec 122 review)', () => {
-  it.each(['input', 'textarea', 'select', 'button', 'checkbox', 'radio-group', 'input-group', 'tabs'])(
-    'ui/%s.tsx fills dark controls with --aura-bg-input, not a tint of the border colour',
-    (file) => {
-      // `--input` is AURA's control BORDER (zinc-400 in dark); 30 % of it under a
-      // zinc-400 placeholder measured 3.95:1 on a dark card.
-      const src = readFileSync(join(ROOT, `src/components/ui/${file}.tsx`), 'utf8');
-      expect(src).not.toMatch(/dark:(?:[a-z-]+:)*bg-input\/(?:30|50)\b/);
-    },
-  );
-});
-
-describe('legacy kit overlays stack on the AURA z-index scale (spec 122 T013)', () => {
-  it.each([
-    ['popover', 'menu'],
-    ['select', 'menu'],
-    ['dropdown-menu', 'menu'],
-    ['tooltip', 'tooltip'],
-    ['dialog', 'dialog'],
-    ['alert-dialog', 'dialog'],
-    ['sheet', 'dialog'],
-  ])('ui/%s.tsx uses --aura-z-%s and no fixed z-50', (file, layer) => {
-    // Combobox and the other pickers open through ui/popover, so they inherit it.
-    const src = readFileSync(join(ROOT, `src/components/ui/${file}.tsx`), 'utf8');
-    expect(src).toContain(`z-[var(--aura-z-${layer})]`);
-    // A bare `z-50` class; a variant-scoped one (`**:data-[slot=kbd]:z-50`)
-    // stacks inside the popup and stays.
-    expect(src).not.toMatch(/(^|[\s"'`])z-50\b/);
-  });
-});

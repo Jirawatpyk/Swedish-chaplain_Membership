@@ -146,7 +146,7 @@ import { renderFinancePreview } from './finance-previews';
 import { EditorPreview } from './editor-preview';
 import type { ExportJobRecord, GroupedEvidence } from '@/modules/insights';
 
-// Request-time evaluation so the guard runs per request (see button-matrix).
+// Request-time evaluation so the guard runs per request (as the other test fixtures).
 export const dynamic = 'force-dynamic';
 
 /**

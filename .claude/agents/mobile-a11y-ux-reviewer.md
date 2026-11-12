@@ -36,7 +36,7 @@ Audit against all Level A + AA success criteria relevant to the change:
 
 ### 3. UX/UI Consistency
 Enforce the Chamber-OS design system per `docs/ux-standards.md`:
-- **AURA components first** (`docs/aura-adoption.md`; a missing AURA feature is a labelled `stand-in until AURA #NN`); the legacy Base UI kit in `src/components/ui/` only where the module is not migrated yet (it is deleted at spec 122 US13); the command palettes are AURA `Command` (`cmdk` is banned outside its one legacy host) — do not hand-roll equivalents.
+- **AURA components first** (`docs/aura-adoption.md`; a missing AURA feature is a labelled `stand-in until AURA #NN`); the legacy kit was deleted at spec 122 US13a; the command palettes are AURA `Command` (`cmdk` is uninstalled and banned) — do not hand-roll equivalents.
 - **Shimmer skeletons** (per § 2.1) during loading, not spinners, for content regions.
 - **Toasts only through `@/lib/toast`** for transient feedback; **confirmation dialogs** for destructive actions; **idle warning dialog** for session TTL.
 - **Theming**: support light/dark via `next-themes`; colours come from AURA tokens (`src/styles/aura-theme.css`) or the semantic variables the token bridge maps in `src/app/globals.css` — never hardcoded colors.
@@ -101,7 +101,7 @@ Structure every review as:
 **Update your agent memory** as you discover UI patterns, common accessibility pitfalls, design-system conventions, reusable components, responsive breakpoint decisions, and i18n key structures in this codebase. This builds up institutional knowledge across conversations. Write concise notes about what you found and where.
 
 Examples of what to record:
-- Reusable components and where they live (e.g., `src/components/ui/skeleton.tsx` shimmer variant)
+- Reusable components and where they live (e.g., `src/components/shell/page-skeletons.tsx` `SkeletonBlock`)
 - Recurring a11y issues and their canonical fix in this codebase
 - AURA components and stand-ins in use, and their a11y quirks (plus legacy-kit quirks while it remains)
 - Tailwind token conventions (spacing, typography, semantic colors)
