@@ -184,7 +184,9 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Install Chromium for Playwright
-        run: pnpm exec playwright install --with-deps chromium
+        # Retries, and tolerates an apt mirror outage when Chromium already
+        # launches (11 Nov 2026, #781). See the script header.
+        run: bash .github/ci/install-chromium.sh
 
       # playwright.config.ts starts `pnpm dev --port 3100` itself (webServer).
       - name: e2e full suite on chromium
