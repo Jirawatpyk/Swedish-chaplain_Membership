@@ -444,8 +444,11 @@ describe('CreditNoteForm — #66 the idempotency key', () => {
       await waitFor(() =>
         expect(screen.getByTestId('credit-note-error')).toHaveAttribute('data-tone', 'neutral'),
       );
+      // The wrapper reads `neutral` while the retry is still pending (the button
+      // then says "Issuing…"), so wait for the settled submit button itself.
+      const submit = await screen.findByRole('button', { name: cnMessages.submit });
       expect(screen.getByLabelText(new RegExp(cnMessages.confirmCopy.split('{phrase}')[0]!))).toHaveValue('');
-      expect(screen.getByRole('button', { name: cnMessages.submit })).toBeDisabled();
+      expect(submit).toBeDisabled();
     } finally {
       vi.unstubAllGlobals();
     }
