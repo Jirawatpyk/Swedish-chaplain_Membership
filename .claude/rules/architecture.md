@@ -25,7 +25,6 @@ src/
 │   ├── application/                   # Use cases — NO drizzle/next/react imports
 │   └── infrastructure/                # DB repos, email client, hasher, rate-limit adapter
 ├── components/
-│   ├── ui/                            # legacy shadcn/ui on Base UI — deleted at spec 122 US13 (AURA replaces it)
 │   ├── auth/                          # sign-in-form, reset-password-form, idle-warning-dialog, …
 │   ├── shell/                         # user-menu, theme-toggle, skip-to-content, empty-state, error-state
 │   └── layout/                        # staff-shell, staff-top-bar, member-header, member-nav, page-header

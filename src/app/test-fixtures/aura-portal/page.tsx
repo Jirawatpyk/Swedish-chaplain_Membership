@@ -49,7 +49,7 @@ import { RenewalPageView, type RenewalGate } from '@/app/(member)/portal/renewal
 import { renderRenewalSuccessView } from '@/app/(member)/portal/renewal/[memberId]/success/page';
 import { PayPreview, type PayPreviewState } from './pay-preview';
 
-// Request-time evaluation so the guard runs per request (see button-matrix).
+// Request-time evaluation so the guard runs per request (as the other test fixtures).
 export const dynamic = 'force-dynamic';
 
 /**

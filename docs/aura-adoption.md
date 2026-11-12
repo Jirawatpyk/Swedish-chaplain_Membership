@@ -25,9 +25,9 @@ The migration was decided on 2026-09-26, with these settled points:
 | Fonts | `@jirawatpyk/aura-tokens/aura-fonts.local.css` | Inter + Noto Sans Thai (text and kit headings), Fraunces (AURA display only), JetBrains Mono (mono), served from our own origin. The CSP is unchanged. |
 | Provider | `src/components/providers/aura-bridge.tsx`, mounted in `src/app/layout.tsx` | `locale` (en/th/sv); `calendar` (Buddhist for `th`, else Gregorian — display only); the tenant `timeZone`; `linkComponent` = `next/link`. AURA's built-in labels come in EN/TH/SV. |
 | Density | `<AuraDensity>` (from the bridge file) in `src/app/(staff)/admin/layout.tsx` (compact) and `src/app/(member)/portal/layout.tsx` (comfortable) | Inherits everything else from the bridge. |
-| Toasts | `@/lib/toast` (facade) → AURA `toast`; `<Toaster position="top-center" offset={80}>` in the bridge (below the 72px portal header) | The only toast import. Options: `description` (text or JSX), `id`, one `action` (with `href` / `dismiss`), `duration`. At most 3 visible; errors persist by default; Alt+T reaches the newest toast (AURA). |
+| Toasts | `@/lib/toast` (facade) → AURA `toast`; `<Toaster position="top-center" offset={80}>` in the bridge (below the 72px portal header) | The only toast import, kept at US13a (decision: 113 importers and 171 test mocks go through it, and it sets the `error` default `duration: Infinity` the money screens rely on). Options: `description` (text or JSX), `id`, one `action` (with `href` / `dismiss`), `duration`. At most 3 visible; errors persist by default; Alt+T reaches the newest toast (AURA). |
 | Dates | `src/lib/format-date-localised.ts` | Stays the only formatter. AURA's `formatDate` / `useFormatDate` are lint-banned. |
-| Overlay stacking | legacy kit wrappers use `var(--aura-z-menu)` / `var(--aura-z-dialog)` | AURA scale: dialog 900, menu 1000, toast 1200, tooltip 1300. Never open an overlay from one library inside an overlay from the other. |
+| Overlay stacking | AURA only since US13a | AURA scale: dialog 900, menu 1000, toast 1200, tooltip 1300. |
 
 ## Server components never import AURA directly
 
@@ -38,19 +38,18 @@ A server component that needs a static AURA component imports it from **`@jirawa
 
 ## The ratchet
 
-- The rule is `@typescript-eslint/no-restricted-imports`, built by `uiRatchet(MIGRATED_PATHS)` in `eslint.ui-ratchet.mjs` and spread at the end of `eslint.config.mjs`. It uses a distinct rule id on purpose, so it never replaces the architecture `no-restricted-imports` blocks.
-- It bans everywhere:
+- The rule is `@typescript-eslint/no-restricted-imports`, built by `uiRatchet()` in `eslint.ui-ratchet.mjs` and spread at the end of `eslint.config.mjs`. It uses a distinct rule id on purpose, so it never replaces the architecture `no-restricted-imports` blocks.
+- Since US13a it is one block on `src/**` and `tests/**` that bans everywhere:
   - `sonner` (use `@/lib/toast`)
   - AURA's root `formatDate` / `useFormatDate`
-  - `cmdk`, except in its one host `src/components/ui/command.tsx`. US1 moved both command palettes to AURA `Command`; the host stays for the pickers and `ui/combobox` until the last of their modules migrates (at the latest US13)
-- **`MIGRATED_PATHS`** lists the directories that are on AURA. Any `@/components/ui/*` import there fails lint. **`NOT_YET_ON_AURA`** names the few files inside them that still wait for a later phase, each with that phase; it only shrinks.
-- A phase PR adds its directories to this list in the same PR that removes their last legacy import.
-- The list only grows. At US13 the ban becomes global and the list is deleted.
+  - `cmdk` (uninstalled at US13a; both palettes are AURA `Command`, the pickers AURA `Combobox`)
+  - the legacy kit, `@/components/ui` and `@/components/ui/*` (deleted at US13a)
+- Until US13a a per-phase list, `MIGRATED_PATHS`, carried the kit ban path by path; it was deleted when the kit went. The AURA internal-class ratchet now scans all of `src/` (three reaches the old list never covered wait in its `KNOWN_UNLABELLED` for US13b).
 - `tests/unit/architecture/ui-import-ratchet.test.ts` proves each ban fires (the positive control).
 
 ## Definition of done for a phase (spec FR-010)
 
-1. Its paths import nothing from `@/components/ui`, and they are added to `MIGRATED_PATHS`.
+1. Its paths import nothing from `@/components/ui` (since US13a the kit is gone and the ban is global).
 2. Its screens match their canvas boards on the "Chamber-OS Portal — Aura" design canvas, at 390 and 1280 px, in light and dark. Screenshots go in the PR. Where a board is marked **Proposed**, the PR says whether it was implemented or deferred.
 3. `check:layout`, `check:i18n`, `check:strict-aria` and `check:dates` are green.
 4. Its unit/component tests and every required CI check pass. The local e2e, `@a11y` and `@i18n` suites run only at the **checkpoints** — after US1, after US4/US8 (money), and before US13 — because a full run takes over an hour; per PR, CI runs only the `@critical` set, and the full suite runs nightly (`docs/runbooks/e2e-ci.md`).

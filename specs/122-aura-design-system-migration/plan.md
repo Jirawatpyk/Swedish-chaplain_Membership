@@ -71,7 +71,7 @@ US1–US13 are specified here at phase level. Each gets its own detailed plan se
   - A rich (React-node) toast description degrades to text plus one action (research R4).
   - No state changes, no audit events.
 - [x] **IX. Code Quality**: strict TS, ESLint clean, Conventional Commits, ≥1 reviewer. UI PRs also get an enterprise-ux-designer pass, and money screens a financial-integrity-reviewer pass.
-- [x] **X. Simplicity**: two new deps (justified below); the facade is temporary (inlined or kept as the single toast import at US13); no speculative abstraction.
+- [x] **X. Simplicity**: two new deps (justified below); the facade is kept as the single toast import (decided at US13a); no speculative abstraction.
 
 **Post-design re-check (after Phase 1)**: unchanged. The only FAIL is VI, justified with a hard end date.
 
