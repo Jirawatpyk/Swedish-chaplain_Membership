@@ -103,10 +103,10 @@ import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import { MoneyDialogFooter } from '../../_components/money-dialog-footer';
 
-/** #92 — the confirm dialog returns focus here on Cancel. */
 /** #92 follow-up: the draft step's "couldn't confirm" warning — kept until
  * dismissed, and cleared once a later draft request gets an answer. */
 const DRAFT_UNCONFIRMED_TOAST = { id: 'event-fee-draft-unconfirmed', duration: Infinity } as const;
+/** #92 — the confirm dialog returns focus here on Cancel. */
 const SUBMIT_BUTTON_ID = 'event-fee-submit';
 const DUPLICATE_CLOSE_ID = 'event-fee-duplicate-close';
 const CONFIRM_DT = 'text-[var(--aura-fg-secondary)]';
