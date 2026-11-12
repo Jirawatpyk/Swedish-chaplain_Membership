@@ -976,11 +976,23 @@ export function EventFeeForm({
       // draft-remains info (and we still land on the surviving draft).
       let createdInvoiceId: string | null = null;
       try {
-        const res = await fetch('/api/invoices/event-draft', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
+        // #92 follow-up: the draft may commit and still lose its answer
+        // (a timeout, a dropped connection, a 504 page). A retry is safe:
+        // one non-void event invoice per registration
+        // (`invoices_event_registration_uniq`), so a second try gets the 409
+        // duplicate notice with the existing draft. The copy says exactly that.
+        let res: Response;
+        try {
+          res = await fetch('/api/invoices/event-draft', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(MONEY_POST_TIMEOUT_MS),
+          });
+        } catch {
+          toast.warning(t('errors.draftUnconfirmed'));
+          return;
+        }
         if (res.status === 201) {
           // 065 M-1 — the 201 body parse gets its OWN guard: a 201 means
           // the draft EXISTS server-side, but a broken/truncated body
@@ -1025,7 +1037,18 @@ export function EventFeeForm({
           setDuplicateOpen(true);
           return;
         }
-        const payload = await res.json().catch(() => ({}));
+        const payload: unknown = await res.json().catch(() => ({}));
+        if (isReadOnlyRefusal(res.status, payload)) {
+          // The write freeze refused it: nothing was written.
+          toast.warning(tErrors('readOnlyMode'), {
+            description: tErrors('readOnlyNothingChanged'),
+          });
+          return;
+        }
+        if (isUnknownOutcome(res.status, readProblemCode(payload))) {
+          toast.warning(t('errors.draftUnconfirmed'));
+          return;
+        }
         const code = (payload as { error?: { code?: string } })?.error?.code;
         const known = code
           ? // Only map codes we have copy for; otherwise fall back.

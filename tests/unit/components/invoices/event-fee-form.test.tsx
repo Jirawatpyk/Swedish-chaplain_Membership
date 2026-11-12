@@ -1776,7 +1776,9 @@ describe('<EventFeeForm>', () => {
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
-  it('S4: network rejection on the FIRST (event-draft) POST → plain unknown-error toast, no navigation', async () => {
+  // #92 follow-up: a rejection used to read as a plain error; the draft may
+  // have committed, so it now reads as unknown with a safe retry.
+  it('S4: network rejection on the FIRST (event-draft) POST → unknown-outcome warning, no navigation', async () => {
     const fetchMock = mockFetchRegistrations([matchedRegistration]);
     vi.stubGlobal('fetch', fetchMock);
     renderForm({ initialEventId: 'ev-1' });
@@ -1793,10 +1795,11 @@ describe('<EventFeeForm>', () => {
     confirmAsPaidDialog();
 
     await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith(
-        enMessages.admin.invoices.eventFeeForm.errors.unknown,
+      expect(toastWarning).toHaveBeenCalledWith(
+        enMessages.admin.invoices.eventFeeForm.errors.draftUnconfirmed,
       ),
     );
+    expect(toastError).not.toHaveBeenCalled();
     expect(pushMock).not.toHaveBeenCalled();
   });
 
