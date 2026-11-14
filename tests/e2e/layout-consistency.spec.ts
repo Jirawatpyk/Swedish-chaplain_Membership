@@ -30,9 +30,9 @@ const PAGES: Array<{ path: string; variant: Variant }> = [
   { path: '/admin/plans/clone', variant: 'form' },
   { path: `/admin/plans/${SEEDED_YEAR}/${SEEDED_PLAN_ID}`, variant: 'detail' },
   { path: `/admin/plans/${SEEDED_YEAR}/${SEEDED_PLAN_ID}/edit`, variant: 'form' },
-  // The invoicing settings page is a detail page: several cards, not one
-  // form column.
-  { path: '/admin/settings/invoicing', variant: 'detail' },
+  // The invoicing settings page has been one start-aligned form column
+  // since #622 (section tabs on top of the form).
+  { path: '/admin/settings/invoicing', variant: 'form' },
 ];
 
 // Spec 122 put page titles on the boards' step (`--font-size-h1`: 26px on

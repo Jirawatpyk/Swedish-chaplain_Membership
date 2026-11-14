@@ -65,6 +65,7 @@
  */
 import { test, expect } from './fixtures';
 import { fillField } from './fixtures';
+import { tableColumn } from './helpers/data-table';
 import { openFilters } from './helpers/filters-sheet';
 import { seedPaidOnlinePayments } from './helpers/paid-online-payment-seed';
 
@@ -170,7 +171,7 @@ test.describe('admin payment reconciliation view — @payment @e2e (T095, US3)',
     await expect(page).not.toHaveURL(/[?&]paidOnline=1/);
   });
 
-  test('method-badge column header renders on paid-online filter', async ({ page }) => {
+  test('method-badge column header renders on paid-online filter', async ({ page, isMobile }) => {
     test.skip(
       !ADMIN_EMAIL || !ADMIN_PASSWORD,
       'Admin creds missing — set E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD to run.',
@@ -186,8 +187,9 @@ test.describe('admin payment reconciliation view — @payment @e2e (T095, US3)',
     // there as much as the column. It read "present whether or not any row
     // matches" until 2026-09-30, which is why a missing fixture looked like
     // a column regression.
-    // The AURA DataTable's column header (spec 122 US8).
-    const methodHeader = page.getByRole('columnheader', { name: 'Method' });
+    // The AURA DataTable's column header (spec 122 US8); on a phone the
+    // header row is not rendered and each card cell carries the label.
+    const methodHeader = tableColumn(page, 'Method', isMobile);
     await expect(methodHeader).toBeVisible({ timeout: 5_000 });
 
     // `beforeAll` seeds one card + one promptpay row, so at least one badge

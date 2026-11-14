@@ -748,7 +748,7 @@ been **removed** and its two tokens (`--content-max-width-admin`,
 | `/admin/plans/[year]/[planId]`                      | `DetailContainer` | 1280px |
 | `/admin/plans/[year]/[planId]/edit`                 | `FormContainer`   | 720px |
 | `/admin/settings/fees`                              | `FormContainer`   | 720px |
-| `/admin/settings/invoicing`                         | `DetailContainer`\* | 1280px |
+| `/admin/settings/invoicing`                         | `FormContainer`\* (start) | 720px |
 | `/admin/members`                                    | `TableContainer`  | 1536px |
 | `/admin/members/new`                                | `FormContainer`   | 720px |
 | `/admin/members/[memberId]`                         | `DetailContainer` | 1280px |
@@ -787,15 +787,11 @@ and `/portal/contacts/invite` stay `DetailContainer` because they are: an accoun
 account and invite pages put an inner column at the start of the 1280px column,
 under a header that sat at the column's edge.
 
-\* **Documented exception** — `/admin/settings/invoicing` is a settings/edit
-form, which the §18.1 one-liner would default to `FormContainer` (720px).
-It uses `DetailContainer` (1280px) instead because its shell is a two-column
-sticky-nav layout (`SectionNav` left rail + `StickySaveBar`, six field
-sections): 720px minus the rail/overhead doesn't leave enough width for a
-legible 2-column field grid. Any other future settings page that adopts the
-same sticky-nav shell (not just a single-column form) should follow this
-same exception, not the default rule. (`settings-ux-invoice-reminders`
-fix-wave, Task 7/8.)
+\* **Former exception** — `/admin/settings/invoicing` used `DetailContainer`
+(1280px) for a two-column sticky-nav shell (`SectionNav` left rail +
+`StickySaveBar`). Since #622 (2026-10-23) it is one column in the
+start-aligned `FormContainer`, with section tabs on top, like the other
+forms, so the §18.1 default applies and no exception is left.
 
 † **Documented exception** — the two E-Blast compose screens
 (`/portal/broadcasts/new`, `/admin/broadcasts/new`) are compose forms, which

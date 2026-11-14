@@ -25,6 +25,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { BrowserContext } from '@playwright/test';
 import { memberTest as test, expect } from './helpers/member-session';
+import { stubInitiateEndpoint } from './helpers/payment-intent-stub';
+import { stubStripeConfirmSuccess } from './helpers/stripe-mock';
 
 const ISSUED_INVOICE_ID = process.env.E2E_ISSUED_INVOICE_ID;
 const isCi = process.env.CI === 'true' || process.env.CI === '1';
@@ -95,6 +97,12 @@ test.describe('F5 i18n locale coverage @f5 @i18n @e2e (T145)', () => {
       context,
     }) => {
       await setLocale(context, locale);
+      // The initiate call and the Stripe SDK are stubbed, as in
+      // payment-a11y: the E2E member is lapsed by the renewals seed (global
+      // setup), so the real route refuses and the card form never mounts.
+      // The leak scan reads the sheet's own DOM, which the stubs leave as is.
+      await stubInitiateEndpoint(page);
+      await stubStripeConfirmSuccess(page);
       await page.goto(`/portal/invoices/${ISSUED_INVOICE_ID}?pay=1`);
       await page.waitForSelector('[data-testid="pay-sheet-content"]', {
         state: 'visible',
@@ -124,6 +132,10 @@ test.describe('F5 i18n locale coverage @f5 @i18n @e2e (T145)', () => {
     context,
   }) => {
     await setLocale(context, 'th');
+    // Only the initiate call is stubbed (the member is lapsed, see above):
+    // the real Stripe.js must load here, because its iframe URL is what
+    // carries the locale this test checks.
+    await stubInitiateEndpoint(page);
     await page.goto(`/portal/invoices/${ISSUED_INVOICE_ID}?pay=1`);
     await page.waitForSelector('[data-testid="pay-sheet-content"]', {
       state: 'visible',
@@ -173,6 +185,8 @@ test.describe('F5 i18n locale coverage @f5 @i18n @e2e (T145)', () => {
   }) => {
     await setLocale(context, 'th');
     await page.setViewportSize({ width: 360, height: 760 }); // sm breakpoint
+    // Initiate stubbed (lapsed member); the real Stripe.js renders the form.
+    await stubInitiateEndpoint(page);
     await page.goto(`/portal/invoices/${ISSUED_INVOICE_ID}?pay=1`);
     await page.waitForSelector('[data-testid="pay-sheet-content"]', {
       state: 'visible',

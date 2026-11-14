@@ -20,6 +20,7 @@
  */
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import { tableColumn } from './helpers/data-table';
 import { openFilters } from './helpers/filters-sheet';
 import en from '../../src/i18n/messages/en.json';
 
@@ -46,6 +47,7 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
 
   test('AS1 — events list shows paginated table sorted by start_date desc', async ({
     page,
+    isMobile,
   }) => {
     await page.goto('/admin/events');
     await page.waitForLoadState('domcontentloaded');
@@ -63,42 +65,30 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
     // Table columns per AS1: Date, Name, Category, Registrations,
     // Partner Benefit, Match Rate. Spec 122 US9a: the list is AURA's
     // DataTable, an ARIA grid (rows and cells are role="row"/"gridcell").
+    // On a phone the grid is stacked into cards: no header row, each cell
+    // carries its column's label, and the name is the card's title link.
     const table = page.getByRole('grid');
     await expect(table).toBeVisible();
-    await expect(
-      table.getByRole('columnheader', { name: /date/i }),
-    ).toBeVisible();
-    await expect(
-      table.getByRole('columnheader', { name: /name/i }),
-    ).toBeVisible();
-    await expect(
-      table.getByRole('columnheader', { name: /category/i }),
-    ).toBeVisible();
-    await expect(
-      table.getByRole('columnheader', { name: /registrations/i }),
-    ).toBeVisible();
-    await expect(
-      table.getByRole('columnheader', { name: /partner benefit/i }),
-    ).toBeVisible();
-    await expect(
-      table.getByRole('columnheader', { name: /match rate/i }),
-    ).toBeVisible();
+    for (const column of [/date/i, /category/i, /registrations/i, /partner benefit/i, /match rate/i]) {
+      await expect(tableColumn(table, column, isMobile)).toBeVisible();
+    }
+    if (isMobile) {
+      await expect(table.getByRole('link').first()).toBeVisible();
+    } else {
+      await expect(tableColumn(table, /name/i, isMobile)).toBeVisible();
+    }
   });
 
   test('AS2 — event detail shows header + match rate + attendee table', async ({
     page,
   }) => {
-    await page.goto('/admin/events');
+    // The seeded partner-benefit event has attendees, so its match rate is a
+    // figure. The list's first row was order-dependent: other specs create
+    // events with no attendees (eventcreate-a11y's "A11y R060 …", dated a
+    // month ahead, so it sorts first) and their match rate is "—".
+    test.skip(!PB_EVENT_ID, 'E2E_SEED_F6_PB_EVENT_ID unset (global-setup F6 seed)');
+    await page.goto(`/admin/events/${PB_EVENT_ID}`);
     await page.waitForLoadState('domcontentloaded');
-
-    // Click first event row link → detail page. If no events seeded
-    // this test will fail with a clear "no events to click" message
-    // — that's the RED signal until seed data lands.
-    const firstRowLink = page.getByRole('grid').getByRole('link').first();
-    await expect(firstRowLink).toBeVisible();
-    await firstRowLink.click();
-
-    await page.waitForURL(/\/admin\/events\/[^/]+$/);
     // AS2 (amended 2026-10-06): the header's match rate is the figure
     // "NN.N%", then "M of N attendees matched", then the band word; the
     // figure's accessible name is "NN.N% (M of N)". Scoped to the <dd>:

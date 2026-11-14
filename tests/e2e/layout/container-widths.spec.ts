@@ -17,11 +17,11 @@
  * `/portal/account`, `/portal/edit`, `/portal/contacts/invite`) to protect
  * SC-002 across categories — prior revision covered only one.
  *
- * Task-8 HIGH (settings-ux-invoice-reminders wave B) — `/admin/settings/
- * invoicing` moved OUT of the form block and into the detail block below:
- * its two-column sticky-nav shell now renders `DetailContainer`
- * (`data-variant="detail"`), not `FormContainer` (see
- * `docs/ux-standards.md` §18.2's documented exception row).
+ * `/admin/settings/invoicing` is not measured here: it is super-admin only,
+ * so the plain admin these blocks sign in as gets the "Page not available"
+ * shell, whose DetailContainer the detail block used to measure instead.
+ * Since #622 the page is a start-aligned FormContainer;
+ * layout-consistency.spec.ts checks it as a super admin.
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
@@ -59,10 +59,7 @@ const PORTAL_FORM_ROUTES = [
   // wider than the staff 720 by design.
   { route: '/portal/edit', min: 936, max: 952 },
 ] as const;
-// Task-8 HIGH — /admin/settings/invoicing renders DetailContainer (its
-// two-column sticky-nav shell), not FormContainer. See docs/ux-standards.md
-// §18.2's documented exception row.
-const ADMIN_DETAIL_ROUTES = ['/admin', '/admin/settings/invoicing'] as const;
+const ADMIN_DETAIL_ROUTES = ['/admin'] as const;
 /**
  * Portal detail pages: AURA's default `Container`, 1280px outer at 1440 like
  * the admin's (spec 122, 2 Oct 2026; the portal had its own 1200px content
