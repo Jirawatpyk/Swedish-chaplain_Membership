@@ -11,6 +11,7 @@ import { AxeBuilder } from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import { tableColumn } from './helpers/data-table';
 import { goodStandingMemberCredentials, signInAsMember } from './helpers/member-session';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -60,12 +61,12 @@ test.describe('@a11y T097 — F9 dashboard axe-core scan', () => {
     await expectNoAxeViolations(page, '/admin (dashboard)');
   });
 
-  test('members list with engagement column (/admin/members)', async ({ page }) => {
+  test('members list with engagement column (/admin/members)', async ({ page, isMobile }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/members');
     await page.waitForLoadState('domcontentloaded');
     // Wait for the table (engagement column) to render before scanning.
-    await expect(page.getByRole('columnheader', { name: /engagement/i })).toBeVisible({
+    await expect(tableColumn(page, /engagement/i, isMobile)).toBeVisible({
       timeout: 15_000,
     });
     await expectNoAxeViolations(page, '/admin/members (engagement column)');

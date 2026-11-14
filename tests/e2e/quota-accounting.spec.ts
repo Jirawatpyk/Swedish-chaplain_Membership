@@ -45,6 +45,7 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import { tableColumn } from './helpers/data-table';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -117,6 +118,7 @@ test.describe('F6 quota accounting — admin UI surface @workers=1', () => {
 
   test('event detail page renders Quota column + attendee-status badges', async ({
     page,
+    isMobile,
   }) => {
     // SUGG-3 — use the seeded partner-benefit event from global-setup
     // so this test runs unconditionally in CI rather than skipping on
@@ -137,9 +139,7 @@ test.describe('F6 quota accounting — admin UI surface @workers=1', () => {
 
     // Quota column must be present in the attendee table.
     const attendeeTable = page.getByRole('grid', { name: /attendees/i });
-    await expect(
-      attendeeTable.getByRole('columnheader', { name: /quota/i }),
-    ).toBeVisible();
+    await expect(tableColumn(attendeeTable, /quota/i, isMobile)).toBeVisible();
   });
 
   test('admin sees Partner-benefit + Cultural-event toggle buttons in event header', async ({

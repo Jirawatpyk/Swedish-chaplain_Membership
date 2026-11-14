@@ -1,21 +1,19 @@
 /**
  * F5 T062 / SC-007 — CLS during container-size transitions.
  *
- * Tests BOTH directions (detail→table expanding, table→detail shrinking)
+ * Tests BOTH directions (form→table expanding, table→form shrinking)
  * since the shrinking case has a different shift profile. Asserts
  * total CLS on persistent chrome stays ≤0.02 per Spec §SC-007.
  *
- * Task-8 LOW (settings-ux-invoice-reminders wave B) — the route under
- * test (`/admin/settings/invoicing`) now renders `DetailContainer`, not
- * `FormContainer` (see `docs/ux-standards.md` §18.2's documented
- * exception row); the test titles below are renamed to match. The
- * behaviour itself was already passing — this is a label-accuracy fix.
+ * The narrow page under test, `/admin/settings/invoicing`, has rendered
+ * `FormContainer` (720px, start-aligned) since #622; it was a
+ * `DetailContainer` before, and the titles below follow the page.
  */
 import { expect, test } from '../fixtures';
 import { clearE2ERateLimits } from '../helpers/rate-limit';
 import { signInViaForm, waitForLayoutContainer } from '../helpers/layout';
 
-// Super admin since 016 D4: the DetailContainer sample page is
+// Super admin since 016 D4: the narrow sample page is
 // /admin/settings/invoicing, super_admin-only (a plain admin 404s and the
 // CLS walk would measure the not-found shell instead).
 const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
@@ -65,7 +63,7 @@ test.describe('F5 CLS container transition @layout', () => {
     );
   }
 
-  test('CLS stays ≤0.02 during detail→table navigation (DetailContainer → TableContainer)', async ({ page }) => {
+  test('CLS stays ≤0.02 during form→table navigation (FormContainer → TableContainer)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await installClsObserver(page);
     await signInViaForm(page, '/admin/sign-in', ADMIN_EMAIL!, ADMIN_PASSWORD!, /^\/admin(\/|$)/);
@@ -80,7 +78,7 @@ test.describe('F5 CLS container transition @layout', () => {
     expect(cls, 'CLS on persistent chrome must be ≤0.02 per SC-007').toBeLessThanOrEqual(CLS_BUDGET);
   });
 
-  test('CLS stays ≤0.02 during table→detail navigation (TableContainer → DetailContainer)', async ({ page }) => {
+  test('CLS stays ≤0.02 during table→form navigation (TableContainer → FormContainer)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await installClsObserver(page);
     await signInViaForm(page, '/admin/sign-in', ADMIN_EMAIL!, ADMIN_PASSWORD!, /^\/admin(\/|$)/);
