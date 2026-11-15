@@ -195,7 +195,7 @@ describe('ApprovalSwitch (F114 US6)', () => {
     const link = within(note).getByRole('link', { name: '3 requests' });
     expect(link).toHaveAttribute('href', '/admin/change-requests');
     expect(link.className).toMatch(/\bunderline\b/);
-    expect(link.className).not.toMatch(/text-muted-foreground/);
+    expect(link.className).not.toMatch(/aura-fg-secondary/);
   });
 
   it('pending note (UX H2): still rendered in the OFF state — the FR-032 copy — with the same link', () => {

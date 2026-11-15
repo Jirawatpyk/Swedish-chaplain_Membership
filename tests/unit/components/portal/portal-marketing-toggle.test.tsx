@@ -185,7 +185,7 @@ describe('PortalMarketingToggle — cycle 11 (UX M7, a11y 11)', () => {
     // AURA's secondary text colour (an AA-contrast token), not the legacy
     // muted placeholder grey this test was written against.
     const stateText = screen.getByText(t.state.on);
-    expect(stateText.className).not.toContain('text-muted-foreground');
+    expect(stateText.className).not.toContain('aura-fg-secondary');
     expect(stateText).toHaveClass('aura-choice__desc');
   });
 

@@ -9,8 +9,9 @@
  *   AURA   `.aura-card`          padding 24px / 24px   radius 20px  shadow 0 1px 2px rgba(0,0,0,.05)
  *   legacy `[data-slot="card"]`  padding 24px /  0px   radius 12px  shadow none (ring only)
  *
- * The legacy radius is 12px because `--card-radius` resolves through
- * `--radius-lg` → `--radius` → `--aura-radius-md`, while AURA's own card uses
+ * The legacy radius was 12px because `--card-radius` resolved through
+ * `--radius-lg` → `--radius` → `--aura-radius-md` (that chain went with the
+ * token bridge at spec 122 US13b), while AURA's own card uses
  * `--aura-card-radius` (20px); the side padding differs because the legacy Card
  * puts `py-` on itself and leaves the inline padding to CardHeader/CardContent.
  *

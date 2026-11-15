@@ -27,24 +27,28 @@ test.describe('reduced-motion honour (T169, SC-016)', () => {
 
     // Evaluate the computed animation-name on any skeleton-shaped
     // element on the page. The exact selector depends on the
-    // `Skeleton` shadcn primitive; we match on `[data-slot="skeleton"]`
-    // first, then fall back to `.animate-pulse` if the slot marker
-    // is not present in this build.
-    const animationName = await page.evaluate(() => {
-      const selectors = ['[data-slot="skeleton"]', '.animate-pulse', '[role="status"]'];
+    // shared `SkeletonBlock` (`data-slot="skeleton-block"`, spec 122
+    // US13b) or AURA's `.aura-skel`, then falls back to `.animate-pulse`.
+    const found = await page.evaluate(() => {
+      const selectors = ['[data-slot="skeleton-block"]', '.aura-skel', '.animate-pulse', '[role="status"]'];
       for (const sel of selectors) {
         const el = document.querySelector(sel);
         if (el) {
-          return window.getComputedStyle(el).animationName;
+          return { sel, animationName: window.getComputedStyle(el).animationName };
         }
       }
       return null;
     });
 
-    // If there IS an animated element on the page, it MUST NOT be the
-    // shimmer keyframe under reduced-motion.
-    if (animationName !== null) {
-      expect(animationName.toLowerCase()).not.toContain('shimmer');
+    // A skeleton (ours or AURA's) MUST NOT pulse under reduced motion: its
+    // animation is only declared under `prefers-reduced-motion: no-preference`
+    // (`.skeleton-pulse`, AURA's `.aura-skel`). No other element may run the
+    // old shimmer keyframe either.
+    if (found !== null) {
+      if (found.sel === '[data-slot="skeleton-block"]' || found.sel === '.aura-skel') {
+        expect(found.animationName).toBe('none');
+      }
+      expect(found.animationName.toLowerCase()).not.toContain('shimmer');
     }
     // If no skeleton is visible, the test passes trivially — the
     // sign-in page is tiny and may hydrate instantly, leaving no

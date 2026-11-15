@@ -492,6 +492,12 @@ summary {
   z-index: 100;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .skip-to-content {
+    transition: none;
+  }
+}
+
 .skip-to-content:focus {
   transform: none;
 }

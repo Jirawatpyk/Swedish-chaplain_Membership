@@ -31,6 +31,7 @@ Until US13b, `:root` aliased every legacy shadcn variable (`--background`, `--mu
 - `globals.css` defines no shadcn variable; `@theme inline` holds the fonts above, the TSCC gold (`--color-brand-accent*`) and two entrance animations (`--animate-chamber-fade-in`, `--animate-chamber-zoom-in`).
 - Code names AURA tokens directly: `text-[var(--aura-fg-secondary)]`, `text-[var(--aura-fg-danger)]`, `rounded-[var(--aura-radius-sm)]`.
 - `@layer base` gives a bare `border` `--aura-border-default`, the focus outline `--aura-focus-ring`, and `body` `--aura-bg-canvas` / `--aura-fg-primary`.
+- The `data-open:` / `data-checked:` / `data-active:` … variants and `no-scrollbar` that `shadcn/tailwind.css` defined went with it. Tailwind's built-in `data-*:` variants match differently (`[data-active]` also matches `="false"`, and they carry specificity), so they are banned rather than silently reused.
 - **Guards:** `tests/unit/styles/aura-foundation-css.test.ts` (the import list, no bridge name defined) and `tests/unit/architecture/no-bridge-colours.test.ts` (no shadcn class, `var()`, theme radius or tw-animate utility in `src/`).
 
 ## Z-index

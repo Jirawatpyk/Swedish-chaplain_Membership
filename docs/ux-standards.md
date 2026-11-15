@@ -37,9 +37,11 @@ document MUST be updated. If something here is silent, use AURA's defaults.
 
 - **AURA tokens** (`--aura-*`, from `@jirawatpyk/aura-tokens/aura.css` plus the
   generated brand theme `src/styles/aura-theme.css`) are the only colour
-  source. The shadcn names (`text-muted-foreground`, `bg-muted`,
-  `rounded-md`, …) resolve to nothing since US13b removed the token bridge;
-  `tests/unit/architecture/no-bridge-colours.test.ts` fails on any of them.
+  source. Since US13b removed the token bridge, the shadcn colour names
+  (`text-muted-foreground`, `bg-muted`, …) resolve to nothing and
+  `rounded-sm|md|lg|…` silently fall back to Tailwind's default radii;
+  `tests/unit/architecture/no-bridge-colours.test.ts` fails on any of them in
+  `src/` (`.ts`, `.tsx` and `.css`).
 - **Light mode** and **dark mode** — both MUST be supported from day one.
 - Code uses AURA tokens (`text-[var(--aura-fg-secondary)]`,
   `rounded-[var(--aura-radius-sm)]`) or AURA components, never the legacy
@@ -120,7 +122,8 @@ a spinner.
     `src/components/shell/page-skeletons.tsx` for everything else. It draws
     the `.skeleton-pulse` class in `globals.css`, which matches AURA's
     `.aura-skel`, and keeps `data-slot="skeleton-block"`.
-  - AURA `Skeleton` (client entry) inside a client component.
+- Inside a client component, AURA's `Skeleton` (client entry) is an equal
+  choice to `SkeletonBlock`; both draw the same pulse.
 - Never add Tailwind motion utilities on top: the class owns its
   reduced-motion behaviour.
 - Skeleton shapes MUST **match the real content layout** — same dimensions,
