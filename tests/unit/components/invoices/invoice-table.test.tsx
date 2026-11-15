@@ -570,7 +570,7 @@ describe('<InvoicesTable> β as-paid main download (064 remediation S7)', () => 
  * DISTINCT states so a permanent render failure is never mislabelled as forever
  * in-progress (mirrors the portal S1 fix):
  *   - paid + receiptPdfStatus 'pending'  → a SHIMMER "receipt generating" state
- *     (shipped `<Skeleton>` primitive → reduced-motion-safe via skeleton-shimmer
+ *     (shipped `<Skeleton>` primitive → reduced-motion-safe via skeleton-pulse
  *     CSS) inside a role=status aria-live region.
  *   - paid + receiptPdfStatus 'failed'   → a visually-distinct inline ALERT-state
  *     affordance that LINKS to the invoice detail (actionable). It must NOT show

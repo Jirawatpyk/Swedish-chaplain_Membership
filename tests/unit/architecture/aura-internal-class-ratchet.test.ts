@@ -112,18 +112,6 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/**
- * Unlabelled reaches outside the pre-US13 MIGRATED_PATHS, found when the scan
- * went global (US13a). Each needs a label it can truthfully carry (an open
- * handoff item or app content), which US13b decides; a fixed one leaves the
- * list, and a new one fails the rule like any other.
- */
-const KNOWN_UNLABELLED: readonly string[] = [
-  'src/app/(staff)/admin/finance/_components/oldest-overdue-card.tsx:34',
-  'src/lib/filter-sheet-focus.ts:12',
-  'src/lib/filter-sheet-focus.ts:14',
-];
-
 const scanned = walk(join(ROOT, 'src')).sort();
 const openOrNull = openItems(readFileSync(join(ROOT, 'docs/aura-adoption.md'), 'utf8'));
 const open: ReadonlySet<number> = openOrNull ?? new Set();
@@ -142,14 +130,8 @@ describe('AURA internal-class ratchet (spec 122 parity rule)', () => {
     expect(members.every((r) => r.item === null)).toBe(true);
   });
 
-  it('every reach is labelled, and every label names an open item', () => {
-    const known = new Set(KNOWN_UNLABELLED);
-    expect(violations(reaches, open).filter((v) => !known.has(v.split(' ')[0] ?? ''))).toEqual([]);
-  });
-
-  it('each KNOWN_UNLABELLED entry is still an unlabelled reach (the list only shrinks)', () => {
-    const now = new Set(violations(reaches, open).map((v) => v.split(' ')[0]));
-    expect(KNOWN_UNLABELLED.filter((k) => !now.has(k))).toEqual([]);
+  it('every reach is labelled, and every label names an open item (no exceptions since US13b)', () => {
+    expect(violations(reaches, open)).toEqual([]);
   });
 
   describe('the checker itself', () => {

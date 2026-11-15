@@ -333,7 +333,7 @@ export function PromptPayPanel({
           width={220}
           height={220}
           unoptimized
-          className="aspect-square h-auto w-[220px] rounded-md border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-3"
+          className="aspect-square h-auto w-[220px] rounded-[var(--aura-radius-sm)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-3"
           data-testid="pay-sheet-promptpay-qr"
           onError={handleQrLoadError}
         />

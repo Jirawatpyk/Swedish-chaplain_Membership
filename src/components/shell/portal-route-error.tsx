@@ -56,8 +56,8 @@ export function PortalRouteError({
       <Card>
         <div className="flex flex-col gap-4">
           {error.digest ? (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <AlertCircleIcon className="size-4 shrink-0 text-destructive" aria-hidden />
+            <p className="flex items-center gap-2 text-sm text-[var(--aura-fg-secondary)]">
+              <AlertCircleIcon className="size-4 shrink-0 text-[var(--aura-fg-danger)]" aria-hidden />
               {t('errorId', { id: error.digest })}
             </p>
           ) : null}

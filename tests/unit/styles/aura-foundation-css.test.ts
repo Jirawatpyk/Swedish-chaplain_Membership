@@ -1,11 +1,12 @@
 /**
  * Spec 122 FR-002 / FR-003 — the AURA foundation in `src/app/globals.css`
- * (contracts/css-layers.md): layer order, imports, fonts, the token bridge
- * that makes un-migrated pages take AURA's colours, and overlay stacking.
+ * (contracts/css-layers.md): layer order, imports, fonts, and overlay
+ * stacking. The shadcn token bridge that made un-migrated pages take AURA's
+ * colours was removed at US13b, and this file now pins that it stays gone.
  *
  * These are source assertions on purpose: the failure modes are an import in
- * the wrong order (AURA components then beat Tailwind utilities), a bridged
- * variable left pinned in `.dark`, or a font origin sneaking back in — none of
+ * the wrong order (AURA components then beat Tailwind utilities), a bridge
+ * variable coming back, or a font origin sneaking back in — none of
  * which a jsdom render can see.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -31,55 +32,17 @@ function declared(body: string, name: string): string | undefined {
   return body.match(new RegExp(`(?:^|[\\s;{])${name}\\s*:\\s*([^;]+);`))?.[1]?.trim();
 }
 
-/** contracts/css-layers.md § Token bridge. */
-const BRIDGE: Record<string, string> = {
-  '--background': 'bg-canvas',
-  '--foreground': 'fg-primary',
-  '--card': 'bg-surface',
-  '--card-foreground': 'fg-primary',
-  '--popover': 'bg-surface',
-  '--popover-foreground': 'fg-primary',
-  // Brand accent, not AURA's ink button: `text-primary` links must not read as body text.
-  '--primary': 'fg-accent',
-  '--primary-foreground': 'fg-inverted',
-  // Not bg-surface-hover: in light it equals the canvas, so muted fills vanish on the page.
-  '--secondary': 'status-neutral-bg',
-  '--secondary-foreground': 'fg-primary',
-  '--muted': 'status-neutral-bg',
-  '--muted-foreground': 'fg-secondary',
-  '--accent': 'bg-selected',
-  '--accent-foreground': 'fg-primary',
-  '--destructive': 'fg-danger',
-  '--destructive-foreground': 'fg-inverted',
-  '--destructive-surface': 'alert-danger-bg',
-  '--success': 'fg-positive',
-  '--success-foreground': 'fg-inverted',
-  '--success-surface': 'alert-success-bg',
-  '--warning': 'alert-warning-fg',
-  '--warning-foreground': 'fg-inverted',
-  '--warning-surface': 'alert-warning-bg',
-  '--info': 'fg-accent',
-  '--info-foreground': 'fg-inverted',
-  '--info-surface': 'alert-info-bg',
-  '--border': 'border-default',
-  '--input': 'border-control',
-  '--ring': 'focus-ring',
-  '--chart-1': 'chart-1',
-  '--chart-2': 'chart-2',
-  '--chart-3': 'chart-3',
-  '--chart-4': 'chart-4',
-  '--chart-5': 'chart-5',
-  '--radius': 'radius-md',
-  '--sidebar': 'bg-surface',
-  '--sidebar-foreground': 'fg-primary',
-  '--sidebar-primary': 'button-primary-bg',
-  '--sidebar-primary-foreground': 'button-primary-fg',
-  '--sidebar-accent': 'bg-selected',
-  '--sidebar-accent-foreground': 'fg-accent',
-  '--sidebar-border': 'border-default',
-  '--sidebar-ring': 'focus-ring',
-  '--nav-indicator': 'fg-accent',
-};
+/** The shadcn names the bridge used to define (removed at spec 122 US13b). */
+const BRIDGE_NAMES = [
+  '--background', '--foreground', '--card', '--card-foreground', '--popover', '--popover-foreground',
+  '--primary', '--primary-foreground', '--secondary', '--secondary-foreground', '--muted',
+  '--muted-foreground', '--accent', '--accent-foreground', '--destructive', '--destructive-foreground',
+  '--destructive-surface', '--success', '--success-foreground', '--success-surface', '--warning',
+  '--warning-foreground', '--warning-surface', '--info', '--info-foreground', '--info-surface',
+  '--border', '--input', '--ring', '--chart-1', '--chart-2', '--chart-3', '--chart-4', '--chart-5',
+  '--radius', '--sidebar', '--sidebar-foreground', '--sidebar-primary', '--sidebar-primary-foreground',
+  '--sidebar-accent', '--sidebar-accent-foreground', '--sidebar-border', '--sidebar-ring', '--nav-indicator',
+] as const;
 
 describe('globals.css — AURA foundation (spec 122)', () => {
   it('declares the cascade-layer order before anything else', () => {
@@ -87,14 +50,12 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     expect(firstStatement).toBe('@layer aura-tokens, theme, base, aura, components, utilities');
   });
 
-  it('imports Tailwind, the legacy kit CSS and AURA in the contract order', () => {
+  it('imports Tailwind and AURA in the contract order, with no legacy kit CSS (US13b)', () => {
     const imports = [...css.matchAll(/^@import\s+['"]([^'"]+)['"]([^;]*);/gm)].map((m) =>
       `${m[1]}${m[2]?.trim() ? ` ${m[2].trim()}` : ''}`,
     );
     expect(imports).toEqual([
       'tailwindcss',
-      'tw-animate-css',
-      'shadcn/tailwind.css',
       '@jirawatpyk/aura-tokens/aura.css layer(aura-tokens)',
       '@jirawatpyk/aura-tokens/aura-fonts.local.css',
       '@jirawatpyk/aura-tokens/tailwind.prefixed.css',
@@ -103,19 +64,23 @@ describe('globals.css — AURA foundation (spec 122)', () => {
     ]);
   });
 
-  it.each(Object.entries(BRIDGE))('bridges %s to --aura-%s on :root', (name, token) => {
-    expect(declared(block(':root'), name)).toBe(`var(--aura-${token})`);
+  it('defines no shadcn bridge variable anywhere (US13b: colours come from --aura-* directly)', () => {
+    const body = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    const defined = BRIDGE_NAMES.filter((name) => new RegExp(`(?:^|[\\s;{])${name}\\s*:`).test(body));
+    expect(defined).toEqual([]);
   });
 
-  it('leaves no bridged variable pinned in .dark (AURA flips the --aura-* values itself)', () => {
-    const dark = block('.dark');
-    const pinned = Object.keys(BRIDGE).filter((name) => declared(dark, name) !== undefined);
-    expect(pinned).toEqual([]);
+  it('positive control: the bridge check finds a definition when one exists', () => {
+    expect(new RegExp('(?:^|[\\s;{])--muted-foreground\\s*:').test(':root { --muted-foreground: red; }')).toBe(true);
+  });
+
+  it('defines no theme radius override, so `rounded-sm|md|lg` are never used for AURA radii', () => {
+    expect(declared(block('@theme inline'), '--radius-md')).toBeUndefined();
   });
 
   it.each([
     ['--font-sans', '"Inter", "Noto Sans Thai", sans-serif'],
-    // Kit titles (card, dialog, sheet) are h2/h3-level: AURA sets those in sans; Fraunces is display-only.
+    // Card, dialog and sheet titles are h2/h3-level: AURA sets those in sans; Fraunces is display-only.
     ['--font-heading', '"Inter", "Noto Sans Thai", sans-serif'],
     // Thai in a mono label takes Noto Sans Thai, not whatever monospace the OS has (US6 parity).
     ['--font-mono', '"JetBrains Mono", "Noto Sans Thai", monospace'],
@@ -129,14 +94,14 @@ describe('globals.css — AURA foundation (spec 122)', () => {
   });
 
   it('draws skeletons in AURA\'s skeleton tone, visible on the page background', () => {
-    const rule = css.match(/\.skeleton-shimmer\s*\{[^}]*\}/)?.[0] ?? '';
+    const rule = css.match(/\.skeleton-pulse\s*\{[^}]*\}/)?.[0] ?? '';
     expect(rule).toContain('var(--aura-bg-skeleton)');
   });
 
   it('pulses skeletons with AURA\'s own animation, and only without reduced motion (FR-009, spec 122 US1)', () => {
-    // The shimmer sweep is gone: the pulse is AURA's keyframes and duration.
-    expect(css).not.toMatch(/--animate-shimmer|@keyframes shimmer/);
-    const motion = css.match(/@media \(prefers-reduced-motion: no-preference\)\s*\{\s*\.skeleton-shimmer\s*\{[^}]*\}/)?.[0] ?? '';
+    // The shimmer sweep and its class name are gone: the pulse is AURA's keyframes and duration.
+    expect(css).not.toMatch(/--animate-shimmer|@keyframes shimmer|\.skeleton-shimmer/);
+    const motion = css.match(/@media \(prefers-reduced-motion: no-preference\)\s*\{\s*\.skeleton-pulse\s*\{[^}]*\}/)?.[0] ?? '';
     expect(motion).toMatch(/animation:\s*aura-pulse var\(--aura-duration-pulse\)/);
   });
 

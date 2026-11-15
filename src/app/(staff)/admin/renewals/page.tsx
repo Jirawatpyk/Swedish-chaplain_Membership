@@ -905,7 +905,7 @@ async function PendingReviewSection({
     <>
       <div className="space-y-1">
         <h2 className="text-base font-semibold">{t('sectionTitle')}</h2>
-        <p className="text-sm text-muted-foreground">{t('sectionSubtitle')}</p>
+        <p className="text-sm text-[var(--aura-fg-secondary)]">{t('sectionSubtitle')}</p>
       </div>
       <PendingReviewList rows={rows} canApprove={canApprove} totalCount={totalCount} />
     </>

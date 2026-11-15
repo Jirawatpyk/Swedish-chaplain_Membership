@@ -30,7 +30,7 @@ export const OLDEST_OVERDUE_TITLE_ID = 'oldest-overdue-title';
 /** Shown on a phone; the rest of the six are hidden there. */
 const PHONE_ROWS = 3;
 
-/** Due and For step aside in a narrow grid (the days overdue say the same); the phone card keeps both. */
+/** AURA app content: Due and For step aside in a narrow grid (the days overdue say the same); the phone card keeps both. */
 const HIDE_IN_NARROW_GRID = '@min-[640px]/aura-tbl:@max-[800px]/aura-tbl:hidden';
 
 /** The document-number link: a text link in the row title, 44px below 640px or on a coarse pointer (US6.2, AURA #172). */

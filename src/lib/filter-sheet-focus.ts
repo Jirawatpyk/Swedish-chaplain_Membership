@@ -9,6 +9,7 @@
  */
 export function filterSheetDoneButton(): HTMLElement | null {
   if (typeof document === 'undefined') return null;
+  // A stand-in until AURA #211: FilterBar exposes no way to focus its sheet's Done.
   const sheet = document.activeElement?.closest('.aura-filterbar__sheet');
   if (!sheet) return null;
   const buttons = sheet.querySelectorAll<HTMLElement>('.aura-dialog__foot button');

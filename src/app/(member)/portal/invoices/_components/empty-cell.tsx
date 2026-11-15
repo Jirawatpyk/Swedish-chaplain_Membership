@@ -14,7 +14,7 @@
  */
 export function EmptyCell(): React.ReactElement {
   return (
-    <span className="text-sm text-muted-foreground" aria-hidden="true">
+    <span className="text-sm text-[var(--aura-fg-secondary)]" aria-hidden="true">
       —
     </span>
   );

@@ -2,24 +2,24 @@
  * Shared skeleton primitives for route-level `loading.tsx` files.
  *
  * All Server Components (no `'use client'`) — respects
- * `prefers-reduced-motion` purely via the shared `.skeleton-shimmer`
- * CSS utility in `globals.css` (shimmer gradient by default, automatic
- * pulse fallback under `prefers-reduced-motion: reduce`).
+ * `prefers-reduced-motion` purely via the shared `.skeleton-pulse`
+ * CSS utility in `globals.css` (AURA's `--aura-bg-skeleton` tone and
+ * `aura-pulse` animation, still under `prefers-reduced-motion: reduce`;
+ * ux-standards § 2).
  *
  * Design alignment with F4 PageHeader + F5 layout containers:
  * - CardSkeleton honours --card-padding (PR Q: radius, frame and surface on AURA tokens, no shadow, as AURA's Card)
  *   so skeleton cards are visually indistinguishable in dimensions from
  *   real Cards.
- * - TableSkeleton mirrors the shadcn Table grid so the initial row
- *   layout doesn't reflow when real data arrives.
+ * - Table skeletons are AURA's `TableSkeleton` (`@jirawatpyk/aura-react/server`)
+ *   or the shell `DataTableSkeleton`, so they share the real table's grid.
  * - FormSkeleton mirrors the Input height + label spacing tokens.
  *
  * Accessibility:
  * - `PageSkeletonShell` is the SOLE live region per page — it emits
  *   `role="status"` + `aria-live="polite"` with an i18n-driven label
  *   so screen readers hear "Loading…" once per navigation.
- * - Container primitives (CardSkeleton, FormSkeleton, TableSkeleton,
- *   DetailSkeleton) mark themselves `aria-busy="true"` but NOT
+ * - Container primitives (CardSkeleton, FormSkeleton, DetailSkeleton) mark themselves `aria-busy="true"` but NOT
  *   `role="status"` — nested live regions are discouraged by ARIA
  *   (NVDA+Firefox may announce twice or ignore the inner).
  */
@@ -28,23 +28,22 @@ import { cn } from '@/lib/utils';
 type SkeletonProps = React.ComponentProps<'div'>;
 
 /**
- * Atomic skeleton block. Uses the shared `.skeleton-shimmer` utility
- * from `globals.css` (UX standards § 2.1) — horizontal gradient sweep
- * animation by default, automatic pulse fallback under
- * `prefers-reduced-motion: reduce`.
+ * Atomic skeleton block. Uses the shared `.skeleton-pulse` utility from
+ * `globals.css` (UX standards § 2): AURA's skeleton tone with AURA's pulse,
+ * still under `prefers-reduced-motion: reduce`.
  */
 export function SkeletonBlock({ className, ...props }: SkeletonProps) {
   return (
     <div
       data-slot="skeleton-block"
-      className={cn('rounded-md skeleton-shimmer', className)}
+      className={cn('rounded-[var(--aura-radius-sm)] skeleton-pulse', className)}
       {...props}
     />
   );
 }
 
 /**
- * Mirror of shadcn <Card>: title + description + content rows. Honours
+ * Mirror of AURA's Card: title + description + content rows. Honours
  * the F4 card tokens so dimensions match real Cards pixel-for-pixel.
  */
 export function CardSkeleton({
@@ -88,7 +87,7 @@ export function CardSkeleton({
  *
  * `footerButtons` controls the primary/secondary action count (default
  * 1 = submit-only; pass 0 to omit). Buttons render in left→right order
- * with the LAST one wider (primary submit) — mirrors real shadcn form
+ * with the LAST one wider (primary submit) — mirrors a real form
  * footers like `[Cancel (ghost)] [Submit (primary, wider)]`.
  */
 export function FormSkeleton({
@@ -153,45 +152,6 @@ export function FormSkeleton({
       <div className="flex flex-col gap-4 px-[var(--card-padding)] pb-[var(--card-padding)]">
         {fieldRows}
       </div>
-    </div>
-  );
-}
-
-/**
- * Mirror of shadcn <Table>: header + rows with equal-width columns.
- * Row height matches --table-row-height; column widths use `flex-1` so
- * horizontal reflow stays bounded.
- */
-export function TableSkeleton({
-  rows = 8,
-  columns = 5,
-  className,
-}: {
-  rows?: number;
-  columns?: number;
-  className?: string;
-}) {
-  return (
-    <div
-      data-slot="table-skeleton"
-      aria-busy="true"
-      className={cn('w-full overflow-hidden', className)}
-    >
-      <div className="border-b border-border bg-muted/30 flex h-[var(--table-row-height)] items-center gap-4 px-[var(--table-cell-padding-x)]">
-        {Array.from({ length: columns }).map((_, i) => (
-          <SkeletonBlock key={i} className="h-4 flex-1" />
-        ))}
-      </div>
-      {Array.from({ length: rows }).map((_, r) => (
-        <div
-          key={r}
-          className="flex h-[var(--table-row-height)] items-center gap-4 border-b border-border px-[var(--table-cell-padding-x)] last:border-b-0"
-        >
-          {Array.from({ length: columns }).map((_, c) => (
-            <SkeletonBlock key={c} className="h-4 flex-1" />
-          ))}
-        </div>
-      ))}
     </div>
   );
 }

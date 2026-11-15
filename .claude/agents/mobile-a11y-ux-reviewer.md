@@ -39,8 +39,8 @@ Enforce the Chamber-OS design system per `docs/ux-standards.md`:
 - **AURA components first** (`docs/aura-adoption.md`; a missing AURA feature is a labelled `stand-in until AURA #NN`); the legacy kit was deleted at spec 122 US13a; the command palettes are AURA `Command` (`cmdk` is uninstalled and banned) — do not hand-roll equivalents.
 - **Shimmer skeletons** (per § 2.1) during loading, not spinners, for content regions.
 - **Toasts only through `@/lib/toast`** for transient feedback; **confirmation dialogs** for destructive actions; **idle warning dialog** for session TTL.
-- **Theming**: support light/dark via `next-themes`; colours come from AURA tokens (`src/styles/aura-theme.css`) or the semantic variables the token bridge maps in `src/app/globals.css` — never hardcoded colors.
-- **Typography scale, spacing scale, border-radius, shadows**: use AURA tokens / the bridged Tailwind tokens; no magic numbers.
+- **Theming**: support light/dark via `next-themes`; colours come from AURA tokens (`--aura-*`, `src/styles/aura-theme.css`); the shadcn token bridge was removed at spec 122 US13b — never hardcoded colors.
+- **Typography scale, spacing scale, border-radius, shadows**: use AURA tokens (e.g. `rounded-[var(--aura-radius-sm)]`); no magic numbers.
 - **Iconography**: `lucide-react` only; consistent size (16/20/24); `aria-hidden="true"` when decorative alongside text.
 - **Empty states, error states, loading states**: all three MUST be handled for every async surface.
 - **i18n**: no hardcoded user-facing strings — every string routes through `next-intl` with EN canonical + TH + SV translations. Verify keys exist in all three locales.

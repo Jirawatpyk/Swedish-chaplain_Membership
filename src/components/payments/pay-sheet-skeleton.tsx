@@ -1,9 +1,9 @@
 /**
- * PaySheetSkeleton — shimmer placeholder for Stripe's <PaymentElement>
+ * PaySheetSkeleton — pulse placeholder for Stripe's <PaymentElement>
  * inside the PaySheet drawer.
  *
  * Contract: specs/009-online-payment/ux-phase3-contract.md § 2 (C-A).
- *   - Uses the shared <Skeleton> primitive (`.skeleton-shimmer` CSS already
+ *   - Uses the shared `SkeletonBlock` (`.skeleton-pulse` CSS already
  *     handles the `prefers-reduced-motion` fallback — do NOT layer Tailwind
  *     motion utilities on top, per § 2.2 rule 1).
  *   - Shape fidelity (CLS=0): 3 rectangular rows matching PaymentElement
@@ -47,7 +47,7 @@ export function PaySheetSkeleton({
     >
       {/* Visible loading hint — reassures the member that the
           drawer is actively preparing the form (can take 1-3 s on
-          first open). The shimmer rows alone are mute; a short label
+          first open). The pulse rows alone are mute; a short label
           reduces perceived wait time. */}
       <p
         className="text-caption text-[var(--aura-fg-secondary)]"

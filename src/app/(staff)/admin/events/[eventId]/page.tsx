@@ -255,7 +255,7 @@ export default async function AdminEventDetailPage({
        an instant swap. Lives on the loaded-state container only;
        loading.tsx renders the same DetailContainer without these
        classes so the skeleton itself does not fade. */
-    <DetailContainer className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-[120ms]">
+    <DetailContainer className="motion-safe:animate-chamber-fade-in">
       {await renderEventDetailView({
         event,
         rows: registrations.map((r) => ({

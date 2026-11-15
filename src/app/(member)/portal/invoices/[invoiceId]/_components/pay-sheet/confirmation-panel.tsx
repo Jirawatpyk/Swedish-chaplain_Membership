@@ -199,7 +199,7 @@ export function ConfirmationPanel({
       // receipt, a full-width Close, then Pause beside the countdown.
       className="flex min-h-[calc(100dvh-9rem)] flex-col items-center justify-center gap-4 text-center focus:outline-none"
     >
-      <span className="flex size-16 items-center justify-center rounded-full bg-[var(--aura-status-ready-bg)] text-[var(--aura-status-ready-fg)] motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-200">
+      <span className="flex size-16 items-center justify-center rounded-full bg-[var(--aura-status-ready-bg)] text-[var(--aura-status-ready-fg)] motion-safe:animate-chamber-zoom-in">
         <CheckCircle2Icon
           aria-hidden="true"
           className="size-7"

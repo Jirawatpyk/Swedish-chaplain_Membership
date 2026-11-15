@@ -39,7 +39,7 @@
  * `SkeletonBlock` (spec 122 US12a moved this loader out of the legacy kit).
  *
  * **Reduced-motion**: the skeleton animation is CSS-driven (see
- * `skeleton-shimmer` class in globals.css); `prefers-reduced-motion: reduce`
+ * `skeleton-pulse` class in globals.css); `prefers-reduced-motion: reduce`
  * media query disables the animation per WCAG 2.3.3.
  */
 

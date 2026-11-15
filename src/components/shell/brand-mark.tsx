@@ -106,7 +106,7 @@ export function BrandMark({
           fontSize="11.5"
           fontWeight="600"
           letterSpacing="2"
-          fill="var(--muted-foreground)"
+          fill="var(--aura-fg-secondary)"
         >
           THAI–SWEDISH CHAMBER OF COMMERCE
         </text>
@@ -140,7 +140,7 @@ export function BrandMark({
           fontSize="10.5"
           fontWeight="600"
           letterSpacing="1.9"
-          fill="var(--muted-foreground)"
+          fill="var(--aura-fg-secondary)"
         >
           THAI–SWEDISH CHAMBER OF COMMERCE
         </text>

@@ -78,7 +78,7 @@ export function TablePagination({
       data-slot="table-pagination"
     >
       <p
-        className="text-sm text-muted-foreground"
+        className="text-sm text-[var(--aura-fg-secondary)]"
         aria-live={live ? 'polite' : undefined}
         aria-atomic={live ? 'true' : undefined}
       >

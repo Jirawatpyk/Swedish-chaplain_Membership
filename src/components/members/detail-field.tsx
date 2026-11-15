@@ -54,13 +54,13 @@ export function DetailField({
     value === null || value === undefined || value === '' ? null : String(value);
   return (
     <div className={cn('flex flex-col gap-1 py-2', className)}>
-      <dt className={cn('text-xs text-muted-foreground', labelClassName)}>{label}</dt>
+      <dt className={cn('text-xs text-[var(--aura-fg-secondary)]', labelClassName)}>{label}</dt>
       <dd className="flex items-center gap-2 text-sm">
         {v !== null && (
           <span className={cn(mono && 'font-mono text-xs')}>{v}</span>
         )}
         {v === null && extra === undefined && (
-          <span className="text-muted-foreground">{fallback}</span>
+          <span className="text-[var(--aura-fg-secondary)]">{fallback}</span>
         )}
         {extra}
       </dd>

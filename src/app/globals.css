@@ -1,11 +1,8 @@
-/* Spec 122 — AURA coexists with the legacy kit (contracts/css-layers.md).
-   The layer order puts Tailwind utilities LAST, so a utility still beats an
-   AURA component class without `!important`; AURA's tokens sit first so the
-   brand theme and the token bridge below can read them. */
+/* Spec 122 — the layer order (contracts/css-layers.md) puts Tailwind
+   utilities LAST, so a utility still beats an AURA component class without
+   `!important`; AURA's tokens sit first so the brand theme can read them. */
 @layer aura-tokens, theme, base, aura, components, utilities;
 @import 'tailwindcss';
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
 @import '@jirawatpyk/aura-tokens/aura.css' layer(aura-tokens);
 /* Self-hosted woff2 (Inter, Noto Sans Thai, Fraunces, JetBrains Mono) — CSP font-src 'self' unchanged. */
 @import '@jirawatpyk/aura-tokens/aura-fonts.local.css';
@@ -28,167 +25,40 @@
  * and theme variables live in @theme blocks so Tailwind can generate
  * matching utilities without a tailwind.config.ts file.
  *
- * § 2.1 of docs/ux-standards.md mandates a shimmer animation for loading
- * skeletons with a reduced-motion fallback.
+ * Colours, radii and motion come from AURA's tokens (`--aura-*`); the
+ * shadcn token bridge that kept the legacy kit on AURA's palette was
+ * removed with the kit (spec 122 US13b). § 2 of docs/ux-standards.md
+ * mandates AURA's pulse for loading skeletons (`.skeleton-pulse`).
  * --------------------------------------------------------------------------- */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-border: var(--border);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-
   /* AURA's type families (spec 122 FR-003), served from our origin by aura-fonts.local.css. */
   --font-sans: "Inter", "Noto Sans Thai", sans-serif;
   --font-mono: "JetBrains Mono", "Noto Sans Thai", monospace;
 
-  /* Kit titles (card, dialog, sheet) are h2/h3-level, which AURA sets in sans;
-     Fraunces, AURA's display face, is for page titles (`.text-h1`) only. */
+  /* h2/h3-level titles are set in sans, as AURA does; Fraunces, AURA's
+     display face, is for page titles (`.text-h1`) only. */
   --font-heading: "Inter", "Noto Sans Thai", sans-serif;
-
-  --color-sidebar-ring: var(--sidebar-ring);
-
-  --color-sidebar-border: var(--sidebar-border);
-
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-
-  --color-sidebar-accent: var(--sidebar-accent);
-
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-
-  --color-sidebar-primary: var(--sidebar-primary);
-
-  --color-sidebar-foreground: var(--sidebar-foreground);
-
-
-  --color-sidebar: var(--sidebar);
-
-  --color-chart-5: var(--chart-5);
-
-  --color-chart-4: var(--chart-4);
-
-  --color-chart-3: var(--chart-3);
-
-  --color-chart-2: var(--chart-2);
-
-  --color-chart-1: var(--chart-1);
-
-  --color-ring: var(--ring);
-
-  --color-input: var(--input);
-
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-destructive-surface: var(--destructive-surface);
-
-  --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
-  --color-success-surface: var(--success-surface);
-
-  --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
-  --color-warning-surface: var(--warning-surface);
-
-  --color-info: var(--info);
-  --color-info-foreground: var(--info-foreground);
-  --color-info-surface: var(--info-surface);
-
-  --color-accent-foreground: var(--accent-foreground);
-
-  --color-accent: var(--accent);
 
   --color-brand-accent: var(--brand-accent);
   --color-brand-accent-foreground: var(--brand-accent-foreground);
 
-  --color-secondary-foreground: var(--secondary-foreground);
+  /* Two entrance motions that replaced tw-animate-css (spec 122 US13b).
+     Callers use them behind `motion-safe:` so reduced motion swaps
+     instantly (WCAG 2.3.3). */
+  --animate-chamber-fade-in: chamber-fade-in 120ms ease;
+  --animate-chamber-zoom-in: chamber-zoom-in 200ms ease;
 
-  --color-secondary: var(--secondary);
-
-  --color-primary-foreground: var(--primary-foreground);
-
-  --color-primary: var(--primary);
-
-  --color-popover-foreground: var(--popover-foreground);
-
-  --color-popover: var(--popover);
-
-  --color-card-foreground: var(--card-foreground);
-
-  --color-card: var(--card);
-
-  --radius-sm: calc(var(--radius) * 0.6);
-
-  --radius-md: calc(var(--radius) * 0.8);
-
-  --radius-lg: var(--radius);
-
-  --radius-xl: calc(var(--radius) * 1.4);
-
-  --radius-2xl: calc(var(--radius) * 1.8);
-
-  --radius-3xl: calc(var(--radius) * 2.2);
-
-  --radius-4xl: calc(var(--radius) * 2.6)
+  @keyframes chamber-fade-in {
+    from { opacity: 0; }
+  }
+  @keyframes chamber-zoom-in {
+    from { transform: scale(0.5); }
+  }
 }
 
 /* --- Light / dark CSS variables --- */
 :root {
-  /* --- Token bridge (spec 122 FR-002, contracts/css-layers.md) ---
-   * Every legacy kit colour is an alias of an AURA token, so a page that has
-   * not been migrated yet already renders in AURA's palette, in both themes:
-   * `.dark` on <html> flips the --aura-* values on this same element and the
-   * aliases follow. That is why no bridged name may appear in `.dark` below.
-   * A contrast failure is fixed HERE, never per page. Removed at US13. */
-  --background: var(--aura-bg-canvas);
-  --foreground: var(--aura-fg-primary);
-  --card: var(--aura-bg-surface);
-  --card-foreground: var(--aura-fg-primary);
-  --popover: var(--aura-bg-surface);
-  --popover-foreground: var(--aura-fg-primary);
-  /* The brand accent, not AURA's ink button colour: ink equals body text, so
-   * every `text-primary` link would stop reading as a link (review B1). */
-  --primary: var(--aura-fg-accent);
-  --primary-foreground: var(--aura-fg-inverted);
-  /* Not bg-surface-hover: in light it equals the canvas (#fafafa), so muted
-   * fills — tabs, skeletons, secondary buttons — vanish on the page. */
-  --secondary: var(--aura-status-neutral-bg);
-  --secondary-foreground: var(--aura-fg-primary);
-  --muted: var(--aura-status-neutral-bg);
-  --muted-foreground: var(--aura-fg-secondary);
-  --accent: var(--aura-bg-selected);
-  --accent-foreground: var(--aura-fg-primary);
-  --destructive: var(--aura-fg-danger);
-  --destructive-foreground: var(--aura-fg-inverted);
-  --destructive-surface: var(--aura-alert-danger-bg);
-  --success: var(--aura-fg-positive);
-  --success-foreground: var(--aura-fg-inverted);
-  --success-surface: var(--aura-alert-success-bg);
-  --warning: var(--aura-alert-warning-fg);
-  --warning-foreground: var(--aura-fg-inverted);
-  --warning-surface: var(--aura-alert-warning-bg);
-  --info: var(--aura-fg-accent);
-  --info-foreground: var(--aura-fg-inverted);
-  --info-surface: var(--aura-alert-info-bg);
-  --border: var(--aura-border-default);
-  --input: var(--aura-border-control);
-  --ring: var(--aura-focus-ring);
-  --chart-1: var(--aura-chart-1);
-  --chart-2: var(--aura-chart-2);
-  --chart-3: var(--aura-chart-3);
-  --chart-4: var(--aura-chart-4);
-  --chart-5: var(--aura-chart-5);
-  --radius: var(--aura-radius-md);
-  --sidebar: var(--aura-bg-surface);
-  --sidebar-foreground: var(--aura-fg-primary);
-  --sidebar-primary: var(--aura-button-primary-bg);
-  --sidebar-primary-foreground: var(--aura-button-primary-fg);
-  --sidebar-accent: var(--aura-bg-selected);
-  --sidebar-accent-foreground: var(--aura-fg-accent);
-  --sidebar-border: var(--aura-border-default);
-  --sidebar-ring: var(--aura-focus-ring);
-  --nav-indicator: var(--aura-fg-accent);
-
   /* TSCC gold (BrandMark rule, badges on navy). Kept literal, not bridged:
    * AURA has no gold, and its accent is blue. Pair ONLY with dark text or a
    * dark surface (gold-on-white = 2.4:1). */
@@ -221,49 +91,14 @@
   --input-height: 2.25rem;            /* 36px — aligns with Button size=default */
   --input-padding-x: 0.75rem;         /* 12px */
   --field-label-gap: 0.375rem;        /* 6px */
-  --field-error-color: var(--destructive);
 
   /* --- Data tables --- */
   --table-row-height: 2.75rem;        /* 44px */
   --table-cell-padding-x: 0.75rem;    /* 12px */
   --table-cell-padding-y: 0.5rem;     /* 8px */
-  --table-row-hover-bg: color-mix(in oklch, var(--muted) 50%, transparent);
 
   /* --- Cards --- */
   --card-padding: 1.5rem;             /* 24px */
-  --card-radius: var(--radius-lg);
-  --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-
-  /* --- Modals / overlays --- */
-  --modal-backdrop-opacity: 0.8;
-  --modal-max-width-sm: 25rem;        /* 400px — confirmation dialogs */
-  --modal-max-width-md: 32rem;        /* 512px — form dialogs */
-  --modal-max-width-lg: 42rem;        /* 672px — detail dialogs */
-  --modal-duration: 200ms;
-  --modal-easing: cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* --- Sidebar tablet override -----------------------------------------------
- * On tablet-portrait viewports (768-1023px) collapse the desktop sidebar
- * rail to icon-only width so the content area gets ~720px of usable space
- * (was 512px with a 256px expanded rail, causing horizontal scroll).
- * Mobile (<768px) uses the off-canvas drawer (md:flex hides the rail).
- * Desktop (≥1024px) respects the user's expand/collapse preference. */
-@media (min-width: 768px) and (max-width: 1023px) {
-  [data-slot="sidebar-wrapper"] {
-    /* !important is required because SidebarProvider sets the var
-     * inline via style={} which would otherwise win specificity
-     * over an @media stylesheet rule. */
-    --sidebar-width: 3rem !important;            /* match --sidebar-width-icon */
-  }
-}
-
-.dark {
-  /* The legacy kit colours follow AURA's dark values through the token
-   * bridge on :root (spec 122) — no bridged name belongs here. Only the
-   * values AURA has no token for stay.
-   * Heavier card shadow so elevation stays visible on dark surfaces. */
-  --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.3);
 }
 
 /* Reserve the scrollbar gutter on the document root so a page that
@@ -554,8 +389,8 @@ body {
    Tiptap selection UI) or HTML `title` attr (silent on touch). The
    static caption is read by all SR + visible on all viewports. */
 .bracket-placeholder {
-  background: var(--muted);
-  border: 1px dashed var(--border);
+  background: var(--aura-status-neutral-bg);
+  border: 1px dashed var(--aura-border-default);
   border-radius: 3px;
   padding: 0 3px;
   cursor: text;
@@ -564,7 +399,7 @@ body {
 
 @media (hover: hover) {
   .bracket-placeholder:hover {
-    background: color-mix(in srgb, var(--muted) 70%, var(--foreground) 8%);
+    background: color-mix(in srgb, var(--aura-status-neutral-bg) 70%, var(--aura-fg-primary) 8%);
   }
 }
 
@@ -576,47 +411,21 @@ body {
   }
 }
 
-/* Base UI overlays (Popover / Menu / Select / Tooltip / Dialog) use the
-   tw-animate `data-[open]:animate-in` / `data-[closed]:animate-out` keyframes,
-   which carry no motion-safe guard of their own — so the fade/zoom/slide would
-   still play under reduced-motion. Collapse their duration to imperceptible
-   (not `animation: none`) so the exit `animationend` still fires and Base UI
-   unmounts the popup on close. SC 2.3.3 / ux-standards §10.1. */
-@media (prefers-reduced-motion: reduce) {
-  [data-open],
-  [data-closed] {
-    animation-duration: 0.001ms !important;
-    animation-delay: 0ms !important;
-  }
-}
-
-/* --- Skeletons: AURA's pulse (ux-standards § 2.1; spec 122 FR-009) ---
-   The class keeps its old name until US13 (≈70 files draw it through
-   `ui/skeleton` and `page-skeletons`); it now looks exactly like AURA's
-   `.aura-skel`: its tone, its keyframes and duration, still under reduced
-   motion. */
-.skeleton-shimmer {
+/* --- Skeletons: AURA's pulse (ux-standards § 2; spec 122 FR-009) ---
+   `SkeletonBlock` (page-skeletons) draws this class; it looks exactly like
+   AURA's `.aura-skel`: its tone, its keyframes and duration, and no motion
+   under reduced motion. Renamed from the old shimmer class at US13b. */
+.skeleton-pulse {
   background: var(--aura-bg-skeleton);
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .skeleton-shimmer {
+  .skeleton-pulse {
     animation: aura-pulse var(--aura-duration-pulse) var(--aura-ease) infinite;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Sidebar uses a scoped CSS custom property for its animation;
-     `!important` on duration is the only way to override it from a
-     media query without editing the component stylesheet. */
-  [data-slot="sidebar-wrapper"],
-  [data-slot="sidebar-wrapper"] *,
-  [data-slot="sidebar-gap"],
-  [data-slot="sidebar"] {
-    transition-duration: 0s !important;
-    animation-duration: 0s !important;
-  }
-
   /* Tailwind v4 utility animations (animate-spin, animate-pulse,
      animate-bounce, animate-ping) carry no built-in reduced-motion
      guard. Neutralise them globally so every <Loader2 animate-spin>
@@ -636,39 +445,11 @@ body {
      sonner override (verify-fix U-I8) went with sonner in spec 122. */
 }
 
-/* --- FilterBar responsive children ---
- *
- * `<FilterBar>` (src/components/ui/filter-bar.tsx) is a search/filter
- * row above data tables. Direct children default to full width on
- * mobile (<640px) so every input/select/button becomes a tap-friendly
- * full-row block. On desktop (≥640px) this rule does NOT exist, so
- * Tailwind utilities like `sm:w-36` or `w-fit` apply naturally.
- *
- * Unlayered + `@media (max-width)` is deliberate:
- *   - Unlayered CSS wins over all `@layer` content in the cascade,
- *     which lets us beat Tailwind's base `.w-fit` on SelectTrigger
- *     without needing `!important` on every call site.
- *   - The `@media (max-width: 639.98px)` bound means desktop has
- *     no rule from us at all — `sm:w-[NNN]` utilities apply
- *     naturally and size the trigger exactly as authored.
- *
- * `:where()` wrapping keeps selector specificity at 0,0,0 so if a
- * caller ever wants to override even on mobile, any utility class
- * (e.g. `w-auto`) takes precedence without specificity gymnastics.
- */
-@media (max-width: 639.98px) {
-  :where([data-slot="filter-bar"]) > :where(*) {
-    width: 100%;
-  }
-}
-
 /* --- Cursor: Tailwind v4 does not set cursor-pointer on buttons by default --- */
 button,
 [role="button"],
 a[href],
-summary,
-[data-slot="sidebar-menu-button"],
-[data-slot="sidebar-rail"] {
+summary {
   cursor: pointer;
 }
 
@@ -677,8 +458,8 @@ summary,
    utilities`) — e.g. `outline-none`, `outline-hidden`, component-level
    `focus-visible:ring-*` — wins the cascade. Without the layer, this
    unlayered rule beat every utility, stacking a currentColor outline
-   on top of ring-driven box-shadows (double-ring bug on sidebar menu
-   buttons, Input, Button).
+   on top of ring-driven box-shadows (a double ring on buttons and
+   inputs).
 
    Unclassed elements (raw <a href>, native <summary>, etc.) still
    fall through to this rule as their only focus styling, satisfying
@@ -701,8 +482,8 @@ summary,
   top: 0;
   left: 0.5rem;
   padding: 0.5rem 1rem;
-  background: var(--foreground);
-  color: var(--background);
+  background: var(--aura-fg-primary);
+  color: var(--aura-bg-canvas);
   border-radius: 0 0 0.25rem 0.25rem;
   /* Hidden by its own height, so it stays hidden at 200% text (a fixed
      -40px left half of it showing; PR #530, WCAG 1.4.4). */
@@ -782,13 +563,21 @@ summary,
   }
 }
 
+/* A bare `border` takes AURA's default border colour (Tailwind v4 would use
+   currentColor), and the page takes AURA's canvas and text colour. */
 @layer base {
   * {
-    @apply border-border outline-ring/50;}
+    border-color: var(--aura-border-default);
+    outline-color: color-mix(in oklab, var(--aura-focus-ring) 50%, transparent);
+  }
   body {
-    @apply bg-background text-foreground;}
+    background-color: var(--aura-bg-canvas);
+    color: var(--aura-fg-primary);
+  }
   html {
-    @apply font-sans;}}
+    @apply font-sans;
+  }
+}
 
 /* Erasure evidence log — force-open every evidence <details> when printing so a
    printed page is a COMPLETE Article 17 accountability record (the print-to-PDF

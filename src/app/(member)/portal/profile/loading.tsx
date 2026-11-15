@@ -62,7 +62,7 @@ export default async function Loading() {
               {Array.from({ length: 2 }).map((_, i) => (
                 <div
                   key={i}
-                  className="flex items-start justify-between rounded-lg border p-4"
+                  className="flex items-start justify-between rounded-[var(--aura-radius-md)] border p-4"
                 >
                   <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                     <SkeletonBlock className="h-4 w-40" />
