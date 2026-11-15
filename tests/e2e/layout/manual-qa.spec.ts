@@ -53,11 +53,10 @@ test.describe('F5 manual-QA automation @qa', () => {
         /^\/admin(\/|$)/,
       );
 
-      // FORM pages only, as the title says. `/admin/settings/invoicing` was
-      // here and is a documented DetailContainer exception
-      // (docs/ux-standards.md § 18.2 *), so it measured a detail column
-      // against a form budget. `/admin/members/new` is the canonical staff
-      // form column, which keeps two samples on this route set.
+      // FORM pages only, as the title says. `/admin/members/new` is the
+      // canonical staff form column, which keeps two samples on this route
+      // set. (`/admin/settings/invoicing` is super-admin only; this spec
+      // signs in as a plain admin, who gets the "Page not available" shell.)
       const adminRoutes = ['/admin/plans/new', '/admin/members/new'];
       const samples: Array<{
         route: string;

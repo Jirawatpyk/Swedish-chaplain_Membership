@@ -52,12 +52,15 @@ test.describe('@perf T209 — admin queue DOM count + virtualization', () => {
     await page.waitForLoadState('domcontentloaded', { timeout: 120_000 });
 
     // Confirm the queue page rendered — the AURA grid (spec 122 US12b) or
-    // the empty state, which renders no grid at all (count 0).
+    // the empty state, which renders no grid at all (count 0). On a phone
+    // the grid stays in the DOM but hidden (`max-md:hidden`) and the cards
+    // show instead, so wait for it attached: the DOM row count below is what
+    // this guards, on every viewport.
     await page
       .locator('[role="grid"]')
       .or(page.getByText(/queue is clear|ไม่มี|kön är tom/i))
       .first()
-      .waitFor({ timeout: 60_000 });
+      .waitFor({ state: 'attached', timeout: 60_000 });
 
     // Body rows only: the grid's first row is its header.
     const trCount = await page.locator('[role="grid"] [role="row"]:not(:first-child)').count();

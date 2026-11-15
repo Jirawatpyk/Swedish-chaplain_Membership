@@ -126,11 +126,15 @@ test.describe('F8 — admin send-reminder UI (US2 AS6, T113)', () => {
 
     const { rowMenuTrigger, sendReminderButton } = await firstRowReminderControls(page);
 
-    // The button sits immediately before the ⋯ trigger in the row's tab
-    // order, so Shift+Tab from the trigger lands on it — reached by
-    // keyboard alone, without firing the reminder.
+    // The pipeline is an AURA DataTable, an ARIA grid with one tab stop:
+    // the controls inside a cell are tabindex -1 and the keyboard moves cell
+    // by cell. The reminder cell sits just before the ⋯ trigger's, so
+    // Shift+Tab from the trigger lands on that cell and Enter moves into it,
+    // onto the button — reached by keyboard alone, without firing it.
     await rowMenuTrigger.focus();
     await page.keyboard.press('Shift+Tab');
+    await expect(page.getByRole('gridcell').filter({ has: sendReminderButton })).toBeFocused();
+    await page.keyboard.press('Enter');
     await expect(sendReminderButton).toBeFocused();
   });
 });

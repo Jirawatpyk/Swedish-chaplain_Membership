@@ -26,6 +26,7 @@ import { AxeBuilder } from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { signInAsAdmin, signInAsSuperAdmin } from './helpers/admin-session';
+import { openSeedClient } from './helpers/open-seed-client';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -33,6 +34,34 @@ const SUPER_ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
 const SUPER_ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 test.describe.configure({ timeout: 180_000 });
+
+const TENANT_ID = process.env.E2E_TENANT_SLUG ?? process.env.TENANT_SLUG ?? 'swecham';
+
+/**
+ * Deletes the event the R060 test seeds, with the import record and the
+ * registration its CSV adds. Left behind, each run's event sorts first on
+ * /admin/events (it is dated a month ahead) with no attendees, and specs
+ * that open the list's first row read its "—" match rate (49 had piled up
+ * on the dev branch by 2026-11-14).
+ */
+async function deleteSeededEvent(externalId: string): Promise<void> {
+  const client = openSeedClient('e2e eventcreate-a11y R060 cleanup');
+  if (client === null) return;
+  try {
+    await client.sql.begin(async (tx) => {
+      const rows = await tx<{ event_id: string }[]>`
+        SELECT event_id FROM events
+        WHERE tenant_id = ${TENANT_ID} AND external_id = ${externalId}`;
+      const ids = rows.map((r) => r.event_id);
+      if (ids.length === 0) return;
+      await tx`DELETE FROM csv_import_records WHERE tenant_id = ${TENANT_ID} AND event_id = ANY(${ids})`;
+      await tx`DELETE FROM event_registrations WHERE tenant_id = ${TENANT_ID} AND event_id = ANY(${ids})`;
+      await tx`DELETE FROM events WHERE tenant_id = ${TENANT_ID} AND event_id = ANY(${ids})`;
+    });
+  } finally {
+    await client.end();
+  }
+}
 
 async function expectNoAxeViolations(
   page: Page,
@@ -91,6 +120,15 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
     'Set E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD to run admin a11y scans',
   );
+
+  // The R060 test's seeded event, deleted after the test whatever its outcome.
+  let seededExternalId: string | null = null;
+  test.afterEach(async () => {
+    if (seededExternalId === null) return;
+    const externalId = seededExternalId;
+    seededExternalId = null;
+    await deleteSeededEvent(externalId);
+  });
 
   test('admin events list (/admin/events)', async ({ page }) => {
     await signInAsAdmin(page);
@@ -599,6 +637,7 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
     const ts = Date.now();
     const evtExternalId = `a11y-r060-${ts}`;
     const evtName = `A11y R060 ${ts}`;
+    seededExternalId = evtExternalId;
     const seedRes = await page.request.post('/api/admin/events', {
       headers: { Origin: new URL(page.url()).origin },
       data: {
