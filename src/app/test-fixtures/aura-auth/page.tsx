@@ -7,7 +7,7 @@ import { EmailVerificationForm } from '@/components/auth/email-verification-form
 import { InviteRedeemForm } from '@/components/auth/invite-redeem-form';
 import { ResetPasswordForm } from '@/components/auth/reset-password-form';
 
-// Request-time evaluation so the guard runs per request (see button-matrix).
+// Request-time evaluation so the guard runs per request (as the other test fixtures).
 export const dynamic = 'force-dynamic';
 
 /**

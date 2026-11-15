@@ -99,8 +99,8 @@ function buildPipelineHref(
 }
 
 /**
- * Ported from `src/components/ui/tabs.tsx` so the nav renders pixel-identically
- * to the old Base UI tab strip (this component no longer uses the primitive).
+ * Ported from the legacy kit's tabs (deleted at spec 122 US13a) so the nav
+ * renders pixel-identically to the old Base UI tab strip.
  *
  * - `NAV_LIST` = `tabsListVariants` (default variant) resolved for a fixed
  *   horizontal orientation: the `group-data-horizontal/tabs:h-8` track height,

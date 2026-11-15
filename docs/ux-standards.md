@@ -20,12 +20,11 @@ document MUST be updated. If something here is silent, use shadcn/ui defaults.
 
 - **AURA** (`@jirawatpyk/aura-react` + `@jirawatpyk/aura-tokens`, pinned
   exactly) is the component library and design-token source (spec 122). The
-  product is migrating to it module by module; until the Exit phase (US13,
-  at most 10 weeks after the foundation merge) some pages still use the legacy
-  kit in `src/components/ui/` — shadcn/ui on **Base UI** primitives (not Radix).
-- **New or migrated UI uses AURA components only.** The lint ratchet
-  (`@typescript-eslint/no-restricted-imports`, `MIGRATED_PATHS` in
-  `eslint.config.mjs`) fails a migrated path that imports the legacy kit.
+  product moved to it module by module; the legacy kit (`src/components/ui/`,
+  shadcn/ui on Base UI) was deleted at the Exit phase (US13a).
+- **UI uses AURA components only.** The lint ratchet
+  (`@typescript-eslint/no-restricted-imports`, `eslint.ui-ratchet.mjs`) fails
+  any `src/**` or `tests/**` file that imports `@/components/ui`.
 - A behaviour AURA lacks is logged in the AURA handoff doc and bridged by a
   local wrapper marked `// AURA-handoff #NN`, removed when AURA ships it.
 - **Tailwind CSS v4** stays for layout utilities; AURA's utilities carry an
@@ -713,8 +712,7 @@ checklist) or the equivalent checklist for non-auth screens. Reviewers:
 refuse to merge UI PRs that leave boxes unchecked.
 
 For an AURA migration phase (spec 122) the PR additionally shows:
-- zero `@/components/ui` imports in the phase's paths, and those paths added
-  to `MIGRATED_PATHS`;
+- zero `@/components/ui` imports in the phase's paths (global since US13a);
 - screenshots against the phase's canvas boards at 390 and 1280 px, light and
   dark (differences either listed as board proposals or fixed);
 - the local e2e run log (`@a11y`, `@i18n`, the module's specs);

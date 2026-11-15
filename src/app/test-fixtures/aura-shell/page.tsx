@@ -9,7 +9,7 @@ import { StaffShell } from '@/components/layout/staff-shell';
 import { AuraDensity } from '@/components/providers/aura-bridge';
 import { flattenNavItems, staffNavConfig } from '@/config/nav';
 
-// Request-time evaluation so the guard runs per request (see button-matrix).
+// Request-time evaluation so the guard runs per request (as the other test fixtures).
 export const dynamic = 'force-dynamic';
 
 /**
@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic';
  * `Admin-members-mobile`, the portal `Main` boards).
  *
  * Reachable only with `ALLOW_TEST_ROUTES=1` (never set on Vercel), exactly
- * like `/test-fixtures/button-matrix`. Every value below is invented.
+ * like the other `/test-fixtures/*` pages. Every value below is invented.
  */
 export default async function AuraShellPreviewPage({
   searchParams,

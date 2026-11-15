@@ -13,12 +13,13 @@
  *     `AURA app content: <why>`.
  * A label covers the reaches on its own line and the LABEL_WINDOW lines below.
  *
- * Scope: every `MIGRATED_PATHS` entry of `eslint.config.mjs` (so each phase
- * that moves to AURA joins this check in the PR that adds its paths) plus
- * `src/app/globals.css`.
+ * Scope: every `.ts`, `.tsx` and `.css` file under `src/` (since US13, when the
+ * per-phase `MIGRATED_PATHS` list went with the legacy kit). Three reaches the
+ * old list never covered are named in KNOWN_UNLABELLED and carried to US13b;
+ * that list only shrinks.
  *
- * Positive controls: a scan that finds nothing must fail, not pass — every
- * glob must match a file, the tree must contain reaches, the doc must yield
+ * Positive controls: a scan that finds nothing must fail, not pass — the tree
+ * must contain reaches, the doc must yield
  * open items, and a known unlabelled reach must be flagged. Lines are split on
  * `\r?\n` so a Windows (autocrlf) checkout checks the same thing as CI
  * (CLAUDE.md Gotchas, #351).
@@ -26,10 +27,8 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { MIGRATED_PATHS } from '../../../eslint.config.mjs';
 
 const ROOT = join(__dirname, '../../..');
-const EXTRA_FILES = ['src/app/globals.css'];
 const LABEL_WINDOW = 12;
 
 /** Reaches into AURA internals, matched per line with comments blanked out. */
@@ -52,24 +51,6 @@ export interface Reach {
   readonly text: string;
   /** The item a covering label names; null for app content; undefined when unlabelled. */
   readonly item: number | null | undefined;
-}
-
-/** `**`, `*` and `\[` `\]` escapes, as eslint's minimatch reads MIGRATED_PATHS; everything else literal. */
-export function globToRegExp(glob: string): RegExp {
-  let re = '';
-  for (let i = 0; i < glob.length; i += 1) {
-    const c = glob[i] as string;
-    if (c === '\\' && i + 1 < glob.length) {
-      re += `\\${glob[i + 1]}`;
-      i += 1;
-    } else if (c === '*' && glob[i + 1] === '*') {
-      re += '.*';
-      i += 1;
-      if (glob[i + 1] === '/') i += 1;
-    } else if (c === '*') re += '[^/]*';
-    else re += /[.+^${}()|[\]]/.test(c) ? `\\${c}` : c;
-  }
-  return new RegExp(`^${re}$`);
 }
 
 /** Comments replaced by spaces, newlines kept, so line numbers still match the source. */
@@ -131,21 +112,27 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-const globs = MIGRATED_PATHS.map((g: string) => ({ glob: g, re: globToRegExp(g) }));
-const allSrc = walk(join(ROOT, 'src'));
-const scanned = [...new Set([...allSrc.filter((f) => globs.some((g) => g.re.test(f))), ...EXTRA_FILES])].sort();
+/**
+ * Unlabelled reaches outside the pre-US13 MIGRATED_PATHS, found when the scan
+ * went global (US13a). Each needs a label it can truthfully carry (an open
+ * handoff item or app content), which US13b decides; a fixed one leaves the
+ * list, and a new one fails the rule like any other.
+ */
+const KNOWN_UNLABELLED: readonly string[] = [
+  'src/app/(staff)/admin/finance/_components/oldest-overdue-card.tsx:34',
+  'src/lib/filter-sheet-focus.ts:12',
+  'src/lib/filter-sheet-focus.ts:14',
+];
+
+const scanned = walk(join(ROOT, 'src')).sort();
 const openOrNull = openItems(readFileSync(join(ROOT, 'docs/aura-adoption.md'), 'utf8'));
 const open: ReadonlySet<number> = openOrNull ?? new Set();
 const reaches = scanned.flatMap((f) => findReaches(f, readFileSync(join(ROOT, f), 'utf8')));
 
 describe('AURA internal-class ratchet (spec 122 parity rule)', () => {
-  it('every MIGRATED_PATHS glob matches at least one file (a dead glob checks nothing)', () => {
-    expect(globs.length).toBeGreaterThan(50);
-    expect(globs.filter((g) => !allSrc.some((f) => g.re.test(f))).map((g) => g.glob)).toEqual([]);
-  });
-
   it('the scan finds files, reaches and the open-items table (positive control)', () => {
-    expect(scanned.length).toBeGreaterThan(100);
+    expect(scanned.length).toBeGreaterThan(1000);
+    expect(scanned).toContain('src/app/globals.css');
     expect(reaches.length).toBeGreaterThan(0);
     // the table must be found; it may be empty once every item has shipped
     expect(openOrNull).not.toBeNull();
@@ -156,7 +143,13 @@ describe('AURA internal-class ratchet (spec 122 parity rule)', () => {
   });
 
   it('every reach is labelled, and every label names an open item', () => {
-    expect(violations(reaches, open)).toEqual([]);
+    const known = new Set(KNOWN_UNLABELLED);
+    expect(violations(reaches, open).filter((v) => !known.has(v.split(' ')[0] ?? ''))).toEqual([]);
+  });
+
+  it('each KNOWN_UNLABELLED entry is still an unlabelled reach (the list only shrinks)', () => {
+    const now = new Set(violations(reaches, open).map((v) => v.split(' ')[0]));
+    expect(KNOWN_UNLABELLED.filter((k) => !now.has(k))).toEqual([]);
   });
 
   describe('the checker itself', () => {
@@ -201,11 +194,6 @@ describe('AURA internal-class ratchet (spec 122 parity rule)', () => {
       ]) {
         expect(findReaches('f.tsx', `${line}\n`), line).toHaveLength(1);
       }
-    });
-    it('reads escaped brackets in a glob as literal characters', () => {
-      const re = globToRegExp('src/app/(member)/portal/invoices/\\[invoiceId\\]/*.tsx');
-      expect(re.test('src/app/(member)/portal/invoices/[invoiceId]/page.tsx')).toBe(true);
-      expect(re.test('src/app/(member)/portal/invoices/[invoiceId]/_components/x.tsx')).toBe(false);
     });
   });
 });

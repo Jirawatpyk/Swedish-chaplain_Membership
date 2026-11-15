@@ -797,6 +797,7 @@ Boards: `Portal-broadcast-new` (+mobile, -sv, -th), `Admin-broadcast-new` (+mobi
 
 ## Later phases (one PR each; tasks written when the phase starts)
 
+- [x] T1300a [US13] Exit, part 1 (US13a): `src/components/ui` and its tests deleted; `@base-ui/react`, `class-variance-authority`, `cmdk` and `@tanstack/react-table` uninstalled; the old-kit ban global on `src/**` + `tests/**`, `MIGRATED_PATHS` / `NOT_YET_ON_AURA` deleted; the internal-class ratchet scans all of `src/`; the toast facade kept as the one toast import (113 importers, 171 mocks, the `error` default `duration: Infinity`).
 - [ ] T1300 [US13] Exit: delete `src/components/ui`; uninstall `@base-ui/react`, `tw-animate-css`, `shadcn`; drop the TanStack table UI; make the old-kit ban global; remove the token bridge; check the facade decision; confirm the date is within 10 weeks of the US0 merge.
   - DONE — `tests/e2e/invoicing/issue-invoice-zero-rate-a11y.spec.ts` «200% text zoom» on mobile-chrome no longer carries a `test.fail`. Its 67px was the staff top bar not wrapping plus the invoice detail totals behind the dialog (the dialog contributed 0); #530 fixed both, the `test.fail` then reported "Expected to fail, but passed", and it was removed. `invoice-settings-a11y.spec.ts` «200% text zoom» on mobile-chrome passes for the same reason.
 

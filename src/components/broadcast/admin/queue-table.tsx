@@ -8,7 +8,7 @@
  * row virtualization (`@tanstack/react-virtual`, threshold 100 rows,
  * perf.md CHK039) — the queue query pages at 50 rows, so the threshold
  * never fired in production. Task 3 switched the desktop table to the
- * shared `@/components/ui/table.tsx` primitive, matching the
+ * shared table primitive (AURA `Table` since spec 122), matching the
  * members/renewals lists. Task 6 swapped the rendered client component
  * from `QueueTableClient` to `QueueWithBulk` (same props — that wrapper
  * now owns the lifted selection state + the fixed-bottom bulk-action bar).
