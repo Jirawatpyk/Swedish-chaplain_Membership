@@ -41,16 +41,26 @@ vi.mock('@stripe/stripe-js', () => ({
 const confirmPaymentMock = vi.fn();
 const readyHandles: Array<() => void> = [];
 const loadErrorHandles: Array<(e: { error?: { message: string } }) => void> = [];
+/** The `options` each `<Elements>` render received, so a test can read `appearance`. */
+const elementsOptions: Array<{ appearance?: { variables?: Record<string, string> } }> = [];
 
 vi.mock('@stripe/react-stripe-js', async () => {
   const React = await import('react');
   return {
-    Elements: ({ children }: { children: React.ReactNode }) =>
-      React.createElement(
+    Elements: ({
+      children,
+      options,
+    }: {
+      children: React.ReactNode;
+      options?: { appearance?: { variables?: Record<string, string> } };
+    }) => {
+      if (options) elementsOptions.push(options);
+      return React.createElement(
         'div',
         { 'data-testid': 'elements-stub' },
         children,
-      ),
+      );
+    },
     PaymentElement: ({
       onReady,
       onLoadError,
@@ -133,6 +143,44 @@ function renderCardForm(
   );
   return props;
 }
+
+describe('<CardForm> Stripe theme reads AURA tokens (spec 122 US13b)', () => {
+  // jsdom has no canvas, so the hex conversion cannot run here; what this pins
+  // is WHICH custom properties feed the Stripe theme. The shadcn names
+  // (`--primary`, `--background`, …) no longer exist, so reading them would
+  // hand Stripe nothing and the PaymentElement would drop to its own palette.
+  afterEach(() => {
+    vi.restoreAllMocks();
+    elementsOptions.length = 0;
+  });
+
+  it('reads the AURA accent, surface, text and danger tokens for the PaymentElement', () => {
+    const requested: string[] = [];
+    const real = window.getComputedStyle.bind(window);
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) => {
+      const style = real(el, pseudo);
+      if (el !== document.documentElement) return style;
+      return new Proxy(style, {
+        get(target, prop) {
+          if (prop === 'getPropertyValue') {
+            return (name: string) => {
+              requested.push(name);
+              return target.getPropertyValue(name);
+            };
+          }
+          const value = Reflect.get(target, prop) as unknown;
+          return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+        },
+      });
+    });
+    renderCardForm();
+    expect(elementsOptions.length).toBeGreaterThan(0);
+    expect(requested).toEqual(
+      expect.arrayContaining(['--aura-fg-accent', '--aura-bg-surface', '--aura-fg-primary', '--aura-fg-danger']),
+    );
+    expect(requested.filter((n) => !n.startsWith('--aura-'))).toEqual([]);
+  });
+});
 
 describe('<CardForm>', () => {
   let localStorageSetSpy: ReturnType<typeof vi.spyOn>;
