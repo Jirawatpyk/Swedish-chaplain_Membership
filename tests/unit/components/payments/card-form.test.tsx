@@ -154,7 +154,7 @@ describe('<CardForm> Stripe theme reads AURA tokens (spec 122 US13b)', () => {
     elementsOptions.length = 0;
   });
 
-  it('reads the AURA accent, surface, text and danger tokens for the PaymentElement', () => {
+  it('reads the AURA accent, input, text and danger tokens for the PaymentElement', () => {
     const requested: string[] = [];
     const real = window.getComputedStyle.bind(window);
     vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) => {
@@ -176,7 +176,7 @@ describe('<CardForm> Stripe theme reads AURA tokens (spec 122 US13b)', () => {
     renderCardForm();
     expect(elementsOptions.length).toBeGreaterThan(0);
     expect(requested).toEqual(
-      expect.arrayContaining(['--aura-fg-accent', '--aura-bg-surface', '--aura-fg-primary', '--aura-fg-danger']),
+      expect.arrayContaining(['--aura-fg-accent', '--aura-bg-input', '--aura-fg-primary', '--aura-fg-danger']),
     );
     expect(requested.filter((n) => !n.startsWith('--aura-'))).toEqual([]);
   });

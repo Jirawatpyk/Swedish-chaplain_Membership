@@ -36,10 +36,10 @@
  * -----------------
  * Stripe Elements `appearance.theme` switches between 'stripe' (light)
  * and 'night' (dark) based on the resolved `next-themes` value. AURA's
- * accent, surface, text and danger tokens (`--aura-fg-accent`,
- * `--aura-bg-surface`, `--aura-fg-primary`, `--aura-fg-danger`) are
- * propagated so the PaymentElement matches the host drawer chrome (spec 122
- * US13b removed the shadcn names this used to read).
+ * accent, input, text and danger tokens (`--aura-fg-accent`,
+ * `--aura-bg-input`, `--aura-fg-primary`, `--aura-fg-danger`) are
+ * propagated so the card fields look like every other AURA input (spec 122
+ * US13b removed the shadcn names this used to read; R157).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
@@ -378,7 +378,7 @@ export function CardForm({
       const styles = getComputedStyle(document.documentElement);
       const pairs: Array<[keyof typeof resolved | string, string]> = [
         ['colorPrimary', styles.getPropertyValue('--aura-fg-accent').trim()],
-        ['colorBackground', styles.getPropertyValue('--aura-bg-surface').trim()],
+        ['colorBackground', styles.getPropertyValue('--aura-bg-input').trim()],
         ['colorText', styles.getPropertyValue('--aura-fg-primary').trim()],
         ['colorDanger', styles.getPropertyValue('--aura-fg-danger').trim()],
       ];
