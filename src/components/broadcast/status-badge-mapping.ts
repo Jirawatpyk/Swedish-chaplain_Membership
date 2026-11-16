@@ -33,13 +33,13 @@ export interface BroadcastBadgeProps {
 }
 
 const STATUS_STYLES: Record<BroadcastStatus, BroadcastBadgeProps> = {
-  draft: { variant: 'outline', className: 'text-muted-foreground' },
+  draft: { variant: 'outline', className: 'text-[var(--aura-fg-secondary)]' },
   submitted: { variant: 'secondary' },
   approved: { variant: 'default' },
   sending: { variant: 'default', className: 'motion-safe:animate-pulse' },
   sent: { variant: 'default' },
   rejected: { variant: 'destructive' },
-  cancelled: { variant: 'outline', className: 'text-muted-foreground' },
+  cancelled: { variant: 'outline', className: 'text-[var(--aura-fg-secondary)]' },
   failed_to_dispatch: { variant: 'destructive' },
   // F7.1a US1 (Phase 3 B0 — added 2026-05-19). `partially_sent` is
   // non-terminal with admin retry/accept actions; use `destructive`
@@ -63,7 +63,7 @@ const STATUS_STYLES: Record<BroadcastStatus, BroadcastBadgeProps> = {
     className:
       'motion-safe:animate-pulse motion-reduce:ring-2 motion-reduce:ring-white motion-reduce:ring-offset-1',
   },
-  partial_delivery_accepted: { variant: 'secondary', className: 'text-muted-foreground' },
+  partial_delivery_accepted: { variant: 'secondary', className: 'text-[var(--aura-fg-secondary)]' },
   // F119 (0308). Marketing's turn reads like `submitted` (secondary) — the
   // same party is waiting. The member's turn gets plain `outline`: distinct
   // from secondary, not destructive, and not muted like draft/cancelled,
@@ -73,7 +73,7 @@ const STATUS_STYLES: Record<BroadcastStatus, BroadcastBadgeProps> = {
   awaiting_member_approval: { variant: 'outline' },
   changes_requested: { variant: 'secondary' },
   member_approved: { variant: 'secondary' },
-  expired_no_member_response: { variant: 'outline', className: 'text-muted-foreground' },
+  expired_no_member_response: { variant: 'outline', className: 'text-[var(--aura-fg-secondary)]' },
 };
 
 export function getBroadcastStatusBadgeProps(

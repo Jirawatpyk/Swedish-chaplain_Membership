@@ -130,7 +130,7 @@ const BUTTON_STYLE: React.CSSProperties = {
 /**
  * F5 FR-027 — "Pay online" primary button style. Deliberately visually
  * distinct from the download CTA: coloured primary (deep Swedish navy
- * `EMAIL_BRAND_PRIMARY` = the app's `--primary` token value, inlined at
+ * `EMAIL_BRAND_PRIMARY` = the SweCham brand navy (the seed of the app's AURA theme), inlined at
  * render — email clients don't resolve CSS variables). Meets WCAG 2.1 AA
  * contrast ≥ 4.5:1 on `#ffffff` body (white-on-navy ≈ 9.4:1).
  */

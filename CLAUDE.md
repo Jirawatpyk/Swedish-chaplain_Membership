@@ -52,7 +52,7 @@ When the `advisor` tool is available, call it at these three points:
 - **Next.js 16** App Router + Turbopack (`cacheComponents` was tried and reverted — data caching uses `unstable_cache`; see `next.config.ts`) · React 19 · **TypeScript 5.7+ strict** (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) · Node 22 LTS
 - **Neon Postgres + Drizzle ORM** · Upstash Redis (rate limits) — both Singapore
 - **Auth**: custom session-based (Lucia v3 guide pattern), argon2id via `@node-rs/argon2`
-- **UI**: AURA (`@jirawatpyk/aura-react` + `@jirawatpyk/aura-tokens`, exact-pinned) replacing the legacy shadcn/Base UI kit (spec 122) · Tailwind CSS v4 · lucide-react · toasts only via `@/lib/toast`
+- **UI**: AURA (`@jirawatpyk/aura-react` + `@jirawatpyk/aura-tokens`, exact-pinned); the legacy shadcn/Base UI kit and its token bridge were removed (spec 122 US13), so name `--aura-*` tokens directly · Tailwind CSS v4 · lucide-react · toasts only via `@/lib/toast`
 - **i18n**: next-intl — EN default + TH + SV; **TH is mandatory for Thai tax documents**
 - **Forms / validation**: react-hook-form + zod; zod validates every system boundary and `process.env` (`src/lib/env.ts`)
 - **Email**: Resend (transactional) + a separate Resend Broadcasts surface · **Payments**: Stripe Elements / Payment Intents (SAQ-A) + PromptPay, live

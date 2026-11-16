@@ -43,7 +43,7 @@ export default async function AuraShellPreviewPage({
         <main className="flex-1" id="main-content" tabIndex={-1}>
           <DetailContainer>
             <PageHeader title="Hi Anna" subtitle="Here's your membership at a glance." />
-            <p className="text-body text-muted-foreground">Page content.</p>
+            <p className="text-body text-[var(--aura-fg-secondary)]">Page content.</p>
           </DetailContainer>
         </main>
         <MemberBottomTabs currentPath="/portal" />
@@ -67,7 +67,7 @@ export default async function AuraShellPreviewPage({
       >
         <TableContainer>
           <PageHeader title="Members" subtitle="Member companies + primary contacts" />
-          <p className="text-body text-muted-foreground">Page content.</p>
+          <p className="text-body text-[var(--aura-fg-secondary)]">Page content.</p>
         </TableContainer>
         {/* As the admin layout mounts it; search answers come from a mocked route in the preview scripts. */}
         <CommandPalette />

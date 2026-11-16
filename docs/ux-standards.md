@@ -10,7 +10,7 @@ Every feature spec and plan MUST conform to it. Every component MUST be
 implemented to these rules before review sign-off.
 
 If something here conflicts with Principle VI, Principle VI wins and this
-document MUST be updated. If something here is silent, use shadcn/ui defaults.
+document MUST be updated. If something here is silent, use AURA's defaults.
 
 ---
 
@@ -21,12 +21,14 @@ document MUST be updated. If something here is silent, use shadcn/ui defaults.
 - **AURA** (`@jirawatpyk/aura-react` + `@jirawatpyk/aura-tokens`, pinned
   exactly) is the component library and design-token source (spec 122). The
   product moved to it module by module; the legacy kit (`src/components/ui/`,
-  shadcn/ui on Base UI) was deleted at the Exit phase (US13a).
+  shadcn/ui on Base UI) was deleted at the Exit phase (US13a), and its token
+  bridge, `tw-animate-css` and the `shadcn` CSS went at US13b.
 - **UI uses AURA components only.** The lint ratchet
   (`@typescript-eslint/no-restricted-imports`, `eslint.ui-ratchet.mjs`) fails
   any `src/**` or `tests/**` file that imports `@/components/ui`.
 - A behaviour AURA lacks is logged in the AURA handoff doc and bridged by a
-  local wrapper marked `// AURA-handoff #NN`, removed when AURA ships it.
+  local stand-in labelled `stand-in until AURA #NN` (an open item in
+  `docs/aura-adoption.md`), removed when AURA ships it.
 - **Tailwind CSS v4** stays for layout utilities; AURA's utilities carry an
   `aura-` prefix. Layer order and imports: `docs/aura-adoption.md`.
 - **lucide-react** for icons outside AURA components (AURA ships its own).
@@ -34,11 +36,15 @@ document MUST be updated. If something here is silent, use shadcn/ui defaults.
 ### 1.2 Colour tokens
 
 - **AURA tokens** (`--aura-*`, from `@jirawatpyk/aura-tokens/aura.css` plus the
-  generated brand theme `src/styles/aura-theme.css`) are the source. The legacy
-  shadcn variables in `src/app/globals.css` are aliases of AURA tokens (the
-  "token bridge", `docs/aura-adoption.md`) until the Exit phase.
+  generated brand theme `src/styles/aura-theme.css`) are the only colour
+  source. Since US13b removed the token bridge, the shadcn colour names
+  (`text-muted-foreground`, `bg-muted`, …) resolve to nothing and
+  `rounded-sm|md|lg|…` silently fall back to Tailwind's default radii;
+  `tests/unit/architecture/no-bridge-colours.test.ts` fails on any of them in
+  `src/` (`.ts`, `.tsx` and `.css`).
 - **Light mode** and **dark mode** — both MUST be supported from day one.
-- Migrated code uses AURA tokens or `aura-*` utilities, never the legacy
+- Code uses AURA tokens (`text-[var(--aura-fg-secondary)]`,
+  `rounded-[var(--aura-radius-sm)]`) or AURA components, never the legacy
   names.
 - **Contrast**: all text/background combinations MUST meet **WCAG 2.1 AA**
   (4.5:1 for normal text, 3:1 for large text) in BOTH modes — verified by
@@ -95,82 +101,44 @@ document MUST be updated. If something here is silent, use shadcn/ui defaults.
 
 ---
 
-## 2. Loading States — **Skeleton Shimmer** (mandatory)
+## 2. Loading States — **Skeleton Pulse** (mandatory)
 
 Loading is a UX state, not an absence of UX. Every surface that waits on
-data MUST show a **skeleton shimmer** placeholder — never a blank screen,
-never just a spinner.
+data MUST show a **skeleton** placeholder — never a blank screen, never just
+a spinner.
 
 ### 2.1 Skeleton — the canonical pattern
 
-> **Spec 122 (2026-09-26): AURA's pulse skeleton replaces the shimmer below.**
-> From the Shell phase (US1) every skeleton is AURA `<Skeleton>` (a pulse,
-> stopped under `prefers-reduced-motion`); the shimmer CSS is removed then.
-> The rules on shape still apply: a skeleton matches the real content layout
-> (same dimensions, corners and count; CLS = 0). The shimmer description below
-> is kept only until US1 lands.
-
-
-- Use `<Skeleton>` from `src/components/ui/skeleton.tsx` (shadcn-generated,
-  extended with shimmer).
-- The shimmer effect is a linear gradient sliding left-to-right across the
-  placeholder, 1.5 s per cycle, `ease-in-out`.
-- Base colour: `bg-muted`. Shimmer colour: `bg-muted-foreground/10`
-  (light mode) / `bg-muted-foreground/15` (dark mode).
+- The skeleton is **AURA's pulse** (spec 122, 2026-09-26): the
+  `--aura-bg-skeleton` tone with AURA's `aura-pulse` animation, stopped under
+  `prefers-reduced-motion: reduce`. There is no shimmer sweep.
+- Use, in this order:
+  - AURA `TableSkeleton` (`@jirawatpyk/aura-react/server`) for a table, with
+    the real columns, so the grid and phone cards match the loaded table;
+  - the shell `DataTableSkeleton` (`src/components/shell/data-table-skeleton.tsx`)
+    where a list already uses it;
+  - `SkeletonBlock` and its compositions (`CardSkeleton`, `FormSkeleton`,
+    `DetailSkeleton`, `PageSkeletonShell`) from
+    `src/components/shell/page-skeletons.tsx` for everything else. It draws
+    the `.skeleton-pulse` class in `globals.css`, which matches AURA's
+    `.aura-skel`, and keeps `data-slot="skeleton-block"`.
+- Inside a client component, AURA's `Skeleton` (client entry) is an equal
+  choice to `SkeletonBlock`; both draw the same pulse.
+- Never add Tailwind motion utilities on top: the class owns its
+  reduced-motion behaviour.
 - Skeleton shapes MUST **match the real content layout** — same dimensions,
   same rounded corners, same count. A loaded card transitioning to a skeleton
   card should not shift the layout (CLS = 0).
-
-**Tailwind config addition** (`tailwind.config.ts`):
-
-```ts
-// in theme.extend
-keyframes: {
-  shimmer: {
-    '0%':   { transform: 'translateX(-100%)' },
-    '100%': { transform: 'translateX(100%)' },
-  },
-},
-animation: {
-  shimmer: 'shimmer 1.5s ease-in-out infinite',
-},
-```
-
-**Skeleton component** (`src/components/ui/skeleton.tsx`):
-
-```tsx
-import { cn } from '@/lib/cn';
-
-export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn(
-        'relative overflow-hidden rounded-md bg-muted',
-        'motion-safe:after:absolute motion-safe:after:inset-0',
-        'motion-safe:after:-translate-x-full motion-safe:after:animate-shimmer',
-        'motion-safe:after:bg-gradient-to-r',
-        'motion-safe:after:from-transparent motion-safe:after:via-muted-foreground/10 motion-safe:after:to-transparent',
-        'motion-reduce:animate-pulse',
-        className,
-      )}
-      aria-hidden="true"
-      {...props}
-    />
-  );
-}
-```
-
-Note the `motion-safe:` and `motion-reduce:` prefixes — users who set
-`prefers-reduced-motion: reduce` see a gentle `animate-pulse` instead of a
-moving shimmer (Principle VI compliance).
+- `PageSkeletonShell` is the one `role="status"` live region per page;
+  container skeletons carry `aria-busy="true"` only.
 
 ### 2.2 When to use skeletons vs spinners
 
 | Scenario | Use |
 |---|---|
-| Initial page load, data being fetched on the server | Skeleton shimmer |
-| Card or list item being loaded | Skeleton shimmer |
-| Chart / dashboard widget loading | Skeleton shimmer (matching the chart's layout) |
+| Initial page load, data being fetched on the server | Skeleton |
+| Card or list item being loaded | Skeleton |
+| Chart / dashboard widget loading | Skeleton (matching the chart's layout) |
 | Form submission in progress (button pressed) | **Button spinner** (`<Loader2 className="animate-spin" />` inside the button) — not a skeleton |
 | File upload in progress | **Progress bar** |
 | Short sync wait (<100 ms) | No indicator — "instant" feel |
@@ -178,7 +146,7 @@ moving shimmer (Principle VI compliance).
 ### 2.3 Minimum display duration
 
 A skeleton MUST be visible for **at least 300 ms** once shown, even if data
-arrives faster. This prevents the "flash of skeleton" — a sub-100 ms shimmer
+arrives faster. This prevents the "flash of skeleton" — a sub-100 ms pulse
 that makes the UI feel glitchy.
 
 Implementation: use a `useMinDelay(300)` hook that delays hiding the skeleton
@@ -342,7 +310,7 @@ a modal dialog.
 
 ### 6.2 Anatomy
 
-- `<AlertDialog>` (shadcn primitive on Radix).
+- AURA `Dialog` with `role="alertdialog"` (money dialogs use `MoneyDialogFooter`).
 - **Title**: the action in plain language ("Disable account?")
 - **Description**: the consequence ("Jane Admin will be signed out immediately and cannot sign in again until re-enabled.")
 - **Buttons**:
@@ -415,8 +383,10 @@ Power-user shortcuts (per feature) documented in a `?` help dialog.
 
 ### 7.5 Focus visible indicators
 
-- `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`
-  on every interactive element (inherited from shadcn defaults).
+- AURA components draw their own focus ring (`--aura-focus-ring`); a
+  hand-built control uses `focus-visible:outline-2
+  focus-visible:outline-[var(--aura-focus-ring)]`, and anything else falls
+  back to the `*:focus-visible` outline in `globals.css`.
 - The ring colour has ≥ 3:1 contrast against all backgrounds.
 
 ### 7.6 Screen reader landmarks
@@ -522,22 +492,22 @@ in the user menu.
 ### 10.1 Respect reduced motion
 
 - **Every** animation MUST have a `motion-reduce:` fallback.
-- `prefers-reduced-motion: reduce` disables: shimmer, slide-in, scale
-  transitions, toast slide, modal fade. Keeps only: colour transitions,
-  opacity transitions ≤ 200 ms, `animate-pulse` as shimmer fallback.
+- `prefers-reduced-motion: reduce` disables: the skeleton pulse, slide-in,
+  scale transitions, toast slide, modal fade. Keeps only: colour transitions
+  and opacity transitions ≤ 200 ms.
 
 ### 10.2 Durations
 
 - **Micro** (focus, hover): 150 ms
 - **Transition** (modal, drawer): 200 ms
-- **Emphasis** (shimmer cycle): 1 500 ms (but only with `motion-safe`)
+- **Emphasis** (skeleton pulse): AURA's `--aura-duration-pulse` (only with `motion-safe`)
 - Never longer than 300 ms for user-initiated feedback.
 
 ### 10.3 Easing
 
 - `ease-out` for entering (snappy start)
 - `ease-in` for exiting
-- `ease-in-out` for shimmer
+- AURA's `--aura-ease` for the skeleton pulse
 
 ---
 
@@ -655,7 +625,7 @@ auth domain layer, not the UI.
 - [ ] Renders at 1920 × 1080 px without ugly stretching
 - [ ] Passes `@axe-core/playwright` WCAG 2.1 AA automated scan
 - [ ] All user-visible strings have EN + TH + SV translations
-- [ ] Skeleton shimmer shown on first-load data sections (if any)
+- [ ] Skeleton shown on first-load data sections (if any)
 - [ ] Empty state designed and tested (if applicable to the screen)
 - [ ] Error states designed and tested (field, form, page)
 - [ ] Toast shown on success (if non-blocking)
@@ -666,7 +636,7 @@ auth domain layer, not the UI.
 - [ ] Focus-visible ring on every interactive element
 - [ ] Dark mode renders correctly
 - [ ] Screen reader: landmarks announced, errors announced, flow navigable
-- [ ] `prefers-reduced-motion` honoured (shimmer → pulse, transitions → none)
+- [ ] `prefers-reduced-motion` honoured (no pulse, transitions → none)
 - [ ] Session user menu visible on authenticated shells (if applicable)
 - [ ] Idle-warning modal tested (staff shell only for F1)
 
@@ -674,7 +644,7 @@ auth domain layer, not the UI.
 
 ## 16. Component inventory
 
-**AURA (spec 122 — the target).** Build with AURA components: AppShell,
+**AURA (spec 122).** Build with AURA components: AppShell,
 SideNav, Breadcrumb, Pagination, Command, Dialog, Drawer, Menu/DropdownMenu,
 Popover, Tooltip, Tabs, Card, Stat, StatusPill, Badge/Tag, Alert, EmptyState,
 Skeleton, Progress, Stepper, DataTable, FilterBar, TextField, Textarea,
@@ -683,25 +653,11 @@ SegmentedControl, DatePicker/DateRangePicker/Calendar, TimePicker, FileUpload,
 FormErrorSummary, Toaster (via `@/lib/toast`). The migration phases and the
 per-module definition of done are in `docs/aura-adoption.md`.
 
-**Legacy (until US13).** The shadcn install list below describes the old kit
-for pages not yet migrated. Do not add to it.
-
-From the [shadcn CLI](https://ui.shadcn.com), the following primitives are
-installed for F1:
-
-```bash
-pnpm dlx shadcn@latest add \
-  alert alert-dialog avatar badge button card dialog \
-  dropdown-menu form input label select separator \
-  skeleton sonner tabs toast tooltip
-```
-
-Plus custom extensions:
-- `skeleton.tsx` — extended with shimmer animation (§ 2.1)
-- `idle-warning-dialog.tsx` — composed from `alert-dialog` (§ 8.2)
-- `user-menu.tsx` — composed from `dropdown-menu` + `avatar` (§ 8.1)
-- `empty-state.tsx` — composed from `card` + lucide icon (§ 3.1)
-- `skip-to-content.tsx` — plain `<a>` with focus styles (§ 7.1)
+The legacy shadcn kit and its install list were removed at spec 122 US13
+(the kit at US13a, its token bridge, `tw-animate-css` and `shadcn` CSS at
+US13b). App-level compositions that stay: `idle-warning-dialog.tsx` (§ 8.2),
+`user-menu.tsx` (§ 8.1), the shell `empty-state.tsx` (§ 3.1) and
+`skip-to-content.tsx` (§ 7.1), all on AURA.
 
 ---
 

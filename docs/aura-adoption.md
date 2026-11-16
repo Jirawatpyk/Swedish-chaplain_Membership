@@ -20,7 +20,7 @@ The migration was decided on 2026-09-26, with these settled points:
 | Piece | Where | Notes |
 |---|---|---|
 | CSS layer order + imports | head of `src/app/globals.css` | `@layer aura-tokens, theme, base, aura, components, utilities;` then Tailwind, the legacy kit's CSS, AURA tokens, AURA fonts, the prefixed AURA Tailwind theme, the brand theme, and AURA's layered component CSS. Utilities beat AURA components without `!important`. See `specs/122-…/contracts/css-layers.md`. |
-| Token bridge | `:root` / `.dark` in `src/app/globals.css` | Legacy shadcn variables (`--background`, `--primary`, `--border`, `--ring`, `--chart-*`, `--sidebar-*`, `--radius`, …) are aliases of `--aura-*`, so un-migrated pages already look like AURA. A contrast failure is fixed in this mapping, never per page. It is removed at US13. |
+| Token bridge | removed at US13b | Until US13b the legacy shadcn variables (`--background`, `--primary`, `--border`, `--ring`, `--chart-*`, `--sidebar-*`, `--radius`, …) were aliases of `--aura-*` on `:root`. Now `globals.css` defines none of them, its `@theme inline` holds only the fonts, the TSCC gold and two entrance animations (`animate-chamber-fade-in`, `animate-chamber-zoom-in`, which replaced `tw-animate-css`), and code names AURA tokens directly (`text-[var(--aura-fg-secondary)]`, `rounded-[var(--aura-radius-sm)]`). `tests/unit/architecture/no-bridge-colours.test.ts` fails on any shadcn class, `var()`, theme radius or tw-animate utility in `src/`. |
 | Brand theme | `src/styles/aura-theme.css` (generated) | Regenerate with `npx aura-theme --brand "#10487A" --out src/styles/aura-theme.css`. The CLI exits 1 if any contrast check fails. Do not edit by hand. |
 | Fonts | `@jirawatpyk/aura-tokens/aura-fonts.local.css` | Inter + Noto Sans Thai (text and kit headings), Fraunces (AURA display only), JetBrains Mono (mono), served from our own origin. The CSP is unchanged. |
 | Provider | `src/components/providers/aura-bridge.tsx`, mounted in `src/app/layout.tsx` | `locale` (en/th/sv); `calendar` (Buddhist for `th`, else Gregorian — display only); the tenant `timeZone`; `linkComponent` = `next/link`. AURA's built-in labels come in EN/TH/SV. |
@@ -44,7 +44,7 @@ A server component that needs a static AURA component imports it from **`@jirawa
   - AURA's root `formatDate` / `useFormatDate`
   - `cmdk` (uninstalled at US13a; both palettes are AURA `Command`, the pickers AURA `Combobox`)
   - the legacy kit, `@/components/ui` and `@/components/ui/*` (deleted at US13a)
-- Until US13a a per-phase list, `MIGRATED_PATHS`, carried the kit ban path by path; it was deleted when the kit went. The AURA internal-class ratchet now scans all of `src/` (three reaches the old list never covered wait in its `KNOWN_UNLABELLED` for US13b).
+- Until US13a a per-phase list, `MIGRATED_PATHS`, carried the kit ban path by path; it was deleted when the kit went. The AURA internal-class ratchet now scans all of `src/` with no exceptions: the three reaches the old list never covered were labelled at US13b (the finance narrow-grid column drop as app content, `filter-sheet-focus.ts` as a stand-in for #211).
 - `tests/unit/architecture/ui-import-ratchet.test.ts` proves each ban fires (the positive control).
 
 ## Definition of done for a phase (spec FR-010)
@@ -218,7 +218,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
-| — | None open. | — |
+| #211 | `FilterBar`'s phone sheet (`collapseBelow`, #146) gives an app control inside it no way to move focus to the sheet's Done when that control unmounts itself (a list's own Clear button). AURA's own Clear all does this internally. Ask: a `focusDone()` handle, or an `onClearAll` that the bar's own Clear can stand behind (handoff addendum 111) | `src/lib/filter-sheet-focus.ts` finds the sheet by `.aura-filterbar__sheet` and its Done by `.aura-dialog__foot button` |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

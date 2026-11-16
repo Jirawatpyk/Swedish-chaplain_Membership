@@ -148,7 +148,7 @@ export function ErrorCardActions({
         <span id={referenceId} className="sr-only">
           {referenceLabel}
         </span>
-        <code aria-describedby={referenceId} className="text-xs text-muted-foreground font-mono">
+        <code aria-describedby={referenceId} className="text-xs text-[var(--aura-fg-secondary)] font-mono">
           {correlationId}
         </code>
       </div>

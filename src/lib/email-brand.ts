@@ -1,6 +1,6 @@
 /**
- * Brand primary colour for transactional + broadcast emails — the app's
- * `--primary` token value (deep Swedish navy). Kept as an inline literal
+ * Brand primary colour for transactional + broadcast emails — the SweCham
+ * brand navy. Kept as an inline literal
  * because email clients don't resolve CSS variables; it is inlined into the
  * rendered HTML at build/render time.
  *
@@ -12,7 +12,7 @@
  *
  * This hex is the SweCham brand navy — the seed of the app's AURA brand theme
  * (`npx aura-theme --brand "#10487A"`, `src/styles/aura-theme.css`). Since
- * spec 122 the in-app `--primary` is AURA's accent derived from it, so emails
+ * spec 122 the in-app accent (`--aura-fg-accent`) is derived from it, so emails
  * keep the literal brand colour. Email clients can't resolve CSS variables OR
  * `oklch()`, so it stays a static hex (S15 speckit-review).
  */

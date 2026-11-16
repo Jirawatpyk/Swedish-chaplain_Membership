@@ -39,7 +39,7 @@ export function CreditNotesTable({ rows }: { readonly rows: readonly ListCreditN
           <span className="inline-flex flex-wrap items-center gap-[var(--aura-space-2)]">
             <Link
               href={`/admin/credit-notes/${r.creditNoteId}`}
-              className="rounded-sm font-mono text-xs font-medium text-[var(--aura-fg-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
+              className="rounded-[var(--aura-radius-sm)] font-mono text-xs font-medium text-[var(--aura-fg-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
             >
               {r.documentNumberRaw}
             </Link>

@@ -68,7 +68,7 @@ const nextConfig: NextConfig = {
     ];
   },
   experimental: {
-    // Enterprise UX § 2.1 — skeleton shimmer relies on CSS animations.
+    // Enterprise UX § 2.1 — the skeleton pulse relies on CSS animations.
     //
     // Audit 2026-04-26 round-2 #4 REVERTED via self-review #R2-A3:
     // attempted `cacheComponents: true` + `'use cache'` directive

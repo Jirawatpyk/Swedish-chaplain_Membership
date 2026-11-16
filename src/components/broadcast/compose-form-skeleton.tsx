@@ -98,7 +98,7 @@ export function ComposeFormSkeleton({ variant, imageControls }: ComposeFormSkele
                 44 px controls over the canvas. */}
             <div className="space-y-2">
               <Skeleton className="h-4 w-20" />
-              <div className="overflow-hidden rounded-md border border-[var(--aura-border-default)]">
+              <div className="overflow-hidden rounded-[var(--aura-radius-sm)] border border-[var(--aura-border-default)]">
                 <div className="flex flex-wrap items-center gap-0.5 border-b border-[var(--aura-border-default)] p-1">
                   {Array.from({ length: toolbarControls }).map((_, i) => (
                     <Skeleton

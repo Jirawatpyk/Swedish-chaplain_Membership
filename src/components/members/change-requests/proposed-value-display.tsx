@@ -34,14 +34,14 @@ export interface ProposedValueDisplayProps {
 
 export function ProposedValueDisplay({ fieldKey, value, inline = false }: ProposedValueDisplayProps) {
   const t = useTranslations('portal.changeRequests.diff');
-  if (value === null || value === '') return <span className="text-muted-foreground">{t('empty')}</span>;
+  if (value === null || value === '') return <span className="text-[var(--aura-fg-secondary)]">{t('empty')}</span>;
   // a STRING under an address key is the erasure sentinel (FR-030) — text, never "(empty)"
   if (typeof value === 'string') return <span className="break-words">{value}</span>;
   if (isAddress(value) || isAddressGroupKey(fieldKey)) {
     const obj = (isAddress(value) ? value : {}) as Readonly<Record<string, string | null>>;
     const lines = fieldKey === 'billing_address' ? BILLING_ADDRESS_LINES : REGISTERED_ADDRESS_LINES;
     const present = lines.filter((line) => (obj[line] ?? null) !== null && obj[line] !== '');
-    if (present.length === 0) return <span className="text-muted-foreground">{t('empty')}</span>;
+    if (present.length === 0) return <span className="text-[var(--aura-fg-secondary)]">{t('empty')}</span>;
     if (inline) {
       // the postal code follows its line with a space ("Bangkok 10500"), as the profile prints it
       const text = present.reduce(
@@ -54,7 +54,7 @@ export function ProposedValueDisplay({ fieldKey, value, inline = false }: Propos
       <dl className="m-0 space-y-0.5">
         {present.map((line) => (
           <div key={line} className="flex gap-2">
-            <dt className="shrink-0 text-caption text-muted-foreground">{t(`lines.${line}`)}</dt>
+            <dt className="shrink-0 text-caption text-[var(--aura-fg-secondary)]">{t(`lines.${line}`)}</dt>
             <dd className="m-0 break-words">{obj[line]}</dd>
           </div>
         ))}

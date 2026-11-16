@@ -55,7 +55,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 /**
  * The failed-read state (a pending-read or profile fault). `role="alert"` so
- * assistive tech announces it, and NOT `text-muted-foreground` — muted is the
+ * assistive tech announces it, and NOT `text-[var(--aura-fg-secondary)]` — muted is the
  * repo's EMPTY-state sentinel, and this is an error (round 7, silent-failure
  * N4). A retry is a reload (server component), so the copy says so.
  */

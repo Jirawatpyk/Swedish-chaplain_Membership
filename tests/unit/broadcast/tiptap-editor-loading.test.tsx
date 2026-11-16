@@ -3,7 +3,7 @@
  * between the editor chunk arriving and Tiptap creating its editor, the
  * editor drew a static grey box. It now shows the same pulse skeleton the
  * loader shows while the chunk loads (`TiptapLoadingSkeleton`, AURA pulse via
- * `skeleton-shimmer`, ux-standards § 2.1), so loading reads as one state.
+ * `skeleton-pulse`, ux-standards § 2.1), so loading reads as one state.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -31,6 +31,6 @@ describe('the editor before Tiptap is ready', () => {
     const status = screen.getByTestId('tiptap-loading');
     expect(status).toHaveAttribute('role', 'status');
     expect(status).toHaveAccessibleName(enMessages.shell.editorLoading);
-    expect(status.querySelectorAll('.skeleton-shimmer').length).toBeGreaterThan(0);
+    expect(status.querySelectorAll('.skeleton-pulse').length).toBeGreaterThan(0);
   });
 });

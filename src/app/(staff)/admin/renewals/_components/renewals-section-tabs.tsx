@@ -113,7 +113,7 @@ function buildPipelineHref(
  *   variant's always-`opacity-0` `after:` indicator).
  * - `NAV_LINK_INACTIVE` / `NAV_LINK_ACTIVE` — the primitive drove the pill from
  *   its `data-active` attribute (`data-active:text-foreground` outranking the
- *   base `text-muted-foreground` via selector specificity). A conditional class
+ *   base `text-muted-foreground` via selector specificity; the old kit's names). A conditional class
  *   toggle has no such specificity edge, so the two text colours are made
  *   mutually exclusive here to guarantee the identical result regardless of
  *   Tailwind's utility sort order.

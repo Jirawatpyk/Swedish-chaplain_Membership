@@ -201,7 +201,7 @@ export type InvoicesTableRow = {
 // faux-oblique bends "ร่าง"'s marks) and never muted (that colour is this
 // table's "empty" sentinel), so it reads as a link, not a document number.
 const numberLinkBase =
-  'inline-flex min-h-6 items-center rounded-sm text-[var(--aura-fg-primary)] underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]';
+  'inline-flex min-h-6 items-center rounded-[var(--aura-radius-sm)] text-[var(--aura-fg-primary)] underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]';
 const subLine = 'text-xs text-[var(--aura-fg-secondary)]';
 const dash = <span className="text-sm text-[var(--aura-fg-tertiary)]">—</span>;
 
@@ -462,7 +462,7 @@ export function InvoicesTable({
           <Link
             href={`/admin/invoices/${r.invoiceId}`}
             aria-label={t('actions.receiptRenderFailedAria', { number: r.documentNumber })}
-            className="inline-flex min-h-6 items-center gap-1 rounded-sm text-xs font-medium text-[var(--aura-fg-danger)] underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
+            className="inline-flex min-h-6 items-center gap-1 rounded-[var(--aura-radius-sm)] text-xs font-medium text-[var(--aura-fg-danger)] underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
             {...(withTestIds ? { 'data-testid': 'row-receipt-render-failed' } : {})}
           >
             <Icon name="circle-alert" size={14} />
@@ -520,7 +520,7 @@ export function InvoicesTable({
                       count: r.creditNoteCount,
                       amount: formatSatangAmount(r.creditedTotalSatang),
                     })}
-                    className="rounded-sm text-[var(--aura-fg-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
+                    className="rounded-[var(--aura-radius-sm)] text-[var(--aura-fg-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
                   >
                     {t('creditNoteCount', { count: r.creditNoteCount })}
                   </Link>
@@ -553,7 +553,7 @@ export function InvoicesTable({
               <Link
                 href={`/admin/members/${r.memberId}`}
                 title={r.memberName}
-                className="line-clamp-2 max-w-[32ch] break-words rounded-sm focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
+                className="line-clamp-2 max-w-[32ch] break-words rounded-[var(--aura-radius-sm)] focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
               >
                 {r.memberName}
               </Link>

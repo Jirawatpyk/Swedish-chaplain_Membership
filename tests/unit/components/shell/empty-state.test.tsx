@@ -24,7 +24,7 @@ describe('<EmptyState> icon colour', () => {
     const icon = container.querySelector('svg[aria-hidden="true"]');
     // AURA #86 (5.14): AURA's own EmptyState wraps a custom icon in its sized span
     expect(icon?.closest('.aura-empty__icon')).not.toBeNull();
-    expect(icon).not.toHaveClass('text-success');
+    expect(icon).not.toHaveClass('text-[var(--aura-fg-positive)]');
   });
 
   it('overrides the icon colour via iconClassName, inside AURA\'s sized icon span', () => {
@@ -32,11 +32,11 @@ describe('<EmptyState> icon colour', () => {
       <EmptyState
         icon={ShieldCheck}
         title="No one at risk"
-        iconClassName="text-success"
+        iconClassName="text-[var(--aura-fg-positive)]"
       />,
     );
     const icon = container.querySelector('svg[aria-hidden="true"]');
-    expect(icon).toHaveClass('text-success');
+    expect(icon).toHaveClass('text-[var(--aura-fg-positive)]');
     expect(icon?.parentElement).toHaveClass('aura-icon--custom');
   });
 });

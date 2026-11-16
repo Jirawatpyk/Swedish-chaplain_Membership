@@ -7,7 +7,6 @@ import {
   FormSkeleton,
   PageSkeletonShell,
   SkeletonBlock,
-  TableSkeleton,
 } from '@/components/shell/page-skeletons';
 
 /**
@@ -17,17 +16,17 @@ import {
  */
 
 describe('SkeletonBlock', () => {
-  it('applies the skeleton-shimmer utility by default', () => {
+  it('applies the skeleton-pulse utility by default', () => {
     const { container } = render(<SkeletonBlock />);
     const el = container.querySelector('[data-slot="skeleton-block"]');
     expect(el).not.toBeNull();
-    expect(el!.className).toContain('skeleton-shimmer');
+    expect(el!.className).toContain('skeleton-pulse');
   });
 
-  it('merges caller className without dropping shimmer', () => {
+  it('merges caller className without dropping the pulse', () => {
     const { container } = render(<SkeletonBlock className="h-4 w-24" />);
     const el = container.querySelector('[data-slot="skeleton-block"]');
-    expect(el!.className).toContain('skeleton-shimmer');
+    expect(el!.className).toContain('skeleton-pulse');
     expect(el!.className).toContain('h-4');
     expect(el!.className).toContain('w-24');
   });
@@ -124,25 +123,6 @@ describe('FormSkeleton', () => {
   });
 });
 
-describe('TableSkeleton', () => {
-  it('renders header + rows, each with `columns` cells', () => {
-    const { container } = render(<TableSkeleton rows={3} columns={4} />);
-    const root = container.querySelector('[data-slot="table-skeleton"]');
-    // (header 4) + (rows 3 × cols 4) = 16 blocks minimum.
-    expect(
-      root!.querySelectorAll('[data-slot="skeleton-block"]').length,
-    ).toBeGreaterThanOrEqual(16);
-  });
-
-  it('marks the skeleton as aria-busy but not role=status', () => {
-    // See CardSkeleton's a11y test — PageSkeletonShell owns the live
-    // region; nested primitives only carry aria-busy.
-    const { container } = render(<TableSkeleton />);
-    const root = container.querySelector('[data-slot="table-skeleton"]');
-    expect(root!.getAttribute('role')).toBeNull();
-    expect(root!.getAttribute('aria-busy')).toBe('true');
-  });
-});
 
 describe('DetailSkeleton', () => {
   it('renders one label/value pair per item', () => {

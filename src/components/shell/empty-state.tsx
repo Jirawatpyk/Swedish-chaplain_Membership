@@ -27,7 +27,7 @@ export interface EmptyStateProps {
    * Fix round 1 M-3 — override the icon's colour class. Defaults to
    * AURA's empty-state icon colour (unchanged for every existing consumer). Lets a
    * deliberate positive-affirmation empty state (e.g. the at-risk widget's
-   * "no one at risk" `ShieldCheck`) keep its `text-success` green after
+   * "no one at risk" `ShieldCheck`) keep its positive green (an AURA token class) after
    * routing through this shared primitive.
    */
   readonly iconClassName?: string;

@@ -64,14 +64,14 @@ describe('<PaySheetSkeleton>', () => {
     expect(skeletons?.length).toBe(4);
   });
 
-  it('relies on the shared <Skeleton> primitive (.skeleton-shimmer class) — does not add redundant motion utilities', () => {
+  it('relies on the shared <Skeleton> primitive (.skeleton-pulse class) — does not add redundant motion utilities', () => {
     const { container } = renderWithIntl();
     const skeletons = container.querySelectorAll('[data-slot="skeleton-block"]');
     // Contract § 2.2 rule 1: motion-reduce fallback is handled inside the
-    // primitive via the .skeleton-shimmer CSS class. A wrapper layering
+    // primitive via the .skeleton-pulse CSS class. A wrapper layering
     // `motion-reduce:animate-pulse` would be a spec violation.
     skeletons.forEach((el) => {
-      expect(el.className).toMatch(/skeleton-shimmer/);
+      expect(el.className).toMatch(/skeleton-pulse/);
       expect(el.className).not.toMatch(/motion-reduce:/);
     });
   });

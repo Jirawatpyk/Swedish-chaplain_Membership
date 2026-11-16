@@ -23,7 +23,7 @@
  * existing consumer) adds a `'muted'` variant for auxiliary, non-blocking
  * surfaces where the loud red `role="alert"` + `aria-live="assertive"` skin is
  * disproportionate (e.g. one KPI band failing on an otherwise-working page).
- * `'muted'` swaps the destructive red for `text-muted-foreground` and the
+ * `'muted'` swaps the destructive red for `text-[var(--aura-fg-secondary)]` and the
  * announcement to `role="status"` / `aria-live="polite"` — a proportional,
  * non-interrupting "couldn't load" notice instead of a page-level alarm.
  */

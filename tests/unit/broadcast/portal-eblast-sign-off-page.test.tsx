@@ -369,7 +369,7 @@ describe('F119 UX review — the member sign-off page around the decision', () =
     const at = html.indexOf('data-testid="eblast-proposed-send-at"');
     const dd = html.slice(html.lastIndexOf('<dd', at), at);
     expect(dd).not.toContain('--aura-fg-secondary');
-    expect(dd).not.toContain('text-muted-foreground');
+    expect(dd).not.toContain('aura-fg-secondary');
   });
 
   // Spec 122 US12c-2 — the stage banner is AURA's info alert; the stage an AURA

@@ -64,7 +64,7 @@ export function ResultCountLabel({
             : '';
   if (text === '') return null;
   return (
-    <p aria-hidden="true" className="text-sm text-muted-foreground tabular-nums">
+    <p aria-hidden="true" className="text-sm text-[var(--aura-fg-secondary)] tabular-nums">
       {text}
     </p>
   );

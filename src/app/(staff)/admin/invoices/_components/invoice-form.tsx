@@ -453,7 +453,7 @@ export function CreateDraftForm({
               </div>
               <Link
                 href={`/admin/members/${memberId}/edit`}
-                className="inline-flex min-h-6 items-center rounded-sm text-sm text-[var(--aura-fg-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
+                className="inline-flex min-h-6 items-center rounded-[var(--aura-radius-sm)] text-sm text-[var(--aura-fg-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aura-focus-ring)]"
               >
                 {tPlan('changePlan')}
               </Link>

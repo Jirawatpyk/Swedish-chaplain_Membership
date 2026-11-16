@@ -31,7 +31,7 @@ export function ReceiptFailedSupportHint({
     <span
       data-testid="receipt-failed-support"
       className={cn(
-        'inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground',
+        'inline-flex min-h-11 items-center gap-1 text-sm text-[var(--aura-fg-secondary)]',
         className,
       )}
     >

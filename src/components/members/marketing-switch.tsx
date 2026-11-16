@@ -234,7 +234,7 @@ export function MarketingSwitch({
   // switch column a blank reads as "failed to load". A short line says why.
   if (!staffCanAct) {
     return (
-      <span className="text-xs text-muted-foreground" data-marketing-state={state}>
+      <span className="text-xs text-[var(--aura-fg-secondary)]" data-marketing-state={state}>
         {state === 'unavailable' ? t('readOnly.unavailable') : t('readOnly.contact')}
       </span>
     );

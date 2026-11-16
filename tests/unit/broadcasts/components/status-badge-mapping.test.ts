@@ -57,16 +57,16 @@ describe('getBroadcastStatusBadgeProps', () => {
     expect(className).toContain('motion-safe:animate-pulse');
   });
 
-  it('dims draft + cancelled with text-muted-foreground', () => {
+  it('dims draft + cancelled with AURA secondary text (US13b: no bridge name)', () => {
     expect(getBroadcastStatusBadgeProps('draft').className).toContain(
-      'text-muted-foreground',
+      'text-[var(--aura-fg-secondary)]',
     );
     expect(getBroadcastStatusBadgeProps('cancelled').className).toContain(
-      'text-muted-foreground',
+      'text-[var(--aura-fg-secondary)]',
     );
     expect(
       getBroadcastStatusBadgeProps('expired_no_member_response').className,
-    ).toContain('text-muted-foreground');
+    ).toContain('text-[var(--aura-fg-secondary)]');
   });
 
   it('does not mute the member’s turn — it is live work, unlike draft/cancelled', () => {
