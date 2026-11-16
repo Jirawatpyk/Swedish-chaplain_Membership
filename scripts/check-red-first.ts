@@ -22,7 +22,12 @@ import { findRedFirstViolations, type BranchCommit } from './lib/red-first';
  * branch's commits from `main`, so an entry only matters while its branch is
  * open; delete it once that PR merges.
  */
-const ALLOW: ReadonlyArray<{ readonly sha: string; readonly why: string }> = [];
+const ALLOW: ReadonlyArray<{ readonly sha: string; readonly why: string }> = [
+  {
+    sha: '233fb178c',
+    why: 'task #94: the only tenants/domain change is a comment naming the renamed js-joda guard (iana-timezone.ts:20); the guard itself went RED in d0b1b7673',
+  },
+];
 
 function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).replace(/\r/g, '');
