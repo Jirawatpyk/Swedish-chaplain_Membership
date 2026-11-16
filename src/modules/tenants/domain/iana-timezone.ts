@@ -17,7 +17,7 @@
  * `import '@js-joda/timezone'` is an un-tree-shakeable side effect that put
  * ~900 KB of tz data into every one of those client bundles. Server code
  * that does zone arithmetic imports js-joda + its tz data itself.
- * Guarded by `tests/unit/architecture/member-form-no-js-joda.test.ts`.
+ * Guarded by `tests/unit/architecture/client-no-js-joda.test.ts`.
  */
 import { err, ok, type Result } from '@/lib/result';
 
