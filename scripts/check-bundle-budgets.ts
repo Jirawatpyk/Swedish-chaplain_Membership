@@ -147,6 +147,13 @@
  *   time (money screens; a regression here was previously unwatched):
  *     /admin/invoices                     853.8 KB measured → ≤  960 KB
  *     /admin/invoices/new                 833.6 KB measured → ≤  940 KB
+ *   Task #94 (2026-11-16) — `/admin/invoices/new` re-baselined after
+ *   js-joda (about 1.1 MB, core + the IANA database) left its client graph:
+ *   1866.3 KB → 961.8 KB measured (relay R158) → ≤ 1070 KB (was 940). The
+ *   ~128 KB over the US8a 833.6 KB baseline is the features added since
+ *   (event-fee tab, server member/event search with zod-checked responses,
+ *   the as-paid confirm dialog). `client-no-js-joda.test.ts` keeps js-joda
+ *   out of every client graph.
  *
  *   Spec 122 US8b (AURA invoice detail, void, new credit note, 2026-10-03,
  *   AURA 5.29.0) — budgeted for the first time on the branch build:
@@ -283,7 +290,8 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/admin/plans/clone', maxKb: 1070 },
   // --- Spec 122 US8a invoicing (AURA) — see docblock --------------------
   { route: '/admin/invoices', maxKb: 960 },
-  { route: '/admin/invoices/new', maxKb: 940 },
+  // Task #94 re-baseline (961.8 KB after js-joda left the route) — see docblock.
+  { route: '/admin/invoices/new', maxKb: 1070 },
   // --- 124 invoice dashboard ---------------------------------------------
   // 848.5 KB measured (23 Oct 2026); recharts stays behind the trend
   // canvas's `next/dynamic`, as on /admin.
