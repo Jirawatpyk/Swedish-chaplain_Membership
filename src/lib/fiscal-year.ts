@@ -24,6 +24,12 @@
  * time. For SweCham, start month = 1 (January), so FY == CE year.
  * Other tenants (e.g. April-start fiscal year) are supported by passing
  * a different `startMonth`.
+ *
+ * Server code only: importing this file from anything a `'use client'`
+ * module reaches ships about 1.1 MB of js-joda (the IANA database) to the
+ * browser. Client code uses `bangkokDateOnly` (`@/lib/dates`) or
+ * `bangkokTodayIso` (`@/lib/bangkok-today`); the app-wide guard is
+ * `tests/unit/architecture/client-no-js-joda.test.ts` (task #94).
  */
 
 import '@js-joda/timezone';

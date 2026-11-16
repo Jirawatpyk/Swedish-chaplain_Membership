@@ -1,57 +1,55 @@
 /**
- * Bundle guard — no broadcast client component may reach `@js-joda/*`.
+ * Bundle guard — no `'use client'` module anywhere in `src/` may reach
+ * `@js-joda/*`.
  *
  * `@js-joda/timezone` is imported for its side effect (it registers the full
  * IANA tz database), so a bundler cannot tree-shake it: ONE value import on a
- * client path ships ~900 KB of ZoneRules data to the browser. On 2026-09-26
- * that 902 KB chunk sat on `/admin/broadcasts`, `/admin/broadcasts/new`,
- * `/admin/broadcasts/[id]` and `/portal/broadcasts/new`, via two client-side
- * Bangkok wall-time helpers:
+ * client path ships about 1.1 MB (core + timezone) to the browser. It has
+ * leaked three times, each fixed with a guard scoped to that area only:
  *
- *   schedule-picker / schedule-confirm-dialog / bulk-approve-confirm-dialog
- *     → components/broadcast/bangkok-datetime.ts → '@js-joda/timezone'
- *   admin/approve-dialog.tsx (inline copies)     → '@js-joda/timezone'
+ *   2026-07-09 PR #173  — `bangkokDateOnly` (`src/lib/dates.ts`) created;
+ *   2026-09-26          — broadcasts (`bangkok-datetime.ts`, approve dialog);
+ *   member form         — the tenants barrel's IANA timezone check;
+ *   2026-11-05 #732     — `/admin/invoices/new` 834 → 1866 KB, via
+ *                         use-event-search → event-options → fiscal-year
+ *                         (task #94).
  *
- * Both are now `Intl`-based. Server-side js-joda (use-cases, ports) is
- * untouched — only files reachable from a `'use client'` module ship to the
- * browser, so those are the scan roots.
+ * This one guard replaces the two scoped ones (broadcast-client-no-js-joda,
+ * member-form-no-js-joda): every `'use client'` module under `src/` is a scan
+ * root. Server-side js-joda (use-cases, ports, page loaders) is untouched —
+ * only files reachable from a client module ship to the browser.
  *
  * The walk follows static value imports and `export … from` re-exports
  * (`import type` / `export type` are erased at build and skipped), resolving
- * `@/` and relative specifiers to files under `src/`. Same matcher as
- * `member-form-no-js-joda.test.ts`.
+ * `@/` and relative specifiers to files under `src/`.
  *
  * Positive controls, so the guard cannot pass vacuously:
  *   1. at least MIN_CLIENT_ROOTS `'use client'` roots are discovered;
- *   2. the walk reaches both helper files that used to leak;
+ *   2. the walk reaches every file that used to leak;
  *   3. the SAME matcher must detect a js-joda import in fixture strings.
  */
 import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { stripCommentsPreserveLines } from '../../../scripts/lib/source-scan';
 
 const ROOT = resolve(__dirname, '../../..');
 
-/** Trees whose `'use client'` modules are scan roots. */
-const ROOT_TREES = ['src/components/broadcast', 'src/app'] as const;
-
-/** Under `src/app`, only broadcast routes are in scope. */
-function inScope(rel: string): boolean {
-  return rel.startsWith('src/components/broadcast/') || /\/broadcasts\//.test(rel);
-}
 
 /** Must be reached — proves the walk covers the files that leaked. */
 const MUST_REACH = [
   'src/components/broadcast/bangkok-datetime.ts',
   'src/components/broadcast/admin/approve-dialog.tsx',
+  'src/modules/tenants/domain/iana-timezone.ts',
+  'src/app/(staff)/admin/invoices/new/_lib/event-options.ts',
 ] as const;
 
 /**
- * 61 broadcast `'use client'` modules on 2026-09-26. The floor sits under,
- * so a broken discovery fails loudly while ordinary refactors do not churn
- * the number.
+ * About 444 `'use client'` modules under `src/` on 2026-11-16. The floor sits
+ * under, so a broken discovery fails loudly while ordinary refactors do not
+ * churn the number.
  */
-const MIN_CLIENT_ROOTS = 50;
+const MIN_CLIENT_ROOTS = 400;
 
 const SOURCE_EXT = /\.(ts|tsx)$/;
 
@@ -67,15 +65,17 @@ function walkTree(dir: string, out: string[] = []): string[] {
 /** `'use client'` directive as the first statement (after comments). */
 const USE_CLIENT = /^(?:\s|\/\/[^\r\n]*|\/\*[\s\S]*?\*\/)*(['"])use client\1/;
 
-/** Strip block + line comments so prose mentioning an import is not a hit. */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`\\])\/\/[^\r\n]*/g, '$1');
-}
+/**
+ * Comments are stripped with the repo's string-aware scanner, so a `/**` glob
+ * inside a line comment or a string cannot open a phantom block comment that
+ * hides the imports after it.
+ */
+const stripComments = stripCommentsPreserveLines;
 
 /**
  * Value-import specifiers of a module: `import … from 'x'`, bare
- * `import 'x'` (side-effect) and `export … from 'x'`. Type-only forms are
- * skipped.
+ * `import 'x'` (side-effect), `export … from 'x'` and dynamic `import('x')`.
+ * Type-only forms are skipped.
  */
 function valueImportSpecifiers(source: string): string[] {
   const code = stripComments(source);
@@ -87,6 +87,10 @@ function valueImportSpecifiers(source: string): string[] {
   }
   const bareRe = /(^|[;\r\n])\s*import\s*(['"])([^'"]+)\2/g;
   for (const m of code.matchAll(bareRe)) out.push(m[3]!);
+  // Dynamic `import('x')`, including `next/dynamic(() => import('x'))`: a
+  // lazy chunk still ships to the browser.
+  const dynamicRe = /\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/g;
+  for (const m of code.matchAll(dynamicRe)) out.push(m[2]!);
   return out;
 }
 
@@ -111,6 +115,17 @@ function resolveSpecifier(specifier: string, fromRel: string): string | null {
 
 type Hit = { file: string; specifier: string; chain: string[] };
 
+/** Each file is read once: the directive pass and the walk share it. */
+const sourceCache = new Map<string, string>();
+function readSource(rel: string): string {
+  let source = sourceCache.get(rel);
+  if (source === undefined) {
+    source = readFileSync(resolve(ROOT, rel), 'utf8');
+    sourceCache.set(rel, source);
+  }
+  return source;
+}
+
 function walkGraph(entries: readonly string[]): { visited: Set<string>; hits: Hit[] } {
   const parent = new Map<string, string | null>();
   const queue: string[] = [];
@@ -119,9 +134,9 @@ function walkGraph(entries: readonly string[]): { visited: Set<string>; hits: Hi
     queue.push(e);
   }
   const hits: Hit[] = [];
-  while (queue.length > 0) {
-    const file = queue.shift()!;
-    const source = readFileSync(resolve(ROOT, file), 'utf8');
+  for (let i = 0; i < queue.length; i++) {
+    const file = queue[i]!;
+    const source = readSource(file);
     for (const specifier of valueImportSpecifiers(source)) {
       if (isJsJoda(specifier)) {
         const chain: string[] = [];
@@ -139,15 +154,16 @@ function walkGraph(entries: readonly string[]): { visited: Set<string>; hits: Hi
   return { visited: new Set(parent.keys()), hits };
 }
 
-const clientRoots = [...new Set(ROOT_TREES.flatMap((tree) => walkTree(resolve(ROOT, tree))))]
+/** Every `'use client'` module under `src/` is a scan root. */
+const clientRoots = walkTree(resolve(ROOT, 'src'))
   .map((abs) => relative(ROOT, abs).split('\\').join('/'))
-  .filter((rel) => inScope(rel) && USE_CLIENT.test(readFileSync(resolve(ROOT, rel), 'utf8')))
+  .filter((rel) => USE_CLIENT.test(readSource(rel)))
   .sort();
 
 const { visited, hits } = walkGraph(clientRoots);
 
-describe('broadcast client graph carries no @js-joda (bundle budget)', () => {
-  it(`positive control: at least ${MIN_CLIENT_ROOTS} broadcast 'use client' roots are discovered`, () => {
+describe('the client graph carries no @js-joda (bundle budget)', () => {
+  it(`positive control: at least ${MIN_CLIENT_ROOTS} 'use client' roots are discovered under src`, () => {
     expect(clientRoots.length, clientRoots.join('\n')).toBeGreaterThanOrEqual(MIN_CLIENT_ROOTS);
   });
 
@@ -171,9 +187,13 @@ describe('broadcast client graph carries no @js-joda (bundle budget)', () => {
     expect(detect("import type { ZoneId } from '@js-joda/core';")).toBe(false);
     expect(detect("// import { ZoneId } from '@js-joda/core';\nexport const x = 1;")).toBe(false);
     expect(detect("/* import '@js-joda/timezone' */ export const x = 1;")).toBe(false);
+    expect(detect("const m = await import('@js-joda/timezone');")).toBe(true);
+    // A `/**` glob inside a line comment must not hide the import after it.
+    expect(detect("// see `src/**` for more\nimport '@js-joda/timezone';\n/* later */\n")).toBe(true);
+    expect(detect("const glob = 'a/*';\nimport { ZoneId } from '@js-joda/core';\n/* later */\n")).toBe(true);
   });
 
-  it('no file reachable from a broadcast client component imports @js-joda', () => {
+  it('no file reachable from any client component imports @js-joda', () => {
     const report = hits.map((h) => `${h.specifier}  ←  ${h.chain.join('  →  ')}`).join('\n');
     expect(hits, `@js-joda reached from a client graph:\n${report}`).toEqual([]);
   });

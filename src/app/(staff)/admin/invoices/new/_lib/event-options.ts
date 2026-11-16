@@ -6,7 +6,9 @@
  * the options. Without `withDeepLinkedEvent`, a registration on an older event
  * opened an empty Event tab with no message (#54).
  */
-import { bangkokLocalDate } from '@/lib/fiscal-year';
+// Client-safe (+7 h shift, no js-joda): this file is reached from the
+// event-search hook, a client module (task #94).
+import { bangkokDateOnly } from '@/lib/dates';
 import type { EventOption } from '../_components/event-fee-form';
 
 /** Label: name + CE start date in Asia/Bangkok (BE is display-only, later). */
@@ -16,7 +18,7 @@ export function toEventOption(
 ): EventOption {
   return {
     eventId: e.eventId,
-    label: `${e.name} (${bangkokLocalDate(e.startDateIso)})`,
+    label: `${e.name} (${bangkokDateOnly(e.startDateIso)})`,
     ...(description ? { description } : {}),
   };
 }

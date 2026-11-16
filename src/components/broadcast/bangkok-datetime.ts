@@ -24,7 +24,7 @@
  * results match the previous js-joda implementation exactly — pinned by the
  * parity tests in `tests/unit/broadcast/bangkok-datetime.test.ts` — and the
  * bundle stays clean per
- * `tests/unit/architecture/broadcast-client-no-js-joda.test.ts`.
+ * `tests/unit/architecture/client-no-js-joda.test.ts`.
  */
 
 import { getDateFormatLocale } from '@/lib/format-date-localised';
