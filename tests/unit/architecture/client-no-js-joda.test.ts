@@ -1,55 +1,70 @@
 /**
- * Bundle guard — the member create / edit client graph must never reach
+ * Bundle guard — no `'use client'` module anywhere in `src/` may reach
  * `@js-joda/*`.
  *
  * `@js-joda/timezone` is imported for its side effect (it registers the full
  * IANA tz database), so a bundler cannot tree-shake it: ONE value import on a
- * client path ships ~900 KB of ZoneRules data to the browser. On 2026-09-26
- * that is exactly what pushed `/admin/members/new` (2149 KB) and
- * `/admin/members/[memberId]/edit` (2180 KB) past their 1330 / 1350 KB
- * ceilings in `scripts/check-bundle-budgets.ts`. The leak was:
+ * client path ships about 1.1 MB (core + timezone) to the browser. It has
+ * leaked three times, each fixed with a guard scoped to that area only:
  *
- *   create-/edit-member-client.tsx ('use client')
- *     → member-form/schema.ts (BILLING_CYCLES)
- *     → modules/members/domain/member.ts
- *     → modules/tenants (barrel)
- *     → modules/tenants/domain/iana-timezone.ts → '@js-joda/timezone'
+ *   2026-07-09 PR #173  — `bangkokDateOnly` (`src/lib/dates.ts`) created;
+ *   2026-09-26          — broadcasts (`bangkok-datetime.ts`, approve dialog);
+ *   member form         — the tenants barrel's IANA timezone check;
+ *   2026-11-05 #732     — `/admin/invoices/new` 834 → 1866 KB, via
+ *                         use-event-search → event-options → fiscal-year
+ *                         (task #94).
  *
- * The `tenants` barrel is a Domain-only module imported from dozens of client
- * components, so it is a root of this scan too. `pnpm check:bundle-budgets`
- * needs a full `pnpm build`; this static walk catches the same regression in
- * the unit suite.
+ * This one guard replaces the two scoped ones (broadcast-client-no-js-joda,
+ * member-form-no-js-joda): every `'use client'` module under `src/` is a scan
+ * root. Server-side js-joda (use-cases, ports, page loaders) is untouched —
+ * only files reachable from a client module ship to the browser.
  *
  * The walk follows static value imports and `export … from` re-exports
  * (`import type` / `export type` are erased at build and skipped), resolving
  * `@/` and relative specifiers to files under `src/`.
  *
  * Positive controls, so the guard cannot pass vacuously:
- *   1. the walk must visit at least MIN_FILES_SCANNED files;
- *   2. it must reach the tenants `iana-timezone.ts` VO (the file that leaked);
+ *   1. at least MIN_CLIENT_ROOTS `'use client'` roots are discovered;
+ *   2. the walk reaches every file that used to leak;
  *   3. the SAME matcher must detect a js-joda import in fixture strings.
  */
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '../../..');
 
-const ENTRY_POINTS = [
-  'src/components/members/create-member-client.tsx',
-  'src/components/members/edit-member-client.tsx',
-  'src/modules/tenants/index.ts',
+/** Every `'use client'` module under `src/` is a scan root. */
+const ROOT_TREES = ['src'] as const;
+
+/** Must be reached — proves the walk covers the files that leaked. */
+const MUST_REACH = [
+  'src/components/broadcast/bangkok-datetime.ts',
+  'src/components/broadcast/admin/approve-dialog.tsx',
+  'src/modules/tenants/domain/iana-timezone.ts',
+  'src/app/(staff)/admin/invoices/new/_lib/event-options.ts',
 ] as const;
 
-/** Must be reached — proves the walk crosses member.ts → tenants barrel. */
-const MUST_REACH = 'src/modules/tenants/domain/iana-timezone.ts';
-
 /**
- * 63 files reachable from the three entry points on 2026-09-26. The floor
- * sits under, so a broken resolver fails loudly while ordinary refactors do
- * not churn the number.
+ * About 444 `'use client'` modules under `src/` on 2026-11-16. The floor sits
+ * under, so a broken discovery fails loudly while ordinary refactors do not
+ * churn the number.
  */
-const MIN_FILES_SCANNED = 50;
+const MIN_CLIENT_ROOTS = 400;
+
+const SOURCE_EXT = /\.(ts|tsx)$/;
+
+function walkTree(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) walkTree(full, out);
+    else if (SOURCE_EXT.test(entry)) out.push(full);
+  }
+  return out;
+}
+
+/** `'use client'` directive as the first statement (after comments). */
+const USE_CLIENT = /^(?:\s|\/\/[^\r\n]*|\/\*[\s\S]*?\*\/)*(['"])use client\1/;
 
 /** Strip block + line comments so prose mentioning an import is not a hit. */
 function stripComments(source: string): string {
@@ -123,23 +138,29 @@ function walkGraph(entries: readonly string[]): { visited: Set<string>; hits: Hi
   return { visited: new Set(parent.keys()), hits };
 }
 
-const { visited, hits } = walkGraph(ENTRY_POINTS);
+const clientRoots = [...new Set(ROOT_TREES.flatMap((tree) => walkTree(resolve(ROOT, tree))))]
+  .map((abs) => relative(ROOT, abs).split('\\').join('/'))
+  .filter((rel) => USE_CLIENT.test(readFileSync(resolve(ROOT, rel), 'utf8')))
+  .sort();
 
-describe('member create/edit client graph carries no @js-joda (bundle budget)', () => {
-  it('positive control: every entry point exists on disk', () => {
-    const missing = ENTRY_POINTS.filter((e) => !existsSync(resolve(ROOT, e)));
-    expect(missing).toEqual([]);
+const { visited, hits } = walkGraph(clientRoots);
+
+describe('the client graph carries no @js-joda (bundle budget)', () => {
+  it(`positive control: at least ${MIN_CLIENT_ROOTS} 'use client' roots are discovered under src`, () => {
+    expect(clientRoots.length, clientRoots.join('\n')).toBeGreaterThanOrEqual(MIN_CLIENT_ROOTS);
   });
 
-  it(`positive control: the walk visits at least ${MIN_FILES_SCANNED} files`, () => {
-    expect(visited.size).toBeGreaterThanOrEqual(MIN_FILES_SCANNED);
+  it.each(MUST_REACH)('positive control: the walk reaches %s', (file) => {
+    expect(visited.has(file)).toBe(true);
   });
 
-  it(`positive control: the walk reaches ${MUST_REACH}`, () => {
-    expect(visited.has(MUST_REACH)).toBe(true);
+  it("positive control: the 'use client' matcher accepts leading comments and both quote styles", () => {
+    expect(USE_CLIENT.test("'use client';\nexport {}")).toBe(true);
+    expect(USE_CLIENT.test('/**\n * doc\n */\r\n"use client";\r\nexport {}')).toBe(true);
+    expect(USE_CLIENT.test("import x from 'y';\n'use client';")).toBe(false);
   });
 
-  it('positive control: the matcher detects js-joda imports (side-effect, named, CRLF) and skips type-only / comments', () => {
+  it('positive control: the import matcher detects js-joda imports (side-effect, named, CRLF) and skips type-only / comments', () => {
     const detect = (src: string) => valueImportSpecifiers(src).some(isJsJoda);
     expect(detect("import '@js-joda/timezone';\n")).toBe(true);
     expect(
@@ -151,7 +172,7 @@ describe('member create/edit client graph carries no @js-joda (bundle budget)', 
     expect(detect("/* import '@js-joda/timezone' */ export const x = 1;")).toBe(false);
   });
 
-  it('no file reachable from the member form or the tenants barrel imports @js-joda', () => {
+  it('no file reachable from any client component imports @js-joda', () => {
     const report = hits.map((h) => `${h.specifier}  ←  ${h.chain.join('  →  ')}`).join('\n');
     expect(hits, `@js-joda reached from a client graph:\n${report}`).toEqual([]);
   });
