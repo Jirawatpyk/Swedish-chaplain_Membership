@@ -31,11 +31,10 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { stripCommentsPreserveLines } from '../../../scripts/lib/source-scan';
 
 const ROOT = resolve(__dirname, '../../..');
 
-/** Every `'use client'` module under `src/` is a scan root. */
-const ROOT_TREES = ['src'] as const;
 
 /** Must be reached — proves the walk covers the files that leaked. */
 const MUST_REACH = [
@@ -66,15 +65,17 @@ function walkTree(dir: string, out: string[] = []): string[] {
 /** `'use client'` directive as the first statement (after comments). */
 const USE_CLIENT = /^(?:\s|\/\/[^\r\n]*|\/\*[\s\S]*?\*\/)*(['"])use client\1/;
 
-/** Strip block + line comments so prose mentioning an import is not a hit. */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`\\])\/\/[^\r\n]*/g, '$1');
-}
+/**
+ * Comments are stripped with the repo's string-aware scanner, so a `/**` glob
+ * inside a line comment or a string cannot open a phantom block comment that
+ * hides the imports after it.
+ */
+const stripComments = stripCommentsPreserveLines;
 
 /**
  * Value-import specifiers of a module: `import … from 'x'`, bare
- * `import 'x'` (side-effect) and `export … from 'x'`. Type-only forms are
- * skipped.
+ * `import 'x'` (side-effect), `export … from 'x'` and dynamic `import('x')`.
+ * Type-only forms are skipped.
  */
 function valueImportSpecifiers(source: string): string[] {
   const code = stripComments(source);
@@ -86,6 +87,10 @@ function valueImportSpecifiers(source: string): string[] {
   }
   const bareRe = /(^|[;\r\n])\s*import\s*(['"])([^'"]+)\2/g;
   for (const m of code.matchAll(bareRe)) out.push(m[3]!);
+  // Dynamic `import('x')`, including `next/dynamic(() => import('x'))`: a
+  // lazy chunk still ships to the browser.
+  const dynamicRe = /\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/g;
+  for (const m of code.matchAll(dynamicRe)) out.push(m[2]!);
   return out;
 }
 
@@ -110,6 +115,17 @@ function resolveSpecifier(specifier: string, fromRel: string): string | null {
 
 type Hit = { file: string; specifier: string; chain: string[] };
 
+/** Each file is read once: the directive pass and the walk share it. */
+const sourceCache = new Map<string, string>();
+function readSource(rel: string): string {
+  let source = sourceCache.get(rel);
+  if (source === undefined) {
+    source = readFileSync(resolve(ROOT, rel), 'utf8');
+    sourceCache.set(rel, source);
+  }
+  return source;
+}
+
 function walkGraph(entries: readonly string[]): { visited: Set<string>; hits: Hit[] } {
   const parent = new Map<string, string | null>();
   const queue: string[] = [];
@@ -118,9 +134,9 @@ function walkGraph(entries: readonly string[]): { visited: Set<string>; hits: Hi
     queue.push(e);
   }
   const hits: Hit[] = [];
-  while (queue.length > 0) {
-    const file = queue.shift()!;
-    const source = readFileSync(resolve(ROOT, file), 'utf8');
+  for (let i = 0; i < queue.length; i++) {
+    const file = queue[i]!;
+    const source = readSource(file);
     for (const specifier of valueImportSpecifiers(source)) {
       if (isJsJoda(specifier)) {
         const chain: string[] = [];
@@ -138,9 +154,10 @@ function walkGraph(entries: readonly string[]): { visited: Set<string>; hits: Hi
   return { visited: new Set(parent.keys()), hits };
 }
 
-const clientRoots = [...new Set(ROOT_TREES.flatMap((tree) => walkTree(resolve(ROOT, tree))))]
+/** Every `'use client'` module under `src/` is a scan root. */
+const clientRoots = walkTree(resolve(ROOT, 'src'))
   .map((abs) => relative(ROOT, abs).split('\\').join('/'))
-  .filter((rel) => USE_CLIENT.test(readFileSync(resolve(ROOT, rel), 'utf8')))
+  .filter((rel) => USE_CLIENT.test(readSource(rel)))
   .sort();
 
 const { visited, hits } = walkGraph(clientRoots);
@@ -170,6 +187,10 @@ describe('the client graph carries no @js-joda (bundle budget)', () => {
     expect(detect("import type { ZoneId } from '@js-joda/core';")).toBe(false);
     expect(detect("// import { ZoneId } from '@js-joda/core';\nexport const x = 1;")).toBe(false);
     expect(detect("/* import '@js-joda/timezone' */ export const x = 1;")).toBe(false);
+    expect(detect("const m = await import('@js-joda/timezone');")).toBe(true);
+    // A `/**` glob inside a line comment must not hide the import after it.
+    expect(detect("// see `src/**` for more\nimport '@js-joda/timezone';\n/* later */\n")).toBe(true);
+    expect(detect("const glob = 'a/*';\nimport { ZoneId } from '@js-joda/core';\n/* later */\n")).toBe(true);
   });
 
   it('no file reachable from any client component imports @js-joda', () => {
