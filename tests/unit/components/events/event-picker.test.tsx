@@ -211,6 +211,37 @@ describe('EventPicker on AURA Combobox (US9b-2)', () => {
     ).toBeVisible();
   });
 
+  // #791 review — a start with no zone would be read as browser-local time by
+  // the date label, so the first load fails instead of listing a guessed day.
+  it('fails the events load when a start date has no zone', async () => {
+    const bad = { eventId: 'ev-x', name: 'Zone-less Mixer', startDate: '2026-11-16T20:00:00' };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ items: [bad] }), { status: 200 })),
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(wrap(<Harness />));
+    const field = screen.getByRole('combobox', { name: 'Event' });
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'));
+    expect(
+      screen.getByText(enMessages.admin.events.import.eventPicker.loadErrorDetail),
+    ).toBeVisible();
+  });
+
+  it('lists an event whose start date carries an offset', async () => {
+    const zoned = { eventId: 'ev-z', name: 'Offset Mixer', startDate: '2026-11-16T20:00:00+07:00' };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ items: [zoned] }), { status: 200 })),
+    );
+    const user = userEvent.setup();
+    render(wrap(<Harness />));
+    const field = screen.getByRole('combobox', { name: 'Event' });
+    await user.click(field);
+    expect(await screen.findByRole('option', { name: /Offset Mixer/ })).toBeInTheDocument();
+    expect(field).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
   // #89 — the picker loads the newest 100 events (the list route's ceiling).
   // With a full page loaded, typed text searches the server for older ones,
   // bounded to events starting at or before the oldest loaded one.

@@ -22,10 +22,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { Combobox, Icon, IconButton, comboboxFilter, linkClass, type ComboboxOption } from '@jirawatpyk/aura-react';
 import { formatDatePreset } from '@/lib/format-date-localised';
-import { useEventSearch } from '@/hooks/use-event-search';
+import { z } from 'zod';
+import { EventSearchItemSchema, useEventSearch } from '@/hooks/use-event-search';
 
 /** The list route's page ceiling; a full page means older events may exist. */
 const EVENT_LOAD_PAGE_SIZE = 100;
+const LoadResponseSchema = z.object({ items: z.array(EventSearchItemSchema) });
 
 export interface EventPickerOption {
   readonly eventId: string;
@@ -198,25 +200,16 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
           if (!signal.cancelled) setError(t('loadErrorDetail'));
           return;
         }
-        const body = (await res.json()) as {
-          items?: ReadonlyArray<{
-            eventId?: string;
-            name?: string;
-            startDate?: string;
-          }>;
-        };
-        const normalised = (body.items ?? [])
-          .filter(
-            (e): e is EventPickerOption =>
-              typeof e.eventId === 'string' &&
-              typeof e.name === 'string' &&
-              typeof e.startDate === 'string',
-          )
-          .map((e) => ({
-            eventId: e.eventId,
-            name: e.name,
-            startDate: e.startDate,
-          }));
+        // #791 review — the same item rule as the search: a start with no
+        // zone (or a missing id or name) fails the load, so the field shows
+        // the error and Refresh instead of a guessed day or a dropped event.
+        const parsed = LoadResponseSchema.safeParse(await res.json());
+        if (!parsed.success) {
+          console.warn('[F6.1] event-picker response shape invalid');
+          if (!signal.cancelled) setError(t('loadErrorDetail'));
+          return;
+        }
+        const normalised: EventPickerOption[] = parsed.data.items;
         if (!signal.cancelled) setFetchedEvents(normalised);
       } catch (e) {
         // S-1 (Round 1 — silent-failure-hunter): preserve console
