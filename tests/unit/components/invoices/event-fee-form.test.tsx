@@ -338,6 +338,24 @@ describe('EventFeeForm — the event picker searches the server (#732)', () => {
     expect(await screen.findByText(picker.searchFailed ?? '<missing eventPicker.searchFailed>', NOTE)).toBeInTheDocument();
   });
 
+  // #788 review — the label's Bangkok day is `new Date(iso) + 7 h`, so a start
+  // with no zone would be read as browser-local time and could land on the
+  // wrong day. The hook accepts only a start with Z or an offset.
+  it('a start date with no zone fails the search instead of showing a guessed day', async () => {
+    stubFetch(() => listOf([{ ...oldEvent, startDate: '2026-11-16T20:00:00' }]));
+    renderForm();
+    typeInPicker('Old');
+    expect(await screen.findByText(picker.searchFailed ?? '<missing eventPicker.searchFailed>', NOTE)).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Old Breakfast/ })).toBeNull();
+  });
+
+  it('a start date with an offset is accepted and labelled with its Bangkok day', async () => {
+    stubFetch(() => listOf([{ ...oldEvent, startDate: '2026-11-16T20:00:00+00:00' }]));
+    renderForm();
+    typeInPicker('Old');
+    expect(await screen.findByRole('option', { name: /Old Breakfast \(2026-11-17\)/ })).toBeInTheDocument();
+  });
+
   // #89 (UX L2) — with server search on, the field says typing reaches older events.
   it('hints that typing searches older events only when the server search is on', () => {
     stubFetch(() => listOf([]));
