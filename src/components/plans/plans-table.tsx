@@ -30,7 +30,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { filterSheetDoneButton } from '@/lib/filter-sheet-focus';
+import { FilterSheetBridge, useFilterSheetRef } from '@/components/shell/filter-sheet-bridge';
 import { CopyIcon, PlusIcon, SearchXIcon } from 'lucide-react';
 import {
   AuraProvider,
@@ -182,6 +182,7 @@ export function PlansTable({
   // page, so it moves to the search (or Year, when an empty year has no
   // search) instead of dropping to <body> (UX review H1).
   const barRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useFilterSheetRef();
   // Bumped by a chip × or Clear; the effect moves focus once the bar has
   // re-rendered without the control that was pressed.
   const [focusRequest, setFocusRequest] = useState(0);
@@ -194,8 +195,8 @@ export function PlansTable({
 
   function clearFilters() {
     // In the phone Filters sheet the bar is behind it: focus its Done instead.
-    const done = filterSheetDoneButton();
-    if (done) queueMicrotask(() => done.focus());
+    const sheet = sheetRef.current;
+    if (sheet?.inSheet) sheet.focusDone();
     else focusBar();
     setCategory(null);
     setQ('');
@@ -276,6 +277,7 @@ export function PlansTable({
           // No "0 results" beside "No plans for this year" (UX review L2).
           {...(yearEmpty ? {} : { resultCount: sorted.length })}
         >
+          <FilterSheetBridge ref={sheetRef} />
           <FilterSelect
             label={t('filters.year')}
             value={String(year)}
