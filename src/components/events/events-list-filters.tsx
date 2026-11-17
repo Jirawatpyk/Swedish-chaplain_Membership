@@ -22,7 +22,7 @@
 import { useMemo, useRef, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { filterSheetDoneButton } from '@/lib/filter-sheet-focus';
+import { FilterSheetBridge, useFilterSheetRef } from '@/components/shell/filter-sheet-bridge';
 import { AuraProvider, Button, FilterBar, Tag } from '@jirawatpyk/aura-react';
 
 type ToggleKey = 'partnerBenefitOnly' | 'culturalEventOnly' | 'includeArchived';
@@ -50,6 +50,7 @@ export function EventsListFilters({
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const barRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useFilterSheetRef();
 
   function write(next: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -73,11 +74,12 @@ export function EventsListFilters({
   const anyChip = partnerBenefitOnly || culturalEventOnly || includeArchived || hasCategory;
 
   function clearAll() {
-    const done = filterSheetDoneButton();
+    const sheet = sheetRef.current;
+    if (sheet?.inSheet) sheet.focusDone();
     write({ q: null, partnerBenefitOnly: null, culturalEventOnly: null, includeArchived: null, categoryFilter: null });
     // The pressed control unmounts; the search keeps focus in the row (in the
     // phone Filters sheet, its Done).
-    queueMicrotask(() => (done ?? barRef.current?.querySelector<HTMLElement>('input[type="search"]'))?.focus());
+    if (!sheet?.inSheet) queueMicrotask(() => barRef.current?.querySelector<HTMLElement>('input[type="search"]')?.focus());
   }
 
   const barStrings = useMemo(() => ({ clearFilters: t('filters.clearAll') }), [t]);
@@ -105,6 +107,7 @@ export function EventsListFilters({
             : t('resultsAnnouncement', { count: resultCount })
         }
       >
+        <FilterSheetBridge ref={sheetRef} />
         {/* On a phone the chips show the board's short words (Admin-events-
             mobile) so all three fit one row; each keeps its full name, which
             contains the short word (WCAG 2.5.3). */}

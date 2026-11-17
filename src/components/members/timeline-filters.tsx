@@ -22,7 +22,7 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button, DatePicker, FilterBar, Select, type ISODate } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
-import { filterSheetDoneButton } from '@/lib/filter-sheet-focus';
+import { FilterSheetBridge, useFilterSheetRef } from '@/components/shell/filter-sheet-bridge';
 import {
   TIMELINE_SOURCES,
   TIMELINE_ACTOR_KINDS,
@@ -34,6 +34,7 @@ const ALL = 'all';
 
 export function TimelineFilters(): React.JSX.Element {
   const t = useTranslations('timeline.filters');
+  const sheetRef = useFilterSheetRef();
   const tSource = useTranslations('timeline.source');
   const tActor = useTranslations('timeline.actorKind');
   const router = useRouter();
@@ -81,6 +82,7 @@ export function TimelineFilters(): React.JSX.Element {
       controlsLayout="fill"
       filterCount={[currentSource !== ALL, currentActor !== ALL, Boolean(currentFrom), Boolean(currentTo)].filter(Boolean).length}
     >
+      <FilterSheetBridge ref={sheetRef} />
       <Select
         name="source"
         label={t('source')}
@@ -124,9 +126,8 @@ export function TimelineFilters(): React.JSX.Element {
         disabled={!hasAnyFilter}
         onClick={() => {
           // It hides once nothing is filtered; in the sheet, focus goes to Done.
-          const done = filterSheetDoneButton();
+          sheetRef.current?.focusDone();
           pushUrl({ source: null, actorKind: null, from: null, to: null });
-          if (done) queueMicrotask(() => done.focus());
         }}
       >
         {t('clear')}

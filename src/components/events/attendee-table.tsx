@@ -36,7 +36,7 @@
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { filterSheetDoneButton } from '@/lib/filter-sheet-focus';
+import { FilterSheetBridge, useFilterSheetRef } from '@/components/shell/filter-sheet-bridge';
 import { Copy, Eraser, SearchX } from 'lucide-react';
 import {
   AuraProvider,
@@ -217,6 +217,7 @@ export function AttendeeTable({
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const barRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useFilterSheetRef();
   // R3-F5 — the search keeps focus in the row after a clear: the pressed
   // control unmounts once the results come back.
   // After a successful erase the row is gone; focus lands on the search.
@@ -340,17 +341,17 @@ export function AttendeeTable({
   const hasAnyFilter = FILTER_PARAM_KEYS.some((k) => searchParams.has(k));
   const clearAllFilters = useCallback(
     (announce: boolean) => {
-      const done = filterSheetDoneButton();
+      const sheet = sheetRef.current;
+      if (sheet?.inSheet) sheet.focusDone();
       writeUrl(Object.fromEntries(FILTER_PARAM_KEYS.map((k) => [k, null])));
       // R4-U2 — the empty state's CTA announces "Filters cleared" before
       // focus moves to the search; the bar's own Clear needs no toast (the
       // count it carries is announced).
       if (announce) toast.success(t('filtersCleared'));
       // In the phone Filters sheet the search is behind it: its Done instead.
-      if (done) queueMicrotask(() => done.focus());
-      else focusSearch();
+      if (!sheet?.inSheet) focusSearch();
     },
-    [writeUrl, t, focusSearch],
+    [writeUrl, t, focusSearch, sheetRef],
   );
 
   const activeFilters: ActiveFilter[] = [];
@@ -531,6 +532,7 @@ export function AttendeeTable({
           {...(activeFilters.length > 0 ? { onClearAll: () => clearAllFilters(false) } : {})}
           resultCount={t('resultCount', { count: totalCount ?? rows.length })}
         >
+          <FilterSheetBridge ref={sheetRef} />
           {/* Selects first, then on/off chips: the filter order on Members and Plans. */}
           <FilterSelect
             label={t('paymentStatusFilter')}
