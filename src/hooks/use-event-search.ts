@@ -29,14 +29,19 @@ export const EVENT_SEARCH_PAGE_SIZE = 25;
 export interface EventSearchItem {
   readonly eventId: string;
   readonly name: string;
-  /** ISO 8601 start. */
+  /** ISO 8601 start with Z or an offset; a zone-less start fails the search (#788 review). */
   readonly startDate: string;
 }
 
 const NO_RESULTS: readonly EventSearchItem[] = [];
 
 const SearchResponseSchema = z.object({
-  items: z.array(z.object({ eventId: z.string(), name: z.string(), startDate: z.string() })),
+  // A start with no zone would be read as browser-local time by the Bangkok
+  // day label (`bangkokDateOnly`), so it fails the search rather than show a
+  // guessed day. The same rule as the list route's own input.
+  items: z.array(
+    z.object({ eventId: z.string(), name: z.string(), startDate: z.string().datetime({ offset: true }) }),
+  ),
 });
 
 /** Trimmed, and capped on code points so a surrogate pair is never split. */
