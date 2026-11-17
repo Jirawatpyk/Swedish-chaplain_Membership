@@ -5,6 +5,10 @@
  * (FilterBar renders its children in the row or in the sheet, never both) and
  * read the sheet through its ref: in the sheet, `focusDone()` before the
  * pressed control unmounts; outside, focus the bar's own search as before.
+ *
+ * It must be a direct child of the FilterBar (not wrapped in a provider that
+ * renders elsewhere), and it counts as a child: put it only in a bar that has
+ * other filter controls, or the bar grows a Filters button for an empty sheet.
  */
 'use client';
 
