@@ -35,14 +35,20 @@ export interface EventSearchItem {
 
 const NO_RESULTS: readonly EventSearchItem[] = [];
 
-const SearchResponseSchema = z.object({
-  // A start with no zone would be read as browser-local time by the Bangkok
-  // day label (`bangkokDateOnly`), so it fails the search rather than show a
-  // guessed day. The same rule as the list route's own input.
-  items: z.array(
-    z.object({ eventId: z.string(), name: z.string(), startDate: z.string().datetime({ offset: true }) }),
-  ),
+/**
+ * One event as the list route returns it. A start with no zone would be read
+ * as browser-local time by a date label (`bangkokDateOnly`,
+ * `formatDatePreset`), so it fails the parse rather than show a guessed day.
+ * The same rule as the list route's own input. Shared with the CSV import's
+ * own first load (`event-picker.tsx`).
+ */
+export const EventSearchItemSchema = z.object({
+  eventId: z.string(),
+  name: z.string(),
+  startDate: z.string().datetime({ offset: true }),
 });
+
+const SearchResponseSchema = z.object({ items: z.array(EventSearchItemSchema) });
 
 /** Trimmed, and capped on code points so a surrogate pair is never split. */
 function searchText(text: string): string {
