@@ -158,6 +158,7 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
       findErasedAtByIdInTx: [tx, 'member-1'],
       findErasedAtById: [CTX, 'member-1'],
       hasMemberErasedRecord: [CTX, 'member-1'],
+      hasMemberErasedRecordInTx: [tx, 'member-1'],
       findStuckErasuresInTx: [tx, T, 10],
       countStuckErasuresInTx: [tx, T],
       hasSubprocessorPropagationInTx: [tx, T, 'member-1', 3000],

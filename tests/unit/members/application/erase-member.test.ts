@@ -137,29 +137,74 @@ describe('eraseMember — requested audit + atomic scrub', () => {
   // reconciler pass. It still completes the scrub + cascades and re-emits
   // `member_erased` (the completion proof) — the request was already logged on
   // the first run.
-  // #717 — a member whose erasure already COMPLETED (erased_at set AND a
-  // `member_erased` record exists) is a no-op: a repeat call (a new
-  // Idempotency-Key, a second admin) must not re-scrub, re-run any cascade,
-  // or append a second `member_erased` / `subprocessor_erasure_propagated`
-  // row to the 10-year DPO log. It answers with the ORIGINAL erasure instant.
-  it('#717: a completed erasure is a no-op that returns the stored erasedAt', async () => {
+  // #717 — a repeat erase of an erasure that already COMPLETED (erased_at set
+  // AND a `member_erased` record) RE-SWEEPS: the scrub and every cascade run
+  // again (data that came back after completion is cleared), the repeat is
+  // recorded once as `member_erasure_repeated`, and no second `member_erased`
+  // or `member_erasure_requested` is written. It answers the ORIGINAL instant.
+  const types = (deps: StubbedEraseDeps) =>
+    deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+
+  it('#717: a repeat of a completed erasure re-sweeps, records the repeat once, writes no member_erased', async () => {
     const deps = buildEraseDeps();
     const stored = new Date('2026-06-15T00:00:00.000Z');
     deps.memberRepo.findErasedAtById = vi.fn(async () => ok({ erasedAt: stored })) as never;
     deps.memberRepo.hasMemberErasedRecord = vi.fn(async () => ok(true));
+    deps.memberRepo.hasMemberErasedRecordInTx = vi.fn(async () => true);
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.value.erasedAt).toEqual(stored);
       expect(res.value.cascadesComplete).toBe(true);
     }
-    expect(deps.memberRepo.hasMemberErasedRecord).toHaveBeenCalledWith(deps.tenant, 'm-1');
-    expect(deps.audit.recordInTx).not.toHaveBeenCalled();
-    expect(deps.memberRepo.scrubPiiInTx).not.toHaveBeenCalled();
-    expect(deps.broadcastsCascade.cancelInFlightForMember).not.toHaveBeenCalled();
-    expect(deps.renewalsCascade.cancelInFlightForMember).not.toHaveBeenCalled();
-    expect(deps.directoryErasure.eraseForMember).not.toHaveBeenCalled();
-    expect(deps.subprocessorErasure.propagate).not.toHaveBeenCalled();
+    expect(deps.memberRepo.scrubPiiInTx).toHaveBeenCalledTimes(1);
+    expect(deps.broadcastsCascade.cancelInFlightForMember).toHaveBeenCalledTimes(1);
+    expect(deps.directoryErasure.eraseForMember).toHaveBeenCalledTimes(1);
+    const t = types(deps);
+    expect(t.filter((x) => x === 'member_erasure_repeated')).toHaveLength(1);
+    expect(t).not.toContain('member_erasure_requested');
+    expect(t).not.toContain('member_erased');
+  });
+
+  it('#717: the repeat record carries the original instant and the new attestation, no PII', async () => {
+    const deps = buildEraseDeps();
+    const stored = new Date('2026-06-15T00:00:00.000Z');
+    deps.memberRepo.findErasedAtById = vi.fn(async () => ok({ erasedAt: stored })) as never;
+    deps.memberRepo.hasMemberErasedRecord = vi.fn(async () => ok(true));
+    deps.memberRepo.hasMemberErasedRecordInTx = vi.fn(async () => true);
+    await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request', identityVerified: true, verificationMethod: 'in_person', note: 'case 42' },
+      META,
+      deps,
+    );
+    const call = deps.audit.recordInTx.mock.calls.find(
+      (c) => (c[2] as { type: string }).type === 'member_erasure_repeated',
+    );
+    expect((call?.[2] as { payload: unknown }).payload).toEqual({
+      member_id: 'm-1',
+      reason: 'gdpr_erasure_request',
+      original_erased_at: stored.toISOString(),
+      identity_verified: true,
+      verification_method: 'in_person',
+      note: 'case 42',
+    });
+  });
+
+  it('#717: a completion written meanwhile (found under the member lock) blocks a second member_erased', async () => {
+    const deps = buildEraseDeps();
+    deps.memberRepo.findErasedAtById = vi.fn(async () =>
+      ok({ erasedAt: new Date('2026-06-15T00:00:00.000Z') }),
+    ) as never;
+    deps.memberRepo.hasMemberErasedRecordInTx = vi.fn(async () => true);
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(true);
+    expect(types(deps)).not.toContain('member_erased');
+    expect(types(deps)).not.toContain('member_erasure_repeated');
+    // The re-check runs on the emit tx after the member row lock.
+    const lockOrder = deps.memberRepo.findByIdInTx.mock.invocationCallOrder.at(-1)!;
+    expect(lockOrder).toBeLessThan(deps.memberRepo.hasMemberErasedRecordInTx.mock.invocationCallOrder[0]!);
   });
 
   // #710 — the directory cascade gets the route's deadline, so its Blob
@@ -207,6 +252,8 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(res.ok).toBe(true);
     expect(deps.memberRepo.scrubPiiInTx).toHaveBeenCalledTimes(1);
+    expect(types(deps)).not.toContain('member_erasure_repeated');
+    expect(types(deps).filter((x) => x === 'member_erased')).toHaveLength(1);
   });
 
   it('does NOT re-emit member_erasure_requested when the member is already erased (re-drive)', async () => {

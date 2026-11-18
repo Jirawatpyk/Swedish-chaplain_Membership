@@ -22,6 +22,7 @@ export type StubbedEraseDeps = EraseMemberDeps & {
   memberRepo: {
     findErasedAtById: ReturnType<typeof vi.fn>;
     hasMemberErasedRecord: ReturnType<typeof vi.fn>;
+    hasMemberErasedRecordInTx: ReturnType<typeof vi.fn>;
     findByIdInTx: ReturnType<typeof vi.fn>;
     scrubPiiInTx: ReturnType<typeof vi.fn>;
     hasSubprocessorPropagationInTx: ReturnType<typeof vi.fn>;
@@ -118,6 +119,9 @@ export function buildEraseDeps(): StubbedEraseDeps {
       // #717 — default: no `member_erased` record yet, so an already-erased
       // member is a half-done erasure that the call re-drives.
       hasMemberErasedRecord: vi.fn(async () => ok(false)),
+      // #717 — the completion re-check inside the `member_erased` emit tx,
+      // under the member row lock. Default: none written yet.
+      hasMemberErasedRecordInTx: vi.fn(async () => false),
       findByIdInTx: vi.fn(async () => ok(FAKE_MEMBER)),
       scrubPiiInTx: vi.fn(async () => ok(undefined)),
       // Spec 140 s3 review round 2 (R2-A2) — default: no earlier

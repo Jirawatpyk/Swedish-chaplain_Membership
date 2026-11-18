@@ -361,7 +361,7 @@ describe('eraseMember — live-Neon PII oracle (production deps)', () => {
   }, ciScaled(30_000));
 });
 
-describe('eraseMember — #717 a completed erasure is a no-op (production deps)', () => {
+describe('eraseMember — #717 a repeat of a completed erasure (production deps)', () => {
   let tenant: TestTenant;
   let otherTenant: TestTenant;
   let admin: TestUser;
@@ -379,7 +379,7 @@ describe('eraseMember — #717 a completed erasure is a no-op (production deps)'
     await deleteTestUser(admin).catch(() => {});
   });
 
-  it('a second erase writes no new audit row and returns the first erasedAt', async () => {
+  it('a second erase re-sweeps, records the repeat once and returns the first erasedAt', async () => {
     const { memberId } = await seedMemberWithContacts(tenant, {
       companyName: 'Repeat Erase Co',
       taxId: '0105599999999',
@@ -406,9 +406,13 @@ describe('eraseMember — #717 a completed erasure is a no-op (production deps)'
     const stored = (await rawSelectMember(memberId))!.erased_at;
     expect(second.value.erasedAt.toISOString()).toBe(new Date(stored as Date).toISOString());
 
+    // The repeat re-sweeps: one `member_erasure_repeated`, still ONE
+    // `member_erased`, no second `member_erasure_requested`.
     const after = await rawSelectMemberAudits(tenant.ctx.slug, memberId);
-    expect(after).toHaveLength(before.length);
-    expect(after.filter((a) => a.eventType === 'member_erased')).toHaveLength(1);
+    const count = (rows: typeof after, t: string) => rows.filter((a) => a.eventType === t).length;
+    expect(count(after, 'member_erased')).toBe(1);
+    expect(count(after, 'member_erasure_requested')).toBe(count(before, 'member_erasure_requested'));
+    expect(count(after, 'member_erasure_repeated')).toBe(1);
   }, ciScaled(60_000));
 
   it('cross-tenant: tenant B never sees tenant A\'s completion record', async () => {
