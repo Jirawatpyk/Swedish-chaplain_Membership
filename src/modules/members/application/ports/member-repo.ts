@@ -939,6 +939,13 @@ export interface MemberRepo {
   ): Promise<Result<boolean, RepoError>>;
 
   /**
+   * #717 — the in-tx twin, read on the CALLER's tx under the member row lock
+   * (`findByIdInTx`, FOR UPDATE) so two concurrent completions cannot both
+   * write `member_erased`. Throws on a DB error.
+   */
+  hasMemberErasedRecordInTx(tx: TenantTx, memberId: MemberId): Promise<boolean>;
+
+  /**
    * F114 review (reliability I-2 / security I-2) — the in-tx twin, read on
    * the CALLER's `tx` so a use case holding `FOR UPDATE` on the member row
    * sees the erasure it is racing against instead of a second connection's

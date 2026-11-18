@@ -425,6 +425,15 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    evidence log) and any manual sub-processor remediation (step 6). The US3-D
    evidence log is the durable accountability artefact (GDPR Art. 5(2) / Art. 30).
 
+10. **Erase again after completion (#717).** If personal data turns up on a member
+   whose erasure is already complete (a late webhook registration, or a cascade
+   added in a later release), press **Erase** again. The repeat re-runs the scrub
+   and every cascade, writes one `member_erasure_repeated` row (actor, request,
+   attestation, `original_erased_at`) and **no** second `member_erased`, and
+   answers with the original erasure time. The Art. 12 clock is not restarted.
+   It also writes a `subprocessor_erasure_propagated` row for that run (usually
+   `already_propagated`). Cite the repeat row in the DSR ticket.
+
 ---
 
 ## Inline E-Blast images (F119 PR-1, review finding F2-2)

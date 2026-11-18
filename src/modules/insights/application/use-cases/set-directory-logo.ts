@@ -10,6 +10,8 @@
  * Application layer: no sharp/ORM imports (Constitution Principle III).
  */
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { ok, err, type Result } from '@/lib/result';
 import { insightsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
@@ -21,6 +23,15 @@ import type { LogoContentType, LogoImagePort, LogoStorePort } from '../ports/log
 // into this Application module's graph at eval time.
 import type { Role } from '@/modules/auth/domain/role';
 import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
+
+/**
+ * #710 review — a best-effort logo delete that failed (now bounded, so a
+ * timeout lands here) leaves an orphan public blob: say so, class only (the
+ * URL is never logged).
+ */
+function warnLogoDeleteFailed(e: unknown): void {
+  logger.warn({ err: errKind(e) }, 'insights.directory_logo.delete_failed');
+}
 
 // 016 T030/T033 — widened to the full Role union so routes stop casting and
 // audit emitters record the LITERAL actor role; the decision arms in this
@@ -129,13 +140,13 @@ export async function setDirectoryLogo(
 
   if (outcome.state === 'member_not_found') {
     // Roll back the just-uploaded orphan blob (best-effort).
-    await deps.logoStore.deleteLogo(url).catch(() => {});
+    await deps.logoStore.deleteLogo(url).catch(warnLogoDeleteFailed);
     return err('member_not_found');
   }
   // Delete the REPLACED logo blob so re-uploads don't leak orphans (each upload
   // gets a fresh `addRandomSuffix` URL, so the prior URL differs from the new one).
   if (outcome.priorLogoUrl !== null && outcome.priorLogoUrl !== url) {
-    await deps.logoStore.deleteLogo(outcome.priorLogoUrl).catch(() => {});
+    await deps.logoStore.deleteLogo(outcome.priorLogoUrl).catch(warnLogoDeleteFailed);
   }
   insightsMetrics.directoryListingUpdated(ctx.slug);
   return ok({ logoUrl: url });
@@ -180,7 +191,7 @@ export async function removeDirectoryLogo(
 
   if (outcome.state === 'member_not_found') return err('member_not_found');
   // Delete the now-unreferenced blob (best-effort; the row no longer points at it).
-  if (outcome.priorUrl !== null) await deps.logoStore.deleteLogo(outcome.priorUrl).catch(() => {});
+  if (outcome.priorUrl !== null) await deps.logoStore.deleteLogo(outcome.priorUrl).catch(warnLogoDeleteFailed);
   insightsMetrics.directoryListingUpdated(ctx.slug);
   return ok(undefined);
 }

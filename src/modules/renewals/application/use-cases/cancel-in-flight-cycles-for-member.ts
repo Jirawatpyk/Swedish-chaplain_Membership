@@ -386,8 +386,8 @@ export async function cancelInFlightCyclesForMember(
             'renewal_cycle_cancelled audit emit failed',
             {
               cause: auditErr,
-              underlyingErrorName:
-                auditErr instanceof Error ? auditErr.name : 'UnknownError',
+              // #711 review — the class, the same label as every other line.
+              underlyingErrorName: errKind(auditErr),
               ...(underlyingCode !== undefined
                 ? { underlyingErrorCode: underlyingCode }
                 : {}),

@@ -8224,6 +8224,7 @@
       "insights_cross_tenant_probe": "Obehörigt åtkomstförsök från annan organisation (insikter)",
       "member_erasure_requested": "Radering av medlem begärd",
       "member_erased": "Medlemsuppgifter raderade",
+      "member_erasure_repeated": "Radering av medlem upprepad (data rensad igen)",
       "subprocessor_erasure_propagated": "Radering vidarebefordrad till underbiträde",
       "member_auto_invoice_enrolled": "Registrerad för automatisk förnyelsefakturering",
       "member_auto_invoice_unenrolled": "Borttagen från automatisk förnyelsefakturering",

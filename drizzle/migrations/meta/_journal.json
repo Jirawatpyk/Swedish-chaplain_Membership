@@ -2241,6 +2241,13 @@
       "when": 1798546100000,
       "tag": "0328_audit_log_audience_deleted_once",
       "breakpoints": true
+    },
+    {
+      "idx": 330,
+      "version": "7",
+      "when": 1798546200000,
+      "tag": "0329_audit_event_member_erasure_repeated",
+      "breakpoints": true
     }
   ]
 }

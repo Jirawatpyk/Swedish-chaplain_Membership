@@ -301,22 +301,19 @@ export async function eraseMember(
   // member was already erased (`erased_at` is sticky), else this call's.
   const erasedAt = preflight.value.erasedAt ?? now;
 
-  // #717 — an erasure that already COMPLETED (its `member_erased` record
-  // exists) is a no-op: a repeat call (a new Idempotency-Key, a second admin)
-  // re-runs no scrub and no cascade and writes no audit row, so the 10-year
-  // DPO log holds exactly one completion per erasure. A half-done erasure (no
-  // record yet) falls through and is re-driven as before; so does a failed
-  // read, which never skips an unfinished erasure.
+  // #717 — a repeat erase of an erasure that already COMPLETED (its
+  // `member_erased` record exists) RE-SWEEPS: the scrub and every cascade run
+  // again, so data that came back after completion is cleared, and the repeat
+  // is recorded once as `member_erasure_repeated` (step 1). No second
+  // `member_erased` is written (step 4 re-checks under the member lock). A
+  // half-done erasure (no record yet) is re-driven as before; so is one whose
+  // read failed, which then writes no repeat record.
+  let repeatOfCompleted = false;
   if (alreadyErased) {
     const done = await deps.memberRepo.hasMemberErasedRecord(deps.tenant, memberId);
-    if (done.ok && done.value) {
-      logger.info(
-        { memberId, requestId: meta.requestId },
-        'members.erase.already_complete',
-      );
-      return ok({ memberId, erasedAt, cascadesComplete: true });
-    }
-    if (!done.ok) {
+    if (done.ok) {
+      repeatOfCompleted = done.value;
+    } else {
       logger.warn(
         {
           repoCode: done.error.code,
@@ -387,6 +384,42 @@ export async function eraseMember(
         'erase-member: requested-audit failed',
       );
       return err({ type: 'server_error', message: 'erase request audit failed' });
+    }
+  } else if (repeatOfCompleted) {
+    // #717 — the repeat request's durable record: who asked, when, with what
+    // attestation, and the erasure's ORIGINAL instant. Kept apart from
+    // `member_erasure_requested` so the Art. 12 clock is not restarted.
+    try {
+      await runInTenant(deps.tenant, async (tx) => {
+        const repeated = await deps.audit.recordInTx(tx, deps.tenant, {
+          type: 'member_erasure_repeated',
+          actorUserId: meta.actorUserId,
+          requestId: meta.requestId,
+          summary: `member_erasure_repeated ${memberId}`,
+          payload: {
+            member_id: memberId,
+            reason,
+            original_erased_at: erasedAt.toISOString(),
+            ...(parsed.data.identityVerified !== undefined
+              ? { identity_verified: parsed.data.identityVerified }
+              : {}),
+            ...(parsed.data.verificationMethod !== undefined
+              ? { verification_method: parsed.data.verificationMethod }
+              : {}),
+            ...(parsed.data.note != null ? { note: parsed.data.note } : {}),
+          },
+        });
+        if (!repeated.ok)
+          throw new Error('audit_failed', {
+            cause: 'cause' in repeated.error ? repeated.error.cause : undefined,
+          });
+      });
+    } catch (e) {
+      logger.error(
+        { err: errKind(e), step: errStep(e), code: pgErrorCode(e), memberId, requestId: meta.requestId },
+        'erase-member: repeat audit failed',
+      );
+      return err({ type: 'server_error', message: 'erase repeat audit failed' });
     }
   }
 
@@ -980,10 +1013,11 @@ export async function eraseMember(
   // sentinels), the cascades are individually idempotent, and member_erased is
   // emitted ONLY on a fully-clean run — so a partial erasure is completed by a
   // later call (or the US2 reconciliation sweep), and an incomplete run is never
-  // marked done. Only a HALF-DONE erasure reaches here twice: a completed one
-  // returned at the pre-flight (#717), so `member_erased` is written once per
-  // erasure. A re-drive's completion carries 0/0 counts (sessions/invitations
-  // already revoked on the first pass), flagged by `re_drive`.
+  // marked done. `member_erased` is written once per erasure: step 4 re-checks
+  // for it under the member row lock (#717), so a repeat of a completed
+  // erasure, or a run racing another to completion, writes no second one. A
+  // re-drive's completion carries 0/0 counts (sessions/invitations already
+  // revoked on the first pass), flagged by `re_drive`.
   //
   // 3. POST-COMMIT best-effort cascades. Each opens its own tx (in the adapter)
   //    and must NOT roll back the committed scrub. Track whether every cascade
@@ -1418,6 +1452,13 @@ export async function eraseMember(
   if (allCascadesClean) {
     try {
       await runInTenant(deps.tenant, async (tx) => {
+        // #717 — the member row lock (the scrub's FOR UPDATE), then the
+        // completion re-check: two runs completing at once serialise here, so
+        // `member_erased` is written once per erasure. A repeat of a completed
+        // erasure finds its record and writes nothing more.
+        const locked = await deps.memberRepo.findByIdInTx(tx, memberId);
+        if (!locked.ok) throw new Error(`member_lock_failed:${locked.error.code}`);
+        if (await deps.memberRepo.hasMemberErasedRecordInTx(tx, memberId)) return;
         const done = await deps.audit.recordInTx(tx, deps.tenant, {
           type: 'member_erased',
           actorUserId: meta.actorUserId,

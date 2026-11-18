@@ -123,6 +123,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     // COMP-1 (erase pre-flight) — interface compliance stub.
     findErasedAtById: async () => ok({ erasedAt: null }),
     hasMemberErasedRecord: async () => ok(false),
+    hasMemberErasedRecordInTx: async () => false,
     // COMP-1 US2d (reconciler candidate) — interface compliance stub.
     findStuckErasuresInTx: async () => [],
     countStuckErasuresInTx: async () => 0,

@@ -7,7 +7,8 @@
  *   - `get(key, { access:'private', useCache:false })` — streams the object
  *     server-side; the URL is never handed to the client (the download proxy
  *     pipes the bytes through our own authenticated route).
- *   - `del(key)` — TTL sweep.
+ *   - `del(key)` — export expiry and member erasure; bounded by
+ *     `BLOB_DELETE_TIMEOUT_MS` (#710).
  *
  * Uses `env.blob.privateReadWriteToken` — a SEPARATE private-access store from
  * the public `readWriteToken` store (which backs F4 invoice PDFs + F9 logos,
@@ -19,7 +20,7 @@
  */
 import { put, get, del } from '@vercel/blob';
 import { env } from '@/lib/env';
-import { INSIGHTS_BLOB_DELETE_TIMEOUT_MS } from './blob-delete-timeout';
+import { BLOB_DELETE_TIMEOUT_MS } from '@/lib/blob-delete-timeout';
 import type {
   PrivateBlobObject,
   PrivateBlobPort,
@@ -53,7 +54,7 @@ export const privateBlobAdapter: PrivateBlobPort = {
     await del(key, {
       token: env.blob.privateReadWriteToken,
       // #710 — bounded, so a hung delete cannot outlast the erasure route.
-      abortSignal: AbortSignal.timeout(INSIGHTS_BLOB_DELETE_TIMEOUT_MS),
+      abortSignal: AbortSignal.timeout(BLOB_DELETE_TIMEOUT_MS),
     });
   },
 };

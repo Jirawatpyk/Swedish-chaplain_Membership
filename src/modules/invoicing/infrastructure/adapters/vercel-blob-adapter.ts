@@ -15,9 +15,8 @@ import {
 } from '../../application/ports/blob-storage-port';
 import type { OrphanPdfBlobPage, OrphanPdfBlobPort } from '../../application/ports/orphan-pdf-blob-port';
 import { env } from '@/lib/env';
+import { BLOB_DELETE_TIMEOUT_MS } from '@/lib/blob-delete-timeout';
 
-/** #60 — upper bound on one Blob delete, retries included. */
-const BLOB_DELETE_TIMEOUT_MS = 10_000;
 /** #729 — upper bound on one listing page when the caller gives no signal. */
 const BLOB_LIST_PAGE_TIMEOUT_MS = 20_000;
 
