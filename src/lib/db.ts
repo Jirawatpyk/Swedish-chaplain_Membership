@@ -9,7 +9,9 @@ import * as schema from '@/modules/auth/infrastructure/db/schema';
  * Drizzle client singleton (T025, plan.md § Constraints).
  *
  * Constraints:
- *   - 5-second statement timeout (Postgres `statement_timeout`)
+ *   - statement timeout: `runInTenant` sets `TENANT_TX_STATEMENT_TIMEOUT_MS`
+ *     per transaction (#754). The startup parameter below does not reach a
+ *     pooled Neon connection.
  *   - 3-second connection acquisition timeout
  *   - SSL required (Neon)
  *
@@ -43,7 +45,10 @@ function createPgClient() {
     max: env.database.poolMax ?? (env.isProduction ? 10 : 8),
     idle_timeout: 20,
     connect_timeout: 3,
-    // Apply statement timeout per-connection (5 seconds, milliseconds)
+    // Startup statement timeout (5 s). The Neon pooler DROPS startup
+    // parameters, so on the pooled URL this reads 0 inside a transaction
+    // (measured 5 Nov 2026, #754); it only holds on a direct connection.
+    // `runInTenant` sets its own bound (`TENANT_TX_STATEMENT_TIMEOUT_MS`).
     connection: {
       // postgres.js maps `connection` keys to runtime parameters; statement_timeout
       // is a numeric (ms) parameter that postgres.js accepts as a string per its
@@ -98,6 +103,25 @@ export type Database = typeof db;
 // ---------------------------------------------------------------------------
 
 const DEBUG_RLS_STATE = env.tenant.debugRlsState;
+
+/**
+ * #754 — the per-statement bound every `runInTenant` transaction sets with
+ * `SET LOCAL statement_timeout`. Needed because the Neon pooler drops the
+ * connection's startup `statement_timeout`, which left tenant transactions
+ * unbounded until Vercel's `maxDuration` (300 s).
+ *
+ * 30 s, not 5 s: it must stay ABOVE every lock wait the code budgets on
+ * purpose — the E-Blast dispatch lease's 28 s `lock_timeout` (sized against
+ * the 23 s erasure hold) and the 5 s `lock_timeout`s whose 55P03 handling
+ * would otherwise race a 57014. It does NOT cover the renewals per-tenant
+ * cron advisory-lock waits: those routes hold the lock for the whole run, so
+ * an overlapping run now waits up to 30 s, then fails 57014 and answers 500
+ * (rolled back, nothing sent twice; before #754 it hung until `maxDuration`).
+ * It is per STATEMENT (lock waits count; time spent in JS between
+ * statements, e.g. a PDF render, does not). A site that sets its own
+ * `SET LOCAL statement_timeout` later in the tx overrides it.
+ */
+export const TENANT_TX_STATEMENT_TIMEOUT_MS = 30_000;
 
 export class TenantContextAssertionError extends Error {
   constructor(message: string) {
@@ -297,6 +321,10 @@ export async function runInTenant<T>(
     // docs/runbooks/rls-row-security-incident.md.
     await tx.execute(sql`SET LOCAL row_security = on`);
     await tx.execute(sql`SET LOCAL ROLE chamber_app`);
+    // #754 — bound each statement; the pooler dropped the startup bound.
+    await tx.execute(
+      sql.raw(`SET LOCAL statement_timeout = ${TENANT_TX_STATEMENT_TIMEOUT_MS}`),
+    );
     await tx.execute(sql.raw(`SET LOCAL app.current_tenant = '${ctx.slug}'`));
 
     bindTenantTx(tx, ctx.slug);

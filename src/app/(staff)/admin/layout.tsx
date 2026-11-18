@@ -52,9 +52,9 @@ export default async function StaffLayout({ children }: { children: ReactNode })
   // icon FUNCTIONS that cannot cross the RSC boundary, so the map must be
   // complete before the sidebar element is created. The read is TIME-BOXED
   // instead (`readPendingChangeRequestsForNav`, 1,500 ms): this layout renders
-  // on EVERY `/admin/**` page and `src/lib/db.ts` bounds a pooled query at
-  // `statement_timeout 5s` + `connect_timeout 3`, so an unbounded badge read
-  // could add ~8 s to every staff page's TTFB for a number in the sidebar.
+  // on EVERY `/admin/**` page and `src/lib/db.ts` bounds a `runInTenant`
+  // statement at 30 s (#754) + `connect_timeout 3`, so an unbounded badge read
+  // could add up to ~33 s to every staff page's TTFB for a number in the sidebar.
   const tenant = resolveTenantFromHeaders(await headers());
   // F119 T132 (FR-023) — the E-Blasts waiting on marketing, the same shape and
   // the same deadline as the change-request badge, read in parallel with it so
