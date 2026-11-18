@@ -302,12 +302,13 @@ describe('F8 F3-archival cascade — Phase 9 / T240', () => {
         if (event.type === 'renewal_cycle_cancelled') {
           // Pretend a Postgres pgEnum violation surfaced from
           // `tx.insert(auditLog).values(...)`. The use-case wraps
-          // any throw from emitInTx in `AuditEmitError`.
-          const pgErr = new Error(
-            'NeonDbError: invalid input value for enum',
-          );
-          pgErr.name = 'NeonDbError';
-          throw pgErr;
+          // any throw from emitInTx in `AuditEmitError`. A real
+          // subclass, because `errKind` reads `constructor.name` (as the
+          // driver's own NeonDbError class reports it), not `.name`.
+          class NeonDbError extends Error {
+            readonly code = '22P02';
+          }
+          throw new NeonDbError('invalid input value for enum');
         }
         return realEmitInTx(tx, event, ctx);
       });
@@ -350,9 +351,8 @@ describe('F8 F3-archival cascade — Phase 9 / T240', () => {
       // discriminated-union arm (replaces the prior generic-log
       // gap where the underlying error class was dropped).
       expect(result.value.auditEmitErrorName).toBe('NeonDbError');
-      expect(result.value.auditEmitErrorMessage).toContain(
-        'invalid input value for enum',
-      );
+      // #711 — the outcome carries the class and SQLSTATE, never the message.
+      expect(JSON.stringify(result.value)).not.toContain('invalid input value for enum');
       // Cycle row should NOT be 'cancelled' — the runInTenant tx
       // rolled back per Principle VIII when AuditEmitError fired.
       const cycleRow = await db
@@ -418,7 +418,7 @@ describe('F8 F3-archival cascade — Phase 9 / T240', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.kind).toBe('cascade.server_error');
-    expect(result.error.message).toContain('synthetic-adapter-throw');
-    expect(result.error.errName).toBe('SyntheticAdapterError');
+    // #711 — the class only; the message never leaves the use case.
+    expect(result.error).toEqual({ kind: 'cascade.server_error', errClass: 'SyntheticAdapterError' });
   });
 });

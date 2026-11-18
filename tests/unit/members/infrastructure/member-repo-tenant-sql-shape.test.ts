@@ -157,6 +157,8 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
       findRiskById: [CTX, 'member-1'],
       findErasedAtByIdInTx: [tx, 'member-1'],
       findErasedAtById: [CTX, 'member-1'],
+      hasMemberErasedRecord: [CTX, 'member-1'],
+      hasMemberErasedRecordInTx: [tx, 'member-1'],
       findStuckErasuresInTx: [tx, T, 10],
       countStuckErasuresInTx: [tx, T],
       hasSubprocessorPropagationInTx: [tx, T, 'member-1', 3000],
@@ -195,6 +197,8 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
     expect(byMethod.size).toBeGreaterThanOrEqual(36);
     // Spec 140 s3 round 5 (code-review #6): the gate skips this method's
     // `SET LOCAL statement_timeout`, so its own fenced SELECT must still be recorded.
+    // #717 — the completion read's `audit_log` SELECT is fenced on the tenant.
+    expect(byMethod.get('hasMemberErasedRecord')?.some((st) => /audit_log/.test(st.sql))).toBe(true);
     expect(byMethod.get('hasSubprocessorPropagationInTx')?.some((st) => /audit_log/.test(st.sql))).toBe(true);
     expect(violationsOf(rec.statements)).toEqual([]);
   });

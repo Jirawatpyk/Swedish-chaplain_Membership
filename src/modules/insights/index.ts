@@ -354,4 +354,7 @@ export {
 // COMP-1 / GDPR Art.17 — member insights-footprint erasure (directory listing +
 // public logo blob + the member's own GDPR export artefacts), called by the
 // members erasure cascade via its DirectoryErasurePort adapter.
-export { eraseMemberInsightsFootprint } from './infrastructure/directory-erasure';
+export {
+  eraseMemberInsightsFootprint,
+  DirectoryErasureDeadlineError,
+} from './infrastructure/directory-erasure';

@@ -8224,6 +8224,7 @@
       "insights_cross_tenant_probe": "ตรวจพบการเข้าถึงข้ามองค์กร (ข้อมูลเชิงลึก)",
       "member_erasure_requested": "ขอลบข้อมูลสมาชิก",
       "member_erased": "ลบข้อมูลสมาชิกแล้ว",
+      "member_erasure_repeated": "ขอลบข้อมูลสมาชิกซ้ำ (ลบข้อมูลอีกครั้ง)",
       "subprocessor_erasure_propagated": "ส่งต่อการลบข้อมูลไปยังผู้ประมวลผลช่วง",
       "member_auto_invoice_enrolled": "ลงทะเบียนออกใบแจ้งหนี้ต่ออายุอัตโนมัติ",
       "member_auto_invoice_unenrolled": "ยกเลิกการออกใบแจ้งหนี้ต่ออายุอัตโนมัติ",

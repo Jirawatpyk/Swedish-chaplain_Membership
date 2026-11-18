@@ -197,9 +197,9 @@ const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
   // `resolve-segment-recipients.ts` — every construction site sets
   // `errClass: errKind(e)`, an error class name.
   ResolveSegmentError: new Set(['errClass']),
-  // renewals `cancel-in-flight-cycles-for-member.ts` — `errName` is an
-  // Error's `.name` (its class or a code-set name) or `'UnknownError'`.
-  CancelInFlightCyclesForMemberError: new Set(['errName']),
+  // renewals `cancel-in-flight-cycles-for-member.ts` — its one construction
+  // site sets `errClass: errKind(e)`, an error class name (#711).
+  CancelInFlightCyclesForMemberError: new Set(['errClass']),
   // renewals `restore-cycle-for-member.ts` — `errName` is an Error's `.name`
   // or `'UnknownError'`, as above.
   RestoreCycleForMemberError: new Set(['errName']),

@@ -8,10 +8,22 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const footprintMock = vi.hoisted(() => vi.fn());
-vi.mock('@/modules/insights', () => ({ eraseMemberInsightsFootprint: footprintMock }));
+const { DirectoryErasureDeadlineError } = vi.hoisted(() => ({
+  DirectoryErasureDeadlineError: class DirectoryErasureDeadlineError extends Error {
+    constructor() {
+      super('directory_erasure_deadline');
+      this.name = 'DirectoryErasureDeadlineError';
+    }
+  },
+}));
+vi.mock('@/modules/insights', () => ({
+  eraseMemberInsightsFootprint: footprintMock,
+  DirectoryErasureDeadlineError,
+}));
 const loggerError = vi.hoisted(() => vi.fn());
+const loggerWarn = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/logger', () => ({
-  logger: { error: loggerError, warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+  logger: { error: loggerError, warn: loggerWarn, info: vi.fn(), debug: vi.fn() },
 }));
 
 import { directoryErasureAdapter } from '@/modules/members/infrastructure/adapters/directory-erasure-adapter';
@@ -22,6 +34,7 @@ const meta = { actorUserId: 'a-1', requestId: 'r-1' };
 beforeEach(() => {
   footprintMock.mockReset();
   loggerError.mockReset();
+  loggerWarn.mockReset();
 });
 
 describe('directoryErasureAdapter', () => {
@@ -29,7 +42,15 @@ describe('directoryErasureAdapter', () => {
     footprintMock.mockResolvedValue(undefined);
     const r = await directoryErasureAdapter.eraseForMember(tenant, 'm-1' as never, meta);
     expect(r).toEqual({ outcome: 'ok' });
-    expect(footprintMock).toHaveBeenCalledWith(tenant, 'm-1');
+    expect(footprintMock).toHaveBeenCalledWith(tenant, 'm-1', {});
+  });
+
+  // #710 — the caller's deadline reaches the footprint erase.
+  it('passes the deadline through to the footprint erase', async () => {
+    footprintMock.mockResolvedValue(undefined);
+    const deadlineAt = new Date('2026-11-18T00:04:00Z');
+    await directoryErasureAdapter.eraseForMember(tenant, 'm-1' as never, { ...meta, deadlineAt });
+    expect(footprintMock).toHaveBeenCalledWith(tenant, 'm-1', { deadlineAt });
   });
 
   it('translates a throw to outcome:failed (never propagates) + logs errKind only', async () => {
@@ -41,5 +62,18 @@ describe('directoryErasureAdapter', () => {
     const logged = JSON.stringify(loggerError.mock.calls[0]?.[0]);
     expect(logged).not.toContain('secret@pii.com');
     expect(logged).toContain('Error'); // errKind = constructor name
+  });
+
+  // #710 review — a deadline deferral is planned work for the reconciler, not
+  // a failure: `warn`, its own event name, never the failure alert.
+  it('a deadline deferral is failed but logged at warn, not error', async () => {
+    footprintMock.mockRejectedValue(new DirectoryErasureDeadlineError());
+    const r = await directoryErasureAdapter.eraseForMember(tenant, 'm-1' as never, meta);
+    expect(r).toEqual({ outcome: 'failed' });
+    expect(loggerError).not.toHaveBeenCalled();
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'deadline' }),
+      'members.erase.directory_erasure_deferred',
+    );
   });
 });

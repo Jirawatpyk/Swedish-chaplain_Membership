@@ -25,6 +25,12 @@
  *   503 idempotency_reservation_failed — Upstash outage
  *   200 { memberId, erasedAt, cascadesComplete } — happy path (a
  *       cascadesComplete:false is STILL 200; the reconciler finishes the rest)
+ *       #717: a repeat erase of a member whose erasure already completed
+ *       re-runs the scrub and every cascade (clearing data that came back),
+ *       records `member_erasure_repeated`, writes no second `member_erased`,
+ *       and answers the ORIGINAL erasedAt. `cascadesComplete` covers the
+ *       controller-side cascades only; the sub-processor propagation is
+ *       recorded in `subprocessor_erasure_propagated` and never gates it
  *   500 server_error
  */
 import { NextResponse, type NextRequest } from 'next/server';

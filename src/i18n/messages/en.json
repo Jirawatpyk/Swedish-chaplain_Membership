@@ -8224,6 +8224,7 @@
       "insights_cross_tenant_probe": "Cross-tenant probe (insights)",
       "member_erasure_requested": "Member erasure requested",
       "member_erased": "Member data erased",
+      "member_erasure_repeated": "Member erasure repeated (data swept again)",
       "subprocessor_erasure_propagated": "Erasure propagated to subprocessor",
       "member_auto_invoice_enrolled": "Enrolled in automatic renewal invoicing",
       "member_auto_invoice_unenrolled": "Removed from automatic renewal invoicing",

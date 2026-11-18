@@ -35,6 +35,7 @@ import {
 } from '../application/ports/image-storage-port';
 import type { TenantSlug } from '@/modules/tenants';
 import { env } from '@/lib/env';
+import { BLOB_DELETE_TIMEOUT_MS } from '@/lib/blob-delete-timeout';
 
 /**
  * NOT-FOUND is classified by the SDK's own class. `@vercel/blob@2.3.3`
@@ -90,7 +91,7 @@ function buildKey(
 }
 
 /** Spec 131 — the bound on one blob delete (the sweep's only un-bounded wait). */
-export const IMAGE_BLOB_DELETE_TIMEOUT_MS = 10_000;
+export const IMAGE_BLOB_DELETE_TIMEOUT_MS = BLOB_DELETE_TIMEOUT_MS;
 
 export const vercelBlobImageStorage: ImageStoragePort = {
   async existsByContentHash(

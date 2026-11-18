@@ -99,6 +99,11 @@ export type F3AuditEventType =
   // reports complete. Neither payload may carry erased PII (append-only log).
   | 'member_erasure_requested'
   | 'member_erased'
+  // #717 (migration 0329) — a repeat erase of a COMPLETED erasure re-sweeps
+  // and writes this, never a second `member_erased`. Payload: { member_id,
+  // reason, original_erased_at, identity_verified?, verification_method?,
+  // note? } — no erased PII. Staff-only (not member-visible). 5y retention.
+  | 'member_erasure_repeated'
   // COMP-1 US3-C (migration 0228) — best-effort sub-processor erasure
   // propagation. Payload: { member_id, reason, resend_outcome (ok / partial /
   // failed / not_attempted / already_propagated), resend_contacts_removed_count,

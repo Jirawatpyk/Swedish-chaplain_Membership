@@ -28,6 +28,7 @@ import {
   sql,
   type SQL,
 } from 'drizzle-orm';
+import { memberErasedRecordExists, pgBool } from './member-erased-predicate';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant, tenantSlugOf, type TenantTx } from '@/lib/db';
@@ -602,12 +603,7 @@ export function buildBroadcastRecipientContactsQuery(
  */
 function stuckErasurePredicate(tenantSlug: string): SQL {
   return sql`m.erased_at IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM audit_log al2
-          WHERE al2.tenant_id = ${tenantSlug}
-            AND al2.event_type = 'member_erased'
-            AND al2.payload->>'member_id' = m.member_id::text
-        )`;
+        AND NOT ${memberErasedRecordExists(tenantSlug, sql`m.member_id::text`)}`;
 }
 
 export const drizzleMemberRepo: MemberRepo = {
@@ -704,6 +700,28 @@ export const drizzleMemberRepo: MemberRepo = {
       const row = rows[0];
       if (row === undefined) return err({ code: 'repo.not_found' });
       return ok({ erasedAt: row.erasedAt ?? null });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async hasMemberErasedRecordInTx(tx, memberId) {
+    // #717 — on the caller's tx: `eraseMember` re-reads it under the member row
+    // lock before it writes `member_erased`, so two completions serialise.
+    // Throws on a DB error (the caller's tx fails closed: nothing is written).
+    const tenantId = tenantSlugOf(tx);
+    const rows = (await tx.execute(
+      sql`SELECT ${memberErasedRecordExists(tenantId, sql`${memberId as string}`)} AS done`,
+    )) as unknown as Array<{ done: unknown }>;
+    return pgBool(rows[0]?.done);
+  },
+
+  async hasMemberErasedRecord(ctx, memberId) {
+    try {
+      const done = await runInTenant(ctx, (tx) =>
+        drizzleMemberRepo.hasMemberErasedRecordInTx(tx, memberId),
+      );
+      return ok(done);
     } catch (e) {
       return err(unexpected(e));
     }

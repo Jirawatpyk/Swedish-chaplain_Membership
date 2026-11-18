@@ -11,10 +11,10 @@
  * invoicing, the F1 user erasure, the content scrub, events), `member_erased`
  * and the response: ~22 s of bounded calls plus DB work, so 60 s.
  *
- * NOT covered, a known pre-existing unbounded call: the directory cascade's
- * Vercel Blob `del` calls (up to 1 logo and 100 archives,
- * `public-logo-blob-adapter.ts`, `private-blob-adapter.ts`) carry no timeout;
- * a follow-up issue tracks it. Sub-processor propagation — the one step a
+ * The directory cascade (#710) gets the same deadline: each of its Vercel Blob
+ * `del` calls (up to 1 logo and 100 archives) is bounded at 10 s, and none
+ * starts unless it can finish before the deadline, so it never eats into
+ * this reserve. Sub-processor propagation — the one step a
  * re-drive cannot repeat — runs BEFORE the broadcasts cascade
  * (erase-member.ts), so it never competes for the reserve (its own bound is
  * slice 2).

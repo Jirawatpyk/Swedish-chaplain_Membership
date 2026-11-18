@@ -56,6 +56,9 @@ const F3_AUDIT_EVENTS: readonly F3AuditEventType[] = [
   // COMP-1 Member Erasure (migration 0221) — F3 events, 5y retention.
   'member_erasure_requested',
   'member_erased',
+  // #717 (migration 0329) — a repeat erase of a COMPLETED erasure: the
+  // re-sweep's record (no second `member_erased`). 5y retention.
+  'member_erasure_repeated',
   // COMP-1 US3-C (migration 0228) — best-effort sub-processor erasure propagation outcome.
   'subprocessor_erasure_propagated',
   // 107-auto-invoice Task 15 (migration 0263) — auto-invoice enrolment.
@@ -90,9 +93,9 @@ type _AssertF3Coverage = typeof F3_AUDIT_EVENTS extends
 const _: _AssertF3Coverage = true;
 
 describe('F3AuditEventType count guard', () => {
-  it('F3 audit event type count is 42 (37 prior + the five F114 change-request events)', () => {
+  it('F3 audit event type count is 43 (42 prior + member_erasure_repeated, #717)', () => {
     // Reference `_` so the compile-time proof is not tree-shaken / unused.
     expect(_).toBe(true);
-    expect(F3_AUDIT_EVENTS.length).toBe(42);
+    expect(F3_AUDIT_EVENTS.length).toBe(43);
   });
 });

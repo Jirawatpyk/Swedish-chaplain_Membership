@@ -384,6 +384,9 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   // COMP-1 Member Erasure (migration 0221) — F3 events, 5y retention.
   'member_erasure_requested',
   'member_erased',
+  // #717 (migration 0329) — a repeat erase of a COMPLETED erasure: the
+  // re-sweep's record (no second `member_erased`). F3 event, 5y retention.
+  'member_erasure_repeated',
   // COMP-1 US3-C (migration 0228) — best-effort sub-processor erasure
   // propagation outcome. F3 event, 5y retention. Payload carries ids +
   // outcomes ONLY, never erased PII (append-only log).

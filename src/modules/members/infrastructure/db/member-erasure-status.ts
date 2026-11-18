@@ -28,6 +28,7 @@
  * write affordances on a member that IS erased — an Art.17/§33 control bypass.
  */
 import { sql } from 'drizzle-orm';
+import { memberErasedRecordExists, pgBool } from './member-erased-predicate';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '../../domain/member';
@@ -46,12 +47,7 @@ export async function getMemberErasureStatus(
     tx.execute(sql`
       SELECT
         m.erased_at AS erased_at,
-        EXISTS (
-          SELECT 1 FROM audit_log al
-          WHERE al.tenant_id = ${ctx.slug}
-            AND al.event_type = 'member_erased'
-            AND al.payload->>'member_id' = m.member_id::text
-        ) AS completed
+        ${memberErasedRecordExists(ctx.slug, sql`m.member_id::text`)} AS completed
       FROM members m
       WHERE m.member_id = ${memberId}
       LIMIT 1
@@ -72,6 +68,6 @@ export async function getMemberErasureStatus(
         : new Date(row.erased_at);
   return {
     erasedAt,
-    completed: row.completed === true || row.completed === 't',
+    completed: pgBool(row.completed),
   };
 }

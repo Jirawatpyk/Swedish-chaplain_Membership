@@ -15,7 +15,7 @@
  * `member_erased` withheld → the US2d reconciler re-drives (idempotent +
  * re-drive-safe by construction).
  */
-import { eraseMemberInsightsFootprint } from '@/modules/insights';
+import { DirectoryErasureDeadlineError, eraseMemberInsightsFootprint } from '@/modules/insights';
 import { logger } from '@/lib/logger';
 import type { DirectoryErasurePort } from '../../application/ports/directory-erasure-port';
 
@@ -33,9 +33,29 @@ export const noopDirectoryErasureAdapter: DirectoryErasurePort = {
 export const directoryErasureAdapter: DirectoryErasurePort = {
   async eraseForMember(tenant, memberId, meta) {
     try {
-      await eraseMemberInsightsFootprint(tenant, memberId as string);
+      await eraseMemberInsightsFootprint(
+        tenant,
+        memberId as string,
+        meta.deadlineAt !== undefined ? { deadlineAt: meta.deadlineAt } : {},
+      );
       return { outcome: 'ok' };
     } catch (e) {
+      if (e instanceof DirectoryErasureDeadlineError) {
+        // #710 review — a planned deferral to the reconciler (the deadline
+        // left no room for another bounded Blob delete), not a failure: warn,
+        // its own event, never the failure alert.
+        logger.warn(
+          {
+            reason: 'deadline',
+            tenantId: tenant.slug,
+            memberId: memberId as string,
+            requestId: meta.requestId,
+            cascade: 'f9_directory_erasure',
+          },
+          'members.erase.directory_erasure_deferred',
+        );
+        return { outcome: 'failed' };
+      }
       logger.error(
         {
           // Forbidden-log hygiene: error CLASS name only, never the raw message
