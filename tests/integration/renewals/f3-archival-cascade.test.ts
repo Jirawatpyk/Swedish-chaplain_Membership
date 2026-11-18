@@ -302,12 +302,13 @@ describe('F8 F3-archival cascade — Phase 9 / T240', () => {
         if (event.type === 'renewal_cycle_cancelled') {
           // Pretend a Postgres pgEnum violation surfaced from
           // `tx.insert(auditLog).values(...)`. The use-case wraps
-          // any throw from emitInTx in `AuditEmitError`.
-          const pgErr = new Error(
-            'NeonDbError: invalid input value for enum',
-          );
-          pgErr.name = 'NeonDbError';
-          throw pgErr;
+          // any throw from emitInTx in `AuditEmitError`. A real
+          // subclass, because `errKind` reads `constructor.name` (as the
+          // driver's own NeonDbError class reports it), not `.name`.
+          class NeonDbError extends Error {
+            readonly code = '22P02';
+          }
+          throw new NeonDbError('invalid input value for enum');
         }
         return realEmitInTx(tx, event, ctx);
       });
