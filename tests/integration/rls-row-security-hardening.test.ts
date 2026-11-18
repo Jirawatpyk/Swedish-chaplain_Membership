@@ -53,6 +53,17 @@ describe('RLS hardening — runInTenant forces row_security on', () => {
     expect(override).toBe('1500ms');
   });
 
+  it('enforces the bound: a statement past a tightened SET LOCAL ends with 57014', async () => {
+    const err = await runInTenant(asTenantContext(TENANT_SLUG), async (tx) => {
+      await tx.execute(sql`SET LOCAL statement_timeout = 200`);
+      await tx.execute(sql`SELECT pg_sleep(1)`);
+    }).then(
+      () => null,
+      (e: unknown) => e as { code?: string; cause?: { code?: string } },
+    );
+    expect(err?.code ?? err?.cause?.code).toBe('57014');
+  });
+
   describe('defends a connection contaminated with row_security = off', () => {
     // A dedicated max=1 client so the poison + the transaction share ONE
     // physical connection deterministically — mirroring the production leak
@@ -72,6 +83,7 @@ describe('RLS hardening — runInTenant forces row_security on', () => {
       client.begin(async (tx) => {
         if (opts.withFix) await tx`SET LOCAL row_security = on`;
         await tx`SET LOCAL ROLE chamber_app`;
+        await tx`SET LOCAL statement_timeout = 30000`;
         await tx.unsafe(`SET LOCAL app.current_tenant = '${TENANT_SLUG}'`);
         return tx`SELECT 1 AS ok FROM membership_plans LIMIT 1`;
       });

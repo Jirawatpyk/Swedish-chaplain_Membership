@@ -117,9 +117,9 @@ const DEBUG_RLS_STATE = env.tenant.debugRlsState;
  * cron advisory-lock waits: those routes hold the lock for the whole run, so
  * an overlapping run now waits up to 30 s, then fails 57014 and answers 500
  * (rolled back, nothing sent twice; before #754 it hung until `maxDuration`).
- * It is per STATEMENT (lock waits count; time spent
- * in JS between statements, e.g. a PDF render, does not). A site that sets
- * its own `SET LOCAL statement_timeout` later in the tx overrides it.
+ * It is per STATEMENT (lock waits count; time spent in JS between
+ * statements, e.g. a PDF render, does not). A site that sets its own
+ * `SET LOCAL statement_timeout` later in the tx overrides it.
  */
 export const TENANT_TX_STATEMENT_TIMEOUT_MS = 30_000;
 
