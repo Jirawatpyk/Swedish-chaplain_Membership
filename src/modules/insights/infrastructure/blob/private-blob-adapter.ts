@@ -19,6 +19,7 @@
  */
 import { put, get, del } from '@vercel/blob';
 import { env } from '@/lib/env';
+import { INSIGHTS_BLOB_DELETE_TIMEOUT_MS } from './blob-delete-timeout';
 import type {
   PrivateBlobObject,
   PrivateBlobPort,
@@ -49,6 +50,10 @@ export const privateBlobAdapter: PrivateBlobPort = {
   },
 
   async delete(key: string): Promise<void> {
-    await del(key, { token: env.blob.privateReadWriteToken });
+    await del(key, {
+      token: env.blob.privateReadWriteToken,
+      // #710 — bounded, so a hung delete cannot outlast the erasure route.
+      abortSignal: AbortSignal.timeout(INSIGHTS_BLOB_DELETE_TIMEOUT_MS),
+    });
   },
 };

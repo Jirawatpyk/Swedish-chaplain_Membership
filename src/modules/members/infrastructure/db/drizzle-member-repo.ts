@@ -709,6 +709,24 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async hasMemberErasedRecord(ctx, memberId) {
+    try {
+      // #717 — the completion record the reconciler's stuck predicate reads.
+      // `audit_log`'s RLS is permissive, so the tenant filter is required.
+      const rows = (await runInTenant(ctx, (tx) =>
+        tx.execute(sql`SELECT EXISTS (
+            SELECT 1 FROM audit_log al
+            WHERE al.tenant_id = ${ctx.slug}
+              AND al.event_type = 'member_erased'
+              AND al.payload->>'member_id' = ${memberId as string}
+          ) AS done`),
+      )) as unknown as Array<{ done: boolean }>;
+      return ok(rows[0]?.done === true);
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async findStuckErasuresInTx(tx, tenantSlug, limit) {
     // COMP-1 US2d reconciler candidate query. Anti-join: erased members
     // (erased_at IS NOT NULL) with NO `member_erased` completion audit. The

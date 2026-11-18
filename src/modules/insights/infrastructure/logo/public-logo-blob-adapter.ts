@@ -9,6 +9,7 @@
  */
 import { put, del } from '@vercel/blob';
 import { env } from '@/lib/env';
+import { INSIGHTS_BLOB_DELETE_TIMEOUT_MS } from '../blob/blob-delete-timeout';
 import type { LogoStorePort } from '../../application/ports/logo-port';
 
 export const publicLogoBlobAdapter: LogoStorePort = {
@@ -24,6 +25,10 @@ export const publicLogoBlobAdapter: LogoStorePort = {
   },
 
   async deleteLogo(urlOrKey: string): Promise<void> {
-    await del(urlOrKey, { token: env.blob.readWriteToken });
+    await del(urlOrKey, {
+      token: env.blob.readWriteToken,
+      // #710 — bounded, so a hung delete cannot outlast the erasure route.
+      abortSignal: AbortSignal.timeout(INSIGHTS_BLOB_DELETE_TIMEOUT_MS),
+    });
   },
 };

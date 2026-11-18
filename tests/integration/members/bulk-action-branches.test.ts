@@ -112,6 +112,7 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
     findPendingInvitationsForPrimaryContacts: vi.fn(),
     scrubPiiInTx: vi.fn(),
     findErasedAtById: vi.fn(),
+    hasMemberErasedRecord: vi.fn(),
     findErasedAtByIdInTx: vi.fn(),
     findStuckErasuresInTx: vi.fn(),
     countStuckErasuresInTx: vi.fn(),

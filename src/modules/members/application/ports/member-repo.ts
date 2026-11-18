@@ -926,6 +926,19 @@ export interface MemberRepo {
   ): Promise<Result<{ readonly erasedAt: Date | null }, RepoError>>;
 
   /**
+   * #717 — does the member's erasure have its completion record (a
+   * `member_erased` audit row)? `eraseMember` reads it only for an
+   * already-erased member: true ⇒ the erasure is done and a repeat call is a
+   * no-op; false ⇒ a half-done erasure the call re-drives. The same predicate
+   * as the reconciler's stuck query. Tenant-scoped on `audit_log` (its RLS
+   * policy is permissive, so the predicate is load-bearing).
+   */
+  hasMemberErasedRecord(
+    ctx: TenantContext,
+    memberId: MemberId,
+  ): Promise<Result<boolean, RepoError>>;
+
+  /**
    * F114 review (reliability I-2 / security I-2) — the in-tx twin, read on
    * the CALLER's `tx` so a use case holding `FOR UPDATE` on the member row
    * sees the erasure it is racing against instead of a second connection's

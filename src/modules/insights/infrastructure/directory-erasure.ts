@@ -20,6 +20,9 @@
  *     every opted-in member), so they are left to the TTL sweep +
  *     regeneration-without-the-erased-member, not force-deleted here.
  *
+ * #710 — each Blob delete is bounded (`INSIGHTS_BLOB_DELETE_TIMEOUT_MS`), and
+ * with a `deadlineAt` none starts unless it can finish in time.
+ *
  * Throws on any DB/blob failure so the members cascade records the outcome as
  * incomplete (member_erased withheld → US2d reconciler re-drives). Every step is
  * idempotent + re-drive-safe.
@@ -30,19 +33,42 @@ import { makeDrizzleDirectoryRepo } from './repos/drizzle-directory-repo';
 import { makeDrizzleExportJobRepo } from './repos/drizzle-export-job-repo';
 import { publicLogoBlobAdapter } from './logo/public-logo-blob-adapter';
 import { privateBlobAdapter } from './blob/private-blob-adapter';
+import { INSIGHTS_BLOB_DELETE_TIMEOUT_MS } from './blob/blob-delete-timeout';
 
 // A member holds at most a handful of live GDPR archives (older ones are
 // TTL-expired — blob gone — then purged); a generous bound covers the live set.
 const GDPR_ARCHIVE_SCAN_LIMIT = 100;
 
+/**
+ * #710 — the erase stopped because the caller's deadline left too little time
+ * for another Blob delete (each is bounded by `INSIGHTS_BLOB_DELETE_TIMEOUT_MS`).
+ * The members adapter turns it into `outcome: 'failed'`; the reconciler
+ * re-drives the rest (every step is idempotent).
+ */
+export class DirectoryErasureDeadlineError extends Error {
+  constructor() {
+    super('directory_erasure_deadline');
+    this.name = 'DirectoryErasureDeadlineError';
+  }
+}
+
+function assertTimeLeft(deadlineAt: Date | undefined): void {
+  if (deadlineAt === undefined) return;
+  if (deadlineAt.getTime() - Date.now() < INSIGHTS_BLOB_DELETE_TIMEOUT_MS) {
+    throw new DirectoryErasureDeadlineError();
+  }
+}
+
 export async function eraseMemberInsightsFootprint(
   ctx: TenantContext,
   memberId: string,
+  opts: { readonly deadlineAt?: Date } = {},
 ): Promise<void> {
   // 1. Directory listing + public logo (blob-before-row, re-drive-safe).
   const directoryRepo = makeDrizzleDirectoryRepo(ctx.slug);
   const listing = await directoryRepo.findByMemberId(ctx, memberId);
   if (listing?.logoUrl) {
+    assertTimeLeft(opts.deadlineAt);
     await publicLogoBlobAdapter.deleteLogo(listing.logoUrl);
   }
   await runInTenant(ctx, (tx) => directoryRepo.deleteForMemberInTx(tx, memberId));
@@ -60,6 +86,7 @@ export async function eraseMemberInsightsFootprint(
     // nulls the single-use download token (markExpiredInTx is guarded to
     // ready|delivered). Mirrors the TTL sweep's order + is re-drive-safe.
     if (job.blobKey) {
+      assertTimeLeft(opts.deadlineAt);
       await privateBlobAdapter.delete(job.blobKey);
     }
     await runInTenant(ctx, (tx) => exportRepo.markExpiredInTx(tx, job.id));

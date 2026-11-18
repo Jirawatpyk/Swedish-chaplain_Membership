@@ -25,6 +25,9 @@
  *   503 idempotency_reservation_failed — Upstash outage
  *   200 { memberId, erasedAt, cascadesComplete } — happy path (a
  *       cascadesComplete:false is STILL 200; the reconciler finishes the rest)
+ *       #717: a member whose erasure already completed answers 200 with its
+ *       ORIGINAL erasedAt and cascadesComplete:true; nothing is re-run and no
+ *       audit row is written
  *   500 server_error
  */
 import { NextResponse, type NextRequest } from 'next/server';

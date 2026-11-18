@@ -33,7 +33,11 @@ export const noopDirectoryErasureAdapter: DirectoryErasurePort = {
 export const directoryErasureAdapter: DirectoryErasurePort = {
   async eraseForMember(tenant, memberId, meta) {
     try {
-      await eraseMemberInsightsFootprint(tenant, memberId as string);
+      await eraseMemberInsightsFootprint(
+        tenant,
+        memberId as string,
+        meta.deadlineAt !== undefined ? { deadlineAt: meta.deadlineAt } : {},
+      );
       return { outcome: 'ok' };
     } catch (e) {
       logger.error(

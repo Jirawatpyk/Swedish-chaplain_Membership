@@ -203,7 +203,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     deps.memberRepo.hasMemberErasedRecord = vi.fn(async () => ({
       ok: false,
       error: { code: 'repo.unexpected' },
-    }));
+    })) as never;
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(res.ok).toBe(true);
     expect(deps.memberRepo.scrubPiiInTx).toHaveBeenCalledTimes(1);

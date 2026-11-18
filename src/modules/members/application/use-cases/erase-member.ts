@@ -297,6 +297,38 @@ export async function eraseMember(
     return err({ type: 'server_error', message: 'erase pre-flight read failed' });
   }
   const alreadyErased = preflight.value.erasedAt !== null;
+  // The erasure instant the caller is answered with: the stored one when the
+  // member was already erased (`erased_at` is sticky), else this call's.
+  const erasedAt = preflight.value.erasedAt ?? now;
+
+  // #717 — an erasure that already COMPLETED (its `member_erased` record
+  // exists) is a no-op: a repeat call (a new Idempotency-Key, a second admin)
+  // re-runs no scrub and no cascade and writes no audit row, so the 10-year
+  // DPO log holds exactly one completion per erasure. A half-done erasure (no
+  // record yet) falls through and is re-driven as before; so does a failed
+  // read, which never skips an unfinished erasure.
+  if (alreadyErased) {
+    const done = await deps.memberRepo.hasMemberErasedRecord(deps.tenant, memberId);
+    if (done.ok && done.value) {
+      logger.info(
+        { memberId, requestId: meta.requestId },
+        'members.erase.already_complete',
+      );
+      return ok({ memberId, erasedAt, cascadesComplete: true });
+    }
+    if (!done.ok) {
+      logger.warn(
+        {
+          repoCode: done.error.code,
+          err: errKind(rootCause(done.error)),
+          code: pgErrorCode(done.error),
+          memberId,
+          requestId: meta.requestId,
+        },
+        'erase-member: completion read failed; re-driving',
+      );
+    }
+  }
 
   // 1. Durable request audit — its OWN committed tx so the DPO log records the
   //    request even if the scrub below fails (Art. 12 clock start). Emitted ONLY
@@ -948,9 +980,10 @@ export async function eraseMember(
   // sentinels), the cascades are individually idempotent, and member_erased is
   // emitted ONLY on a fully-clean run — so a partial erasure is completed by a
   // later call (or the US2 reconciliation sweep), and an incomplete run is never
-  // marked done. A re-drive of an already-erased member re-emits member_erased
-  // with 0/0 counts (sessions/invitations already revoked on the first pass) —
-  // benign, append-only.
+  // marked done. Only a HALF-DONE erasure reaches here twice: a completed one
+  // returned at the pre-flight (#717), so `member_erased` is written once per
+  // erasure. A re-drive's completion carries 0/0 counts (sessions/invitations
+  // already revoked on the first pass), flagged by `re_drive`.
   //
   // 3. POST-COMMIT best-effort cascades. Each opens its own tx (in the adapter)
   //    and must NOT roll back the committed scrub. Track whether every cascade
@@ -1359,6 +1392,8 @@ export async function eraseMember(
     const r = await deps.directoryErasure.eraseForMember(deps.tenant, memberId, {
       actorUserId: meta.actorUserId,
       requestId: meta.requestId,
+      // #710 — its Blob deletes stop before the route's deadline.
+      ...(meta.deadlineAt !== undefined ? { deadlineAt: meta.deadlineAt } : {}),
     });
     if (r.outcome !== 'ok') {
       allCascadesClean = false;
@@ -1459,5 +1494,5 @@ export async function eraseMember(
     }
   }
 
-  return ok({ memberId, erasedAt: now, cascadesComplete: allCascadesClean });
+  return ok({ memberId, erasedAt, cascadesComplete: allCascadesClean });
 }

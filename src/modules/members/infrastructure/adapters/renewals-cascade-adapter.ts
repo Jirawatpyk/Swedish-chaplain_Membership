@@ -94,16 +94,16 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
         // F8 cascade failure is non-fatal for F3 archival — the member
         // archive should succeed even if a cascade glitch leaves a
         // cycle in-flight. Log + return `cascade_failed` so the F3
-        // caller emits a metric / audit signal. Phase 9 verify-fix —
-        // propagate `errName` from the use-case Result for triage.
+        // caller emits a metric / audit signal. The use-case Result
+        // carries the error class (`errClass`) for triage.
         // Review round 2 — annotated with its type, the check:log-error-objects
         // allowlist (TOKEN_FIELDS_BY_TYPE).
-        const errName: CancelInFlightCyclesForMemberError['errName'] = result.error.errName;
+        const errClass: CancelInFlightCyclesForMemberError['errClass'] = result.error.errClass;
         logger.error(
           {
             // Spec 140 s2d (#736c) — the closed kind and the class, never the message.
             err: result.error.kind,
-            errName,
+            errClass,
             tenantId: tenant.slug,
             memberId: memberId as string,
             cascade: 'f8_in_flight_cycle_cancel',
@@ -144,12 +144,10 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
             memberId: memberId as string,
             cancelledCount: result.value.cancelledCount,
             skippedConcurrentCount: result.value.skippedConcurrentCount,
-            // Round-2 close: log the underlying error class + message
-            // from the typed `AuditEmitError` so dashboards can group
-            // on a stable label (vs the prior "generic warn without
-            // the underlying class" gap).
+            // The underlying error class from the typed `AuditEmitError`
+            // (#711: never its message), so dashboards group on a stable label.
             auditEmitErrorName: result.value.auditEmitErrorName,
-            auditEmitErrorMessage: result.value.auditEmitErrorMessage,
+            auditEmitErrorCode: result.value.auditEmitErrorCode,
             cascade: 'f8_audit_emit_failure',
           },
           'members.archive.renewals_cascade_audit_emit_failed',

@@ -58,6 +58,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '@/modules/members';
 import {
@@ -177,8 +178,8 @@ export class AuditEmitError extends Error {
  *                                    audit pipeline itself is broken,
  *                                    not a benign race.
  *                                    Round-2 close: carries
- *                                    `auditEmitErrorName` +
- *                                    `auditEmitErrorMessage` from the
+ *                                    `auditEmitErrorName` (#711: the
+ *                                    class only, never the message) from the
  *                                    typed `AuditEmitError` so the
  *                                    F3 adapter can log the
  *                                    underlying class without losing
@@ -208,12 +209,6 @@ export type CancelInFlightCyclesForMemberOutput =
        */
       readonly auditEmitErrorName: string;
       /**
-       * The raw `Error.message` from the underlying audit-emit
-       * failure. Sanitised at the adapter logging boundary
-       * (`renewals-cascade-adapter.ts`) — no PII per FR-049.
-       */
-      readonly auditEmitErrorMessage: string;
-      /**
        * Round-3 close — Postgres / Drizzle SQLSTATE code when
        * present (e.g. `'22P02'` for invalid pgEnum, `'40001'` for
        * serialization-failure retry, `'08006'` for connection-lost).
@@ -226,17 +221,16 @@ export type CancelInFlightCyclesForMemberOutput =
     };
 
 /**
- * Phase 9 verify-fix close-on-review — extend the Result error to
- * carry both `message` AND `errName` so the adapter can log the
- * underlying error class. Round-2 close: `errName` is now REQUIRED
- * (was optional). Producer at line ~365 uses sentinel fallback
- * `'UnknownError'` when `e` is not an `Error` instance — eliminates
- * the `?? 'unknown'` cast every dashboard query previously needed.
+ * The Result error: the closed kind and the error's class, so the adapter can
+ * log what failed without the message (#711).
  */
 export type CancelInFlightCyclesForMemberError = {
   readonly kind: 'cascade.server_error';
-  readonly message: string;
-  readonly errName: string;
+  /**
+   * #711 — the error's class (`errKind`), never its message: a driver message
+   * can quote bound parameters of the member being erased.
+   */
+  readonly errClass: string;
 };
 
 const DEFAULT_REASON: RenewalsCascadeReason = 'originator_member_archived';
@@ -386,10 +380,10 @@ export async function cancelInFlightCyclesForMember(
             typeof (auditErr as { code: unknown }).code === 'string'
               ? (auditErr as { code: string }).code
               : undefined;
+          // #711 — a fixed message: the driver's (in `cause`) can quote
+          // the erased member's bound parameters, and is never logged.
           throw new AuditEmitError(
-            auditErr instanceof Error
-              ? auditErr.message
-              : String(auditErr),
+            'renewal_cycle_cancelled audit emit failed',
             {
               cause: auditErr,
               underlyingErrorName:
@@ -430,15 +424,12 @@ export async function cancelInFlightCyclesForMember(
       // typed underlying-error class through the discriminated-union
       // arm so the F3 adapter can log + emit the right metric label
       // without losing forensic context.
-      const errMessage =
-        txErr instanceof Error ? txErr.message : String(txErr);
-      const errName =
-        txErr instanceof Error ? txErr.name : 'UnknownError';
+      // #711 — the class only, never the message.
+      const errClass = errKind(txErr);
       if (txErr instanceof AuditEmitError) {
         logger.error(
           {
-            err: errMessage,
-            errName,
+            err: errClass,
             underlyingErrorName: txErr.underlyingErrorName,
             underlyingErrorCode: txErr.underlyingErrorCode,
             tenantId: input.tenant.slug,
@@ -453,14 +444,12 @@ export async function cancelInFlightCyclesForMember(
           cancelledCount,
           skippedConcurrentCount,
           auditEmitErrorName: txErr.underlyingErrorName,
-          auditEmitErrorMessage: errMessage,
           auditEmitErrorCode: txErr.underlyingErrorCode,
         });
       }
       logger.error(
         {
-          err: errMessage,
-          errName,
+          err: errClass,
           tenantId: input.tenant.slug,
           memberId: input.memberId as string,
           cycleId: activeCycle.cycleId,
@@ -501,8 +490,7 @@ export async function cancelInFlightCyclesForMember(
     if (e instanceof AuditEmitError) {
       logger.error(
         {
-          err: e.message,
-          errName: e.name,
+          err: errKind(e),
           underlyingErrorName: e.underlyingErrorName,
           underlyingErrorCode: e.underlyingErrorCode,
           tenantId: input.tenant.slug,
@@ -516,33 +504,20 @@ export async function cancelInFlightCyclesForMember(
         cancelledCount: 0,
         skippedConcurrentCount: 0,
         auditEmitErrorName: e.underlyingErrorName,
-        auditEmitErrorMessage: e.message,
         auditEmitErrorCode: e.underlyingErrorCode,
       });
     }
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
-        // Round-3 M1 close — sentinel `'UnknownError'` for non-Error
-        // throws (was `undefined`). Matches the producer convention
-        // at the Result.err return below + the runInTenant inner-
-        // catch convention. Single dashboard label across all
-        // cascade.server_error log lines.
-        errName: e instanceof Error ? e.name : 'UnknownError',
+        // #711 — the class only (`errKind`), never the message.
+        err: errKind(e),
         tenantId: input.tenant.slug,
         memberId: input.memberId as string,
         cascade: cascadeLabel,
       },
       'renewals.cascade.lookup_failed',
     );
-    // Phase 9 verify-fix Round-2 — `errName` is REQUIRED
-    // (sentinel `'UnknownError'` for non-Error throws). Eliminates
-    // the `?? 'unknown'` cast every dashboard query previously
-    // needed and makes group-by-errName statements safe.
-    return err({
-      kind: 'cascade.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
-      errName: e instanceof Error ? e.name : 'UnknownError',
-    });
+    // #711 — the closed kind and the class, as the broadcasts cascade does.
+    return err({ kind: 'cascade.server_error', errClass: errKind(e) });
   }
 }

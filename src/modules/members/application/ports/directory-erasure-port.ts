@@ -18,6 +18,15 @@ export interface DirectoryErasurePort {
   eraseForMember(
     tenant: TenantContext,
     memberId: MemberId,
-    meta: { readonly actorUserId: string; readonly requestId: string },
+    meta: {
+      readonly actorUserId: string;
+      readonly requestId: string;
+      /**
+       * #710 — when the caller's function must be done. The footprint erase
+       * starts no Blob delete it cannot finish by then; what it skips is
+       * `'failed'`, so the reconciler re-drives it.
+       */
+      readonly deadlineAt?: Date;
+    },
   ): Promise<{ readonly outcome: 'ok' | 'failed' }>;
 }
