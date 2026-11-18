@@ -361,6 +361,82 @@ describe('eraseMember — live-Neon PII oracle (production deps)', () => {
   }, ciScaled(30_000));
 });
 
+describe('eraseMember — #717 a completed erasure is a no-op (production deps)', () => {
+  let tenant: TestTenant;
+  let otherTenant: TestTenant;
+  let admin: TestUser;
+
+  beforeAll(async () => {
+    admin = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    otherTenant = await createTestTenant('test-swecham');
+    await seedPlan(tenant, admin.userId);
+  }, ciScaled(30_000));
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+    await otherTenant.cleanup().catch(() => {});
+    await deleteTestUser(admin).catch(() => {});
+  });
+
+  it('a second erase writes no new audit row and returns the first erasedAt', async () => {
+    const { memberId } = await seedMemberWithContacts(tenant, {
+      companyName: 'Repeat Erase Co',
+      taxId: '0105599999999',
+      contactCount: 1,
+      emailPrefix: 'repeat-erase',
+    });
+    const deps = buildEraseMemberDeps(tenant.ctx);
+    const meta = { actorUserId: admin.userId, requestId: `rq-717-a-${Date.now()}` };
+    const first = await eraseMember(asMemberId(memberId) as MemberId, { reason: 'gdpr_erasure_request' }, meta, deps);
+    expect(first.ok, JSON.stringify(first)).toBe(true);
+    if (!first.ok) return;
+    expect(first.value.cascadesComplete).toBe(true);
+    const before = await rawSelectMemberAudits(tenant.ctx.slug, memberId);
+
+    const second = await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { ...meta, requestId: `rq-717-b-${Date.now()}` },
+      deps,
+    );
+    expect(second.ok, JSON.stringify(second)).toBe(true);
+    if (!second.ok) return;
+    expect(second.value.cascadesComplete).toBe(true);
+    const stored = (await rawSelectMember(memberId))!.erased_at;
+    expect(second.value.erasedAt.toISOString()).toBe(new Date(stored as Date).toISOString());
+
+    const after = await rawSelectMemberAudits(tenant.ctx.slug, memberId);
+    expect(after).toHaveLength(before.length);
+    expect(after.filter((a) => a.eventType === 'member_erased')).toHaveLength(1);
+  }, ciScaled(60_000));
+
+  it('cross-tenant: tenant B never sees tenant A\'s completion record', async () => {
+    const { memberId } = await seedMemberWithContacts(tenant, {
+      companyName: 'Cross Tenant Erase Co',
+      taxId: '0105599999998',
+      contactCount: 1,
+      emailPrefix: 'xt-erase',
+    });
+    const deps = buildEraseMemberDeps(tenant.ctx);
+    await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId: `rq-717-x-${Date.now()}` },
+      deps,
+    );
+    const repo = buildEraseMemberDeps(otherTenant.ctx).memberRepo;
+    const seen = await repo.hasMemberErasedRecord(otherTenant.ctx, asMemberId(memberId) as MemberId);
+    expect(seen.ok).toBe(true);
+    if (seen.ok) expect(seen.value).toBe(false);
+    const own = await buildEraseMemberDeps(tenant.ctx).memberRepo.hasMemberErasedRecord(
+      tenant.ctx,
+      asMemberId(memberId) as MemberId,
+    );
+    expect(own.ok && own.value).toBe(true);
+  }, ciScaled(60_000));
+});
+
 describe('eraseMember — sentinel-email collision (production deps)', () => {
   let tenant: TestTenant;
   let admin: TestUser;

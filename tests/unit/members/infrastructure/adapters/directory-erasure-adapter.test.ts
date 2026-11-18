@@ -29,7 +29,15 @@ describe('directoryErasureAdapter', () => {
     footprintMock.mockResolvedValue(undefined);
     const r = await directoryErasureAdapter.eraseForMember(tenant, 'm-1' as never, meta);
     expect(r).toEqual({ outcome: 'ok' });
-    expect(footprintMock).toHaveBeenCalledWith(tenant, 'm-1');
+    expect(footprintMock).toHaveBeenCalledWith(tenant, 'm-1', {});
+  });
+
+  // #710 — the caller's deadline reaches the footprint erase.
+  it('passes the deadline through to the footprint erase', async () => {
+    footprintMock.mockResolvedValue(undefined);
+    const deadlineAt = new Date('2026-11-18T00:04:00Z');
+    await directoryErasureAdapter.eraseForMember(tenant, 'm-1' as never, { ...meta, deadlineAt });
+    expect(footprintMock).toHaveBeenCalledWith(tenant, 'm-1', { deadlineAt });
   });
 
   it('translates a throw to outcome:failed (never propagates) + logs errKind only', async () => {
