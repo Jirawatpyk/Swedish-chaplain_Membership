@@ -36,6 +36,23 @@ describe('RLS hardening — runInTenant forces row_security on', () => {
     expect(slug).toBe(TENANT_SLUG);
   });
 
+  // #754 — the pooler drops the connection's startup statement_timeout, so
+  // runInTenant sets its own bound; a later per-site SET LOCAL still wins.
+  it('bounds every statement at 30 s, and a per-site SET LOCAL overrides it', async () => {
+    const [def, override] = await runInTenant(asTenantContext(TENANT_SLUG), async (tx) => {
+      const a = (await tx.execute(
+        sql`SELECT current_setting('statement_timeout') AS t`,
+      )) as unknown as Array<{ t: string }>;
+      await tx.execute(sql`SET LOCAL statement_timeout = 1500`);
+      const b = (await tx.execute(
+        sql`SELECT current_setting('statement_timeout') AS t`,
+      )) as unknown as Array<{ t: string }>;
+      return [a[0]?.t, b[0]?.t];
+    });
+    expect(def).toBe('30s');
+    expect(override).toBe('1500ms');
+  });
+
   describe('defends a connection contaminated with row_security = off', () => {
     // A dedicated max=1 client so the poison + the transaction share ONE
     // physical connection deterministically — mirroring the production leak
