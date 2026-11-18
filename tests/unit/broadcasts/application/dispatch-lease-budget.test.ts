@@ -36,6 +36,7 @@ import {
   IMPORT_CALL_TIMEOUT_MS,
   RESEND_CALL_TIMEOUT_MS,
 } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import { TENANT_TX_STATEMENT_TIMEOUT_MS } from '@/lib/db';
 import { REPROBE_PAUSE_MS } from '@/modules/broadcasts/application/use-cases/_reprobe-pause';
 
 const ROUTE = 'src/app/api/cron/broadcasts/dispatch-scheduled/route.ts';
@@ -76,6 +77,10 @@ describe('spec 140 s2b — the dispatch lease budget (DL9, A5)', () => {
   it('review round 1 (reliability L2) — the pre-call check waits at most E + 5 s for the row lock', () => {
     expect(CHECK_LOCK_TIMEOUT_MS).toBe(ERASURE_ROW_LOCK_HOLD_MS + 5_000);
     expect(CHECK_LOCK_TIMEOUT_MS).toBe(28_000);
+  });
+
+  it('#754 — the pre-call lock wait stays at least 2 s under runInTenant\'s statement_timeout, so its own 55P03 fires first', () => {
+    expect(CHECK_LOCK_TIMEOUT_MS + 2_000).toBeLessThanOrEqual(TENANT_TX_STATEMENT_TIMEOUT_MS);
   });
 
   it('every inequality holds for the shipped values', () => {

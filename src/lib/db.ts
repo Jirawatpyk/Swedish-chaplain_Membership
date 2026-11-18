@@ -113,8 +113,11 @@ const DEBUG_RLS_STATE = env.tenant.debugRlsState;
  * 30 s, not 5 s: it must stay ABOVE every lock wait the code budgets on
  * purpose — the E-Blast dispatch lease's 28 s `lock_timeout` (sized against
  * the 23 s erasure hold) and the 5 s `lock_timeout`s whose 55P03 handling
- * would otherwise race a 57014 — and the renewals cron advisory-lock waits
- * for an overlapping run. It is per STATEMENT (lock waits count; time spent
+ * would otherwise race a 57014. It does NOT cover the renewals per-tenant
+ * cron advisory-lock waits: those routes hold the lock for the whole run, so
+ * an overlapping run now waits up to 30 s, then fails 57014 and answers 500
+ * (rolled back, nothing sent twice; before #754 it hung until `maxDuration`).
+ * It is per STATEMENT (lock waits count; time spent
  * in JS between statements, e.g. a PDF render, does not). A site that sets
  * its own `SET LOCAL statement_timeout` later in the tx overrides it.
  */

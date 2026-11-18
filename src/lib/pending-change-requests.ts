@@ -99,9 +99,10 @@ export async function readPendingChangeRequests(
  * boundary does not fit (the sidebar is a client component that can read
  * neither `env` nor `canPerform`, and the config itself carries Lucide icon
  * FUNCTIONS, which cannot cross). The layout renders on EVERY `/admin/**`
- * page, and `src/lib/db.ts` bounds a pooled query at `statement_timeout 5s`
- * plus `connect_timeout 3` — so an unbounded badge read could add ~8 s to the
- * TTFB of every staff page for a number in the sidebar. 1,500 ms is well past
+ * page, and `src/lib/db.ts` bounds a `runInTenant` statement at 30 s
+ * (`TENANT_TX_STATEMENT_TIMEOUT_MS`, #754) plus `connect_timeout 3` — so an
+ * unbounded badge read could add up to ~33 s to the TTFB of every staff page
+ * for a number in the sidebar. 1,500 ms is well past
  * the indexed count's measured cost and well inside a page budget.
  */
 export const NAV_BADGE_READ_TIMEOUT_MS = 1_500;
