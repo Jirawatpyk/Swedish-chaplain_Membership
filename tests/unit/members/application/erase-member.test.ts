@@ -191,6 +191,46 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     });
   });
 
+  it.each([
+    ['with a cause', { code: 'repo.unexpected', cause: new Error('x') }],
+    ['without a cause', { code: 'repo.unexpected' }],
+  ])('#717: a failed repeat audit (%s) is server_error and runs no scrub', async (_label, auditError) => {
+    const deps = buildEraseDeps();
+    deps.memberRepo.findErasedAtById = vi.fn(async () =>
+      ok({ erasedAt: new Date('2026-06-15T00:00:00.000Z') }),
+    ) as never;
+    deps.memberRepo.hasMemberErasedRecord = vi.fn(async () => ok(true));
+    deps.audit.recordInTx = vi.fn(async (_tx: unknown, _ctx: unknown, ev: { type: string }) =>
+      ev.type === 'member_erasure_repeated'
+        ? { ok: false, error: auditError }
+        : ok(undefined),
+    ) as never;
+    const errSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toEqual({ type: 'server_error', message: 'erase repeat audit failed' });
+    expect(deps.memberRepo.scrubPiiInTx).not.toHaveBeenCalled();
+    expect(types(deps)).not.toContain('member_erased');
+    expect(errSpy).toHaveBeenCalledWith(expect.anything(), 'erase-member: repeat audit failed');
+    errSpy.mockRestore();
+  });
+
+  it('#717: a failed member lock in the completion tx withholds member_erased', async () => {
+    const deps = buildEraseDeps();
+    const original = deps.memberRepo.findByIdInTx.getMockImplementation()!;
+    deps.memberRepo.findByIdInTx = vi
+      .fn()
+      .mockImplementationOnce(original)
+      .mockResolvedValue({ ok: false, error: { code: 'repo.unexpected' } });
+    const errSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+    expect(types(deps)).not.toContain('member_erased');
+    expect(deps.memberRepo.hasMemberErasedRecordInTx).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
   it('#717: a completion written meanwhile (found under the member lock) blocks a second member_erased', async () => {
     const deps = buildEraseDeps();
     deps.memberRepo.findErasedAtById = vi.fn(async () =>
