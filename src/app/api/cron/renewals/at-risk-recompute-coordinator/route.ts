@@ -38,6 +38,7 @@ import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
+import { refuseCrossOriginFanOut } from '@/lib/cron-fan-out-guard';
 import { countTenantSkips, reportOverlapSkips } from '@/lib/renewals-cron-lock';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
@@ -228,6 +229,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // Fan-out via internal fetch.
+  // #97: outside production, fan out only to this server's own origin.
+  const fanOutRefusal = refuseCrossOriginFanOut(request, {
+    cronKind: 'at_risk_recompute',
+    correlationId,
+  });
+  if (fanOutRefusal) return fanOutRefusal;
   const baseUrl = env.app.baseUrl;
   const cronSecret = env.cron.secret;
 
