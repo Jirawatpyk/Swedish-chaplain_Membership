@@ -5950,6 +5950,10 @@
           "matchBreakdownTitle": "Matchningsöversikt",
           "errorRowsTitle": "Rader med fel ({count})",
           "errorRowLabel": "Rad {rowNumber}",
+          "errorReasons": {
+            "row_db_error": "Inte sparad: ett databasfel stoppade den här raden. Försök importera igen; kontakta support om det upprepas.",
+            "batch_tx_aborted": "Inte sparad: ett databasfel stoppade den här omgången. Försök importera igen; kontakta support om det upprepas."
+          },
           "noErrorRows": "Alla rader importerades utan fel.",
           "recordIdLabel": "Referens-ID",
           "historyDegraded": "Importhistoriken kunde inte sparas — raderna ovan är fortfarande säkert införda, men granskningstabellen saknar en rad för denna import. Ange referens-ID:t ovan om du behöver kontakta supporten i efterhand.",

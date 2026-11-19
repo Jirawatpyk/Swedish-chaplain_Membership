@@ -97,8 +97,7 @@ describe('H4.4 — pino-audit-port standalone throw-chain regression', () => {
         requestId: 'req-malformed-slug',
         source: 'eventcreate',
         failureStage: 'audit_emit',
-        errorMessage: 'malformed-slug invariant probe',
-        errorStack: null,
+        errClass: 'TxStageError',
       },
     });
 

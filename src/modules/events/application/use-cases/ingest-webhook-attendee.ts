@@ -68,8 +68,7 @@
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
-import { redactStack } from '@/lib/redact-stack';
-import { formatErrorWithCause } from './_helpers/format-error-with-cause';
+import { formatErrorClass } from './_helpers/format-error-with-cause';
 import { asTenantId } from '@/modules/members';
 import {
   EventCreatePayloadV1,
@@ -151,7 +150,8 @@ export type IngestError =
   | {
       readonly kind: 'rolled_back';
       readonly failureStage: FailureStage;
-      readonly errorMessage: string;
+      /** #739 — the class chain (`formatErrorClass`), never error text. */
+      readonly errClass: string;
       /**
        * True when `emitRolledBackStandalone` ALSO failed (FR-037
        * catastrophic double-failure). Route includes this in its 500
@@ -270,7 +270,7 @@ export async function ingestWebhookAttendee(
 
   const startedAtMs = Date.now();
   let failureStage: FailureStage = 'unknown';
-  let errorMessage = '';
+  let errClass = '';
 
   try {
     // Phase 2: strict-transactional ACID unit
@@ -404,21 +404,10 @@ export async function ingestWebhookAttendee(
       });
     });
   } catch (e) {
-    // R3.3.2 + R5.4 / Round 4 I-8 — delegate to shared
-    // `formatErrorWithCause` helper. Preserves the `e.cause` discriminator
-    // (PostgresError, MarkRefundedError, AuditEmitError.db_error, etc.)
-    // on the `webhook_rolled_back.payload.errorMessage` audit field so
-    // SRE forensics can distinguish failure modes. Previously inlined
-    // the same logic; consolidated with import-csv.ts toErrMessage.
-    errorMessage = formatErrorWithCause(e);
+    // #739 — the audit row carries the class chain and the stage, never the
+    // message or the stack: a drizzle error's message quotes bound parameters.
+    errClass = formatErrorClass(e);
     const stage: TxStageError['stage'] = e instanceof TxStageError ? e.stage : failureStage;
-    // scrub Vercel container
-    // paths + macOS /private/* + node_modules + webpack-internal:///
-    // from the stack BEFORE persisting to the 5-year audit row. The
-    // pre-redaction stack is never written anywhere — only the
-    // sanitised version reaches `audit_log.payload.errorStack`.
-    const rawStack = e instanceof Error && e.stack ? e.stack : null;
-    const errorStack = rawStack === null ? null : (redactStack(rawStack) ?? null);
 
     // FR-037 dual-write fallback: emit `webhook_rolled_back` in a
     // SEPARATE tx so the audit row commits even though the primary tx
@@ -433,14 +422,13 @@ export async function ingestWebhookAttendee(
       actorType: 'zapier_webhook',
       actorUserId: null,
       occurredAt: new Date(),
-      summary: `webhook rolled back at stage ${stage}: ${errorMessage}`,
+      summary: `webhook rolled back at stage ${stage} (${errClass})`,
       payload: {
         severity: 'error',
         requestId: input.requestId,
         source: toAuditSource(input.source),
         failureStage: stage,
-        errorMessage,
-        errorStack,
+        errClass,
       },
     });
 
@@ -463,7 +451,7 @@ export async function ingestWebhookAttendee(
     return err({
       kind: 'rolled_back',
       failureStage: stage,
-      errorMessage,
+      errClass,
       auditFallbackFailed,
       ingestLatencyMs: Date.now() - startedAtMs,
     });

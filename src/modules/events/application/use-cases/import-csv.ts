@@ -27,7 +27,6 @@ import {
 } from './_helpers/attendee-email-hash';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
-import { formatErrorWithCause } from './_helpers/format-error-with-cause';
 import { asLockKey } from '../ports/advisory-lock-acquirer';
 import {
   applyQuotaEffect,
@@ -1560,7 +1559,9 @@ async function processOneRowInSavepoint(
     // `TxStageError.stage` taxonomy on BOTH the `RowOutcome.row_failed`
     // field AND the `csv_import_row_failed` audit payload so dashboards
     // can alert on `audit_emit` failures (security-critical).
-    const reason = toErrMessage(e);
+    // #739 — a closed code; the stage keeps the taxonomy and the log line the
+    // class. The driver's text quotes bound parameters (emails, names).
+    const reason = CSV_ROW_DB_ERROR;
     const failureStage: FailureStage =
       e instanceof TxStageError ? e.stage : 'unknown';
     await safeEmitRowFailed(
@@ -1710,7 +1711,7 @@ async function processBatch(
     // double-count and forensic reviewers see contradictory
     // narratives (`event_upsert` vs `batch_tx_aborted`) for the same
     // rowNumber.
-    const reason = toErrMessage(e);
+    const reason = CSV_BATCH_TX_ABORTED;
     logger.error(
       {
         event: 'f6_csv_batch_tx_aborted',
@@ -1738,7 +1739,7 @@ async function processBatch(
             deps,
             input,
             row.rowNumber,
-            `batch tx aborted: ${reason}`,
+            reason,
             '',
           ),
         ),
@@ -1768,7 +1769,7 @@ async function processBatch(
         outcomes[index] = {
           kind: 'row_failed',
           rowNumber: row.rowNumber,
-          reason: `batch tx aborted: ${reason}`,
+          reason,
           failureStage: 'unknown',
         };
       }
@@ -1776,17 +1777,6 @@ async function processBatch(
   }
 
   return outcomes;
-}
-
-/**
- * R5.4 / Round 4 I-8 — delegates to the shared `formatErrorWithCause`
- * helper. Previously inlined the same cause-appending logic that
- * `ingest-webhook-attendee.ts:384` also inlined; consolidated to one
- * source of truth so future stack-capture + PII-redaction extensions
- * land in one place.
- */
-function toErrMessage(e: unknown): string {
-  return formatErrorWithCause(e);
 }
 
 /**
@@ -2682,12 +2672,26 @@ export async function importCsv(
 // F6.1 — helper: serialize errorRows to CSV bytes
 // ---------------------------------------------------------------------------
 
+/**
+ * #739 B3a — the two row reasons the import writes for a database failure.
+ * Every other reason is parser or validation text the import writes itself.
+ * The result card maps these to localised copy; the error CSV (English, an
+ * admin download) to the sentence below.
+ */
+export const CSV_ROW_DB_ERROR = 'row_db_error';
+export const CSV_BATCH_TX_ABORTED = 'batch_tx_aborted';
+
+const ERROR_CSV_REASON_TEXT: Readonly<Record<string, string>> = {
+  [CSV_ROW_DB_ERROR]: 'Not saved: a database error stopped this row. Try the import again; if it repeats, contact support.',
+  [CSV_BATCH_TX_ABORTED]: 'Not saved: a database error stopped this batch. Try the import again; if it repeats, contact support.',
+};
+
 function serializeErrorRowsToCsv(
   errorRows: ReadonlyArray<ImportSummaryErrorRow>,
 ): Uint8Array {
   const lines: string[] = ['row_number,reason,failure_stage'];
   for (const row of errorRows) {
-    const reason = csvEscape(sanitiseFormulaPrefix(row.reason));
+    const reason = csvEscape(sanitiseFormulaPrefix(ERROR_CSV_REASON_TEXT[row.reason] ?? row.reason));
     const stage = csvEscape(sanitiseFormulaPrefix(row.failureStage ?? ''));
     lines.push(`${row.rowNumber},${reason},${stage}`);
   }

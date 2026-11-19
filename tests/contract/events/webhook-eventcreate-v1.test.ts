@@ -537,7 +537,7 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
       error: {
         kind: 'rolled_back',
         failureStage: 'registration_insert',
-        errorMessage: 'simulated FK failure',
+        errClass: 'TxStageError',
         auditFallbackFailed: false,
         ingestLatencyMs: 42,
       },

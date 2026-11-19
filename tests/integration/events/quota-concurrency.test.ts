@@ -229,7 +229,7 @@ describe('T083 — F6 quota concurrency (SC-004 zero-error promise)', () => {
       const reasons = failed
         .map((r) =>
           !r.ok
-            ? `${r.error.kind}${'errorMessage' in r.error ? `: ${r.error.errorMessage}` : ''}`
+            ? `${r.error.kind}${'errClass' in r.error ? `: ${r.error.errClass}` : ''}`
             : 'ok',
         )
         .join('; ');
@@ -533,7 +533,7 @@ describe('#8 — year-scoped cultural quota lock (fix double-decrement)', () => 
       const reasons = failed
         .map((r) =>
           !r.ok
-            ? `${r.error.kind}${'errorMessage' in r.error ? `: ${r.error.errorMessage}` : ''}`
+            ? `${r.error.kind}${'errClass' in r.error ? `: ${r.error.errClass}` : ''}`
             : 'ok',
         )
         .join('; ');

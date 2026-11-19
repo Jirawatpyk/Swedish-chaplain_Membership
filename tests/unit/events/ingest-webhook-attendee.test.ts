@@ -217,11 +217,9 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
   it('R5.2.2 / Round 4 I-2 — Result.err mid-tx → emitRolledBackStandalone payload.errClass names the class and the synthetic cause, never the message (#739)', async () => {
     // R3.3.1 wraps `audit.emit` Result.err as
     //   TxStageError('audit_emit', wrap_msg, { cause: new Error('AuditEmitError.db_error: ...') })
-    // The R5.4 refactor extracted the outer catch's cause-format into
-    // `formatErrorWithCause`, which prefixes `(cause: NAME: MSG)` onto
-    // the rolled-back audit payload errorMessage. A regression that
-    // drops the helper call would collapse every wrapped failure to
-    // the bare TxStageError message — this test pins the contract.
+    // #739 — `formatErrorClass` names the outer class and the synthetic
+    // cause's discriminator; the message (here the driver's text) and the
+    // stack never reach the 5-year audit row.
     const ports = buildPorts();
     (ports.audit.emit as ReturnType<typeof vi.fn>).mockImplementation(
       async (entry) => {

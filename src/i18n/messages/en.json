@@ -5950,6 +5950,10 @@
           "matchBreakdownTitle": "Match breakdown",
           "errorRowsTitle": "Rows with errors ({count})",
           "errorRowLabel": "Row {rowNumber}",
+          "errorReasons": {
+            "row_db_error": "Not saved: a database error stopped this row. Try the import again; if it repeats, contact support.",
+            "batch_tx_aborted": "Not saved: a database error stopped this batch. Try the import again; if it repeats, contact support."
+          },
           "noErrorRows": "All rows imported cleanly — no errors to review.",
           "recordIdLabel": "Reference ID",
           "historyDegraded": "Import history could not be saved — the rows above are still committed safely, but the audit row is missing. Please quote the reference ID to support if you need to look this up later.",

@@ -271,8 +271,8 @@ export interface AuditPayloads {
     readonly requestId: string;
     readonly source: 'eventcreate' | 'eventcreate_csv';
     readonly failureStage: FailureStage;
-    readonly errorMessage: string;
-    readonly errorStack: string | null;
+    /** #739 — the class chain of the thrown value; never its message or stack. */
+    readonly errClass: string;
     readonly audit_secondary_tx_failure?: boolean;
   };
   webhook_secret_grace_used: {

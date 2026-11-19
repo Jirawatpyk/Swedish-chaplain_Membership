@@ -115,6 +115,14 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${remainder}s`;
 }
 
+/**
+ * #739 B3a — the import writes these two codes for a database failure (the
+ * driver's text quotes bound parameters); every other reason is parser or
+ * validation text the import writes itself and is shown as is.
+ */
+const DB_FAILURE_REASONS: ReadonlySet<string> = new Set(['row_db_error', 'batch_tx_aborted']);
+type DbFailureReason = 'row_db_error' | 'batch_tx_aborted';
+
 export function CsvImportResult({ result, footerAction }: CsvImportResultProps) {
   const t = useTranslations('admin.events.import.result');
   const tHistory = useTranslations('admin.events.import.history');
@@ -267,7 +275,9 @@ export function CsvImportResult({ result, footerAction }: CsvImportResultProps) 
                   <strong>
                     {t('errorRowLabel', { rowNumber: row.rowNumber })}
                   </strong>
-                  : {row.reason}
+                  : {DB_FAILURE_REASONS.has(row.reason)
+                    ? t(`errorReasons.${row.reason as DbFailureReason}`)
+                    : row.reason}
                 </li>
               ))}
             </ul>
