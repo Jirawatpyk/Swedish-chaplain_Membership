@@ -35,6 +35,7 @@ import {
 } from '@/lib/idempotency';
 import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { inlineEdit, asMemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 
@@ -201,7 +202,7 @@ export async function PATCH(
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'inline-edit: unhandled',
         );
         return NextResponse.json(

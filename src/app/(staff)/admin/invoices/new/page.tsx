@@ -15,6 +15,7 @@ import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import {
   runListEventNamesByIds,
   runListEvents,
@@ -160,7 +161,7 @@ export default async function NewInvoiceDraftPage({
       vatRateBps = invoiceSettings ? Number(invoiceSettings.vatRate.numerator) : null;
     } catch (err) {
       logger.warn(
-        { event: 'invoice_new_settings_load_failed', tenantId: tenantCtx.slug, err },
+        { event: 'invoice_new_settings_load_failed', tenantId: tenantCtx.slug, ...errLogFields(err) },
         '[F4] /admin/invoices/new — invoice settings read failed; event-fee VAT preview shows the total only',
       );
     }
@@ -212,7 +213,7 @@ export default async function NewInvoiceDraftPage({
         }
       } catch (err) {
         logger.warn(
-          { event: 'invoice_new_deep_link_event_load_failed', tenantId: tenantCtx.slug, err },
+          { event: 'invoice_new_deep_link_event_load_failed', tenantId: tenantCtx.slug, ...errLogFields(err) },
           '[F4] /admin/invoices/new — deep-linked event read failed; Event tab opens without it',
         );
       }

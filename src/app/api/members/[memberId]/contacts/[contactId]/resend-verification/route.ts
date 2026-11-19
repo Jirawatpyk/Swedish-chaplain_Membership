@@ -21,6 +21,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requireApiPermission } from '@/lib/rbac';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { rateLimiter } from '@/lib/auth-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 
@@ -105,7 +106,7 @@ export async function POST(
         );
       default:
         logger.error(
-          { requestId, err: result.error },
+          { requestId, ...errLogFields(result.error) },
           'members.resend_verification.server_error',
         );
         return NextResponse.json({ error: 'server_error' }, { status: 500 });

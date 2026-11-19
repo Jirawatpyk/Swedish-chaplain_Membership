@@ -33,6 +33,9 @@ import {
   makeIssueRefundDeps,
   type IssueRefundError,
 } from '@/modules/payments';
+
+/** The credit-note gate refusal: its `reason` is F4's closed `RefundCreditNoteBlockReason` union. */
+type RefundCreditNoteGateBlocked = Extract<IssueRefundError, { code: 'f4_preflight_credit_note_blocked' }>;
 import { REFUND_DECLINED_MESSAGES, type F5RouteErrorCode } from '@/lib/payments-errors-i18n';
 import {
   baseHeaders,
@@ -486,6 +489,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // `retryable` processor failure, which this route answers with
     // `processor_outcome_unknown`, whose copy says NOT to retry (Task B).
     const { processorErrorKind } = buildUseCaseErrorTelemetry(result.error);
+    const gate: RefundCreditNoteGateBlocked['reason'] | null =
+      result.error.code === 'f4_preflight_credit_note_blocked' ? result.error.reason : null;
     logger.warn(
       {
         requestId,
@@ -503,15 +508,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // The docstring promised on-call a field that did not exist. Emit it.
         // Bounded enum (`draft|issued|paid|void|credited|partially_credited`)
         // — no PII, nothing to redact.
-        ...(result.error.code === 'f4_preflight_credit_note_blocked'
+        ...(gate !== null
           ? {
               // I8 — the block reason and how it clears, so a triager can tell
               // a self-healing render from a permanently uncreditable invoice
               // without a second query. Bounded literals; no PII.
-              gateReason: result.error.reason.code,
-              gateRetryability: result.error.reason.retryability,
-              ...(result.error.reason.code === 'invoice_not_creditable'
-                ? { invoiceStatus: result.error.reason.status }
+              gateReason: gate.code,
+              gateRetryability: gate.retryability,
+              ...(gate.code === 'invoice_not_creditable'
+                ? { invoiceStatus: gate.status }
                 : {}),
             }
           : {}),

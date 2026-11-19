@@ -29,6 +29,7 @@
  * rare-of-rare case, but `account_created` + this error log are the trail).
  */
 import { Result, err, ok } from '@/lib/result';
+import { errLogFields } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { db, type DbTx } from '@/lib/db';
 import type { UserId } from '@/modules/auth/domain/branded';
@@ -103,7 +104,7 @@ export async function deleteInvitedUser(
     logger.error(
       {
         requestId: input.requestId,
-        errMessage: e instanceof Error ? e.message : String(e),
+        ...errLogFields(e),
       },
       'delete_invited_user.compensation_failed',
     );

@@ -39,6 +39,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { sql } from 'drizzle-orm';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { runInTenant } from '@/lib/db';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { gateF6Cron } from '@/lib/events-cron-deps';
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       logger.error(
-        { event: 'recompute_match_rate_per_tenant_failed', tenantId, err: message },
+        { event: 'recompute_match_rate_per_tenant_failed', tenantId, ...errLogFields(e) },
         '[F6] recompute-match-rate: per-tenant failure',
       );
       errors.push({ tenantId, message });

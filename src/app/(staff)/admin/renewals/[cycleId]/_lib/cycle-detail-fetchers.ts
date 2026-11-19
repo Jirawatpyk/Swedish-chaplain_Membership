@@ -183,7 +183,7 @@ export async function fetchPlanDisplay(
         errorCode: 'plan_name_jsonb_malformed',
         planId: args.planId,
         raw: row.planName,
-        zodIssues: parsed.error.issues,
+        issueCount: parsed.error.issues.length,
       },
       '[admin/renewals/cycle-detail] plan_name JSONB failed schema parse',
     );

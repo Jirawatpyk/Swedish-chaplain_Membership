@@ -10,6 +10,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { undeletePlan, asPlanSlug, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { serialisePlan } from '@/app/api/plans/_serialise-plan';
@@ -96,7 +97,7 @@ export async function POST(
         );
       case 'audit_failed':
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'undelete-plan: audit write failed',
         );
         return NextResponse.json(
@@ -106,7 +107,7 @@ export async function POST(
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'undelete-plan: unhandled error',
         );
         return NextResponse.json(

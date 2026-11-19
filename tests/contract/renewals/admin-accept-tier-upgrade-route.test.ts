@@ -135,9 +135,8 @@ describe('contract: POST /api/admin/renewals/tier-upgrades/[suggestionId]/accept
     expect(loggerErrorMock).toHaveBeenCalledTimes(1);
     const [structured, message] = loggerErrorMock.mock.calls[0]!;
     expect(structured.errorId).toBe('F8.ACCEPT_TIER.SERVER_ERROR');
-    expect(structured.message).toBe(
-      'deploy-skew:unhandled-gateway-arm:weird_gateway_arm',
-    );
+    // #740 B2 — the errorId only: the typed message can carry error text.
+    expect(structured).not.toHaveProperty('message');
     expect(structured.correlationId).toBe('corr-accept-1');
     expect(structured.suggestionId).toBe(SUGGESTION_ID);
     expect(message).toBe('admin.renewals.tier-upgrades.accept_server_error');
@@ -316,10 +315,8 @@ describe('contract: POST /api/admin/renewals/tier-upgrades/[suggestionId]/accept
     const [structured] = loggerErrorMock.mock.calls[0]!;
     expect(structured.errorId).toBe('F8.ACCEPT_TIER.UNEXPECTED');
     expect(structured.correlationId).toBe('corr-accept-1');
-    // The thrown message names the KIND so the incident is diagnosable,
-    // and carries nothing else from the error object.
-    expect(String(structured.err)).toContain('accept-tier-upgrade');
-    expect(String(structured.err)).toContain('quota_exhausted_in_a_future_release');
+    // #740 B2 — the thrown error's CLASS only, never its message.
+    expect(structured.err).toBe('Error');
   });
 
   it('500 uncaught throw — outer catch emits errorId F8.ACCEPT_TIER.UNEXPECTED', async () => {

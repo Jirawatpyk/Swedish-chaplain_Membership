@@ -31,6 +31,7 @@ import { deriveMembershipAccess, type RenewalCycle } from '@/modules/renewals/do
 import type { F8AuditEvent, RenewalAuditEmitter } from '@/modules/renewals/application/ports/renewal-audit-emitter';
 import type { RenewalCycleRepo } from '@/modules/renewals/application/ports/renewal-cycle-repo';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 /**
  * Allowed portal route prefixes for a `terminated` member (T134) — matched
  * against pathname via `matchesScopePrefix` (exact match, or prefix followed
@@ -387,7 +388,7 @@ async function emitAuditSwallowingFailure(
     // (e.g. schema drift, JSON-serialise bug on cycle_id payload).
     logger.warn(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: ctx.tenantId,
         memberId: ctx.memberId,
         cycleId,
@@ -467,7 +468,7 @@ function emitFailOpen(
   try {
     logger.warn(
       {
-        err: message,
+        ...errLogFields(err),
         tenantId: ctx.tenantId,
         memberId: ctx.memberId,
         blockedRoute: ctx.pathname,

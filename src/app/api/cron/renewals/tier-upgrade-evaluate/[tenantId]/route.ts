@@ -38,6 +38,7 @@ import {
   DEFAULT_TIER_UPGRADE_EVAL_PAGE_SIZE,
 } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -113,11 +114,6 @@ export async function POST(
           tenantId,
           correlationId,
           errorKind: txResult.error.kind,
-          message:
-            txResult.error.kind === 'invalid_input' ||
-            txResult.error.kind === 'server_error'
-              ? txResult.error.message
-              : undefined,
         },
         'cron.renewals.tier_upgrade.evaluate_failed',
       );
@@ -146,7 +142,7 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         tenantId,
         correlationId,
       },

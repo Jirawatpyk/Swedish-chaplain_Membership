@@ -3042,7 +3042,8 @@ async function advanceToSending(
       const leaseLost = stampErr instanceof BroadcastConcurrentMutationError && stampErr.observedStatus === LEASE_LOST;
       if (leaseLost) broadcastsMetrics.dispatchLeaseLostAfterSend(deps.tenant.slug, 'completion_stamp');
       if (leaseLost && leaseLostAfterSendIsBenign(stampErr.rowStatus ?? undefined)) {
-        logLeaseLostAfterSend({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, step: 'completion_stamp', rowStatus: stampErr.rowStatus }, stampErr.rowStatus ?? undefined);
+        const rowStatus: BroadcastConcurrentMutationError['rowStatus'] = stampErr.rowStatus;
+        logLeaseLostAfterSend({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, step: 'completion_stamp', rowStatus }, stampErr.rowStatus ?? undefined);
       } else logger.error(
         {
           err: errKind(stampErr),

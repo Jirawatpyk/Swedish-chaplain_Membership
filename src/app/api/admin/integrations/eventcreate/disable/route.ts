@@ -17,6 +17,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { problemResponse } from '@/lib/http/problem-response';
 import { adminOnlyGuard } from '../_lib/role-violation-audit';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 
 const ROUTE = '/api/admin/integrations/eventcreate/disable';
@@ -109,7 +110,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       {
         event: 'f6_disable_ingest_threw',
         tenantSlug: tenantCtx.slug,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         requestId,
       },
       '[F6] disable route threw',

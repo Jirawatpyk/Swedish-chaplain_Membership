@@ -158,12 +158,7 @@ describe('contract: POST /api/admin/renewals/tier-upgrades/[suggestionId]/dismis
     // this field, not on message text — could not match this 500.
     expect(structured.errorId).toBe('F8.DISMISS_TIER.UNEXPECTED');
     expect(structured.correlationId).toBe('corr-dismiss-1');
-    // The thrown message names the KIND and carries nothing else from the
-    // error object (`assertNever`'s default would JSON.stringify all of it,
-    // and pino's default err serializer puts the message in the log).
-    expect(String(structured.err)).toContain('dismiss-tier-upgrade');
-    expect(String(structured.err)).toContain(
-      'suggestion_already_dismissed_in_a_future_release',
-    );
+    // #740 B2 — the thrown error's CLASS only, never its message.
+    expect(structured.err).toBe('Error');
   });
 });

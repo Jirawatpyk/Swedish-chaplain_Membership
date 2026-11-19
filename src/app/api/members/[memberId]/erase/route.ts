@@ -46,6 +46,7 @@ import {
 import { erasureCascadeDeadline } from '@/lib/erasure-cascade-deadline';
 import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import {
   eraseMember,
   eraseReasonSchema,
@@ -220,7 +221,7 @@ export async function POST(
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'erase-member: unhandled',
         );
         return NextResponse.json(

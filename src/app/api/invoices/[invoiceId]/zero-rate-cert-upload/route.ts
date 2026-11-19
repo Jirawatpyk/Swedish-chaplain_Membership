@@ -31,6 +31,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { uploadZeroRateCert, makeUploadZeroRateCertDeps } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { assertNever } from '@/lib/assert-never';
 
 export const runtime = 'nodejs';
@@ -93,7 +94,7 @@ export async function POST(
     });
   } catch (err) {
     logger.error(
-      { err, requestId, tenantId: tenantCtx.slug, invoiceId },
+      { ...errLogFields(err), requestId, tenantId: tenantCtx.slug, invoiceId },
       'POST /api/invoices/[id]/zero-rate-cert-upload — uploadZeroRateCert threw',
     );
     return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });

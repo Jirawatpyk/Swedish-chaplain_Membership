@@ -41,7 +41,11 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { makeSweepExpiredBroadcastsDeps, sweepExpiredBroadcasts } from '@/modules/broadcasts';
+import {
+  makeSweepExpiredBroadcastsDeps,
+  sweepExpiredBroadcasts,
+  type SweepExpiredBroadcastsError,
+} from '@/modules/broadcasts';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { pgErrorCode } from '@/lib/db-errors';
@@ -123,10 +127,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // The rows that committed before the failure stay deleted — count them.
         broadcastsMetrics.retentionSwept(tenantId, result.error.sweptCount);
         broadcastsMetrics.retentionSweepFailed(tenantId);
+        const sweptCount: SweepExpiredBroadcastsError['sweptCount'] = result.error.sweptCount;
         logger.error(
           {
             tenantId,
-            sweptCount: result.error.sweptCount,
+            sweptCount,
             err: errKind(rootCause(result.error)),
             code: pgErrorCode(rootCause(result.error)),
             errorId: 'F7.cron.retention_sweep.server_error',

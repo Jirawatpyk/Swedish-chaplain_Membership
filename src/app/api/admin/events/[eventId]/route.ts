@@ -18,7 +18,6 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
 import { getCurrentSession } from '@/lib/auth-session';
 import { canPerform } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -37,6 +36,7 @@ import { asUserId } from '@/modules/auth';
 import { clampPageSize, coerceBoolean } from '../_lib/query-helpers';
 import { emitEventsRoleViolation } from '../_lib/role-violation-audit';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 const DetailQuerySchema = z.object({
   page: z.coerce.number().int().min(1).max(10_000).optional().default(1),
   pageSize: z.coerce.number().int().min(10).max(200).optional().default(50),
@@ -123,7 +123,7 @@ export async function GET(
     logger.error(
       {
         event: 'admin_event_detail_tenant_resolve_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         eventId,
       },
       '[F6] resolveTenantFromRequest threw on detail route',
@@ -171,17 +171,7 @@ export async function GET(
     logger.error(
       {
         event: 'admin_event_detail_route_throw',
-        err:
-          e instanceof Error
-            ? {
-                name: e.name,
-                message: e.message,
-                stack:
-                  typeof e.stack === 'string'
-                    ? (redactStack(e.stack) ?? null)
-                    : null,
-              }
-            : String(e),
+        ...errLogFields(e),
         eventId,
       },
       '[F6] /api/admin/events/[eventId] — runLoadEventDetail threw',
@@ -304,7 +294,7 @@ export async function GET(
       return new NextResponse(null, { status: 404 });
     }
     logger.error(
-      { event: 'admin_event_detail_error', error: result.error, eventId },
+      { event: 'admin_event_detail_error', ...errLogFields(result.error), eventId },
       'admin event detail use-case failed',
     );
     return NextResponse.json(

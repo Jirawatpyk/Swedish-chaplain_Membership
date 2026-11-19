@@ -27,6 +27,7 @@
  * each rejection is logged with a distinct errorId for SRE triage.
  */
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { makeRenewalsDeps } from '@/modules/renewals';
 import { RenewalsSectionTabs } from './renewals-section-tabs';
 
@@ -81,10 +82,7 @@ export async function loadSectionTabCounts(
     logger.error(
       {
         errorId: 'F8.ADMIN.PENDING_REVIEW_COUNT',
-        err:
-          pendingReviewResult.reason instanceof Error
-            ? pendingReviewResult.reason.message
-            : String(pendingReviewResult.reason),
+        err: errKind(pendingReviewResult.reason),
         tenantId: tenantSlug,
       },
       '[admin/renewals] pending-review count load failed',
@@ -98,10 +96,7 @@ export async function loadSectionTabCounts(
     logger.error(
       {
         errorId: 'F8.ADMIN.TASKS_COUNT',
-        err:
-          tasksResult.reason instanceof Error
-            ? tasksResult.reason.message
-            : String(tasksResult.reason),
+        err: errKind(tasksResult.reason),
         tenantId: tenantSlug,
       },
       '[admin/renewals] open-tasks count load failed',
@@ -115,10 +110,7 @@ export async function loadSectionTabCounts(
     logger.error(
       {
         errorId: 'F8.ADMIN.TIER_UPGRADE_COUNT',
-        err:
-          tierUpgradeResult.reason instanceof Error
-            ? tierUpgradeResult.reason.message
-            : String(tierUpgradeResult.reason),
+        err: errKind(tierUpgradeResult.reason),
         tenantId: tenantSlug,
       },
       '[admin/renewals] tier-upgrade count load failed',

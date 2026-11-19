@@ -29,6 +29,7 @@ import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EmptyState } from '@/components/shell/empty-state';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { loadCycleDetail, makeRenewalsDeps } from '@/modules/renewals';
@@ -156,7 +157,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
     // silently-cached 200. The throw routes to Next.js error boundary.
     const _exhaustive: never = result.error;
     logger.error(
-      { errorId: 'F8.ADMIN.CYCLE_DETAIL_PAGE', err: _exhaustive, cycleId },
+      { errorId: 'F8.ADMIN.CYCLE_DETAIL_PAGE', ...errLogFields(_exhaustive), cycleId },
       '[admin/renewals/cycle-detail] unhandled loadCycleDetail error kind',
     );
     throw new Error(
@@ -205,13 +206,13 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
     planResult.status === 'fulfilled' ? planResult.value : null;
   if (memberResult.status === 'rejected') {
     logger.warn(
-      { err: memberResult.reason, memberId: c.memberId },
+      { ...errLogFields(memberResult.reason), memberId: c.memberId },
       '[admin/renewals/cycle-detail] member display lookup failed; falling back to UUID-only',
     );
   }
   if (planResult.status === 'rejected') {
     logger.warn(
-      { err: planResult.reason, planId: c.planIdAtCycleStart },
+      { ...errLogFields(planResult.reason), planId: c.planIdAtCycleStart },
       '[admin/renewals/cycle-detail] plan display lookup failed; falling back to UUID-only',
     );
   }

@@ -26,6 +26,7 @@ import {
 } from '@/lib/idempotency';
 import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { archiveMember } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -181,7 +182,7 @@ export async function POST(
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'archive-member: unhandled',
         );
         return NextResponse.json(

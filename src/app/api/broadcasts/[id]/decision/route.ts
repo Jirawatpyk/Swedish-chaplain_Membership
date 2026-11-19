@@ -168,12 +168,14 @@ function decisionErrorResponse(error: RecordMemberDecisionError, callerUserId: s
       });
     case 'stale_version':
       return errorResponse(409, 'stale_version', correlationId, { details: { currentVersion: error.current } });
-    case 'server_error':
+    case 'server_error': {
+      const errClass: Extract<RecordMemberDecisionError, { kind: 'server_error' }>['errKind'] = error.errKind;
       logger.error(
-        { err: error.errKind, correlationId, errorId: 'M119.portal.decision.server_error' },
+        { err: errClass, correlationId, errorId: 'M119.portal.decision.server_error' },
         'broadcasts.member_decision.failed',
       );
       return errorResponse(500, 'internal_error', correlationId);
+    }
     default:
       return assertNever(error);
   }

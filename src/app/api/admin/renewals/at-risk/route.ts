@@ -34,6 +34,7 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
@@ -155,7 +156,7 @@ export async function GET(request: NextRequest) {
     logger.error(
       {
         errorId: `${ERROR_ID}.UNEXPECTED`,
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         correlationId: ctx.correlationId,
         tenantId: tenantCtx.slug,
       },

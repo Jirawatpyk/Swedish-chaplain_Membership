@@ -63,7 +63,80 @@ export interface LogErrorScan {
   readonly findings: LogErrorFinding[];
   /** The `logger.<level>(…)` and `logger.child(…)` calls read — the runner's floor counts them. */
   readonly loggerCalls: number;
+  /**
+   * #740 B2 — every function whose own parameter reaches a log line (directly,
+   * as a spread, or through a registered wrapper's checked argument), with that
+   * parameter's index. The runner fails on a {@link LOG_WRAPPERS} entry that no
+   * longer matches one.
+   */
+  readonly wrappers: ReadonlyArray<{ readonly name: string; readonly index: number }>;
 }
+
+/**
+ * #740 B2 — reviewed log wrappers: a function that puts one of its parameters
+ * into a log line, keyed by name, with the argument indexes its call sites
+ * must keep free of error text. Each call `name(…)` (or `x.name(…)`) has those
+ * arguments checked exactly like a logger call's. A new wrapper fails the gate
+ * until it is listed here, so a wrapper is a visible decision, not a blind spot
+ * — for the shapes discovery follows: a parameter logged as the value, as a
+ * spread, or under an error-detail key (`ERRORISH_KEYS`). Not followed: a
+ * parameter copied into a local first, a destructured parameter, a property of
+ * a parameter, and a call through an alias. Names are global: a generic one
+ * (`fail`) would match unrelated calls, so a wrapper gets a specific name.
+ * A LoggerPort adapter's level method (`warn(message, meta)`) is not listed:
+ * its callers write `deps.logger.<level>(…)`, which is read already.
+ */
+export const LOG_WRAPPERS: Readonly<Record<string, readonly number[]>> = {
+  // lib/logger.ts — `logger.child(context)`.
+  loggerFor: [0],
+  // broadcasts: the audit-emit failure line (context, log key).
+  logAuditEmitFailure: [1, 2],
+  // broadcasts `_dispatch-retry-epoch.ts` — the audit event names it logs.
+  dispatchRetryEpoch: [4],
+  resetDispatchRetryClock: [2],
+  // broadcasts `_dispatch-standing-gate.ts` / `_probe-refused-send.ts` — ids only.
+  deleteDraftBeforeErasedRefusal: [1],
+  probeRefusedSend: [1],
+  // broadcasts `_safe-audit-emit.ts` — extra context on the failure line.
+  safeAuditEmit: [3],
+  // broadcasts `build-audience-tick.ts` — the lease-lost fields.
+  logLeaseLostAfterSend: [0],
+  // broadcasts `cancel-in-flight-broadcasts-for-member.ts` — messages and extra context.
+  countUnexpected: [3],
+  orphanUnexpected: [2, 3],
+  reportStuck: [2],
+  // the same file's outcome map, which forwards to `orphanUnexpected`.
+  undecided: [1, 2],
+  // events `import-csv.ts` — the audit-emit failure line (message, context).
+  recordAuditEmitFailure: [3, 4],
+  // invoicing `drizzle-credit-note-repo.ts` — the idempotent read's log context.
+  findOneIdempotent: [3],
+  // members `submit-change-request.ts` / `drizzle-change-request-repo.ts` — ids only.
+  mapLoadError: [1],
+  corruptRow: [1],
+  // renewals `_lib/` — shared warning and unexpected-error lines.
+  logSupersedeWarnings: [1],
+  logUnexpectedError: [2],
+  // #740 B2 review: parameters logged under an error-detail key (`err: code`, `{ reason }`).
+  /** payments sweep-stale-pending-refunds: `reason` of an escalated refund. */
+  escalate: [4],
+  maybeEscalate: [4],
+  /** renewals verify-renewal-link-token: the token-invalid `reason`. */
+  emitTokenInvalid: [3],
+  /** renewals drizzle-renewal-audit-emitter: the fallback log's `reason`. */
+  pinoFallback: [2],
+  /** admin change-requests and member-changes pages: the failure `code`. */
+  failQueuePage: [1],
+  failMemberChangesPage: [1],
+  /** admin broadcasts version route: the 500's `kind`. */
+  logVersionServerError: [0],
+  /** outbox-dispatch: the receipt gate's skip `code`. */
+  gateFail: [0],
+  /** resend-broadcasts webhook: the unattributed opt-out `reason`. */
+  auditUnattributedOptOut: [0],
+  /** stripe webhook: the rejected delivery's `reason`. */
+  auditReject: [1],
+};
 
 const LEVELS = new Set(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'child']);
 
@@ -94,6 +167,7 @@ const SAFE_CALLS = new Set([
   'hashId',
   'errLogFields',
   'errStep',
+  'stepToken',
   'gatewayField',
   'approvalErrKind',
   'retryableSubKind',
@@ -113,12 +187,41 @@ const OBJECT_FIELDS = new Set(['error', 'cause']);
 /** The only fields read off an error-ish base: closed tokens. */
 const TOKEN_FIELDS = new Set(['code', 'kind', 'name']);
 
-function isLoggerCall(node: ts.CallExpression): boolean {
+function isLoggerTarget(target: ts.Expression, aliases: ReadonlySet<string>): boolean {
+  if (ts.isIdentifier(target)) return target.text === 'logger' || aliases.has(target.text);
+  return ts.isPropertyAccessExpression(target) && target.name.text === 'logger';
+}
+
+function isLoggerCall(node: ts.CallExpression, aliases: ReadonlySet<string> = new Set()): boolean {
   const callee = node.expression;
   if (!ts.isPropertyAccessExpression(callee) || !LEVELS.has(callee.name.text)) return false;
-  const target = callee.expression;
-  if (ts.isIdentifier(target)) return target.text === 'logger';
-  return ts.isPropertyAccessExpression(target) && target.name.text === 'logger';
+  return isLoggerTarget(callee.expression, aliases);
+}
+
+/**
+ * #740 B2 review — locals that hold a logger: `const log = deps.logger`,
+ * `const log = logger.child({ … })`. Calls on them are logger calls too, so a
+ * file cannot step around the rule by renaming its logger. Matched by name in
+ * the whole file: a tripwire, not a scope analysis.
+ */
+function loggerAliases(sf: ts.SourceFile): ReadonlySet<string> {
+  const names = new Set<string>();
+  const holdsLogger = (init: ts.Expression): boolean => {
+    const n = unwrap(init);
+    if (isLoggerTarget(n, names)) return true;
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === 'child') {
+      return isLoggerTarget(unwrap(n.expression.expression), names);
+    }
+    return false;
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined && holdsLogger(node.initializer)) {
+      names.add(node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return names;
 }
 
 function unwrap(node: ts.Expression): ts.Expression {
@@ -211,8 +314,21 @@ const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
   // `build-audience-tick.ts` — a descriptor the tick builds, not a thrown
   // error: `reason` is `ImportFailureReason` (a const tuple of literals),
   // `importId` an opaque Resend import id or null, `observed` / `expected`
-  // numbers or null.
-  BuildAudienceTickError: new Set(['reason', 'importId', 'observed', 'expected']),
+  // numbers or null. #740 B2: `errClass` is `errKind(e)`, a literal, a
+  // `classifyThrown(e).kind`, `ResolveSegmentError['errClass']` or the
+  // standing gate's closed class; `resourceType` a closed union; `resourceId`
+  // an opaque Resend id (or the row's broadcast uuid); `step` a code-authored
+  // `leaseGate` step literal.
+  BuildAudienceTickError: new Set([
+    'reason',
+    'importId',
+    'observed',
+    'expected',
+    'errClass',
+    'resourceType',
+    'resourceId',
+    'step',
+  ]),
   // payments `stripe-gateway.ts` (#740) — `statusCode` is the SDK's HTTP
   // status number; never Stripe's message text.
   StripeErrorShape: new Set(['statusCode']),
@@ -248,6 +364,106 @@ const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
   TierUpgradeStatusConflictError: new Set(['actualStatus']),
   // renewals `create-cycle-in-tx.ts` (#740) — `'not_found' | 'plan_inactive'`.
   PlanNotResolvableError: new Set(['planStatus']),
+  // events `relink-registration.ts` (#740 B2) — branded `EventId` /
+  // `RegistrationId` uuids: the path's UUID-gated id, the row's `event_id`.
+  RelinkRegistrationError: new Set(['eventIdInPath', 'eventIdOnRegistration', 'registrationId']),
+  // broadcasts `cancel-in-flight-broadcasts-for-member.ts` (#740 B2) — each
+  // construction site passes a closed `DeleteKind`, or `${DeleteKind}_probe_${ProbedStatus}`
+  // (both closed unions; `normaliseStatus` maps Resend's status to a literal).
+  ResendUnsettledError: new Set(['outcome']),
+  // broadcasts approval `list-broadcast-versions.ts` / `get-member-version-thread.ts`
+  // (#740 B2) — the one `server_error` construction sets `errKind: errKind(e)`.
+  ListBroadcastVersionsError: new Set(['errKind']),
+  GetMemberVersionThreadError: new Set(['errKind']),
+  // broadcasts `cancel-broadcast.ts`, `approve-broadcast.ts`, `reject-broadcast.ts`,
+  // approval `send-version-to-member.ts`, `confirm-schedule.ts`,
+  // `record-member-decision.ts` (#740 B2) — the one `server_error`
+  // construction in each sets `errKind: errKind(e)` or `approvalErrKind(e)`.
+  CancelBroadcastError: new Set(['errKind']),
+  ApproveBroadcastError: new Set(['errKind']),
+  RejectBroadcastError: new Set(['errKind']),
+  SendVersionToMemberError: new Set(['errKind']),
+  ConfirmScheduleError: new Set(['errKind']),
+  RecordMemberDecisionError: new Set(['errKind']),
+  // broadcasts `set-brand-settings.ts`, `expire-stale-member-approvals.ts`,
+  // `read-formatting-warnings.ts` (#740 B2) — `errKind(e)` / `approvalErrKind(e)`.
+  SetBrandSettingsError: new Set(['errKind']),
+  ExpireStaleMemberApprovalsError: new Set(['errKind']),
+  ReadFormattingWarningsError: new Set(['errKind']),
+  // broadcasts `read-dispatch-hold.ts` (#740 B2) — `errClass` comes from
+  // `_dispatch-standing-gate.ts`: a literal, `errKind(e)`, or a
+  // `MembershipAccessLookupError['kind']` union member.
+  ReadDispatchHoldError: new Set(['errClass']),
+  // broadcasts `cleanup-orphaned-audiences.ts` (#740 B2) — `errClass: errKind(e)`;
+  // `orphans` is `OrphanDrainOutput`, numbers and booleans only.
+  CleanupOrphanedAudiencesError: new Set(['errClass', 'orphans']),
+  // broadcasts `reconcile-stuck-sending.ts` (#740 B2) — `errClass: errKind(e)`.
+  ReconcileStuckSendingError: new Set(['errClass']),
+  // Two types share this name (#740 B2): broadcasts `process-webhook-event.ts`
+  // — `errClass: errKind(e)`, `step: errStep(e)`, `reason` a literal plus an
+  // `EmailLowerError` code; payments `process-webhook-event.ts` — `detail` a
+  // sub-use-case code or `formatDispatchErrorDetail` (an error class),
+  // `subDetail` the F4 bridge code or `F5_SETTINGS_MISSING_DETAIL` /
+  // `'invoice_payability_read_failed'`, a boolean, and `DispatchPermanence`.
+  ProcessWebhookEventError: new Set([
+    'errClass',
+    'step',
+    'reason',
+    'detail',
+    'subDetail',
+    'retryCeilingExceeded',
+    'permanence',
+  ]),
+  // broadcasts `sweep-expired-broadcasts.ts` (#740 B2) — a row count.
+  SweepExpiredBroadcastsError: new Set(['sweptCount']),
+  // auth `redeem-invite.ts` / `reset-password.ts` (#740 B2) — `reason` is
+  // `TokenFailureReason`, `'not-found' | 'used' | 'expired'`.
+  RedeemInviteError: new Set(['reason']),
+  ResetPasswordError: new Set(['reason']),
+  // invoicing `create-invoice-draft.ts` / renewals `mark-paid-offline.ts`
+  // (#740 B2) — the live bill's `invoice_id` uuid and `status` enum column;
+  // `stage` is the F4 bridge error's `kind`; `orphanInvoiceId` the bridge's
+  // issued invoice uuid. NOT `reason`: on `f4_failure` / `f4_orphan_invoice`
+  // it is error text.
+  CreateInvoiceDraftError: new Set(['existingInvoiceId', 'existingStatus']),
+  MarkPaidOfflineError: new Set(['existingInvoiceId', 'existingStatus', 'stage', 'orphanInvoiceId']),
+  // invoicing `get-{invoice,receipt,credit-note}-pdf-signed-url.ts` (#740 B2) —
+  // `key` is a server-built `invoicing/<tenant>/<fy>/<uuid>…_v<n>.pdf` path
+  // (`issue-invoice.ts`, `render-receipt-pdf.ts`, `issue-credit-note.ts`, …),
+  // read only on `blob_missing`: the object is gone, so the key opens nothing
+  // (PG-1 holds), and the missing-PDF runbook reads it.
+  GetInvoicePdfSignedUrlError: new Set(['key']),
+  GetReceiptPdfSignedUrlError: new Set(['key']),
+  GetCreditNotePdfSignedUrlError: new Set(['key']),
+  // the mark-paid-offline route's own alias for the `f4_permanent_failure`
+  // variant (#740 B2) — `reason` is `MarkPaidOfflinePermanentReason`, literals.
+  MarkPaidOfflinePermanentFailure: new Set(['reason']),
+  // lib `events-admin-integration-deps.ts` (#740 B2) — `errKind` is the
+  // config repo error's own `kind`.
+  TestWebhookConfigLoadFailed: new Set(['errKind']),
+  // plans `search-plans.ts` (#740 B2) — `errKind: errKind(e)`.
+  SearchPlansError: new Set(['errKind']),
+  // payments `sweep-stale-pending-refunds.ts` (#740 B2) — `cause` is an error
+  // class name, `'unknown'`, a literal, or a code-authored bound message.
+  SweepStalePendingRefundsError: new Set(['cause']),
+  // renewals `end-membership-coverage.ts` (#740 B2) — `errName` is an
+  // Error's `.name` or `'UnknownError'` (its local `errName` helper).
+  EndMembershipCoverageError: new Set(['errName']),
+  // plans `scheduled-plan-change.ts` (#740 B2) — `'invalid_payload' | 'persist_failed'`.
+  CancelScheduledPlanChangeError: new Set(['auditErrorType']),
+  // members `invite-colleague.ts` (#740 B2) — `reason` is `InviteUnavailableReason`, literals.
+  InviteColleagueError: new Set(['reason']),
+  // the refunds initiate route's alias for the `f4_preflight_credit_note_blocked`
+  // variant (#740 B2) — `reason` is `RefundCreditNoteBlockReason`, closed
+  // literals and an `InvoiceStatus` enum value.
+  RefundCreditNoteGateBlocked: new Set(['reason']),
+  // events `ingest-webhook-attendee.ts` (#740 B2) — `FailureStage`, a closed
+  // union of literals, and a boolean. Never `errorMessage`.
+  IngestError: new Set(['failureStage', 'auditFallbackFailed']),
+  // broadcasts `start-formatted-version.ts` / `save-formatted-version.ts`
+  // (#740 B2 review) — the one `server_error` construction sets `errKind: errKind(e)`.
+  StartFormattedVersionError: new Set(['errKind']),
+  SaveFormattedVersionError: new Set(['errKind']),
 };
 
 /** `T` for `T['f']`, and for `Extract<T, …>['f']`; else null. */
@@ -577,6 +793,8 @@ function refusal(sf: ts.SourceFile, expr: ts.Expression, scope: Scope): string |
       return CLASSIFY_SAFE_FIELDS.has(field) ? null : `\`classifyThrown(…).${field}\` (only .kind is a closed token)`;
     }
     if (TEXT_FIELDS.has(field)) return `\`.${field}\``;
+    // A zod error's issue count is a number (#740 B2 review): `parsed.error.issues.length`.
+    if (field === 'length' && ts.isPropertyAccessExpression(base) && base.name.text === 'issues') return null;
     const baseShape = shapeOf(base, scope);
     if (baseShape === 'text') return `\`.${field}\` of error text`;
     if (baseShape === 'error') {
@@ -654,13 +872,55 @@ function lineOf(sf: ts.SourceFile, node: ts.Node): number {
   return sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
 }
 
-function checkContainer(
+const LOGICAL_OPERATORS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.QuestionQuestionToken,
+  ts.SyntaxKind.BarBarToken,
+  ts.SyntaxKind.AmpersandAmpersandToken,
+]);
+
+/** Whether a value is, or has in a conditional / logical arm, an object or array literal. */
+function hasContainer(node: ts.Expression): boolean {
+  const n = unwrap(node);
+  if (ts.isObjectLiteralExpression(n) || ts.isArrayLiteralExpression(n)) return true;
+  if (ts.isConditionalExpression(n)) return hasContainer(n.whenTrue) || hasContainer(n.whenFalse);
+  if (ts.isBinaryExpression(n) && LOGICAL_OPERATORS.has(n.operatorToken.kind)) {
+    if (n.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) return hasContainer(n.right);
+    return hasContainer(n.left) || hasContainer(n.right);
+  }
+  return false;
+}
+
+/**
+ * One value in a log line. An object or array literal is walked field by
+ * field; the arms of a conditional or a `??` / `||` / `&&` are walked the same
+ * way (#740 B2: `err: ok ? { message: e.message } : …`), so an object literal
+ * in an arm is never skipped; anything else is a leaf `refusal` reports at `at`.
+ */
+function checkValue(
   sf: ts.SourceFile,
   node: ts.Expression,
   scope: Scope,
   out: LogErrorFinding[],
+  describe: (why: string) => string,
+  at: ts.Node,
 ): void {
   const n = unwrap(node);
+  if (!hasContainer(n)) {
+    const why = refusal(sf, n, scope);
+    if (why !== null) out.push({ line: lineOf(sf, at), message: describe(why) });
+    return;
+  }
+  if (ts.isConditionalExpression(n)) {
+    checkValue(sf, n.whenTrue, scope, out, describe, at);
+    checkValue(sf, n.whenFalse, scope, out, describe, at);
+    return;
+  }
+  if (ts.isBinaryExpression(n) && LOGICAL_OPERATORS.has(n.operatorToken.kind)) {
+    // `a && b` logs `a` only when it is falsy, so it carries nothing (#740 B2 review).
+    if (n.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken) checkValue(sf, n.left, scope, out, describe, at);
+    checkValue(sf, n.right, scope, out, describe, at);
+    return;
+  }
   if (ts.isObjectLiteralExpression(n)) {
     for (const prop of n.properties) {
       if (ts.isShorthandPropertyAssignment(prop)) {
@@ -668,26 +928,99 @@ function checkContainer(
           out.push({ line: lineOf(sf, prop), message: `shorthand \`{ ${prop.name.text} }\` logs the error object` });
         }
       } else if (ts.isSpreadAssignment(prop)) {
-        const why = refusal(sf, prop.expression, scope);
-        if (why !== null) out.push({ line: lineOf(sf, prop), message: `spread of ${why}` });
+        checkValue(sf, prop.expression, scope, out, (why) => `spread of ${why}`, prop);
       } else if (ts.isPropertyAssignment(prop)) {
-        const init = unwrap(prop.initializer);
-        if (ts.isObjectLiteralExpression(init) || ts.isArrayLiteralExpression(init)) {
-          checkContainer(sf, init, scope, out);
-        } else {
-          const why = refusal(sf, prop.initializer, scope);
-          if (why !== null) out.push({ line: lineOf(sf, prop), message: `${prop.name.getText(sf)}: ${why}` });
-        }
+        const key = prop.name.getText(sf);
+        checkValue(sf, prop.initializer, scope, out, (why) => `${key}: ${why}`, prop);
       }
     }
     return;
   }
   if (ts.isArrayLiteralExpression(n)) {
-    for (const el of n.elements) checkContainer(sf, el, scope, out);
+    for (const el of n.elements) checkValue(sf, el, scope, out, describe, el);
     return;
   }
   const why = refusal(sf, n, scope);
-  if (why !== null) out.push({ line: lineOf(sf, n), message: why });
+  if (why !== null) out.push({ line: lineOf(sf, at), message: describe(why) });
+}
+
+function checkContainer(sf: ts.SourceFile, node: ts.Expression, scope: Scope, out: LogErrorFinding[]): void {
+  checkValue(sf, node, scope, out, (why) => why, node);
+}
+
+/** The last name of a call's callee: `f(…)` → `f`, `a.b.f(…)` → `f`. */
+function lastCalleeName(call: ts.CallExpression): string | null {
+  const c = unwrap(call.expression);
+  if (ts.isIdentifier(c)) return c.text;
+  if (ts.isPropertyAccessExpression(c)) return c.name.text;
+  return null;
+}
+
+/** The registered argument indexes of a log-wrapper call, or null. */
+function wrapperIndexes(call: ts.CallExpression): readonly number[] | null {
+  const name = lastCalleeName(call);
+  return name !== null && Object.prototype.hasOwnProperty.call(LOG_WRAPPERS, name) ? (LOG_WRAPPERS[name] ?? null) : null;
+}
+
+type FunctionLike = ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression;
+
+function functionName(fn: FunctionLike): string | null {
+  if ((ts.isFunctionDeclaration(fn) || ts.isMethodDeclaration(fn)) && fn.name !== undefined) return fn.name.getText();
+  const parent = fn.parent;
+  if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) return parent.name.text;
+  if (ts.isPropertyAssignment(parent)) return parent.name.getText();
+  return null;
+}
+
+/**
+ * Keys whose value is error detail by name. A parameter logged under one of
+ * them (`err: code`, `{ detail }`) makes its function a log wrapper, the same
+ * as a spread parameter does (#740 B2 review). Other keys (`tenantId`, `count`)
+ * are not followed: they would make every use case a wrapper.
+ */
+const ERRORISH_KEYS = new Set([
+  'err', 'error', 'cause', 'detail', 'details', 'reason', 'message', 'msg',
+  'errMessage', 'errorMessage', 'errorDetail', 'stack', 'description', 'why',
+]);
+
+/**
+ * Identifiers that reach a log argument as the value itself, as a spread, or
+ * as the value of an {@link ERRORISH_KEYS} key (nested objects included).
+ */
+function reachingIdentifiers(arg: ts.Expression, out: ts.Identifier[] = []): ts.Identifier[] {
+  const n = unwrap(arg);
+  if (ts.isIdentifier(n)) out.push(n);
+  else if (ts.isConditionalExpression(n)) {
+    reachingIdentifiers(n.whenTrue, out);
+    reachingIdentifiers(n.whenFalse, out);
+  } else if (ts.isBinaryExpression(n) && LOGICAL_OPERATORS.has(n.operatorToken.kind)) {
+    reachingIdentifiers(n.right, out);
+    if (n.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken) reachingIdentifiers(n.left, out);
+  } else if (ts.isObjectLiteralExpression(n)) {
+    for (const p of n.properties) {
+      if (ts.isSpreadAssignment(p)) reachingIdentifiers(p.expression, out);
+      else if (ts.isShorthandPropertyAssignment(p)) {
+        if (ERRORISH_KEYS.has(p.name.text)) out.push(p.name);
+      } else if (ts.isPropertyAssignment(p)) {
+        const key = ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) ? p.name.text : null;
+        const value = unwrap(p.initializer);
+        if (key !== null && ERRORISH_KEYS.has(key)) reachingIdentifiers(value, out);
+        else if (ts.isObjectLiteralExpression(value)) reachingIdentifiers(value, out);
+      }
+    }
+  }
+  return out;
+}
+
+/** The nearest enclosing function that declares `name` as a plain parameter, with its index. */
+function owningParameter(node: ts.Node, name: string): { fn: FunctionLike; index: number } | null {
+  for (let cur: ts.Node | undefined = node.parent; cur !== undefined; cur = cur.parent) {
+    if (ts.isFunctionDeclaration(cur) || ts.isMethodDeclaration(cur) || ts.isArrowFunction(cur) || ts.isFunctionExpression(cur)) {
+      const index = cur.parameters.findIndex((p) => ts.isIdentifier(p.name) && p.name.text === name);
+      if (index >= 0) return { fn: cur, index };
+    }
+  }
+  return null;
 }
 
 /**
@@ -701,17 +1034,52 @@ export function scanLogErrorObjects(fileName: string, source: string): LogErrorS
   const kind = /\.tsx$/i.test(fileName) ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind);
   const findings: LogErrorFinding[] = [];
+  const wrappers: Array<{ name: string; index: number }> = [];
   let loggerCalls = 0;
+  const aliases = loggerAliases(sf);
+  const discover = (call: ts.CallExpression, args: readonly ts.Expression[]): void => {
+    for (const arg of args) {
+      for (const id of reachingIdentifiers(arg)) {
+        const owner = owningParameter(call, id.text);
+        if (owner === null) continue;
+        const name = functionName(owner.fn);
+        // A LoggerPort adapter's level method: its callers are read as `deps.logger.<level>(…)`.
+        if (name !== null && LEVELS.has(name) && ts.isMethodDeclaration(owner.fn)) continue;
+        if (name !== null && ts.isPropertyAssignment(owner.fn.parent) && LEVELS.has(name)) continue;
+        if (name !== null) wrappers.push({ name, index: owner.index });
+        if (name === null || !(LOG_WRAPPERS[name] ?? []).includes(owner.index)) {
+          findings.push({
+            line: lineOf(sf, call),
+            message:
+              name === null
+                ? `the parameter \`${id.text}\` of an unnamed function reaches a log line; name the function and list it in LOG_WRAPPERS`
+                : `the parameter \`${id.text}\` of \`${name}\` reaches a log line, so its callers' values are never read; list \`${name}: [${owner.index}]\` in LOG_WRAPPERS`,
+          });
+        }
+      }
+    }
+  };
   const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && isLoggerCall(node)) {
-      loggerCalls += 1;
-      const scope: Scope = { errors: new Set([...caughtNames(node), ...taintedNames(sf, node)]), tokens: TOKEN_FIELDS };
-      for (const arg of node.arguments) checkContainer(sf, arg, scope, findings);
+    if (ts.isCallExpression(node)) {
+      if (isLoggerCall(node, aliases)) {
+        loggerCalls += 1;
+        const scope: Scope = { errors: new Set([...caughtNames(node), ...taintedNames(sf, node)]), tokens: TOKEN_FIELDS };
+        for (const arg of node.arguments) checkContainer(sf, arg, scope, findings);
+        discover(node, node.arguments);
+      } else {
+        const indexes = wrapperIndexes(node);
+        if (indexes !== null) {
+          const scope: Scope = { errors: new Set([...caughtNames(node), ...taintedNames(sf, node)]), tokens: TOKEN_FIELDS };
+          const checked = indexes.flatMap((i) => (node.arguments[i] !== undefined ? [node.arguments[i]] : []));
+          for (const arg of checked) checkContainer(sf, arg, scope, findings);
+          discover(node, checked);
+        }
+      }
     }
     ts.forEachChild(node, visit);
   };
   visit(sf);
-  return { findings, loggerCalls };
+  return { findings, loggerCalls, wrappers };
 }
 
 /** The findings of {@link scanLogErrorObjects} alone. */

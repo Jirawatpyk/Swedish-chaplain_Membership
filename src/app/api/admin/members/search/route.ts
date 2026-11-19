@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 
@@ -71,7 +72,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   if (!result.ok) {
     logger.error(
-      { requestId: ctx.requestId, err: result.error },
+      { requestId: ctx.requestId, ...errLogFields(result.error) },
       'admin-members-search: server error',
     );
     return NextResponse.json(

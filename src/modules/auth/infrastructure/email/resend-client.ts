@@ -137,7 +137,7 @@ class ResendEmailSender implements EmailSender {
     }
 
     logger.error(
-      { err: lastError },
+      { err: errKind(lastError) },
       'resend send failed after exhausting retries',
     );
     return err({

@@ -46,6 +46,7 @@ import { env } from '@/lib/env';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
 /**
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     logger.error(
       {
         tenantId: tenant.slug,
-        errMessage: result.error.message,
+        ...errLogFields(result.error),
       },
       'cron.broadcasts.reclaim_orphan_audiences.server_error',
     );

@@ -330,7 +330,7 @@ export async function runListMemberVatRegistrantByIds(
         tenant_slug: tenantSlug,
         member_id_count: memberIds.length,
         errName: e instanceof Error ? e.name : 'unknown',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[F6] buyerIsVatRegistrant enrichment lookup failed — registrations fall back to offering bill_first (the server gate stays authoritative)',
     );

@@ -31,6 +31,7 @@ import {
 } from '@/lib/idempotency';
 import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import {
   asPlanSlug,
   asPlanYear,
@@ -98,7 +99,7 @@ export async function GET(
 
   if (result.error.type === 'server_error') {
     logger.error(
-      { requestId: ctx.requestId, err: result.error },
+      { requestId: ctx.requestId, ...errLogFields(result.error) },
       'get-plan: server error',
     );
     return NextResponse.json(
@@ -312,7 +313,7 @@ export async function PATCH(
         );
       case 'audit_failed':
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'update-plan: audit write failed',
         );
         return NextResponse.json(
@@ -327,7 +328,7 @@ export async function PATCH(
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'update-plan: unhandled error',
         );
         return NextResponse.json(
@@ -496,7 +497,7 @@ export async function DELETE(
         );
       case 'audit_failed':
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'soft-delete-plan: audit write failed',
         );
         return NextResponse.json(
@@ -506,7 +507,7 @@ export async function DELETE(
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'soft-delete-plan: unhandled error',
         );
         return NextResponse.json(

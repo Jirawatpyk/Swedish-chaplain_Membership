@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 
 /**
  * Shared server-to-Blob byte-streaming helper for all PDF download routes.
@@ -81,7 +82,7 @@ export async function streamPdfFromBlob(
     const isTimeout = err instanceof Error && err.name === 'TimeoutError';
     const errorCode = isTimeout ? 'blob_fetch_timeout' : 'blob_fetch_failed';
     logger.error(
-      { ...logContext, errorCode, timeoutMs: isTimeout ? timeoutMs : undefined, err },
+      { ...logContext, errorCode, timeoutMs: isTimeout ? timeoutMs : undefined, ...errLogFields(err) },
       `GET ${route} — blob fetch ${isTimeout ? 'timed out' : 'failed'}`,
     );
     return NextResponse.json(

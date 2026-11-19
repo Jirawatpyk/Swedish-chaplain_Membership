@@ -20,6 +20,7 @@ import { env } from '@/lib/env';
 // loading when the feature flag is off.
 import { serialiseInvoice, stripReason } from '../../_serialise';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
 import { createServerTiming, type ServerTiming } from '@/lib/server-timing';
@@ -186,10 +187,7 @@ async function handlePay(
       } catch (finaliseErr) {
         logger.error(
           {
-            err:
-              finaliseErr instanceof Error
-                ? finaliseErr.message
-                : String(finaliseErr),
+            err: errKind(finaliseErr),
             requestId,
             tenantId: tenantCtx.slug,
             invoiceId,

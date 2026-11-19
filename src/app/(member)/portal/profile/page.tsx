@@ -24,7 +24,7 @@ import { makeMarketingSuppressionLookup } from '@/lib/contact-marketing-deps';
 import { env } from '@/lib/env';
 // F114 — the caller's OWN pending change request (never another contact's).
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { serialiseChangeRequestForPortal, type ChangeRequestView } from '@/lib/change-request-portal-view';
 
@@ -210,7 +210,7 @@ export async function PortalProfileBody({
       });
       if (!recent.ok) {
         logger.error(
-          { errorId: 'M114.portal.profile.recent_read_failed', err: recent.error.type, tenantId: tenant.slug },
+          { errorId: 'M114.portal.profile.recent_read_failed', ...errLogFields(recent.error), tenantId: tenant.slug },
           'portal.profile.recent_read_failed',
         );
         return null;

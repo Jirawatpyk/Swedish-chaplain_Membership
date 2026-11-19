@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { loadMemberRenewalContext } from '@/app/(staff)/admin/invoices/_lib/member-renewal-context';
 
 const querySchema = z.object({
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // the admin think the FORM is broken; log loudly and let the client
     // treat a non-200 as "no context available" (the panel simply hides).
     logger.warn(
-      { err, tenantSlug: tenantCtx.slug, memberId: parsed.data.memberId },
+      { ...errLogFields(err), tenantSlug: tenantCtx.slug, memberId: parsed.data.memberId },
       '[invoices] member-renewal-context lookup failed',
     );
     return NextResponse.json({ error: { code: 'lookup_failed' } }, { status: 500 });

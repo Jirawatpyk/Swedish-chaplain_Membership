@@ -22,6 +22,7 @@ import {
 } from '@/lib/idempotency';
 import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { env } from '@/lib/env';
 import { createMember, directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   if (!result.ok) {
     logger.error(
-      { requestId: ctx.requestId, err: result.error },
+      { requestId: ctx.requestId, ...errLogFields(result.error) },
       'directory-search: unhandled error',
     );
     return NextResponse.json(
@@ -348,7 +349,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'create-member: unhandled',
         );
         return NextResponse.json(

@@ -32,6 +32,7 @@ import { makeStandaloneAuditDeps } from '@/modules/events';
 import { asTenantId } from '@/modules/members';
 import { asUserId, isRole, type Role, type UserId } from '@/modules/auth';
 
+import { errKind } from '@/lib/log-id';
 export interface EmitEventsRoleViolationInput {
   readonly actorUserId: string | null;
   /** 016 T033 — the LITERAL denied role (the F6 ActorType union now carries
@@ -60,7 +61,7 @@ export async function emitEventsRoleViolation(
     logger.error(
       {
         event: 'tenant_resolve_failed_during_role_violation_audit',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         ...(input.eventId !== null ? { eventId: input.eventId } : {}),
       },
       '[F6] tenant resolution failed during role_violation_blocked emit — 404 still served',
@@ -121,7 +122,7 @@ export async function emitEventsRoleViolation(
         // thrown failure can be correlated; the prior shape lost
         // everything outside the inner Result-branch.
         event: 'f6_audit_emit_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantSlug,
         actorRole: input.actorRole,
         attemptedRoute: input.attemptedRoute,
@@ -240,7 +241,7 @@ export async function adminOnlyWriterGuard(
     logger.debug(
       {
         event: 'f6_admin_writer_guard_tenant_resolve_failed_best_effort',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         attemptedRoute: input.attemptedRoute,
       },
       '[F6] tenantSlug resolve failed in writer-guard (best-effort, continuing without tenant context)',
@@ -258,7 +259,7 @@ export async function adminOnlyWriterGuard(
     logger.error(
       {
         event: 'f6_admin_writer_guard_session_lookup_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         attemptedRoute: input.attemptedRoute,
         tenantSlug,
         requestId,

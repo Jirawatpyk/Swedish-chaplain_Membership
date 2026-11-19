@@ -21,6 +21,7 @@ import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@jirawatpyk/aura-react/server';
 import { env } from '@/lib/env';
+import { stepToken } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { requirePagePermission } from '@/lib/rbac';
@@ -43,7 +44,7 @@ export default async function MemberChangesSettingsPage(): Promise<React.ReactEl
   const deps = buildChangeRequestDeps(tenant);
   // A read failure must reach the error boundary — a switch rendered from a
   // row we could not read would assert "off" about a tenant that may be on.
-  const fail: (arm: string, code: string) => never = (arm, code) => {
+  const failMemberChangesPage: (arm: string, code: string) => never = (arm, code) => {
     logger.error(
       { errorId: `M114.admin.setting_page.${arm}`, requestId, tenantId: tenant.slug, err: code },
       'member-changes.settings page: read failed',
@@ -52,9 +53,9 @@ export default async function MemberChangesSettingsPage(): Promise<React.ReactEl
   };
 
   const row = await deps.tenantMemberChangeSettings.readInTenant(tenant);
-  if (!row.ok) fail('settings_read_failed', row.error.code);
+  if (!row.ok) failMemberChangesPage('settings_read_failed', row.error.code);
   const pending = await countPendingChangeRequests(deps);
-  if (!pending.ok) fail('pending_count_failed', pending.error.message);
+  if (!pending.ok) failMemberChangesPage('pending_count_failed', stepToken(pending.error.message) ?? 'unknown');
 
   return renderMemberChangesView({
     // no row yet = the new-tenant default (off, FR-031)

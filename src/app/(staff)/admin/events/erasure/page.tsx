@@ -34,7 +34,6 @@ import { z } from 'zod';
 import { getTranslations } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runSearchAttendeesByEmail } from '@/lib/events-admin-deps';
@@ -42,6 +41,7 @@ import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { TableContainer } from '@/components/layout';
 import { renderErasureBody } from './_components/erasure-view';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 // RFC email + ≤254 applied to the trimmed+lowered value (carry-forward #4).
 const NormalisedEmailSchema = z.string().min(1).max(254).email();
 
@@ -84,7 +84,7 @@ export default async function EraseByEmailPage({
     logger.error(
       {
         event: 'admin_erase_by_email_page_tenant_resolve_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         // No email in the log line — it is the PII we are erasing.
       },
       '[F6] resolveTenantFromHeaders threw on erase-by-email page',
@@ -119,17 +119,7 @@ export default async function EraseByEmailPage({
       logger.error(
         {
           event: 'admin_erase_by_email_page_throw',
-          err:
-            e instanceof Error
-              ? {
-                  name: e.name,
-                  message: e.message,
-                  stack:
-                    typeof e.stack === 'string'
-                      ? (redactStack(e.stack) ?? null)
-                      : null,
-                }
-              : String(e),
+          ...errLogFields(e),
         },
         '[F6] runSearchAttendeesByEmail threw on erase-by-email page',
       );

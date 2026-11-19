@@ -43,7 +43,7 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { hashId } from '@/lib/log-id';
+import { errKind, errLogFields, hashId } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
 import { db, type DbTx } from '@/lib/db';
 import {
@@ -248,7 +248,7 @@ export async function createUser(
           {
             requestId: input.requestId,
             errCode: enqueueResult.error.code,
-            errCause: enqueueResult.error.cause,
+            errCause: errKind(enqueueResult.error.cause),
             targetUserIdHash: hashId(user.id),
           },
           'create_user.invitation_enqueue_failed',
@@ -294,7 +294,7 @@ export async function createUser(
     logger.error(
       {
         requestId: input.requestId,
-        errMessage: e instanceof Error ? e.message : String(e),
+        ...errLogFields(e),
       },
       'create_user.unexpected_tx_failure',
     );

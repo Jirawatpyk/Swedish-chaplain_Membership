@@ -42,6 +42,7 @@ import { countTenantSkips, reportOverlapSkips } from '@/lib/renewals-cron-lock';
 import { asTenantContext } from '@/modules/tenants';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 /**
  * Phase 9 / T231 + Cycle-state observable gauge wiring.
  *
@@ -137,7 +138,7 @@ async function observeCycleStateGaugesForTenant(
     // failure (which would indicate broken aggregation queries).
     logger.warn(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId,
         gaugeKind: 'renewals_cycles_state',
       },
@@ -257,10 +258,8 @@ async function emitOrchestratedAudit(
     // docstring).
     logger.error(
       {
-        // K12-3 (REL-K-1): pass the Error instance so pino's `err`
-        // serializer captures stack + type without the manual stack
-        // field below.
-        err: e instanceof Error ? e : new Error(String(e)),
+        // #740: the class only — an Error's message and stack can quote bound parameters.
+        err: errKind(e),
         correlationId,
       },
       'cron.renewals.coordinator.audit_emit_failed',
@@ -418,9 +417,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               jsonParseFailed = true;
               logger.error(
                 {
-                  // K12-3 (REL-K-1): pass the Error instance so pino's
-                  // `err` serializer captures stack + type.
-                  err: e instanceof Error ? e : new Error(String(e)),
+                  // #740: the class only — an Error's message and stack can quote bound parameters.
+                  err: errKind(e),
                   tenantId,
                   status: r.status,
                   contentType: r.headers.get('content-type'),

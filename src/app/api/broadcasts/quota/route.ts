@@ -18,6 +18,7 @@ import { quotaResponseBody } from '@/lib/broadcasts-draft-response';
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const correlationId = randomUUID();
   const ctx = await requireMemberContext(request);
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               correlationId,
               tenantId: ctx.tenant.slug,
               memberId: ctx.member.memberId,
-              err: result.error,
+              ...errLogFields(result.error),
             },
             'broadcasts.quota.invariant_violation',
           );
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               correlationId,
               tenantId: ctx.tenant.slug,
               memberId: ctx.member.memberId,
-              err: _exhaustive,
+              ...errLogFields(_exhaustive),
             },
             'broadcasts.quota.unhandled_error_variant',
           );
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: ctx.tenant.slug,
         memberId: ctx.member.memberId,

@@ -16,6 +16,7 @@ import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { problemResponse } from '@/lib/http/problem-response';
 import { adminOnlyGuard } from '../_lib/role-violation-audit';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 
 const ROUTE = '/api/admin/integrations/eventcreate/generate-secret';
@@ -113,7 +114,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       {
         event: 'f6_generate_secret_threw',
         tenantSlug: tenantCtx.slug,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         requestId,
       },
       '[F6] generate-secret route threw',

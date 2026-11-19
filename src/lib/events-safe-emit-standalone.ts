@@ -24,7 +24,7 @@
  * are public-barrel types only; no Infrastructure leak.
  */
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
+import { errLogFields } from '@/lib/log-id';
 import type {
   StandaloneAuditDeps,
   F6AuditEventType,
@@ -76,39 +76,20 @@ export async function safeEmitStandalone<T extends F6AuditEventType>(
           event: failCtx.logEvent,
           tenantSlug: failCtx.tenantSlug,
           auditErrorKind: result.error.kind,
-          auditErrorMessage:
-            'message' in result.error ? result.error.message : null,
         },
         failCtx.logMsg,
       );
     }
     return;
   } catch (auditErr) {
-    // R6-W2 staff-review fix (preserved in R7 extraction): scrub
-    // container paths + node_modules + webpack-internal:/// from the
-    // stack before the pino sink. Pino REDACT_PATHS does not match
-    // `errStack` (it is not on the wildcard list); explicit redaction
-    // here closes the gap that the original `wrapRepoError` path
-    // fixed for repository errors.
-    //
-    // R8 round-8 fix (2026-05-13): normalise `Error.stack === undefined`
-    // (rare — e.g. when `Error.captureStackTrace` is unavailable, or
-    // a caller has `delete err.stack`) to `null` so the logged
-    // `errStack` field is always either a redacted string OR `null`
-    // — never `undefined`, which pino would omit from the structured
-    // log and break grep-on-presence in alert rules.
-    const rawStack: string | null =
-      auditErr instanceof Error && typeof auditErr.stack === 'string'
-        ? auditErr.stack
-        : null;
+    // #740 B2 — the error's name and class only: its message and stack can
+    // quote a driver error's bound parameters.
     logger.error(
       {
         event: failCtx.logEvent,
         tenantSlug: failCtx.tenantSlug,
         errName: auditErr instanceof Error ? auditErr.name : 'unknown',
-        errMessage:
-          auditErr instanceof Error ? auditErr.message : String(auditErr),
-        errStack: rawStack === null ? null : (redactStack(rawStack) ?? null),
+        ...errLogFields(auditErr),
       },
       failCtx.logMsg,
     );

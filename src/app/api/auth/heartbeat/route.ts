@@ -21,7 +21,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getCurrentSession } from '@/lib/auth-session';
 import { logger } from '@/lib/logger';
-import { hashId } from '@/lib/log-id';
+import { errLogFields, hashId } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { heartbeat } from '@/modules/auth';
 
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // M1 (Round 3) — include requestId in body for client-side log
     // correlation. Pre-fix the body was bare 'server-error' and the
     // idle-warning dialog had no handle to surface to user-reports.
-    logger.error({ err: error, requestId }, 'heartbeat.infra-error');
+    logger.error({ ...errLogFields(error), requestId }, 'heartbeat.infra-error');
     return NextResponse.json(
       { error: 'server-error', requestId },
       { status: 500 },

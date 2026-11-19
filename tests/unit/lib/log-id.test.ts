@@ -161,6 +161,18 @@ describe('errLogFields() — a Result error keyed on kind or type (#740 B1 revie
     });
   });
 
+  it('#740 B2 review: a code-built `<op>: <code>` message is kept as step', () => {
+    expect(errLogFields({ type: 'server_error', message: 'count-pending: repo.unexpected' })).toEqual({
+      err: 'unknown',
+      resultKind: 'server_error',
+      step: 'count-pending: repo.unexpected',
+    });
+    expect(errLogFields({ kind: 'server_error', message: 'Failed query: select 1 -- a@x.io' })).toEqual({
+      err: 'unknown',
+      resultKind: 'server_error',
+    });
+  });
+
   it('a kind that is not token-shaped is unrecognised', () => {
     expect(errLogFields({ kind: 'Failed for a@x.io' })).toEqual({ err: 'unknown', resultKind: 'unrecognised' });
   });

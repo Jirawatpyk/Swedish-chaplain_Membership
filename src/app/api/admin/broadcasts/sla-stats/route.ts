@@ -22,6 +22,7 @@ import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
+import { errKind } from '@/lib/log-id';
 const TARGET_SLA_HOURS = 48;
 
 type BannerSeverity = 'green' | 'amber' | 'red';
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: tenantCtx.slug,
       },

@@ -857,7 +857,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // regression. Importing + narrowing on the proper type makes
       // that regression a build error.
       const dispatchError: ProcessWebhookEventError = result.error;
-      const permanence = dispatchError.permanence;
+      const permanence: ProcessWebhookEventError['permanence'] = dispatchError.permanence;
+      const dispatchFailureDetail: ProcessWebhookEventError['detail'] = dispatchError.detail;
+      const dispatchFailureSubDetail: ProcessWebhookEventError['subDetail'] = dispatchError.subDetail;
+      const retryCeilingExceeded: ProcessWebhookEventError['retryCeilingExceeded'] =
+        dispatchError.retryCeilingExceeded;
       logger.error(
         {
           eventId: evId,
@@ -866,13 +870,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           correlationId,
           requestId,
           dispatchFailureKind: dispatchError.kind,
-          dispatchFailureDetail: dispatchError.detail,
+          dispatchFailureDetail,
           // money-remediation Task 5 — the F4 sub-code. Pre-Task-5 every F4
           // decline logged `bridge_error` and nothing more, so this line
           // could not distinguish "Blob is down" from "this invoice needs
           // re-issuing". Both are PII-free operational codes.
-          dispatchFailureSubDetail: dispatchError.subDetail,
-          retryCeilingExceeded: dispatchError.retryCeilingExceeded,
+          dispatchFailureSubDetail,
+          retryCeilingExceeded,
           permanence,
         },
         'stripe-webhook.dispatch_failed',

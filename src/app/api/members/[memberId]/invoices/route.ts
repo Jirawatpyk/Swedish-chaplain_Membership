@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { getMember, type MemberId } from '@/modules/members';
 import { buildMemberProbeDeps } from '@/modules/members/members-deps';
 import {
@@ -100,7 +101,7 @@ export async function GET(
     // raw `cause: unknown` which may spill infra paths + stack traces
     // into log storage. The Result tag is enough for correlation.
     logger.error(
-      { requestId: ctx.requestId, errType: memberResult.error.type },
+      { requestId: ctx.requestId, ...errLogFields(memberResult.error) },
       'member-invoices: member lookup failed',
     );
     return NextResponse.json(
@@ -128,7 +129,7 @@ export async function GET(
     // Log only the discriminated error-type tag (same reasoning as
     // the member-probe log above).
     logger.error(
-      { requestId: ctx.requestId, errType: result.error.type },
+      { requestId: ctx.requestId, ...errLogFields(result.error) },
       'list-invoices-by-member: unhandled',
     );
     return NextResponse.json(

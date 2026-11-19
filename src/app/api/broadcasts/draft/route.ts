@@ -28,6 +28,7 @@ import {
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
 
+import { errKind } from '@/lib/log-id';
 const SegmentTypeEnum = z.enum([
   'all_members',
   'tier',
@@ -125,7 +126,7 @@ async function handle(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: ctx.tenant.slug,
         memberId: ctx.member.memberId,

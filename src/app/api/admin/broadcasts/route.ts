@@ -43,6 +43,7 @@ import { isYmd, tenantDayRangeUtc } from '@/lib/tenant-day-range';
 import { isUpcomingPreset, loadAdminBroadcastQueue, queueSortFor, upcomingFrom } from '@/lib/admin-broadcast-queue';
 import { readEblastStageChips } from '@/lib/eblast-waiting-count';
 
+import { errKind } from '@/lib/log-id';
 /** URL sort tokens → the repo's orders. `scheduled_for` is the Upcoming sends preset's token. */
 const SORT_TOKENS = {
   submitted_at_asc: 'submitted_at_asc',
@@ -162,7 +163,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: tenantCtx.slug,
       },

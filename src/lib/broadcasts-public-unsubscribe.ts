@@ -48,6 +48,7 @@ import { getTranslations } from 'next-intl/server';
 
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { isLocale, type Locale } from '@/i18n/config';
 import { asTenantContext } from '@/modules/tenants';
 import {
@@ -141,7 +142,7 @@ async function emitInvalidTokenAudit(
     });
   } catch (e) {
     logger.error(
-      { err: (e as Error).message, failureReason, requestId },
+      { err: errKind(e), failureReason, requestId },
       'unsubscribe_invalid_audit_emit_failed',
     );
   }
@@ -162,7 +163,7 @@ async function rateLimitRetryAfter(
     return rl.ok ? null : rl.error.retryAfterSeconds;
   } catch (e) {
     logger.warn(
-      { err: (e as Error).message, requestId },
+      { err: errKind(e), requestId },
       'unsubscribe_rate_limit_check_failed',
     );
     return null;
@@ -292,7 +293,7 @@ export async function processUnsubscribe(
     tenantCtx = asTenantContext(payload.tenantId);
   } catch (e) {
     logger.warn(
-      { err: (e as Error).message, tenantId: payload.tenantId },
+      { err: errKind(e), tenantId: payload.tenantId },
       'unsubscribe_invalid_tenant_slug',
     );
     return reject('invalid_tenant_slug', payload.tenantId, payload.lang);
@@ -315,7 +316,7 @@ export async function processUnsubscribe(
     tenantDisplayName = await resolveTenantDisplayName(payload.tenantId);
   } catch (e) {
     logger.error(
-      { err: (e as Error).message, tenantId: payload.tenantId, requestId },
+      { err: errKind(e), tenantId: payload.tenantId, requestId },
       'unsubscribe_tenant_displayname_lookup_failed',
     );
     const tFallback = await getTranslations({
@@ -346,7 +347,7 @@ export async function processUnsubscribe(
     );
   } catch (e) {
     logger.error(
-      { err: (e as Error).message, tenantId: payload.tenantId, requestId },
+      { err: errKind(e), tenantId: payload.tenantId, requestId },
       'unsubscribe_unhandled_error',
     );
     broadcastsMetrics.unsubscribesCount(payload.tenantId, 'unhandled_error');

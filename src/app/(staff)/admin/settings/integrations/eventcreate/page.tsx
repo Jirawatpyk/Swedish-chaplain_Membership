@@ -34,6 +34,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { WebhookConfigWizard } from '@/components/events/webhook-config-wizard';
 import { ZapierWalkthrough } from '@/components/events/zapier-walkthrough';
 
+import { errKind } from '@/lib/log-id';
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.integrations.eventcreate');
   return { title: t('page.title') };
@@ -84,7 +85,7 @@ export default async function EventCreateIntegrationPage({
       {
         event: 'f6_load_integration_config_page_threw',
         tenantSlug: tenantCtx.slug,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[F6] integration config page render — runLoadIntegrationConfig threw',
     );

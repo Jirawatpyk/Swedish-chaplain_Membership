@@ -21,6 +21,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import {
   exportMembersBackup,
   makeExportMembersBackupDeps,
@@ -51,7 +52,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       return NextResponse.json({ error: { code: 'not_found' } }, { status: 404 });
     }
     logger.error(
-      { tenantSlug: tenantCtx.slug, requestId, err: result.error },
+      { tenantSlug: tenantCtx.slug, requestId, ...errLogFields(result.error) },
       '[admin-members-backup] export use-case failed',
     );
     return NextResponse.json({ error: { code: 'server_error' } }, { status: 500 });

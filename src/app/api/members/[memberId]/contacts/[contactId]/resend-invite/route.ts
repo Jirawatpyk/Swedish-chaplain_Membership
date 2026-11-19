@@ -24,6 +24,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requireApiPermission } from '@/lib/rbac';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 
 const paramsSchema = z.object({
   memberId: z.string().uuid(),
@@ -79,7 +80,7 @@ export async function POST(
         );
       default:
         logger.error(
-          { requestId, err: result.error },
+          { requestId, ...errLogFields(result.error) },
           'members.resend_bounced_invite.server_error',
         );
         return NextResponse.json({ error: 'server_error' }, { status: 500 });

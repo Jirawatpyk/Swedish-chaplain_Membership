@@ -17,7 +17,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { makeRenderBroadcastPreviewDeps } from '@/lib/broadcast-brand-deps';
 import { baseHeaders, errorResponse } from '@/lib/broadcasts-route-helpers';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import {
   broadcastsRateLimiter,
@@ -100,7 +100,7 @@ export async function handlePreview(
         return errorResponse(400, 'invalid_body', correlationId, { details: { reason: result.error.reason } });
       }
       logger.error(
-        { err: result.error.reason, correlationId, errorId: `M119.${actor.surface}.preview.sanitizer` },
+        { ...errLogFields(result.error), correlationId, errorId: `M119.${actor.surface}.preview.sanitizer` },
         'broadcasts.preview.sanitizer_unavailable',
       );
       return errorResponse(500, 'internal_error', correlationId);

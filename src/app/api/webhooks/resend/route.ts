@@ -53,6 +53,7 @@ import {
 } from '@/modules/renewals';
 import { handleInvitationBounce } from '@/modules/members';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 // Subset of the Resend webhook event type enum — only the ones our
 // `email_delivery_events` enum column supports. Unknown event types
 // are logged and silently accepted (200 with no row inserted).
@@ -193,7 +194,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       {
         requestId,
         eventType,
-        zodIssues: parsed.error.issues.slice(0, 5),
+        // #740 B2 review — the count only: an issue's message can quote the payload.
+        issueCount: parsed.error.issues.length,
       },
       'resend_webhook.schema_rejected',
     );
@@ -257,7 +259,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await db.insert(emailDeliveryEvents).values(insertRow).onConflictDoNothing();
   } catch (error) {
     logger.error(
-      { requestId, err: error, svixId },
+      { requestId, ...errLogFields(error), svixId },
       'resend_webhook.insert_failed',
     );
     return NextResponse.json({ error: 'server-error' }, { status: 500 });
@@ -270,7 +272,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         requestId,
         eventType: mapped,
         messageId,
-        toEmail,
       },
       'resend_webhook.negative_signal',
     );
@@ -292,16 +293,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const { marked } = await handleInvitationBounce(toEmail, requestId, bouncedAt);
       if (marked > 0) {
         logger.info(
-          { requestId, toEmail, marked },
+          { requestId, messageId, marked },
           'resend_webhook.invitation_bounced_marked',
         );
       }
     } catch (e) {
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           requestId,
-          toEmail,
         },
         'resend_webhook.invitation_bounce_handler_failed',
       );
@@ -329,10 +329,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // DB lookup failure — tenant unknown by definition.
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
-          stack: e instanceof Error ? e.stack : undefined,
+          err: errKind(e),
           requestId,
-          toEmail,
         },
         'resend_webhook.f8_bounce_hook_failed_lookup',
       );
@@ -359,12 +357,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // until Sender-Score telemetry catches up hours later.
         logger.error(
           {
-            err: e instanceof Error ? e.message : String(e),
-            stack: e instanceof Error ? e.stack : undefined,
+            err: errKind(e),
             requestId,
             tenantId: lookup.tenantId,
             memberId: lookup.memberId,
-            toEmail,
           },
           'resend_webhook.f8_bounce_hook_failed',
         );

@@ -18,6 +18,7 @@ import {
 import { loadCycleDetail, makeRenewalsDeps } from '@/modules/renewals';
 import { assertNever } from '@/lib/assert-never';
 
+import { errKind } from '@/lib/log-id';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
@@ -154,9 +155,8 @@ export async function GET(
     logger.error(
       {
         errorId: `${ERROR_ID}.UNEXPECTED`,
-        // K12-3 (REL-K-1): pass the Error instance so pino's `err`
-        // serializer captures stack + type.
-        err: e instanceof Error ? e : new Error(String(e)),
+        // #740: the class only — an Error's message and stack can quote bound parameters.
+        err: errKind(e),
         correlationId: ctx.correlationId,
         cycleId,
         tenantId: tenantCtx.slug,

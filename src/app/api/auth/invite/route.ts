@@ -36,6 +36,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requireApiPermission } from '@/lib/rbac';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 
 const inputSchema = z.object({
   email: z.string().email().max(254),
@@ -223,7 +224,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'link-failed' }, { status: 500 });
       case 'server_error':
         logger.error(
-          { requestId: ctx.requestId, err: error },
+          { requestId: ctx.requestId, ...errLogFields(error) },
           'invite.member_link.server_error',
         );
         return NextResponse.json({ error: 'server-error' }, { status: 500 });
@@ -233,7 +234,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // preventing silent 500 on a newly-introduced error code.
         const _exhaustive: never = error;
         logger.error(
-          { requestId: ctx.requestId, err: _exhaustive },
+          { requestId: ctx.requestId, ...errLogFields(_exhaustive) },
           'invite.member_link.unhandled_variant',
         );
         return NextResponse.json({ error: 'server-error' }, { status: 500 });
@@ -278,7 +279,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'email-taken' }, { status: 409 });
     default: {
       logger.error(
-        { requestId: ctx.requestId, err: error },
+        { requestId: ctx.requestId, ...errLogFields(error) },
         'invite: unhandled error variant',
       );
       return NextResponse.json({ error: 'server-error' }, { status: 500 });
@@ -286,7 +287,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   } catch (error) {
     logger.error(
-      { err: error, requestId: ctx.requestId },
+      { ...errLogFields(error), requestId: ctx.requestId },
       'invite.infra-error',
     );
     return NextResponse.json(

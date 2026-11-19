@@ -34,6 +34,7 @@ import {
   type PendingReviewMemberInfo,
 } from '../_lib/pending-review-enrichment';
 
+import { errKind } from '@/lib/log-id';
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals.tier_upgrades');
   return { title: t('title'), description: t('subtitle') };
@@ -90,7 +91,7 @@ export default async function TierUpgradeQueuePage({
     // into thinking no candidates exist when the DB query failed).
     hasError = true;
     logger.error(
-      { err: e instanceof Error ? e : new Error(String(e)) },
+      { err: errKind(e) },
       'admin.renewals.tier-upgrades.page_load_failed',
     );
   }
@@ -141,7 +142,7 @@ export default async function TierUpgradeQueuePage({
           } catch (e) {
             // Non-fatal: fall back to rendering the ID.
             logger.warn(
-              { planId, err: e instanceof Error ? e : new Error(String(e)) },
+              { planId, err: errKind(e) },
               'admin.renewals.tier-upgrades.plan_name_lookup_failed',
             );
           }
@@ -153,7 +154,7 @@ export default async function TierUpgradeQueuePage({
       }).catch((e: unknown) => {
         // Non-fatal: fall back to rendering the member-id slice.
         logger.warn(
-          { err: e instanceof Error ? e : new Error(String(e)) },
+          { err: errKind(e) },
           'admin.renewals.tier-upgrades.company_name_lookup_failed',
         );
         return new Map<string, PendingReviewMemberInfo>();

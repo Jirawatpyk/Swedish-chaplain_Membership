@@ -25,12 +25,12 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runToggleEventCategory } from '@/lib/events-admin-deps';
 import { asEventId } from '@/modules/events';
 import { adminOnlyWriterGuard } from '../../_lib/role-violation-audit';
 
+import { errKind, errLogFields, rootCause } from '@/lib/log-id';
 /**
  * Phase 6 staff-review-4 PERF-R6-01 — pin Node runtime + raise function
  * timeout for toggle re-evaluation. Same rationale as archive route:
@@ -115,7 +115,7 @@ export async function POST(
     logger.error(
       {
         event: 'admin_event_toggle_tenant_resolve_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         eventId,
       },
       '[F6] resolveTenantFromRequest threw on toggle-partner-benefit',
@@ -141,17 +141,7 @@ export async function POST(
     logger.error(
       {
         event: 'admin_event_toggle_partner_benefit_throw',
-        err:
-          e instanceof Error
-            ? {
-                name: e.name,
-                message: e.message,
-                stack:
-                  typeof e.stack === 'string'
-                    ? (redactStack(e.stack) ?? null)
-                    : null,
-              }
-            : String(e),
+        ...errLogFields(e),
         eventId,
       },
       '[F6] /api/admin/events/[eventId]/toggle-partner-benefit threw',
@@ -186,21 +176,8 @@ export async function POST(
             event: 'admin_event_toggle_partner_benefit_use_case_error',
             eventId,
             errKind: result.error.kind,
-            // pino's `err` key auto-serializes Error → {type, message, stack}.
-            // Use `typeof === 'object' && !null` guard before `in` to survive
-            // a future primitive-shaped error variant (R3-CRIT-3 + R3-LOW-1).
-            err:
-              typeof result.error === 'object' &&
-              result.error !== null &&
-              'cause' in result.error
-                ? result.error.cause
-                : undefined,
-            message:
-              typeof result.error === 'object' &&
-              result.error !== null &&
-              'message' in result.error
-                ? result.error.message
-                : undefined,
+            // #740: the class only — an Error's message and stack can quote bound parameters.
+            err: errKind(rootCause(result.error)),
           },
           '[F6] toggleEventCategory returned use-case error',
         );

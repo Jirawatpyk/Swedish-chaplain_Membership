@@ -148,7 +148,7 @@ export async function handleInvitationBounce(
   // the "silent bounce = data integrity bug" case the spec warns about.
   if (failed > 0 && marked === 0) {
     logger.error(
-      { toEmail, requestId, targets: targets.length, failed },
+      { requestId, targets: targets.length, failed },
       'invitation_bounce.all_targets_failed',
     );
   }

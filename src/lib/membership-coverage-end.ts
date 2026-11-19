@@ -30,6 +30,7 @@ import {
   endMembershipCoverageNow,
   makeRenewalsDeps,
   type CoverageEndTrigger,
+  type EndMembershipCoverageError,
 } from '@/modules/renewals';
 
 export type MembershipEndOutcome =
@@ -79,7 +80,8 @@ async function run(args: Parameters<typeof requestMembershipEnd>[0]): Promise<Me
       correlationId: args.correlationId,
     });
     if (!r.ok) {
-      logger.error({ ...logBase, errName: r.error.errName }, 'membership_end.failed');
+      const errName: EndMembershipCoverageError['errName'] = r.error.errName;
+      logger.error({ ...logBase, errName }, 'membership_end.failed');
       return 'failed';
     }
     if (r.value.outcome !== 'ended' && r.value.outcome !== 'scheduled') {

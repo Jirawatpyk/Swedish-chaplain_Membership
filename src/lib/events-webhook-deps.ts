@@ -39,6 +39,7 @@ import {
   type TenantWebhookConfigAggregate,
 } from '@/modules/events';
 
+import { errKind } from '@/lib/log-id';
 export {
   makeIngestWebhookAttendeeDeps,
   makeStandaloneAuditDeps,
@@ -128,13 +129,15 @@ export async function loadTenantWebhookConfig(
     );
   } catch (e) {
     if (e instanceof GraceStateInvariantError) {
+      const rawSecretWasSet: GraceStateInvariantError['rawSecretWasSet'] = e.rawSecretWasSet;
+      const rawRotatedAtWasSet: GraceStateInvariantError['rawRotatedAtWasSet'] = e.rawRotatedAtWasSet;
       logger.error(
         {
           event: 'f6_grace_state_invariant_violation',
           tenantId: ctx.slug,
           source: row.source,
-          rawSecretWasSet: e.rawSecretWasSet,
-          rawRotatedAtWasSet: e.rawRotatedAtWasSet,
+          rawSecretWasSet,
+          rawRotatedAtWasSet,
         },
         '[F6] tenant_webhook_configs row violates grace-pair invariant at READ time — likely DB CHECK regression or RLS misconfig',
       );
@@ -144,9 +147,7 @@ export async function loadTenantWebhookConfig(
         {
           event: 'f6_unexpected_throw_in_asGraceState',
           tenantId: ctx.slug,
-          err: e instanceof Error
-            ? { name: e.name, message: e.message }
-            : { name: 'non_error', message: String(e) },
+          err: errKind(e),
         },
         '[F6] unexpected throw inside asGraceState — investigate',
       );
@@ -186,8 +187,7 @@ export function resolveTenantFromSlug(slug: string): TenantContext | null {
         event: 'f6_tenant_context_build_failed',
         slug,
         errName: e instanceof Error ? e.name : 'unknown',
-        errMessage: e instanceof Error ? e.message : String(e),
-        errStack: e instanceof Error ? e.stack : null,
+        err: errKind(e),
       },
       '[F6] asTenantContext threw on shape-valid slug',
     );

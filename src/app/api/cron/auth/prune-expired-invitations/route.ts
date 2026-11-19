@@ -29,6 +29,7 @@ import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { pruneExpiredInvitations } from '@/modules/auth';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         requestId,
         route: ROUTE,
       },

@@ -19,6 +19,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { problemResponse } from '@/lib/http/problem-response';
 import { adminOnlyGuard, deriveWebhookBaseUrl } from './_lib/role-violation-audit';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 
 const ROUTE = '/api/admin/integrations/eventcreate';
@@ -51,7 +52,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       {
         event: 'f6_load_integration_config_threw',
         tenantSlug: tenantCtx.slug,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         requestId,
       },
       '[F6] /api/admin/integrations/eventcreate GET — runLoadIntegrationConfig threw',

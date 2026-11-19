@@ -22,6 +22,7 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { ArrowRightIcon } from 'lucide-react';
 import { Alert, Card, EmptyState, buttonClass } from '@jirawatpyk/aura-react/server';
 import { logger } from '@/lib/logger';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildChangeRequestDeps } from '@/lib/members-change-request-deps';
@@ -52,11 +53,11 @@ const loadMemberChangeRequests = cache(async (tenant: TenantContext, memberId: s
     if (result.ok) items = result.value.items;
     else {
       loadFailed = true;
-      logger.error({ errorId: 'M114.admin.member_section.list_failed', requestId, tenantId: tenant.slug, memberId, err: result.error.type }, 'member change-requests section: list failed');
+      logger.error({ errorId: 'M114.admin.member_section.list_failed', requestId, tenantId: tenant.slug, memberId, ...errLogFields(result.error) }, 'member change-requests section: list failed');
     }
   } catch (e) {
     loadFailed = true;
-    logger.error({ errorId: 'M114.admin.member_section.threw', requestId, tenantId: tenant.slug, memberId, err: e instanceof Error ? e.name : String(e) }, 'member change-requests section: threw');
+    logger.error({ errorId: 'M114.admin.member_section.threw', requestId, tenantId: tenant.slug, memberId, err: errKind(e) }, 'member change-requests section: threw');
   }
   return { items, loadFailed };
 });

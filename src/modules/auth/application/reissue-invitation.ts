@@ -55,7 +55,7 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { hashId } from '@/lib/log-id';
+import { errKind, errLogFields, hashId } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
 import { db } from '@/lib/db';
 import type { InvitationTokenHash, UserId } from '@/modules/auth/domain/branded';
@@ -158,7 +158,7 @@ export async function reissueInvitation(
           {
             requestId: input.requestId,
             errCode: enqueueResult.error.code,
-            errCause: enqueueResult.error.cause,
+            errCause: errKind(enqueueResult.error.cause),
             targetUserIdHash: hashId(user.id),
           },
           'reissue_invitation.enqueue_failed',
@@ -192,7 +192,7 @@ export async function reissueInvitation(
     logger.error(
       {
         requestId: input.requestId,
-        errMessage: e instanceof Error ? e.message : String(e),
+        ...errLogFields(e),
       },
       'reissue_invitation.unexpected_tx_failure',
     );

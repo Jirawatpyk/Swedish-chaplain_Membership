@@ -22,6 +22,7 @@ import { errorResponse } from '@/lib/renewals-route-helpers';
 import { requireApiPermission } from '@/lib/rbac';
 import { userRepo } from '@/lib/auth-deps';
 
+import { errKind } from '@/lib/log-id';
 export async function GET(request: NextRequest) {
   // 016 T028: session + role fold into one gate (replaces the pre-sweep
   // `requireSession` NEXT_REDIRECT-filter idiom — the gate 401s JSON instead of
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         correlationId,
       },
       'admin.users.staff-active.list_unexpected_error',

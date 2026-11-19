@@ -47,6 +47,7 @@ import { uuidv7 } from '@/lib/request-id';
 import { renewalsMetrics } from '@/lib/metrics';
 import { autoDraftDueRenewals, makeRenewalsDeps } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -130,7 +131,7 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         correlationId,
         tenantId,
       },

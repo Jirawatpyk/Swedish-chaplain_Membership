@@ -36,7 +36,7 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { canPerform, requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { broadcastsRateLimiter, getBrandSettings, setBrandSettings } from '@/modules/broadcasts';
+import { broadcastsRateLimiter, getBrandSettings, setBrandSettings, type SetBrandSettingsError } from '@/modules/broadcasts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -130,15 +130,17 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
           fieldErrors: { postalAddress: ['address_too_long'] },
           details: { max: result.error.max },
         });
-      case 'storage_error':
+      case 'storage_error': {
         // F2-9 — never `detail`: it is raw Postgres error text and can embed
         // SQL param VALUES (the tenant's postal address). F7-5 — log the error
         // CLASS; the constant kind `storage_error` told on-call nothing.
+        const errClass: Extract<SetBrandSettingsError, { kind: 'storage_error' }>['errKind'] = result.error.errKind;
         logger.error(
-          { err: result.error.errKind, correlationId, errorId: 'M119.admin.brand.patch.storage' },
+          { err: errClass, correlationId, errorId: 'M119.admin.brand.patch.storage' },
           'broadcasts.brand.patch_failed',
         );
         return errorResponse(500, 'internal_error', correlationId);
+      }
       default:
         return assertNever(result.error);
     }

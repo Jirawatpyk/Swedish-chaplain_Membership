@@ -8,6 +8,7 @@ import { disableUser, asUserId, isStaffRole } from '@/modules/auth';
 import { requireApiPermission } from '@/lib/rbac';
 import { userRepo } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 
 export async function POST(
   request: NextRequest,
@@ -71,7 +72,7 @@ export async function POST(
     }
   } catch (error) {
     logger.error(
-      { err: error, requestId: ctx.requestId },
+      { ...errLogFields(error), requestId: ctx.requestId },
       'disable-user.infra-error',
     );
     return NextResponse.json(

@@ -7,6 +7,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { getCreditNote, makeGetCreditNoteDeps } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { serialiseCreditNote } from '../_serialise';
 
 export async function GET(
@@ -56,7 +57,7 @@ export async function GET(
     return NextResponse.json(serialiseCreditNote(result.value));
   } catch (err) {
     logger.error(
-      { requestId, tenantId: tenantCtx.slug, creditNoteId, err: String(err) },
+      { requestId, tenantId: tenantCtx.slug, creditNoteId, ...errLogFields(err) },
       'GET /api/credit-notes/[id] — unexpected error',
     );
     return NextResponse.json(

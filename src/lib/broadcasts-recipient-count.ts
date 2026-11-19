@@ -20,7 +20,7 @@
  * number (FR-040b).
  */
 import { z } from 'zod';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { broadcastTierCodesSchema } from '@/lib/broadcasts-tier-codes';
@@ -184,14 +184,14 @@ async function countRecipientsInner(
           // `members_bridge_<read>:<error code>` step every bridge read
           // throws through `failedRead`, else the error class. Never the
           // thrown text, never a row value, never an address.
-          { tenantId: deps.tenant.slug, correlationId: input.correlationId, err: result.error.message },
+          { tenantId: deps.tenant.slug, correlationId: input.correlationId, ...errLogFields(result.error) },
           'broadcasts.recipient_count.resolve_failed',
         );
         return { status: 'unavailable' };
       default: {
         const _exhaustive: never = result.error;
         logger.error(
-          { tenantId: deps.tenant.slug, correlationId: input.correlationId, err: _exhaustive },
+          { tenantId: deps.tenant.slug, correlationId: input.correlationId, ...errLogFields(_exhaustive) },
           'broadcasts.recipient_count.unhandled_error_variant',
         );
         return { status: 'unavailable' };

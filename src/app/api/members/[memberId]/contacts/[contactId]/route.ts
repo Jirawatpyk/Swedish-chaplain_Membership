@@ -25,7 +25,7 @@ import {
 } from '@/lib/idempotency';
 import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import {
   changeContactEmail,
   removeContact,
@@ -153,7 +153,7 @@ export async function PATCH(
           );
         }
         logger.error(
-          { requestId: ctx.requestId, err: contactLookup.error },
+          { requestId: ctx.requestId, ...errLogFields(contactLookup.error) },
           'patch-contact: contact lookup failed',
         );
         return NextResponse.json(
@@ -307,7 +307,7 @@ export async function PATCH(
               );
             default:
               logger.error(
-                { requestId: ctx.requestId, err: emailUpdate.error },
+                { requestId: ctx.requestId, ...errLogFields(emailUpdate.error) },
                 'update-unlinked-contact-email: unhandled',
               );
               return NextResponse.json(
@@ -432,7 +432,7 @@ export async function PATCH(
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'update-contact: unhandled',
         );
         return NextResponse.json(
@@ -507,7 +507,7 @@ export async function DELETE(
     case 'server_error':
     default:
       logger.error(
-        { requestId: ctx.requestId, err: result.error },
+        { requestId: ctx.requestId, ...errLogFields(result.error) },
         'remove-contact: unhandled',
       );
       return NextResponse.json(

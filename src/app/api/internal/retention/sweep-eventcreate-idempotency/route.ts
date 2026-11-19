@@ -17,6 +17,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { runInTenant } from '@/lib/db';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { gateF6Cron } from '@/lib/events-cron-deps';
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           {
             event: 'eventcreate_idempotency_sweep_failed',
             tenantSlug,
-            err: result.error.message,
+            ...errLogFields(result.error),
           },
           '[F6] idempotency sweep failed',
         );
@@ -132,7 +133,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       logger.error(
-        { event: 'eventcreate_idempotency_sweep_throw', tenantSlug, err: message },
+        { event: 'eventcreate_idempotency_sweep_throw', tenantSlug, ...errLogFields(e) },
         '[F6] idempotency sweep: per-tenant tx threw',
       );
       perTenant.push({ tenantId: tenantSlug, outcome: 'error', message });

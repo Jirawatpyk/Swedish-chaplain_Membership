@@ -9,6 +9,7 @@ import { changeRole, asUserId, isStaffRole } from '@/modules/auth';
 import { requireApiPermission } from '@/lib/rbac';
 import { userRepo } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 
 // Every role is assignable from the users-page picker: `super_admin` in PR 3
 // (T048), `marketing` in PR 4 (T059 / D17). The server enum must match the
@@ -108,7 +109,7 @@ export async function POST(
     }
   } catch (error) {
     logger.error(
-      { err: error, requestId: ctx.requestId },
+      { ...errLogFields(error), requestId: ctx.requestId },
       'change-role.infra-error',
     );
     return NextResponse.json(

@@ -19,7 +19,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('@/lib/log-id', () => ({ hashId: vi.fn((s: string) => s) }));
+vi.mock('@/lib/log-id', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/log-id')>()),
+  hashId: vi.fn((s: string) => s),
+}));
 vi.mock('@/lib/metrics', () => ({
   authMetrics: {
     invitationSent: vi.fn(),

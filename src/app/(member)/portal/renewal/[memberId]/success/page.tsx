@@ -28,6 +28,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { makeRenewalsDeps } from '@/modules/renewals';
 import {
@@ -122,7 +123,7 @@ export default async function RenewalSuccessPage({
             tenantId: tenant.slug,
             memberId: memberLookup.value.memberId,
             invoiceId,
-            err,
+            ...errLogFields(err),
           },
           '[renewal-success-page] getInvoice threw unexpectedly — falling back to View All Invoices link',
         );

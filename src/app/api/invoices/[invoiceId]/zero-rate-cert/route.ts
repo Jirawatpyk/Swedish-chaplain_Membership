@@ -26,6 +26,7 @@ import {
 } from '@/modules/invoicing';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 
 export const runtime = 'nodejs';
 
@@ -72,7 +73,7 @@ export async function GET(
     );
   } catch (err) {
     logger.error(
-      { requestId, tenantId: tenantCtx.slug, invoiceId, err },
+      { requestId, tenantId: tenantCtx.slug, invoiceId, ...errLogFields(err) },
       'GET /api/invoices/[id]/zero-rate-cert — getZeroRateCertSignedUrl threw',
     );
     return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });
@@ -84,8 +85,9 @@ export async function GET(
         requestId,
         tenantId: tenantCtx.slug,
         invoiceId,
+        // #740 B2 — no blob key: its suffix after the invoice prefix is
+        // client-supplied at issue, so it is not a closed token.
         errorCode: result.error.code,
-        ...(result.error.code === 'blob_missing' ? { blobKey: result.error.key } : {}),
       },
       'GET /api/invoices/[id]/zero-rate-cert failed',
     );
@@ -102,7 +104,7 @@ export async function GET(
   } catch (err) {
     const isTimeout = err instanceof Error && err.name === 'TimeoutError';
     logger.error(
-      { requestId, tenantId: tenantCtx.slug, invoiceId, err },
+      { requestId, tenantId: tenantCtx.slug, invoiceId, ...errLogFields(err) },
       `GET /api/invoices/[id]/zero-rate-cert — blob fetch ${isTimeout ? 'timed out' : 'failed'}`,
     );
     return NextResponse.json(

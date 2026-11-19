@@ -15,6 +15,7 @@ import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import {
   getMember,
   getMemberPreferredLocale,
@@ -93,7 +94,7 @@ export default async function EditMemberPage({ params }: PageProps) {
     // (admin can set fresh value); ops sees the gap in pino stream.
     logger.warn(
       {
-        err: preferredLocaleResult.error,
+        ...errLogFields(preferredLocaleResult.error),
         tenantId: tenant.slug,
         memberId: member.memberId,
         actorUserId: user.id,

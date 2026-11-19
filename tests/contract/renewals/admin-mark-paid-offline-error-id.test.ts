@@ -175,10 +175,7 @@ describe('contract: POST /api/admin/renewals/[cycleId]/mark-paid-offline — err
     expect(loggerErrorMock).toHaveBeenCalledTimes(1);
     const [structured] = loggerErrorMock.mock.calls[0]!;
     expect(structured.errorId).toBe('F8.CYCLE_MARK_PAID_OFFLINE.UNEXPECTED');
-    // The thrown message must name the kind — that string is what tells the
-    // on-call which use-case variant this build cannot map.
-    expect(String(structured.err)).toContain(
-      'settlement_window_locked_in_a_future_release',
-    );
+    // #740 B2 — the thrown error's CLASS only, never its message.
+    expect(structured.err).toBe('Error');
   });
 });

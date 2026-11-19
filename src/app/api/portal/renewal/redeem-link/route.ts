@@ -55,6 +55,7 @@ import {
   makeRenewalsDeps,
 } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
@@ -393,7 +394,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             errorId: `${ERROR_ID}.PRECONSUME_INPUT_SHAPE`,
             correlationId,
             tenantId: tenant.slug,
-            message: verifyResult.error.message,
           },
           '[redeem-renewal-link] programmer error — verifyRenewalLinkToken rejected input shape (no audit emitted by use-case)',
         );
@@ -464,7 +464,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // errorId is about the throw, not the status code: a member whose
         // renewal link silently dies is exactly the failure worth alerting on.
         errorId: `${ERROR_ID}.UNEXPECTED`,
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         correlationId,
         tenantId: tenant.slug,
       },

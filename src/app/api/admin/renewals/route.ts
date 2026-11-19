@@ -27,6 +27,7 @@ import {
 } from '@/modules/renewals';
 import { randomUUID } from 'node:crypto';
 
+import { errKind } from '@/lib/log-id';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
@@ -106,7 +107,7 @@ export async function GET(request: NextRequest) {
           // 500ed — a rule keyed on `.UNEXPECTED` firing here would send
           // the on-call looking for an outage that did not happen.
           errorId: `${ERROR_ID}.KILL_SWITCH_AUDIT_EMIT_FAILED`,
-          err: e instanceof Error ? e : new Error(String(e)),
+          err: errKind(e),
           correlationId,
           route: '/api/admin/renewals',
         },
@@ -207,11 +208,8 @@ export async function GET(request: NextRequest) {
     logger.error(
       {
         errorId: `${ERROR_ID}.UNEXPECTED`,
-        // K12-3 (REL-K-1): pass the Error instance so pino's `err`
-        // serializer captures stack + type. Passing the bare message
-        // string drops the stack trace and breaks Sentry/Grafana
-        // `err.type` filters.
-        err: e instanceof Error ? e : new Error(String(e)),
+        // #740: the class only — an Error's message and stack can quote bound parameters.
+        err: errKind(e),
         correlationId: ctx.correlationId,
         tenantId: tenantCtx.slug,
       },

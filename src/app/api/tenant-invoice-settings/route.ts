@@ -44,6 +44,7 @@ import {
  
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { env } from '@/lib/env';
 import { isThaiTaxId } from '@/lib/thai-tax-id';
@@ -254,7 +255,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       // Audit emit failure is secondary — the primary 403 still stands.
       // Using `warn` (not `error`) keeps primary-error alerting clean.
       logger.warn(
-        { requestId, err: auditErr },
+        { requestId, ...errLogFields(auditErr) },
         'GET /api/tenant-invoice-settings: probe audit emit failed',
       );
     }
@@ -374,7 +375,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
       // Audit emit failure is secondary — the primary 403 still stands.
       // Using `warn` (not `error`) keeps primary-error alerting clean.
       logger.warn(
-        { requestId, err: auditErr },
+        { requestId, ...errLogFields(auditErr) },
         'PATCH /api/tenant-invoice-settings: probe audit emit failed',
       );
     }
@@ -490,7 +491,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     if (result.error.code === 'no_op') {
       return NextResponse.json({ error: { code: 'no_op' } }, { status: 400 });
     }
-    logger.warn({ err: result.error, tenantSlug: tenantCtx.slug }, 'tenant settings update failed');
+    logger.warn({ ...errLogFields(result.error), tenantSlug: tenantCtx.slug }, 'tenant settings update failed');
     return NextResponse.json({ error: { code: 'server_error' } }, { status: 500 });
   }
 

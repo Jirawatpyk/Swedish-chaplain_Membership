@@ -38,6 +38,7 @@ import { logger } from './logger';
 import { err, ok, type Result } from './result';
 import type { TenantContext } from '@/modules/tenants';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 // --- Types -------------------------------------------------------------------
 
 export type IdempotencyClassification =
@@ -153,7 +154,7 @@ export async function classifyIdempotencyRequest(
     stored = await redis.get<StoredRecord>(redisKey(tenant, key));
   } catch (e) {
     logger.warn(
-      { err: e instanceof Error ? e.message : String(e), tenant: tenant.slug, key },
+      { err: errKind(e), tenant: tenant.slug, key },
       'idempotency: Redis read failed — failing open to first',
     );
     return { kind: 'first' };
@@ -223,7 +224,7 @@ export async function reserveIdempotencyRecord(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     logger.warn(
-      { err: message, tenant: tenant.slug, key },
+      { ...errLogFields(e), tenant: tenant.slug, key },
       'idempotency: Redis reserve failed — caller must surface 503',
     );
     return err({ kind: 'redis_unavailable', message });
@@ -251,7 +252,7 @@ export async function releaseIdempotencyRecord(tenant: TenantContext, key: strin
     await redis.del(redisKey(tenant, key));
   } catch (e) {
     logger.warn(
-      { err: e instanceof Error ? e.message : String(e), tenant: tenant.slug, key },
+      { err: errKind(e), tenant: tenant.slug, key },
       'idempotency: Redis release failed — the reservation expires on its TTL',
     );
   }
@@ -281,7 +282,7 @@ export async function rememberIdempotentResponse(
     await redis.set(redisKey(tenant, key), record, { ex: IDEMPOTENCY_TTL_SECONDS });
   } catch (e) {
     logger.warn(
-      { err: e instanceof Error ? e.message : String(e), tenant: tenant.slug, key },
+      { err: errKind(e), tenant: tenant.slug, key },
       'idempotency: Redis write failed — response not cached, replays will be re-processed',
     );
   }

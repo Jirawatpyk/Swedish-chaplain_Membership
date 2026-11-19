@@ -18,6 +18,7 @@ import { logger } from '@/lib/logger';
 import {
   runRunTestWebhook,
   testWebhookRateLimitCheck,
+  type TestWebhookConfigLoadFailed,
 } from '@/lib/events-admin-integration-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
@@ -27,6 +28,7 @@ import {
   deriveWebhookBaseUrl,
 } from '../_lib/role-violation-audit';
 
+import { errKind } from '@/lib/log-id';
 const ROUTE = '/api/admin/integrations/eventcreate/test-webhook';
 
 export const runtime = 'nodejs';
@@ -78,11 +80,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       // `config_load_failed` discriminant so a transient Neon outage
       // no longer surfaces as misleading 404 to the admin.
       if (result.error.kind === 'config_load_failed') {
+        const configErrKind: TestWebhookConfigLoadFailed['errKind'] = result.error.errKind;
         logger.error(
           {
             event: 'f6_test_webhook_config_load_failed',
             tenantSlug: tenantCtx.slug,
-            errKind: result.error.errKind,
+            errKind: configErrKind,
             requestId,
           },
           '[F6] test-webhook config load failed — propagating as 500',
@@ -118,7 +121,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       {
         event: 'f6_test_webhook_threw',
         tenantSlug: tenantCtx.slug,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         requestId,
       },
       '[F6] test-webhook route threw',

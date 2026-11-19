@@ -24,8 +24,8 @@ import { findRedFirstViolations, type BranchCommit } from './lib/red-first';
  */
 const ALLOW: ReadonlyArray<{ readonly sha: string; readonly why: string }> = [
   {
-    sha: 'aaa02fa1a',
-    why: '#740 B1 log arguments only; its RED is the widened check:log-error-objects gate in 6e12d9d8c (221 findings). Delete once PR #798 merges.',
+    sha: '04071aaf3',
+    why: '#740 B2: broadcasts changes are log arguments only at log-wrapper call sites; the RED is 4e2f75ed4 (the log gate and its fixture). Delete once #799 merges.',
   },
 ];
 

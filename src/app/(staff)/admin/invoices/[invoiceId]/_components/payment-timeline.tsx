@@ -62,7 +62,7 @@ import { getInvoicePaymentActivity } from '../_lib/cached-payment-activity';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
 import { logger } from '@/lib/logger';
-import { errKind, hashId } from '@/lib/log-id';
+import { errKind, errLogFields, hashId } from '@/lib/log-id';
 import { CopyChargeIdButton } from './copy-charge-id-button';
 import { RefundPendingAnnouncer } from './refund-pending-announcer';
 
@@ -405,7 +405,7 @@ export async function PaymentTimeline({
         // surfaces in pino aggregation; the UI still degrades gracefully by
         // falling back to the raw uuid.
         logger.warn(
-          { cause, userIdHash: hashId(uid) },
+          { ...errLogFields(cause), userIdHash: hashId(uid) },
           'payment-timeline: user lookup failed, falling back to actor uuid',
         );
         userEmailMap.set(uid, uid);

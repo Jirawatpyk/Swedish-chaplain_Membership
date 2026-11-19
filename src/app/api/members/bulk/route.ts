@@ -24,6 +24,7 @@ import {
 } from '@/lib/idempotency';
 import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import {
   bulkAction,
   bulkSendPortalInvite,
@@ -173,7 +174,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
       } catch (e) {
         logger.warn(
-          { err: e, requestId: ctx.requestId },
+          { ...errLogFields(e), requestId: ctx.requestId },
           'bulk-action: rate-limit audit write failed (non-fatal)',
         );
       }
@@ -261,7 +262,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           });
         } catch (e) {
           logger.warn(
-            { err: e, requestId: ctx.requestId },
+            { ...errLogFields(e), requestId: ctx.requestId },
             'bulk-invite: rememberIdempotentResponse failed (non-fatal)',
           );
         }
@@ -299,7 +300,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await remember(errorResponse);
       } catch (e) {
         logger.warn(
-          { err: e, requestId: ctx.requestId },
+          { ...errLogFields(e), requestId: ctx.requestId },
           'bulk-invite: rememberIdempotentResponse (error path) failed (non-fatal)',
         );
       }
@@ -349,7 +350,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           });
         } catch (e) {
           logger.warn(
-            { err: e, requestId: ctx.requestId },
+            { ...errLogFields(e), requestId: ctx.requestId },
             'bulk-reminder: rememberIdempotentResponse failed (non-fatal)',
           );
         }
@@ -373,7 +374,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await remember(errorResponse);
       } catch (e) {
         logger.warn(
-          { err: e, requestId: ctx.requestId },
+          { ...errLogFields(e), requestId: ctx.requestId },
           'bulk-reminder: rememberIdempotentResponse (error path) failed (non-fatal)',
         );
       }
@@ -424,7 +425,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           });
         } catch (e) {
           logger.warn(
-            { err: e, requestId: ctx.requestId },
+            { ...errLogFields(e), requestId: ctx.requestId },
             'bulk-enrol-auto-invoice: rememberIdempotentResponse failed (non-fatal)',
           );
         }
@@ -478,7 +479,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       if (errorResponse.status === 500) {
         logger.error(
-          { requestId: ctx.requestId, err: enrolError },
+          { requestId: ctx.requestId, ...errLogFields(enrolError) },
           'bulk-enrol-auto-invoice: unhandled',
         );
       } else {
@@ -491,7 +492,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           await remember(errorResponse,);
         } catch (e) {
           logger.warn(
-            { err: e, requestId: ctx.requestId },
+            { ...errLogFields(e), requestId: ctx.requestId },
             'bulk-enrol-auto-invoice: rememberIdempotentResponse (error path) failed (non-fatal)',
           );
         }
@@ -545,7 +546,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           });
         } catch (e) {
           logger.warn(
-            { err: e, requestId: ctx.requestId },
+            { ...errLogFields(e), requestId: ctx.requestId },
             'bulk-unenrol-auto-invoice: rememberIdempotentResponse failed (non-fatal)',
           );
         }
@@ -599,7 +600,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       if (errorResponse.status === 500) {
         logger.error(
-          { requestId: ctx.requestId, err: unenrolError },
+          { requestId: ctx.requestId, ...errLogFields(unenrolError) },
           'bulk-unenrol-auto-invoice: unhandled',
         );
       } else {
@@ -611,7 +612,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           await remember(errorResponse,);
         } catch (e) {
           logger.warn(
-            { err: e, requestId: ctx.requestId },
+            { ...errLogFields(e), requestId: ctx.requestId },
             'bulk-unenrol-auto-invoice: rememberIdempotentResponse (error path) failed (non-fatal)',
           );
         }
@@ -659,7 +660,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
       } catch (e) {
         logger.warn(
-          { err: e, requestId: ctx.requestId },
+          { ...errLogFields(e), requestId: ctx.requestId },
           'bulk-action: rememberIdempotentResponse failed (non-fatal)',
         );
       }
@@ -720,7 +721,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'bulk-action: unhandled',
         );
         return NextResponse.json(

@@ -32,6 +32,7 @@ import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { isYmd, tenantDayEndUtc, tenantDayStartUtc } from '@/lib/tenant-day-range';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
+import { stepToken } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
@@ -110,7 +111,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   // typed `never` on the BINDING (not only the arrow) so TS narrows after a
   // call and no `ok ? value : fallback` is needed — a fallback that renders
   // an empty page is the defect this helper exists to prevent (UX C3, REL-13)
-  const fail: (arm: string, code: string) => never = (arm, code) => {
+  const failQueuePage: (arm: string, code: string) => never = (arm, code) => {
     logger.error({ errorId: `M114.admin.queue_page.${arm}`, requestId, tenantId: tenant.slug, err: code }, 'change-requests.queue page: read failed');
     throw new Error('change-requests.queue: load failed');
   };
@@ -146,12 +147,12 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   let deepLinkNotice: string | null = null;
   if (submitter && state === 'pending' && !q.cursor) {
     const pending = await listChangeRequestQueue(deps, { filter: { state: 'pending', submitterUserId: submitter }, cursor: null, limit: 2, includeStats: false });
-    if (!pending.ok) fail('deep_link_pending_read_failed', pending.error.type === 'server_error' ? pending.error.message : pending.error.type);
+    if (!pending.ok) failQueuePage('deep_link_pending_read_failed', stepToken(pending.error.type === 'server_error' ? pending.error.message : pending.error.type) ?? 'unknown');
     const rows = pending.value.items;
     if (rows.length === 1 && rows[0]) redirect(`/admin/change-requests/${rows[0].row.request.id}`);
     if (rows.length === 0) {
       const decided = await listChangeRequestQueue(deps, { filter: { state: 'decided', submitterUserId: submitter }, cursor: null, limit: 1, includeStats: false });
-      if (!decided.ok) fail('deep_link_decided_read_failed', decided.error.type === 'server_error' ? decided.error.message : decided.error.type);
+      if (!decided.ok) failQueuePage('deep_link_decided_read_failed', stepToken(decided.error.type === 'server_error' ? decided.error.message : decided.error.type) ?? 'unknown');
       const last = decided.value.items[0]?.row;
       deepLinkNotice =
         last && last.request.decidedAt
@@ -175,7 +176,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   });
   if (!result.ok) {
     if (result.error.type === 'invalid_cursor') notFound();
-    fail('queue_read_failed', result.error.message);
+    failQueuePage('queue_read_failed', stepToken(result.error.message) ?? 'unknown');
   }
   const page = result.value;
   const filtered = Boolean(outcome || q.memberId || submitter || q.from || q.to || state !== 'pending');
@@ -186,7 +187,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
     const member = await deps.memberRepo.findById(tenant, asMemberId(q.memberId));
     if (member.ok) memberChip = member.value.companyName;
     else if (member.error.code === 'repo.not_found') memberChip = tFilters('unknownMember');
-    else fail('member_chip_read_failed', member.error.code);
+    else failQueuePage('member_chip_read_failed', member.error.code);
   }
   const defaultView = !filtered && !q.cursor;
 

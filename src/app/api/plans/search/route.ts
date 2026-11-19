@@ -11,8 +11,8 @@ import { canPerform, requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
-import { searchPlans, filterPaletteEntriesByFeature } from '@/modules/plans';
+import { errKind, errLogFields } from '@/lib/log-id';
+import { searchPlans, filterPaletteEntriesByFeature, type SearchPlansError } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import type { LocaleKey } from '@/modules/plans';
 import {
@@ -316,7 +316,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             {
               errorId: 'F2.PALETTE.REFUNDABLE_LIST_UNAVAILABLE',
               requestId: ctx.requestId,
-              err: paid.error,
+              ...errLogFields(paid.error),
             },
             'palette.refundable_invoices_list_unavailable',
           );
@@ -379,8 +379,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // server_error from use case (e.g. DB connection failure). Log only the
   // safe `errKind` classifier — never the raw error object, whose message
   // could carry SQL/schema fragments from a Postgres failure (n43 log-hygiene).
+  const searchErrKind: SearchPlansError['errKind'] = result.error.errKind;
   logger.error(
-    { requestId: ctx.requestId, errKind: result.error.errKind },
+    { requestId: ctx.requestId, errKind: searchErrKind },
     'search-plans: server error',
   );
   return NextResponse.json(

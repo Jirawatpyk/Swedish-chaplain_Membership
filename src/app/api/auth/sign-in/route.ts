@@ -20,6 +20,7 @@ import { setSessionCookie } from '@/lib/auth-cookies';
 import { getClientIp } from '@/lib/client-ip';
 import { portalHomePath } from '@/lib/portal-paths';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
 const inputSchema = z.object({
@@ -121,7 +122,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
   } catch (error) {
-    logger.error({ err: error, requestId }, 'sign-in.infra-error');
+    logger.error({ ...errLogFields(error), requestId }, 'sign-in.infra-error');
     return NextResponse.json(
       { error: 'server-error', requestId },
       { status: 500 },

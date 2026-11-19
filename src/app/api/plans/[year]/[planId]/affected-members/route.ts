@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { affectedMembersCount } from '@/modules/members';
 import type { PlanId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -50,7 +51,7 @@ export async function GET(
 
   if (!result.ok) {
     logger.error(
-      { requestId: ctx.requestId, err: result.error },
+      { requestId: ctx.requestId, ...errLogFields(result.error) },
       'affected-members: unhandled',
     );
     return NextResponse.json(

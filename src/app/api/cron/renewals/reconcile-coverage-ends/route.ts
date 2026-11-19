@@ -37,8 +37,13 @@ import { uuidv7 } from '@/lib/request-id';
 import { renewalsMetrics } from '@/lib/metrics';
 import { pingCronHeartbeat } from '@/lib/cron-heartbeat';
 import { asTenantContext } from '@/modules/tenants';
-import { reconcileMembershipCoverageEnds, makeRenewalsDeps } from '@/modules/renewals';
+import {
+  reconcileMembershipCoverageEnds,
+  makeRenewalsDeps,
+  type EndMembershipCoverageError,
+} from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -75,8 +80,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       tenant: asTenantContext(tenantId),
     });
     if (!result.ok) {
+      const errName: EndMembershipCoverageError['errName'] = result.error.errName;
       logger.error(
-        { tenantId, correlationId, errName: result.error.errName },
+        { tenantId, correlationId, errName },
         'cron.renewals.reconcile_coverage_ends.failed',
       );
       renewalsMetrics.coverageEndReconciled(tenantId, 'errored', 1);
@@ -113,7 +119,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(body);
   } catch (e) {
     logger.error(
-      { err: e instanceof Error ? e : new Error(String(e)), tenantId, correlationId },
+      { err: errKind(e), tenantId, correlationId },
       'cron.renewals.reconcile_coverage_ends.unexpected_error',
     );
     renewalsMetrics.coverageEndReconciled(tenantId, 'errored', 1);

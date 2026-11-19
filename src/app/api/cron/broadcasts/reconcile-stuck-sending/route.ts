@@ -25,6 +25,7 @@ import {
   asBroadcastId,
   makeReconcileStuckSendingDeps,
   reconcileStuckSending,
+  type ReconcileStuckSendingError,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -176,12 +177,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             {
               tenantId: tenant.slug,
               broadcastId: row.broadcast_id,
-              cause: result.error.cause,
             },
             'cron.broadcasts.reconcile.gateway_error',
           );
         } else {
           summary.server_error++;
+          const errClass: Extract<ReconcileStuckSendingError, { kind: 'reconcile.server_error' }>['errClass'] =
+            result.error.errClass;
           logger.error(
             {
               tenantId: tenant.slug,
@@ -192,7 +194,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               // this module member addresses, and `message` is not a
               // REDACT_PATH. Same class round 4 L3 fixed on the dispatch route;
               // this one was missed. The class is the bounded half.
-              errClass: result.error.errClass ?? 'unclassified',
+              errClass: errClass ?? 'unclassified',
             },
             'cron.broadcasts.reconcile.server_error',
           );

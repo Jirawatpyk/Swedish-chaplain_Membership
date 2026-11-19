@@ -29,6 +29,7 @@ import {
 import { MonthBarChart } from '@/components/renewals/month-bar-chart';
 import { MonthFilterChip } from '@/components/renewals/month-filter-chip';
 
+import { errKind } from '@/lib/log-id';
 export async function RenewalsByMonthSection({
   tenantSlug,
   nowIso,
@@ -71,7 +72,7 @@ export async function RenewalsByMonthSection({
     logger.error(
       {
         errorId: 'F8.ADMIN.RENEWALS_BY_MONTH_LOAD',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: tenantSlug,
       },
       '[admin/renewals] renewals-by-month load failed',

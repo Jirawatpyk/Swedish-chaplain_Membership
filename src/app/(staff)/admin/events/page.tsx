@@ -22,7 +22,7 @@ import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
+import { errLogFields } from '@/lib/log-id';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
@@ -130,7 +130,7 @@ export default async function AdminEventsListPage({
     });
     if (!result.ok) {
       logger.error(
-        { event: 'admin_events_page_render_error', error: result.error },
+        { event: 'admin_events_page_render_error', ...errLogFields(result.error) },
         '[F6] /admin/events list page — use-case returned err',
       );
     }
@@ -141,17 +141,7 @@ export default async function AdminEventsListPage({
     logger.error(
       {
         event: 'admin_events_page_render_throw',
-        err:
-          e instanceof Error
-            ? {
-                name: e.name,
-                message: e.message,
-                stack:
-                  typeof e.stack === 'string'
-                    ? (redactStack(e.stack) ?? null)
-                    : null,
-              }
-            : String(e),
+        ...errLogFields(e),
       },
       '[F6] /admin/events list page — runListEvents threw',
     );

@@ -16,7 +16,7 @@ import type { CurrentSession } from '@/lib/auth-session';
 import { getCurrentSession } from '@/lib/auth-session';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
-import { errKind, hashId, rootCause } from '@/lib/log-id';
+import { errKind, errLogFields, hashId, rootCause } from '@/lib/log-id';
 import { checkPortalAccess } from '@/lib/lapsed-portal-scope';
 import { buildPortalAccessDeps, toPortalAccessAction } from '@/lib/portal-access-deps';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -186,7 +186,7 @@ export async function requireMemberContext(
     };
   } catch (error) {
     logger.error(
-      { err: error, requestId },
+      { ...errLogFields(error), requestId },
       'member-context.infrastructure-error',
     );
     return {

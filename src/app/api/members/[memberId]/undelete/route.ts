@@ -36,6 +36,7 @@ import {
 } from '@/lib/idempotency';
 import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { undeleteMember } from '@/modules/members';
 import type { ContactId, MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -254,7 +255,7 @@ export async function POST(
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'undelete-member: unhandled',
         );
         return NextResponse.json(

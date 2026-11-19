@@ -85,6 +85,19 @@ export function errStep(e: unknown): string | undefined {
 }
 
 /**
+ * #740 B2 review — the string form of {@link errStep}, for a Result error whose
+ * `message` code wrote as `<op>: <code>` (`count-pending: repo.unexpected`,
+ * the change-request use cases) or as a bare step token. Anything else, and
+ * any text over 64 characters, is `undefined`: a driver message has capitals
+ * or more than one space, and an address has an `@`. For a log line's `step`.
+ */
+const STEP_TOKEN = /^[a-z][a-z0-9_-]*(?:: ?[a-z][a-z0-9_.]*)?$/;
+
+export function stepToken(text: unknown): string | undefined {
+  return typeof text === 'string' && text.length <= 64 && STEP_TOKEN.test(text) ? text : undefined;
+}
+
+/**
  * Spec 140 s2d review round 3 (code-review #1, security #1) — a code-authored
  * code is token-SHAPED: words that start with a letter, joined by `_` or `-`,
  * in segments joined by `.` or `:`, at most 64 characters and at most 4 digits.
@@ -127,7 +140,8 @@ const ERROR_CODE = new RegExp(
  *   class of its `cause`, `repoCode` its own code, `code` the cause's SQLSTATE.
  * - #740 B1 review: a Result error with no `code` but a `kind` or `type`
  *   (`{ kind, message }`, `{ type, issues }`): `err` is the class of its
- *   `cause`, `resultKind` its own discriminator, never its message.
+ *   `cause`, `resultKind` its own discriminator, never its message — except
+ *   that a message {@link stepToken} accepts is `step` (#740 B2 review).
  * - Review round 1 (code-review #8) — a thrown Error that wraps a Result error
  *   at `.cause`, or at `.error` (where `UseCaseAbort` keeps it; the plan row
  *   named only `cause`): `err` is the thrown class, `repoCode` the wrapped
@@ -140,6 +154,7 @@ export function errLogFields(failure: unknown): {
   readonly err: string;
   readonly repoCode?: string;
   readonly resultKind?: string;
+  readonly step?: string;
   readonly code?: string;
   readonly errCode?: string;
 } {
@@ -166,9 +181,13 @@ export function errLogFields(failure: unknown): {
   if (typeof resultKind === 'string') {
     const cause = rootCause(failure);
     const sqlState = pgErrorCode(cause);
+    // #740 B2 review — a `message` code wrote as a step (`count-pending:
+    // repo.unexpected`) is the one thing that tells these failures apart.
+    const step = stepToken((failure as { message?: unknown }).message);
     return {
       err: errKind(cause),
       resultKind: RESULT_CODE.test(resultKind) ? resultKind : 'unrecognised',
+      ...(step !== undefined ? { step } : {}),
       ...(sqlState !== undefined ? { code: sqlState } : {}),
     };
   }

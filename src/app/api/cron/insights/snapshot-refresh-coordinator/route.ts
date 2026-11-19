@@ -18,7 +18,7 @@ import {
 } from '@/modules/insights';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { insightsMetrics } from '@/lib/metrics';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!result.ok) {
       insightsMetrics.snapshotRefresh('failed', tenant.slug);
       logger.error(
-        { tenantId: tenant.slug, error: result.error, durationMs },
+        { tenantId: tenant.slug, ...errLogFields(result.error), durationMs },
         'cron.insights.snapshot_coordinator.compute_failed',
       );
       return NextResponse.json(

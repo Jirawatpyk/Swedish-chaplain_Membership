@@ -27,6 +27,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import {
   AUDIENCE_CLEANUP_GRACE_MS,
   cleanupOrphanedAudiences,
+  type CleanupOrphanedAudiencesError,
   makeCleanupOrphanedAudiencesDeps,
 } from '@/modules/broadcasts';
 import { asTenantContext } from '@/modules/tenants';
@@ -103,13 +104,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   });
 
   if (!result.ok) {
+    const errClass: CleanupOrphanedAudiencesError['errClass'] = result.error.errClass;
+    const orphans: CleanupOrphanedAudiencesError['orphans'] = result.error.orphans;
     logger.error(
       {
         tenantId: tenant.slug,
         // The error CLASS (the use case answers `errKind`), never a driver message.
-        err: result.error.errClass,
+        err: errClass,
         // Review round 1 (code-review #4) — the orphan drain still ran.
-        orphans: result.error.orphans,
+        orphans,
       },
       'cron.broadcasts.cleanup_audiences.server_error',
     );

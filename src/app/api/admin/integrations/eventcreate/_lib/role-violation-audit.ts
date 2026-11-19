@@ -31,6 +31,7 @@ import { makeStandaloneAuditDeps } from '@/modules/events';
 import { asTenantId } from '@/modules/members';
 import { asUserId, isRole, type Role } from '@/modules/auth';
 
+import { errKind } from '@/lib/log-id';
 export interface EmitIntegrationRoleViolationInput {
   readonly actorUserId: string | null;
   /** 016 T033 — the LITERAL denied role (F6 ActorType now carries RBAC v2). */
@@ -51,7 +52,7 @@ export async function emitIntegrationRoleViolation(
     logger.error(
       {
         event: 'tenant_resolve_failed_during_role_violation_audit',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         attemptedRoute: input.attemptedRoute,
       },
       '[F6] tenant resolution failed during role_violation_blocked emit — 404 still served',
@@ -97,7 +98,7 @@ export async function emitIntegrationRoleViolation(
     }
   } catch (e) {
     logger.error(
-      { event: 'f6_audit_emit_failed', err: e instanceof Error ? e.message : String(e) },
+      { event: 'f6_audit_emit_failed', err: errKind(e) },
       '[F6] role_violation_blocked audit emit failed — 404 response still served',
     );
   }

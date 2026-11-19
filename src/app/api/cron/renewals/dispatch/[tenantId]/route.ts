@@ -47,6 +47,7 @@ import {
   makeRenewalsDeps,
 } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -86,16 +87,13 @@ export async function POST(
       }
     } catch (e) {
       // K14-5/6 + K15-2 (R13-S2+S3+S8 + R14-W2): redisFallback metric
-      // for alert pipeline + truncated err.message to cap Upstash
-      // endpoint-URL leakage + ip in warn-log for ops triage +
-      // bounded errStack for K12-3 forensic-richness preservation.
+      // for alert pipeline + ip in warn-log for ops triage. #740 B2 —
+      // the error's name only, never its message or stack.
       // See coordinator route for the full rationale.
       const errInstance = e instanceof Error ? e : new Error(String(e));
       logger.warn(
         {
-          errMsg: errInstance.message.slice(0, 200),
           errName: errInstance.name,
-          errStack: errInstance.stack?.slice(0, 500),
           ip,
           route: '/api/cron/renewals/dispatch/[tenantId]',
         },
@@ -121,7 +119,7 @@ export async function POST(
     } catch (e) {
       logger.error(
         {
-          err: e instanceof Error ? e : new Error(String(e)),
+          err: errKind(e),
         },
         'cron.renewals.dispatch.bearer_rejected_audit_failed',
       );
@@ -201,7 +199,6 @@ export async function POST(
             tenantId,
             correlationId,
             error: dispatchResult.error.kind,
-            message: dispatchResult.error.message,
           },
           'cron.renewals.dispatch.dispatch_failed',
         );
@@ -237,7 +234,6 @@ export async function POST(
             tenantId,
             correlationId,
             errKind: retryResult.error.kind,
-            errMessage: retryResult.error.message,
           },
           'cron.renewals.dispatch.retry_pass_failed',
         );
@@ -286,9 +282,8 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        // K12-3 (REL-K-1): pass the Error instance so pino's `err`
-        // serializer captures stack + type.
-        err: e instanceof Error ? e : new Error(String(e)),
+        // #740: the class only — an Error's message and stack can quote bound parameters.
+        err: errKind(e),
         tenantId,
         correlationId,
       },

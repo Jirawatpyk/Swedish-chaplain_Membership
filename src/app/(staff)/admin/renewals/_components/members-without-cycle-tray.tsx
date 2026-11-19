@@ -29,6 +29,7 @@ import {
 } from '@/modules/renewals';
 import type { Settled } from '../_lib/settled';
 
+import { errKind } from '@/lib/log-id';
 export async function MembersWithoutCycleTray({
   tenantSlug,
   resultPromise,
@@ -65,7 +66,7 @@ export async function MembersWithoutCycleTray({
     logger.error(
       {
         errorId: 'F8.ADMIN.MEMBERS_WITHOUT_CYCLE_LOAD',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: tenantSlug,
       },
       '[admin/renewals] members-without-cycle tray load failed',

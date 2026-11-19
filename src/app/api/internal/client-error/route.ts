@@ -50,6 +50,7 @@ import { logger } from '@/lib/logger';
 import { rateLimiter } from '@/lib/auth-deps';
 import { getCurrentSession } from '@/lib/auth-session';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -67,6 +68,17 @@ const reportSchema = z.object({
   /** Optional client-side message (clipped). */
   message: z.string().max(200).optional(),
 });
+
+/** A client tag or code as logged: a lowercase token (`http_502`, `renewal-confirm`) or `invalid`. */
+function clientToken(value: string): string {
+  return /^[a-z][a-z0-9_.:-]{0,63}$/.test(value) ? value : 'invalid';
+}
+
+/** A client path as logged: its route segments only, or `invalid`. */
+function clientPath(value: string): string {
+  const route = value.split(/[?#]/, 1)[0] ?? '';
+  return /^\/[A-Za-z0-9/_.\-[\]]{0,199}$/.test(route) ? route : 'invalid';
+}
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Read body with byte cap to bound abuse cost. sendBeacon payloads
@@ -117,7 +129,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     logger.debug(
       {
         errorId: 'CLIENT.ERROR_REPORT.INVALID_JSON',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[client-error] beacon body was not parseable JSON',
     );
@@ -141,15 +153,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Structured log for SRE / support correlation. errorId fixed so
   // alerts can attach to the metric counter (future wave) or the
-  // pino log itself.
+  // pino log itself. #740 B2 — the client's message is free text (it can
+  // quote an error or an address): only its length is logged.
+  // #740 B2 review (security M2) — tag, code and path are client strings too:
+  // a non-token tag or code is logged as `invalid`, and a path keeps only its
+  // route segments (no query string or fragment).
+  const { message: clientMessage } = parsed.data;
   logger.warn(
     {
       errorId: 'CLIENT.ERROR_REPORT',
-      tag: parsed.data.tag,
-      code: parsed.data.code,
+      tag: clientToken(parsed.data.tag),
+      code: clientToken(parsed.data.code),
       status: parsed.data.status ?? null,
-      path: parsed.data.path ?? null,
-      message: parsed.data.message ?? null,
+      path: parsed.data.path === undefined ? null : clientPath(parsed.data.path),
+      messageLength: clientMessage?.length ?? null,
       // F1 cross-tenant users — user.id is the only stable correlation
       // handle on the session. Tenant scope (when known) is implicit
       // in the route path when present.

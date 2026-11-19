@@ -21,8 +21,10 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import {
   getReceiptPdfSignedUrl,
   makeGetReceiptPdfSignedUrlDeps,
+  type GetReceiptPdfSignedUrlError,
 } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { streamPdfFromBlob } from '@/lib/stream-pdf-from-blob';
 import { pdfRouteErrorStatus } from '@/lib/pdf-route-error-status';
 
@@ -56,7 +58,7 @@ export async function GET(
     );
   } catch (err) {
     logger.error(
-      { requestId, tenantId: tenantCtx.slug, invoiceId, err },
+      { requestId, tenantId: tenantCtx.slug, invoiceId, ...errLogFields(err) },
       'GET /api/invoices/[id]/receipt/pdf — use-case threw (likely audit-emit failure)',
     );
     return NextResponse.json(
@@ -66,21 +68,18 @@ export async function GET(
   }
 
   if (!result.ok) {
+    const blobKey: Extract<GetReceiptPdfSignedUrlError, { code: 'blob_missing' }>['key'] | undefined =
+      result.error.code === 'blob_missing' ? result.error.key : undefined;
     logger.warn(
       {
         requestId,
         tenantId: tenantCtx.slug,
         invoiceId,
         errorCode: result.error.code,
-        // R9-E2 — surface the failing blob key / failure reason so
-        // operators can immediately locate the offending blob or the
-        // worker-side render error without joining back to invoices.
-        ...(result.error.code === 'blob_missing'
-          ? { blobKey: result.error.key }
-          : {}),
-        ...(result.error.code === 'receipt_pdf_failed'
-          ? { reason: result.error.reason }
-          : {}),
+        // R9-E2 — surface the failing blob key so operators can locate the
+        // offending blob without joining back to invoices. #740 B2 — never
+        // the worker's render error: it is stored error text.
+        ...(blobKey !== undefined ? { blobKey } : {}),
       },
       'GET /api/invoices/[id]/receipt/pdf failed',
     );

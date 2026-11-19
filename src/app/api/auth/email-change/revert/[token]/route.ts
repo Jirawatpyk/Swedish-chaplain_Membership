@@ -28,6 +28,7 @@ import {
 } from '@/modules/members/members-deps';
 import { rateLimiter } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { getClientIp } from '@/lib/client-ip';
 import { sha256Hex } from '@/lib/crypto';
@@ -106,7 +107,7 @@ async function handle(
         );
       default:
         logger.error(
-          { requestId, err: result.error },
+          { requestId, ...errLogFields(result.error) },
           'email_change.revert.server_error',
         );
         return NextResponse.json({ error: 'server_error' }, { status: 500 });

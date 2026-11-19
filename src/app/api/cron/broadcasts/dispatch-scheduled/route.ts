@@ -39,6 +39,7 @@ import {
   buildAudienceTick,
   makeBuildAudienceTickDeps,
   currentAudienceCeiling,
+  type BuildAudienceTickError,
 } from '@/modules/broadcasts';
 import { brandChromePort } from '@/lib/broadcast-brand-deps';
 import { runInTenant } from '@/lib/db';
@@ -352,7 +353,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           continue;
         }
         switch (built.error.kind) {
-          case 'dispatch.server_error':
+          case 'dispatch.server_error': {
             // Transient: the row stays `approved` and the next tick retries.
             summary.retryable++;
             broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug, built.error.phase);
@@ -375,16 +376,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             // free text on this module can carry a Neon error's bound
             // parameters, member addresses. `NeonDbError` (a DB blip),
             // `TypeError` (our bug), a fetch error (the network).
+            const errClass: Extract<BuildAudienceTickError, { kind: 'dispatch.server_error' }>['errClass'] = built.error.errClass;
             logger.warn(
               {
                 tenantId: tenant.slug,
                 broadcastId: row.broadcast_id,
-                errClass: built.error.errClass ?? 'unclassified',
+                errClass: errClass ?? 'unclassified',
               },
               'cron.broadcasts.dispatch.server_error',
             );
             break;
-          case 'broadcast_resend_resource_missing':
+          }
+          case 'broadcast_resend_resource_missing': {
             // Round 4 F5 — its own bucket. The 404 path used to return
             // `audience_import_failed`, so this counter was structurally 0 on
             // the import leg and a trace read "permanent_failed=1,
@@ -397,16 +400,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             // fails to compile instead of falling to `unknown_error` +
             // `cronUnknownErrorCount`, the enum-drift signal that PAGES on-call.
             summary.resource_missing++;
+            const resourceType: Extract<BuildAudienceTickError, { kind: 'broadcast_resend_resource_missing' }>['resourceType'] = built.error.resourceType;
+            const resourceId: Extract<BuildAudienceTickError, { kind: 'broadcast_resend_resource_missing' }>['resourceId'] = built.error.resourceId;
             logger.error(
               {
                 tenantId: tenant.slug,
                 broadcastId: row.broadcast_id,
-                resourceType: built.error.resourceType,
-                resourceId: built.error.resourceId,
+                resourceType,
+                resourceId,
               },
               'cron.broadcasts.dispatch.resend_resource_missing',
             );
             break;
+          }
           case 'audience_import_failed':
           case 'audience_import_stuck':
           case 'broadcast_audience_too_large':
@@ -417,14 +423,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             // already moved the row to `failed_to_dispatch` and audited it.
             summary.permanent_failed++;
             break;
-          case 'lease_expiring':
+          case 'lease_expiring': {
             summary.lease_expiring++;
             broadcastsMetrics.dispatchLeaseExpiring(tenant.slug);
+            const step: Extract<BuildAudienceTickError, { kind: 'lease_expiring' }>['step'] = built.error.step;
             logger.warn(
-              { tenantId: tenant.slug, broadcastId: row.broadcast_id, step: built.error.step },
+              { tenantId: tenant.slug, broadcastId: row.broadcast_id, step },
               'cron.broadcasts.dispatch.lease_expiring',
             );
             break;
+          }
           case 'broadcast_invalid_state_transition':
           case 'broadcast_not_found':
             // See `summary.concurrent_skip` above. Logged at warn with the
