@@ -27,16 +27,24 @@
  * if a `// refused` line yields none, or if an `// allowed` line yields one —
  * so a rule that rots cannot pass silently over the real tree.
  *
- * Scope: `src/modules/members/**` and `src/modules/broadcasts/**` `.ts`
- * files, tests excluded. Follow-up: the same rule for the other modules and
- * `src/app` (see the s2d PR).
+ * Scope: `src/modules/{members,broadcasts,invoicing,payments,events,renewals}/**`
+ * `.ts` files, tests excluded (#740 B1 added the last four). Follow-up (#740
+ * B2): `src/app` and `src/lib`.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { findLogErrorObjects, scanLogErrorObjects } from './lib/log-error-objects-rules';
 
-const ROOTS = ['src/modules/members', 'src/modules/broadcasts'] as const;
+const ROOTS = [
+  'src/modules/members',
+  'src/modules/broadcasts',
+  // #740 (group B1): the other modules that log driver and gateway errors.
+  'src/modules/invoicing',
+  'src/modules/payments',
+  'src/modules/events',
+  'src/modules/renewals',
+] as const;
 const FIXTURE = 'scripts/__fixtures__/log-error-objects.fixture.txt';
 /** A floor, not a pin: the scope rotting to a handful of files must fail loudly. */
 const MIN_FILES_PER_ROOT = 50;
@@ -45,7 +53,7 @@ const MIN_FILES_PER_ROOT = 50;
  * tree: a parse that silently stops recognising logger calls must fail
  * loudly, not pass at zero findings.
  */
-const MIN_LOGGER_CALLS = 300;
+const MIN_LOGGER_CALLS = 700;
 
 function walk(dir: string, out: string[]): string[] {
   for (const entry of readdirSync(dir)) {
@@ -115,6 +123,6 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `✓ check:log-error-objects — ${fileCount} file(s) and ${loggerCalls} logger call(s) in members + broadcasts, no error object or text in a log line; ` +
+  `✓ check:log-error-objects — ${fileCount} file(s) and ${loggerCalls} logger call(s) in ${ROOTS.length} module root(s), no error object or text in a log line; ` +
     `${refusedMarked} refused form(s) in the positive control, each found.`,
 );
