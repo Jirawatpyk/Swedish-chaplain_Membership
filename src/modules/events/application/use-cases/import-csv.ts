@@ -2696,7 +2696,7 @@ export async function importCsv(
 export const CSV_ROW_DB_ERROR = 'row_db_error';
 export const CSV_BATCH_TX_ABORTED = 'batch_tx_aborted';
 
-const ERROR_CSV_REASON_TEXT: Readonly<Record<string, string>> = {
+export const ERROR_CSV_REASON_TEXT: Readonly<Record<string, string>> = {
   [CSV_ROW_DB_ERROR]: 'Not saved: this row could not be saved. Try the import again; if it repeats, contact support.',
   [CSV_BATCH_TX_ABORTED]: 'Not saved: this batch could not be saved. Try the import again; if it repeats, contact support.',
 };
