@@ -40,8 +40,7 @@ import {
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { broadcastsTracer } from '@/lib/otel-tracer';
-import { SpanStatusCode } from '@opentelemetry/api';
+import { broadcastsTracer, markSpanFailed } from '@/lib/otel-tracer';
 
 // Test seam kept at its historical import path (T138 integration test).
 export { processUnsubscribe, type UnsubscribeOutcome };
@@ -122,10 +121,7 @@ export default async function UnsubscribePage({
     locale = result.locale;
     span.setAttribute('broadcasts.outcome', outcome.state);
   } catch (e) {
-    span.setStatus({
-      code: SpanStatusCode.ERROR,
-      message: e instanceof Error ? e.message : 'unsubscribe_threw',
-    });
+    markSpanFailed(span, e);
     span.end();
     throw e;
   }

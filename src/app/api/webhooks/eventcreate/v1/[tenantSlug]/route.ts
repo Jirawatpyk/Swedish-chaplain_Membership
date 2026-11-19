@@ -42,7 +42,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { SpanStatusCode, type Span } from '@opentelemetry/api';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
-import { eventsTracer } from '@/lib/otel-tracer';
+import { eventsTracer, markSpanFailed } from '@/lib/otel-tracer';
 import { safeEmitStandalone } from '@/lib/events-safe-emit-standalone';
 import { problemResponse } from '@/lib/http/problem-response';
 import { asTenantId } from '@/modules/members';
@@ -918,11 +918,7 @@ export async function POST(
         // Last-resort catch — span needs to be ended with error status
         // even if something genuinely unexpected throws past every
         // defensive layer above.
-        span.setStatus({
-          code: SpanStatusCode.ERROR,
-          message: e instanceof Error ? e.message : String(e),
-        });
-        if (e instanceof Error) span.recordException(e);
+        markSpanFailed(span, e);
         logger.fatal(
           {
             event: 'f6_webhook_uncaught_exception',

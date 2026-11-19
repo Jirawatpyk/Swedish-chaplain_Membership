@@ -23,6 +23,7 @@
  * in spans, swap to `cryptoHash('sha256', tenantId)` at the call
  * site — but no F5 use-case needs that today.
  */
+import { errKind } from '@/lib/log-id';
 import {
   SpanStatusCode,
   trace,
@@ -180,6 +181,18 @@ export function membersTracer(): Tracer {
  * synchronous throw inside the callback (was a Round 5 R5-CRON-B
  * leak risk before this helper existed).
  */
+/**
+ * #739 — mark a span failed by the error's class: the status message and an
+ * `error.type` attribute (OTel semantic convention). Never the message, and
+ * no `recordException`, which exports the message and the stack: a drizzle
+ * error's message quotes bound parameters (emails, names).
+ */
+export function markSpanFailed(span: Span, e: unknown): void {
+  const errClass = errKind(e);
+  span.setAttribute('error.type', errClass);
+  span.setStatus({ code: SpanStatusCode.ERROR, message: errClass });
+}
+
 export async function withSpan<T>(
   tracer: Tracer,
   name: string,
@@ -190,11 +203,7 @@ export async function withSpan<T>(
   try {
     return await fn(span);
   } catch (e) {
-    span.setStatus({
-      code: SpanStatusCode.ERROR,
-      message: e instanceof Error ? e.message : String(e),
-    });
-    if (e instanceof Error) span.recordException(e);
+    markSpanFailed(span, e);
     throw e;
   } finally {
     span.end();
@@ -223,11 +232,7 @@ export async function withActiveSpan<T>(
     try {
       return await fn(span);
     } catch (e) {
-      span.setStatus({
-        code: SpanStatusCode.ERROR,
-        message: e instanceof Error ? e.message : String(e),
-      });
-      if (e instanceof Error) span.recordException(e);
+      markSpanFailed(span, e);
       throw e;
     } finally {
       span.end();

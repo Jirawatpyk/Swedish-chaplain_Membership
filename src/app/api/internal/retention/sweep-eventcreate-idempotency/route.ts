@@ -17,7 +17,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { errLogFields } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { runInTenant } from '@/lib/db';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { gateF6Cron } from '@/lib/events-cron-deps';
@@ -76,7 +76,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     outcome: 'success' | 'error';
     deletedCount?: number;
     durationMs?: number;
-    message?: string;
+    /** #739 — the error's class or closed kind, never its text. */
+    errClass?: string;
   }> = [];
 
   for (const tenantSlug of tenants) {
@@ -127,16 +128,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         perTenant.push({
           tenantId: tenantSlug,
           outcome: 'error',
-          message: result.error.message,
+          errClass: result.error.kind,
         });
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
       logger.error(
         { event: 'eventcreate_idempotency_sweep_throw', tenantSlug, ...errLogFields(e) },
         '[F6] idempotency sweep: per-tenant tx threw',
       );
-      perTenant.push({ tenantId: tenantSlug, outcome: 'error', message });
+      perTenant.push({ tenantId: tenantSlug, outcome: 'error', errClass: errKind(e) });
     }
   }
 
