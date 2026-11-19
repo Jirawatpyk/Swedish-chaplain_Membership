@@ -1209,7 +1209,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     if (!r.ok) {
       expect(r.error.code).toBe('pdf_render_failed');
       if (r.error.code === 'pdf_render_failed') {
-        expect(r.error.reason).toContain('font load failed');
+        expect(r.error.reason).toBe('render:Error');
       }
     }
     expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();

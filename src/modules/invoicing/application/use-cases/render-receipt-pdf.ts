@@ -213,7 +213,7 @@ export async function renderReceiptPdf(
         if (!docResult.ok) {
           throw new RenderReceiptInternalError({
             kind: 'data_corruption',
-            reason: `receipt_doc_num_parse_failed: ${loaded.receiptDocumentNumberRaw}`,
+            reason: 'receipt_doc_num_parse_failed',
           });
         }
         receiptDocNum = docResult.value;
@@ -225,8 +225,9 @@ export async function renderReceiptPdf(
         // record-payment bug); short-circuit the retry ladder.
         throw new RenderReceiptInternalError({
           kind: 'data_corruption',
-          reason:
-            'receipt_doc_num_missing — paid row has neither receipt_document_number_raw nor document_number',
+          // A closed code (#739); the row has neither receipt_document_number_raw
+          // nor document_number.
+          reason: 'receipt_doc_num_missing',
         });
       }
 

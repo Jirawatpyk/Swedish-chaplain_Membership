@@ -1196,7 +1196,7 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error.code).toBe('pdf_render_failed');
-      if (r.error.code === 'pdf_render_failed') expect(r.error.reason).toContain('font load failed');
+      if (r.error.code === 'pdf_render_failed') expect(r.error.reason).toBe('render:Error');
     }
     expect(deps.invoiceRepo.applyIssueAsPaid).not.toHaveBeenCalled();
     expect(deps.audit.emit).toHaveBeenCalledWith(

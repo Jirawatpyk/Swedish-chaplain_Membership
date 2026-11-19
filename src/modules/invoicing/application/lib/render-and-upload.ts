@@ -25,12 +25,16 @@
  * substituted 1:1 for two adjacent try/catch blocks, so code reviewers
  * can map call-site letters (G/H/J2) to the same functional boundary.
  *
- * The `reasonPrefix` option supports the J2 re-annotation path's
- * `"annotation render: ..."` / `"annotation upload: ..."` messages
- * so the post-rollback log distinguishes the initial-issue failure
- * from the credit-note-triggered re-annotation failure on the same
- * invoice.
+ * The `reason` is a closed code, `<step>:<ErrClass>` (`render:TypeError`,
+ * `upload:BlobError`; `annotation_render:Error` with the J2 re-annotation
+ * `reasonPrefix`), never the thrown text (#739): it is stored in
+ * `invoices.receipt_pdf_last_error` and `notifications_outbox.last_error`
+ * and audited, and a drizzle error's message quotes bound parameters. The
+ * failure's class, SQLSTATE and code go to one WARN line here instead.
  */
+import { errKind, errLogFields } from '@/lib/log-id';
+import { logger } from '@/lib/logger';
+
 import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type { PdfRenderInput, PdfRenderPort, PdfRenderResult } from '../ports/pdf-render-port';
 
@@ -55,7 +59,7 @@ export interface RenderAndUploadInput {
   readonly allowOverwrite?: boolean;
   /**
    * Optional prefix for the `reason` string passed to `wrap`. Used by
-   * the J2 re-annotation path to tag failures as `"annotation ..."`
+   * the J2 re-annotation path to tag failures as `annotation_<step>:…`
    * so operators can distinguish them from the initial-issue path.
    */
   readonly reasonPrefix?: string;
@@ -74,14 +78,19 @@ export async function renderAndUploadPdf(
   input: RenderAndUploadInput,
   wrap: (kind: RenderAndUploadFailureKind, reason: string) => Error,
 ): Promise<PdfRenderResult & { readonly etag?: string }> {
+  const reasonFor = (step: 'render' | 'upload', e: unknown): string => {
+    logger.warn(
+      { step: input.reasonPrefix ? `${input.reasonPrefix}_${step}` : step, ...errLogFields(e) },
+      'invoicing.pdf.render_and_upload_failed',
+    );
+    return `${input.reasonPrefix ? `${input.reasonPrefix}_` : ''}${step}:${errKind(e)}`;
+  };
+
   let rendered: PdfRenderResult;
   try {
     rendered = await deps.pdfRender.render(input.renderInput);
   } catch (e) {
-    const reason = input.reasonPrefix
-      ? `${input.reasonPrefix} render: ${String(e)}`
-      : String(e);
-    throw wrap('pdf_render_failed', reason);
+    throw wrap('pdf_render_failed', reasonFor('render', e));
   }
 
   let uploaded: { readonly etag?: string } | undefined;
@@ -93,10 +102,7 @@ export async function renderAndUploadPdf(
       ...(input.allowOverwrite ? { allowOverwrite: true as const } : {}),
     });
   } catch (e) {
-    const reason = input.reasonPrefix
-      ? `${input.reasonPrefix} upload: ${String(e)}`
-      : String(e);
-    throw wrap('blob_upload_failed', reason);
+    throw wrap('blob_upload_failed', reasonFor('upload', e));
   }
 
   // #60 — the stored etag lets a catch-path cleanup delete conditionally.

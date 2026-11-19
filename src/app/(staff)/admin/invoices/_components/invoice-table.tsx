@@ -35,6 +35,7 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { invoiceStatusTone } from '@/components/invoices/invoice-status-tone';
 import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-client';
+import { receiptFailedCopyKey } from '../_lib/receipt-failure-copy';
 import { RecordPaymentDialog } from './record-payment-dialog';
 import { INVOICES_COLUMN_LAYOUT } from './invoices-table-columns';
 import {
@@ -319,7 +320,7 @@ export function InvoicesTable({
           fallbackFilename,
           toasts: {
             pending: tDetail('toast.receiptPending'),
-            failed: (reason) => tDetail('toast.receiptFailed', { reason }),
+            failed: (reason) => tDetail(receiptFailedCopyKey(reason)),
             forbidden: tDetail('toast.receiptForbidden'),
             unavailable: tDetail('toast.receiptUnavailable'),
             sessionExpired: tDetail('toast.receiptSessionExpired'),
