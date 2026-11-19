@@ -394,7 +394,7 @@ async function sendViaResendWithRetry(args: {
     lastError ?? {
       kind: 'gateway_5xx',
       retryable: true,
-      message: 'exhausted retries',
+      message: 'exhausted_retries',
     },
   );
 }
@@ -742,7 +742,7 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
       lastError ?? {
         kind: 'gateway_5xx',
         retryable: true,
-        message: 'exhausted retries',
+        message: 'exhausted_retries',
       },
     );
   },

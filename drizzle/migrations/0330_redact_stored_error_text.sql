@@ -16,8 +16,11 @@
 -- docs/observability.md § 3 and the PR. The error-CSV blobs (events CSV import) are
 -- private and TTL-swept at 30 days.
 --
--- Safe before and after the code deploys: plain UPDATEs, idempotent (a second run finds
--- nothing to rewrite), no DDL. The invoices immutability trigger does not lock
+-- Correct before and after the code deploys: plain UPDATEs, idempotent (a second run finds
+-- nothing to rewrite), no DDL. Not complete on its own: the build runs this before the new
+-- code is promoted, so the old deployment can write text into these columns until the alias
+-- flips (and again after a promote back to a pre-#739 deployment). #739 B3b repeats the same
+-- UPDATEs in a later migration to catch those rows. The invoices immutability trigger does not lock
 -- receipt_pdf_last_error; none of the three tables has an updated_at trigger, and the
 -- statements do not set updated_at, so no timer restarts. Rollback: none needed — the
 -- text is gone by design.
@@ -29,21 +32,26 @@ UPDATE "invoices"
  WHERE "receipt_pdf_last_error" IS NOT NULL
    AND "receipt_pdf_last_error" !~ '^[a-z][a-z0-9_]*(:[A-Za-z][A-Za-z0-9_]*(:[A-Za-z0-9_.-]+)?)?$';
 
--- notifications_outbox: keep code-authored values — a token, `prefix:token`, optionally
--- followed by ` — <code-authored detail>` (`receipt_pdf_gate_skip:invoice_void — …`, which
--- findFailedAutoEmailsByInvoice matches by prefix) — when they hold no '@'. Resend's and
--- the drizzle driver's messages start upper-case or carry an address, so they go.
+--> statement-breakpoint
+
+-- notifications_outbox: keep code-authored values — a token or `prefix:token` — and the
+-- receipt PDF gate's `receipt_pdf_(gate|render)_skip:<code> — <constant detail>` (which
+-- findFailedAutoEmailsByInvoice matches by prefix), when they hold no '@'. Resend's and the
+-- drizzle driver's messages start upper-case or carry an address, so they go.
 UPDATE "notifications_outbox"
    SET "last_error" = 'legacy_redacted'
  WHERE "last_error" IS NOT NULL
-   AND ("last_error" !~ '^[a-z][a-z0-9_-]*(:[A-Za-z0-9_.-]+)*( — .*)?$'
+   AND ("last_error" !~ '^([a-z][a-z0-9_-]*(:[A-Za-z0-9_.-]+)*|receipt_pdf_(gate|render)_skip:[a-z_]+ — .*)$'
         OR position('@' IN "last_error") > 0);
 
 -- renewal_reminder_events: a crash keeps its prefix, so `failure_kind`-style
 -- classification by prefix still works; other text becomes `legacy_redacted`.
+--> statement-breakpoint
+
 UPDATE "renewal_reminder_events"
    SET "failure_reason" = 'dispatcher_crash:legacy_redacted'
- WHERE "failure_reason" LIKE 'dispatcher_crash: %';
+ WHERE left("failure_reason", 18) = 'dispatcher_crash: ';
+--> statement-breakpoint
 
 UPDATE "renewal_reminder_events"
    SET "failure_reason" = 'legacy_redacted'

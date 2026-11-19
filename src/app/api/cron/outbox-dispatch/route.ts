@@ -608,7 +608,7 @@ async function dispatchReceiptPdfRender(
       .set({
         status: 'permanently_failed' as const,
         attempts: row.attempts + 1,
-        lastError: 'missing tenant_id',
+        lastError: 'missing_tenant_id',
         updatedAt: now,
       })
       .where(eq(notificationsOutbox.id, row.id));
@@ -628,7 +628,7 @@ async function dispatchReceiptPdfRender(
       .set({
         status: 'permanently_failed' as const,
         attempts: row.attempts + 1,
-        lastError: 'malformed context_data',
+        lastError: 'malformed_context_data',
         updatedAt: now,
       })
       .where(eq(notificationsOutbox.id, row.id));
