@@ -313,3 +313,29 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
   - A change that no user or operator drives gets no `/verify`. That covers docs, a static gate and test-only changes. The PR says so, and the tests are the evidence.
   - After review fixes on the driven path, Claude hands over a new command.
 - *Consequence*: `feature-flow` §§ 6–7, `docs/workflow.md` step 6 (with its who-does-what row and the DoD), the PR template, `run-chamber-os`, `review-and-ship` § 1 and `spec-compliance-auditor`. The auditor reports a Claude drive presented as Verify as a High finding. `feature-flow` § 6 is the one owner of the Verify rule. The other files link to it, and `check:process-docs` fails when one of its sentences is restated elsewhere (the same mechanism D-043 uses for the review rules).
+
+**D-045 — Error text already in `audit_log` stays; new rows carry a class or code** (2026-11-19)
+- *Context*:
+  - Before #739 B3a, ten audit event types could store an error's own text. A drizzle error's message quotes the statement's bound parameters: member and attendee emails and names, sometimes of other members in a batch.
+    - `webhook_rolled_back`: `errorMessage`, `errorStack` and `summary`.
+    - `csv_import_row_failed`: `reason` and `summary`.
+    - `renewal_reminder_send_failed(_permanent)`: `failure_message`.
+    - `tier_upgrade_pending_member_notify_failed`: `failure_message`.
+    - `tier_upgrade_apply_post_invoice_paid_failed`: `failure_message`.
+    - `membership_access_fail_open`: `error`.
+    - `email_dispatch_failed` / `auto_email_delivery_failed`: `last_error`.
+    - `pdf_render_permanently_failed`: `reason`.
+  - These rows are 5-year forensic rows, not §87/3 tax rows. No purge job exists today, so in practice they live indefinitely. Admins can read them in the F9 audit viewer, which shows the whole payload.
+  - Migration 0330 scrubs the three mutable columns that held the same text. `audit_log` is append-only (`audit_log_no_update`).
+- *Decision* (the maintainer, 19 Nov 2026: "migration ล้างคอลัมน์ (Recommended)", with the audit rows kept and documented):
+  - Rows written before 0330's deploy date keep their text. Rows from that release on carry the error's class or a closed code.
+  - Rewriting old payloads would mean disabling the append-only trigger for a payload change, which has no precedent: 0084 and 0316 changed only `retention_years`. It stays open as a B3b option, if a prod count shows such rows exist.
+- *Balancing*:
+  - The forensic value of the old text is low: the class, stage and ids on the same row answer the triage question.
+  - The minimisation cost is real: PDPA §22 and GDPR Art. 5(1)(c).
+  - Until B3b decides, two things limit the cost:
+    - the rows are staff-only;
+    - an erasure request that matches a legacy row is handled by hand (below).
+- *Consequence*:
+  - `docs/runbooks/f6-manual-erasure.md` says rows before 0330 may hold PII in error text. A data-subject request that matches one is escalated to the maintainer, not answered as "audit rows are redacted at emit".
+  - B3b starts with a read-only prod count: `SELECT event_type, count(*) FROM audit_log WHERE payload::text ~ '(Failed query|params:|@)' AND event_type IN (…) GROUP BY 1`. The maintainer runs it, and B3b decides on a reviewed payload rewrite from the result.

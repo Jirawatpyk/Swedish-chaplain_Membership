@@ -35,6 +35,7 @@ or CSV import:
 - F3 member directory entries (use F3 erasure flow)
 - F4 invoices / receipts (regulatory retention overrides — Thai RD §87/3 = 5 years)
 - audit_log rows (compliance retention overrides; audit summaries are PII-redacted at emit per `src/lib/logger.ts` REDACT_PATHS)
+  - Exception (D-045): rows written before migration 0330 (#739) can hold PII inside stored error text (`errorMessage`, `failure_message`, `reason`, `last_error`, `error`). If a request matches one, escalate to the maintainer; do not answer that audit rows are redacted.
 
 ## Lawful basis to refuse
 

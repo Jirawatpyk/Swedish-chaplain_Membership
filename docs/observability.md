@@ -186,10 +186,12 @@ could leave the process: an HTTP body, a span, an audit payload, a stored
 column, and the Result that reaches one of them carries the error's class
 (`errKind(e)`, `formatErrorClass(e)` for a class chain) or a closed code
 (`render:TypeError`, `resend:validation_error`, `dispatcher_crash:Error`,
-`row_db_error`), never its text. A failed span is marked with
-`markSpanFailed(span, e)` (`src/lib/otel-tracer.ts`): the status message and
-an `error.type` attribute are the class, and `recordException` is not called,
-because it exports the message and the stack. Where a person reads the code,
+`row_db_error`), never its text. A failed span the app creates is
+marked with `markSpanFailed(span, e)` (`src/lib/otel-tracer.ts`): the status
+message and an `error.type` attribute are the class, and `recordException` is
+not called, because it exports the message and the stack. Not yet covered:
+when an error escapes a route or a page, Next's own span still records the
+exception and its message (#739 B3b: redact at the exporter). Where a person reads the code,
 the UI maps it to fixed copy (the receipt download toast, the CSV import
 result). `pnpm check:log-error-objects` also refuses, inside a `catch`, an
 object literal that is not a log argument and carries the caught value's
@@ -201,7 +203,10 @@ to fix (#739 B3b) sit in the shrink-only
 stored text in `invoices.receipt_pdf_last_error`,
 `notifications_outbox.last_error` and `renewal_reminder_events.failure_reason`
 to `legacy_redacted` (`dispatcher_crash:legacy_redacted` for a crash). Rows
-already in `audit_log` keep their text: the table is append-only.
+already in `audit_log` keep their text: the table is append-only (D-045).
+The build runs 0330 before the new code is promoted, so rows the old
+deployment writes in that window keep their text; B3b repeats the same
+UPDATEs.
 
 A Result error's `message` that code wrote as a step (`count-pending:
 repo.unexpected`) is logged as `step` by `errLogFields`, through
