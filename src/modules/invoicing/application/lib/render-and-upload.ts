@@ -84,7 +84,7 @@ export async function renderAndUploadPdf(
     // The blob key names the tenant, fiscal year and invoice (no PII), so
     // the line joins back to the row whose column holds the code.
     logger.warn(
-      { step: input.reasonPrefix ? `${input.reasonPrefix}_${step}` : step, blobKey: input.blobKey, ...fields },
+      { ...fields, step: input.reasonPrefix ? `${input.reasonPrefix}_${step}` : step, blobKey: input.blobKey },
       'invoicing.pdf.render_and_upload_failed',
     );
     // A token-shaped SQLSTATE or errno rides on the code, so the 10-year

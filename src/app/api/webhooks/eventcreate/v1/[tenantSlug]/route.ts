@@ -165,11 +165,8 @@ function markSpanError(span: Span, reason: string): void {
 // R7-F staff-review fix (2026-05-13): `safeEmitStandalone` extracted
 // to `@/lib/events-safe-emit-standalone` so admin route handlers can
 // reuse the same idiom (round-6 B7 originally inlined a bare try/
-// catch; round-7 R2-F refactors it). The shared helper internally
-// applies `redactStack` to the caught error's stack before logging
-// (preserving the round-6 W2 PII protection — container paths +
-// node_modules + webpack-internal:/// scrubbed). Callers do not need
-// to re-redact.
+// catch; round-7 R2-F refactors it). Since #740 / #739 it logs the
+// error's class, never its message or stack.
 
 // ---------------------------------------------------------------------------
 // Route handler

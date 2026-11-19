@@ -2170,7 +2170,7 @@ Spans carry bounded-cardinality attributes only: `tenant.id`, `f6.page`, `f6.pag
 - `attendee_company` + `attendeeCompany` (+ depth-2) — round-6 S20 fix
 - `EVENTCREATE_PII_PSEUDONYM_SALT` + `pii_pseudonym_salt` (Phase 10)
 
-Stack traces: route-handler + use-case + audit-port catch blocks scrub container paths + `node_modules` + `webpack-internal:///` URLs via `@/lib/redact-stack` before pino log + audit_log JSONB persistence (round-6 W2 fix; full coverage verified by `tests/integration/events/db-unavailable-during-tx.test.ts` showing `[redacted-path]` / `[redacted-file-url]` markers in the fatal-log output).
+Stack traces: since #740 (logs) and #739 (audit payloads, spans) no stack is logged, stored or exported; `@/lib/redact-stack` was removed with its last caller.
 
 ### 24.5 Dashboard
 

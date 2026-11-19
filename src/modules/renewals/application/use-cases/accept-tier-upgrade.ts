@@ -735,11 +735,14 @@ export async function acceptTierUpgrade(
       // R2-IMP-3: preserve actionable metadata for the
       // template_variables_missing variant (carries `missing[]` not
       // `message`). Fall back to comma-joined missing list.
-      // #739 — the gateway's kind, never its message; the missing-variable
-      // list is code-authored and kept.
+      // #739 — the gateway's message is a closed code since #739
+      // (`resend:<name>`, `send:<ErrClass>`, `render:<ErrClass>`); anything else
+      // falls back to the kind. The missing-variable list is code-authored.
       const failureMessage =
         'message' in gatewayResult.error
-          ? gatewayResult.error.kind
+          ? /^[a-z][a-z0-9_]*(:[A-Za-z][A-Za-z0-9_-]*)?$/.test(gatewayResult.error.message)
+            ? gatewayResult.error.message
+            : gatewayResult.error.kind
           : 'missing' in gatewayResult.error
             ? `template_variables_missing: ${(gatewayResult.error as { missing: ReadonlyArray<string> }).missing.join(',')}`
             : null;

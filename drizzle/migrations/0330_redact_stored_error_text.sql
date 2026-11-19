@@ -30,7 +30,7 @@
 UPDATE "invoices"
    SET "receipt_pdf_last_error" = 'legacy_redacted'
  WHERE "receipt_pdf_last_error" IS NOT NULL
-   AND "receipt_pdf_last_error" !~ '^[a-z][a-z0-9_]*(:[A-Za-z][A-Za-z0-9_]*(:[A-Za-z0-9_.-]+)?)?$';
+   AND "receipt_pdf_last_error" !~ '^[a-z][a-z0-9_]*(:[A-Za-z][A-Za-z0-9_]*(:[A-Za-z0-9_.-]+)*)?$';
 
 --> statement-breakpoint
 
@@ -56,4 +56,4 @@ UPDATE "renewal_reminder_events"
 UPDATE "renewal_reminder_events"
    SET "failure_reason" = 'legacy_redacted'
  WHERE "failure_reason" IS NOT NULL
-   AND "failure_reason" !~ '^[a-z][a-z0-9_]*(:[A-Za-z][A-Za-z0-9_-]*)?$';
+   AND "failure_reason" !~ '^[a-z][a-z0-9_]*(:[A-Za-z][A-Za-z0-9_.-]*)?$';
