@@ -153,7 +153,7 @@ describe('deleteInvitedUser (SAGA compensation)', () => {
     );
   });
 
-  it('fault: a non-Error throw is stringified for the log (String(e) branch)', async () => {
+  it('fault: a non-Error throw logs its class, never its text', async () => {
     const { deps } = makeDeps({
       users: {
         deleteInvitedPendingInTx: vi.fn(async () => {
@@ -169,9 +169,11 @@ describe('deleteInvitedUser (SAGA compensation)', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('compensation-failed');
     expect(result.error.cause).toBe('raw pg fault string');
+    // #740 B2 review — the class only: the thrown text never reaches the log.
     expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ errMessage: 'raw pg fault string' }),
+      expect.objectContaining({ err: 'unknown' }),
       'delete_invited_user.compensation_failed',
     );
+    expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain('raw pg fault string');
   });
 });
