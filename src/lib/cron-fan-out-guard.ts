@@ -5,9 +5,10 @@
  * `APP_BASE_URL` at production, so every per-tenant run executed on prod and
  * a real renewal reminder went out (docs/retro.md, 2026-11-19).
  *
- * Outside production a coordinator may only fan out to its OWN origin. In
- * production the check is skipped: Vercel Cron calls the deployment host
- * while `APP_BASE_URL` is the custom domain, so the origins differ by design.
+ * Outside production, and on any loopback server, a coordinator may only fan
+ * out to its OWN origin. On a deployed production server the check is
+ * skipped: Vercel Cron calls the deployment host while `APP_BASE_URL` is the
+ * custom domain, so the origins differ by design.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
@@ -25,14 +26,24 @@ function originOf(url: string): string | null {
   }
 }
 
+function isLoopback(origin: string): boolean {
+  const host = new URL(origin).hostname;
+  return host === 'localhost' || host === '0.0.0.0' || host === '[::1]' || host.startsWith('127.');
+}
+
 export function checkFanOutOrigin(args: {
   readonly baseUrl: string;
   readonly requestUrl: string;
   readonly vercelEnv: string | undefined;
 }): FanOutOriginCheck {
-  if (args.vercelEnv === 'production') return { ok: true };
   const baseOrigin = originOf(args.baseUrl);
   const requestOrigin = originOf(args.requestUrl);
+  // A loopback server never skips the check, even when its env says
+  // production: `vercel env pull --environment=production` writes
+  // VERCEL_ENV="production" into `.env.local` (#797 review M2).
+  if (args.vercelEnv === 'production' && requestOrigin !== null && !isLoopback(requestOrigin)) {
+    return { ok: true };
+  }
   if (baseOrigin !== null && baseOrigin === requestOrigin) return { ok: true };
   return {
     ok: false,
