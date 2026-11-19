@@ -1627,7 +1627,16 @@ Per-tenant advisory lock: `pg_try_advisory_xact_lock(hashtextextended(
 'renewals:at-risk:'||tenant_id, 0))` — NON-blocking (#754 follow-up): an
 overlapping run answers 200 `{ skipped: true, reason: 'overlap' }` at once
 (the run holding the lock does the work) instead of waiting out
-`runInTenant`'s 30 s statement bound and failing 57014 → 500. Distinct
+`runInTenant`'s 30 s statement bound and failing 57014 → 500. A skip is not
+free: if the holder's run fails, or a member becomes due after it listed its
+work, that work waits for the cron's next schedule (daily for dispatch,
+enter-awaiting, lapse and reconcile-reactivations; weekly for at-risk,
+tier-upgrade and reconcile-applications). Each coordinator counts overlaps
+in `renewals.coordinator.tenants_skipped_overlap_total{cron_kind}` and logs
+`cron.renewals.coordinator.overlap_skipped` (warn). To catch up sooner,
+re-fire the coordinator once the holder's run has ended. Overlap on two runs
+in a row means a run is stuck or the schedule overlaps itself: read the
+holder's logs before re-firing. Distinct
 namespace from `renewals:dispatch:` so daily dispatch and weekly at-risk
 recompute can run concurrently without contention.
 

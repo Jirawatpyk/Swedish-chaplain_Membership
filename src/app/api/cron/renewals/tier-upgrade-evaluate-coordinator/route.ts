@@ -40,6 +40,7 @@ import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
+import { countTenantSkips, reportOverlapSkips } from '@/lib/renewals-cron-lock';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
 export const runtime = 'nodejs';
@@ -309,12 +310,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // #754 follow-up: an `overlap` skip (another run held the try-lock
   // and did the work) is counted apart from a kill-switch skip; both
   // stay out of `tenants_succeeded`.
-  const tenantsSkippedOverlap = tenantsSucceededOrSkipped.filter(
-    (r) => r.skipped && r.skip_reason === 'overlap',
-  ).length;
-  const tenantsSkippedKillSwitch = tenantsSucceededOrSkipped.filter(
-    (r) => r.skipped && r.skip_reason !== 'overlap',
-  ).length;
+  const { overlap: tenantsSkippedOverlap, other: tenantsSkippedKillSwitch } =
+    countTenantSkips(perTenantResults);
   const tenantsSucceeded =
     tenantsSucceededOrSkipped.length -
     tenantsSkippedKillSwitch -
@@ -348,6 +345,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (summary.tenants_failed > 0) {
     renewalsMetrics.coordinatorTenantsFailed('tier_upgrade_evaluate', summary.tenants_failed);
   }
+  reportOverlapSkips('tier_upgrade_evaluate', summary.tenants_skipped_overlap, correlationId);
   renewalsMetrics.coordinatorDurationMs('tier_upgrade_evaluate', summary.duration_ms);
 
   logger.info(

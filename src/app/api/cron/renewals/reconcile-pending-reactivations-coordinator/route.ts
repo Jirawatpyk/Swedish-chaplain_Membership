@@ -25,6 +25,7 @@ import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
+import { countTenantSkips, reportOverlapSkips } from '@/lib/renewals-cron-lock';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
 export const runtime = 'nodejs';
@@ -212,15 +213,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // #754 follow-up: a skipped tenant is not a succeeded one. An
   // `overlap` skip (another run held the per-tenant try-lock and did the
-  // work) is counted on its own; this coordinator checks the kill-switch
-  // itself before fanning out, so `tenants_skipped_kill_switch` stays 0.
+  // work) is counted on its own; any other per-tenant skip (the tenant
+  // route's own kill switch) is `tenants_skipped_kill_switch`, so the four
+  // buckets add up to `tenants_enqueued`.
   const tenantsSucceeded = perTenantResults.filter(
     (r) => r.error === undefined && r.skipped !== true,
   ).length;
-  const tenantsSkippedOverlap = perTenantResults.filter(
-    (r) =>
-      r.error === undefined && r.skipped === true && r.skip_reason === 'overlap',
-  ).length;
+  const { overlap: tenantsSkippedOverlap, other: tenantsSkippedKillSwitch } =
+    countTenantSkips(perTenantResults);
   const tenantsFailed = perTenantResults.filter(
     (r) => r.error !== undefined,
   ).length;
@@ -229,7 +229,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     tenants_enqueued: activeTenants.length,
     tenants_succeeded: tenantsSucceeded,
     tenants_failed: tenantsFailed,
-    tenants_skipped_kill_switch: 0,
+    tenants_skipped_kill_switch: tenantsSkippedKillSwitch,
     tenants_skipped_overlap: tenantsSkippedOverlap,
     duration_ms: Date.now() - startedAt,
   };
@@ -290,6 +290,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (summary.tenants_failed > 0) {
     renewalsMetrics.coordinatorTenantsFailed('reconcile', summary.tenants_failed);
   }
+  reportOverlapSkips('reconcile', summary.tenants_skipped_overlap, correlationId);
   renewalsMetrics.coordinatorDurationMs('reconcile', summary.duration_ms);
 
   logger.info(

@@ -53,5 +53,10 @@ describe('tryRenewalsCronLock (#754 follow-up)', () => {
       release();
       await holding;
     }
+    // R1 L6: once the holder commits, the lock is free again.
+    const again = await runInTenant(asTenantContext(TENANT), (tx) =>
+      tryRenewalsCronLock(tx, KEY, TENANT),
+    );
+    expect(again).toBe(true);
   });
 });

@@ -1227,8 +1227,9 @@ async function processTimeout(
   //
   //   PRIMARY SERIALISERS (prevent concurrent in-flight double-refunds):
   //     (a) Route-level per-tenant advisory lock `renewals:reconcile:<tenant>`
-  //         (acquired at the top of this POST handler) — serialises overlapping
-  //         cron retries for the same tenant so two cron passes cannot both
+  //         (a try-lock taken at the top of this POST handler) — excludes
+  //         overlapping cron retries for the same tenant: the second pass
+  //         answers 200 `overlap` and skips, so two cron passes cannot both
   //         reach Step 2 concurrently for the same invoice.
   //     (b) F5 `issueRefund` Phase A `SELECT…FOR UPDATE` on the `payments`
   //         row + `pendingCount > 0 → refund_in_progress` guard — detects a

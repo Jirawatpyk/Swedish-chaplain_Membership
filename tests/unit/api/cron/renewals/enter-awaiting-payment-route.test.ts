@@ -97,6 +97,7 @@ vi.mock('@/lib/metrics', () => ({
     coordinatorTenantsEnqueued: vi.fn(),
     coordinatorTenantsSucceeded: vi.fn(),
     coordinatorTenantsFailed: vi.fn(),
+    coordinatorTenantsSkippedOverlap: vi.fn(),
     coordinatorDurationMs: vi.fn(),
   },
 }));
