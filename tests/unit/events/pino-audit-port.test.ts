@@ -195,9 +195,8 @@ describe('pino-audit-port — logFullError coverage on emit + emitRolledBack', (
       expect.objectContaining({
         event: 'f6_audit_emit_db_error',
         caller: 'emitRolledBack',
-        err: expect.objectContaining({
-          message: expect.stringContaining('Invalid tenant slug'),
-        }),
+        // #740 — the error class only, never its message.
+        err: 'InvalidTenantSlugError',
       }),
       expect.any(String),
     );

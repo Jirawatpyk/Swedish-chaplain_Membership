@@ -427,11 +427,15 @@ export async function cancelInFlightCyclesForMember(
       // #711 — the class only, never the message.
       const errClass = errKind(txErr);
       if (txErr instanceof AuditEmitError) {
+        const underlyingErrorName: AuditEmitError['underlyingErrorName'] =
+          txErr.underlyingErrorName;
+        const underlyingErrorCode: AuditEmitError['underlyingErrorCode'] =
+          txErr.underlyingErrorCode;
         logger.error(
           {
             err: errClass,
-            underlyingErrorName: txErr.underlyingErrorName,
-            underlyingErrorCode: txErr.underlyingErrorCode,
+            underlyingErrorName,
+            underlyingErrorCode,
             tenantId: input.tenant.slug,
             memberId: input.memberId as string,
             cycleId: activeCycle.cycleId,
@@ -488,11 +492,13 @@ export async function cancelInFlightCyclesForMember(
     // would otherwise mis-classify it as `cascade.server_error`,
     // losing the `cascade_audit_emit_failed` outcome forensics.
     if (e instanceof AuditEmitError) {
+      const underlyingErrorName: AuditEmitError['underlyingErrorName'] = e.underlyingErrorName;
+      const underlyingErrorCode: AuditEmitError['underlyingErrorCode'] = e.underlyingErrorCode;
       logger.error(
         {
           err: errKind(e),
-          underlyingErrorName: e.underlyingErrorName,
-          underlyingErrorCode: e.underlyingErrorCode,
+          underlyingErrorName,
+          underlyingErrorCode,
           tenantId: input.tenant.slug,
           memberId: input.memberId as string,
           cascade: cascadeLabel,

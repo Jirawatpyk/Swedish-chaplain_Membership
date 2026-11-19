@@ -101,6 +101,7 @@ import { TierUpgradeStatusConflictError } from '../ports/tier-upgrade-suggestion
 // the same helper F4/F5 conflict paths use.
 import { isUniqueViolation, errorChainMessage } from '@/lib/db-errors';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 // 065 Fix B (S3) — the partial-unique index enforcing "at most one
 // pending scheduled_plan_changes row per (tenant, member, cycle)"
 // (migration 0086). A 23505 on THIS index at step (a) means a concurrent
@@ -337,7 +338,7 @@ export async function acceptTierUpgrade(
           // any orphan-pending suggestions.
           logger.warn(
             {
-              err: e instanceof Error ? e.message : String(e),
+              err: errKind(e),
               suggestionId: suggestion.suggestionId,
             },
             '[accept-tier-upgrade] T-180 verify task creation failed — continuing',
@@ -485,7 +486,7 @@ export async function acceptTierUpgrade(
             errorId: 'F2.PLAN_CHANGE.SCHEDULED_AUDIT_EMIT_FAILED',
             event: 'accept_tier_upgrade.f2_audit_emit_failed',
             audit_event: 'plan_change_scheduled',
-            err: scheduledAuditResult.error,
+            ...errLogFields(scheduledAuditResult.error),
             suggestionId: suggestion.suggestionId,
             scheduledChangeId: txResult.value.scheduledChangeId,
           },
@@ -517,7 +518,7 @@ export async function acceptTierUpgrade(
               errorId: 'F2.PLAN_CHANGE.SUPERSEDED_AUDIT_EMIT_FAILED',
               event: 'accept_tier_upgrade.f2_audit_emit_failed',
               audit_event: 'plan_change_superseded',
-              err: supersededAuditResult.error,
+              ...errLogFields(supersededAuditResult.error),
               suggestionId: suggestion.suggestionId,
               supersededScheduledChangeId:
                 txResult.value.supersededScheduledChangeId,
@@ -538,7 +539,7 @@ export async function acceptTierUpgrade(
         {
           errorId: 'F2.PLAN_CHANGE.AUDIT_EMIT_THREW',
           event: 'accept_tier_upgrade.f2_audit_emit_threw',
-          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          err: errKind(auditErr),
           suggestionId: suggestion.suggestionId,
         },
         '[accept-tier-upgrade] F2 audit emitter threw — F8 state committed; operator backfill needed',
@@ -655,7 +656,7 @@ export async function acceptTierUpgrade(
       renewalsMetrics.tierUpgradeNotifyFailed('unknown');
       logger.warn(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           suggestionId: suggestion.suggestionId,
         },
         '[accept-tier-upgrade] gateway / lookup path threw — emitting failed audit',
@@ -685,7 +686,7 @@ export async function acceptTierUpgrade(
         );
         logger.error(
           {
-            err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+            err: errKind(auditErr),
             suggestionId: suggestion.suggestionId,
           },
           '[accept-tier-upgrade] notify_skipped audit emit failed — counter bumped',
@@ -723,7 +724,7 @@ export async function acceptTierUpgrade(
         );
         logger.error(
           {
-            err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+            err: errKind(auditErr),
             suggestionId: suggestion.suggestionId,
             deliveryId: gatewayResult.deliveryId,
           },
@@ -762,7 +763,7 @@ export async function acceptTierUpgrade(
         );
         logger.error(
           {
-            err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+            err: errKind(auditErr),
             suggestionId: suggestion.suggestionId,
             errorKind: gatewayResult.error.kind,
           },
@@ -815,7 +816,7 @@ export async function acceptTierUpgrade(
         );
         logger.error(
           {
-            err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+            err: errKind(auditErr),
             suggestionId: suggestion.suggestionId,
           },
           '[accept-tier-upgrade] threw-branch notify_failed audit emit failed — counter bumped',
@@ -878,7 +879,7 @@ export async function acceptTierUpgrade(
         );
         logger.error(
           {
-            err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+            err: errKind(auditErr),
             suggestionId: suggestion.suggestionId,
           },
           '[accept-tier-upgrade] unhandled-arm audit emit failed — counter bumped',

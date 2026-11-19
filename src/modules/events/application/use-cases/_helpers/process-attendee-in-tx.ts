@@ -67,7 +67,7 @@ import type {
   F6AuditEntry,
   F6AuditPort,
 } from '../../ports/audit-port';
-import type { EventsRepository } from '../../ports/events-repository';
+import type { EventsRepository, EventsRepositoryError } from '../../ports/events-repository';
 import type {
   RegistrationsRepository,
   RegistrationsRepositoryError,
@@ -594,11 +594,13 @@ export async function processAttendeeInTx(
         msg = e.message;
       } else if (e.kind === 'invariant_violation') {
         msg = `events.upsert invariant violated: ${e.invariant}`;
+        const invariant: Extract<EventsRepositoryError, { kind: 'invariant_violation' }>['invariant'] =
+          e.invariant;
         logger.fatal(
           {
             event: 'f6_events_repo_invariant_violation',
             tenantId: input.tenantId,
-            invariant: e.invariant,
+            invariant,
           },
           '[F6] events.upsert returned no row — likely RLS / schema drift',
         );
@@ -608,8 +610,6 @@ export async function processAttendeeInTx(
           {
             event: 'f6_use_case_called_unimplemented_port',
             tenantId: input.tenantId,
-            method: e.method,
-            futureTask: e.futureTask,
           },
           '[F6] events.upsert called an unimplemented port stub',
         );
@@ -688,11 +688,13 @@ export async function processAttendeeInTx(
       msg = e.message;
     } else if (e.kind === 'invariant_violation') {
       msg = `event_registrations.upsert invariant violated: ${e.invariant}`;
+      const invariant: Extract<RegistrationsRepositoryError, { kind: 'invariant_violation' }>['invariant'] =
+        e.invariant;
       logger.fatal(
         {
           event: 'f6_registrations_repo_invariant_violation',
           tenantId: input.tenantId,
-          invariant: e.invariant,
+          invariant,
         },
         '[F6] event_registrations.upsert returned no row — likely RLS / schema drift',
       );
@@ -704,8 +706,6 @@ export async function processAttendeeInTx(
         {
           event: 'f6_use_case_called_unimplemented_port',
           tenantId: input.tenantId,
-          method: e.method,
-          futureTask: e.futureTask,
         },
         '[F6] event_registrations.insertOnConflictDoNothing called an unimplemented port stub',
       );

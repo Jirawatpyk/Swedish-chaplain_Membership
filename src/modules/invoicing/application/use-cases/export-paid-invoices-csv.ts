@@ -88,6 +88,7 @@ import type { AuditPort } from '../ports/audit-port';
 import { billFirstDocumentNumber, type Invoice } from '../../domain/invoice';
 import { resolveCreditNoteOriginalDocuments } from '../../domain/credit-note';
 
+import { errKind } from '@/lib/log-id';
 // --- Input + Output ----------------------------------------------------
 
 export const exportPaidInvoicesCsvSchema = z.object({
@@ -259,7 +260,7 @@ export async function exportPaidInvoicesCsv(
     // invoice scan is completely unobservable. Log the cause here, keep the
     // contractual `list_failed` Result shape unchanged (route maps it to 500).
     logger.error(
-      { tenantId: input.tenantId, err: e instanceof Error ? e.message : String(e) },
+      { tenantId: input.tenantId, err: errKind(e) },
       'exportPaidInvoicesCsv: paid-invoice scan failed',
     );
     return err({ code: 'list_failed' });

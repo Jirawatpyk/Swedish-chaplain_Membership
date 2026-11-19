@@ -33,6 +33,7 @@ import type {
 } from '../ports/csv-import-records-repo';
 import type { ErrorCsvStore } from '../ports/error-csv-store';
 
+import { errKind } from '@/lib/log-id';
 export interface SweepExpiredErrorCsvBlobsInput {
   /** Defaults to 100 — caps per-cron-run work to keep DB load bounded. */
   readonly limit?: number;
@@ -215,7 +216,7 @@ async function sweepOne(
         event: 'f6_error_csv_sweep_clear_threw',
         tenantId: candidate.tenantId,
         recordId: candidate.recordId,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[F6.1] sweep cron: clearErrorCsvBlob THREW after blob delete — investigate runInTenant outage',
     );

@@ -82,6 +82,7 @@ export type RescheduleOnPlanChangeInput = z.infer<
 // `TierBucket` literal-union instead of bare string.
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 
+import { errKind } from '@/lib/log-id';
 export interface RescheduleOnPlanChangeOutput {
   readonly cancelledStepIds: ReadonlyArray<string>;
   readonly newStepIds: ReadonlyArray<string>;
@@ -214,7 +215,7 @@ export async function rescheduleOnPlanChangeInTx(
       );
       logger.error(
         {
-          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          err: errKind(auditErr),
           tenantId: args.tenantId,
           memberId: args.memberId,
           reason,
@@ -348,7 +349,7 @@ export async function rescheduleOnPlanChangeInTx(
     );
     logger.error(
       {
-        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        err: errKind(auditErr),
         tenantId: args.tenantId,
         memberId: args.memberId,
         cycleId: activeCycle.cycleId,
@@ -413,7 +414,7 @@ export async function rescheduleOnPlanChange(
     // infra fault is observable independent of caller behaviour.
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: input.tenantId,
         memberId: input.memberId,
         errorId: 'F8.RESCHEDULE.WRAPPER_THREW',

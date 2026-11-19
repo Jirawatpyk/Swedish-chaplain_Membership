@@ -45,6 +45,7 @@ import {
 import type { AuditEventId } from '@/modules/auth';
 import type { TenantId } from '@/modules/members';
 import type { RegistrationId } from '../domain/branded-types';
+import { errLogFields, errKind } from '@/lib/log-id';
 import { sanitizeDbErrorMessage } from './sanitize-db-error';
 
 /**
@@ -151,10 +152,7 @@ function emitMatchingQuotaMetric(entry: F6AuditEntry): void {
         event: 'f6_quota_metric_emit_failed',
         eventType: entry.eventType,
         tenantId: String(entry.tenantId),
-        err:
-          e instanceof Error
-            ? { name: e.name, message: e.message }
-            : { name: 'non_error', message: String(e) },
+        err: errKind(e),
       },
       'F6 quota metric emit failed — audit row was persisted but OTel counter did not increment',
     );
@@ -168,11 +166,10 @@ function emitMatchingQuotaMetric(entry: F6AuditEntry): void {
 export const F6_DEFAULT_RETENTION_YEARS = 5 as const;
 
 /**
- * Preserve full error info (name + message + stack) in a structured log
- * line BEFORE the sanitised Result is returned to Application. Pairs
- * with `sanitizeDbErrorMessage` — sanitisation protects the outbound
- * payload (audit row stays clean of PG identifiers); this log keeps
- * the root cause server-side for SRE debugging.
+ * Log the error's class + SQLSTATE (never its message or stack: a driver
+ * error quotes bound parameters, #740) BEFORE the sanitised Result is
+ * returned to Application. Pairs with `sanitizeDbErrorMessage`, which
+ * protects the outbound payload (audit row stays clean of PG identifiers).
  */
 function logFullError(
   context: { caller: string; tenantId: string; eventType: string },
@@ -184,10 +181,7 @@ function logFullError(
       caller: context.caller,
       tenantId: context.tenantId,
       eventType: context.eventType,
-      err:
-        e instanceof Error
-          ? { name: e.name, message: e.message, stack: e.stack }
-          : { name: 'non_error', message: String(e), stack: null },
+      ...errLogFields(e),
     },
     '[F6] audit row insert failed (full error preserved server-side; sanitised copy returned to caller)',
   );
@@ -548,7 +542,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
               tenantId: entry.tenantId,
               audit_secondary_tx_failure: true,
               payload: redactPayloadForFatalLog(entry.payload),
-              dbErrorMessage: sanitizeDbErrorMessage(e),
+              ...errLogFields(e),
             },
             '[F6] webhook_rolled_back audit secondary-tx failure — payload preserved per FR-037 dual-write fallback',
           );
@@ -642,7 +636,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
               tenantId: entry.tenantId,
               audit_secondary_tx_failure: true,
               payload: redactPayloadForFatalLog(entry.payload),
-              dbErrorMessage: sanitizeDbErrorMessage(e),
+              ...errLogFields(e),
             },
             `[F6] ${entry.eventType} audit secondary-tx failure — payload preserved per FR-037 dual-write fallback`,
           );

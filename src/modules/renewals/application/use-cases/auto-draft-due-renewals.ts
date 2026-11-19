@@ -132,6 +132,7 @@ import { classifyMembershipPayment } from '../../domain/classify-membership-paym
 import { deriveMembershipAccess, type RenewalCycle } from '../../domain/renewal-cycle';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 
+import { errKind } from '@/lib/log-id';
 export const autoDraftDueRenewalsInputSchema = z.object({
   tenantId: z.string().min(1),
   correlationId: z.string().min(1),
@@ -310,7 +311,7 @@ export async function autoDraftDueRenewals(
           errorId: 'F8.AUTO_DRAFT.CYCLE_FAILED',
           tenantId: input.tenantId,
           cycleId: cycle.cycleId,
-          err: e instanceof Error ? e : new Error(String(e)),
+          err: errKind(e),
         },
         '[auto-draft-due-renewals] cycle draft threw — counted in errors; cron continues',
       );
@@ -724,7 +725,7 @@ async function processOne(
         tenantId,
         cycleId,
         invoiceId,
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
       },
       '[auto-draft-due-renewals] tx2 (stamp/audit) failed AFTER the F4 draft already committed — invoice exists but is unstamped/unaudited; needs manual reconciliation',
     );

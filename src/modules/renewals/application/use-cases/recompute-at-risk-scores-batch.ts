@@ -53,6 +53,7 @@ import type {
 import type { MemberId } from '@/modules/members';
 import { parseInput } from './_lib/parse-input';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 export const recomputeAtRiskScoresBatchInputSchema = z.object({
   tenantId: z.string().min(1),
   correlationId: z.string().min(1),
@@ -287,7 +288,7 @@ export async function recomputeAtRiskScoresBatch(
           membersFailed += 1;
           logger.warn(
             {
-              err: e instanceof Error ? e.message : String(e),
+              err: errKind(e),
               tenantId: input.tenantId,
               memberId: row.memberId,
               correlationId: input.correlationId,
@@ -449,13 +450,10 @@ export async function recomputeAtRiskScoresBatch(
     }
     return await runInTenant(deps.tenant, work);
   } catch (e) {
-    const errInstance = e instanceof Error ? e : new Error(String(e));
-    const message = errInstance.message;
+    const message = e instanceof Error ? e.message : String(e);
     logger.error(
       {
-        errMsg: message,
-        errName: errInstance.name,
-        errStack: errInstance.stack?.slice(0, 800),
+        ...errLogFields(e),
         tenantId: input.tenantId,
         correlationId: input.correlationId,
       },

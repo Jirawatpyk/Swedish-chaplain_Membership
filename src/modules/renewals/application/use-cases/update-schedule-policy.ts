@@ -44,6 +44,7 @@ import {
   type SchedulePolicyError,
 } from '../../domain/tenant-renewal-schedule-policy';
 
+import { errKind } from '@/lib/log-id';
 // ---------------------------------------------------------------------------
 // Input schema — tolerates the JSONB-shape steps array directly so route
 // handlers don't have to re-shape from the wire format.
@@ -235,7 +236,7 @@ export async function updateSchedulePolicy(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         tenantId: input.tenantId,
         tierBucket,
         correlationId: input.correlationId,

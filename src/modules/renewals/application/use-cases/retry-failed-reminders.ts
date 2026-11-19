@@ -58,6 +58,7 @@ import { isPermanentGatewayError } from '../ports/renewal-gateway';
 import type { DispatchFailureKind } from './_lib/dispatch-one-cycle';
 import type { MemberId } from '@/modules/members';
 
+import { errKind } from '@/lib/log-id';
 export const DEFAULT_RETRY_PAGE_SIZE = 200 as const;
 
 export const retryFailedRemindersInputSchema = z.object({
@@ -244,7 +245,6 @@ async function attemptRetry(
         tenantId: event.tenantId,
         correlationId,
         errKind: pauseResult.error.kind,
-        errMessage: pauseResult.error.message,
       },
       'attemptRetry: outreach pause-check returned err — defensive block to preserve FR-033',
     );
@@ -699,7 +699,7 @@ export async function retryFailedReminders(
       summary.passErrors += 1;
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           reminderEventId: event.reminderEventId,
           tenantId: input.tenantId,
           correlationId: input.correlationId,
@@ -754,7 +754,7 @@ export async function retryFailedReminders(
       summary.passErrors += 1;
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           reminderEventId: event.reminderEventId,
           tenantId: input.tenantId,
           correlationId: input.correlationId,

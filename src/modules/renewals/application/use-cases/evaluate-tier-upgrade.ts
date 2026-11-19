@@ -50,6 +50,7 @@ import type {
 // Type-only — runtime no-op brand cast (Constitution Principle III).
 import type { MemberId, PlanId } from '@/modules/members';
 
+import { errKind } from '@/lib/log-id';
 export const evaluateTierUpgradeInputSchema = z.object({
   tenantId: z.string().min(1),
   correlationId: z.string().min(1),
@@ -253,7 +254,7 @@ export async function evaluateTierUpgrade(
       );
     } catch (e) {
       logger.warn(
-        { err: e instanceof Error ? e.message : String(e), tenantId },
+        { err: errKind(e), tenantId },
         '[evaluate-tier-upgrade] tenant_disabled audit emit failed',
       );
     }
@@ -302,7 +303,7 @@ export async function evaluateTierUpgrade(
       );
     } catch (e) {
       logger.warn(
-        { err: e instanceof Error ? e.message : String(e), tenantId },
+        { err: errKind(e), tenantId },
         '[evaluate-tier-upgrade] no_thresholds audit emit failed',
       );
     }
@@ -581,7 +582,7 @@ export async function evaluateTierUpgrade(
     } catch (e) {
       logger.warn(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           tenantId,
           correlationId,
           alreadyAtTarget,

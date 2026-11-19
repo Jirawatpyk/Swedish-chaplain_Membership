@@ -57,6 +57,7 @@ import {
   CycleTransitionConflictError,
 } from '../ports/renewal-cycle-repo';
 
+import { errKind } from '@/lib/log-id';
 export const adminReactivateLapsedCycleInputSchema = z.object({
   tenantId: z.string().min(1),
   cycleId: z.string().uuid(),
@@ -180,7 +181,7 @@ export async function adminReactivateLapsedCycle(
         return err({ kind: 'cycle_not_found' });
       }
       logger.error(
-        { err: e instanceof Error ? e.message : String(e), cycleId },
+        { err: errKind(e), cycleId },
         '[admin-reactivate-lapsed-cycle] transition failed',
       );
       return err({
@@ -212,7 +213,7 @@ export async function adminReactivateLapsedCycle(
       // Constitution Principle VIII reverse-direction atomicity: audit
       // emit failure inside tx MUST roll back the state mutation.
       logger.error(
-        { err: e instanceof Error ? e.message : String(e) },
+        { err: errKind(e) },
         '[admin-reactivate-lapsed-cycle] audit emit failed inside tx — rolling back',
       );
       throw e;

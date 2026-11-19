@@ -45,6 +45,7 @@ import { deriveMembershipAccess } from '@/modules/renewals';
 import { makeDrizzleRenewalCycleRepo } from '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo';
 import type { MembershipAccessPort } from '../application/ports/membership-access-port';
 
+import { errKind } from '@/lib/log-id';
 export const membershipAccessBridge: MembershipAccessPort = {
   async getMembershipAccess(tenantId: TenantId, memberId: MemberId) {
     try {
@@ -56,7 +57,7 @@ export const membershipAccessBridge: MembershipAccessPort = {
     } catch (e) {
       logger.warn(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           tenantId,
           memberId,
         },

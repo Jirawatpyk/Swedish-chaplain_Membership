@@ -172,7 +172,7 @@ export async function loadRenewalSummary(
       );
     } catch (e) {
       logger.warn(
-        { err: e instanceof Error ? e.message : String(e) },
+        { err: errKind(e) },
         '[load-renewal-summary] cross-tenant audit emit failed',
       );
     }
@@ -203,7 +203,7 @@ export async function loadRenewalSummary(
       );
     } catch (e) {
       logger.warn(
-        { err: e instanceof Error ? e.message : String(e) },
+        { err: errKind(e) },
         '[load-renewal-summary] cross-member audit emit failed',
       );
     }
@@ -247,7 +247,7 @@ export async function loadRenewalSummary(
   } catch (e) {
     logger.warn(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: input.tenantId,
         cycleId: cycle.cycleId,
         memberId: cycle.memberId,

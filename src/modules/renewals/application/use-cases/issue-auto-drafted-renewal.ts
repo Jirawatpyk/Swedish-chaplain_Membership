@@ -192,6 +192,7 @@ import type { RenewalInvoiceErrorCode } from '../ports/f4-invoicing-bridge';
 import type { SupersedeWarning } from '@/modules/invoicing';
 import { InvoiceLinkConflictError } from '../ports/renewal-cycle-repo';
 
+import { errKind } from '@/lib/log-id';
 export const issueAutoDraftedRenewalInputSchema = z.object({
   tenantId: z.string().min(1),
   invoiceId: z.string().uuid(),
@@ -671,13 +672,17 @@ async function linkWithRetry(
         // A DIFFERENT invoice owns this cycle. Retrying cannot help and would
         // only re-throw; surface it distinctly — this is a real conflict
         // (two bills contending for one cycle), not a transient fault.
+        const attemptedInvoiceId: InvoiceLinkConflictError['attemptedInvoiceId'] =
+          e.attemptedInvoiceId;
+        const existingInvoiceId: InvoiceLinkConflictError['existingInvoiceId'] =
+          e.existingInvoiceId;
         logger.error(
           {
             errorId: 'F8.AUTO_ISSUE.LINK_CONFLICT',
             tenantId: args.tenantId,
             cycleId: args.cycleId,
-            attemptedInvoiceId: e.attemptedInvoiceId,
-            existingInvoiceId: e.existingInvoiceId,
+            attemptedInvoiceId,
+            existingInvoiceId,
           },
           '[issue-auto-drafted-renewal] cycle already linked to a DIFFERENT invoice — our issued bill is orphaned; reconcile manually',
         );
@@ -689,7 +694,7 @@ async function linkWithRetry(
             tenantId: args.tenantId,
             cycleId: args.cycleId,
             invoiceId: args.invoiceId,
-            err: e instanceof Error ? e : new Error(String(e)),
+            err: errKind(e),
           },
           '[issue-auto-drafted-renewal] link attempt 1 failed — retrying idempotently',
         );
@@ -706,7 +711,7 @@ async function linkWithRetry(
       tenantId: args.tenantId,
       cycleId: args.cycleId,
       invoiceId: args.invoiceId,
-      err: lastError instanceof Error ? lastError : new Error(String(lastError)),
+      err: errKind(lastError),
     },
     '[issue-auto-drafted-renewal] could not link the issued bill to its cycle after a retry — reconcile cron must repair',
   );

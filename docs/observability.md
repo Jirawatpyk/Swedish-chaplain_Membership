@@ -146,7 +146,8 @@ line carries:
 - A user id as `hashId(id)` (`actorUserIdHash`, `userIdHash`).
 
 `pnpm check:log-error-objects` (in `pnpm check` and CI's static job) parses
-`src/modules/{members,broadcasts}/**` with the TypeScript compiler API (a
+`src/modules/{members,broadcasts,invoicing,payments,events,renewals}/**` (the
+last four since #740 B1; `src/app` and `src/lib` follow in B2) with the TypeScript compiler API (a
 `.tsx` file as TSX) and refuses these forms inside `logger.<level>(…)` and
 `logger.child(…)` arguments. Since review round 1: on an error-ish base (a
 caught or error-named identifier, or a chain through `.error` / `.cause`) only
@@ -154,7 +155,7 @@ caught or error-named identifier, or a chain through `.error` / `.cause`) only
 its text (`e.toString()`, `e.message.slice()`), and a call whose literal
 argument holds an error (`JSON.stringify({ e })`) are refused; the safe
 callees are an explicit set, not a name pattern; and the run fails if it
-parsed fewer than `MIN_LOGGER_CALLS` (300) logger calls. Since review round 2
+parsed fewer than `MIN_LOGGER_CALLS` (700 since #740 B1) logger calls. Since review round 2
 it follows one hop through a local: `const { x } = e` / `const x = e.y` make
 `x` error-ish unless `y` is `code` / `kind` / `name`, or the local is
 annotated with a type in the rule's reviewed `TOKEN_FIELDS_BY_TYPE`

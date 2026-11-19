@@ -18,6 +18,7 @@ import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 
+import { errKind } from '@/lib/log-id';
 export const unblockAutoReactivationInputSchema = z.object({
   tenantId: z.string().min(1),
   memberId: z.string().uuid(),
@@ -86,7 +87,7 @@ export async function unblockAutoReactivation(
         );
       } catch (e) {
         logger.error(
-          { err: e instanceof Error ? e.message : String(e) },
+          { err: errKind(e) },
           '[unblock-auto-reactivation] audit emit failed inside tx — rolling back',
         );
         throw e;

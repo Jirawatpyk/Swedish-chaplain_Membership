@@ -120,6 +120,7 @@ import {
   InvoiceLinkConflictError,
 } from '../ports/renewal-cycle-repo';
 
+import { errKind } from '@/lib/log-id';
 export const confirmRenewalInputSchema = z.object({
   tenantId: z.string().min(1),
   cycleId: z.string().uuid(),
@@ -291,7 +292,7 @@ export async function confirmRenewal(
         );
       } catch (e) {
         logger.warn(
-          { err: e instanceof Error ? e.message : String(e) },
+          { err: errKind(e) },
           '[confirm-renewal] cross-member probe audit emit failed',
         );
       }
@@ -959,11 +960,15 @@ export async function confirmRenewal(
         // I1 review-fix: a concurrent confirm won the link race. Our
         // F4-issued invoice is now orphaned; surface this in the log so
         // support can void it via the F4 admin list.
+        const attemptedInvoiceId: InvoiceLinkConflictError['attemptedInvoiceId'] =
+          e.attemptedInvoiceId;
+        const existingInvoiceId: InvoiceLinkConflictError['existingInvoiceId'] =
+          e.existingInvoiceId;
         logger.error(
           {
             cycleId,
-            attemptedInvoiceId: e.attemptedInvoiceId,
-            existingInvoiceId: e.existingInvoiceId,
+            attemptedInvoiceId,
+            existingInvoiceId,
           },
           '[confirm-renewal] concurrent confirm linked a different invoice — our invoice orphaned in F4 (void via admin)',
         );
@@ -1061,7 +1066,7 @@ export async function confirmRenewal(
       );
     } catch (e) {
       logger.error(
-        { err: e instanceof Error ? e.message : String(e) },
+        { err: errKind(e) },
         '[confirm-renewal] audit emit failed inside tx — rolling back link',
       );
       throw e;

@@ -44,6 +44,7 @@ import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { ConsumedLinkTokensRepo } from '../ports/consumed-link-tokens-repo';
 import { parseCycleId } from '../../domain/renewal-cycle';
 
+import { errKind } from '@/lib/log-id';
 export const verifyRenewalLinkTokenInputSchema = z.object({
   /** Raw `v1.<payload>.<mac>` token from the URL query param. */
   rawToken: z.string().min(1).max(2048),
@@ -304,7 +305,7 @@ export async function verifyRenewalLinkToken(
       // fires for non-Error throws which audit emitters never produce.
       logger.warn(
         /* v8 ignore next */
-        { err: e instanceof Error ? e.message : String(e) },
+        { err: errKind(e) },
         '[verify-renewal-link-token] cycle-completed audit emit failed',
       );
     }
@@ -353,7 +354,7 @@ export async function verifyRenewalLinkToken(
     // branch is unreachable in practice.
     logger.warn(
       /* v8 ignore next */
-      { err: e instanceof Error ? e.message : String(e) },
+      { err: errKind(e) },
       '[verify-renewal-link-token] self-service-initiated audit emit failed',
     );
   }
@@ -442,7 +443,7 @@ async function emitTokenInvalid(
     // Defensive logging; same rationale.
     logger.warn(
       /* v8 ignore next */
-      { err: e instanceof Error ? e.message : String(e), reason },
+      { err: errKind(e), reason },
       '[verify-renewal-link-token] reject audit emit failed',
     );
   }

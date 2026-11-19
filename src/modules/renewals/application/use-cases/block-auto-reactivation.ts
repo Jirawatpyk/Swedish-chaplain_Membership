@@ -24,6 +24,7 @@ import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 
+import { errKind } from '@/lib/log-id';
 export const blockAutoReactivationInputSchema = z.object({
   tenantId: z.string().min(1),
   memberId: z.string().uuid(),
@@ -119,7 +120,7 @@ export async function blockAutoReactivation(
         // outer runInTenant rolls the UPDATE back. Re-throw rather
         // than swallowing.
         logger.error(
-          { err: e instanceof Error ? e.message : String(e) },
+          { err: errKind(e) },
           '[block-auto-reactivation] audit emit failed inside tx — rolling back',
         );
         throw e;

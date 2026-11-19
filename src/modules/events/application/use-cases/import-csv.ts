@@ -79,6 +79,7 @@ import {
   type ProcessAttendeeInTxPorts,
 } from './_helpers/process-attendee-in-tx';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 // ---------------------------------------------------------------------------
 // Result + summary types
 // ---------------------------------------------------------------------------
@@ -993,14 +994,15 @@ async function maybeApplyStateChange(
           e.stage,
         );
       }
+      const stage: TxStageError['stage'] = e.stage;
       logger.error(
         {
           event: 'f6_csv_state_change_savepoint_rollback',
           tenantId: input.tenantId,
           rowNumber: parsed.rowNumber,
-          stage: e.stage,
+          stage,
           attendeeEmailHash: hashAttendeeEmail(parsed.row.attendee_email),
-          err: toErrMessage(e),
+          err: errKind(e),
         },
         '[F6.1] state-change probe TxStageError — savepoint rolls back atomically',
       );
@@ -1016,7 +1018,7 @@ async function maybeApplyStateChange(
         tenantId: input.tenantId,
         rowNumber: parsed.rowNumber,
         attendeeEmailHash: hashAttendeeEmail(parsed.row.attendee_email),
-        err: toErrMessage(e),
+        err: errKind(e),
       },
       '[F6.1] state-change probe threw — non-TxStageError fallback; admin re-upload required',
     );
@@ -1181,7 +1183,7 @@ async function checkSuspendedMemberWarning(
         tenantId: input.tenantId,
         rowNumber,
         matchedMemberId,
-        err: toErrMessage(e),
+        err: errKind(e),
       },
       '[F6.1] suspended-member membership-access lookup THREW (port contract violation) — proceeding without a warning (fail-open; row already recorded normally)',
     );
@@ -1237,7 +1239,7 @@ async function checkSuspendedMemberWarning(
         tenantId: input.tenantId,
         rowNumber,
         matchedMemberId,
-        err: toErrMessage(e),
+        err: errKind(e),
       },
       '[F6.1] event_attendance_by_suspended_member audit emitter threw — forensic trail loss',
     );
@@ -1716,7 +1718,7 @@ async function processBatch(
         batchRowCount: dbRows.length,
         firstRowNumber: dbRows[0]?.row.rowNumber,
         lastRowNumber: dbRows[dbRows.length - 1]?.row.rowNumber,
-        err: reason,
+        ...errLogFields(reason),
       },
       '[F6] CSV batch tx aborted — all rows in batch failed; investigate RLS / pool / deadlock / commit signals',
     );
@@ -1987,8 +1989,7 @@ export async function importCsv(
         event: 'f6_csv_parser_threw',
         tenantId: input.tenantId,
         recordId,
-        err: toErrMessage(e),
-        stack: e instanceof Error ? e.stack : undefined,
+        err: errKind(e),
       },
       '[F6.1] CSV parser threw — admin sees generic error; investigate stderr trail',
     );
@@ -2137,7 +2138,7 @@ export async function importCsv(
           tenantId: input.tenantId,
           eventId: input.selectedEvent.eventId,
           eventExternalId: input.selectedEvent.externalId,
-          err: toErrMessage(e),
+          err: errKind(e),
         },
         '[F6.1] safety-net fingerprint query threw — fail-open; FR-019b duplicate protection disabled for this upload',
       );
@@ -2219,7 +2220,7 @@ export async function importCsv(
         event: 'f6_csv_import_records_insert_threw',
         tenantId: input.tenantId,
         recordId,
-        err: toErrMessage(e),
+        err: errKind(e),
       },
       '[F6.1] csv_import_records placeholder insert threw — proceeding with import',
     );
@@ -2430,7 +2431,7 @@ export async function importCsv(
           event: 'f6_csv_error_csv_blob_put_threw',
           tenantId: input.tenantId,
           recordId,
-          err: toErrMessage(e),
+          err: errKind(e),
         },
         '[F6.1] error-CSV blob put THREW — US5 download unavailable; investigate Vercel Blob outage',
       );
@@ -2574,7 +2575,7 @@ export async function importCsv(
               event: 'f6_csv_import_records_recovery_threw',
               tenantId: input.tenantId,
               recordId,
-              err: toErrMessage(recoveryErr),
+              err: errKind(recoveryErr),
             },
             '[F6.1] csv_import_records recovery INSERT threw',
           );
@@ -2598,7 +2599,7 @@ export async function importCsv(
         event: 'f6_csv_import_records_update_threw',
         tenantId: input.tenantId,
         recordId,
-        err: toErrMessage(e),
+        err: errKind(e),
       },
       '[F6.1] csv_import_records final-outcome update threw',
     );

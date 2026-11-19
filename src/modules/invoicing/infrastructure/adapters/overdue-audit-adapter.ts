@@ -18,6 +18,7 @@ import type {
   OverdueDetectedEvent,
 } from '../../application/ports/overdue-audit-port';
 
+import { errLogFields } from '@/lib/log-id';
 export const overdueAuditAdapter: OverdueAuditPort = {
   async emitOverdueOnce(event: OverdueDetectedEvent): Promise<boolean> {
     const payload = {
@@ -67,7 +68,7 @@ export const overdueAuditAdapter: OverdueAuditPort = {
       // stack for post-hoc forensics.
       logger.warn(
         {
-          err: error,
+          ...errLogFields(error),
           tenantId: event.tenantId,
           invoiceId: event.invoiceId,
         },

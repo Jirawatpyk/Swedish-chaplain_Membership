@@ -40,6 +40,7 @@ import type { TenantId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import type { WebhookSecret } from '../../domain/branded-types';
 
+import { errKind } from '@/lib/log-id';
 export interface RunTestWebhookInput {
   readonly tenantId: TenantId;
   readonly tenantSlug: string;
@@ -292,7 +293,7 @@ export async function runTestWebhook(
         tenantSlug: input.tenantSlug,
         requestId,
         errName: e instanceof Error ? e.name : 'unknown',
-        errMessage: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[F6] test-webhook outbound fetch failed — admin sees network_error UI',
     );
@@ -332,7 +333,7 @@ export async function runTestWebhook(
         tenantSlug: input.tenantSlug,
         requestId,
         errName: e instanceof Error ? e.name : 'unknown',
-        errMessage: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[F6] test-webhook response JSON parse failed — likely HTML 200 from CDN/proxy',
     );

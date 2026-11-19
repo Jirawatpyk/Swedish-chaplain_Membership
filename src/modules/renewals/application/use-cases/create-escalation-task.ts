@@ -58,6 +58,7 @@ import type { MemberId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import type { CreditNoteId } from '@/modules/invoicing';
 
+import { errKind } from '@/lib/log-id';
 export const createEscalationTaskInputSchema = z.object({
   tenantId: z.string().min(1),
   memberId: z.string().uuid(),
@@ -198,7 +199,7 @@ export async function createEscalationTask(
         // runInTenant rolls the insertIfAbsent back.
         // R8 IMP-B close — demoted to warn (breadcrumb only).
         logger.warn(
-          { err: e instanceof Error ? e.message : String(e), taskId },
+          { err: errKind(e), taskId },
           '[create-escalation-task] audit emit failed inside tx — rolling back (breadcrumb)',
         );
         throw e;

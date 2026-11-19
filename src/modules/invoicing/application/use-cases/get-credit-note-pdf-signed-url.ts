@@ -15,6 +15,7 @@ import {
 import { logger } from '@/lib/logger';
 import type { Role } from '@/modules/auth';
 
+import { errLogFields } from '@/lib/log-id';
 export interface GetCreditNotePdfSignedUrlInput {
   readonly tenantId: string;
   readonly actorUserId: string;
@@ -128,11 +129,10 @@ export async function getCreditNotePdfSignedUrl(
   try {
     url = await deps.blob.signDownloadUrl(cn.pdf.blobKey);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
     const notFound = e instanceof BlobKeyNotFoundError;
     logger.error(
       {
-        err: msg,
+        ...errLogFields(e),
         creditNoteId,
         tenantId: input.tenantId,
         blobKey: cn.pdf.blobKey,

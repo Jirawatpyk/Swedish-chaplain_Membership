@@ -26,6 +26,7 @@
  */
 import type { BlobStoragePort } from '../ports/blob-storage-port';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { invoicingMetrics } from '@/lib/metrics';
 
 export interface TenantLogoBytes {
@@ -127,7 +128,7 @@ export async function loadTenantLogo(
     return result;
   } catch (err) {
     logger.warn(
-      { err, logoBlobKey },
+      { err: errKind(err), logoBlobKey },
       'loadTenantLogo: failed to fetch logo bytes — rendering without logo',
     );
     // OTel counter for ops alerting — sustained non-zero rate per

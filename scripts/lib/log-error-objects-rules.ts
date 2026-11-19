@@ -210,6 +210,41 @@ const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
   // `importId` an opaque Resend import id or null, `observed` / `expected`
   // numbers or null.
   BuildAudienceTickError: new Set(['reason', 'importId', 'observed', 'expected']),
+  // payments `stripe-gateway.ts` (#740) — `statusCode` is the SDK's HTTP
+  // status number; never Stripe's message text.
+  StripeErrorShape: new Set(['statusCode']),
+  // invoicing `credit-note.ts` `assertCreditNoteVatBalance` (#740) — three
+  // bigint satang amounts copied from the CN row's money columns.
+  CreditNoteBalanceError: new Set(['creditAmountSatang', 'vatSatang', 'totalSatang']),
+  // events `drizzle-events-repository.ts` / `drizzle-registrations-repository.ts`
+  // (#740) — `invariant` is a code-authored sentence at every construction
+  // site (a literal, or a template over a closed method-name union); never
+  // driver or row text.
+  EventsRepositoryError: new Set(['invariant']),
+  RegistrationsRepositoryError: new Set(['invariant']),
+  // events `process-attendee-in-tx.ts` (#740) — `stage` is `FailureStage`, a
+  // closed union of literals.
+  TxStageError: new Set(['stage']),
+  // events `tenant-webhook-config.ts` (#740) — two booleans (whether the
+  // grace secret / rotated-at column was set); never the secret.
+  GraceStateInvariantError: new Set(['rawSecretWasSet', 'rawRotatedAtWasSet']),
+  // renewals `drizzle-renewal-cycle-repo.ts` (#740) — invoice uuids, or the
+  // literal `'<unexpected-null>'`.
+  InvoiceLinkConflictError: new Set(['attemptedInvoiceId', 'existingInvoiceId']),
+  // renewals `cancel-in-flight-cycles-for-member.ts` (#740) — its one
+  // construction site sets `underlyingErrorName: errKind(auditErr)` and
+  // `underlyingErrorCode` from the thrown error's own string `.code` — the
+  // same value the rule accepts as `e.code` inline.
+  AuditEmitError: new Set(['underlyingErrorName', 'underlyingErrorCode']),
+  // renewals `mark-paid-offline.ts` (#740) — the F4 bridge's issued invoice uuid.
+  OrphanInvoiceRollback: new Set(['orphanInvoiceId']),
+  // renewals `renewal-cycle-repo.ts` (#740) — both `CycleStatus`, a DB enum.
+  CycleTransitionConflictError: new Set(['expectedFrom', 'actualStatus']),
+  // renewals `drizzle-tier-upgrade-suggestion-repo.ts` (#740) — the row's
+  // `status` enum column, or a status literal (`accept-tier-upgrade.ts`).
+  TierUpgradeStatusConflictError: new Set(['actualStatus']),
+  // renewals `create-cycle-in-tx.ts` (#740) — `'not_found' | 'plan_inactive'`.
+  PlanNotResolvableError: new Set(['planStatus']),
 };
 
 /** `T` for `T['f']`, and for `Extract<T, …>['f']`; else null. */

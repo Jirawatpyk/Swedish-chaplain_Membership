@@ -26,6 +26,7 @@ import {
 } from '@/modules/invoicing/domain/invoice';
 import type { Role } from '@/modules/auth';
 
+import { errLogFields } from '@/lib/log-id';
 export interface GetInvoicePdfSignedUrlInput {
   readonly tenantId: string;
   readonly actorUserId: string;
@@ -163,11 +164,10 @@ export async function getInvoicePdfSignedUrl(
   try {
     url = await deps.blob.signDownloadUrl(invoice.pdf.blobKey);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
     const notFound = e instanceof BlobKeyNotFoundError;
     logger.error(
       {
-        err: msg,
+        ...errLogFields(e),
         invoiceId,
         tenantId: input.tenantId,
         blobKey: invoice.pdf.blobKey,

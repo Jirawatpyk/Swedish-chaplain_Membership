@@ -108,7 +108,7 @@ import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
 import { deleteOrphanPdfUnderLock, OrphanCleanupLockReadError } from '../lib/delete-orphan-pdf';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { resolveInvoiceBuyerForIssue } from '../lib/resolve-invoice-buyer';
 import { enqueueInvoiceAutoEmail } from '../lib/enqueue-invoice-email';
@@ -1068,7 +1068,7 @@ export async function issueInvoice(
         } else {
           // 065 H-1b — ERROR + alertable counter: stale bytes remain at the key.
           logger.error(
-            { err: delErr, invoiceId: input.invoiceId, blobKey: orphanBlobKey },
+            { ...errLogFields(delErr), invoiceId: input.invoiceId, blobKey: orphanBlobKey },
             'issueInvoice: orphan blob cleanup failed',
           );
           invoicingMetrics.orphanBlobCleanupFailed('issue');
@@ -1117,7 +1117,7 @@ export async function issueInvoice(
           });
         } catch (auditErr) {
           logger.warn(
-            { err: auditErr, invoiceId: input.invoiceId },
+            { ...errLogFields(auditErr), invoiceId: input.invoiceId },
             'issueInvoice: pdf_render_failed audit emit also failed',
           );
         }
@@ -1144,7 +1144,7 @@ export async function issueInvoice(
     // code is deliberate, not a generic "malformed snapshot" catch-all.
     if (e instanceof InvalidMemberIdentitySnapshotError) {
       logger.warn(
-        { invoiceId: input.invoiceId, tenantId: input.tenantId, issues: e.issues },
+        { invoiceId: input.invoiceId, tenantId: input.tenantId },
         'issueInvoice: buyer identity snapshot invalid at issue time (VAT registrant with no tax_id), rolling back',
       );
       try {
@@ -1161,7 +1161,7 @@ export async function issueInvoice(
         });
       } catch (auditErr) {
         logger.warn(
-          { err: auditErr, invoiceId: input.invoiceId },
+          { ...errLogFields(auditErr), invoiceId: input.invoiceId },
           'issueInvoice: invoice_buyer_identity_invalid audit emit also failed',
         );
       }
