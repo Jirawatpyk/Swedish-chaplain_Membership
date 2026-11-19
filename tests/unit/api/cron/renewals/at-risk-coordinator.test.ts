@@ -64,8 +64,10 @@ vi.mock('@/lib/otel-tracer', () => ({
 // W0-09: cron-auth.ts now calls renewalsMetrics.cronBearerAuthRejected on
 // every 401 path. Mock the whole renewalsMetrics object so the tests do not
 // require a live OTel SDK (safeMetric swallows, but mocking is cleaner).
+const coordinatorTenantsSkippedOverlapMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/metrics', () => ({
   renewalsMetrics: {
+    coordinatorTenantsSkippedOverlap: coordinatorTenantsSkippedOverlapMock,
     cronBearerAuthRejected: vi.fn(),
     coordinatorAuditEmitFailed: vi.fn(),
     redisFallback: vi.fn(),
@@ -259,6 +261,8 @@ describe('#754 follow-up — per-tenant overlap skip', () => {
       tenants_skipped_kill_switch?: number;
     };
     expect(payload.tenants_skipped_overlap).toBe(1);
+    // R1 M1: an overlap skip is counted where an alert can see it.
+    expect(coordinatorTenantsSkippedOverlapMock).toHaveBeenCalledWith('at_risk_recompute', 1);
     expect(payload.tenants_skipped_kill_switch).toBe(0);
   });
 });

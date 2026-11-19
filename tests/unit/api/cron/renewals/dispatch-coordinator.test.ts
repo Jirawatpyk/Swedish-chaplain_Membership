@@ -82,8 +82,10 @@ const coordinatorTenantsSucceededMock = vi.hoisted(() => vi.fn());
 const coordinatorTenantsFailedMock = vi.hoisted(() => vi.fn());
 const coordinatorDurationMsMock = vi.hoisted(() => vi.fn());
 const cronBearerAuthRejectedMock = vi.hoisted(() => vi.fn());
+const coordinatorTenantsSkippedOverlapMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/metrics', () => ({
   renewalsMetrics: {
+    coordinatorTenantsSkippedOverlap: coordinatorTenantsSkippedOverlapMock,
     redisFallback: redisFallbackMock,
     coordinatorAuditEmitFailed: coordinatorAuditEmitFailedMock,
     coordinatorTenantFailed: vi.fn(),
@@ -433,6 +435,8 @@ describe('#754 follow-up — per-tenant overlap skip', () => {
       tenants_skipped_kill_switch?: number;
     };
     expect(payload.tenants_skipped_overlap).toBe(1);
+    // R1 M1: an overlap skip is counted where an alert can see it.
+    expect(coordinatorTenantsSkippedOverlapMock).toHaveBeenCalledWith('dispatch', 1);
     expect(payload.tenants_skipped_kill_switch).toBe(0);
   });
 });
