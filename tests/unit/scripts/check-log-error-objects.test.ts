@@ -148,6 +148,47 @@ describe('findLogErrorObjects', () => {
     expect(rules.scanLogErrorObjects('x.ts', src).wrappers).toEqual([{ name: 'logThing', index: 1 }]);
   });
 
+  it('#740 B2 review: a parameter logged under an error-detail key is a wrapper; a tenant id is not', () => {
+    const src = [
+      'export function failPage(arm: string, code: string) {',
+      "  logger.error({ errorId: arm, err: code }, 'x');",
+      '}',
+      'export function note(tenantId: string) {',
+      "  logger.info({ tenantId }, 'x');",
+      '}',
+    ].join('\n');
+    const scan = rules.scanLogErrorObjects('x.ts', src);
+    expect(scan.findings.map((f) => f.line)).toEqual([2]);
+    expect(scan.findings[0]?.message).toContain('failPage');
+    expect(scan.wrappers).toEqual([{ name: 'failPage', index: 1 }]);
+  });
+
+  it('#740 B2 review: a logger held in a local is read, and the left side of `&&` is not logged', () => {
+    const src = [
+      'const log = deps.logger;',
+      'const child = logger.child({ mod: "x" });',
+      'try { void 0; } catch (e) {',
+      "  log.error({ err: e }, 'x');",
+      "  child.warn({ msg: e.message }, 'x');",
+      "  logger.error({ ...(e && { kind: errKind(e) }) }, 'x');",
+      '}',
+    ].join('\n');
+    const scan = rules.scanLogErrorObjects('x.ts', src);
+    expect(scan.findings.map((f) => f.line)).toEqual([4, 5]);
+    expect(scan.loggerCalls).toBe(3);
+  });
+
+  it('#740 B2 review: stepToken keeps a code-built step and drops driver text', async () => {
+    const { stepToken } = await import('@/lib/log-id');
+    expect(stepToken('count-pending: repo.unexpected')).toBe('count-pending: repo.unexpected');
+    expect(stepToken('queue: repo.not_found')).toBe('queue: repo.not_found');
+    expect(stepToken('deploy_skew_gateway_arm')).toBe('deploy_skew_gateway_arm');
+    expect(stepToken('Failed query: select * from members where email = $1')).toBeUndefined();
+    expect(stepToken('insert failed for a@b.example')).toBeUndefined();
+    expect(stepToken('x: ' + 'a'.repeat(80))).toBeUndefined();
+    expect(stepToken(42)).toBeUndefined();
+  });
+
   it('the fixture: every `// refused` line is found and no `// allowed` line is', () => {
     const path = 'scripts/__fixtures__/log-error-objects.fixture.txt';
     const text = readFileSync(path, 'utf8');

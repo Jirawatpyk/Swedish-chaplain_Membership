@@ -263,3 +263,23 @@ const portAdapter = {
     logger.warn({ mod: 'x', ...(meta ?? {}) }, message); // allowed
   },
 };
+// #740 B2 review — a parameter logged under an error-detail key makes its
+// function a log wrapper too (`err: code`), not only a spread parameter.
+function unregisteredKeyedWrapper(arm: string, code: string) {
+  logger.error({ errorId: arm, err: code }, 'x'); // refused
+}
+// `a && b` logs `a` only when it is falsy, so its left side carries nothing.
+try {
+  void 0;
+} catch (e) {
+  logger.error({ ...(e && { kind: errKind(e) }) }, 'x'); // allowed
+}
+// A logger held in a local is still a logger.
+declare const deps: { logger: typeof logger };
+const aliasedLog = deps.logger;
+try {
+  void 0;
+} catch (e) {
+  aliasedLog.error({ err: e }, 'x'); // refused
+  aliasedLog.error({ err: errKind(e) }, 'x'); // allowed
+}

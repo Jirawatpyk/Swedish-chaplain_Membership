@@ -38,14 +38,10 @@ import { join } from 'node:path';
 import { findLogErrorObjects, LOG_WRAPPERS, scanLogErrorObjects } from './lib/log-error-objects-rules';
 
 const ROOTS = [
-  'src/modules/members',
-  'src/modules/broadcasts',
-  // #740 (group B1): the other modules that log driver and gateway errors.
-  'src/modules/invoicing',
-  'src/modules/payments',
-  'src/modules/events',
-  'src/modules/renewals',
-  // #740 (group B2): route handlers, pages and the composition helpers.
+  // #740: every module (B1 swept invoicing, payments, events and renewals; the
+  // B2 review added auth, plans, insights and tenants), then the route
+  // handlers, pages and composition helpers (B2).
+  'src/modules',
   'src/app',
   'src/lib',
 ] as const;
