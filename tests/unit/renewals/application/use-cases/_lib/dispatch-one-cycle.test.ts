@@ -1369,7 +1369,7 @@ describe('dispatchOneCycle', () => {
         sendRenewalEmail: ReturnType<typeof vi.fn>;
       };
       gateway.sendRenewalEmail = vi.fn(async () => {
-        throw new Error('SDK panic: ECONNRESET');
+        throw new Error('SDK panic: ECONNRESET for a@b.example');
       });
 
       const result = await dispatchOneCycle(deps, buildHappyCandidate(), happyCtx);
@@ -1379,7 +1379,8 @@ describe('dispatchOneCycle', () => {
       // pickup within 24h.
       expect(result.kind).toBe('failed_transient');
       if (result.kind !== 'failed_transient') return;
-      expect(result.reason).toMatch(/^dispatcher_crash: /);
+      // #739 — a closed code; the thrown text never reaches the row or audit.
+      expect(result.reason).toBe('dispatcher_crash:Error');
 
       // Critical: the orphan pending row was transitioned. Without
       // this fix the row would orphan forever (retry-pass filters
@@ -1388,7 +1389,7 @@ describe('dispatchOneCycle', () => {
         expect.anything(),
         expect.objectContaining({
           nextStatus: 'failed',
-          failureReason: expect.stringMatching(/^dispatcher_crash: /),
+          failureReason: 'dispatcher_crash:Error',
           retryUntil: expect.any(String),
         }),
       );
@@ -1401,6 +1402,7 @@ describe('dispatchOneCycle', () => {
           c[1].payload.failure_kind === 'dispatcher_crash',
       );
       expect(failedAudit).toBeDefined();
+      expect(failedAudit?.[1].payload.failure_message).toBe('Error');
     });
 
     it('J2-B2: inner persistence tx throws → defensive cleanup catches + ensures row not orphaned', async () => {

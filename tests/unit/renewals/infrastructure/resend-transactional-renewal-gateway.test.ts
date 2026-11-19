@@ -141,6 +141,18 @@ describe('resendTransactionalRenewalGateway', () => {
       expect(payload.subject).toContain('unpaid membership invoice');
     });
 
+    it('#739: a render exception is a closed render:<ErrClass> message, never its text', async () => {
+      const { render } = await import('@react-email/components');
+      vi.mocked(render).mockRejectedValueOnce(new TypeError('cannot read name of Anna Svensson'));
+      const result =
+        await resendTransactionalRenewalGateway.sendRenewalEmail(DUE_TRACK_INPUT);
+      expect(result.ok).toBe(false);
+      if (!result.ok && 'message' in result.error) {
+        expect(result.error.message).toBe('render:TypeError');
+      }
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+
     it('renders due+7.email with the gentle-rung subject', async () => {
       const result = await resendTransactionalRenewalGateway.sendRenewalEmail({
         ...DUE_TRACK_INPUT,

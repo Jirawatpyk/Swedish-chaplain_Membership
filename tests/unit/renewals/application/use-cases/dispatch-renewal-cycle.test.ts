@@ -323,7 +323,8 @@ describe('dispatchRenewalCycle', () => {
     expect(event.payload.via_retry_pass).toBe(false);
     // The error message is forwarded (truncated to 200 chars upstream)
     // so on-call can correlate the audit row to the log line.
-    expect(event.payload.failure_message).toContain('upstream went away');
+    // #739 — the class, never the thrown text.
+    expect(event.payload.failure_message).toBe('Error');
 
     // Actor context: cron path (no human actor); correlationId
     // forwarded so the audit row joins the cron's log trail.
@@ -580,7 +581,8 @@ describe('dispatchRenewalCycle', () => {
       expect(event.type).toBe('renewal_reminder_send_failed');
       expect(event.payload.cycle_id).toBe('due-101');
       expect(event.payload.failure_kind).toBe('dispatcher_crash');
-      expect(event.payload.failure_message).toContain('due-track boom');
+      // #739 — the class, never the thrown text.
+      expect(event.payload.failure_message).toBe('Error');
       expect(event.payload.via_retry_pass).toBe(false);
       const ctx = emitCall[1] as {
         tenantId: string;
