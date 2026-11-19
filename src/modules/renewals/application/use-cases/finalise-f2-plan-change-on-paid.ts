@@ -45,6 +45,7 @@ import { runInTenant } from '@/lib/db';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseSuggestionIdFromReason } from '../../domain/tier-upgrade-suggestion';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 /**
  * The minimal identity the finaliser needs off a paid invoice. A
  * structural subset of F4's `F4InvoicePaidEvent`, so the OFFLINE caller
@@ -112,7 +113,7 @@ export async function finaliseF2PlanChangeForPaidInvoiceOnline(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: args.tenantId,
         invoiceId: args.invoiceId,
         errorId: 'F2.PLAN_CHANGE.CYCLE_RESOLVE_FAILED',
@@ -150,7 +151,7 @@ export async function finaliseF2PlanChangeOnPaid(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: paid.tenantId,
         memberId,
         cycleId,
@@ -199,7 +200,7 @@ export async function finaliseF2PlanChangeOnPaid(
       // `pending` — strand, never over-bill).
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           tenantId: paid.tenantId,
           memberId,
           cycleId,
@@ -237,7 +238,7 @@ export async function finaliseF2PlanChangeOnPaid(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: paid.tenantId,
         memberId,
         cycleId,
@@ -285,7 +286,7 @@ export async function finaliseF2PlanChangeOnPaid(
           // extraction (the f8-onPaid-f2-finalise unit test asserts it).
           event: 'f8_onPaid.f2_audit_emit_failed',
           audit_event: 'plan_change_applied',
-          err: auditResult.error,
+          ...errLogFields(auditResult.error),
           tenantId: paid.tenantId,
           memberId,
           cycleId,
@@ -304,7 +305,7 @@ export async function finaliseF2PlanChangeOnPaid(
         // Stable `event` discriminator preserved across the 070 helper
         // extraction (the f8-onPaid-f2-finalise unit test asserts it).
         event: 'f8_onPaid.f2_audit_emit_threw',
-        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        err: errKind(auditErr),
         tenantId: paid.tenantId,
         memberId,
         cycleId,

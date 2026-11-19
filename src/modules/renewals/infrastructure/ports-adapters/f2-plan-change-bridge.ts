@@ -79,6 +79,7 @@ import { supersedePendingTierUpgrade } from '../../application/use-cases/superse
 import { rescheduleOnPlanChange } from '../../application/use-cases/reschedule-on-plan-change';
 import type { ManualPlanChangeEvent } from '../../application/ports/manual-plan-change-event';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 /**
  * Backward-compatible alias — keeps existing callers compiling while
  * the canonical type now lives in the F8 port. Phase 7 review-fix
@@ -99,18 +100,6 @@ type ListenerResult = {
 };
 
 /**
- * Extracts a loggable message from a use-case error value (which may be
- * `{ kind, message }`, an Error, or an arbitrary value).
- */
-function errMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (error !== null && typeof error === 'object' && 'message' in error) {
-    return String((error as { message: unknown }).message);
-  }
-  return String(error);
-}
-
-/**
  * Listener wrapper (063 Option A) — runs `fn(evt)` (the non-`InTx`
  * use-case, which opens its own tenant tx). On a thrown error OR a
  * returned `{ ok: false }`, logs a structured error + bumps the
@@ -129,7 +118,7 @@ async function wrapListener(
     if (!result.ok) {
       logger.error(
         {
-          err: errMessage(result.error),
+          ...errLogFields(result.error),
           listener,
           tenantId: evt.tenantId,
           memberId: evt.memberId,
@@ -141,7 +130,7 @@ async function wrapListener(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         listener,
         tenantId: evt.tenantId,
         memberId: evt.memberId,

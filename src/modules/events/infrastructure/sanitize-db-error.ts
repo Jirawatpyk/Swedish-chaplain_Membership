@@ -10,17 +10,16 @@
  * Centralised here so both audit-port emit-error path and Drizzle
  * repo adapters share the same Postgres-identifier redaction regex.
  *
- * IMPORTANT: callers MUST log the FULL error (`e.message + e.stack`)
- * via `logger.error` at the catch site BEFORE passing the sanitised
- * string back to Application. Sanitisation protects the outbound
- * payload; server-side logs keep root-cause forensics.
+ * Callers log the error's class and codes (`...errLogFields(e)`) at
+ * the catch site, never its message or stack: a driver error's text
+ * quotes bound parameters (#740, docs/observability.md § Log hygiene).
  *
  * Constitution Principle I sub-clause 4 (audit + log hygiene): no
  * Postgres identifiers in user-facing or audit-log error payloads.
  */
 
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
+import { errLogFields } from '@/lib/log-id';
 import { GraceStateInvariantError } from '../domain/tenant-webhook-config';
 import { MatchResolutionInvariantError } from '../domain/event-registration';
 
@@ -47,9 +46,9 @@ export function sanitizeDbErrorMessage(e: unknown): string {
  *     return err(wrapRepoError('events', e));
  *   }
  *
- * Preserves both server-side log fidelity (full error.name + message +
- * stack via `logger.error` with `event: 'f6_repo_db_error'`) AND
- * outbound payload sanitisation (Postgres identifiers stripped,
+ * Logs the error class + SQLSTATE via `logger.error` with
+ * `event: 'f6_repo_db_error'` (never the message or stack, #740) AND
+ * applies outbound payload sanitisation (Postgres identifiers stripped,
  * message capped at 200 chars). The `repoLabel` parameter narrows
  * the log line to the specific repo so SREs can filter alerts by
  * adapter origin.
@@ -89,27 +88,9 @@ export function wrapRepoError(
     {
       event: 'f6_repo_db_error',
       repo: repoLabel,
-      err:
-        e instanceof Error
-          ? {
-              name: e.name,
-              message: e.message,
-              // Stack trace is bounded + filesystem-redacted before
-              // emission. On Vercel Fluid Compute raw stacks contain
-              // absolute container paths (`/var/task/...`) which would
-              // expose deployment filesystem layout to any log viewer
-              // with broader access than the SRE pool. Replace those
-              // prefixes with `[redacted]` and cap total length.
-              stack: redactStack(e.stack),
-            }
-          : String(e),
+      ...errLogFields(e),
     },
     `[F6 ${repoLabel} repository] DB error`,
   );
   return { kind: 'db_error', message: sanitizeDbErrorMessage(e) };
 }
-
-// R6-W2 staff-review fix (2026-05-13): `redactStack` extracted to
-// `@/lib/redact-stack` so Application use-cases can import it without
-// violating Clean Architecture Principle III. This file re-imports
-// for the `wrapRepoError` log path.

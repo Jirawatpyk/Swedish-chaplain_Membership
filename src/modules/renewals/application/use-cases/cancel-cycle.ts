@@ -39,6 +39,7 @@ import {
 import type { MemberId } from '@/modules/members';
 import { isTerminalCycleStatus } from '../../domain/value-objects/cycle-status';
 
+import { errKind } from '@/lib/log-id';
 export const cancelCycleInputSchema = z.object({
   tenantId: z.string().min(1),
   cycleId: z.string().uuid(),
@@ -117,7 +118,7 @@ export async function cancelCycle(
     } catch (e) {
       logger.warn(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           cycleId,
           correlationId: input.correlationId,
         },
@@ -228,7 +229,7 @@ export async function cancelCycle(
     }
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         cycleId,
         tenantId: input.tenantId,
       },

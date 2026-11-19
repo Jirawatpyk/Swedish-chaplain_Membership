@@ -132,7 +132,6 @@ export async function dispatchDueTrackCycle(
         tenantId: ctx.tenantId,
         correlationId: ctx.correlationId,
         errKind: pauseResult.error.kind,
-        errMessage: pauseResult.error.message,
       },
       'dispatchDueTrackCycle: pause-check returned err — defensive skip to preserve FR-033 invariant',
     );

@@ -411,7 +411,7 @@ export async function ingestWebhookAttendee(
     // SRE forensics can distinguish failure modes. Previously inlined
     // the same logic; consolidated with import-csv.ts toErrMessage.
     errorMessage = formatErrorWithCause(e);
-    const stage: FailureStage = e instanceof TxStageError ? e.stage : failureStage;
+    const stage: TxStageError['stage'] = e instanceof TxStageError ? e.stage : failureStage;
     // scrub Vercel container
     // paths + macOS /private/* + node_modules + webpack-internal:///
     // from the stack BEFORE persisting to the 5-year audit row. The

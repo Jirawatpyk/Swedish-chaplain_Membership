@@ -43,6 +43,7 @@ import { RISK_BAND_THRESHOLDS } from '../../domain/value-objects/risk-band';
 // Type-only import — runtime no-op brand cast (Constitution Principle III)
 import type { MemberId } from '@/modules/members';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 export const computeAtRiskScoreInputSchema = z.object({
   tenantId: z.string().min(1),
   memberId: z.string().uuid(),
@@ -109,7 +110,7 @@ export async function computeAtRiskScore(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error(
-      { err: message, tenantId: input.tenantId, memberId: input.memberId },
+      { ...errLogFields(e), tenantId: input.tenantId, memberId: input.memberId },
       '[compute-at-risk-score] scorer threw — propagating to cron for partial-failure audit',
     );
     return err({ kind: 'server_error' as const, message });
@@ -148,7 +149,7 @@ export async function computeAtRiskScore(
       // member + cron-pass in logs.
       logger.warn(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           tenantId: input.tenantId,
           memberId: input.memberId,
           correlationId: input.correlationId,
@@ -262,7 +263,7 @@ export async function computeAtRiskScore(
       // Constitution Principle VIII reverse-direction atomicity —
       // audit failure inside tx rolls the score-write back.
       logger.error(
-        { err: e instanceof Error ? e.message : String(e) },
+        { err: errKind(e) },
         '[compute-at-risk-score] audit emit failed inside tx — rolling back',
       );
       throw e;

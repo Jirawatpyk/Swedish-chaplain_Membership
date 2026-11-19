@@ -29,6 +29,7 @@
  */
 import { logger } from '@/lib/logger';
 
+import { errKind } from '@/lib/log-id';
 export function logUnexpectedError(
   useCaseLabel: string,
   e: unknown,
@@ -36,7 +37,7 @@ export function logUnexpectedError(
 ): void {
   logger.error(
     {
-      err: e instanceof Error ? e : new Error(String(e)),
+      err: errKind(e),
       ...ctx,
     },
     `[${useCaseLabel}] unexpected error → server_error`,

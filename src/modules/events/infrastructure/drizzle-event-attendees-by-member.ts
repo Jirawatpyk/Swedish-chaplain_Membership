@@ -31,7 +31,7 @@
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
+import { errLogFields } from '@/lib/log-id';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import { events, eventRegistrations } from './schema';
@@ -134,9 +134,8 @@ export const drizzleEventAttendeesQuery: EventAttendeesQueryPort = {
     try {
       return await runAttendeesQuery(input);
     } catch (e) {
-      // R3.3.4 / I-4 / R5.3.2 / Round 4 I-5 — preserve `err.stack` for
-      // RLS-regression / pool-exhaustion forensics. `redactStack`
-      // strips secrets before pino serialises.
+      // #740 — the error class + SQLSTATE only (`errLogFields`), never the
+      // message or stack: a driver error quotes bound parameters.
       //
       // R5.3.2 / Round 4 I-5 — nested try/catch around `logger.error` +
       // the metric counter. The F8 EventAttendeesPort contract is "no
@@ -152,17 +151,7 @@ export const drizzleEventAttendeesQuery: EventAttendeesQueryPort = {
             event: 'f6_event_attendees_query_failed',
             tenantId: String(input.tenantId),
             memberId: String(input.memberId),
-            err:
-              e instanceof Error
-                ? {
-                    name: e.name,
-                    message: e.message,
-                    stack:
-                      typeof e.stack === 'string'
-                        ? (redactStack(e.stack) ?? null)
-                        : null,
-                  }
-                : { name: 'non_error', message: String(e), stack: null },
+            ...errLogFields(e),
           },
           '[F6→F8 bridge] eventAttendees query failed — falling open to [] to preserve F8 scorer no-throw contract',
         );

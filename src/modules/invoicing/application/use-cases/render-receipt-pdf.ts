@@ -57,6 +57,7 @@ import {
   resolveBuyerIsVatRegistrant,
 } from '@/modules/invoicing/domain/document-kind';
 
+import { errKind } from '@/lib/log-id';
 export interface RenderReceiptPdfInput {
   readonly tenantId: string;
   readonly invoiceId: string;
@@ -379,7 +380,6 @@ export async function renderReceiptPdf(
             {
               tenantId: input.tenantId,
               invoiceId,
-              originalErrorReason: e.error.reason,
             },
             'renderReceiptPdf: failure write lost the race to a concurrent success; treating as ok',
           );
@@ -390,7 +390,7 @@ export async function renderReceiptPdf(
           {
             tenantId: input.tenantId,
             invoiceId,
-            err: markErr instanceof Error ? markErr.message : String(markErr),
+            err: errKind(markErr),
           },
           'renderReceiptPdf: failed to mark row as failed (suppressed)',
         );

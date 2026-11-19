@@ -63,7 +63,7 @@ import {
 } from '@/modules/invoicing/domain/document-kind';
 import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { invoicingMetrics } from '@/lib/metrics';
 import { bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
 import { sha256Hex } from '@/lib/crypto';
@@ -440,7 +440,7 @@ export async function recordPayment(
       } catch (gateErr) {
         logger.warn(
           {
-            err: gateErr instanceof Error ? gateErr.message : String(gateErr),
+            err: errKind(gateErr),
             invoiceId,
             memberId: preInvoice.memberId,
             tenantId: input.tenantId,
@@ -1478,7 +1478,7 @@ export async function recordPayment(
     if (e instanceof RecordPaymentInternalError) {
       logger.warn(
         {
-          err: e.error,
+          ...errLogFields(e.error),
           invoiceId: input.invoiceId,
           tenantId: input.tenantId,
         },
@@ -1505,7 +1505,7 @@ export async function recordPayment(
           });
         } catch (auditErr) {
           logger.warn(
-            { err: auditErr, invoiceId: input.invoiceId },
+            { ...errLogFields(auditErr), invoiceId: input.invoiceId },
             'recordPayment: pdf_render_failed audit emit also failed',
           );
         }

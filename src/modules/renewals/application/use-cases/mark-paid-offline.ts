@@ -84,6 +84,7 @@ import type {
 } from '@/modules/invoicing';
 import type { MemberId } from '@/modules/members';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 export const markPaidOfflineInputSchema = z.object({
   tenantId: z.string().min(1),
   cycleId: z.string().uuid(),
@@ -304,7 +305,7 @@ export async function markPaidOffline(
     } catch (e) {
       logger.warn(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           cycleId,
           correlationId: input.correlationId,
         },
@@ -353,7 +354,7 @@ export async function markPaidOffline(
   } catch (gateErr) {
     logger.warn(
       {
-        err: gateErr instanceof Error ? gateErr.message : String(gateErr),
+        err: errKind(gateErr),
         cycleId,
         memberId: preLoad.memberId,
         tenantId: input.tenantId,
@@ -1055,10 +1056,7 @@ export async function markPaidOffline(
       } catch (finaliseErr) {
         logger.error(
           {
-            err:
-              finaliseErr instanceof Error
-                ? finaliseErr
-                : new Error(String(finaliseErr)),
+            ...errLogFields(finaliseErr),
             cycleId,
             tenantId: input.tenantId,
             invoiceId: result.value.invoiceId,
@@ -1097,13 +1095,14 @@ export async function markPaidOffline(
             ),
           );
         } catch (clearErr) {
+          const orphanInvoiceId: OrphanInvoiceRollback['orphanInvoiceId'] = e.orphanInvoiceId;
           logger.warn(
             {
-              err: clearErr instanceof Error ? clearErr : new Error(String(clearErr)),
+              err: errKind(clearErr),
               cycleId,
               tenantId: input.tenantId,
               staleInvoiceId: staleId,
-              orphanInvoiceId: e.orphanInvoiceId,
+              orphanInvoiceId,
             },
             'markPaidOffline: could not re-apply the stale-link clear after the orphan rollback — the cycle still points at a void invoice',
           );
@@ -1117,7 +1116,7 @@ export async function markPaidOffline(
     }
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         cycleId,
         tenantId: input.tenantId,
       },

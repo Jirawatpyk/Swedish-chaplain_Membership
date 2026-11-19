@@ -100,6 +100,7 @@ import {
   InvoiceLinkConflictError,
 } from '../ports/renewal-cycle-repo';
 
+import { errKind } from '@/lib/log-id';
 /**
  * L1 (068 security review) — the partial UNIQUE index enforcing invariant
  * L135 ("at most one active cycle per member"):
@@ -534,7 +535,7 @@ export async function adminRenewLapsedMember(
     const message = e instanceof Error ? e.message : String(e);
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(message),
+        err: errKind(e),
         tenantId: input.tenantId,
         memberId: input.memberId,
         correlationId: input.correlationId,
@@ -699,11 +700,15 @@ export async function adminRenewLapsedMember(
         });
       }
       if (e instanceof InvoiceLinkConflictError) {
+        const attemptedInvoiceId: InvoiceLinkConflictError['attemptedInvoiceId'] =
+          e.attemptedInvoiceId;
+        const existingInvoiceId: InvoiceLinkConflictError['existingInvoiceId'] =
+          e.existingInvoiceId;
         logger.error(
           {
             cycleId,
-            attemptedInvoiceId: e.attemptedInvoiceId,
-            existingInvoiceId: e.existingInvoiceId,
+            attemptedInvoiceId,
+            existingInvoiceId,
           },
           '[admin-renew-lapsed-member] concurrent link won the race — our invoice orphaned in F4 (void via admin)',
         );
@@ -795,7 +800,7 @@ export async function adminRenewLapsedMember(
       );
     } catch (e) {
       logger.error(
-        { err: e instanceof Error ? e.message : String(e), cycleId },
+        { err: errKind(e), cycleId },
         '[admin-renew-lapsed-member] audit emit failed inside tx — rolling back link',
       );
       throw e;

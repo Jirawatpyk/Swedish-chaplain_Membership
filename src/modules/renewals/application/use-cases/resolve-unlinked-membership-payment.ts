@@ -77,6 +77,7 @@ import type { FiscalYearStartMonthPort } from '../ports/fiscal-year-settings-por
 import { paymentAnchorMonthStartUtc } from './_lib/payment-anchor-date';
 import { reanchorFirstPaymentCycleInTx } from './_lib/reanchor-first-payment';
 
+import { errLogFields } from '@/lib/log-id';
 export type UnlinkedResolutionOutcome =
   | { readonly kind: 'reanchored'; readonly cycleId: string }
   | { readonly kind: 'renewed'; readonly cycleId: string }
@@ -407,13 +408,14 @@ async function healNoCycle(
     });
   } catch (e) {
     if (e instanceof PlanNotResolvableError) {
+      const planStatus: PlanNotResolvableError['planStatus'] = e.planStatus;
       logger.error(
         {
           tenantId: evt.tenantId,
           memberId: evt.memberId,
           invoiceId: evt.invoiceId,
-          planId: e.planId,
-          planStatus: e.planStatus,
+          planId: member.planId,
+          planStatus,
         },
         '[resolve-unlinked-payment] heal: plan unresolvable — skipping (payment stands; dispatcher skip-guard will surface the member)',
       );
@@ -573,7 +575,7 @@ async function renewalComplete(
   } catch (e) {
     if (e instanceof CycleTransitionConflictError || e instanceof CycleNotFoundError) {
       logger.warn(
-        { cycleId: cycle.cycleId, err: e.message },
+        { cycleId: cycle.cycleId, ...errLogFields(e) },
         '[resolve-unlinked-payment] renewal-complete lost race — idempotent skip',
       );
       renewalsMetrics.unlinkedPaymentResolved('skipped');
@@ -682,7 +684,7 @@ async function heldForAdminReview(
   } catch (e) {
     if (e instanceof CycleTransitionConflictError || e instanceof CycleNotFoundError) {
       logger.warn(
-        { cycleId: cycle.cycleId, err: e.message },
+        { cycleId: cycle.cycleId, ...errLogFields(e) },
         '[resolve-unlinked-payment] held-for-admin lost race — idempotent skip',
       );
       renewalsMetrics.unlinkedPaymentResolved('skipped');

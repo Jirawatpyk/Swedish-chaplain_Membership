@@ -37,6 +37,7 @@ import { and, eq, lt, sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { eventcreateMetrics } from '@/lib/metrics';
 import {
   tenantWebhookConfigs,
@@ -76,13 +77,16 @@ function toAggregate(row: TenantWebhookConfigRow): TenantWebhookConfigAggregate 
     );
   } catch (e) {
     if (e instanceof GraceStateInvariantError) {
+      const rawSecretWasSet: GraceStateInvariantError['rawSecretWasSet'] = e.rawSecretWasSet;
+      const rawRotatedAtWasSet: GraceStateInvariantError['rawRotatedAtWasSet'] =
+        e.rawRotatedAtWasSet;
       logger.error(
         {
           event: 'f6_grace_state_invariant_violation',
           tenantId: String(row.tenantId),
           source: row.source,
-          rawSecretWasSet: e.rawSecretWasSet,
-          rawRotatedAtWasSet: e.rawRotatedAtWasSet,
+          rawSecretWasSet,
+          rawRotatedAtWasSet,
         },
         '[F6] tenant_webhook_configs row violates grace-pair invariant at READ time — likely DB CHECK regression or RLS misconfig',
       );
@@ -93,9 +97,7 @@ function toAggregate(row: TenantWebhookConfigRow): TenantWebhookConfigAggregate 
           event: 'f6_unexpected_throw_in_asGraceState',
           tenantId: String(row.tenantId),
           source: row.source,
-          err: e instanceof Error
-            ? { name: e.name, message: e.message }
-            : { name: 'non_error', message: String(e) },
+          err: errKind(e),
         },
         '[F6] unexpected throw inside asGraceState — investigate',
       );

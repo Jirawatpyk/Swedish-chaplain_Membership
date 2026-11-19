@@ -73,6 +73,7 @@ import {
 import { resolveUnlinkedMembershipPaymentInTx } from './resolve-unlinked-membership-payment';
 import { reanchorFirstPaymentCycleInTx } from './_lib/reanchor-first-payment';
 
+import { errLogFields } from '@/lib/log-id';
 export type MarkCycleCompleteOutcome =
   | { readonly kind: 'no_cycle_for_invoice' }
   | { readonly kind: 'cycle_not_payable'; readonly currentStatus: string }
@@ -535,7 +536,7 @@ async function autoComplete(
       // Race against an admin manual transition. Idempotent skip — the
       // cycle is already settled; F4's invoice-paid stands.
       logger.warn(
-        { cycleId, err: e.message },
+        { cycleId, ...errLogFields(e) },
         '[mark-cycle-complete] auto-complete lost race — idempotent skip',
       );
       return {
@@ -600,7 +601,7 @@ async function holdForAdminReview(
       e instanceof CycleNotFoundError
     ) {
       logger.warn(
-        { cycleId, err: e.message },
+        { cycleId, ...errLogFields(e) },
         '[mark-cycle-complete] hold-for-admin lost race — idempotent skip',
       );
       return {

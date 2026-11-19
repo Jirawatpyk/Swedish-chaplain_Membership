@@ -38,6 +38,7 @@ import { makeDrizzleRenewalCycleRepo } from '@/modules/renewals/infrastructure/d
 import { systemClock } from '../application/ports/clock-port';
 import type { MembershipAccessPort } from '../application/ports/membership-access-port';
 
+import { errKind } from '@/lib/log-id';
 export const membershipAccessBridge: MembershipAccessPort = {
   async getMembershipAccess(tenant: TenantContext, memberId: string) {
     try {
@@ -55,7 +56,7 @@ export const membershipAccessBridge: MembershipAccessPort = {
       // sibling adapters.
       logger.warn(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           tenantSlug: tenant.slug,
           memberId,
         },

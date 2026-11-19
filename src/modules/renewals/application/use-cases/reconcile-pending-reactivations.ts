@@ -61,6 +61,7 @@ import type {
   ReminderLadderAuditType,
 } from '../ports/reminder-audit-query-repo';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 export const reconcilePendingReactivationsInputSchema = z.object({
   tenantId: z.string().min(1),
   /** Injected clock for deterministic tests. */
@@ -598,7 +599,7 @@ export async function reconcilePendingReactivations(
             errorId: 'F8.RECONCILE.AUDIT_QUERY_FAILED',
             tenantId: cycle.tenantId,
             cycleId: cycle.cycleId,
-            err: e instanceof Error ? e.message : String(e),
+            err: errKind(e),
           },
           '[reconcile-pending-reactivations] reminderAuditQuery failed — falling back to fire-all-crossed-rungs',
         );
@@ -820,7 +821,7 @@ async function emitReminderAudit(
         tenantId: cycle.tenantId,
         cycleId: cycle.cycleId,
         type,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[reconcile-pending-reactivations] reminder audit emit failed — counted in remindersFailed; cron continues',
     );
@@ -954,7 +955,7 @@ async function processMarkedRejectRefund(
           cycleId,
           tenantId: cycle.tenantId,
           refundId: rejectRefundId,
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
         },
         '[reconcile-pending-reactivations] async reject-refund FAILED-branch marker-clear tx threw (non-conflict) — tx rolled back, cycle stays marked+pending; next cron pass retries',
       );
@@ -1037,7 +1038,7 @@ async function processMarkedRejectRefund(
             e instanceof CycleNotFoundError
           ) {
             logger.warn(
-              { cycleId, tenantId: cycle.tenantId, err: e.message },
+              { cycleId, tenantId: cycle.tenantId, ...errLogFields(e) },
               '[reconcile-pending-reactivations] async reject-refund cancel transition lost optimistic-lock race — admin/conflict won; skipping',
             );
             return 'admin_race_skipped';
@@ -1148,7 +1149,7 @@ async function processMarkedRejectRefund(
         cycleId,
         tenantId: cycle.tenantId,
         refundId: cycle.rejectRefundId,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[reconcile-pending-reactivations] async reject-refund settle tx threw (non-conflict) — tx rolled back, cycle stays marked+pending; next cron pass retries',
     );
@@ -1459,7 +1460,7 @@ async function processTimeout(
         cycleId,
         tenantId: cycle.tenantId,
         refundIssued,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       refundIssued
         ? '[reconcile-pending-reactivations] timeout transition threw after refund — refund is durable, cycle stays pending; next cron run self-heals (F5 short-circuits the second refund)'

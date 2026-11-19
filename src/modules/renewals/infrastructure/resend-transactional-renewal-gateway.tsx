@@ -208,6 +208,7 @@ function isPermanentResendName(nameLower: string): boolean {
  * consumers (mapResendError, gateway error mapping).
  */
 import { sanitizeResendErrorMessage } from '../domain/value-objects/sanitize-error-message';
+import { errKind } from '@/lib/log-id';
 export { sanitizeResendErrorMessage };
 
 function mapResendError(
@@ -369,7 +370,7 @@ async function sendViaResendWithRetry(args: {
         {
           // K13-5 (CON-R12-2): Error instance for pino's `err`
           // serializer (stack + type capture).
-          err: e instanceof Error ? e : new Error(String(e)),
+          err: errKind(e),
           tenantId: input.tenantId,
           attempt,
         },
@@ -451,7 +452,7 @@ async function sendDueTrackEmail(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         tenantId: input.tenantId,
         stepId,
       },
@@ -605,7 +606,7 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
         {
           // K13-5 (CON-R12-2): Error instance for pino's `err`
           // serializer (stack + type capture).
-          err: e instanceof Error ? e : new Error(String(e)),
+          err: errKind(e),
           tenantId: input.tenantId,
           tier,
           offset,
@@ -669,7 +670,7 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
     } catch (e) {
       logger.error(
         {
-          err: e instanceof Error ? e : new Error(String(e)),
+          err: errKind(e),
           tenantId: input.tenantId,
         },
         'resend.renewals.tier_upgrade_approval.render_failed',
@@ -721,7 +722,7 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
         };
         logger.warn(
           {
-            err: e instanceof Error ? e : new Error(String(e)),
+            err: errKind(e),
             tenantId: input.tenantId,
             attempt,
           },

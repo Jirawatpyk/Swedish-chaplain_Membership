@@ -29,6 +29,7 @@ import {
   type DispatchOneCycleOutcome,
 } from './_lib/dispatch-one-cycle';
 
+import { errKind } from '@/lib/log-id';
 export const sendReminderNowInputSchema = z.object({
   tenantId: z.string().min(1),
   cycleId: z.string().uuid(),
@@ -131,7 +132,7 @@ export async function sendReminderNow(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         cycleId: input.cycleId,
         actorUserId: input.actorUserId,
         tenantId: input.tenantId,

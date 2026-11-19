@@ -137,18 +137,16 @@ describe('pino-audit-port.emitStandalone', () => {
     // (lowercase alphanumeric + hyphen, 1..63 chars)."
     // Defensive code is unchanged — only the test expectation aligned.
     expect(result.error.message).toMatch(/Invalid tenant slug|Must match \[a-z0-9-\]/);
-    // logFullError preserves the unsanitised error name + stack server-side
+    // logFullError logs the error class only, never its message (#740)
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'f6_audit_emit_db_error',
         caller: 'emitStandalone',
-        err: expect.objectContaining({
-          name: expect.any(String),
-          message: expect.stringMatching(/Invalid tenant slug|Must match \[a-z0-9-\]/),
-        }),
+        err: 'InvalidTenantSlugError',
       }),
       expect.any(String),
     );
+    expect(JSON.stringify(errorSpy.mock.calls[0]?.[0])).not.toMatch(/Invalid tenant slug/);
     errorSpy.mockRestore();
   });
 

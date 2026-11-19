@@ -113,7 +113,7 @@ import {
 } from '@/modules/invoicing/domain/invoice';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
@@ -775,7 +775,7 @@ export async function voidInvoice(
       // uniquely without leaking the storage layout.
       logger.error(
         {
-          err: e,
+          ...errLogFields(e),
           invoiceId: input.invoiceId,
           tenantId: input.tenantId,
           phase,
@@ -816,7 +816,7 @@ export async function voidInvoice(
       } catch (auditErr) {
         logger.error(
           {
-            err: auditErr,
+            ...errLogFields(auditErr),
             invoiceId: input.invoiceId,
             tenantId: input.tenantId,
           },

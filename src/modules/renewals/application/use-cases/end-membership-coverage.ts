@@ -57,6 +57,7 @@ import {
 import type { RenewalActorRole } from '../ports/renewal-audit-emitter';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 
+import { errKind } from '@/lib/log-id';
 export type EndMembershipCoverageDeps = Pick<
   RenewalsDeps,
   | 'cyclesRepo'
@@ -198,7 +199,7 @@ export async function endMembershipCoverageNow(
       cycleId = open.cycleId;
     } catch (e) {
       logger.error(
-        { errName: errName(e), tenantId, memberId },
+        { err: errKind(e), tenantId, memberId },
         'renewals.coverage_end.lookup_failed',
       );
       return err({ kind: 'coverage_end.server_error', errName: errName(e) });
@@ -227,7 +228,7 @@ export async function endMembershipCoverageNow(
         continue; // closed in the race window (or a plain request is due) — re-look
       } catch (e) {
         logger.error(
-          { errName: errName(e), tenantId, memberId, cycleId, refundId: awaitRefund.refundId },
+          { err: errKind(e), tenantId, memberId, cycleId, refundId: awaitRefund.refundId },
           'renewals.coverage_end.schedule_failed',
         );
         return err({ kind: 'coverage_end.server_error', errName: errName(e) });
@@ -254,7 +255,7 @@ export async function endMembershipCoverageNow(
       // The money side has already committed. Leave a plain request so the
       // reconcile retries the end — never silently drop the staff decision.
       logger.error(
-        { errName: errName(e), tenantId, memberId, cycleId, trigger: input.trigger },
+        { err: errKind(e), tenantId, memberId, cycleId, trigger: input.trigger },
         'renewals.coverage_end.inline_end_failed',
       );
       try {
@@ -269,7 +270,7 @@ export async function endMembershipCoverageNow(
         if (stamped) return ok({ outcome: 'deferred', cycleId });
       } catch (stampErr) {
         logger.error(
-          { errName: errName(stampErr), tenantId, memberId, cycleId },
+          { err: errKind(stampErr), tenantId, memberId, cycleId },
           'renewals.coverage_end.retry_stamp_failed',
         );
       }
@@ -345,7 +346,7 @@ export async function reconcileMembershipCoverageEnds(
     }
   } catch (e) {
     errored += 1;
-    logger.error({ errName: errName(e), tenantId }, 'renewals.coverage_end.clear_stranded_failed');
+    logger.error({ err: errKind(e), tenantId }, 'renewals.coverage_end.clear_stranded_failed');
   }
 
   // 2. Converge pending requests.
@@ -354,7 +355,7 @@ export async function reconcileMembershipCoverageEnds(
     requests = await deps.coverageEndRequests.listPending(tenantId, input.limit ?? 500);
   } catch (e) {
     errored += 1;
-    logger.error({ errName: errName(e), tenantId }, 'renewals.coverage_end.reconcile_list_failed');
+    logger.error({ err: errKind(e), tenantId }, 'renewals.coverage_end.reconcile_list_failed');
   }
 
   for (const req of requests) {
@@ -423,7 +424,7 @@ export async function reconcileMembershipCoverageEnds(
     } catch (e) {
       errored += 1;
       logger.error(
-        { errName: errName(e), tenantId, cycleId: req.cycleId },
+        { err: errKind(e), tenantId, cycleId: req.cycleId },
         'renewals.coverage_end.reconcile_item_failed',
       );
     }
@@ -480,14 +481,14 @@ export async function reconcileMembershipCoverageEnds(
       } catch (e) {
         errored += 1;
         logger.error(
-          { errName: errName(e), tenantId, memberId: rec.memberId, source: rec.kind },
+          { err: errKind(e), tenantId, memberId: rec.memberId, source: rec.kind },
           'renewals.coverage_end.backstop_item_failed',
         );
       }
     }
   } catch (e) {
     errored += 1;
-    logger.error({ errName: errName(e), tenantId }, 'renewals.coverage_end.backstop_list_failed');
+    logger.error({ err: errKind(e), tenantId }, 'renewals.coverage_end.backstop_list_failed');
   }
 
   return ok({

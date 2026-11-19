@@ -58,6 +58,7 @@ import { parseInput } from './_lib/parse-input';
 import { SYSTEM_ACTOR_AUTO_INVOICE_CRON } from './auto-draft-due-renewals';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 
+import { errKind } from '@/lib/log-id';
 export const pruneAutoDraftsInputSchema = z.object({
   tenantId: z.string().min(1),
   correlationId: z.string().min(1),
@@ -160,7 +161,7 @@ export async function pruneAutoDrafts(
           tenantId: input.tenantId,
           invoiceId: row.invoiceId,
           cycleId: row.cycleId,
-          err: e instanceof Error ? e : new Error(String(e)),
+          err: errKind(e),
         },
         '[prune-auto-drafts] candidate discard threw — counted in errors; cron continues',
       );

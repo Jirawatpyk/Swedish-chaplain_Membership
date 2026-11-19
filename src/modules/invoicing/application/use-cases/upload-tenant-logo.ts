@@ -104,7 +104,8 @@ export async function uploadTenantLogo(
     // unsupported codec inside the probe).
     logger.warn(
       {
-        err: reencodeResult.error.reason,
+        // The decoder's reason is free text; log the step, never it (#740).
+        stage: 'reencode',
         tenantId: input.tenantId,
         declaredMime: input.declaredMime,
       },

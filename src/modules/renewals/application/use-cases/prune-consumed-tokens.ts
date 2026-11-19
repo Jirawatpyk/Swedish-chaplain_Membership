@@ -34,6 +34,7 @@ import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 
+import { errKind } from '@/lib/log-id';
 /**
  * Retention window per `data-model.md § 2.8` and migration 0093 header
  * comment. Kept as a constant so a future tenant-overridable setting
@@ -114,7 +115,7 @@ export async function pruneConsumedTokens(
     const message = e instanceof Error ? e.message : String(e);
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(message),
+        err: errKind(e),
         tenantId: input.tenantId,
         correlationId: input.correlationId,
       },

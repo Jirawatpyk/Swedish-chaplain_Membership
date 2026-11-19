@@ -180,6 +180,7 @@ export interface DispatchContext {
  * downstream toast UI strings.
  */
 import type { SendRenewalEmailError } from '../../ports/renewal-gateway';
+import { errKind, errLogFields } from '@/lib/log-id';
 export type DispatchFailureKind =
   | SendRenewalEmailError['kind']
   | 'dispatcher_crash';
@@ -247,7 +248,7 @@ export async function handleDispatcherCrash(
   const passLabel = pass === 'due-track' ? 'due-track ' : '';
   logger.error(
     {
-      err: e instanceof Error ? e : new Error(String(e)),
+      err: errKind(e),
       cycleId: candidate.cycle.cycleId,
       memberId: candidate.member.memberId,
       tenantId: ctx.tenantId,
@@ -278,7 +279,7 @@ export async function handleDispatcherCrash(
   } catch (auditErr) {
     logger.error(
       {
-        err: auditErr instanceof Error ? auditErr : new Error(String(auditErr)),
+        err: errKind(auditErr),
         cycleId: candidate.cycle.cycleId,
         tenantId: ctx.tenantId,
         correlationId: ctx.correlationId,
@@ -822,7 +823,6 @@ async function dispatchOneCycleInner(
         tenantId: ctx.tenantId,
         correlationId: ctx.correlationId,
         errKind: pauseResult.error.kind,
-        errMessage: pauseResult.error.message,
       },
       'dispatchOneCycleInner: pause-check returned err — defensive skip to preserve FR-033 invariant',
     );
@@ -926,11 +926,9 @@ async function dispatchOneCycleInner(
     try {
       await fireStep(deps, candidate, ctx, fireArgs);
     } catch (siblingErr) {
-      const errMsg =
-        siblingErr instanceof Error ? siblingErr.message : String(siblingErr);
       logger.error(
         {
-          err: siblingErr instanceof Error ? siblingErr : new Error(errMsg),
+          err: errKind(siblingErr),
           cycleId: cycle.cycleId,
           memberId: member.memberId,
           stepId: step.stepId,
@@ -1182,7 +1180,6 @@ export async function defensivelyMarkFailedForRetry(
   const { cycle, member } = candidate;
   const errMsg =
     origError instanceof Error ? origError.message : String(origError);
-  const stack = origError instanceof Error ? origError.stack : undefined;
   const truncatedMsg = errMsg.slice(0, 400);
   const failureReason = `dispatcher_crash: ${truncatedMsg}`;
   const retryUntilIso = new Date(
@@ -1191,8 +1188,7 @@ export async function defensivelyMarkFailedForRetry(
 
   logger.error(
     {
-      err: errMsg,
-      stack,
+      ...errLogFields(origError),
       cycleId: cycle.cycleId,
       memberId: member.memberId,
       reminderEventId,
@@ -1259,11 +1255,8 @@ export async function defensivelyMarkFailedForRetry(
   } catch (cleanupErr) {
     logger.error(
       {
-        err:
-          cleanupErr instanceof Error
-            ? cleanupErr.message
-            : String(cleanupErr),
-        origErr: errMsg,
+        ...errLogFields(cleanupErr),
+        origErrKind: errKind(origError),
         cycleId: cycle.cycleId,
         memberId: member.memberId,
         reminderEventId,
@@ -1430,8 +1423,9 @@ export async function dispatchEmailStep(
         cycleId: cycle.cycleId,
         memberId: member.memberId,
         stepId: step.stepId,
+        // `failureKind` and `permanent`, never the gateway's message text,
+        // which can quote the recipient (#740).
         failureKind: err.kind,
-        failureMessage: failureReason,
         permanent: isPermanent,
       },
       'dispatchOneCycle: gateway send failed',

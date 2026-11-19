@@ -21,6 +21,7 @@ import { and, asc, desc, eq, inArray, or, sql, ilike, like, type SQL } from 'dri
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { eventcreateMetrics } from '@/lib/metrics';
 
 /**
@@ -146,9 +147,7 @@ function toAggregate(row: EventRegistrationRow): EventRegistrationAggregate {
           tenantId: String(row.tenantId),
           registrationId: String(row.registrationId),
           eventId: String(row.eventId),
-          err: e instanceof Error
-            ? { name: e.name, message: e.message }
-            : { name: 'non_error', message: String(e) },
+          err: errKind(e),
         },
         '[F6] unexpected throw inside asMatchResolutionView — investigate',
       );

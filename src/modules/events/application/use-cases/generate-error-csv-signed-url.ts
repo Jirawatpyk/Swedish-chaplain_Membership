@@ -136,7 +136,7 @@ export async function generateErrorCsvSignedUrl(
           recordId: input.recordId,
           actorUserId: input.actorUserId,
           blobUrlExists: true,
-          err: errorCsvStoreErrorMessage(signResult.error),
+          storeErrorKind: signResult.error.kind,
         },
         '[F6.1] error-CSV signed-URL generation failed — Vercel Blob unavailable; admin advised to retry',
       );
@@ -208,7 +208,7 @@ export async function generateErrorCsvSignedUrl(
         event: 'f6_error_csv_findbyid_db_error',
         tenantId: input.tenantId,
         recordId: input.recordId,
-        err: lookup.error.message,
+        repoErrorKind: lookup.error.kind,
       },
       '[F6.1] findById DB error — falling through to cross-tenant probe check (security forensics > availability)',
     );

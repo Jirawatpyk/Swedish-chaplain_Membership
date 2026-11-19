@@ -14,6 +14,7 @@ import {
   resolveCreditNoteOriginalDocuments,
   assertCreditNoteVatBalance,
   type CreditNote,
+  type CreditNoteBalanceError,
   type CreditNoteId,
 } from '../../domain/credit-note';
 import { logger } from '@/lib/logger';
@@ -109,13 +110,17 @@ function rowToCreditNote(
   // so no downstream code sees an inconsistent row.
   const balance = assertCreditNoteVatBalance(cn);
   if (!balance.ok) {
+    const creditAmountSatang: CreditNoteBalanceError['creditAmountSatang'] =
+      balance.error.creditAmountSatang;
+    const vatSatang: CreditNoteBalanceError['vatSatang'] = balance.error.vatSatang;
+    const totalSatang: CreditNoteBalanceError['totalSatang'] = balance.error.totalSatang;
     logger.error(
       {
         creditNoteId: row.creditNoteId,
         tenantId: row.tenantId,
-        creditAmountSatang: balance.error.creditAmountSatang.toString(),
-        vatSatang: balance.error.vatSatang.toString(),
-        totalSatang: balance.error.totalSatang.toString(),
+        creditAmountSatang: creditAmountSatang.toString(),
+        vatSatang: vatSatang.toString(),
+        totalSatang: totalSatang.toString(),
       },
       'drizzle-credit-note-repo: vat_balance_violated',
     );

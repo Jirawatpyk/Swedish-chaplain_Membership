@@ -83,6 +83,7 @@ import {
   InvoiceLinkConflictError,
 } from '../ports/renewal-cycle-repo';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
+import { errKind } from '@/lib/log-id';
 
 export const reconcileIssuedOrphansInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -208,13 +209,15 @@ export async function reconcileIssuedOrphans(
               // status between our re-read and this call. A genuine race,
               // not a bug — must not inflate the generic `errors` counter.
               if (e instanceof CycleTransitionConflictError) {
+                const expectedFrom: CycleTransitionConflictError['expectedFrom'] = e.expectedFrom;
+                const actualStatus: CycleTransitionConflictError['actualStatus'] = e.actualStatus;
                 logger.warn(
                   {
                     tenantId: input.tenantId,
                     cycleId: row.cycleId,
                     invoiceId: row.invoiceId,
-                    expectedFrom: e.expectedFrom,
-                    actualStatus: e.actualStatus,
+                    expectedFrom,
+                    actualStatus,
                   },
                   '[reconcile-issued-orphans] cycle transitioned concurrently — leaving alone; a later pass or the live retry will resolve it',
                 );
@@ -259,14 +262,18 @@ export async function reconcileIssuedOrphans(
               );
             } catch (e) {
               if (e instanceof InvoiceLinkConflictError) {
+                const attemptedInvoiceId: InvoiceLinkConflictError['attemptedInvoiceId'] =
+                  e.attemptedInvoiceId;
+                const existingInvoiceId: InvoiceLinkConflictError['existingInvoiceId'] =
+                  e.existingInvoiceId;
                 logger.error(
                   {
                     errorId: 'F8.RECONCILE_ORPHANS.LINK_CONFLICT',
                     tenantId: input.tenantId,
                     cycleId: row.cycleId,
                     invoiceId: row.invoiceId,
-                    attemptedInvoiceId: e.attemptedInvoiceId,
-                    existingInvoiceId: e.existingInvoiceId,
+                    attemptedInvoiceId,
+                    existingInvoiceId,
                   },
                   '[reconcile-issued-orphans] cycle already linked to a DIFFERENT invoice — leaving alone; reconcile manually',
                 );
@@ -356,7 +363,7 @@ export async function reconcileIssuedOrphans(
           tenantId: input.tenantId,
           invoiceId: row.invoiceId,
           cycleId: row.cycleId,
-          err: e instanceof Error ? e : new Error(String(e)),
+          err: errKind(e),
         },
         '[reconcile-issued-orphans] candidate relink threw — counted in errors; cron continues',
       );

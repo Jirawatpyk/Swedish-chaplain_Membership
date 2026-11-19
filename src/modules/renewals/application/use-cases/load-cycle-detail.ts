@@ -38,6 +38,7 @@ import type { RenewalLapsedAuditInfo } from '../ports/reminder-audit-query-repo'
 import type { RenewalEscalationTask } from '../../domain/renewal-escalation-task';
 import { getInvoice, makeGetInvoiceDeps } from '@/modules/invoicing';
 
+import { errKind } from '@/lib/log-id';
 export const loadCycleDetailInputSchema = z.object({
   tenantId: z.string().min(1),
   cycleId: z.string().uuid(),
@@ -122,7 +123,7 @@ export async function loadCycleDetail(
     } catch (e) {
       logger.warn(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           cycleId,
           correlationId: input.correlationId,
         },
@@ -210,7 +211,7 @@ export async function loadCycleDetail(
   } catch (e) {
     logger.warn(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: input.tenantId,
         cycleId,
       },
@@ -227,7 +228,7 @@ export async function loadCycleDetail(
   } catch (e) {
     logger.warn(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: input.tenantId,
         cycleId,
       },
@@ -247,7 +248,7 @@ export async function loadCycleDetail(
     } catch (e) {
       logger.warn(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           tenantId: input.tenantId,
           cycleId,
         },

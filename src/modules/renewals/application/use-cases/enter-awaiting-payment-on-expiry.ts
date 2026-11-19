@@ -54,6 +54,7 @@ import {
   CycleTransitionConflictError,
 } from '../ports/renewal-cycle-repo';
 
+import { errKind } from '@/lib/log-id';
 export const enterAwaitingPaymentOnExpiryInputSchema = z.object({
   tenantId: z.string().min(1),
   /** Injected clock for deterministic tests. */
@@ -156,7 +157,7 @@ export async function enterAwaitingPaymentOnExpiry(
           errorId: 'F8.ENTER_AWAITING.CYCLE_TRANSITION_FAILED',
           tenantId: input.tenantId,
           cycleId: cycle.cycleId,
-          err: e instanceof Error ? e : new Error(String(e)),
+          err: errKind(e),
         },
         '[enter-awaiting-payment-on-expiry] cycle transition threw — counted in errors; cron continues',
       );

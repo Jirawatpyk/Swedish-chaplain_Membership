@@ -97,6 +97,7 @@ import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
 
+import { errLogFields } from '@/lib/log-id';
 export const issueCreditNoteSchema = z.object({
   tenantId: z.string().min(1),
   actorUserId: z.string().min(1),
@@ -1230,7 +1231,7 @@ export async function issueCreditNote(
         // surface as a typed concurrent_state_change and let the caller
         // decide whether to retry.
         logger.error(
-          { err: String(e), creditNoteId, invoiceId },
+          { ...errLogFields(e), creditNoteId, invoiceId },
           'issueCreditNote: insertCreditNote failed',
         );
         throw new IssueCreditNoteInternalError({ code: 'concurrent_state_change' });
@@ -1418,7 +1419,7 @@ export async function issueCreditNote(
         }
       } catch (e) {
         logger.error(
-          { err: String(e), invoiceId, creditNoteId, persist: receiptTarget.persist },
+          { ...errLogFields(e), invoiceId, creditNoteId, persist: receiptTarget.persist },
           'issueCreditNote: tax-document pdf regeneration failed',
         );
         throw new IssueCreditNoteInternalError({ code: 'concurrent_state_change' });
@@ -1670,10 +1671,10 @@ export async function issueCreditNote(
       } catch (reconcileErr) {
         logger.error(
           {
-            err: reconcileErr,
+            ...errLogFields(reconcileErr),
             tenantId: input.tenantId,
             invoiceId: input.invoiceId,
-            sourceRefundId: e.sourceRefundId,
+            sourceRefundId: input.sourceRefundId,
           },
           'issueCreditNote: fresh-tx reconcile read failed (transient) after source_refund_id race — returning concurrent_state_change',
         );
@@ -1694,7 +1695,7 @@ export async function issueCreditNote(
         {
           tenantId: input.tenantId,
           invoiceId: input.invoiceId,
-          sourceRefundId: e.sourceRefundId,
+          sourceRefundId: input.sourceRefundId,
         },
         'issueCreditNote: source_refund_id race but sibling CN absent on fresh-tx reconcile',
       );
@@ -1719,7 +1720,7 @@ export async function issueCreditNote(
         // would end the client's attempt, so surface a 5xx (the form keeps the
         // key and the lock) — /code-review on #728.
         logger.error(
-          { err: reconcileErr, tenantId: input.tenantId, invoiceId: input.invoiceId },
+          { ...errLogFields(reconcileErr), tenantId: input.tenantId, invoiceId: input.invoiceId },
           'issueCreditNote: fresh-tx reconcile failed after an idempotency_key race — rethrowing',
         );
         throw reconcileErr;
@@ -1742,7 +1743,7 @@ export async function issueCreditNote(
     if (e instanceof IssueCreditNoteInternalError) {
       logger.warn(
         {
-          err: e.error,
+          ...errLogFields(e.error),
           invoiceId: input.invoiceId,
           tenantId: input.tenantId,
         },
@@ -1774,7 +1775,7 @@ export async function issueCreditNote(
           });
         } catch (auditErr) {
           logger.warn(
-            { err: auditErr, invoiceId: input.invoiceId },
+            { ...errLogFields(auditErr), invoiceId: input.invoiceId },
             'issueCreditNote: pdf_render_failed audit emit also failed',
           );
         }

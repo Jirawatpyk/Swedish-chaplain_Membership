@@ -59,8 +59,8 @@ contract is being exercised in degraded mode.
 
 3. **Check tenant slug shape**: the bridge calls `asTenantContext(String(input.tenantId))`
    which throws on a malformed slug. Pino logs at level `error` with
-   `event: 'f6_event_attendees_query_failed'` carry `errName` —
-   `InvalidTenantSlugError` indicates a bug in F8 caller (passing
+   `event: 'f6_event_attendees_query_failed'` carry `err` (the error
+   class, #740) — `InvalidTenantSlugError` indicates a bug in F8 caller (passing
    a non-slug TenantId).
 
 4. **Check pino stderr last-ditch**: if even the structured logger

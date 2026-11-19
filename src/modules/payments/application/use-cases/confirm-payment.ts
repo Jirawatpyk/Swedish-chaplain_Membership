@@ -67,7 +67,7 @@ import { bangkokLocalDate } from '@/lib/fiscal-year';
 // captured ops log below (precedent: F4's record-payment.ts also imports
 // the structured logger at the Application layer).
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -1325,14 +1325,14 @@ async function confirmPaymentBody(
   // prove the assignment ran), so re-bind through an unknown cast.
   const stalePendingFinal = stalePending as StalePending | null;
   if (stalePendingFinal !== null) {
-    const { payment, cause, invoiceStatus } = stalePendingFinal;
+    const { payment, cause: staleCause, invoiceStatus } = stalePendingFinal;
     const refund = await deps.processorGateway.createRefund({
       paymentIntentId: input.paymentIntentId,
       metadata: {
         invoiceId: payment.invoiceId,
         tenantId: input.tenantId,
         paymentId: payment.id,
-        cause,
+        cause: staleCause,
       },
       idempotencyKey: `auto-refund-${payment.id}`,
       stripeAccount: settings.processorAccountId,
@@ -1435,7 +1435,7 @@ async function confirmPaymentBody(
     // the generic `payment_auto_refunded_stale_invoice` label so
     // audit-log queries can pivot on the specific scenario.
     const auditEventType =
-      cause === 'invoice_already_paid'
+      staleCause === 'invoice_already_paid'
         ? ('payment_auto_refunded_concurrent_manual_mark' as const)
         : ('payment_auto_refunded_stale_invoice' as const);
 
@@ -1496,7 +1496,7 @@ async function confirmPaymentBody(
             payment_id: payment.id,
             invoice_id: payment.invoiceId,
             refunded_amount_satang: payment.amountSatang.toString(),
-            cause,
+            cause: staleCause,
             processor_refund_id: refund.value.id,
           },
           retentionYears: retentionFor(auditEventType),
@@ -1631,7 +1631,7 @@ async function confirmPaymentBody(
         paymentId: payment.id,
         invoiceId: payment.invoiceId,
         amountSatang: payment.amountSatang,
-        cause,
+        cause: staleCause,
         processorRefundId: refund.value.id,
         refundStatus: refund.value.status,
         errorKind: phaseBErrKind,
@@ -1915,10 +1915,7 @@ async function confirmPaymentBody(
       } catch (finaliseErr) {
         logger.error(
           {
-            err:
-              finaliseErr instanceof Error
-                ? finaliseErr.message
-                : String(finaliseErr),
+            ...errLogFields(finaliseErr),
             tenantId: input.tenantId,
             invoiceId: paidInvoiceId,
             paymentIntentId: input.paymentIntentId,

@@ -135,6 +135,16 @@ function isWebhookReadLagError(e: unknown): boolean {
   return err_.code === 'resource_missing' || err_.statusCode === 404;
 }
 
+/** The fields `mapStripeError` reads off a Stripe SDK error. */
+interface StripeErrorShape {
+  readonly type?: string;
+  readonly code?: string;
+  readonly message?: string;
+  readonly statusCode?: number;
+  readonly param?: string;
+  readonly raw?: { readonly param?: string };
+}
+
 /**
  * Map a Stripe SDK error to the port's `ProcessorGatewayError` union.
  *
@@ -162,14 +172,7 @@ export function mapStripeError(
   e: unknown,
   context: { stripeAccount: string; paymentIntentId?: string | undefined },
 ): ProcessorGatewayError {
-  const err_ = e as {
-    readonly type?: string;
-    readonly code?: string;
-    readonly message?: string;
-    readonly statusCode?: number;
-    readonly param?: string;
-    readonly raw?: { readonly param?: string };
-  };
+  const err_ = e as StripeErrorShape;
 
   const type = err_.type ?? 'unknown';
   // Audit 2026-04-25 finding #1: do NOT fall back to `type` as `code`.
@@ -194,13 +197,15 @@ export function mapStripeError(
   // would slip through. `code` + `param` give ops enough to triage
   // without exposing PII.
   const stripeErrorParam = err_.param ?? err_.raw?.param;
+  // #740: an HTTP status number, allow-listed for the log gate.
+  const stripeErrorStatus: StripeErrorShape['statusCode'] = err_.statusCode;
   logger.warn(
     {
       stripeAccount: context.stripeAccount,
       paymentIntentId: context.paymentIntentId,
       stripeErrorType: type,
       stripeErrorCode: err_.code,
-      stripeErrorStatus: err_.statusCode,
+      stripeErrorStatus,
       ...(stripeErrorParam ? { stripeErrorParam } : {}),
     },
     'stripe-gateway: SDK error',

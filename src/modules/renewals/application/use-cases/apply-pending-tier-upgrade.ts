@@ -58,6 +58,7 @@ import type { MemberId, PlanId } from '@/modules/members';
 import { parseInvoiceId, type InvoiceId } from '@/modules/invoicing';
 import type { RenewalActorRole } from '../ports/renewal-audit-emitter';
 
+import { errKind } from '@/lib/log-id';
 /**
  * Actor context for the `tier_upgrade_applied_at_renewal` audit emitted
  * by `applyPendingTierUpgradeInTx`. The default (online F4 invoice-paid
@@ -297,7 +298,7 @@ async function flipMemberPlanForUpgradeInTx(
   } catch (e) {
     logger.warn(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId,
         memberId,
         toPlanId,

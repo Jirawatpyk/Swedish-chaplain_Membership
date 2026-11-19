@@ -173,6 +173,7 @@ import type { PlanCatalogPort } from '../application/ports/plan-catalog-port';
 import type { SuggestionId } from '../domain/tier-upgrade-suggestion';
 import { type ClockPort, wallClock } from '../application/ports/clock-port';
 
+import { errKind } from '@/lib/log-id';
 export interface RenewalsDeps {
   readonly tenant: TenantContext;
   /**
@@ -750,7 +751,7 @@ export function f8OnPaidCallbacks(
         const { logger } = await import('@/lib/logger');
         logger.error(
           {
-            err: e instanceof Error ? e : new Error(String(e)),
+            err: errKind(e),
             tenantId,
             invoiceId: evt.invoiceId,
             memberId: evt.memberId,
@@ -934,7 +935,7 @@ export function f8OnPaidCallbacks(
         const { logger } = await import('@/lib/logger');
         logger.error(
           {
-            err: e instanceof Error ? e : new Error(String(e)),
+            err: errKind(e),
             tenantId,
             invoiceId: evt.invoiceId,
             memberId: evt.memberId,

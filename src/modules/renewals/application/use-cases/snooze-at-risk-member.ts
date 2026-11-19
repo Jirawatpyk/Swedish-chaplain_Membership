@@ -30,6 +30,7 @@ import { parseInput } from './_lib/parse-input';
 // invoking `asMemberId(...)` and avoids importing a runtime value.
 import type { MemberId } from '@/modules/members';
 
+import { errKind } from '@/lib/log-id';
 export const snoozeAtRiskMemberInputSchema = z.object({
   tenantId: z.string().min(1),
   memberId: z.string().uuid(),
@@ -104,7 +105,7 @@ export async function snoozeAtRiskMember(
       // audit emit failure inside the tx MUST propagate so the outer
       // runInTenant rolls the UPDATE back.
       logger.error(
-        { err: e instanceof Error ? e.message : String(e) },
+        { err: errKind(e) },
         '[snooze-at-risk-member] audit emit failed inside tx — rolling back',
       );
       throw e;

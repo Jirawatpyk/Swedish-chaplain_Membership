@@ -32,6 +32,7 @@ import type { CycleId } from '../../domain/renewal-cycle';
 import type { MemberId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 
+import { errKind } from '@/lib/log-id';
 export const skipEscalationTaskInputSchema = z.object({
   tenantId: z.string().min(1),
   taskId: z.string().uuid(),
@@ -127,7 +128,7 @@ export async function skipEscalationTask(
       } catch (e) {
         // R8 IMP-B close — demoted to warn (breadcrumb only).
         logger.warn(
-          { err: e instanceof Error ? e.message : String(e), taskId },
+          { err: errKind(e), taskId },
           '[skip-escalation-task] audit emit failed inside tx — rolling back (breadcrumb)',
         );
         // R10 T277g close — F8-A2 alarm rolls up via this counter.

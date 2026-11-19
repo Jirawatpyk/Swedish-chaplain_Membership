@@ -42,6 +42,7 @@ import type { Result } from '@/lib/result';
 import { ok, err } from '@/lib/result';
 import { safeAuditEmit } from './_helpers/safe-audit-emit';
 
+import { errKind } from '@/lib/log-id';
 // ---------------------------------------------------------------------------
 // Input + Output + Outcome
 // ---------------------------------------------------------------------------
@@ -261,7 +262,7 @@ export async function createEvent(
       {
         event: 'f6_create_event_threw',
         tenantId: input.tenantId,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[F6.1] createEvent use-case threw',
     );

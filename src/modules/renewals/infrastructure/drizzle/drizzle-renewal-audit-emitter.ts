@@ -30,6 +30,7 @@ import {
 } from '../../application/ports/renewal-audit-emitter';
 import type { AuditLogInsert } from '@/modules/auth/infrastructure/db/schema';
 
+import { errLogFields } from '@/lib/log-id';
 /**
  * F8 event types whose pgEnum value exists today. Each entry MUST
  * have a corresponding `ALTER TYPE "audit_event_type" ADD VALUE` in a
@@ -444,11 +445,7 @@ export function makeDrizzleRenewalAuditEmitter(
         // payload keys only.
         logger.error(
           {
-            err: e,
-            errCode:
-              e instanceof Error && 'code' in e
-                ? (e as { code?: string }).code
-                : undefined,
+            ...errLogFields(e),
             eventType: event.type,
             tenantId: ctx.tenantId,
             actorUserId: ctx.actorUserId,

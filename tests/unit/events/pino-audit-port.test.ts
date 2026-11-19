@@ -95,21 +95,22 @@ describe('pino-audit-port — logFullError coverage on emit + emitRolledBack', (
     // Sanitiser strips `"audit_log"` identifier
     expect(result.error.message).toMatch(/relation\s+"\[redacted\]"/);
 
-    // logFullError preserves the unsanitised name + message + stack
+    // logFullError logs the error class only (#740)
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'f6_audit_emit_db_error',
         caller: 'emit',
         tenantId: 'test-chamber',
         eventType: 'webhook_rolled_back',
-        err: expect.objectContaining({
-          name: expect.any(String),
-          message: expect.stringContaining('audit_log'),
-          stack: expect.any(String),
-        }),
+        err: 'Error',
       }),
       expect.any(String),
     );
+    // #740: the log line carries the error class only, never its message
+    // (a driver message quotes identifiers and bound parameters) or stack.
+    const logged = JSON.stringify(errorSpy.mock.calls[0]?.[0]);
+    expect(logged).not.toContain('audit_log');
+    expect(logged).not.toContain('stack');
   });
 
   it('emitRolledBack — runInTenant throw → logFullError with caller="emitRolledBack" + audit_secondary_tx_failure marker', async () => {
@@ -138,21 +139,22 @@ describe('pino-audit-port — logFullError coverage on emit + emitRolledBack', (
     if (result.error.kind !== 'db_error') throw new Error('unreachable');
     expect(result.error.message).toMatch(/column\s+"\[redacted\]"/);
 
-    // logFullError preserves the unsanitised name + message + stack
+    // logFullError logs the error class only (#740)
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'f6_audit_emit_db_error',
         caller: 'emitRolledBack',
         tenantId: 'test-chamber',
         eventType: 'webhook_rolled_back',
-        err: expect.objectContaining({
-          name: expect.any(String),
-          message: expect.stringContaining('tenant_id'),
-          stack: expect.any(String),
-        }),
+        err: 'Error',
       }),
       expect.any(String),
     );
+    // #740: the log line carries the error class only, never its message
+    // (a driver message quotes identifiers and bound parameters) or stack.
+    const logged = JSON.stringify(errorSpy.mock.calls[0]?.[0]);
+    expect(logged).not.toContain('tenant_id');
+    expect(logged).not.toContain('stack');
 
     // pino.fatal secondary-tx-failure marker fires per FR-037 dual-write fallback
     expect(fatalSpy).toHaveBeenCalledWith(
@@ -193,9 +195,8 @@ describe('pino-audit-port — logFullError coverage on emit + emitRolledBack', (
       expect.objectContaining({
         event: 'f6_audit_emit_db_error',
         caller: 'emitRolledBack',
-        err: expect.objectContaining({
-          message: expect.stringContaining('Invalid tenant slug'),
-        }),
+        // #740 — the error class only, never its message.
+        err: 'InvalidTenantSlugError',
       }),
       expect.any(String),
     );

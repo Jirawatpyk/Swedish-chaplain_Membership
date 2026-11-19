@@ -106,7 +106,7 @@ import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
 import { deleteOrphanPdfUnderLock, OrphanCleanupLockReadError } from '../lib/delete-orphan-pdf';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { resolveInvoiceBuyerForIssue } from '../lib/resolve-invoice-buyer';
 import { enqueueInvoiceAutoEmail } from '../lib/enqueue-invoice-email';
@@ -923,7 +923,7 @@ export async function issueEventInvoiceAsPaid(
         } else {
           // 065 H-1b — ERROR + alertable counter: stale bytes remain at the key.
           logger.error(
-            { err: delErr, invoiceId: input.invoiceId, blobKey: orphanBlobKey },
+            { ...errLogFields(delErr), invoiceId: input.invoiceId, blobKey: orphanBlobKey },
             'issue-as-paid: orphan blob cleanup failed',
           );
           invoicingMetrics.orphanBlobCleanupFailed('issue_as_paid');
@@ -977,7 +977,7 @@ export async function issueEventInvoiceAsPaid(
           });
         } catch (auditErr) {
           logger.warn(
-            { err: auditErr, invoiceId: input.invoiceId },
+            { ...errLogFields(auditErr), invoiceId: input.invoiceId },
             'issueEventInvoiceAsPaid: pdf_render_failed audit emit also failed',
           );
         }
@@ -994,7 +994,7 @@ export async function issueEventInvoiceAsPaid(
     // the original error with an audit-write failure.
     if (e instanceof InvalidMemberIdentitySnapshotError) {
       logger.warn(
-        { invoiceId: input.invoiceId, tenantId: input.tenantId, issues: e.issues },
+        { invoiceId: input.invoiceId, tenantId: input.tenantId },
         'issueEventInvoiceAsPaid: buyer identity snapshot invalid at issue time (VAT registrant with no tax_id), rolling back',
       );
       try {
@@ -1011,7 +1011,7 @@ export async function issueEventInvoiceAsPaid(
         });
       } catch (auditErr) {
         logger.warn(
-          { err: auditErr, invoiceId: input.invoiceId },
+          { ...errLogFields(auditErr), invoiceId: input.invoiceId },
           'issueEventInvoiceAsPaid: invoice_buyer_identity_invalid audit emit also failed',
         );
       }

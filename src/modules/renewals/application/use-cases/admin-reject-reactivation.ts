@@ -58,6 +58,7 @@ import {
 } from '../ports/renewal-cycle-repo';
 import { asTaskId } from '../../domain/renewal-escalation-task';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 export const adminRejectReactivationInputSchema = z.object({
   tenantId: z.string().min(1),
   cycleId: z.string().uuid(),
@@ -449,7 +450,7 @@ export async function adminRejectReactivation(
           {
             cycleId,
             refundCreditNoteId,
-            err: e.message,
+            ...errLogFields(e),
           },
           '[admin-reject-reactivation] refund issued but cycle transition lost race — manual reconciliation needed',
         );
@@ -465,7 +466,7 @@ export async function adminRejectReactivation(
         return err({ kind: 'cycle_not_found' });
       }
       logger.error(
-        { err: e instanceof Error ? e.message : String(e), cycleId },
+        { err: errKind(e), cycleId },
         '[admin-reject-reactivation] cycle transition failed',
       );
       renewalsMetrics.adminRejectCompleted(input.tenantId, 'failed');
@@ -506,7 +507,7 @@ export async function adminRejectReactivation(
       // for refund-orphan rollbacks in pino → Sentry queries.
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           cycleId,
           tenantId: input.tenantId,
           refundCreditNoteId,
@@ -587,7 +588,7 @@ export async function adminRejectReactivation(
         // owed", not "no refund happened" — `refundWaiverReason` disambiguates.
         logger.error(
           {
-            err: e instanceof Error ? e.message : String(e),
+            err: errKind(e),
             cycleId,
             tenantId: input.tenantId,
             refundCreditNoteId,

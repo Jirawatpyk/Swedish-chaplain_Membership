@@ -35,6 +35,7 @@ import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId as MemberIdBrand } from '@/modules/members';
 import type { RenewalsDeps } from '../renewals-deps';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 export function makeApplyTierUpgradeOnPaidCallback(
   deps: RenewalsDeps,
   tenantId: string,
@@ -70,7 +71,7 @@ export function makeApplyTierUpgradeOnPaidCallback(
       } catch (e) {
         logger.error(
           {
-            err: e instanceof Error ? e.message : String(e),
+            err: errKind(e),
             tenantId: evt.tenantId,
             invoiceId: evt.invoiceId,
             cycleId: cycle.cycleId,
@@ -111,10 +112,7 @@ export function makeApplyTierUpgradeOnPaidCallback(
             // Counter still bumped + log escalated to fatal.
             logger.fatal(
               {
-                err:
-                  auditErr instanceof Error
-                    ? auditErr.message
-                    : String(auditErr),
+                ...errLogFields(auditErr),
                 tenantId: evt.tenantId,
                 invoiceId: evt.invoiceId,
                 cycleId: cycle.cycleId,

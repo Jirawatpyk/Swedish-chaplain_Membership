@@ -33,6 +33,7 @@ import type { Invoice } from '../../domain/invoice';
 import type { ClockPort } from '../ports/clock-port';
 import type { TaxRegisterRepo } from '../ports/tax-register-repo';
 
+import { errLogFields } from '@/lib/log-id';
 export const listTaxDocumentRegisterSchema = z.object({
   tenantId: z.string().min(1),
   kind: z.enum(['rc_register', 'zero_rate_sales', 're_register']),
@@ -188,7 +189,7 @@ export async function listTaxDocumentRegister(
     // (export-paid-invoices-csv, the signed-url readers).
     logger.error(
       {
-        err: e,
+        ...errLogFields(e),
         tenantId: input.tenantId,
         kind: input.kind,
         from: input.from,

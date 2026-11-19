@@ -43,6 +43,7 @@ import { EscalationTaskNotFoundError } from '../ports/renewal-escalation-task-re
 // of cross-module runtime coupling.
 import type { MemberId } from '@/modules/members';
 
+import { errKind } from '@/lib/log-id';
 /**
  * The fixed task-type closed by this use-case. F8 reserves
  * `manual_outreach_required` for "member's email bounced, admin needs
@@ -199,7 +200,7 @@ export async function resetEmailUnverified(
         // (member-flag update + any prior task transitions).
         logger.error(
           {
-            err: e instanceof Error ? e.message : String(e),
+            err: errKind(e),
             taskId: task.taskId,
             memberId: input.memberId,
             correlationId: input.correlationId,

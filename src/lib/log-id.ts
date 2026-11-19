@@ -125,6 +125,9 @@ const ERROR_CODE = new RegExp(
  *   `ECONNRESET`.
  * - A Result error (`{ code, cause? }`, a RepoError and kin): `err` is the
  *   class of its `cause`, `repoCode` its own code, `code` the cause's SQLSTATE.
+ * - #740 B1 review: a Result error with no `code` but a `kind` or `type`
+ *   (`{ kind, message }`, `{ type, issues }`): `err` is the class of its
+ *   `cause`, `resultKind` its own discriminator, never its message.
  * - Review round 1 (code-review #8) — a thrown Error that wraps a Result error
  *   at `.cause`, or at `.error` (where `UseCaseAbort` keeps it; the plan row
  *   named only `cause`): `err` is the thrown class, `repoCode` the wrapped
@@ -136,6 +139,7 @@ const ERROR_CODE = new RegExp(
 export function errLogFields(failure: unknown): {
   readonly err: string;
   readonly repoCode?: string;
+  readonly resultKind?: string;
   readonly code?: string;
   readonly errCode?: string;
 } {
@@ -149,6 +153,22 @@ export function errLogFields(failure: unknown): {
     return {
       err: errKind(cause),
       repoCode: RESULT_CODE.test(resultCode) ? resultCode : 'unrecognised',
+      ...(sqlState !== undefined ? { code: sqlState } : {}),
+    };
+  }
+  // #740 B1 review — a Result error keyed on `kind` or `type` (`{ kind,
+  // message }`, a plan-audit `{ type, issues }`) and no `code`: its own
+  // discriminator, when token-shaped, is `resultKind`; never its message.
+  const resultKind =
+    resultCode === undefined && !(failure instanceof Error) && typeof failure === 'object' && failure !== null
+      ? ((failure as { kind?: unknown }).kind ?? (failure as { type?: unknown }).type)
+      : undefined;
+  if (typeof resultKind === 'string') {
+    const cause = rootCause(failure);
+    const sqlState = pgErrorCode(cause);
+    return {
+      err: errKind(cause),
+      resultKind: RESULT_CODE.test(resultKind) ? resultKind : 'unrecognised',
       ...(sqlState !== undefined ? { code: sqlState } : {}),
     };
   }

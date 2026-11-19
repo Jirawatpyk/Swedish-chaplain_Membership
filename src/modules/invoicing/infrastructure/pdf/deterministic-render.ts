@@ -44,6 +44,7 @@
  */
 import { createHash } from 'node:crypto';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 
 /**
  * Mulberry32 PRNG — 32-bit integer state, deterministic, well-tested
@@ -214,7 +215,7 @@ export async function withSeededRandom<T>(
   renderChain = next.catch((err: unknown) => {
     if (process.env.NODE_ENV !== 'test') {
       try {
-        logger.error({ err }, 'pdf.deterministic-render.mutex-chain-error');
+        logger.error({ err: errKind(err) }, 'pdf.deterministic-render.mutex-chain-error');
       } catch {
         /* logger unavailable during teardown — best-effort */
       }

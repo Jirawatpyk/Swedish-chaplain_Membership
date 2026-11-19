@@ -37,6 +37,7 @@ import type {
   DeleteErrorCsvInput,
 } from '../application/ports/error-csv-store';
 
+import { errLogFields } from '@/lib/log-id';
 // Tenant-scoped path prefix per research.md R6.
 function buildBlobKey(tenantSlug: string, recordId: string): string {
   return `tenants/${tenantSlug}/csv-import-errors/${recordId}.csv`;
@@ -74,7 +75,7 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
           tenantId: input.tenantId,
           recordId: input.recordId,
           errorRowsBytes: input.csvBytes.length,
-          err: message,
+          ...errLogFields(e),
         },
         'F6.1 error CSV blob upload failed',
       );
@@ -119,7 +120,7 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
           // column without exposing the capability.
           blobUrlLength: input.blobUrl.length,
           blobUrlPathSuffix: extractPathSuffix(input.blobUrl),
-          err: message,
+          ...errLogFields(e),
         },
         'F6.1 error CSV signed-URL generation failed (likely malformed blobUrl)',
       );
@@ -146,7 +147,7 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
           // signed-URL path above.
           blobUrlLength: input.blobUrl.length,
           blobUrlPathSuffix: extractPathSuffix(input.blobUrl),
-          err: message,
+          ...errLogFields(e),
         },
         'F6.1 error CSV blob delete failed',
       );

@@ -26,6 +26,7 @@ import type {
   PlanCatalogPort,
 } from '../../application/ports/plan-catalog-port';
 
+import { errKind } from '@/lib/log-id';
 async function listForTenantViaTx(
   tx: TenantTx,
   tenantId: string,
@@ -132,7 +133,7 @@ async function listForTenantViaTx(
       } catch (e) {
         logger.error(
           {
-            err: e instanceof Error ? e.message : String(e),
+            err: errKind(e),
             tenantId,
             planId: drop.planId,
           },

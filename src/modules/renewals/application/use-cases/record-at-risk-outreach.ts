@@ -40,6 +40,7 @@ import {
 // Type-only import — runtime no-op brand cast (Constitution Principle III)
 import type { MemberId } from '@/modules/members';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 export const recordAtRiskOutreachInputSchema = z
   .object({
     tenantId: z.string().min(1),
@@ -129,7 +130,7 @@ export async function recordAtRiskOutreach(
       // 4xx instead of 5xx for known invariants.
       const message = e instanceof Error ? e.message : String(e);
       logger.error(
-        { err: message, tenantId: input.tenantId, memberId: input.memberId },
+        { ...errLogFields(e), tenantId: input.tenantId, memberId: input.memberId },
         '[record-at-risk-outreach] insert failed',
       );
       return err({ kind: 'server_error' as const, message });
@@ -160,7 +161,7 @@ export async function recordAtRiskOutreach(
       // Reverse-direction atomicity per Constitution Principle VIII —
       // audit failure rolls the INSERT back.
       logger.error(
-        { err: e instanceof Error ? e.message : String(e) },
+        { err: errKind(e) },
         '[record-at-risk-outreach] audit emit failed inside tx — rolling back',
       );
       throw e;

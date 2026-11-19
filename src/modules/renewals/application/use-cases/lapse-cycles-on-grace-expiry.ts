@@ -141,6 +141,7 @@ import {
   CycleTransitionConflictError,
 } from '../ports/renewal-cycle-repo';
 
+import { errKind } from '@/lib/log-id';
 export const lapseCyclesOnGraceExpiryInputSchema = z.object({
   tenantId: z.string().min(1),
   /** Injected clock for deterministic tests. */
@@ -390,7 +391,7 @@ export async function lapseCyclesOnGraceExpiry(
           errorId: 'F8.LAPSE.CYCLE_TRANSITION_FAILED',
           tenantId: input.tenantId,
           cycleId: cycle.cycleId,
-          err: e instanceof Error ? e : new Error(String(e)),
+          err: errKind(e),
         },
         '[lapse-cycles-on-grace-expiry] cycle transition threw — counted in errors; cron continues',
       );
@@ -491,7 +492,7 @@ async function processOne(
         errorId: 'F8.LAPSE.INVOICE_DUE_GUARD_FAILED',
         tenantId,
         cycleId: cycle.cycleId,
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
       },
       '[lapse-cycles-on-grace-expiry] invoiceDueBridge threw — failing SAFE (member NOT lapsed); counted as deferred_guard_error, NOT folded into the generic errors tally',
     );
@@ -592,7 +593,7 @@ async function processOne(
           errorId: 'F8.LAPSE.WARNING_GUARD_FAILED',
           tenantId,
           cycleId: cycle.cycleId,
-          err: e instanceof Error ? e : new Error(String(e)),
+          err: errKind(e),
         },
         '[lapse-cycles-on-grace-expiry] reminderEventRepo.listForCycle threw — failing SAFE (member NOT lapsed); counted as deferred_guard_error',
       );

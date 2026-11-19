@@ -32,6 +32,7 @@ import type { MemberId } from '@/modules/members';
 // dismiss UPDATE) from a genuine dismiss failure.
 import { TierUpgradeStatusConflictError } from '../ports/tier-upgrade-suggestion-repo';
 
+import { errKind } from '@/lib/log-id';
 export const reconcilePendingApplicationsInputSchema = z.object({
   tenantId: z.string().min(1),
   correlationId: z.string().min(1),
@@ -167,10 +168,11 @@ export async function reconcilePendingApplications(
       // self-healing race). Count it as a benign skip and continue.
       if (e instanceof TierUpgradeStatusConflictError) {
         skippedBenign++;
+        const actualStatus: TierUpgradeStatusConflictError['actualStatus'] = e.actualStatus;
         logger.info(
           {
             suggestionId: orphan.suggestion.suggestionId,
-            actualStatus: e.actualStatus,
+            actualStatus,
           },
           '[reconcile-pending-applications] orphan already transitioned concurrently — benign skip',
         );
@@ -185,7 +187,7 @@ export async function reconcilePendingApplications(
       renewalsMetrics.tierUpgradeReconcileErrors(input.tenantId);
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           suggestionId: orphan.suggestion.suggestionId,
         },
         '[reconcile-pending-applications] orphan dismiss failed — continuing',
