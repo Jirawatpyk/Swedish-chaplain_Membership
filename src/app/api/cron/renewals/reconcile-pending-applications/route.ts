@@ -26,6 +26,7 @@ import { uuidv7 } from '@/lib/request-id';
 import {
   renewalsCronOverlapBody,
   tryRenewalsCronLock,
+  reportOverlapSkips,
 } from '@/lib/renewals-cron-lock';
 import { asTenantContext } from '@/modules/tenants';
 import {
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // `payments:`, F7 `broadcasts:` namespaces. Auto-released at tx
     // end. A try-lock (#754 follow-up): an overlapping invocation
     // answers 200 `skipped: overlap` at once instead of waiting out the
-    // 30 s statement bound; the holder does the work.
+    // 30 s statement bound. The holder may be the other reconcile cron.
     const result = await runInTenant(tenantCtx, async (tx) => {
       if (!(await tryRenewalsCronLock(tx, 'renewals:reconcile:', tenantId))) {
         return 'overlap' as const;
@@ -97,10 +98,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       });
     });
     if (result === 'overlap') {
-      logger.info(
-        { tenantId, correlationId },
-        'cron.renewals.reconcile_pending.overlap_skipped',
-      );
+      // No coordinator counts this cron, so it reports its own overlap.
+      // Its key is shared with reconcile-pending-reactivations: the holder
+      // may be the OTHER cron, so this week's work waits for next Friday
+      // unless ops re-fires it once the holder ends.
+      reportOverlapSkips('reconcile_pending_applications', 1, correlationId);
       return NextResponse.json(renewalsCronOverlapBody(tenantId));
     }
     if (!result.ok) {

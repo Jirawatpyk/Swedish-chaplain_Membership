@@ -1636,7 +1636,10 @@ in `renewals.coordinator.tenants_skipped_overlap_total{cron_kind}` and logs
 `cron.renewals.coordinator.overlap_skipped` (warn). To catch up sooner,
 re-fire the coordinator once the holder's run has ended. Overlap on two runs
 in a row means a run is stuck or the schedule overlaps itself: read the
-holder's logs before re-firing. Distinct
+holder's logs before re-firing. reconcile-pending-applications has no coordinator and reports its
+own overlap (`cron_kind` `reconcile_pending_applications`); its key is shared
+with reconcile-pending-reactivations, so a skip there waits a week unless
+re-fired. Distinct
 namespace from `renewals:dispatch:` so daily dispatch and weekly at-risk
 recompute can run concurrently without contention.
 
