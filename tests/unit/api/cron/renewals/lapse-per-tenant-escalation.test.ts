@@ -40,7 +40,11 @@ vi.mock('@/lib/env', () => ({
   },
 }));
 
-const txExecuteMock = vi.hoisted(() => vi.fn(async () => undefined));
+// #754 follow-up — the route reads `acquired` from the try-lock row;
+// default to a won lock so every pre-existing test runs the use case.
+const txExecuteMock = vi.hoisted(() =>
+  vi.fn(async (_q?: unknown): Promise<unknown> => [{ acquired: true }]),
+);
 vi.mock('@/lib/db', () => ({
   db: {},
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
@@ -163,6 +167,19 @@ describe('cron lapse-cycles per-tenant route — §3.2(3) escalation loop', () =
     lapseMock.mockResolvedValueOnce(lapseResult([]));
     const res = await POST(makeRequest(VALID_AUTH), params(TENANT_SLUG));
     expect(res.status).toBe(200);
+    expect(createEscalationTaskMock).not.toHaveBeenCalled();
+  });
+
+  it('#754 follow-up: an overlapping run skips at once with 200 overlap, no lapse pass', async () => {
+    txExecuteMock.mockResolvedValueOnce([{ acquired: false }]);
+    const res = await POST(makeRequest(VALID_AUTH), params(TENANT_SLUG));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      skipped: true,
+      reason: 'overlap',
+      tenant_id: TENANT_SLUG,
+    });
+    expect(lapseMock).not.toHaveBeenCalled();
     expect(createEscalationTaskMock).not.toHaveBeenCalled();
   });
 

@@ -4,13 +4,16 @@
  * Called by the weekly at-risk-recompute coordinator (T160) — NOT by
  * cron-job.org directly. Receives `tenantId` as a URL path param,
  * validates against `env.tenant.slug` (MVP single-tenant guard),
- * acquires per-tenant advisory lock, then loops over active members
+ * takes the per-tenant advisory try-lock, then loops over active members
  * (per FR-007a canonical definition) calling the T154
  * `computeAtRiskScore` use-case once per member with per-member fault
  * isolation.
  *
- * Per-tenant advisory lock convention:
- *   pg_advisory_xact_lock(hashtextextended('renewals:at-risk:'||tenantId, 0))
+ * Per-tenant advisory lock convention (#754 follow-up: NON-blocking):
+ *   pg_try_advisory_xact_lock(hashtextextended('renewals:at-risk:'||tenantId, 0))
+ *
+ * An overlapping run answers 200 `{ skipped: true, reason: 'overlap' }`
+ * at once; the run holding the lock does the work.
  *
  * Distinct namespace from `renewals:dispatch:` so daily dispatch + the
  * weekly at-risk recompute can run concurrently without contention. F4
@@ -39,7 +42,6 @@
  * aggregate counts (per FR-spec audit-port shape).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -49,6 +51,10 @@ import { rateLimiter } from '@/lib/auth-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { getClientIp } from '@/lib/client-ip';
 import { renewalsMetrics } from '@/lib/metrics';
+import {
+  renewalsCronOverlapBody,
+  tryRenewalsCronLock,
+} from '@/lib/renewals-cron-lock';
 import { asTenantContext } from '@/modules/tenants';
 import {
   recomputeAtRiskScoresBatch,
@@ -159,19 +165,20 @@ export async function POST(
   const startedAt = Date.now();
 
   try {
-    // Lock + work atomic (Phase 6 review C1): the advisory_xact_lock,
+    // Lock + work atomic (Phase 6 review C1): the advisory xact lock,
     // the batched recompute (factor CTE + bulk UPDATE + bulk audit
     // INSERT), and the partial-failure audit all commit in one tx.
-    // Two concurrent cron-job.org invocations now serialise correctly
-    // — one waits on the lock until the other commits, instead of both
-    // racing through the use-case work. Lock namespace
-    // `renewals:at-risk:` stays disjoint from `renewals:dispatch:`.
+    // Two concurrent invocations never both run the use-case work: the
+    // second fails the try-lock and skips at once (#754 follow-up — a
+    // blocking wait would hit the 30 s statement bound and 500). Lock
+    // namespace `renewals:at-risk:` stays disjoint from
+    // `renewals:dispatch:`.
     const memberNotFound = 0; // batched path doesn't surface this signal
 
     const txResult = await runInTenant(tenantCtx, async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:at-risk:'||${tenantId}, 0))`,
-      );
+      if (!(await tryRenewalsCronLock(tx, 'renewals:at-risk:', tenantId))) {
+        return 'overlap' as const;
+      }
       // T159b batched recompute — 4 round-trips total (settings +
       // factor CTE + bulk UPDATE + bulk INSERT audits) regardless of
       // member count. Hits FR-036 + SC-005 60s @ 5,000 members SLO on
@@ -211,6 +218,14 @@ export async function POST(
       }
       return batchResult;
     });
+
+    if (txResult === 'overlap') {
+      logger.info(
+        { tenantId, correlationId },
+        'cron.renewals.at_risk.overlap_skipped',
+      );
+      return NextResponse.json(renewalsCronOverlapBody(tenantId));
+    }
 
     if (!txResult.ok) {
       logger.error(

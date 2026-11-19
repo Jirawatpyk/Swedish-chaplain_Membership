@@ -40,6 +40,7 @@ import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
+import { countTenantSkips, reportOverlapSkips } from '@/lib/renewals-cron-lock';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
 export const runtime = 'nodejs';
@@ -48,6 +49,8 @@ export const dynamic = 'force-dynamic';
 interface PerTenantResultOk {
   readonly tenant_id: string;
   readonly skipped: boolean;
+  /** The per-tenant route's `reason` when `skipped` (e.g. `overlap`). */
+  readonly skip_reason?: string;
   readonly tenant_skipped_reason?: string;
   readonly members_scanned?: number;
   readonly suggestions_created?: number;
@@ -69,6 +72,10 @@ interface OrchestratedSummary {
   readonly tenants_succeeded: number;
   readonly tenants_failed: number;
   readonly tenants_skipped_kill_switch: number;
+  // #754 follow-up: tenants whose per-tenant route answered 200
+  // `{ skipped: true, reason: 'overlap' }` — another run held the
+  // per-tenant try-lock and did the work. Neither succeeded nor failed.
+  readonly tenants_skipped_overlap: number;
   readonly duration_ms: number;
 }
 
@@ -89,6 +96,7 @@ async function emitOrchestratedAudit(
           tenants_succeeded: summary.tenants_succeeded,
           tenants_failed: summary.tenants_failed,
           tenants_skipped_kill_switch: summary.tenants_skipped_kill_switch,
+          tenants_skipped_overlap: summary.tenants_skipped_overlap,
           duration_ms: summary.duration_ms,
           per_tenant_summaries: perTenantResults.map((r) =>
             'error' in r
@@ -173,6 +181,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       tenants_succeeded: 0,
       tenants_failed: 0,
       tenants_skipped_kill_switch: 0,
+      tenants_skipped_overlap: 0,
       duration_ms: Date.now() - startedAt,
     };
     await emitOrchestratedAudit(env.tenant.slug, summary, [], correlationId);
@@ -235,6 +244,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return {
         tenant_id: tenantId,
         skipped: Boolean(r.value.json.skipped),
+        ...(typeof r.value.json.reason === 'string'
+          ? { skip_reason: r.value.json.reason }
+          : {}),
         members_scanned:
           typeof r.value.json.members_scanned === 'number'
             ? r.value.json.members_scanned
@@ -295,11 +307,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const tenantsSucceededOrSkipped = perTenantResults.filter(
     (r): r is PerTenantResultOk => !('error' in r),
   );
-  const tenantsSkippedKillSwitch = tenantsSucceededOrSkipped.filter(
-    (r) => r.skipped,
-  ).length;
+  // #754 follow-up: an `overlap` skip (another run held the try-lock
+  // and did the work) is counted apart from a kill-switch skip; both
+  // stay out of `tenants_succeeded`.
+  const { overlap: tenantsSkippedOverlap, other: tenantsSkippedKillSwitch } =
+    countTenantSkips(perTenantResults);
   const tenantsSucceeded =
-    tenantsSucceededOrSkipped.length - tenantsSkippedKillSwitch;
+    tenantsSucceededOrSkipped.length -
+    tenantsSkippedKillSwitch -
+    tenantsSkippedOverlap;
   const tenantsFailed =
     perTenantResults.length - tenantsSucceededOrSkipped.length;
 
@@ -308,6 +324,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     tenants_succeeded: tenantsSucceeded,
     tenants_failed: tenantsFailed,
     tenants_skipped_kill_switch: tenantsSkippedKillSwitch,
+    tenants_skipped_overlap: tenantsSkippedOverlap,
     duration_ms: Date.now() - startedAt,
   };
 
@@ -328,6 +345,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (summary.tenants_failed > 0) {
     renewalsMetrics.coordinatorTenantsFailed('tier_upgrade_evaluate', summary.tenants_failed);
   }
+  reportOverlapSkips('tier_upgrade_evaluate', summary.tenants_skipped_overlap, correlationId);
   renewalsMetrics.coordinatorDurationMs('tier_upgrade_evaluate', summary.duration_ms);
 
   logger.info(

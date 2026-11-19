@@ -11,12 +11,12 @@
  *   2. `retryFailedReminders` (Wave I2e) — FR-010a 24h retry budget
  *      pass for transient failures + permanent-exhaustion handling.
  *
- * Per-tenant advisory lock convention:
- *   pg_advisory_xact_lock(hashtextextended('renewals:dispatch:'||tenantId, 0))
+ * Per-tenant advisory lock convention (#754 follow-up: NON-blocking):
+ *   pg_try_advisory_xact_lock(hashtextextended('renewals:dispatch:'||tenantId, 0))
  *
- * Auto-released at tx end. Concurrent T103 coordinator runs would
- * race on the same lock — second waits, then sees zero new dispatches
- * via FR-011 idempotency. Safe.
+ * Auto-released at tx end. An overlapping run (cron retry, manual
+ * re-fire) does not wait: it answers 200 `{ skipped: true, reason:
+ * 'overlap' }` at once and the run holding the lock does the work.
  *
  * Auth: Bearer via `CRON_SECRET` (same as T103 coordinator). The
  * coordinator forwards its Bearer to the per-tenant route — both
@@ -27,7 +27,6 @@
  * table.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -37,6 +36,10 @@ import { rateLimiter } from '@/lib/auth-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { getClientIp } from '@/lib/client-ip';
 import { renewalsMetrics } from '@/lib/metrics';
+import {
+  renewalsCronOverlapBody,
+  tryRenewalsCronLock,
+} from '@/lib/renewals-cron-lock';
 import { asTenantContext } from '@/modules/tenants';
 import {
   dispatchRenewalCycle,
@@ -175,11 +178,17 @@ export async function POST(
       // (per-tenant cron pass vs per-cycle admin action). Cross-feature
       // namespaces stay disjoint: F4 uses `invoicing:`, F5 `payments:`,
       // F7 `broadcasts:`. Auto-released at tx end. The TX exists ONLY
-      // to acquire the lock — the inner use-cases open their OWN
-      // runInTenant blocks for atomic state+audit.
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:dispatch:'||${tenantId}, 0))`,
-      );
+      // to hold the lock — the inner use-cases open their OWN
+      // runInTenant blocks for atomic state+audit. #754 follow-up: a
+      // try-lock — an overlapping run skips at once instead of waiting
+      // out the 30 s statement bound and failing 57014 → 500.
+      if (!(await tryRenewalsCronLock(tx, 'renewals:dispatch:', tenantId))) {
+        logger.info(
+          { tenantId, correlationId },
+          'cron.renewals.dispatch.overlap_skipped',
+        );
+        return NextResponse.json(renewalsCronOverlapBody(tenantId));
+      }
 
       // 1. New dispatches.
       const dispatchResult = await dispatchRenewalCycle(deps, {

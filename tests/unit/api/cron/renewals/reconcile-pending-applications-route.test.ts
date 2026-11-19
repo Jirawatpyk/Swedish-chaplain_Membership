@@ -21,8 +21,13 @@ const envMock = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/env', () => ({ env: envMock }));
 
+// #754 follow-up — the route reads `acquired` from the try-lock row;
+// default to a won lock so every pre-existing test runs the reconcile.
+const txExecuteMock = vi.hoisted(() =>
+  vi.fn(async (_q?: unknown): Promise<unknown> => [{ acquired: true }]),
+);
 const runInTenantMock = vi.hoisted(() =>
-  vi.fn(async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn({ execute: async () => [] })),
+  vi.fn(async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn({ execute: txExecuteMock })),
 );
 vi.mock('@/lib/db', () => ({ runInTenant: runInTenantMock }));
 
@@ -39,8 +44,12 @@ vi.mock('@/modules/renewals', () => ({
 vi.mock('@/modules/tenants', () => ({ asTenantContext: (slug: string) => ({ slug }) }));
 
 const skippedReadOnlyMock = vi.hoisted(() => vi.fn());
+const skippedOverlapMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/metrics', () => ({
-  renewalsMetrics: { coordinatorSkippedReadOnly: skippedReadOnlyMock },
+  renewalsMetrics: {
+    coordinatorSkippedReadOnly: skippedReadOnlyMock,
+    coordinatorTenantsSkippedOverlap: skippedOverlapMock,
+  },
 }));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -97,5 +106,21 @@ describe('cron renewals reconcile-pending-applications — READ_ONLY_MODE (#408)
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ skipped: false, tenant_id: 'tenanta', orphans_detected: 0 });
     expect(reconcileMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('#754 follow-up: an overlapping run skips at once with 200 overlap, no reconcile', async () => {
+    txExecuteMock.mockResolvedValueOnce([{ acquired: false }]);
+    const res = await GET(makeRequest(`Bearer ${CRON_SECRET}`));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      skipped: true,
+      reason: 'overlap',
+      tenant_id: 'tenanta',
+    });
+    expect(reconcileMock).not.toHaveBeenCalled();
+    // #796 code review: this cron has no coordinator, so its own overlap
+    // must reach the same counter (its lock key is shared with
+    // reconcile-pending-reactivations, so the holder does other work).
+    expect(skippedOverlapMock).toHaveBeenCalledWith('reconcile_pending_applications', 1);
   });
 });

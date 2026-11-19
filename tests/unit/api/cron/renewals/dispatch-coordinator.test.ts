@@ -82,8 +82,10 @@ const coordinatorTenantsSucceededMock = vi.hoisted(() => vi.fn());
 const coordinatorTenantsFailedMock = vi.hoisted(() => vi.fn());
 const coordinatorDurationMsMock = vi.hoisted(() => vi.fn());
 const cronBearerAuthRejectedMock = vi.hoisted(() => vi.fn());
+const coordinatorTenantsSkippedOverlapMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/metrics', () => ({
   renewalsMetrics: {
+    coordinatorTenantsSkippedOverlap: coordinatorTenantsSkippedOverlapMock,
     redisFallback: redisFallbackMock,
     coordinatorAuditEmitFailed: coordinatorAuditEmitFailedMock,
     coordinatorTenantFailed: vi.fn(),
@@ -401,5 +403,40 @@ describe('cron dispatch-coordinator route (T103)', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.tenants_succeeded).toBe(1);
+  });
+});
+
+describe('#754 follow-up — per-tenant overlap skip', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('a 200 overlap skip counts as tenants_skipped_overlap, not succeeded or failed', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({
+        skipped: true,
+        reason: 'overlap',
+        tenant_id: TENANT_SLUG,
+      }),
+    });
+    const res = await POST(makeRequest(VALID_AUTH));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tenants_succeeded).toBe(0);
+    expect(body.tenants_skipped_overlap).toBe(1);
+    expect(body.tenants_failed).toBe(0);
+    expect(body.tenants_skipped_kill_switch).toBe(0);
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    const payload = auditEmitMock.mock.calls[0]![0].payload as {
+      tenants_skipped_overlap?: number;
+      tenants_skipped_kill_switch?: number;
+    };
+    expect(payload.tenants_skipped_overlap).toBe(1);
+    // R1 M1: an overlap skip is counted where an alert can see it.
+    expect(coordinatorTenantsSkippedOverlapMock).toHaveBeenCalledWith('dispatch', 1);
+    expect(payload.tenants_skipped_kill_switch).toBe(0);
   });
 });

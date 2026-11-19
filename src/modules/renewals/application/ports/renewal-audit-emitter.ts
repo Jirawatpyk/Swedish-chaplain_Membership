@@ -1220,6 +1220,17 @@ export interface F8AuditPayloadShapes {
      * written before this field landed.
      */
     readonly tenants_skipped_kill_switch?: number;
+    /**
+     * #754 follow-up: tenants whose per-tenant route answered 200
+     * `{ skipped: true, reason: 'overlap' }` — another run held the
+     * per-tenant advisory try-lock and did the work, so this run skipped
+     * at once instead of waiting out the 30 s statement bound and failing
+     * 57014 → 500. Counted in neither `tenants_succeeded` nor
+     * `tenants_failed`. Optional for backward compat with audit rows
+     * written before this field landed (and the auto-draft coordinator,
+     * which takes no per-tenant lock, omits it).
+     */
+    readonly tenants_skipped_overlap?: number;
     readonly duration_ms: number;
     readonly per_tenant_summaries: ReadonlyArray<
       | {

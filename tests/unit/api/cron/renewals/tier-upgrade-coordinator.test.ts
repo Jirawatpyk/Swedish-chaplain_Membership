@@ -61,8 +61,10 @@ vi.mock('@/lib/otel-tracer', () => ({
 
 const coordinatorTenantsFailedMock = vi.hoisted(() => vi.fn());
 const coordinatorSkippedReadOnlyMock = vi.hoisted(() => vi.fn());
+const coordinatorTenantsSkippedOverlapMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/metrics', () => ({
   renewalsMetrics: {
+    coordinatorTenantsSkippedOverlap: coordinatorTenantsSkippedOverlapMock,
     cronBearerAuthRejected: vi.fn(),
     coordinatorAuditEmitFailed: vi.fn(),
     redisFallback: vi.fn(),
@@ -164,5 +166,40 @@ describe('cron tier-upgrade-evaluate-coordinator route (W0-09)', () => {
     expect((await res.json()).tenants_failed).toBe(1);
     // F8-A1 (the alert this finding restores) — the failed counter MUST fire.
     expect(coordinatorTenantsFailedMock).toHaveBeenCalledWith('tier_upgrade_evaluate', 1);
+  });
+});
+
+describe('#754 follow-up — per-tenant overlap skip', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('a 200 overlap skip counts as tenants_skipped_overlap, not succeeded or failed', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({
+        skipped: true,
+        reason: 'overlap',
+        tenant_id: TENANT_SLUG,
+      }),
+    });
+    const res = await POST(makeRequest(VALID_AUTH));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tenants_succeeded).toBe(0);
+    expect(body.tenants_skipped_overlap).toBe(1);
+    expect(body.tenants_failed).toBe(0);
+    expect(body.tenants_skipped_kill_switch).toBe(0);
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    const payload = auditEmitMock.mock.calls[0]![0].payload as {
+      tenants_skipped_overlap?: number;
+      tenants_skipped_kill_switch?: number;
+    };
+    expect(payload.tenants_skipped_overlap).toBe(1);
+    // R1 M1: an overlap skip is counted where an alert can see it.
+    expect(coordinatorTenantsSkippedOverlapMock).toHaveBeenCalledWith('tier_upgrade_evaluate', 1);
+    expect(payload.tenants_skipped_kill_switch).toBe(0);
   });
 });

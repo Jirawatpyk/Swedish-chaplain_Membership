@@ -28,6 +28,7 @@ import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
+import { countTenantSkips, reportOverlapSkips } from '@/lib/renewals-cron-lock';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
 export const runtime = 'nodejs';
@@ -36,6 +37,8 @@ export const dynamic = 'force-dynamic';
 interface PerTenantResult {
   readonly tenant_id: string;
   readonly skipped?: boolean;
+  /** The per-tenant route's `reason` when `skipped` (e.g. `overlap`). */
+  readonly skip_reason?: string;
   readonly cycles_processed?: number;
   readonly flipped?: number;
   readonly race_skipped?: number;
@@ -107,6 +110,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             cron_kind: 'enter_awaiting',
             ...summary,
             tenants_skipped_kill_switch: 0,
+            tenants_skipped_overlap: 0,
             per_tenant_summaries: [],
           },
         },
@@ -167,6 +171,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return {
           tenant_id: tenantId,
           skipped: Boolean(json.skipped),
+          ...(typeof json.reason === 'string' ? { skip_reason: json.reason } : {}),
           cycles_processed: numFromJson(json, 'cycles_processed'),
           flipped: numFromJson(json, 'flipped'),
           race_skipped: numFromJson(json, 'race_skipped'),
@@ -196,10 +201,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return r.value;
   });
 
+  // #754 follow-up: a skipped tenant is not a succeeded one. An
+  // `overlap` skip (another run held the per-tenant try-lock and did the
+  // work) is counted on its own; any other per-tenant skip (the tenant
+  // route's own kill switch) is `tenants_skipped_kill_switch`, so the four
+  // buckets add up to `tenants_enqueued`.
   const tenantsSucceeded = perTenantResults.filter(
-    (r) => r.error === undefined,
+    (r) => r.error === undefined && r.skipped !== true,
   ).length;
-  const tenantsFailed = perTenantResults.length - tenantsSucceeded;
+  const { overlap: tenantsSkippedOverlap, other: tenantsSkippedKillSwitch } =
+    countTenantSkips(perTenantResults);
+  const tenantsFailed = perTenantResults.filter(
+    (r) => r.error !== undefined,
+  ).length;
   // Surface tenants that returned 200-OK but had per-cycle errors so a
   // tenant whose transition consistently throws does not appear "100%
   // healthy" while no cycles actually flipped.
@@ -211,7 +225,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     tenants_enqueued: activeTenants.length,
     tenants_succeeded: tenantsSucceeded,
     tenants_failed: tenantsFailed,
-    tenants_skipped_kill_switch: 0,
+    tenants_skipped_kill_switch: tenantsSkippedKillSwitch,
+    tenants_skipped_overlap: tenantsSkippedOverlap,
     duration_ms: Date.now() - startedAt,
   };
 
@@ -269,6 +284,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (summary.tenants_failed > 0) {
     renewalsMetrics.coordinatorTenantsFailed('enter_awaiting', summary.tenants_failed);
   }
+  reportOverlapSkips('enter_awaiting', summary.tenants_skipped_overlap, correlationId);
   renewalsMetrics.coordinatorDurationMs('enter_awaiting', summary.duration_ms);
 
   logger.info(

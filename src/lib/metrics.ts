@@ -5538,6 +5538,22 @@ export const renewalsMetrics = {
   },
 
   /**
+   * `renewals.coordinator.tenants_skipped_overlap_total{cron_kind}` — #754
+   * follow-up. Tenants whose per-tenant run answered 200 `overlap` because
+   * another run held the renewals cron try-lock. Not a failure (F8-A1 stays
+   * quiet), but overlap on two runs in a row means a run is stuck or the
+   * schedule overlaps itself (`docs/observability.md`).
+   */
+  coordinatorTenantsSkippedOverlap(cronKind: string, count: number): void {
+    safeMetric(() => {
+      counter(
+        'renewals.coordinator.tenants_skipped_overlap_total',
+        'F8 cron coordinator — tenants skipped because another run held the cron lock (#754)',
+      ).add(count, { cron_kind: cronKind });
+    });
+  },
+
+  /**
    * `renewals.coordinator.duration_ms{cron_kind}` — § 23.1.3.
    *
    * Histogram of total coordinator wall-clock duration. Distinct from the

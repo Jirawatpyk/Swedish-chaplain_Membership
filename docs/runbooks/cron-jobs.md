@@ -1559,7 +1559,10 @@ not at review. The table below had drifted too: it listed 36 of the 39 until
 
 **After Vercel crons are confirmed firing (overlap window is safe —**
 **every handler is advisory-locked / idempotent, so a double-fire from**
-**cron-job.org + Vercel in the same window no-ops the second run):**
+**cron-job.org + Vercel in the same window no-ops the second run; the**
+**renewals per-tenant routes take a try-lock, so an overlapping run**
+**answers 200 `{ skipped: true, reason: 'overlap' }` at once and its**
+**coordinator counts it as `tenants_skipped_overlap`, not failed):**
 
 6. **Pause (do NOT delete)** every cron-job.org job in the SweCham ops
    account. Keep them as standby in case Pro limits ever change again.
@@ -1618,12 +1621,27 @@ member) + `at_risk_score_threshold_crossed` (when member's band crosses UP)
 FR-035). Cron-pass-level `at_risk_compute_partial_failure` audit on aggregate
 non-zero member-failure count. Coordinator emits `cron_dispatch_orchestrated`
 (re-using the existing typed shape) summarising tenants enqueued / succeeded
-/ failed / skipped-by-kill-switch.
+/ failed / skipped-by-kill-switch / skipped-by-overlap.
 
-Per-tenant advisory lock: `pg_advisory_xact_lock(hashtextextended(
-'renewals:at-risk:'||tenant_id, 0))`. Distinct namespace from
-`renewals:dispatch:` so daily dispatch and weekly at-risk recompute can run
-concurrently without contention.
+Per-tenant advisory lock: `pg_try_advisory_xact_lock(hashtextextended(
+'renewals:at-risk:'||tenant_id, 0))` — NON-blocking (#754 follow-up): an
+overlapping run answers 200 `{ skipped: true, reason: 'overlap' }` at once
+(the run holding the lock does the work) instead of waiting out
+`runInTenant`'s 30 s statement bound and failing 57014 → 500. A skip is not
+free: if the holder's run fails, or a member becomes due after it listed its
+work, that work waits for the cron's next schedule (daily for dispatch,
+enter-awaiting, lapse and reconcile-reactivations; weekly for at-risk,
+tier-upgrade and reconcile-applications). Each coordinator counts overlaps
+in `renewals.coordinator.tenants_skipped_overlap_total{cron_kind}` and logs
+`cron.renewals.coordinator.overlap_skipped` (warn). To catch up sooner,
+re-fire the coordinator once the holder's run has ended. Overlap on two runs
+in a row means a run is stuck or the schedule overlaps itself: read the
+holder's logs before re-firing. reconcile-pending-applications has no coordinator and reports its
+own overlap (`cron_kind` `reconcile_pending_applications`); its key is shared
+with reconcile-pending-reactivations, so a skip there waits a week unless
+re-fired. Distinct
+namespace from `renewals:dispatch:` so daily dispatch and weekly at-risk
+recompute can run concurrently without contention.
 
 Granular kill-switch: `FEATURE_F8_AT_RISK_DISABLED=true` short-circuits ONLY
 this surface (returns 200 + `{skipped: true, reason: 'at_risk_disabled'}`)

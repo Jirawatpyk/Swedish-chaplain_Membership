@@ -39,7 +39,11 @@ vi.mock('@/lib/env', () => ({
   },
 }));
 
-const txExecuteMock = vi.hoisted(() => vi.fn(async () => undefined));
+// #754 follow-up — the route reads `acquired` from the try-lock row;
+// default to a won lock so every pre-existing test runs the use case.
+const txExecuteMock = vi.hoisted(() =>
+  vi.fn(async (_q?: unknown): Promise<unknown> => [{ acquired: true }]),
+);
 vi.mock('@/lib/db', () => ({
   db: {},
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
@@ -93,6 +97,7 @@ vi.mock('@/lib/metrics', () => ({
     coordinatorTenantsEnqueued: vi.fn(),
     coordinatorTenantsSucceeded: vi.fn(),
     coordinatorTenantsFailed: vi.fn(),
+    coordinatorTenantsSkippedOverlap: vi.fn(),
     coordinatorDurationMs: vi.fn(),
   },
 }));
@@ -167,6 +172,18 @@ describe('cron enter-awaiting-payment per-tenant route (slice 2 / T2.4)', () => 
     expect(body.errors).toBe(0);
     // Advisory lock acquired (disjoint enter-awaiting namespace).
     expect(txExecuteMock).toHaveBeenCalled();
+  });
+
+  it('#754 follow-up: an overlapping run skips at once with 200 overlap, no use case', async () => {
+    txExecuteMock.mockResolvedValueOnce([{ acquired: false }]);
+    const res = await perTenantPOST(makeRequest(VALID_AUTH), params(TENANT_SLUG));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      skipped: true,
+      reason: 'overlap',
+      tenant_id: TENANT_SLUG,
+    });
+    expect(enterMock).not.toHaveBeenCalled();
   });
 });
 
@@ -250,6 +267,29 @@ describe('cron enter-awaiting-payment-coordinator route (slice 2 / T2.4)', () =>
     expect((event.payload as { cron_kind: string }).cron_kind).toBe(
       'enter_awaiting',
     );
+  });
+
+  it('#754 follow-up: a per-tenant overlap skip counts as tenants_skipped_overlap, not succeeded or failed', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        skipped: true,
+        reason: 'overlap',
+        tenant_id: TENANT_SLUG,
+      }),
+    });
+    const res = await coordinatorPOST(makeRequest(VALID_AUTH));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tenants_succeeded).toBe(0);
+    expect(body.tenants_skipped_overlap).toBe(1);
+    expect(body.tenants_failed).toBe(0);
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    const payload = auditEmitMock.mock.calls[0]![0].payload as {
+      tenants_skipped_overlap?: number;
+    };
+    expect(payload.tenants_skipped_overlap).toBe(1);
   });
 
   it('per-tenant fetch rejection → audit-row error="fetch_rejected" (PII redaction)', async () => {

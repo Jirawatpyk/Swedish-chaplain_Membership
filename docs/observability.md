@@ -1856,6 +1856,7 @@ All 4 coordinators emit a single `cron_dispatch_orchestrated` audit on completio
 |---|---|---|---|
 | `renewals.coordinator.tenants_enqueued_total` | counter | `cron_kind` | coordinator audit |
 | `renewals.coordinator.tenants_succeeded_total` | counter | `cron_kind` | coordinator audit |
+| `renewals.coordinator.tenants_skipped_overlap_total` | counter | `cron_kind` | #754 follow-up: tenants skipped because another run held the cron try-lock. Not a failure; alert when it is > 0 on two runs in a row of the same `cron_kind` (a stuck run or a self-overlapping schedule). Paired with the warn log `cron.renewals.coordinator.overlap_skipped`. |
 | `renewals.coordinator.tenants_failed_total` | counter | `cron_kind` | coordinator audit |
 | `renewals.coordinator.duration_ms` | histogram | `cron_kind` | OTel span (lapse + reconcile + at-risk; dispatch span existed since Wave I5) |
 | `renewals.coordinator.audit_emit_failed_total` | counter | `cron_kind` | error path |

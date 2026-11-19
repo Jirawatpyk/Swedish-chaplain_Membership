@@ -4,10 +4,13 @@
  * Called by the weekly tier-upgrade-evaluate-coordinator (T189) — NOT
  * by cron-job.org directly. Receives `tenantId` as a URL path param,
  * validates against `env.tenant.slug` (MVP single-tenant guard),
- * acquires per-tenant advisory lock, then runs `evaluateTierUpgrade`.
+ * takes the per-tenant advisory try-lock, then runs `evaluateTierUpgrade`.
  *
- * Per-tenant advisory lock convention:
- *   pg_advisory_xact_lock(hashtextextended('renewals:tierupgrade:'||tenantId, 0))
+ * Per-tenant advisory lock convention (#754 follow-up: NON-blocking):
+ *   pg_try_advisory_xact_lock(hashtextextended('renewals:tierupgrade:'||tenantId, 0))
+ *
+ * An overlapping run answers 200 `{ skipped: true, reason: 'overlap' }`
+ * at once; the run holding the lock does the work.
  *
  * Distinct namespace from `renewals:dispatch:` and `renewals:at-risk:`
  * so the three F8 weekly cron streams can run concurrently without
@@ -19,12 +22,15 @@
  * reason: 'feature_flag_disabled'}` (whole-F8 dark launch).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
+import {
+  renewalsCronOverlapBody,
+  tryRenewalsCronLock,
+} from '@/lib/renewals-cron-lock';
 import { asTenantContext } from '@/modules/tenants';
 import {
   evaluateTierUpgrade,
@@ -75,9 +81,9 @@ export async function POST(
 
   try {
     const txResult = await runInTenant(tenantCtx, async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:tierupgrade:'||${tenantId}, 0))`,
-      );
+      if (!(await tryRenewalsCronLock(tx, 'renewals:tierupgrade:', tenantId))) {
+        return 'overlap' as const;
+      }
       // Round 6 W-001 — thread the lock-holding tx through to the
       // use-case so suggestion-insert + audit-emit writes happen on
       // the same session as the advisory lock (no nested runInTenant
@@ -92,6 +98,14 @@ export async function POST(
         tx,
       );
     });
+
+    if (txResult === 'overlap') {
+      logger.info(
+        { tenantId, correlationId },
+        'cron.renewals.tier_upgrade.overlap_skipped',
+      );
+      return NextResponse.json(renewalsCronOverlapBody(tenantId));
+    }
 
     if (!txResult.ok) {
       logger.error(

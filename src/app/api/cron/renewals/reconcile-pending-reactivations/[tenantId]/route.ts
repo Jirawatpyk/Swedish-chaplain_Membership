@@ -10,22 +10,29 @@
  * routes (rate-limit on 401 + `cron_bearer_auth_rejected` audit emit).
  * Kill-switch mirrors coordinator semantics — 200 + skipped.
  *
- * Per-tenant advisory lock: `renewals:reconcile:<tenantId>`. Auto-
- * released at tx end. Concurrent cron-job.org retries serialise so the
- * "list pending cycles" query is not double-issued.
+ * Per-tenant advisory lock: `renewals:reconcile:<tenantId>` — SHARED
+ * with reconcile-pending-applications, so the two reconcile crons
+ * exclude each other. Auto-released at tx end. A NON-blocking try-lock
+ * (#754 follow-up): an overlapping run answers 200 `{ skipped: true,
+ * reason: 'overlap' }` at once, so the "list pending cycles" query is
+ * not double-issued and the run does not wait out the 30 s statement
+ * bound.
  *
  * MVP single-tenant guard: only `env.tenant.slug` accepted. Mirrors the
  * dispatch + at-risk + lapse per-tenant convention; closes the
  * deep-review gap.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsMetrics } from '@/lib/metrics';
+import {
+  renewalsCronOverlapBody,
+  tryRenewalsCronLock,
+} from '@/lib/renewals-cron-lock';
 import { asTenantContext } from '@/modules/tenants';
 import {
   reconcilePendingReactivations,
@@ -79,13 +86,18 @@ export async function POST(
   try {
     return await runInTenant(tenantCtx, async (tx) => {
       // Per-tenant advisory lock — `renewals:reconcile:<tenantId>` is
-      // distinct from `renewals:dispatch:` + `renewals:at-risk:` +
-      // `renewals:lapse:` + `renewals:tierupgrade:` so all five cron
-      // passes can run concurrently on the same tenant. Auto-released
-      // at tx-end.
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:reconcile:'||${tenantId}, 0))`,
-      );
+      // SHARED with reconcile-pending-applications (the two reconcile
+      // crons exclude each other) and distinct from
+      // `renewals:dispatch:` + `renewals:at-risk:` + `renewals:lapse:` +
+      // `renewals:tierupgrade:`. Auto-released at tx-end. Try-lock
+      // (#754 follow-up): an overlapping run skips at once.
+      if (!(await tryRenewalsCronLock(tx, 'renewals:reconcile:', tenantId))) {
+        logger.info(
+          { tenantId, correlationId },
+          'cron.renewals.reconcile-pending.per-tenant.overlap_skipped',
+        );
+        return NextResponse.json(renewalsCronOverlapBody(tenantId));
+      }
 
       const deps = makeRenewalsDeps(tenantId);
       const result = await reconcilePendingReactivations(deps, {

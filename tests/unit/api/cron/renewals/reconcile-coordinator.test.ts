@@ -62,8 +62,10 @@ vi.stubGlobal('fetch', fetchMock);
 
 // W0-09: cron-auth.ts now calls renewalsMetrics.cronBearerAuthRejected on
 // every 401 path.
+const coordinatorTenantsSkippedOverlapMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/metrics', () => ({
   renewalsMetrics: {
+    coordinatorTenantsSkippedOverlap: coordinatorTenantsSkippedOverlapMock,
     cronBearerAuthRejected: vi.fn(),
     coordinatorAuditEmitFailed: vi.fn(),
     redisFallback: vi.fn(),
@@ -214,5 +216,58 @@ describe('cron reconcile-pending-reactivations-coordinator route (Round-5 M1)', 
     expect(bodyText).not.toContain('ECONNREFUSED');
     expect(bodyText).not.toContain('10.0.0.5');
     expect(bodyText).not.toContain('chamber_app');
+  });
+});
+
+describe('#754 follow-up — per-tenant overlap skip', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('a 200 overlap skip counts as tenants_skipped_overlap, not succeeded or failed', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({
+        skipped: true,
+        reason: 'overlap',
+        tenant_id: TENANT_SLUG,
+      }),
+    });
+    const res = await POST(makeRequest(VALID_AUTH));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tenants_succeeded).toBe(0);
+    expect(body.tenants_skipped_overlap).toBe(1);
+    expect(body.tenants_failed).toBe(0);
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    const payload = auditEmitMock.mock.calls[0]![0].payload as {
+      tenants_skipped_overlap?: number;
+      tenants_skipped_kill_switch?: number;
+    };
+    expect(payload.tenants_skipped_overlap).toBe(1);
+    // R1 M1: an overlap skip is counted where an alert can see it.
+    expect(coordinatorTenantsSkippedOverlapMock).toHaveBeenCalledWith('reconcile', 1);
+  });
+
+  // R1 L1: a per-tenant skip that is not an overlap (the tenant route's own
+  // kill switch) lands in tenants_skipped_kill_switch, so the four buckets
+  // add up to tenants_enqueued.
+  it('a non-overlap per-tenant skip counts as tenants_skipped_kill_switch', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({ skipped: true, reason: 'feature_flag_disabled' }),
+    });
+    const res = await POST(makeRequest(VALID_AUTH));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tenants_succeeded).toBe(0);
+    expect(body.tenants_failed).toBe(0);
+    expect(body.tenants_skipped_overlap).toBe(0);
+    expect(body.tenants_skipped_kill_switch).toBe(1);
+    expect(coordinatorTenantsSkippedOverlapMock).not.toHaveBeenCalled();
   });
 });
