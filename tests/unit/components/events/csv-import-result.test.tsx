@@ -50,6 +50,10 @@ const MESSAGES = {
           errorRowsTitle: '{count, plural, one {# error row} other {# error rows}}',
           errorRowLabel: 'Row {rowNumber}',
           noErrorRows: 'All rows imported cleanly',
+          errorReasons: {
+            row_db_error: 'Not saved: a database error stopped this row.',
+            batch_tx_aborted: 'Not saved: a database error stopped this batch.',
+          },
         },
         history: {
           downloadErrorCsv: 'Download error CSV',
@@ -128,5 +132,24 @@ describe('R8.B1 — <CsvImportResult> safetyNetFailedOpen chip rendering', () =>
     expect(screen.getByTestId('result-safety-net-unavailable')).toBeDefined();
     expect(screen.getByTestId('result-history-degraded')).toBeDefined();
     expect(screen.getByTestId('result-audit-degraded')).toBeDefined();
+  });
+});
+
+describe('#739 — a database-failure row shows fixed copy, never a code or error text', () => {
+  afterEach(() => cleanup());
+
+  it('row_db_error and batch_tx_aborted read as copy; a parser reason stays as written', () => {
+    renderResult({
+      errorRows: [
+        { rowNumber: 2, reason: 'row_db_error' },
+        { rowNumber: 3, reason: 'batch_tx_aborted' },
+        { rowNumber: 4, reason: 'Missing email' },
+      ],
+    } as Partial<CsvImportResultPayload>);
+    const rows = screen.getAllByTestId('result-error-row').map((r) => r.textContent);
+    expect(rows[0]).toContain('Not saved: a database error stopped this row.');
+    expect(rows[1]).toContain('Not saved: a database error stopped this batch.');
+    expect(rows[2]).toContain('Missing email');
+    expect(rows.join(' ')).not.toContain('row_db_error');
   });
 });

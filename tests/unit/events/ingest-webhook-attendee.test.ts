@@ -214,7 +214,7 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     expect(result.error.failureStage).toBe('audit_emit');
   });
 
-  it('R5.2.2 / Round 4 I-2 — Result.err mid-tx → emitRolledBackStandalone payload.errorMessage carries (cause: …) discriminator from synthetic cause', async () => {
+  it('R5.2.2 / Round 4 I-2 — Result.err mid-tx → emitRolledBackStandalone payload.errClass names the class and the synthetic cause, never the message (#739)', async () => {
     // R3.3.1 wraps `audit.emit` Result.err as
     //   TxStageError('audit_emit', wrap_msg, { cause: new Error('AuditEmitError.db_error: ...') })
     // The R5.4 refactor extracted the outer catch's cause-format into
@@ -241,17 +241,14 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
 
     expect(emitRolledBackSpy).toHaveBeenCalledTimes(1);
     const call = emitRolledBackSpy.mock.calls[0]?.[0] as {
-      payload: { errorMessage: string };
+      summary: string;
+      payload: Record<string, unknown>;
     };
-    expect(call.payload.errorMessage).toContain('audit emit failed');
-    expect(call.payload.errorMessage).toContain('(cause:');
-    // R5.8 — synthetic-cause Error.name = wrapping class discriminator
-    // ('AuditEmitError'), Error.message = detail body. formatErrorWithCause
-    // renders as `(cause: AuditEmitError: <detail>)`.
-    expect(call.payload.errorMessage).toContain('AuditEmitError:');
-    expect(call.payload.errorMessage).toContain(
-      'db_error: connection terminated by Neon',
-    );
+    // #739 — the class chain, never a message or a stack.
+    expect(call.payload.errClass).toBe('TxStageError(cause:AuditEmitError)');
+    expect(call.payload).not.toHaveProperty('errorMessage');
+    expect(call.payload).not.toHaveProperty('errorStack');
+    expect(JSON.stringify(call)).not.toContain('connection terminated by Neon');
   });
 
   it('emitRolledBackStandalone failure → auditFallbackFailed=true + double-failure metric + logger.fatal', async () => {
