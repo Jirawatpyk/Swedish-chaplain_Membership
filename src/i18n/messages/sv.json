@@ -5951,8 +5951,8 @@
           "errorRowsTitle": "Rader med fel ({count})",
           "errorRowLabel": "Rad {rowNumber}",
           "errorReasons": {
-            "row_db_error": "Inte sparad: ett databasfel stoppade den här raden. Försök importera igen; kontakta support om det upprepas.",
-            "batch_tx_aborted": "Inte sparad: ett databasfel stoppade den här omgången. Försök importera igen; kontakta support om det upprepas."
+            "row_db_error": "Inte sparad: raden kunde inte sparas. Försök importera igen; kontakta support om det upprepas.",
+            "batch_tx_aborted": "Inte sparad: omgången kunde inte sparas. Försök importera igen; kontakta support om det upprepas."
           },
           "noErrorRows": "Alla rader importerades utan fel.",
           "recordIdLabel": "Referens-ID",

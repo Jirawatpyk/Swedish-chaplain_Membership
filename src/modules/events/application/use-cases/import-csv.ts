@@ -26,6 +26,7 @@ import {
   type EmailHashPrefix,
 } from './_helpers/attendee-email-hash';
 import { logger } from '@/lib/logger';
+import { formatErrorClass } from './_helpers/format-error-with-cause';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { asLockKey } from '../ports/advisory-lock-acquirer';
 import {
@@ -1559,11 +1560,23 @@ async function processOneRowInSavepoint(
     // `TxStageError.stage` taxonomy on BOTH the `RowOutcome.row_failed`
     // field AND the `csv_import_row_failed` audit payload so dashboards
     // can alert on `audit_emit` failures (security-critical).
-    // #739 — a closed code; the stage keeps the taxonomy and the log line the
-    // class. The driver's text quotes bound parameters (emails, names).
+    // #739 — a closed code; the stage keeps the taxonomy and this log line the
+    // class chain, SQLSTATE and errno. The driver's text quotes bound
+    // parameters (emails, names).
     const reason = CSV_ROW_DB_ERROR;
     const failureStage: FailureStage =
       e instanceof TxStageError ? e.stage : 'unknown';
+    logger.warn(
+      {
+        event: 'f6_csv_row_failed',
+        tenantId: input.tenantId,
+        rowNumber: parsed.rowNumber,
+        failureStage,
+        ...errLogFields(e instanceof Error && e.cause !== undefined ? e.cause : e),
+        errClass: formatErrorClass(e),
+      },
+      '[F6] CSV row rolled back to its savepoint',
+    );
     await safeEmitRowFailed(
       deps,
       input,
@@ -2673,8 +2686,10 @@ export async function importCsv(
 // ---------------------------------------------------------------------------
 
 /**
- * #739 B3a — the two row reasons the import writes for a database failure.
- * Every other reason is parser or validation text the import writes itself.
+ * #739 B3a — the two row reasons the import writes when a row's (or a batch's)
+ * transaction rolls back, whatever the stage threw; the stage stays on
+ * `failureStage`. Every other reason is parser or validation text the import
+ * writes itself.
  * The result card maps these to localised copy; the error CSV (English, an
  * admin download) to the sentence below.
  */
@@ -2682,8 +2697,8 @@ export const CSV_ROW_DB_ERROR = 'row_db_error';
 export const CSV_BATCH_TX_ABORTED = 'batch_tx_aborted';
 
 const ERROR_CSV_REASON_TEXT: Readonly<Record<string, string>> = {
-  [CSV_ROW_DB_ERROR]: 'Not saved: a database error stopped this row. Try the import again; if it repeats, contact support.',
-  [CSV_BATCH_TX_ABORTED]: 'Not saved: a database error stopped this batch. Try the import again; if it repeats, contact support.',
+  [CSV_ROW_DB_ERROR]: 'Not saved: this row could not be saved. Try the import again; if it repeats, contact support.',
+  [CSV_BATCH_TX_ABORTED]: 'Not saved: this batch could not be saved. Try the import again; if it repeats, contact support.',
 };
 
 function serializeErrorRowsToCsv(

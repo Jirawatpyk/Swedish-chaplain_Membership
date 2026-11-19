@@ -5951,8 +5951,8 @@
           "errorRowsTitle": "Rows with errors ({count})",
           "errorRowLabel": "Row {rowNumber}",
           "errorReasons": {
-            "row_db_error": "Not saved: a database error stopped this row. Try the import again; if it repeats, contact support.",
-            "batch_tx_aborted": "Not saved: a database error stopped this batch. Try the import again; if it repeats, contact support."
+            "row_db_error": "Not saved: this row could not be saved. Try the import again; if it repeats, contact support.",
+            "batch_tx_aborted": "Not saved: this batch could not be saved. Try the import again; if it repeats, contact support."
           },
           "noErrorRows": "All rows imported cleanly — no errors to review.",
           "recordIdLabel": "Reference ID",

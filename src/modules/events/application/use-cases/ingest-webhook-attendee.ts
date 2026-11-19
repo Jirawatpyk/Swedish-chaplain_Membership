@@ -67,6 +67,7 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { formatErrorClass } from './_helpers/format-error-with-cause';
 import { asTenantId } from '@/modules/members';
@@ -408,6 +409,17 @@ export async function ingestWebhookAttendee(
     // message or the stack: a drizzle error's message quotes bound parameters.
     errClass = formatErrorClass(e);
     const stage: TxStageError['stage'] = e instanceof TxStageError ? e.stage : failureStage;
+    logger.warn(
+      {
+        event: 'f6_webhook_rolled_back',
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        failureStage: stage,
+        ...errLogFields(e instanceof Error && e.cause !== undefined ? e.cause : e),
+        errClass,
+      },
+      '[F6] webhook ingest rolled back',
+    );
 
     // FR-037 dual-write fallback: emit `webhook_rolled_back` in a
     // SEPARATE tx so the audit row commits even though the primary tx

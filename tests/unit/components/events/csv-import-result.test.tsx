@@ -51,8 +51,8 @@ const MESSAGES = {
           errorRowLabel: 'Row {rowNumber}',
           noErrorRows: 'All rows imported cleanly',
           errorReasons: {
-            row_db_error: 'Not saved: a database error stopped this row.',
-            batch_tx_aborted: 'Not saved: a database error stopped this batch.',
+            row_db_error: 'Not saved: this row could not be saved.',
+            batch_tx_aborted: 'Not saved: this batch could not be saved.',
           },
         },
         history: {
@@ -147,8 +147,8 @@ describe('#739 — a database-failure row shows fixed copy, never a code or erro
       ],
     } as Partial<CsvImportResultPayload>);
     const rows = screen.getAllByTestId('result-error-row').map((r) => r.textContent);
-    expect(rows[0]).toContain('Not saved: a database error stopped this row.');
-    expect(rows[1]).toContain('Not saved: a database error stopped this batch.');
+    expect(rows[0]).toContain('Not saved: this row could not be saved.');
+    expect(rows[1]).toContain('Not saved: this batch could not be saved.');
     expect(rows[2]).toContain('Missing email');
     expect(rows.join(' ')).not.toContain('row_db_error');
   });
