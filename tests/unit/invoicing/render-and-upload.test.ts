@@ -7,6 +7,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
+import { logger } from '@/lib/logger';
 import { renderAndUploadPdf } from '@/modules/invoicing/application/lib/render-and-upload';
 
 class Wrapped extends Error {
@@ -75,5 +76,26 @@ describe('renderAndUploadPdf failure reason (#739)', () => {
       renderAndUploadPdf(deps({ upload: async () => { throw 'a@b.example'; } }), input, wrap),
     );
     expect(e.reason).toBe('upload:unknown');
+  });
+
+  it('keeps a token-shaped code (SQLSTATE or errno) so the 10-year audit keeps the cause', async () => {
+    const e = await caught(
+      renderAndUploadPdf(
+        deps({ upload: async () => { throw Object.assign(new TypeError('a@b.example'), { code: 'ECONNRESET' }); } }),
+        input,
+        wrap,
+      ),
+    );
+    expect(e.reason).toBe('upload:TypeError:ECONNRESET');
+  });
+
+  it('the WARN line names the blob key, so it joins back to the invoice', async () => {
+    const warn = vi.spyOn(logger, 'warn');
+    await caught(renderAndUploadPdf(deps({ render: async () => { throw new Error('x'); } }), input, wrap));
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ step: 'render', blobKey: 'k.pdf', err: 'Error' }),
+      'invoicing.pdf.render_and_upload_failed',
+    );
+    warn.mockRestore();
   });
 });
