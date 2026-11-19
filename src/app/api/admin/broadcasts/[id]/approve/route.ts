@@ -178,8 +178,9 @@ function mapApproveError(
 ): NextResponse {
   if (error.kind === 'approve.server_error') {
     // T166 follow-up (the R-M4 class) — this 500 used to leave no trace at all.
+    const errClass: Extract<ApproveBroadcastError, { kind: 'approve.server_error' }>['errKind'] = error.errKind;
     logger.error(
-      { err: error.errKind, correlationId, errorId: 'M119.admin.approve.server_error' },
+      { err: errClass, correlationId, errorId: 'M119.admin.approve.server_error' },
       'broadcasts.admin.approve.server_error',
     );
     return errorResponse(500, 'internal_error', correlationId);

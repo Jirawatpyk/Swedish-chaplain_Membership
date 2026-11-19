@@ -13,6 +13,7 @@ import { signOut } from '@/modules/auth';
 import { getClientIp } from '@/lib/client-ip';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (error) {
     failed = true;
     logger.error(
-      { err: error, requestId },
+      { ...errLogFields(error), requestId },
       'sign_out failed — clearing cookie anyway for client safety',
     );
   } finally {
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch (cookieErr) {
       failed = true;
       logger.error(
-        { err: cookieErr, requestId },
+        { ...errLogFields(cookieErr), requestId },
         'sign_out.clear_cookie_failed',
       );
     }

@@ -55,6 +55,7 @@ import {
   MATCH_TYPE_TO_PROCESSING_OUTCOME,
   asRequestId,
   tryRequestId,
+  type IngestError,
 } from '@/modules/events';
 import {
   makeIngestWebhookAttendeeDeps,
@@ -65,6 +66,7 @@ import {
 } from '@/lib/events-webhook-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 
+import { errKind } from '@/lib/log-id';
 const MAX_WEBHOOK_BODY_BYTES = 64 * 1024; // 64 KiB — matches F5 cap
 
 /**
@@ -187,8 +189,7 @@ export async function POST(
       {
         event: 'f6_route_params_failed',
         errName: e instanceof Error ? e.name : 'unknown',
-        errMessage: e instanceof Error ? e.message : String(e),
-        errStack: e instanceof Error ? e.stack : null,
+        err: errKind(e),
       },
       '[F6] webhook route params resolution failed — returning 500',
     );
@@ -860,19 +861,23 @@ export async function POST(
             eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'verified', 'ingest_disabled');
             span.setAttribute('f6.outcome', 'tenant_ingest_disabled');
             return ingestDisabledResponse();
-          case 'rolled_back':
+          case 'rolled_back': {
             // Audit `webhook_rolled_back` already emitted via dual-write
             // fallback in the use-case (or pino.fatal + last-ditch
             // stderr if the fallback also failed). Return generic
             // 500 — don't leak the failure stage to the caller.
             eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'verified', 'rolled_back');
+            const failureStage: Extract<IngestError, { kind: 'rolled_back' }>['failureStage'] =
+              result.error.failureStage;
+            const auditFallbackFailed: Extract<IngestError, { kind: 'rolled_back' }>['auditFallbackFailed'] =
+              result.error.auditFallbackFailed;
             logger.error(
               {
                 event: 'f6_webhook_ingest_rolled_back',
                 tenantSlug,
                 requestId: rawRequestId.length > 0 ? rawRequestId : null,
-                failureStage: result.error.failureStage,
-                auditFallbackFailed: result.error.auditFallbackFailed,
+                failureStage,
+                auditFallbackFailed,
               },
               result.error.auditFallbackFailed
                 ? '[F6] webhook ingest rolled back AND audit fallback failed — see pino.fatal + last-ditch stderr lines'
@@ -887,6 +892,7 @@ export async function POST(
               'Internal error during webhook processing',
               'Delivery was rolled back. Zapier will retry.',
             );
+          }
           default: {
             // Exhaustiveness assert. If a future phase adds a new
             // `IngestError.kind`, this `never`-assignment forces a TS

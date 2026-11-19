@@ -15,9 +15,11 @@ import {
   listInvoicesSchema,
   makeCreateInvoiceDraftDeps,
   makeListInvoicesDeps,
+  type CreateInvoiceDraftError,
   type CreateInvoiceDraftInput,
 } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { serialiseInvoice } from './_serialise';
 import { loadMemberRenewalContext } from '@/app/(staff)/admin/invoices/_lib/member-renewal-context';
 
@@ -171,7 +173,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   } catch (err) {
     logger.warn(
-      { err, tenantSlug: tenantCtx.slug, memberId: parsed.data.member_id },
+      { ...errLogFields(err), tenantSlug: tenantCtx.slug, memberId: parsed.data.member_id },
       '[invoices] member-renewal-context lookup failed at draft-create — falling back to from_payment coverage text',
     );
   }
@@ -205,13 +207,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // prevent. No PII is added — an invoice id, its number, status and total
     // for a member the caller already named in the request body.
     if (result.error.code === 'duplicate_membership_invoice') {
+      const existingInvoiceId: Extract<CreateInvoiceDraftError, { code: 'duplicate_membership_invoice' }>['existingInvoiceId'] =
+        result.error.existingInvoiceId;
+      const existingStatus: Extract<CreateInvoiceDraftError, { code: 'duplicate_membership_invoice' }>['existingStatus'] =
+        result.error.existingStatus;
       logger.warn(
         {
           tenantSlug: tenantCtx.slug,
           memberId: parsed.data.member_id,
           planYear: parsed.data.plan_year,
-          existingInvoiceId: result.error.existingInvoiceId,
-          existingStatus: result.error.existingStatus,
+          existingInvoiceId,
+          existingStatus,
         },
         'invoice draft create refused — a live membership invoice already exists for this member and plan year',
       );
@@ -244,7 +250,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           : result.error.code === 'member_not_found'
             ? 404
             : 400;
-    logger.warn({ err: result.error, tenantSlug: tenantCtx.slug }, 'invoice draft create failed');
+    logger.warn({ ...errLogFields(result.error), tenantSlug: tenantCtx.slug }, 'invoice draft create failed');
     return NextResponse.json({ error: { code: result.error.code } }, { status });
   }
   return NextResponse.json(serialiseInvoice(result.value), { status: 201 });

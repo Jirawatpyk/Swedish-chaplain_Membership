@@ -159,7 +159,7 @@ export default async function ComposeBroadcastPage({
     // server-side initial load no longer fails silently.
     logger.warn(
       {
-        err: err instanceof Error ? err.message : String(err),
+        err: errKind(err),
         tenantId: tenant.slug,
         userIdHash: hashId(session.user.id),
       },
@@ -278,7 +278,7 @@ export default async function ComposeBroadcastPage({
         // pre-populate failures.
         logger.warn(
           {
-            err: err instanceof Error ? err.message : String(err),
+            err: errKind(err),
             tenantId: tenant.slug,
             templateIdParam,
             userIdHash: hashId(session.user.id),

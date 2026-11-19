@@ -29,6 +29,7 @@ import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EmptyState } from '@/components/shell/empty-state';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { loadCycleDetail, makeRenewalsDeps } from '@/modules/renewals';
@@ -156,7 +157,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
     // silently-cached 200. The throw routes to Next.js error boundary.
     const _exhaustive: never = result.error;
     logger.error(
-      { errorId: 'F8.ADMIN.CYCLE_DETAIL_PAGE', err: _exhaustive, cycleId },
+      { errorId: 'F8.ADMIN.CYCLE_DETAIL_PAGE', ...errLogFields(_exhaustive), cycleId },
       '[admin/renewals/cycle-detail] unhandled loadCycleDetail error kind',
     );
     throw new Error(

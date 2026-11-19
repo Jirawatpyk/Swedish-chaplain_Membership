@@ -353,7 +353,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     );
   });
 
-  it('500 server_error (recheck failed) — single logger.error with F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED + recheckErrMessage field', async () => {
+  it('500 server_error (recheck failed) — single logger.error with F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED and no recheckErrMessage', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({
@@ -386,9 +386,8 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     expect(structuredRecheck.errorId).toBe(
       'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED',
     );
-    expect(structuredRecheck.recheckErrMessage).toBe(
-      'rls: connection-pool exhausted',
-    );
+    // #740 B2 — the recheck's error text never reaches the log.
+    expect(structuredRecheck.recheckErrMessage).toBeUndefined();
   });
 
   it('503 idempotency_reservation_failed when Upstash reserve returns err', async () => {

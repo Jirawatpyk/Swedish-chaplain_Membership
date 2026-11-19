@@ -27,6 +27,7 @@ import {
 } from '@/lib/idempotency';
 import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { listPlans, asPlanYear, createPlan } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { serialisePlan } from './_serialise-plan';
@@ -110,7 +111,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     case 'server_error':
     default:
       logger.error(
-        { requestId: ctx.requestId, err: result.error },
+        { requestId: ctx.requestId, ...errLogFields(result.error) },
         'list-plans: unhandled error',
       );
       return NextResponse.json(
@@ -314,7 +315,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'create-plan: unhandled error',
         );
         return NextResponse.json(

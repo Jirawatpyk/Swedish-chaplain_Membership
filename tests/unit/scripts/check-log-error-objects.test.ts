@@ -105,7 +105,7 @@ describe('findLogErrorObjects', () => {
       'logger.child({ id });',
       "console.error({ id }, 'c');",
     ].join('\n');
-    expect(rules.scanLogErrorObjects('x.ts', src)).toEqual({ findings: [], loggerCalls: 3 });
+    expect(rules.scanLogErrorObjects('x.ts', src)).toEqual({ findings: [], loggerCalls: 3, wrappers: [] });
   });
 
   // #740 B2 — the two forms the B1 reviews found the rule could not see.

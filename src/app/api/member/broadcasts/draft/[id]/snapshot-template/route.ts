@@ -23,6 +23,7 @@ import { requireMemberContext } from '@/lib/member-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 
 const BodySchema = z.object({
@@ -133,7 +134,7 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: tenantCtx.slug,
         draftId,

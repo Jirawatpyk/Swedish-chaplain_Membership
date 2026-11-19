@@ -20,7 +20,7 @@ import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { isInvitationExpired } from '@/lib/invitation-expiry';
 import { safeExternalHref } from '@/lib/safe-url';
 import {
@@ -127,7 +127,7 @@ const cachedCompanyNameForTitle = cache(
       {
         event: 'metadata_company_name_lookup_failed',
         memberId,
-        repoErr: result.error,
+        ...errLogFields(result.error),
       },
       '[F3] cachedCompanyNameForTitle — repo returned err (metadata path falls back to generic title)',
     );
@@ -227,7 +227,7 @@ export default async function MemberDetailPage({
     // sanitised message so the route-level error.tsx boundary and any
     // leaked stack trace don't expose internal detail to the client.
     logger.error(
-      { requestId, err: result.error, memberId },
+      { requestId, ...errLogFields(result.error), memberId },
       'admin.members.detail.getMember_failed',
     );
     throw new Error('admin.members.detail: getMember failed');
@@ -290,7 +290,7 @@ export default async function MemberDetailPage({
             );
           }
           logger.warn(
-            { event: 'pending_invitations_repo_err', err: pendingRes.error, memberId },
+            { event: 'pending_invitations_repo_err', ...errLogFields(pendingRes.error), memberId },
             '[F3] pending-invitations repo returned err — falling back to empty map',
           );
           return new Map<string, PendingInvitation>();

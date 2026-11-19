@@ -27,6 +27,7 @@ import {
 import { runIdempotent } from '@/lib/idempotency-run';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { rateLimiter } from '@/modules/auth';
 import { deriveMarketingState, setContactMarketingOptOut } from '@/modules/members';
 import {
@@ -152,7 +153,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error.message },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'portal.profile.marketing.patch.error',
         );
         return errorJson(500, 'internal');

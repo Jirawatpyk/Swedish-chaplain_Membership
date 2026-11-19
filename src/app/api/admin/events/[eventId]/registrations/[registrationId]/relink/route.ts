@@ -29,13 +29,13 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runRelinkRegistration } from '@/lib/events-admin-deps';
 import { asMemberId } from '@/modules/members';
-import { asRegistrationId, asEventId } from '@/modules/events';
+import { asRegistrationId, asEventId, type RelinkRegistrationError } from '@/modules/events';
 import { adminOnlyWriterGuard } from '../../../../_lib/role-violation-audit';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 // Mirror archive route — Node runtime (advisory locks + audit emits
 // require it) + 60s ceiling. Relink is bounded work O(2 members × 2
 // scopes) but the 60s ceiling defends against pathological Neon-RTT
@@ -135,7 +135,7 @@ export async function POST(
     logger.error(
       {
         event: 'admin_event_relink_tenant_resolve_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         eventId,
         registrationId,
         requestId,
@@ -168,17 +168,7 @@ export async function POST(
     logger.error(
       {
         event: 'admin_event_relink_throw',
-        err:
-          e instanceof Error
-            ? {
-                name: e.name,
-                message: e.message,
-                stack:
-                  typeof e.stack === 'string'
-                    ? (redactStack(e.stack) ?? null)
-                    : null,
-              }
-            : String(e),
+        ...errLogFields(e),
         eventId,
         registrationId,
         requestId,
@@ -212,13 +202,23 @@ export async function POST(
         // (typically a client-bug indicator) without exposing the
         // discriminator to the admin.
         if (result.error.kind === 'event_path_mismatch') {
+          const eventIdInPath: Extract<RelinkRegistrationError, { kind: 'event_path_mismatch' }>['eventIdInPath'] =
+            result.error.eventIdInPath;
+          const eventIdOnRegistration: Extract<
+            RelinkRegistrationError,
+            { kind: 'event_path_mismatch' }
+          >['eventIdOnRegistration'] = result.error.eventIdOnRegistration;
+          const mismatchRegistrationId: Extract<
+            RelinkRegistrationError,
+            { kind: 'event_path_mismatch' }
+          >['registrationId'] = result.error.registrationId;
           logger.warn(
             {
               event: 'admin_event_relink_eventid_path_mismatch',
               requestId,
-              eventIdInPath: result.error.eventIdInPath,
-              eventIdOnRegistration: result.error.eventIdOnRegistration,
-              registrationId: result.error.registrationId,
+              eventIdInPath,
+              eventIdOnRegistration,
+              registrationId: mismatchRegistrationId,
             },
             '[F6] relink path-param eventId did not match registration.eventId — refused before mutation',
           );
@@ -281,8 +281,6 @@ export async function POST(
             eventId,
             registrationId,
             errKind: result.error.kind,
-            errMessage:
-              'message' in result.error ? result.error.message : undefined,
             // Round-2 err-M1 + Round-3 — fallback chain:
             //   1. `.kind` (discriminated repo/quota/audit errors)
             //   2. `.name` (InvalidLockKeyError, generic Error)
@@ -296,9 +294,6 @@ export async function POST(
                 .cause?.kind ??
               (result.error as { cause?: { name?: string } }).cause?.name ??
               null,
-            causeMessage:
-              (result.error as { cause?: { message?: string } }).cause
-                ?.message ?? null,
             causeCode:
               (result.error as { cause?: { code?: string } }).cause?.code ??
               null,

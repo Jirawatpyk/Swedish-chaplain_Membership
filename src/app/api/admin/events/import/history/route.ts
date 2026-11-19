@@ -39,6 +39,7 @@ import { runListCsvImportRecords } from '@/lib/events-csv-import-deps';
 import type { UserId } from '@/modules/auth';
 import { adminOnlyGuard } from '../../../integrations/eventcreate/_lib/role-violation-audit';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 const ROUTE = '/api/admin/events/import/history';
 
 // R8.W / Staff R3 R050 — pinned to UUID v4 (was [1-5] v1-5). v1/v3/v5
@@ -84,7 +85,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     logger.error(
       {
         event: 'f6_csv_history_tenant_resolve_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         requestId,
       },
       '[F6.1] resolveTenantFromRequest threw on CSV history route',
@@ -158,7 +159,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         tenantSlug,
         actorUserId: guard.actorUserId,
         requestId,
-        err: result.error,
+        ...errLogFields(result.error),
       },
       '[F6.1] CSV history list use-case failed',
     );

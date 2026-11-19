@@ -34,6 +34,7 @@ import {
 import { sendReminderNow, makeRenewalsDeps } from '@/modules/renewals';
 import { assertNever } from '@/lib/assert-never';
 
+import { errKind } from '@/lib/log-id';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
@@ -183,7 +184,7 @@ export async function POST(
         errorId: `${ERROR_ID}.UNEXPECTED`,
         // K12-3 (REL-K-1): pass the Error instance so pino's `err`
         // serializer captures stack + type.
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         cycleId,
         correlationId: ctx.correlationId,
         tenantId: tenantCtx.slug,

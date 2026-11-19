@@ -22,6 +22,9 @@ import {
   type BroadcastVersionThread,
   type StaffThreadDecision,
   type FormattingWarnings,
+  type ListBroadcastVersionsError,
+  type ReadDispatchHoldError,
+  type ReadFormattingWarningsError,
 } from '@/modules/broadcasts';
 import {
   makeListBroadcastVersionsDeps,
@@ -311,6 +314,8 @@ async function readThread(
     requestId: null,
   });
   if (result.ok) return result.value;
+  const threadErrKind: Extract<ListBroadcastVersionsError, { kind: 'server_error' }>['errKind'] | undefined =
+    result.error.kind === 'server_error' ? result.error.errKind : undefined;
   logger.warn(
     {
       tenantId: tenantSlug,
@@ -318,7 +323,7 @@ async function readThread(
       reason: result.error.kind,
       // Round-4 B10 — a server_error carries its error class; log it, as
       // `readWarnings` does (pino drops the undefined of a not_found).
-      err: result.error.kind === 'server_error' ? result.error.errKind : undefined,
+      err: threadErrKind,
       errorId: 'M119.admin.detail.thread',
     },
     'broadcasts.detail_page.thread_read_failed',
@@ -338,8 +343,9 @@ async function readHeld(
 ): Promise<boolean> {
   const result = await readDispatchHold(makeReadDispatchHoldDeps(tenantSlug), input);
   if (result.ok) return result.value;
+  const errClass: ReadDispatchHoldError['errClass'] = result.error.errClass;
   logger.warn(
-    { tenantId: tenantSlug, broadcastId, err: result.error.errClass, errorId: 'M119.admin.detail.dispatch_hold' },
+    { tenantId: tenantSlug, broadcastId, err: errClass, errorId: 'M119.admin.detail.dispatch_hold' },
     'broadcasts.detail_page.dispatch_hold_read_failed',
   );
   return false;
@@ -371,8 +377,9 @@ async function readWarnings(
   if (result.ok) return result.value;
   // A failed read shows no warning (logged, so it is not silent); the send
   // and the promotion still refuse under their row lock.
+  const errClass: ReadFormattingWarningsError['errKind'] = result.error.errKind;
   logger.warn(
-    { tenantId: tenantSlug, broadcastId, err: result.error.errKind, errorId: 'M119.admin.detail.warnings' },
+    { tenantId: tenantSlug, broadcastId, err: errClass, errorId: 'M119.admin.detail.warnings' },
     'broadcasts.detail_page.warnings_read_failed',
   );
   return null;

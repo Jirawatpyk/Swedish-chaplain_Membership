@@ -25,13 +25,13 @@ import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadRegistrationForErase } from '@/lib/events-admin-deps';
 import { DetailContainer } from '@/components/layout';
 import { renderErasePageBody } from './_components/erase-page-view';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -72,7 +72,7 @@ export default async function ErasePiiPage({
     logger.error(
       {
         event: 'admin_erase_pii_page_tenant_resolve_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         eventId,
         registrationId,
       },
@@ -91,17 +91,7 @@ export default async function ErasePiiPage({
     logger.error(
       {
         event: 'admin_erase_pii_page_throw',
-        err:
-          e instanceof Error
-            ? {
-                name: e.name,
-                message: e.message,
-                stack:
-                  typeof e.stack === 'string'
-                    ? (redactStack(e.stack) ?? null)
-                    : null,
-              }
-            : String(e),
+        ...errLogFields(e),
         eventId,
         registrationId,
       },

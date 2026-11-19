@@ -44,6 +44,7 @@ import { refuseCrossOriginFanOut } from '@/lib/cron-fan-out-guard';
 import { countTenantSkips, reportOverlapSkips } from '@/lib/renewals-cron-lock';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -123,7 +124,7 @@ async function emitOrchestratedAudit(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         correlationId,
       },
       'cron.renewals.tier_upgrade.coordinator.audit_emit_failed',
@@ -226,7 +227,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           jsonParseFailed = true;
           logger.error(
             {
-              err: e instanceof Error ? e : new Error(String(e)),
+              err: errKind(e),
               tenantId,
               status: r.status,
               correlationId,

@@ -38,11 +38,11 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runEraseAttendeesByEmail } from '@/lib/events-admin-deps';
 import { adminOnlyWriterGuard } from '../_lib/role-violation-audit';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 export const runtime = 'nodejs';
 /**
  * PR 4.1 follow-up #2 — raised 30 → 120s for headroom. The backend now
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
     logger.error(
       {
         event: 'admin_erase_by_email_tenant_resolve_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         // No email in the log line — it is the PII we are erasing.
       },
       '[F6] resolveTenantFromRequest threw on by-email erasure',
@@ -170,17 +170,7 @@ export async function POST(request: NextRequest) {
     logger.error(
       {
         event: 'admin_erase_by_email_throw',
-        err:
-          e instanceof Error
-            ? {
-                name: e.name,
-                message: e.message,
-                stack:
-                  typeof e.stack === 'string'
-                    ? (redactStack(e.stack) ?? null)
-                    : null,
-              }
-            : String(e),
+        ...errLogFields(e),
         // Deliberately no email / attendee PII in the log line.
       },
       '[F6] /api/admin/events/erasure — runEraseAttendeesByEmail threw',

@@ -39,6 +39,7 @@ import {
 } from '@/lib/broadcasts-public-unsubscribe';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { broadcastsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
 
@@ -152,7 +153,7 @@ export default async function UnsubscribePage({
       tenantDisplayName = await resolveTenantDisplayName(env.tenant.slug);
     } catch (e) {
       logger.warn(
-        { err: (e as Error).message, requestId },
+        { err: errKind(e), requestId },
         'unsubscribe_page_tenant_name_failed',
       );
       tenantDisplayName = t('fallbackChamberName');

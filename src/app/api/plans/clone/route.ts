@@ -21,6 +21,7 @@ import {
 } from '@/lib/idempotency';
 import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { clonePlansToYear, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
@@ -242,7 +243,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'clone-plans: unhandled error',
         );
         return NextResponse.json(

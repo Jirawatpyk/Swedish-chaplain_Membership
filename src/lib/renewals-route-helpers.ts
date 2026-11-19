@@ -24,6 +24,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 export interface RenewalsErrorOptions {
   readonly status: number;
   readonly code: string;
@@ -301,7 +302,7 @@ async function emitF8RoleViolationBlocked(
     logger.warn(
       {
         errorId: `${errorId}.ROLE_VIOLATION_AUDIT_EMIT_FAILED`,
-        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        err: errKind(auditErr),
         correlationId,
       },
       'f8_role_violation_blocked audit emit failed',

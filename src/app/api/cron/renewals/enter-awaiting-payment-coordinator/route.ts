@@ -32,6 +32,7 @@ import { refuseCrossOriginFanOut } from '@/lib/cron-fan-out-guard';
 import { countTenantSkips, reportOverlapSkips } from '@/lib/renewals-cron-lock';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -125,7 +126,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     } catch (e) {
       logger.error(
-        { err: e instanceof Error ? e : new Error(String(e)), correlationId },
+        { err: errKind(e), correlationId },
         'cron.renewals.enter-awaiting.coordinator.audit_emit_failed',
       );
       renewalsMetrics.coordinatorAuditEmitFailed('enter_awaiting');
@@ -280,7 +281,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   } catch (e) {
     logger.error(
-      { err: e instanceof Error ? e : new Error(String(e)), correlationId },
+      { err: errKind(e), correlationId },
       'cron.renewals.enter-awaiting.coordinator.audit_emit_failed',
     );
     renewalsMetrics.coordinatorAuditEmitFailed('enter_awaiting');

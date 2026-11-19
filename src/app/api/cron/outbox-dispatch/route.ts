@@ -48,7 +48,7 @@ import {
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { isDecided } from '@/modules/members';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { outboxMetrics, invoicingMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
  
@@ -287,7 +287,7 @@ async function buildPayload(
         // R-3 — log before returning null so ops can distinguish blob-
         // fetch failures from other render-path nulls in Vercel logs.
         logger.warn(
-          { outboxRowId: row.id, err: blobErr },
+          { outboxRowId: row.id, ...errLogFields(blobErr) },
           'cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed',
         );
         return null;
@@ -886,7 +886,7 @@ async function dispatchOne(
     // into the tx without bytes. `buildPayload` will return null and
     // the row retries per the outbox backoff ladder.
     logger.warn(
-      { outboxRowId: rowId, err: prefetchErr },
+      { outboxRowId: rowId, ...errLogFields(prefetchErr) },
       'cron.outbox_dispatch.invoice_voided.prefetch_bytes_failed',
     );
   }
@@ -1574,7 +1574,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
   } catch (healthErr) {
     logger.warn(
-      { requestId, err: healthErr },
+      { requestId, ...errLogFields(healthErr) },
       'cron.outbox_dispatch.health_check_failed',
     );
   }
@@ -1599,7 +1599,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       // Tx failed (connection loss, deadlock). Row stays pending and a
       // future tick will retry via the normal SKIP LOCKED path.
       logger.error(
-        { requestId, outboxRowId: id, err: txError },
+        { requestId, outboxRowId: id, ...errLogFields(txError) },
         'cron.outbox_dispatch.tx_failed',
       );
     }

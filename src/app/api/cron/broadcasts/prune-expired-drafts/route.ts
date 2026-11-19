@@ -44,13 +44,14 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import {
   expireStaleMemberApprovals,
+  type ExpireStaleMemberApprovalsError,
   makePruneExpiredDraftsDeps,
   makeReclaimOrphanedImagesDeps,
   pruneExpiredDrafts,
   reclaimOrphanedImages,
 } from '@/modules/broadcasts';
 import { makeExpireStaleMemberApprovalsDeps } from '@/lib/broadcast-approval-deps';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { verifyCronBearer } from '@/lib/cron-auth';
@@ -132,15 +133,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       cutoff = result.value.cutoff;
     } else {
       logger.error(
-        { tenantId: tenantCtx.slug, message: result.error.message },
+        { tenantId: tenantCtx.slug, ...errLogFields(result.error) },
         'cron.broadcasts.prune_drafts.server_error',
       );
     }
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
-        stack: e instanceof Error ? e.stack : undefined,
+        err: errKind(e),
         tenantId: tenantCtx.slug,
       },
       'cron.broadcasts.prune_drafts.uncaught_error',
@@ -202,7 +202,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     } else {
       logger.error(
-        { tenantId: tenantCtx.slug, message: result.error.message, errorId: 'M119.cron.image_sweep' },
+        { tenantId: tenantCtx.slug, ...errLogFields(result.error), errorId: 'M119.cron.image_sweep' },
         'cron.broadcasts.image_sweep.server_error',
       );
     }
@@ -240,8 +240,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
       }
     } else {
+      const errClass: ExpireStaleMemberApprovalsError['errKind'] = result.error.errKind;
       logger.error(
-        { tenantId: tenantCtx.slug, err: result.error.errKind, errorId: 'M119.cron.approval_lifecycle' },
+        { tenantId: tenantCtx.slug, err: errClass, errorId: 'M119.cron.approval_lifecycle' },
         'cron.broadcasts.approval_lifecycle.server_error',
       );
     }

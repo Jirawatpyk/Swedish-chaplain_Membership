@@ -38,6 +38,7 @@ import {
   type MembershipAccessDecision,
 } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 const FAIL_OPEN_DECISION: MembershipAccessDecision = {
   access: 'full',
   reason: 'in_good_standing',
@@ -53,7 +54,7 @@ export const loadMembershipAccess = cache(
       return deriveMembershipAccess(cycle, new Date());
     } catch (e) {
       logger.warn(
-        { tenantId, err: e instanceof Error ? e.message : String(e) },
+        { tenantId, err: errKind(e) },
         '[load-membership-access] findLatestCycleForMember failed — failing open to full',
       );
       return FAIL_OPEN_DECISION;

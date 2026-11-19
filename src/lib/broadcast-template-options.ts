@@ -16,7 +16,7 @@
  * Failures degrade to an empty list, exactly as the picker already did: a DB
  * or RLS problem must not take the compose surface down with it.
  */
-import { hashId } from '@/lib/log-id';
+import { errKind, hashId } from '@/lib/log-id';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
@@ -53,7 +53,7 @@ export async function loadComposeTemplateOptions(
   } catch (err) {
     logger.warn(
       {
-        err: err instanceof Error ? err.message : String(err),
+        err: errKind(err),
         tenantId: tenant.slug,
         userIdHash: hashId(userId),
       },

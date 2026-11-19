@@ -8,7 +8,7 @@ import { requireSession } from '@/lib/auth-session';
 import { env } from '@/lib/env';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { asMembersUserId } from '@/lib/members-change-request-deps';
 import { readOwnPendingRequest } from '@/lib/portal-own-pending';
@@ -102,7 +102,7 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
     // leave ops with no trace. Mirrors account/page.tsx.
     if (memberResult.error.code !== 'repo.not_found') {
       logger.error(
-        { err: memberResult.error, tenantId: tenant.slug, userId: user.id },
+        { ...errLogFields(memberResult.error), tenantId: tenant.slug, userId: user.id },
         'portal.edit.member_lookup_failed',
       );
     }
@@ -117,7 +117,7 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
   if (!contactsResult.ok) {
     if (contactsResult.error.code !== 'repo.not_found') {
       logger.error(
-        { err: contactsResult.error, tenantId: tenant.slug, userId: user.id },
+        { ...errLogFields(contactsResult.error), tenantId: tenant.slug, userId: user.id },
         'portal.edit.contacts_lookup_failed',
       );
     }

@@ -17,6 +17,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireMemberContext } from '@/lib/member-context';
 import { getInvoice, makeGetInvoiceDeps } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +43,7 @@ export async function GET(
     });
   } catch (err) {
     logger.error(
-      { requestId: ctx.requestId, tenantId: ctx.tenant.slug, invoiceId, err },
+      { requestId: ctx.requestId, tenantId: ctx.tenant.slug, invoiceId, ...errLogFields(err) },
       'GET /api/portal/invoices/[id]/receipt/status — use-case threw',
     );
     return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });

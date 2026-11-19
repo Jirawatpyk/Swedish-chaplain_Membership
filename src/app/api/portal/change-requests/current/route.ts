@@ -20,6 +20,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requireMemberContext } from '@/lib/member-context';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { attemptBucketKey, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
@@ -78,7 +79,7 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     case 'server_error':
     default:
       logger.error(
-        { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: result.error.type },
+        { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, ...errLogFields(result.error) },
         'change-requests.withdraw: use case failed',
       );
       return NextResponse.json({ error: 'server_error' }, { status: 500 });

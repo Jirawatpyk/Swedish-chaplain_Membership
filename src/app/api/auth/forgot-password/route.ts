@@ -11,6 +11,7 @@ import { forgotPassword, type EmailLocale } from '@/modules/auth';
 import { defaultForgotPasswordDeps } from '@/lib/auth-deps';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
 const inputSchema = z.object({
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   return NextResponse.json({ message: NEUTRAL_MESSAGE }, { status: 200 });
   } catch (error) {
-    logger.error({ err: error, requestId }, 'forgot-password.infra-error');
+    logger.error({ ...errLogFields(error), requestId }, 'forgot-password.infra-error');
     return NextResponse.json(
       { error: 'server-error', requestId },
       { status: 500 },

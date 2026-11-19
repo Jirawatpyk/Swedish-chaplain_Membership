@@ -20,6 +20,7 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { acceptTierUpgrade, makeRenewalsDeps } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
@@ -109,13 +110,13 @@ export async function POST(
           // so SRE alert routing keyed on `F8.ACCEPT_TIER.*` can match
           // the discriminator. Without this emit, the
           // `deploy-skew:unhandled-gateway-arm:*` message inserted by
-          // R3-S5 never reaches Sentry/Grafana.
+          // R3-S5 never reaches Sentry/Grafana. #740 B2 — the errorId only:
+          // the message can carry a caught error's text.
           logger.error(
             {
               errorId: `${ERROR_ID}.SERVER_ERROR`,
               correlationId: ctx.correlationId,
               suggestionId,
-              message: result.error.message,
             },
             'admin.renewals.tier-upgrades.accept_server_error',
           );
@@ -157,7 +158,7 @@ export async function POST(
     logger.error(
       {
         errorId: `${ERROR_ID}.UNEXPECTED`,
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         correlationId: ctx.correlationId,
         suggestionId,
       },

@@ -22,6 +22,7 @@ import {
   makeRenewalsDeps,
 } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 const BodySchema = z.object({
   opted_out: z.boolean(),
 });
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         correlationId,
         tenantId: ctx.tenant.slug,
       },

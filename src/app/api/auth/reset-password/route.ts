@@ -10,9 +10,10 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { resetPassword, parseResetTokenId } from '@/modules/auth';
+import { resetPassword, parseResetTokenId, type ResetPasswordError } from '@/modules/auth';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { parseTokenOrLinkInvalid } from '@/lib/auth-route-helpers';
 
@@ -79,8 +80,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // legitimate client benefits from distinguishing (the UI shows
       // the same "request a new link" either way). Internal logs +
       // metrics still discriminate via `error.reason`.
+      const reason: Extract<ResetPasswordError, { code: 'link-invalid' }>['reason'] = error.reason;
       logger.warn(
-        { requestId, reason: error.reason },
+        { requestId, reason },
         'reset-password.link-invalid',
       );
       return NextResponse.json({ error: 'link-invalid' }, { status: 410 });
@@ -107,7 +109,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
   } catch (error) {
-    logger.error({ err: error, requestId }, 'reset-password.infra-error');
+    logger.error({ ...errLogFields(error), requestId }, 'reset-password.infra-error');
     return NextResponse.json(
       { error: 'server-error', requestId },
       { status: 500 },

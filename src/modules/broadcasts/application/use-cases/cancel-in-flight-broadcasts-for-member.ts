@@ -452,6 +452,8 @@ export async function cancelInFlightBroadcastsForMember(
       // (best-effort) so a single bad row does not block the rest.
       unexpectedErrorCount += 1;
       broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'unexpected_error');
+      const resendOutcome: ResendUnsettledError['outcome'] | undefined =
+        e instanceof ResendUnsettledError ? e.outcome : undefined;
       logger.error(
         {
           ...logBase,
@@ -459,7 +461,7 @@ export async function cancelInFlightBroadcastsForMember(
           broadcastId: broadcast.broadcastId as string,
           previousStatus: fromStatus,
           // Spec 139 — what Resend answered, when that is why it failed.
-          ...(e instanceof ResendUnsettledError ? { resendOutcome: e.outcome } : {}),
+          ...(resendOutcome !== undefined ? { resendOutcome } : {}),
         },
         msg,
       );

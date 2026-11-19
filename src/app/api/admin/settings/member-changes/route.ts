@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { env } from '@/lib/env';
 import { problemResponse } from '@/lib/http/problem-response';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requireApiPermission } from '@/lib/rbac';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const pendingCount = await countPendingChangeRequests(deps);
   if (!pendingCount.ok) {
     logger.error(
-      { errorId: `${ERROR_ID}.pending_count_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, err: pendingCount.error.message },
+      { errorId: `${ERROR_ID}.pending_count_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, ...errLogFields(pendingCount.error) },
       'member-changes.setting: pending count failed',
     );
     return problemResponse(500, 'server_error', 'Could not load the setting', undefined, { extras });
@@ -111,7 +112,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
 
   if (!result.ok) {
     logger.error(
-      { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, err: result.error.message },
+      { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, ...errLogFields(result.error) },
       'member-changes.setting: use case failed',
     );
     return problemResponse(500, 'server_error', 'Could not change the setting', undefined, { extras });

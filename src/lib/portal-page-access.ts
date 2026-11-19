@@ -43,7 +43,7 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { CurrentSession } from '@/lib/auth-session';
 import { logger } from '@/lib/logger';
-import { hashId } from '@/lib/log-id';
+import { errKind, hashId } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -110,7 +110,7 @@ async function isPortalPageAccessBlocked(current: CurrentSession): Promise<boole
   } catch (e) {
     logger.warn(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         userIdHash: hashId(current.user.id),
       },
       '[enforce-portal-page-access] lookup failed — failing open (no redirect)',

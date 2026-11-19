@@ -29,6 +29,7 @@ import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 const PreferredLocaleSchema = z.object({
   preferredLocale: z.union([
     z.literal('en'),
@@ -96,7 +97,7 @@ export async function PATCH(
     if (!result.ok) {
       logger.error(
         {
-          err: result.error,
+          ...errLogFields(result.error),
           correlationId,
           tenantId: tenantCtx.slug,
           memberId: id,
@@ -121,7 +122,7 @@ export async function PATCH(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: tenantCtx.slug,
         memberId: id,

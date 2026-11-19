@@ -45,6 +45,7 @@ import type { PreviewState } from '@/components/broadcast/use-preview-html';
 import { makeGetMemberVersionThreadDeps } from '@/lib/broadcast-approval-deps';
 import { renderBroadcastDetailBody } from '@/lib/broadcast-detail-body';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
@@ -56,6 +57,7 @@ import {
   type BroadcastStatus,
   type MemberVersionThread,
   type MemberVisibleVersion,
+  type GetMemberVersionThreadError,
 } from '@/modules/broadcasts';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
@@ -132,7 +134,7 @@ export default async function BroadcastDetailPage(props: {
     if (memberLookup.error.code !== 'repo.not_found') {
       logger.error(
         {
-          err: memberLookup.error,
+          ...errLogFields(memberLookup.error),
           tenantId: tenant.slug,
           userId: session.user.id,
         },
@@ -316,6 +318,8 @@ async function readMemberThread(
     requestId,
   });
   if (result.ok) return result.value;
+  const threadErrKind: Extract<GetMemberVersionThreadError, { kind: 'server_error' }>['errKind'] | undefined =
+    result.error.kind === 'server_error' ? result.error.errKind : undefined;
   logger.warn(
     {
       tenantId: tenantSlug,
@@ -323,7 +327,7 @@ async function readMemberThread(
       reason: result.error.kind,
       // Round-4 B10 — a server_error carries its error class; log it, as
       // `readWarnings` does (pino drops the undefined of a not_found).
-      err: result.error.kind === 'server_error' ? result.error.errKind : undefined,
+      err: threadErrKind,
       errorId: 'M119.portal.detail.thread',
     },
     'broadcasts.detail_page.thread_read_failed',

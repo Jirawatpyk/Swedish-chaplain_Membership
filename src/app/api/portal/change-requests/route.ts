@@ -50,7 +50,7 @@ import {
   reserveIdempotencyRecord,
 } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { requireMemberContext } from '@/lib/member-context';
 import { attemptBucketKey, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
@@ -222,8 +222,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const error = result.error;
   if (idem) await releaseIdempotencyRecord(ctx.tenant, idem.key);
   logger.error(
-    // the repo code rides in `message` — `type` alone is always 'server_error' here
-    { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: error.type === 'server_error' ? error.message : error.type },
+    { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, ...errLogFields(error) },
     'change-requests.submit: use case failed',
   );
   return NextResponse.json({ error: 'server_error' }, { status: 500 });
@@ -330,7 +329,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'invalid_query', message: 'Invalid cursor.' }, { status: 400 });
     }
     logger.error(
-      { errorId: `${HISTORY_ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: result.error.message },
+      { errorId: `${HISTORY_ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, ...errLogFields(result.error) },
       'change-requests.history: use case failed',
     );
     return NextResponse.json({ error: 'server_error' }, { status: 500 });

@@ -11,8 +11,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { getInvoicePdfSignedUrl, makeGetInvoicePdfSignedUrlDeps } from '@/modules/invoicing';
+import {
+  getInvoicePdfSignedUrl,
+  makeGetInvoicePdfSignedUrlDeps,
+  type GetInvoicePdfSignedUrlError,
+} from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { streamPdfFromBlob } from '@/lib/stream-pdf-from-blob';
 import { pdfRouteErrorStatus } from '@/lib/pdf-route-error-status';
 
@@ -44,7 +49,7 @@ export async function GET(
     );
   } catch (err) {
     logger.error(
-      { requestId, tenantId: tenantCtx.slug, invoiceId, err },
+      { requestId, tenantId: tenantCtx.slug, invoiceId, ...errLogFields(err) },
       'GET /api/invoices/[id]/pdf — getInvoicePdfSignedUrl threw',
     );
     return NextResponse.json(
@@ -53,6 +58,8 @@ export async function GET(
     );
   }
   if (!result.ok) {
+    const blobKey: Extract<GetInvoicePdfSignedUrlError, { code: 'blob_missing' }>['key'] | undefined =
+      result.error.code === 'blob_missing' ? result.error.key : undefined;
     logger.warn(
       {
         requestId,
@@ -62,9 +69,7 @@ export async function GET(
         // Surface the missing blob key so operators triaging
         // "Invoice PDF unavailable" toasts can locate the orphaned
         // object in Vercel Blob without joining back to the invoice row.
-        ...(result.error.code === 'blob_missing'
-          ? { blobKey: result.error.key }
-          : {}),
+        ...(blobKey !== undefined ? { blobKey } : {}),
       },
       'GET /api/invoices/[id]/pdf failed',
     );

@@ -21,6 +21,7 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { dismissTierUpgrade, makeRenewalsDeps } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
@@ -167,7 +168,7 @@ export async function POST(
         // could match. Added so the comment and docs/code-conventions.md
         // are true of this file, not only of the accept route.
         errorId: `${ERROR_ID}.UNEXPECTED`,
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         correlationId: ctx.correlationId,
         suggestionId,
       },

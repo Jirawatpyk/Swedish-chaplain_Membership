@@ -20,6 +20,7 @@ import {
 import { makeMarketingSuppressionLookup } from '@/lib/contact-marketing-deps';
 import { parseIdempotencyKey } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
+import { errKind, errLogFields } from '@/lib/log-id';
 
 /**
  * 108 PR-D (US6 / FR-031a, FR-032) — the OWN contact's displayed marketing
@@ -204,7 +205,7 @@ export async function PATCH(request: NextRequest) {
     gate = await deps.memberChangeGate.resolve(ctx.tenant);
   } catch (e) {
     logger.error(
-      { errorId: 'M114.portal.profile.gate_failed', requestId: ctx.requestId, err: e instanceof Error ? e.name : String(e) },
+      { errorId: 'M114.portal.profile.gate_failed', requestId: ctx.requestId, err: errKind(e) },
       'portal.profile.patch.gate_failed',
     );
     return NextResponse.json({ error: { code: 'internal' } }, { status: 500 });
@@ -246,7 +247,7 @@ export async function PATCH(request: NextRequest) {
         );
       default:
         logger.error(
-          { error: result.error, requestId: ctx.requestId },
+          { ...errLogFields(result.error), requestId: ctx.requestId },
           'portal.profile.patch.error',
         );
         return NextResponse.json(

@@ -50,6 +50,7 @@ import { logger } from '@/lib/logger';
 import { rateLimiter } from '@/lib/auth-deps';
 import { getCurrentSession } from '@/lib/auth-session';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -117,7 +118,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     logger.debug(
       {
         errorId: 'CLIENT.ERROR_REPORT.INVALID_JSON',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[client-error] beacon body was not parseable JSON',
     );
@@ -141,7 +142,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Structured log for SRE / support correlation. errorId fixed so
   // alerts can attach to the metric counter (future wave) or the
-  // pino log itself.
+  // pino log itself. #740 B2 — the client's message is free text (it can
+  // quote an error or an address): only its length is logged.
+  const { message: clientMessage } = parsed.data;
   logger.warn(
     {
       errorId: 'CLIENT.ERROR_REPORT',
@@ -149,7 +152,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       code: parsed.data.code,
       status: parsed.data.status ?? null,
       path: parsed.data.path ?? null,
-      message: parsed.data.message ?? null,
+      messageLength: clientMessage?.length ?? null,
       // F1 cross-tenant users — user.id is the only stable correlation
       // handle on the session. Tenant scope (when known) is implicit
       // in the route path when present.

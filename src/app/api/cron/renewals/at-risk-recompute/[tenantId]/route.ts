@@ -61,6 +61,7 @@ import {
   makeRenewalsDeps,
 } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -94,7 +95,6 @@ export async function POST(
       const errInstance = e instanceof Error ? e : new Error(String(e));
       logger.warn(
         {
-          errMsg: errInstance.message.slice(0, 200),
           errName: errInstance.name,
           ip,
           route: '/api/cron/renewals/at-risk-recompute/[tenantId]',
@@ -121,7 +121,7 @@ export async function POST(
       );
     } catch (e) {
       logger.error(
-        { err: e instanceof Error ? e : new Error(String(e)) },
+        { err: errKind(e) },
         'cron.renewals.at_risk.bearer_rejected_audit_failed',
       );
     }
@@ -233,11 +233,6 @@ export async function POST(
           tenantId,
           correlationId,
           errorKind: txResult.error.kind,
-          message:
-            txResult.error.kind === 'invalid_input' ||
-            txResult.error.kind === 'server_error'
-              ? txResult.error.message
-              : undefined,
         },
         'cron.renewals.at_risk.batch_failed',
       );
@@ -292,7 +287,7 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         tenantId,
         correlationId,
       },

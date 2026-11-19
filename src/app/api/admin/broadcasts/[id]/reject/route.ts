@@ -116,8 +116,9 @@ function mapRejectError(
 ): NextResponse {
   if (error.kind === 'reject.server_error') {
     // T166 R-M4 — this 500 used to leave no trace at all.
+    const errClass: Extract<RejectBroadcastError, { kind: 'reject.server_error' }>['errKind'] = error.errKind;
     logger.error(
-      { err: error.errKind, correlationId, errorId: 'M119.admin.reject.server_error' },
+      { err: errClass, correlationId, errorId: 'M119.admin.reject.server_error' },
       'broadcasts.admin.reject.server_error',
     );
     return errorResponse(500, 'internal_error', correlationId);

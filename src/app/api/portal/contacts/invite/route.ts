@@ -13,9 +13,11 @@ import {
   inviteColleague,
   inviteColleagueSchema,
   type CreateUserPort,
+  type InviteColleagueError,
 } from '@/modules/members';
 import { parseIdempotencyKey } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { sha256Hex } from '@/lib/crypto';
 import { membersMetrics } from '@/lib/metrics';
 import { rateLimiter } from '@/lib/auth-deps';
@@ -168,12 +170,13 @@ export async function POST(request: NextRequest) {
         // goes to staff only (metric + log), with the address hashed
         // (CLAUDE.md § Secrets; docs/observability.md § 3).
         membersMetrics.portalInvite.refused(ctx.tenant.slug, result.error.reason);
+        const reason: Extract<InviteColleagueError, { type: 'invite_unavailable' }>['reason'] = result.error.reason;
         logger.warn(
           {
             requestId: ctx.requestId,
             tenantId: ctx.tenant.slug,
             memberId: ctx.memberId,
-            reason: result.error.reason,
+            reason,
             emailHash: emailLogHash(parsed.data.email),
           },
           'portal.contacts.invite.unavailable',
@@ -207,7 +210,7 @@ export async function POST(request: NextRequest) {
         );
       default:
         logger.error(
-          { error: result.error, requestId: ctx.requestId },
+          { ...errLogFields(result.error), requestId: ctx.requestId },
           'portal.contacts.invite.error',
         );
         return NextResponse.json(

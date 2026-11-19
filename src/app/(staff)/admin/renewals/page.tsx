@@ -95,6 +95,7 @@ import {
   type PendingReviewMemberInfo,
 } from './_lib/pending-review-enrichment';
 
+import { errKind } from '@/lib/log-id';
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals');
   return { title: t('title'), description: t('subtitle') };
@@ -654,7 +655,7 @@ async function PipelineMoneyBandSection({
     logger.error(
       {
         errorId: 'F8.ADMIN.MONEY_BAND',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: tenantSlug,
       },
       '[admin/renewals] money band load failed',
@@ -727,7 +728,7 @@ async function resolveNeedsActionCount(
     logger.error(
       {
         errorId: 'F8.ADMIN.NEEDS_ACTION_BADGE',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: tenantSlug,
       },
       '[admin/renewals] needs-action badge count load failed',
@@ -826,7 +827,7 @@ async function PendingReviewSection({
     logger.error(
       {
         errorId: 'F8.ADMIN.PENDING_REVIEW_LOAD',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: tenantSlug,
         correlationId,
       },

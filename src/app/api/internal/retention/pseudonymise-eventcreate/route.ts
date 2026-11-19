@@ -24,6 +24,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { createHmac, createHash } from 'node:crypto';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { runInTenant } from '@/lib/db';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { gateF6Cron } from '@/lib/events-cron-deps';
@@ -154,7 +155,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             event: 'pseudonymise_sweep_per_tenant_use_case_err',
             tenantSlug,
             errKind: result.error.kind,
-            errMessage: result.error.message,
           },
           '[F6] pseudonymise sweep: per-tenant use-case returned Result.err',
         );
@@ -168,7 +168,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       eventcreateMetrics.pseudonymisationSweepRowsTotal(tenantSlug, 'error');
       const message = e instanceof Error ? e.message : String(e);
       logger.error(
-        { event: 'pseudonymise_sweep_per_tenant_throw', tenantSlug, err: message },
+        { event: 'pseudonymise_sweep_per_tenant_throw', tenantSlug, ...errLogFields(e) },
         '[F6] pseudonymise sweep: per-tenant tx threw',
       );
       perTenant.push({ tenantId: tenantSlug, outcome: 'error', message });

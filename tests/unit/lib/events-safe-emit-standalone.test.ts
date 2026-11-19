@@ -9,10 +9,10 @@
  * Behavioural contract under test:
  *   1. Happy path: `emitStandalone` resolves → no logger.error.
  *   2. Audit-failure path: rejects with Error → logger.error fires
- *      once with structured fields (event/tenantSlug/errName/
- *      errMessage/errStack) AND redactStack scrubs container paths.
+ *      once with structured fields (event/tenantSlug/errName/err),
+ *      never the error's message or stack (#740 B2).
  *   3. Non-Error rejection: rejects with string → errName='unknown',
- *      errMessage='<string>', errStack=null.
+ *      err='unknown'.
  *   4. Return-void invariant: helper resolves (never throws) on
  *      either failure mode.
  *   5. logEvent / logMsg / tenantSlug values pass through verbatim.
@@ -114,14 +114,15 @@ describe('safeEmitStandalone — Result.err path (R8-I5 fix)', () => {
       event: 'f6_admin_cross_tenant_probe_audit_failed',
       tenantSlug: 'tenant-a',
       auditErrorKind: 'db_error',
-      auditErrorMessage: 'simulated PG error',
     });
+    // #740 B2 — the Result error's message never reaches the log.
+    expect(logFields).not.toHaveProperty('auditErrorMessage');
     expect(logMessage).toBe(
       '[F6] admin cross_tenant_probe audit emit failed (suppressed — 404 still returned)',
     );
   });
 
-  it('handles err variant without `message` field (auditErrorMessage=null)', async () => {
+  it('handles err variant without `message` field (kind only)', async () => {
     const deps: StandaloneAuditDeps = {
       emitStandalone: vi.fn().mockResolvedValue({
         ok: false,
@@ -132,8 +133,8 @@ describe('safeEmitStandalone — Result.err path (R8-I5 fix)', () => {
     const [logFields] = errorSpy.mock.calls[0] as [Record<string, unknown>];
     expect(logFields).toMatchObject({
       auditErrorKind: 'enum_value_unknown',
-      auditErrorMessage: null,
     });
+    expect(logFields).not.toHaveProperty('auditErrorMessage');
   });
 
   it('Result.err path also resolves (return-void invariant preserved)', async () => {
@@ -160,10 +161,9 @@ describe('safeEmitStandalone — audit-failure path', () => {
     errorSpy.mockRestore();
   });
 
-  it('catches Error rejection + logs structured fields with redacted stack', async () => {
-    // Construct an Error whose stack contains a Vercel container
-    // path — the redactStack scrubber must replace it before pino
-    // sees the structured log. This is the round-6 W2 contract.
+  it('catches Error rejection + logs its name and class, never its message or stack', async () => {
+    // #740 B2 — an Error whose message and stack carry text: neither may
+    // reach the structured log.
     const auditErr = new Error('audit DB connection refused');
     auditErr.stack =
       'Error: audit DB connection refused\n    at fn (/var/task/app/x.js:1:1)';
@@ -182,21 +182,19 @@ describe('safeEmitStandalone — audit-failure path', () => {
       event: 'f6_admin_cross_tenant_probe_audit_failed',
       tenantSlug: 'tenant-a',
       errName: 'Error',
-      errMessage: 'audit DB connection refused',
+      err: 'Error',
     });
-    // Stack must be a string AND the container path must be
-    // scrubbed (round-6 W2 + round-7 R2-C regression guard).
-    expect(typeof logFields['errStack']).toBe('string');
-    const errStack = logFields['errStack'] as string;
-    expect(errStack).toContain('[redacted-path]');
-    expect(errStack).not.toContain('/var/task/app/x.js');
+    expect(logFields).not.toHaveProperty('errMessage');
+    expect(logFields).not.toHaveProperty('errStack');
+    expect(JSON.stringify(logFields)).not.toContain('audit DB connection refused');
+    expect(JSON.stringify(logFields)).not.toContain('/var/task/app/x.js');
     // logMsg pass-through.
     expect(logMessage).toBe(
       '[F6] admin cross_tenant_probe audit emit failed (suppressed — 404 still returned)',
     );
   });
 
-  it('handles non-Error rejection (string) with errName=unknown + errStack=null', async () => {
+  it('handles non-Error rejection (string) with errName=unknown + err=unknown', async () => {
     const deps: StandaloneAuditDeps = {
       emitStandalone: vi.fn().mockRejectedValue('string-error'),
     } as unknown as StandaloneAuditDeps;
@@ -207,9 +205,9 @@ describe('safeEmitStandalone — audit-failure path', () => {
     const [logFields] = errorSpy.mock.calls[0] as [Record<string, unknown>];
     expect(logFields).toMatchObject({
       errName: 'unknown',
-      errMessage: 'string-error',
-      errStack: null,
+      err: 'unknown',
     });
+    expect(JSON.stringify(logFields)).not.toContain('string-error');
   });
 
   it('resolves (never throws) on audit failure — return-void invariant', async () => {
@@ -222,7 +220,7 @@ describe('safeEmitStandalone — audit-failure path', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('handles Error without a stack (errStack=null instead of redaction)', async () => {
+  it('handles Error without a stack (no errStack field)', async () => {
     const err = new Error('no stack');
     delete (err as { stack?: string }).stack;
     const deps: StandaloneAuditDeps = {
@@ -230,6 +228,7 @@ describe('safeEmitStandalone — audit-failure path', () => {
     } as unknown as StandaloneAuditDeps;
     await safeEmitStandalone(deps, makeEntry(), makeFailCtx());
     const [logFields] = errorSpy.mock.calls[0] as [Record<string, unknown>];
-    expect(logFields['errStack']).toBeNull();
+    expect(logFields).not.toHaveProperty('errStack');
+    expect(logFields).toMatchObject({ errName: 'Error', err: 'Error' });
   });
 });

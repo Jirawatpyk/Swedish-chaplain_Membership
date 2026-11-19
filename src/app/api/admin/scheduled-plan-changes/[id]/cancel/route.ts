@@ -34,7 +34,8 @@ import { requireApiPermission } from '@/lib/rbac';
 import { assertNever } from '@/lib/assert-never';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
-import { cancelScheduledPlanChange } from '@/modules/plans';
+import { errLogFields } from '@/lib/log-id';
+import { cancelScheduledPlanChange, type CancelScheduledPlanChangeError } from '@/modules/plans';
 import {
   drizzleScheduledPlanChangeRepo,
   planAuditAdapter,
@@ -184,6 +185,8 @@ export async function POST(
         // (deploy-skew) from DB-rejection (column drift / pgEnum drift
         // / RLS). 126 #7 — the cancel rolled back with the audit, so
         // this is a plain retryable 500 (not cached: 5xx stays retryable).
+        const auditErrorType: Extract<CancelScheduledPlanChangeError, { code: 'audit_failed' }>['auditErrorType'] =
+          result.error.auditErrorType;
         logger.error(
           {
             errorId:
@@ -191,7 +194,7 @@ export async function POST(
                 ? 'F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD'
                 : 'F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED',
             requestId: ctx.requestId,
-            auditErrorType: result.error.auditErrorType,
+            auditErrorType,
           },
           'cancel-scheduled-plan-change: audit write failed — cancel rolled back',
         );
@@ -212,16 +215,14 @@ export async function POST(
         //   - { recheckFailed: true,  message, recheckErrMessage } — recheck also threw
         //
         // R5-I11 collapsed the previous warn + error double-emit into a
-        // single logger.error. The unified emit carries `recheckErrMessage`
-        // as a structured field iff `recheckFailed === true`; errorId
-        // reflects which sub-shape fired.
+        // single logger.error; errorId reflects which sub-shape fired.
+        // #740 B2 — never `recheckErrMessage`: it is the recheck's error text.
         if (result.error.recheckFailed) {
           logger.error(
             {
               errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED',
               requestId: ctx.requestId,
-              err: result.error,
-              recheckErrMessage: result.error.recheckErrMessage,
+              ...errLogFields(result.error),
             },
             'cancel-scheduled-plan-change: TOCTOU recheck failed',
           );
@@ -230,7 +231,7 @@ export async function POST(
             {
               errorId: 'F2.PLAN_CHANGE.CANCEL_SERVER_ERROR',
               requestId: ctx.requestId,
-              err: result.error,
+              ...errLogFields(result.error),
             },
             'cancel-scheduled-plan-change: server error',
           );

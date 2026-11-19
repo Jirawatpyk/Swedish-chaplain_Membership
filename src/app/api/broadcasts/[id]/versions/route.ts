@@ -101,12 +101,14 @@ function threadErrorResponse(error: GetMemberVersionThreadError, correlationId: 
   switch (error.kind) {
     case 'not_found':
       return errorResponse(404, 'broadcast_not_found', correlationId);
-    case 'server_error':
+    case 'server_error': {
+      const errClass: Extract<GetMemberVersionThreadError, { kind: 'server_error' }>['errKind'] = error.errKind;
       logger.error(
-        { err: error.errKind, correlationId, errorId: 'M119.portal.versions.server_error' },
+        { err: errClass, correlationId, errorId: 'M119.portal.versions.server_error' },
         'broadcasts.member_version_thread.failed',
       );
       return errorResponse(500, 'internal_error', correlationId);
+    }
     default:
       return assertNever(error);
   }

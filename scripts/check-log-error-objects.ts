@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 /**
  * `pnpm check:log-error-objects` — Spec 140 s2d (#736c). No log line in the
- * members or broadcasts module carries an error OBJECT or error TEXT
+ * scanned root carries an error OBJECT or error TEXT
  * (`.message`, `.stack`, `String(e)`, a raw `cause`): drizzle-orm's
  * `DrizzleQueryError` has enumerable `query` and `params`, so either one
  * writes the statement's bound parameters — emails, names, payloads — to the
@@ -27,14 +27,15 @@
  * if a `// refused` line yields none, or if an `// allowed` line yields one —
  * so a rule that rots cannot pass silently over the real tree.
  *
- * Scope: `src/modules/{members,broadcasts,invoicing,payments,events,renewals}/**`
- * `.ts` files, tests excluded (#740 B1 added the last four). Follow-up (#740
- * B2): `src/app` and `src/lib`.
+ * Scope: `src/modules/{members,broadcasts,invoicing,payments,events,renewals}/**`,
+ * `src/app/**` and `src/lib/**` `.ts`/`.tsx` files, tests excluded (#740 B1
+ * and B2). Since B2 the call sites of every `LOG_WRAPPERS` entry are read
+ * too, and a listed wrapper that no longer reaches a log line fails the run.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { findLogErrorObjects, scanLogErrorObjects } from './lib/log-error-objects-rules';
+import { findLogErrorObjects, LOG_WRAPPERS, scanLogErrorObjects } from './lib/log-error-objects-rules';
 
 const ROOTS = [
   'src/modules/members',
@@ -93,6 +94,7 @@ if (fixtureFindings.length === 0 || refusedMarked === 0) {
 // --- the real tree ----------------------------------------------------------
 let fileCount = 0;
 let loggerCalls = 0;
+const discovered = new Set<string>();
 for (const root of ROOTS) {
   const files = walk(root, []);
   if (files.length < MIN_FILES_PER_ROOT) {
@@ -102,8 +104,18 @@ for (const root of ROOTS) {
   for (const file of files) {
     const scan = scanLogErrorObjects(file, readFileSync(file, 'utf8'));
     loggerCalls += scan.loggerCalls;
+    for (const w of scan.wrappers) discovered.add(`${w.name}:${w.index}`);
     for (const f of scan.findings) {
       failures.push(`${file}:${f.line}\n    ${f.message}`);
+    }
+  }
+}
+// #740 B2 — a listed wrapper that no longer puts that argument in a log line is stale.
+const wrapperCount = Object.keys(LOG_WRAPPERS).length;
+for (const [name, indexes] of Object.entries(LOG_WRAPPERS)) {
+  for (const index of indexes) {
+    if (!discovered.has(`${name}:${index}`)) {
+      failures.push(`LOG_WRAPPERS: \`${name}: [${index}]\` no longer reaches a log line in the real tree; remove it.`);
     }
   }
 }
@@ -126,6 +138,6 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `✓ check:log-error-objects — ${fileCount} file(s) and ${loggerCalls} logger call(s) in ${ROOTS.length} module root(s), no error object or text in a log line; ` +
+  `✓ check:log-error-objects — ${fileCount} file(s) and ${loggerCalls} logger call(s) in ${ROOTS.length} root(s) and the call sites of ${wrapperCount} log wrapper(s), no error object or text in a log line; ` +
     `${refusedMarked} refused form(s) in the positive control, each found.`,
 );

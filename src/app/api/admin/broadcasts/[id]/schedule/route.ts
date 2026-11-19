@@ -143,12 +143,14 @@ function scheduleErrorResponse(error: ConfirmScheduleError, correlationId: strin
       return errorResponse(422, 'image_source_not_allowlisted', correlationId, {
         details: { images: error.images },
       });
-    case 'server_error':
+    case 'server_error': {
+      const errClass: Extract<ConfirmScheduleError, { kind: 'server_error' }>['errKind'] = error.errKind;
       logger.error(
-        { err: error.errKind, correlationId, errorId: 'M119.admin.schedule.server_error' },
+        { err: errClass, correlationId, errorId: 'M119.admin.schedule.server_error' },
         'broadcasts.schedule.failed',
       );
       return errorResponse(500, 'internal_error', correlationId);
+    }
     default:
       return assertNever(error);
   }

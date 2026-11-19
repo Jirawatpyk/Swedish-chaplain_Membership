@@ -21,6 +21,7 @@ import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { problemResponse } from '@/lib/http/problem-response';
 import { adminOnlyGuard } from '../_lib/role-violation-audit';
 
+import { errKind } from '@/lib/log-id';
 const ROUTE = '/api/admin/integrations/eventcreate/rotate-secret';
 const WARNING =
   'Old secret continues to verify for 24h. Update Zapier within this window.';
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     logger.error(
       {
         event: 'f6_rotate_secret_tenant_resolve_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         requestId: rotateRequestId,
       },
       '[F6] resolveTenantFromRequest threw on rotate-secret route',
@@ -138,7 +139,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       {
         event: 'f6_rotate_secret_threw',
         tenantSlug: tenantCtx.slug,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         requestId,
       },
       '[F6] rotate-secret route threw',

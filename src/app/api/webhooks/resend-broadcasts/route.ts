@@ -65,6 +65,7 @@ import {
   resendBroadcastsWebhookVerifier,
   resolveTenantByResendBroadcastId,
   WebhookSignatureError,
+  type ProcessWebhookEventError,
 } from '@/modules/broadcasts';
 
 export const runtime = 'nodejs';
@@ -587,6 +588,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
 
     if (!result.ok) {
+      const errClass: Extract<ProcessWebhookEventError, { kind: 'process_webhook.server_error' }>['errClass'] | undefined =
+        result.error.kind === 'process_webhook.server_error' ? result.error.errClass : undefined;
+      const step: Extract<ProcessWebhookEventError, { kind: 'process_webhook.server_error' }>['step'] =
+        result.error.kind === 'process_webhook.server_error' ? result.error.step : undefined;
+      const detail: Extract<ProcessWebhookEventError, { kind: 'process_webhook.invalid_payload' }>['reason'] | undefined =
+        result.error.kind === 'process_webhook.invalid_payload' ? result.error.reason : undefined;
       logger.error(
         {
           err: result.error.kind,
@@ -596,13 +603,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           requestId,
           // Spec 140 s2d review round 3 (pdpa H-1) — the class and the
           // code-authored step of the failure, never its text.
-          ...(result.error.kind === 'process_webhook.server_error' && {
-            errClass: result.error.errClass,
-            ...(result.error.step !== undefined ? { step: result.error.step } : {}),
+          ...(errClass !== undefined && {
+            errClass,
+            ...(step !== undefined ? { step } : {}),
           }),
-          ...(result.error.kind === 'process_webhook.invalid_payload' && {
-            detail: result.error.reason,
-          }),
+          ...(detail !== undefined && { detail }),
         },
         'broadcasts.webhook.dispatch_failed',
       );

@@ -19,7 +19,6 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
 import { getCurrentSession } from '@/lib/auth-session';
 import { canPerform } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -38,6 +37,7 @@ import {
   adminOnlyWriterGuard,
 } from './_lib/role-violation-audit';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 const CreateEventBodySchema = z.object({
   externalId: z
     .string()
@@ -150,7 +150,7 @@ export async function GET(request: NextRequest) {
     logger.error(
       {
         event: 'admin_events_list_tenant_resolve_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[F6] resolveTenantFromRequest threw on list route',
     );
@@ -201,17 +201,7 @@ export async function GET(request: NextRequest) {
     logger.error(
       {
         event: 'admin_events_list_route_throw',
-        err:
-          e instanceof Error
-            ? {
-                name: e.name,
-                message: e.message,
-                stack:
-                  typeof e.stack === 'string'
-                    ? (redactStack(e.stack) ?? null)
-                    : null,
-              }
-            : String(e),
+        ...errLogFields(e),
       },
       '[F6] /api/admin/events list — runListEvents threw',
     );
@@ -223,7 +213,7 @@ export async function GET(request: NextRequest) {
 
   if (!result.ok) {
     logger.error(
-      { event: 'admin_events_list_error', error: result.error },
+      { event: 'admin_events_list_error', ...errLogFields(result.error) },
       'admin events list use-case failed',
     );
     return NextResponse.json(
@@ -300,7 +290,7 @@ export async function POST(request: NextRequest) {
       {
         event: 'admin_events_create_tenant_resolve_failed',
         requestId,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[F6.1] resolveTenantFromRequest threw on create-event route',
     );
@@ -368,7 +358,7 @@ export async function POST(request: NextRequest) {
         event: 'admin_events_create_threw',
         tenantSlug: tenantCtx.slug,
         requestId,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[F6.1] runCreateEvent threw before returning an outcome',
     );
@@ -426,7 +416,6 @@ export async function POST(request: NextRequest) {
           tenantSlug: tenantCtx.slug,
           requestId,
           kind: outcome.kind,
-          err: outcome.message,
         },
         '[F6.1] createEvent use-case returned error outcome',
       );

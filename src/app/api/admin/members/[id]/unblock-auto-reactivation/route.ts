@@ -23,6 +23,7 @@ import {
 import { unblockAutoReactivation, makeRenewalsDeps } from '@/modules/renewals';
 import { assertNever } from '@/lib/assert-never';
 
+import { errKind } from '@/lib/log-id';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
@@ -112,7 +113,7 @@ export async function POST(
     logger.error(
       {
         errorId: `${ERROR_ID}.UNEXPECTED`,
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         correlationId: ctx.correlationId,
         memberId,
         tenantId: tenantCtx.slug,

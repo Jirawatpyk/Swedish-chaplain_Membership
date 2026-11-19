@@ -35,6 +35,7 @@ import { runIdempotent } from '@/lib/idempotency-run';
 import { problemResponse } from '@/lib/http/problem-response';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { rateLimiter } from '@/modules/auth';
 import { asContactId, setContactMarketingOptOut } from '@/modules/members';
 import { buildContactMarketingDeps } from '@/lib/contact-marketing-deps';
@@ -188,7 +189,7 @@ export async function POST(
       case 'server_error':
       default:
         logger.error(
-          { requestId: ctx.requestId, err: result.error.message },
+          { requestId: ctx.requestId, ...errLogFields(result.error) },
           'contact-marketing: unhandled',
         );
         return problemResponse(500, 'server_error', 'Internal server error.');

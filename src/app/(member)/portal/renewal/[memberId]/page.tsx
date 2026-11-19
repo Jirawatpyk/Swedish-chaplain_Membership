@@ -43,6 +43,7 @@ import { resolvePlanName } from '@/lib/resolve-plan-name';
 // never disagree. Lives in `portal/_lib` (not this route's `_lib`).
 import { isRenewalPayable } from '../../_lib/is-renewal-payable';
 
+import { errKind } from '@/lib/log-id';
 export default async function RenewalPortalPage({
   params,
 }: {
@@ -98,7 +99,7 @@ export default async function RenewalPortalPage({
     } catch (e) {
       logger.warn(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           tenantId: tenant.slug,
           attemptedMemberId: urlMemberId,
         },

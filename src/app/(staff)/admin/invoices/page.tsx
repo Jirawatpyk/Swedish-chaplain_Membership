@@ -15,7 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.invoices.meta');
@@ -223,7 +223,7 @@ async function loadPlanFilter(
   );
   if (!plans.ok) {
     logger.warn(
-      { tenantId: tenant.slug, errKind: plans.error.type },
+      { tenantId: tenant.slug, ...errLogFields(plans.error) },
       '[admin-invoices-list] plan name lookup failed; the chip shows the plan id',
     );
   }
@@ -487,7 +487,7 @@ export default async function AdminInvoicesPage({
       // instead of silently degrading to 0 on every row across many
       // tenants.
       logger.warn(
-        { tenantId: tenantCtx.slug, invoiceCount: invoiceIds.length, err },
+        { tenantId: tenantCtx.slug, invoiceCount: invoiceIds.length, ...errLogFields(err) },
         '[admin-invoices-list] credit-note count GROUP BY failed — rows will show 0 CN chip',
       );
     }
@@ -531,7 +531,7 @@ export default async function AdminInvoicesPage({
       );
       if (!ctxResult.ok) {
         logger.warn(
-          { tenantId: tenantCtx.slug, err: ctxResult.error },
+          { tenantId: tenantCtx.slug, ...errLogFields(ctxResult.error) },
           '[admin-invoices-list] loadAutoRenewalQueueContext rejected input — queue rows render as unresolved',
         );
         return new Map();
@@ -539,7 +539,7 @@ export default async function AdminInvoicesPage({
       return ctxResult.value;
     } catch (err) {
       logger.warn(
-        { tenantId: tenantCtx.slug, rowCount: rows.length, err },
+        { tenantId: tenantCtx.slug, rowCount: rows.length, ...errLogFields(err) },
         '[admin-invoices-list] loadAutoRenewalQueueContext threw — queue rows render as unresolved',
       );
       return new Map();

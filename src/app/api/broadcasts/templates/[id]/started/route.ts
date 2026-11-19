@@ -48,6 +48,7 @@ import { canPerform, recordApiPermissionDenial } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 
 /**
@@ -146,7 +147,7 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: tenantCtx.slug,
         templateId: id,

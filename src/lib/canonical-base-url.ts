@@ -27,6 +27,7 @@
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 
+import { errKind } from '@/lib/log-id';
 // Round 2 simplifier P4 — allowlist Set built once at module load.
 // `env.app.{baseUrl,allowedOrigins}` are zod-validated at boot and
 // frozen for the process lifetime.
@@ -75,7 +76,7 @@ export function assertCanonicalBaseUrl(
         event: 'f6_webhook_base_url_malformed',
         candidate,
         surface,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[F6] inbound Host candidate failed URL parse — falling back to APP_BASE_URL',
     );

@@ -31,6 +31,7 @@ import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 
 // PR-review fix 2026-05-20 TD-M5 — single source of truth via
@@ -133,7 +134,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: tenantCtx.slug,
       },

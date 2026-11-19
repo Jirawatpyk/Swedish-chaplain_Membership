@@ -96,7 +96,7 @@ describe('runListMemberVatRegistrantByIds — 065 L-2/L-1 failure-path honesty',
     const out = await runListMemberVatRegistrantByIds('test-swecham', MEMBER_IDS);
     expect(out.size).toBe(0);
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ errName: 'unknown', err: 'string failure' }),
+      expect.objectContaining({ errName: 'unknown', err: 'unknown' }),
       expect.any(String),
     );
     expect(degraded).toHaveBeenCalledWith('test-swecham');

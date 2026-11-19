@@ -24,10 +24,12 @@ import { requireMemberContext } from '@/lib/member-context';
 import {
   getCreditNotePdfSignedUrl,
   makeGetCreditNotePdfSignedUrlDeps,
+  type GetCreditNotePdfSignedUrlError,
 } from '@/modules/invoicing';
 import { streamPdfFromBlob } from '@/lib/stream-pdf-from-blob';
 import { pdfRouteErrorStatus } from '@/lib/pdf-route-error-status';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 
 export async function GET(
   request: NextRequest,
@@ -55,7 +57,7 @@ export async function GET(
     );
   } catch (err) {
     logger.error(
-      { requestId: ctx.requestId, tenantId: ctx.tenant.slug, creditNoteId, err },
+      { requestId: ctx.requestId, tenantId: ctx.tenant.slug, creditNoteId, ...errLogFields(err) },
       'GET /api/portal/credit-notes/[id]/pdf — getCreditNotePdfSignedUrl threw',
     );
     return NextResponse.json(
@@ -64,6 +66,8 @@ export async function GET(
     );
   }
   if (!result.ok) {
+    const blobKey: Extract<GetCreditNotePdfSignedUrlError, { code: 'blob_missing' }>['key'] | undefined =
+      result.error.code === 'blob_missing' ? result.error.key : undefined;
     logger.warn(
       {
         requestId: ctx.requestId,
@@ -73,9 +77,7 @@ export async function GET(
         // The missing blob's key, so on-call can locate the orphaned object
         // without joining back to the credit-note row (runbook:
         // receipt-pdf-permanently-failed.md § Missing PDF blob).
-        ...(result.error.code === 'blob_missing'
-          ? { blobKey: result.error.key }
-          : {}),
+        ...(blobKey !== undefined ? { blobKey } : {}),
       },
       'GET /api/portal/credit-notes/[id]/pdf failed',
     );

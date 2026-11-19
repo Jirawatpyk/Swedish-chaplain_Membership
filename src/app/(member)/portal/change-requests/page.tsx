@@ -21,6 +21,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { serialiseChangeRequestForPortal, type ChangeRequestView } from '@/lib/change-request-portal-view';
 import { listPortalChangeRequests } from '@/modules/members';
@@ -75,7 +76,7 @@ export default async function PortalChangeRequestHistoryPage({ searchParams }: P
   if (!result.ok) {
     // a malformed cursor is a bad link, not a fault — start from the top
     if (result.error.type === 'invalid_cursor') notFound();
-    logger.error({ errorId: 'M114.portal.history_page.list_failed', requestId, tenantId: tenant.slug, err: result.error.message }, 'portal.change-requests: list failed');
+    logger.error({ errorId: 'M114.portal.history_page.list_failed', requestId, tenantId: tenant.slug, ...errLogFields(result.error) }, 'portal.change-requests: list failed');
     throw new Error('portal.change-requests: list failed');
   }
 

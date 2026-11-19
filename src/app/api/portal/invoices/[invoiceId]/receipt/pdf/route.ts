@@ -14,8 +14,10 @@ import { requireMemberContext } from '@/lib/member-context';
 import {
   getReceiptPdfSignedUrl,
   makeGetReceiptPdfSignedUrlDeps,
+  type GetReceiptPdfSignedUrlError,
 } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { streamPdfFromBlob } from '@/lib/stream-pdf-from-blob';
 import { pdfRouteErrorStatus } from '@/lib/pdf-route-error-status';
 
@@ -44,7 +46,7 @@ export async function GET(
     );
   } catch (err) {
     logger.error(
-      { requestId: ctx.requestId, tenantId: ctx.tenant.slug, invoiceId, err },
+      { requestId: ctx.requestId, tenantId: ctx.tenant.slug, invoiceId, ...errLogFields(err) },
       'GET /api/portal/invoices/[id]/receipt/pdf — use-case threw',
     );
     return NextResponse.json(
@@ -54,22 +56,18 @@ export async function GET(
   }
 
   if (!result.ok) {
+    const blobKey: Extract<GetReceiptPdfSignedUrlError, { code: 'blob_missing' }>['key'] | undefined =
+      result.error.code === 'blob_missing' ? result.error.key : undefined;
     logger.warn(
       {
         requestId: ctx.requestId,
         tenantId: ctx.tenant.slug,
         invoiceId,
         errorCode: result.error.code,
-        // R9-E2/E3 — surface key + reason server-side so operators
-        // see the internal diagnostic that the member surface
-        // deliberately strips. The 502 response to the member still
-        // omits `reason` (privacy), but the pino log captures it.
-        ...(result.error.code === 'blob_missing'
-          ? { blobKey: result.error.key }
-          : {}),
-        ...(result.error.code === 'receipt_pdf_failed'
-          ? { reason: result.error.reason }
-          : {}),
+        // R9-E2/E3 — surface the key server-side so operators see the
+        // internal diagnostic that the member surface deliberately strips.
+        // #740 B2 — never the render `reason`: it is stored error text.
+        ...(blobKey !== undefined ? { blobKey } : {}),
       },
       'GET /api/portal/invoices/[id]/receipt/pdf failed',
     );

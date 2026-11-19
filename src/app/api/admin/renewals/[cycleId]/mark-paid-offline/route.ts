@@ -15,9 +15,13 @@ import {
   successResponse,
   requireRenewalAdminContext,
 } from '@/lib/renewals-route-helpers';
-import { markPaidOffline, makeRenewalsDeps } from '@/modules/renewals';
+import { markPaidOffline, makeRenewalsDeps, type MarkPaidOfflineError } from '@/modules/renewals';
+
+/** The permanent F4 reject: its `reason` is the closed `MarkPaidOfflinePermanentReason` union. */
+type MarkPaidOfflinePermanentFailure = Extract<MarkPaidOfflineError, { kind: 'f4_permanent_failure' }>;
 import { assertNever } from '@/lib/assert-never';
 
+import { errKind } from '@/lib/log-id';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
@@ -217,13 +221,19 @@ export async function POST(
           // invoice id IS safe to echo (it is the operator's own tenant's
           // document, and the UI deep-links it so they can record the payment
           // there — that path runs the same F8 on-paid callbacks).
+          const existingInvoiceId: Extract<
+            MarkPaidOfflineError,
+            { kind: 'membership_bill_already_exists' }
+          >['existingInvoiceId'] = result.error.existingInvoiceId;
+          const existingStatus: Extract<MarkPaidOfflineError, { kind: 'membership_bill_already_exists' }>['existingStatus'] =
+            result.error.existingStatus;
           logger.warn(
             {
               correlationId: ctx.correlationId,
               cycleId,
               tenantId: tenantCtx.slug,
-              existingInvoiceId: result.error.existingInvoiceId,
-              existingStatus: result.error.existingStatus,
+              existingInvoiceId,
+              existingStatus,
             },
             'mark-paid-offline: refused — live membership bill already exists for this plan year (no duplicate minted)',
           );
@@ -242,12 +252,13 @@ export async function POST(
           // here is a CLOSED safe union of known discriminators, so it is safe
           // to surface directly as the error code → the client renders distinct,
           // actionable copy ("add the plan-year", "restore the member", …).
+          const f4Reason: MarkPaidOfflinePermanentFailure['reason'] = result.error.reason;
           logger.warn(
             {
               correlationId: ctx.correlationId,
               cycleId,
               tenantId: tenantCtx.slug,
-              f4Reason: result.error.reason,
+              f4Reason,
             },
             'mark-paid-offline: permanent F4 reject (actionable — retry will not help)',
           );
@@ -268,11 +279,11 @@ export async function POST(
               : {}),
           });
         }
-        case 'f4_failure':
-          // Round 5 W-02 — log the F4 internal `reason` server-side
-          // for ops triage but do NOT echo it to the client. F4's
-          // reason can include schema/column names and partial row
-          // data which would leak into the admin UI.
+        case 'f4_failure': {
+          // Round 5 W-02 — do NOT echo the F4 internal `reason` to the
+          // client: it can include schema/column names and partial row data.
+          // #740 B2 — nor to the log: it is error text. The stage names the step.
+          const f4Stage: Extract<MarkPaidOfflineError, { kind: 'f4_failure' }>['stage'] = result.error.stage;
           logger.warn(
             {
               // The F4 chain breaking is an operational failure on a money
@@ -283,8 +294,7 @@ export async function POST(
               correlationId: ctx.correlationId,
               cycleId,
               tenantId: tenantCtx.slug,
-              f4Stage: result.error.stage,
-              f4Reason: result.error.reason,
+              f4Stage,
             },
             'mark-paid-offline: F4 chain failed (reason scrubbed from HTTP response)',
           );
@@ -300,12 +310,15 @@ export async function POST(
             code: 'f4_failure',
             correlationId: ctx.correlationId,
           });
-        case 'f4_orphan_invoice':
+        }
+        case 'f4_orphan_invoice': {
           // 409 (conflict) — admin must resume from F4 invoice list.
           // The error envelope carries the orphan invoice id so the UI
           // can deep-link "View invoice" + show DO-NOT-RETRY guidance.
           // Round 5 W-02 — same reason-scrubbing rationale as
-          // f4_failure above.
+          // f4_failure above (and #740 B2: not logged either).
+          const orphanInvoiceId: Extract<MarkPaidOfflineError, { kind: 'f4_orphan_invoice' }>['orphanInvoiceId'] =
+            result.error.orphanInvoiceId;
           logger.warn(
             {
               // An orphan §86/4 has been minted. Nothing else in the system
@@ -314,8 +327,7 @@ export async function POST(
               correlationId: ctx.correlationId,
               cycleId,
               tenantId: tenantCtx.slug,
-              orphanInvoiceId: result.error.orphanInvoiceId,
-              f4Reason: result.error.reason,
+              orphanInvoiceId,
             },
             'mark-paid-offline: F4 orphan invoice (reason scrubbed from HTTP response)',
           );
@@ -327,6 +339,7 @@ export async function POST(
               orphan_invoice_id: result.error.orphanInvoiceId,
             },
           });
+        }
         case 'server_error':
           // K1-C7: server_error variant from Application use-case body.
           // Already logged with full stack inside markPaidOffline; here
@@ -393,7 +406,7 @@ export async function POST(
         errorId: `${ERROR_ID}.UNEXPECTED`,
         // K12-3 (REL-K-1): pass the Error instance so pino's `err`
         // serializer captures stack + type.
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         correlationId: ctx.correlationId,
         cycleId,
         tenantId: tenantCtx.slug,

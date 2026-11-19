@@ -91,6 +91,7 @@ import {
 // JSDoc intent; ESLint exemption for src/lib/** is no longer needed
 // for this seam).
 import { makeAuditPortForTenant as makePinoAuditPort } from '@/modules/events';
+import { errKind, errLogFields } from '@/lib/log-id';
 // `tenantWebhookConfigs` schema import dropped — barrel re-export
 // removed during Phase III barrel cleanup. The file no longer needs
 // the raw schema reference. Tests now reach
@@ -431,7 +432,7 @@ export async function runGenerateWebhookSecret(
           event: 'f6_metric_emit_failed',
           metricName: 'webhookSecretGenerated',
           tenantSlug,
-          err: metricErr instanceof Error ? metricErr.message : String(metricErr),
+          err: errKind(metricErr),
         },
         '[F6] metric emit failed (suppressed) — counter undercount possible',
       );
@@ -495,7 +496,7 @@ export async function runRotateWebhookSecret(
           event: 'f6_metric_emit_failed',
           metricName: 'webhookSecretRotated',
           tenantSlug,
-          err: metricErr instanceof Error ? metricErr.message : String(metricErr),
+          err: errKind(metricErr),
         },
         '[F6] metric emit failed (suppressed) — counter undercount possible',
       );
@@ -512,6 +513,9 @@ export interface RunTestWebhookComposeInput {
   readonly webhookBaseUrl: string;
 }
 
+/** The config read failed; `errKind` is the repo error's own `kind`, a closed token. */
+export type TestWebhookConfigLoadFailed = { kind: 'config_load_failed'; errKind: string };
+
 export async function runRunTestWebhook(
   tenantSlug: string,
   actorUserId: string,
@@ -523,7 +527,7 @@ export async function runRunTestWebhook(
     RunTestWebhookOutcome,
     | RunTestWebhookError
     | { kind: 'config_missing' }
-    | { kind: 'config_load_failed'; errKind: string }
+    | TestWebhookConfigLoadFailed
   >
 > {
   const ctx: TenantContext = asTenantContext(tenantSlug);
@@ -602,24 +606,16 @@ export async function runRunTestWebhook(
           // fetch wraps the syscall error in a generic TypeError
           // ("fetch failed") and exposes the root via `.cause`. Without
           // this, SREs see only "fetch failed" + "TypeError" with no
-          // actionable hint.
-          const cause =
-            e instanceof Error && 'cause' in e
-              ? (e as { cause: unknown }).cause
-              : null;
+          // actionable hint. #740 B2 — `errLogFields` reads that code off
+          // the cause chain as `errCode` (token-shaped only); never the
+          // cause's text.
           logger.warn(
             {
               event: 'f6_test_webhook_fetch_threw',
               tenantSlug,
               url,
-              err: e instanceof Error ? e.message : String(e),
+              ...errLogFields(e),
               errName: e instanceof Error ? e.name : null,
-              errCause:
-                cause === null || cause === undefined
-                  ? null
-                  : typeof cause === 'object' && 'code' in cause
-                    ? String((cause as { code: unknown }).code)
-                    : String(cause),
             },
             '[F6] test-webhook outbound fetch threw — failureCategory=network_error will be returned',
           );
@@ -654,7 +650,7 @@ function safeEmitTestInvokedMetric(
         event: 'f6_metric_emit_failed',
         metricName: 'webhookTestInvoked',
         tenantSlug,
-        err: metricErr instanceof Error ? metricErr.message : String(metricErr),
+        err: errKind(metricErr),
       },
       '[F6] metric emit failed (suppressed) — counter undercount possible',
     );
@@ -807,7 +803,7 @@ export async function runToggleIngest(
           event: 'f6_metric_emit_failed',
           metricName: 'ingestDisabledTenant',
           tenantSlug,
-          err: metricErr instanceof Error ? metricErr.message : String(metricErr),
+          err: errKind(metricErr),
         },
         '[F6] metric emit failed (suppressed) — dashboard drift possible until next state change',
       );

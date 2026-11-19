@@ -37,6 +37,7 @@ import { broadcastsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { broadcastTierCodesSchema } from '@/lib/broadcasts-tier-codes';
 
+import { errKind } from '@/lib/log-id';
 const SegmentSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('all_members') }),
   z.object({
@@ -176,7 +177,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: ctx.tenant.slug,
         memberId: ctx.member.memberId,

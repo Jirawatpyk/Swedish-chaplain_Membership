@@ -44,7 +44,7 @@ import { eraseMember, drizzleMemberRepo } from '@/modules/members';
 import { buildEraseMemberDeps } from '@/modules/members/members-deps';
 import { erasureMetrics } from '@/lib/metrics';
 import { erasureCascadeDeadline, erasureMemberStartCutoff } from '@/lib/erasure-cascade-deadline';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
@@ -225,7 +225,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             memberId,
             // forensics: distinguish the "scrub ok but cascade pending" path
             // from the typed-err path without leaking PII.
-            errType: res.ok ? null : res.error.type,
+            ...(res.ok ? { errType: null } : errLogFields(res.error)),
           },
           'cron.members.reconcile_erasures.still_pending',
         );

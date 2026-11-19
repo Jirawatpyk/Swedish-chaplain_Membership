@@ -46,6 +46,7 @@ import { renderTasksQueueView } from './_components/tasks-queue-view';
 import { RenewalsSectionTabs } from '../_components/renewals-section-tabs';
 import { RenewalsSectionTabsWithCounts } from '../_components/renewals-section-tabs-with-counts';
 
+import { errKind } from '@/lib/log-id';
 const VALID_STATUSES = new Set(ESCALATION_TASK_STATUSES);
 const VALID_ASSIGNMENTS = new Set(['all', 'mine', 'unassigned'] as const);
 const UUID_RE =
@@ -215,7 +216,7 @@ export default async function EscalationTaskQueuePage({
   } catch (e) {
     hasError = true;
     logger.error(
-      { err: e instanceof Error ? e : new Error(String(e)) },
+      { err: errKind(e) },
       'admin.renewals.tasks.page_load_failed',
     );
   } finally {

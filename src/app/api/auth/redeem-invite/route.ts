@@ -8,10 +8,11 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { redeemInvite, parseInvitationTokenId } from '@/modules/auth';
+import { redeemInvite, parseInvitationTokenId, type RedeemInviteError } from '@/modules/auth';
 import { setSessionCookie } from '@/lib/auth-cookies';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { parseTokenOrLinkInvalid } from '@/lib/auth-route-helpers';
 
@@ -88,8 +89,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // 410 Gone. The previous status-code distinction (404 vs 410)
       // leaked which random 64-hex strings hit real issued invitations.
       // The internal `error.reason` still drives logs + metrics.
+      const reason: Extract<RedeemInviteError, { code: 'link-invalid' }>['reason'] = error.reason;
       logger.warn(
-        { requestId, reason: error.reason },
+        { requestId, reason },
         'redeem-invite.link-invalid',
       );
       return NextResponse.json({ error: 'link-invalid' }, { status: 410 });
@@ -113,7 +115,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
   } catch (error) {
-    logger.error({ err: error, requestId }, 'redeem-invite.infra-error');
+    logger.error({ ...errLogFields(error), requestId }, 'redeem-invite.infra-error');
     return NextResponse.json(
       { error: 'server-error', requestId },
       { status: 500 },

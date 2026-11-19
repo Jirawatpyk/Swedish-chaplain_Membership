@@ -53,6 +53,7 @@ import { makeStandaloneAuditDeps, parseColumnMappingObject } from '@/modules/eve
 // surface families.
 import { adminOnlyWriterGuard } from '../_lib/role-violation-audit';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 // R3.3.5 / I-3 — UUID v4 ONLY (variant nibble `4`). Aligns with
 // `asEventId`'s validation in `src/modules/events/domain/branded-types.ts`.
 // Prior version accepted v1-5 (`[1-5]`) but the brand constructor
@@ -106,7 +107,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     logger.error(
       {
         event: 'f6_csv_import_tenant_resolve_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         requestId,
       },
       '[F6] resolveTenantFromRequest threw on CSV import route',
@@ -167,7 +168,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     logger.warn(
       {
         event: 'f6_csv_import_invalid_multipart',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantSlug,
         requestId,
       },
@@ -283,7 +284,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     logger.warn(
       {
         event: 'f6_csv_import_body_read_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantSlug,
         requestId,
       },
@@ -320,14 +321,13 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     eventLookup = await lookupEventByIdTimingSafe(tenantSlug, eventIdField);
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
     logger.error(
       {
         event: 'f6_csv_import_event_lookup_failed',
         tenantSlug,
         eventId: eventIdField,
         requestId,
-        err: message,
+        ...errLogFields(e),
       },
       '[F6.1] lookupEventByIdTimingSafe threw — likely Neon outage / RLS denial / pool exhaustion',
     );
@@ -441,13 +441,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       }),
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
     logger.error(
       {
         event: 'f6_csv_import_threw',
         tenantSlug,
         requestId,
-        err: message,
+        ...errLogFields(e),
       },
       '[F6] CSV import use-case threw',
     );
@@ -542,7 +541,6 @@ export async function POST(request: NextRequest): Promise<Response> {
           event: 'f6_csv_import_unexpected_error',
           tenantSlug,
           requestId,
-          message: outcome.message,
         },
         '[F6] CSV import use-case returned unexpected_error',
       );
@@ -660,7 +658,7 @@ async function emitCrossTenantProbeAudit(
         event: 'f6_csv_cross_tenant_probe_audit_emit_threw',
         tenantSlug: input.tenantSlug,
         probedEventId: input.probedEventId,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
       },
       '[F6.1] csv_import_cross_tenant_probe audit emitter threw',
     );

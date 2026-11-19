@@ -19,6 +19,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requireMemberContext } from '@/lib/member-context';
 import { attemptBucketKey, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   if (!result.ok) {
     if (result.error.type === 'not_found') return NextResponse.json({ error: 'not_found' }, { status: 404 });
     logger.error(
-      { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, changeRequestId: id, err: result.error.type === 'server_error' ? result.error.message : result.error.type },
+      { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, changeRequestId: id, ...errLogFields(result.error) },
       'change-requests.history-item: use case failed',
     );
     return NextResponse.json({ error: 'server_error' }, { status: 500 });

@@ -24,6 +24,7 @@ import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/re
 import { logger } from '@/lib/logger';
 import type { BlockViolations, BroadcastVersion } from '@/modules/broadcasts';
 
+import { errKind } from '@/lib/log-id';
 /**
  * Closed union of every F7 route error code. Mirrors the union of
  * Application use-case errors plus a few HTTP-only codes for invalid
@@ -605,7 +606,7 @@ export async function resolveTenantDisplayName(
     // of failure invisible per Constitution Principle VIII.
     logger.warn(
       {
-        err: err instanceof Error ? err.message : String(err),
+        err: errKind(err),
         tenantId,
       },
       'broadcasts.tenant_display_name.settings_lookup_failed',

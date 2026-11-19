@@ -23,6 +23,7 @@ import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
+import { errKind } from '@/lib/log-id';
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -65,7 +66,7 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: tenantCtx.slug,
         memberId: id,

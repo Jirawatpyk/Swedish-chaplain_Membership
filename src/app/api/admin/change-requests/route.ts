@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { env } from '@/lib/env';
 import { problemResponse } from '@/lib/http/problem-response';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requireApiPermission } from '@/lib/rbac';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -85,7 +86,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return problemResponse(400, 'invalid_query', 'Invalid cursor', undefined, { extras: { requestId: ctx.requestId } });
     }
     logger.error(
-      { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, err: result.error.message },
+      { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, ...errLogFields(result.error) },
       'change-requests.queue: use case failed',
     );
     return problemResponse(500, 'server_error', 'Could not load the queue', undefined, { extras: { requestId: ctx.requestId } });

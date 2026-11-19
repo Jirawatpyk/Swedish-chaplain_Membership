@@ -29,6 +29,7 @@ import { asTenantContext } from '@/modules/tenants';
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
 
+import { errKind, errLogFields } from '@/lib/log-id';
 const PreferredLocaleSchema = z.object({
   preferredLocale: z.union([
     z.literal('en'),
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
     if (!result.ok) {
       logger.error(
-        { err: result.error, correlationId, tenantId: ctx.tenant.slug },
+        { ...errLogFields(result.error), correlationId, tenantId: ctx.tenant.slug },
         'portal.preferred_locale.read_error',
       );
       return NextResponse.json(
@@ -68,7 +69,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: ctx.tenant.slug,
       },
@@ -128,7 +129,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     );
     if (!result.ok) {
       logger.error(
-        { err: result.error, correlationId, tenantId: ctx.tenant.slug },
+        { ...errLogFields(result.error), correlationId, tenantId: ctx.tenant.slug },
         'portal.preferred_locale.repo_error',
       );
       return NextResponse.json(
@@ -143,7 +144,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: ctx.tenant.slug,
       },

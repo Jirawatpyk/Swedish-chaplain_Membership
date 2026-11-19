@@ -39,6 +39,7 @@ import { eventcreateMetrics } from '@/lib/metrics';
 import { asUserId } from '@/modules/auth';
 import { adminOnlyGuard } from '../../../../integrations/eventcreate/_lib/role-violation-audit';
 
+import { errKind } from '@/lib/log-id';
 // R7.W / Staff R2 R037 closure — UUID v4 ONLY (variant nibble `4`).
 // Aligns with `asCsvImportRecordId` validation. Prior version accepted
 // v1-5 (`[1-5]`) but the brand constructor rejected anything except v4,
@@ -85,7 +86,7 @@ export async function GET(
     logger.error(
       {
         event: 'f6_error_csv_tenant_resolve_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         requestId,
       },
       '[F6.1] resolveTenantFromRequest threw on error-csv route',
@@ -174,7 +175,6 @@ export async function GET(
           recordId,
           actorUserId: guard.actorUserId,
           requestId,
-          message: outcome.message,
         },
         '[F6.1] error-CSV signed-URL endpoint returned 500 (signing or audit emit failed)',
       );

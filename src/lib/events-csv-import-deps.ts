@@ -22,6 +22,7 @@ import { rateLimiter as authRateLimiter } from '@/modules/auth/infrastructure/ra
 import { eventcreateMetrics } from '@/lib/metrics';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import {
   importCsv,
   makeImportCsvDeps,
@@ -82,7 +83,7 @@ function unwrapNeverErr<T>(
       {
         event: context.event,
         ...(context.extra ?? {}),
-        outcomeErr: outcome.error,
+        ...errLogFields(outcome.error),
       },
       `[F6.1] type-system invariant violated — ${context.wrapperName} returned Err on a never-typed channel`,
     );

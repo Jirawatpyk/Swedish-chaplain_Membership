@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { env } from '@/lib/env';
 import { problemResponse } from '@/lib/http/problem-response';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requireApiPermission } from '@/lib/rbac';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
@@ -169,7 +170,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     case 'server_error':
     default:
       logger.error(
-        { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, changeRequestId: id, err: error.type },
+        { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, changeRequestId: id, ...errLogFields(error) },
         'change-requests.decide: use case failed',
       );
       return problemResponse(500, 'server_error', 'The decision could not be recorded', undefined, { extras });

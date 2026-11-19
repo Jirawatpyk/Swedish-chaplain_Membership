@@ -320,13 +320,12 @@ describe('adminOnlyWriterGuard (Round-1 test-M7)', () => {
       );
     }
     expect(emitStandaloneMock).not.toHaveBeenCalled();
-    // Round-2 err-M5 polish — assert `err` payload carries the throw's
-    // message (not just `expect.any(String)` which would pass a regression
-    // that strips error context).
+    // #740 B2 — `err` is the throw's CLASS, never its message (a driver
+    // error's message can quote bound parameters).
     expect(loggerErrorMock).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'f6_admin_writer_guard_session_lookup_failed',
-        err: expect.stringContaining('session DB blip'),
+        err: 'Error',
       }),
       expect.any(String),
     );

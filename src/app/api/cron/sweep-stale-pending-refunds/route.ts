@@ -89,6 +89,7 @@ import {
   sweepPendingPaymentsOnUnpayableInvoices,
   makeSweepPendingOnUnpayableDeps,
   type SweepPendingOnUnpayableResult,
+  type SweepStalePendingRefundsError,
 } from '@/modules/payments';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -136,9 +137,9 @@ async function runPendingOnUnpayableSweep(
       makeSweepPendingOnUnpayableDeps(),
       { requestId, budgetMs },
     );
-    for (const e of erroredInvoices) {
+    for (const row of erroredInvoices) {
       logger.error(
-        { requestId, tenantId: e.tenantId, invoiceId: e.invoiceId, errKind: e.errKind },
+        { requestId, tenantId: row.tenantId, invoiceId: row.invoiceId, errKind: row.errKind },
         'cron.sweep_pending_on_unpayable.invoice_threw',
       );
     }
@@ -266,8 +267,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         // 30 days; alert rules + the audit-log forensic trail (5y)
         // are the long-term compliance anchors.
         paymentsMetrics.cronSweepTenantFailed(tenantId);
+        const failureCause: SweepStalePendingRefundsError['cause'] = result.error.cause;
         logger.error(
-          { requestId, tenantId, cause: result.error.cause },
+          { requestId, tenantId, cause: failureCause },
           'cron.sweep_stale_pending_refunds.tenant_failed',
         );
       }

@@ -33,6 +33,7 @@ import { gateF6Cron } from '@/lib/events-cron-deps';
 import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { runSweepExpiredErrorCsvBlobs } from '@/lib/events-csv-import-deps';
 
+import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 // /review Full Scope 2026-05-19 — explicit `force-dynamic` to match
 // project-wide cron-route convention (precedent: PR #22 +
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         event: 'f6_error_csv_sweep_cron_threw',
         route: ROUTE,
         requestId,
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         durationMs: Date.now() - startedAtMs,
       },
       '[F6.1] sweep cron threw — operator should investigate (cron-job.org alerts on ≥2 consecutive failures per T058)',

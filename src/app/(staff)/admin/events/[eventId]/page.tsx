@@ -10,7 +10,7 @@ import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
+import { errLogFields } from '@/lib/log-id';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
@@ -205,7 +205,7 @@ export default async function AdminEventDetailPage({
     });
     if (!result.ok && result.error.kind !== 'not_found') {
       logger.error(
-        { event: 'admin_event_detail_page_render_error', error: result.error, eventId },
+        { event: 'admin_event_detail_page_render_error', ...errLogFields(result.error), eventId },
         '[F6] /admin/events/[eventId] detail page — use-case returned err',
       );
     }
@@ -215,17 +215,7 @@ export default async function AdminEventDetailPage({
     logger.error(
       {
         event: 'admin_event_detail_page_render_throw',
-        err:
-          e instanceof Error
-            ? {
-                name: e.name,
-                message: e.message,
-                stack:
-                  typeof e.stack === 'string'
-                    ? (redactStack(e.stack) ?? null)
-                    : null,
-              }
-            : String(e),
+        ...errLogFields(e),
         eventId,
       },
       '[F6] /admin/events/[eventId] detail page — runLoadEventDetail threw',

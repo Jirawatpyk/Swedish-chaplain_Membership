@@ -21,6 +21,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { directorySearchWithCount } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   if (!result.ok) {
     logger.error(
-      { requestId: ctx.requestId, err: result.error },
+      { requestId: ctx.requestId, ...errLogFields(result.error) },
       'members-ids: directory search failed',
     );
     return NextResponse.json(

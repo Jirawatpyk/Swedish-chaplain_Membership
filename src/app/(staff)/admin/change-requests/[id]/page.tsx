@@ -19,6 +19,7 @@ import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import {
@@ -64,7 +65,7 @@ export default async function ChangeRequestReviewPage({ params }: PageProps) {
   if (!result.ok) {
     if (result.error.type === 'not_found') notFound();
     logger.error(
-      { errorId: 'M114.admin.review_page.use_case_failed', requestId, tenantId: tenant.slug, changeRequestId: id, err: result.error.message },
+      { errorId: 'M114.admin.review_page.use_case_failed', requestId, tenantId: tenant.slug, changeRequestId: id, ...errLogFields(result.error) },
       'change-requests.review page: use case failed',
     );
     throw new Error('change-requests.review: load failed');

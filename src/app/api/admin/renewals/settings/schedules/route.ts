@@ -26,6 +26,7 @@ import {
   reminderStepToJson,
 } from '@/modules/renewals';
 
+import { errKind } from '@/lib/log-id';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
@@ -89,7 +90,7 @@ export async function GET(request: NextRequest) {
         errorId: `${ERROR_ID}.UNEXPECTED`,
         // K12-3 (REL-K-1): pass the Error instance so pino's `err`
         // serializer captures stack + type.
-        err: e instanceof Error ? e : new Error(String(e)),
+        err: errKind(e),
         correlationId: ctx.correlationId,
         tenantId: tenantCtx.slug,
       },

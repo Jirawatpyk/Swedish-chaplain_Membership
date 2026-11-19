@@ -27,6 +27,7 @@ import { uploadTenantLogo } from '@/modules/invoicing';
 // Constitution III's no-restricted-imports ESLint rule.
 import { makeUploadTenantLogoDeps } from '@/modules/invoicing/upload-tenant-logo-deps';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { asTenantContext } from '@/modules/tenants';
 import {
@@ -165,7 +166,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               ? 409
               : 400;
       logger.warn(
-        { requestId, tenantSlug: tenantCtx.slug, err: result.error },
+        { requestId, tenantSlug: tenantCtx.slug, ...errLogFields(result.error) },
         'tenant logo upload rejected',
       );
       // F-01 fix — cache the 4xx response under the idempotency key so a

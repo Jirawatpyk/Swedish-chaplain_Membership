@@ -23,6 +23,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import {
   exportPaidInvoicesCsv,
   makeExportPaidInvoicesCsvDeps,
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       );
     }
     logger.error(
-      { tenantSlug: tenantCtx.slug, requestId, err: result.error },
+      { tenantSlug: tenantCtx.slug, requestId, ...errLogFields(result.error) },
       '[admin-invoices-csv] export use-case failed',
     );
     return NextResponse.json(

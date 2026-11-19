@@ -35,12 +35,12 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { redactStack } from '@/lib/redact-stack';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runEraseAttendeePii } from '@/lib/events-admin-deps';
 import { asEventId, asRegistrationId } from '@/modules/events';
 import { adminOnlyWriterGuard } from '../../../../_lib/role-violation-audit';
 
+import { errKind, errLogFields, rootCause } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
@@ -128,7 +128,7 @@ export async function POST(
     logger.error(
       {
         event: 'admin_erase_pii_tenant_resolve_failed',
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         eventId,
         registrationId,
       },
@@ -154,17 +154,7 @@ export async function POST(
     logger.error(
       {
         event: 'admin_erase_pii_throw',
-        err:
-          e instanceof Error
-            ? {
-                name: e.name,
-                message: e.message,
-                stack:
-                  typeof e.stack === 'string'
-                    ? (redactStack(e.stack) ?? null)
-                    : null,
-              }
-            : String(e),
+        ...errLogFields(e),
         eventId,
         registrationId,
       },
@@ -196,18 +186,7 @@ export async function POST(
             eventId,
             registrationId,
             errKind: result.error.kind,
-            err:
-              typeof result.error === 'object' &&
-              result.error !== null &&
-              'cause' in result.error
-                ? result.error.cause
-                : undefined,
-            message:
-              typeof result.error === 'object' &&
-              result.error !== null &&
-              'message' in result.error
-                ? result.error.message
-                : undefined,
+            err: errKind(rootCause(result.error)),
           },
           '[F6] eraseAttendeePii returned use-case error',
         );

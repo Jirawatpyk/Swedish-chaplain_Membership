@@ -190,7 +190,7 @@ export async function sweepExpiredBroadcasts(
             tenantId: slug,
             outcome,
             errorKind: shape.kind,
-            ...(shape.subKind !== undefined ? { subKind: shape.subKind } : {}),
+            ...(shape.subKind !== undefined ? { subKind: classifyThrown(e).subKind } : {}),
             ...(shape.code !== undefined ? { code: shape.code } : {}),
           },
           'broadcasts.retention_sweep.provider_copy_kept',

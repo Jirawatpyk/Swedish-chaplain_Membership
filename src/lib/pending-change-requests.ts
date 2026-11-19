@@ -39,7 +39,7 @@
  * repo.
  */
 import { env } from '@/lib/env';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { canPerform } from '@/lib/rbac';
@@ -78,7 +78,7 @@ export async function readPendingChangeRequests(
     const result = await countPendingChangeRequests(deps);
     if (result.ok) return { kind: 'ok', summary: result.value };
     logger.error(
-      { errorId, tenantId: deps.tenant.slug, err: result.error.message },
+      { errorId, tenantId: deps.tenant.slug, ...errLogFields(result.error) },
       'change-requests.pending-summary: read failed',
     );
     return UNAVAILABLE;

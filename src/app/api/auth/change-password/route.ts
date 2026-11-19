@@ -13,6 +13,7 @@ import { getCurrentSession } from '@/lib/auth-session';
 import { setSessionCookie } from '@/lib/auth-cookies';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
 // Password fields cap at 256 — same as the sign-in cap. T-16 argon2
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
   } catch (error) {
-    logger.error({ err: error, requestId }, 'change-password.infra-error');
+    logger.error({ ...errLogFields(error), requestId }, 'change-password.infra-error');
     return NextResponse.json(
       { error: 'server-error', requestId },
       { status: 500 },

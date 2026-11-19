@@ -32,7 +32,7 @@ import { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import { asUserId } from '@/modules/auth';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { hashId } from '@/lib/log-id';
+import { errLogFields, hashId } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
@@ -113,7 +113,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       cleared += 1;
     } catch (error) {
       logger.error(
-        { requestId, err: error, userIdHash: hashId(row.id) },
+        { requestId, ...errLogFields(error), userIdHash: hashId(row.id) },
         'cron.lockout_cleanup.row_failed',
       );
       // Continue with remaining rows — idempotent retry will catch this

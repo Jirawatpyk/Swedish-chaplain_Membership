@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { env } from '@/lib/env';
 import { problemResponse } from '@/lib/http/problem-response';
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { requireApiPermission } from '@/lib/rbac';
 import { buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -88,7 +89,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       return problemResponse(400, 'invalid_query', 'Invalid cursor', undefined, { extras: { requestId: ctx.requestId } });
     }
     logger.error(
-      { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, memberId, err: result.error.message },
+      { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, memberId, ...errLogFields(result.error) },
       'change-requests.member-history: use case failed',
     );
     return problemResponse(500, 'server_error', 'Could not load the history', undefined, { extras: { requestId: ctx.requestId } });
