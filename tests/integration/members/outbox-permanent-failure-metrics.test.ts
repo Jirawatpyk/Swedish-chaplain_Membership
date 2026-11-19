@@ -121,7 +121,9 @@ describe('integration: outbox permanentFailure metric labels', () => {
       ok: false,
       error: {
         code: 'invalid-recipient',
-        message: 'no such mailbox',
+        // #739 — Resend's message can quote the address; it never reaches
+        // last_error or the audit payload.
+        message: 'no such mailbox: perm-inv@swecham.test',
       },
     });
 
@@ -147,6 +149,11 @@ describe('integration: outbox permanentFailure metric labels', () => {
       'member_invitation',
       'invalid_recipient',
     );
+    const [stored] = await db
+      .select({ lastError: notificationsOutbox.lastError })
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, id));
+    expect(stored?.lastError).toBe('resend:invalid-recipient');
   });
 
   it("emits permanentFailure(type, 'max_retries') when transient send failures hit MAX_ATTEMPTS", async () => {
