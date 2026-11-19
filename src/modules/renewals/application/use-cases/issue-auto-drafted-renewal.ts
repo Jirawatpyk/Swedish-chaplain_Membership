@@ -549,7 +549,6 @@ export async function issueAutoDraftedRenewal(
         cycleId,
         invoiceId: input.invoiceId,
         errorCode: issued.errorCode,
-        detail: issued.detail,
         ...(mutualAbort
           ? {
               hint: 'draft deleted by a concurrent issue for the same (member, plan_year) before this one could mint; no number was burned — the auto-draft cron re-drafts on its next run',

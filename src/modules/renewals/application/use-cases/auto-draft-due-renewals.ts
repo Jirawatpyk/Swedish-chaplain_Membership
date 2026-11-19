@@ -630,8 +630,8 @@ async function processOne(
         tenantId,
         cycleId,
         memberId: reread.memberId,
+        // `errorCode` only: `detail` can carry an F4 render or upload error's text (#740).
         errorCode: draftResult.errorCode,
-        detail: draftResult.detail,
       },
       '[auto-draft-due-renewals] draftInvoiceForRenewal failed — counted in errors',
     );

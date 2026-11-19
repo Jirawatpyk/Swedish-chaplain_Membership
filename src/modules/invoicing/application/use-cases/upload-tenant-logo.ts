@@ -25,7 +25,6 @@ import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type { AuditPort } from '../ports/audit-port';
 import type { ImageReEncodePort } from '../ports/image-reencode-port';
 
-import { errLogFields } from '@/lib/log-id';
 export interface UploadTenantLogoInput {
   readonly tenantId: string;
   readonly actorUserId: string;
@@ -105,7 +104,8 @@ export async function uploadTenantLogo(
     // unsupported codec inside the probe).
     logger.warn(
       {
-        ...errLogFields(reencodeResult.error.reason),
+        // The decoder's reason is free text; log the step, never it (#740).
+        stage: 'reencode',
         tenantId: input.tenantId,
         declaredMime: input.declaredMime,
       },

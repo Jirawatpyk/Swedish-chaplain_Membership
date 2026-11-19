@@ -1423,10 +1423,10 @@ export async function dispatchEmailStep(
         cycleId: cycle.cycleId,
         memberId: member.memberId,
         stepId: step.stepId,
-        // `failureKind` alone: the gateway's message text can quote the
-        // recipient, and permanence is a function of the kind
-        // (`isPermanentGatewayError`) (#740).
+        // `failureKind` and `permanent`, never the gateway's message text,
+        // which can quote the recipient (#740).
         failureKind: err.kind,
+        permanent: isPermanent,
       },
       'dispatchOneCycle: gateway send failed',
     );

@@ -446,10 +446,6 @@ export function makeDrizzleRenewalAuditEmitter(
         logger.error(
           {
             ...errLogFields(e),
-            errCode:
-              e instanceof Error && 'code' in e
-                ? (e as { code?: string }).code
-                : undefined,
             eventType: event.type,
             tenantId: ctx.tenantId,
             actorUserId: ctx.actorUserId,

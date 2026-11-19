@@ -100,6 +100,9 @@ const SAFE_CALLS = new Set([
   'isTimeout',
   'Number.isFinite',
   'primaryContactTriggerViolation',
+  // renewals `renewal-gateway.ts` — an exhaustive switch over the closed
+  // `SendRenewalEmailError['kind']` union that returns a boolean (#740 B1).
+  'isPermanentGatewayError',
 ]);
 /** The only fields of `classifyThrown(e)` that are closed tokens (`reason` carries the message). */
 const CLASSIFY_SAFE_FIELDS = new Set(['kind', 'subKind', 'resourceType']);

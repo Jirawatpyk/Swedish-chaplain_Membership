@@ -1718,7 +1718,7 @@ async function processBatch(
         batchRowCount: dbRows.length,
         firstRowNumber: dbRows[0]?.row.rowNumber,
         lastRowNumber: dbRows[dbRows.length - 1]?.row.rowNumber,
-        ...errLogFields(reason),
+        ...errLogFields(e),
       },
       '[F6] CSV batch tx aborted — all rows in batch failed; investigate RLS / pool / deadlock / commit signals',
     );
@@ -1749,7 +1749,7 @@ async function processBatch(
           {
             event: 'f6_csv_batch_fan_out_rejected',
             tenantId: input.tenantId,
-            err: toErrMessage(r.reason),
+            err: errKind(r.reason),
           },
           '[F6] batch-tx-abort fan-out emit rejected — internal swallow regressed; forensic trail at risk',
         );
@@ -1871,7 +1871,7 @@ async function safeEmitRowFailed(
         actorUserId: input.actorUserId,
         rowNumber,
         reason: reason.slice(0, 500),
-        err: toErrMessage(e),
+        ...errLogFields(e),
       },
     );
   }
@@ -1932,7 +1932,7 @@ async function safeEmitCancellationNoPrior(
       {
         actorUserId: input.actorUserId,
         rowNumber,
-        err: toErrMessage(e),
+        ...errLogFields(e),
       },
     );
   }
@@ -2826,7 +2826,7 @@ async function tryEmitMismatchOverride(
         actorUserId: input.actorUserId,
         recordId,
         priorImportsCount: priorImports.length,
-        err: toErrMessage(e),
+        ...errLogFields(e),
       },
     );
     return false;
@@ -2924,7 +2924,7 @@ async function emitImportCompletedAudit(
       {
         actorUserId: input.actorUserId,
         ...completedAuditContext,
-        err: toErrMessage(e),
+        ...errLogFields(e),
       },
     );
     return false;
