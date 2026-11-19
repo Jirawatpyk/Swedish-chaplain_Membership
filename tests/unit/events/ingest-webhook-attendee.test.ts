@@ -249,6 +249,21 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     expect(JSON.stringify(call)).not.toContain('connection terminated by Neon');
   });
 
+  it('#739 review: a rollback logs the class chain and stage, never the message', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const ports = buildPorts();
+    (ports.audit.emit as ReturnType<typeof vi.fn>).mockImplementation(async (entry) =>
+      entry.eventType === 'webhook_receipt_verified'
+        ? err({ kind: 'db_error', message: 'connection terminated by Neon' })
+        : ok('audit-id'),
+    );
+    await ingestWebhookAttendee(VALID_INPUT, buildDeps(ports));
+    const line = warn.mock.calls.find((c) => c[1] === '[F6] webhook ingest rolled back');
+    expect(line?.[0]).toMatchObject({ errClass: 'TxStageError(cause:AuditEmitError)' });
+    expect(JSON.stringify(line)).not.toContain('connection terminated by Neon');
+    warn.mockRestore();
+  });
+
   it('emitRolledBackStandalone failure → auditFallbackFailed=true + double-failure metric + logger.fatal', async () => {
     const counterSpy = vi.spyOn(eventcreateMetrics, 'auditFallbackDoubleFailure');
     const ports = buildPorts();
