@@ -1647,7 +1647,8 @@ Outside production (`VERCEL_ENV` not `production`) a renewals coordinator
 refuses to fan out to an origin other than its own: it answers 500
 `fan_out_origin_mismatch` and logs `cron.renewals.coordinator.fan_out_refused`
 (#97). To run one locally, start the server with `APP_BASE_URL` set to its own
-address (for example `http://localhost:3400`).
+address (for example `http://localhost:3400`), and call it on exactly that host:
+`127.0.0.1` and `localhost` count as different origins.
 
 Granular kill-switch: `FEATURE_F8_AT_RISK_DISABLED=true` short-circuits ONLY
 this surface (returns 200 + `{skipped: true, reason: 'at_risk_disabled'}`)

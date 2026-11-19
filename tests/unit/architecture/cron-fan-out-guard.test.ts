@@ -31,11 +31,17 @@ function stripComments(src: string): string {
     .replace(/^\s*\/\/.*$/gm, '');
 }
 
-const FAN_OUT = /\$\{baseUrl\}\/api\/cron\//;
+const FAN_OUT = /\$\{(?:baseUrl|env\.app\.baseUrl)\}\/api\/cron\//;
 
 describe('cron fan-out origin guard coverage (#97)', () => {
   const files = routeFiles(CRON_DIR).map((p) => ({ p, src: stripComments(readFileSync(p, 'utf8')) }));
   const fanOut = files.filter((f) => FAN_OUT.test(f.src));
+
+  it('the matcher sees both spellings of a fan-out (fixture control)', () => {
+    expect(FAN_OUT.test('fetch(`${baseUrl}/api/cron/renewals/x/${t}`)')).toBe(true);
+    expect(FAN_OUT.test('fetch(`${env.app.baseUrl}/api/cron/renewals/x/${t}`)')).toBe(true);
+    expect(FAN_OUT.test('fetch(`${baseUrl}/api/members`)')).toBe(false);
+  });
 
   it('finds the fan-out routes (positive control)', () => {
     expect(fanOut.length).toBeGreaterThanOrEqual(MIN_FAN_OUT);
