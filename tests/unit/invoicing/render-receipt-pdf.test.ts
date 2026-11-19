@@ -366,6 +366,38 @@ describe('renderReceiptPdf — async worker callback', () => {
     expect(deps.invoiceRepo.applyReceiptPdfFailure).toHaveBeenCalledTimes(1);
   });
 
+  // #739 B3a — the column (receipt_pdf_last_error), the outbox last_error and
+  // the pdf_render_permanently_failed audit all take this reason, so it is a
+  // closed `<step>:<ErrClass>` code, never the thrown text (a drizzle error
+  // quotes bound parameters).
+  it('#739: a render failure stores render:<ErrClass>, never the error text', async () => {
+    const deps = makeDeps(makePaidPendingInvoice(), makeSettings());
+    class DrizzleQueryError extends Error {}
+    (deps.pdfRender.render as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new DrizzleQueryError('Failed query: select … params: a@b.example'),
+    );
+    const r = await renderReceiptPdf(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok && 'reason' in r.error) expect(r.error.reason).toBe('render:DrizzleQueryError');
+    expect(deps.invoiceRepo.applyReceiptPdfFailure).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ errorMessage: 'render:DrizzleQueryError' }),
+    );
+  });
+
+  it('#739: an upload failure stores upload:<ErrClass>', async () => {
+    const deps = makeDeps(makePaidPendingInvoice(), makeSettings());
+    (deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new TypeError('fetch failed for a@b.example'),
+    );
+    const r = await renderReceiptPdf(deps, input);
+    if (!r.ok && 'reason' in r.error) expect(r.error.reason).toBe('upload:TypeError');
+    expect(deps.invoiceRepo.applyReceiptPdfFailure).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ errorMessage: 'upload:TypeError' }),
+    );
+  });
+
   // R3-C1 — race-won-by-success path (genuinely exercises C-NEW-1 fix).
   // Scenario: worker A loaded the row when status='pending', started
   // rendering, then encountered a transient failure (pdfRender throw).
