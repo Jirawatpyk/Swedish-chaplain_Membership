@@ -2697,8 +2697,8 @@ export const CSV_ROW_DB_ERROR = 'row_db_error';
 export const CSV_BATCH_TX_ABORTED = 'batch_tx_aborted';
 
 export const ERROR_CSV_REASON_TEXT: Readonly<Record<string, string>> = {
-  [CSV_ROW_DB_ERROR]: 'Not saved: this row could not be saved. Try the import again; if it repeats, contact support.',
-  [CSV_BATCH_TX_ABORTED]: 'Not saved: this batch could not be saved. Try the import again; if it repeats, contact support.',
+  [CSV_ROW_DB_ERROR]: 'Not saved because of a system error. Upload the same file again; rows already saved are skipped. If it keeps failing, contact support.',
+  [CSV_BATCH_TX_ABORTED]: 'Not saved because it was saved together with other rows, and that group failed. Upload the same file again; rows already saved are skipped. If it keeps failing, contact support.',
 };
 
 function serializeErrorRowsToCsv(

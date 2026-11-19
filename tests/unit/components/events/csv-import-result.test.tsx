@@ -152,4 +152,18 @@ describe('#739 — a database-failure row shows fixed copy, never a code or erro
     expect(rows[2]).toContain('Missing email');
     expect(rows.join(' ')).not.toContain('row_db_error');
   });
+
+  it('translated copy is not set in mono; only a raw parser reason is (UX M2)', () => {
+    renderResult({
+      errorRows: [
+        { rowNumber: 2, reason: 'row_db_error' },
+        { rowNumber: 4, reason: 'Missing email' },
+      ],
+    } as Partial<CsvImportResultPayload>);
+    const [dbRow, parserRow] = screen.getAllByTestId('result-error-row');
+    expect(dbRow).not.toHaveClass('font-mono');
+    expect(dbRow?.querySelector('.font-mono')).toBeNull();
+    expect(parserRow).not.toHaveClass('font-mono');
+    expect(parserRow?.querySelector('.font-mono')?.textContent).toBe('Missing email');
+  });
 });

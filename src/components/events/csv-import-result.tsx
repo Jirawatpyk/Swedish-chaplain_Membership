@@ -120,8 +120,10 @@ function formatDuration(ms: number): string {
  * driver's text quotes bound parameters); every other reason is parser or
  * validation text the import writes itself and is shown as is.
  */
-const DB_FAILURE_REASONS: ReadonlySet<string> = new Set(['row_db_error', 'batch_tx_aborted']);
 type DbFailureReason = 'row_db_error' | 'batch_tx_aborted';
+function isDbFailureReason(reason: string): reason is DbFailureReason {
+  return reason === 'row_db_error' || reason === 'batch_tx_aborted';
+}
 
 export function CsvImportResult({ result, footerAction }: CsvImportResultProps) {
   const t = useTranslations('admin.events.import.result');
@@ -270,14 +272,17 @@ export function CsvImportResult({ result, footerAction }: CsvImportResultProps) 
                 <li
                   key={`${row.rowNumber}-${row.reason}`}
                   data-testid="result-error-row"
-                  className="font-mono"
                 >
                   <strong>
                     {t('errorRowLabel', { rowNumber: row.rowNumber })}
                   </strong>
-                  : {DB_FAILURE_REASONS.has(row.reason)
-                    ? t(`errorReasons.${row.reason as DbFailureReason}`)
-                    : row.reason}
+                  {/* Translated copy reads in the body face; only a raw
+                      parser reason keeps mono (#739 UX M2). */}
+                  : {isDbFailureReason(row.reason) ? (
+                    t(`errorReasons.${row.reason}`)
+                  ) : (
+                    <span className="font-mono">{row.reason}</span>
+                  )}
                 </li>
               ))}
             </ul>
