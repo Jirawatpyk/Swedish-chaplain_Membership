@@ -79,7 +79,11 @@ vi.mock('@/lib/metrics', () => ({
 import { POST } from '@/app/api/cron/renewals/tier-upgrade-evaluate-coordinator/route';
 
 function makeRequest(headers: Record<string, string> = {}): NextRequest {
-  return { headers: { get: (k: string) => headers[k.toLowerCase()] ?? null } } as unknown as NextRequest;
+  return {
+    // #97: same origin as the mocked env.app.baseUrl, so the fan-out guard allows it.
+    url: 'http://localhost:3100/api/cron/renewals/tier-upgrade-evaluate-coordinator',
+    headers: { get: (k: string) => headers[k.toLowerCase()] ?? null },
+  } as unknown as NextRequest;
 }
 const VALID_AUTH = { authorization: `Bearer ${CRON_SECRET}` };
 

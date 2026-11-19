@@ -83,6 +83,8 @@ import { POST } from '@/app/api/cron/renewals/lapse-cycles-on-grace-expiry-coord
 
 function makeRequest(headers: Record<string, string> = {}): NextRequest {
   return {
+    // #97: same origin as the mocked env.app.baseUrl, so the fan-out guard allows it.
+    url: 'http://localhost:3100/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator',
     headers: { get: (k: string) => headers[k.toLowerCase()] ?? null },
   } as unknown as NextRequest;
 }

@@ -119,6 +119,8 @@ import { POST } from '@/app/api/cron/renewals/dispatch-coordinator/route';
 
 function makeRequest(headers: Record<string, string> = {}): NextRequest {
   return {
+    // #97: same origin as the mocked env.app.baseUrl, so the fan-out guard allows it.
+    url: 'http://localhost:3100/api/cron/renewals/dispatch-coordinator',
     headers: {
       get: (k: string) => headers[k.toLowerCase()] ?? null,
     },
@@ -438,5 +440,23 @@ describe('#754 follow-up — per-tenant overlap skip', () => {
     // R1 M1: an overlap skip is counted where an alert can see it.
     expect(coordinatorTenantsSkippedOverlapMock).toHaveBeenCalledWith('dispatch', 1);
     expect(payload.tenants_skipped_kill_switch).toBe(0);
+  });
+});
+
+describe('#97 — fan-out origin guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('refuses with 500 fan_out_origin_mismatch, and fetches nothing, when env.app.baseUrl is another origin than the request', async () => {
+    const req = {
+      url: 'http://localhost:3400/api/cron/renewals/dispatch-coordinator',
+      headers: { get: (k: string) => (VALID_AUTH as Record<string, string>)[k.toLowerCase()] ?? null },
+    } as unknown as NextRequest;
+    const res = await POST(req);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error.code).toBe('fan_out_origin_mismatch');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
