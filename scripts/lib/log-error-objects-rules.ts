@@ -1163,8 +1163,16 @@ function caughtTextRefusal(expr: ts.Expression, names: ReadonlySet<string>): str
  * this rule (two passes, so a local read off such a local counts too). Not
  * the log rule's taint, which also taints `errKind(e)`-style values.
  */
-function caughtTextNames(node: ts.Node, caught: ReadonlySet<string>): ReadonlySet<string> {
+function caughtTextNames(node: ts.Node, caught: ReadonlySet<string>, objects?: Set<string>): ReadonlySet<string> {
   const names = new Set(caught);
+  for (const c of caught) objects?.add(c);
+  // A local whose value is the caught object itself (`raw instanceof Error ?
+  // raw : new Error(…)`) holds an error, not its text: `cause:` may chain it.
+  const record = (name: string, why: string): void => {
+    names.add(name);
+    if (why.startsWith('the caught value')) objects?.add(name);
+    else objects?.delete(name);
+  };
   const blocks: ts.Block[] = [];
   for (let cur: ts.Node | undefined = node.parent; cur !== undefined; cur = cur.parent) {
     if (ts.isCatchClause(cur)) blocks.push(cur.block);
@@ -1174,14 +1182,11 @@ function caughtTextNames(node: ts.Node, caught: ReadonlySet<string>): ReadonlySe
       const scan = (n: ts.Node): void => {
         if (n.pos >= node.pos) return;
         if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer !== undefined) {
-          if (caughtTextRefusal(n.initializer, names) !== null) names.add(n.name.text);
-        } else if (
-          ts.isBinaryExpression(n) &&
-          n.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-          ts.isIdentifier(n.left) &&
-          caughtTextRefusal(n.right, names) !== null
-        ) {
-          names.add(n.left.text);
+          const why = caughtTextRefusal(n.initializer, names);
+          if (why !== null) record(n.name.text, why);
+        } else if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left)) {
+          const why = caughtTextRefusal(n.right, names);
+          if (why !== null) record(n.left.text, why);
         }
         if (!ts.isFunctionLike(n)) ts.forEachChild(n, scan);
       };
@@ -1213,12 +1218,20 @@ export function findCaughtErrorLiterals(fileName: string, source: string): LogEr
     ) {
       const caught = caughtNames(node);
       if (caught.size > 0 && !insideLogCall(node, aliases)) {
-        const names = caughtTextNames(node, caught);
+        const objects = new Set<string>();
+        const names = caughtTextNames(node, caught, objects);
         // Error chaining (`{ cause: e }`) keeps the object in memory; it is
         // not a sink, and the log rule reads it wherever it is logged.
-        const chained =
-          node.name.getText(sf) === 'cause' &&
-          (ts.isShorthandPropertyAssignment(node) || ts.isIdentifier(unwrap(node.initializer)));
+        // Only the caught object (or a local holding that object): a local
+        // holding its text is text.
+        // A chained DrizzleQueryError keeps `query` / `params` as own
+        // enumerable fields, so such a Result must never be serialised whole.
+        const chainedName = ts.isShorthandPropertyAssignment(node)
+          ? node.name.text
+          : ts.isIdentifier(unwrap(node.initializer))
+            ? (unwrap(node.initializer) as ts.Identifier).text
+            : null;
+        const chained = node.name.getText(sf) === 'cause' && chainedName !== null && objects.has(chainedName);
         const why = chained
           ? null
           : ts.isShorthandPropertyAssignment(node)
