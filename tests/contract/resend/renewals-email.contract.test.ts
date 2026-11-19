@@ -145,7 +145,7 @@ describe('renewals gateway on the wire (spec 141)', () => {
       {
         "error": {
           "kind": "gateway_4xx",
-          "message": "Invalid \`to\` field.",
+          "message": "resend:validation_error",
           "retryable": false,
         },
         "ok": false,
