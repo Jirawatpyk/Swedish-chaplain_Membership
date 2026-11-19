@@ -40,7 +40,11 @@ vi.mock('@/lib/env', () => ({
   },
 }));
 
-const txExecuteMock = vi.hoisted(() => vi.fn(async () => undefined));
+// #754 follow-up — the route reads `acquired` from the try-lock row;
+// default to a won lock so every pre-existing test runs the use case.
+const txExecuteMock = vi.hoisted(() =>
+  vi.fn(async (_q?: unknown): Promise<unknown> => [{ acquired: true }]),
+);
 vi.mock('@/lib/db', () => ({
   // 2026-05-17 polish — stub `db` to fix collection error.
   db: {},
@@ -184,7 +188,9 @@ describe('cron at-risk per-tenant route (Phase 6 review I9)', () => {
     expect(sqlObject.queryChunks).toBeDefined();
     const chunksText = JSON.stringify(sqlObject.queryChunks);
     expect(chunksText).toContain('renewals:at-risk:');
-    expect(chunksText).toContain('pg_advisory_xact_lock');
+    // #754 follow-up: a NON-blocking try-lock — an overlapping run must
+    // not wait out the 30 s statement bound.
+    expect(chunksText).toContain('pg_try_advisory_xact_lock');
     // R2-S4: pin tenantSlug substring so a future refactor that drops
     // the tenant scope from the lock-namespace key can't silently pass.
     // The TENANT constant is the slug used by the test fixture.
@@ -194,6 +200,19 @@ describe('cron at-risk per-tenant route (Phase 6 review I9)', () => {
     const recomputeArgs = recomputeMock.mock.calls[0] as unknown[] | undefined;
     expect(recomputeArgs).toBeDefined();
     expect(recomputeArgs![2]).toBeDefined(); // externalTx parameter
+  });
+
+  it('#754 follow-up: an overlapping run skips at once with 200 overlap, no recompute', async () => {
+    txExecuteMock.mockResolvedValueOnce([{ acquired: false }]);
+    const res = await callPost(VALID_AUTH);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      skipped: true,
+      reason: 'overlap',
+      tenant_id: TENANT_SLUG,
+    });
+    expect(recomputeMock).not.toHaveBeenCalled();
+    expect(auditEmitInTxMock).not.toHaveBeenCalled();
   });
 
   it('emits at_risk_compute_partial_failure audit when use-case reports failures', async () => {

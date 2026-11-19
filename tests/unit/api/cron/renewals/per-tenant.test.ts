@@ -35,7 +35,11 @@ vi.mock('@/lib/env', () => ({
   },
 }));
 
-const txExecuteMock = vi.hoisted(() => vi.fn(async () => undefined));
+// #754 follow-up — the route reads `acquired` from the try-lock row;
+// default to a won lock so every pre-existing test runs the use case.
+const txExecuteMock = vi.hoisted(() =>
+  vi.fn(async (_q?: unknown): Promise<unknown> => [{ acquired: true }]),
+);
 vi.mock('@/lib/db', () => ({
   // 2026-05-17 polish — stub `db` to fix collection error.
   db: {},
@@ -242,6 +246,19 @@ describe('cron per-tenant dispatch route (T104)', () => {
     expect(txExecuteMock).toHaveBeenCalledTimes(1);
     expect(dispatchMock).toHaveBeenCalledTimes(1);
     expect(retryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('#754 follow-up: an overlapping run skips at once with 200 overlap, no dispatch', async () => {
+    txExecuteMock.mockResolvedValueOnce([{ acquired: false }]);
+    const res = await POST(makeRequest(VALID_AUTH), validParams);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      skipped: true,
+      reason: 'overlap',
+      tenant_id: TENANT_SLUG,
+    });
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(retryMock).not.toHaveBeenCalled();
   });
 
   it('500 when dispatchRenewalCycle returns invalid_input error', async () => {

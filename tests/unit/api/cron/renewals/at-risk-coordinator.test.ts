@@ -229,3 +229,36 @@ describe('cron at-risk-recompute-coordinator route (Phase 6 review I9)', () => {
     expect((event.payload as { tenants_failed: number }).tenants_failed).toBe(1);
   });
 });
+
+describe('#754 follow-up — per-tenant overlap skip', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('a 200 overlap skip counts as tenants_skipped_overlap, not succeeded or failed', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({
+        skipped: true,
+        reason: 'overlap',
+        tenant_id: TENANT_SLUG,
+      }),
+    });
+    const res = await POST(makeRequest(VALID_AUTH));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tenants_succeeded).toBe(0);
+    expect(body.tenants_skipped_overlap).toBe(1);
+    expect(body.tenants_failed).toBe(0);
+    expect(body.tenants_skipped_kill_switch).toBe(0);
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    const payload = auditEmitMock.mock.calls[0]![0].payload as {
+      tenants_skipped_overlap?: number;
+      tenants_skipped_kill_switch?: number;
+    };
+    expect(payload.tenants_skipped_overlap).toBe(1);
+    expect(payload.tenants_skipped_kill_switch).toBe(0);
+  });
+});
