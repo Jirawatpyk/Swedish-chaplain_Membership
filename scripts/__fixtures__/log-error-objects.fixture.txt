@@ -235,3 +235,31 @@ export async function allowedForms(): Promise<void> {
     logger.error({ awaitedKind }); // allowed
   }
 }
+// #740 B2 — a conditional (or `??` / `||`) whose arms are object literals is
+// walked like any nested object, at the top level, under a key and in a spread.
+declare function errLogFields(e: unknown): Record<string, string>;
+declare function recordAuditEmitFailure(t: string, a: string, b: string, m: string, ctx: Record<string, unknown>): void;
+declare const tenantSlug: string;
+try {
+  void 0;
+} catch (e) {
+  logger.error({ err: e instanceof Error ? { message: e.message } : { message: String(e) } }, 'x'); // refused
+  logger.error(e instanceof Error ? { msg: e.message } : {}, 'x'); // refused
+  logger.error({ ...(e instanceof Error ? { m: e.message } : {}) }, 'x'); // refused
+  logger.error({ detail: (e as { body?: unknown }).body ?? { text: String(e) } }, 'x'); // refused
+  logger.error({ err: e instanceof Error ? { kind: errKind(e) } : { kind: 'unknown' } }, 'x'); // allowed
+  // #740 B2 — a registered log wrapper's context argument is checked like a log line.
+  recordAuditEmitFailure(tenantSlug, 'a', 'b', 'c', { err: e instanceof Error ? e.message : String(e) }); // refused
+  recordAuditEmitFailure(tenantSlug, 'a', 'b', 'c', { ...errLogFields(e) }); // allowed
+}
+// #740 B2 — a function whose own parameter reaches a log line is a log wrapper:
+// unregistered, its callers' values would never be read, so it is refused.
+function unregisteredLogWrapper(tenantId: string, context: Record<string, unknown>) {
+  logger.warn({ tenantId, ...context }, 'x'); // refused
+}
+// A LoggerPort adapter's level method is not a wrapper: `deps.logger.<level>(…)` is read already.
+const portAdapter = {
+  warn(message: string, meta?: Record<string, unknown>) {
+    logger.warn({ mod: 'x', ...(meta ?? {}) }, message); // allowed
+  },
+};

@@ -108,6 +108,46 @@ describe('findLogErrorObjects', () => {
     expect(rules.scanLogErrorObjects('x.ts', src)).toEqual({ findings: [], loggerCalls: 3 });
   });
 
+  // #740 B2 — the two forms the B1 reviews found the rule could not see.
+  it('walks the arms of a conditional or `??` when they are object literals', () => {
+    const src = [
+      'try { run(); } catch (e) {',
+      "  logger.error({ err: e instanceof Error ? { message: e.message } : { message: 'x' } });",
+      '  logger.error({',
+      '    ...(e instanceof Error',
+      '      ? { stack: e.stack }',
+      '      : {}),',
+      '  });',
+      "  logger.error({ err: e instanceof Error ? { kind: errKind(e) } : { kind: 'unknown' } });",
+      '}',
+    ].join('\n');
+    expect(lines(src)).toEqual([2, 5]);
+  });
+
+  it('checks the context argument of a registered log wrapper at its call site', () => {
+    expect(rules.LOG_WRAPPERS.recordAuditEmitFailure).toBeDefined();
+    const src = [
+      'try { run(); } catch (e) {',
+      "  recordAuditEmitFailure(t, 'a', 'b', 'c', { err: e.message });",
+      "  recordAuditEmitFailure(t, 'a', 'b', 'c', { ...errLogFields(e) });",
+      '}',
+    ].join('\n');
+    expect(lines(src)).toEqual([2]);
+  });
+
+  it('refuses an unregistered function whose parameter reaches a log line, and names it', () => {
+    const src = [
+      'export function logThing(tenantId: string, context: Record<string, unknown>) {',
+      "  logger.warn({ tenantId, ...context }, 'x');",
+      '}',
+      'const adapter = { warn(message: string, meta?: Record<string, unknown>) { logger.warn({ ...(meta ?? {}) }, message); } };',
+    ].join('\n');
+    const findings = findLogErrorObjects('x.ts', src);
+    expect(findings.map((f) => f.line)).toEqual([2]);
+    expect(findings[0]?.message).toContain('logThing');
+    expect(rules.scanLogErrorObjects('x.ts', src).wrappers).toEqual([{ name: 'logThing', index: 1 }]);
+  });
+
   it('the fixture: every `// refused` line is found and no `// allowed` line is', () => {
     const path = 'scripts/__fixtures__/log-error-objects.fixture.txt';
     const text = readFileSync(path, 'utf8');

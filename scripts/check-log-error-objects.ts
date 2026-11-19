@@ -44,6 +44,9 @@ const ROOTS = [
   'src/modules/payments',
   'src/modules/events',
   'src/modules/renewals',
+  // #740 (group B2): route handlers, pages and the composition helpers.
+  'src/app',
+  'src/lib',
 ] as const;
 const FIXTURE = 'scripts/__fixtures__/log-error-objects.fixture.txt';
 /** A floor, not a pin: the scope rotting to a handful of files must fail loudly. */
@@ -53,7 +56,7 @@ const MIN_FILES_PER_ROOT = 50;
  * tree: a parse that silently stops recognising logger calls must fail
  * loudly, not pass at zero findings.
  */
-const MIN_LOGGER_CALLS = 700;
+const MIN_LOGGER_CALLS = 1600;
 
 function walk(dir: string, out: string[]): string[] {
   for (const entry of readdirSync(dir)) {
