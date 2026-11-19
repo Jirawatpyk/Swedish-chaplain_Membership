@@ -44,8 +44,12 @@ vi.mock('@/modules/renewals', () => ({
 vi.mock('@/modules/tenants', () => ({ asTenantContext: (slug: string) => ({ slug }) }));
 
 const skippedReadOnlyMock = vi.hoisted(() => vi.fn());
+const skippedOverlapMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/metrics', () => ({
-  renewalsMetrics: { coordinatorSkippedReadOnly: skippedReadOnlyMock },
+  renewalsMetrics: {
+    coordinatorSkippedReadOnly: skippedReadOnlyMock,
+    coordinatorTenantsSkippedOverlap: skippedOverlapMock,
+  },
 }));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -114,5 +118,9 @@ describe('cron renewals reconcile-pending-applications — READ_ONLY_MODE (#408)
       tenant_id: 'tenanta',
     });
     expect(reconcileMock).not.toHaveBeenCalled();
+    // #796 code review: this cron has no coordinator, so its own overlap
+    // must reach the same counter (its lock key is shared with
+    // reconcile-pending-reactivations, so the holder does other work).
+    expect(skippedOverlapMock).toHaveBeenCalledWith('reconcile_pending_applications', 1);
   });
 });

@@ -119,12 +119,15 @@ test.describe('F8 — lapse-cycles cron coordinator HTTP route (T277f)', () => {
     expect(typeof json.duration_ms).toBe('number');
     expect(Array.isArray(json.per_tenant_results)).toBe(true);
 
-    // Sanity: every enqueued tenant succeeded, failed, or skipped on
-    // overlap (#754 follow-up — another run held the per-tenant lock).
+    // Sanity: every enqueued tenant succeeded, failed, skipped on its
+    // own kill switch, or skipped on overlap (#754 follow-up — another
+    // run held the per-tenant lock).
     expect(typeof json.tenants_skipped_overlap).toBe('number');
+    expect(typeof json.tenants_skipped_kill_switch).toBe('number');
     expect(
       json.tenants_succeeded +
         json.tenants_failed +
+        json.tenants_skipped_kill_switch +
         json.tenants_skipped_overlap,
     ).toBe(json.tenants_enqueued);
 
