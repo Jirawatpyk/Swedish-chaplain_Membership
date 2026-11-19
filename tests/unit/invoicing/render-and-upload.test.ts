@@ -72,7 +72,6 @@ describe('renderAndUploadPdf failure reason (#739)', () => {
 
   it('a thrown non-Error is the unknown class', async () => {
     const e = await caught(
-      // eslint-disable-next-line @typescript-eslint/only-throw-error -- the case under test
       renderAndUploadPdf(deps({ upload: async () => { throw 'a@b.example'; } }), input, wrap),
     );
     expect(e.reason).toBe('upload:unknown');

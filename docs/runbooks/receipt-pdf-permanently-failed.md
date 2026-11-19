@@ -61,11 +61,16 @@ in the webhook tx). It is a **document delivery** issue.
    `receipt_pdf_last_error` **is the only source for the cause** — the
    `receipt_pdf_render_failures_total{cause=…}` metric this step used to
    cross-check against does not exist (see the trigger note at the top).
-   The same cause vocabulary applies; match it against the error text:
-   - `render_failed` — PDF engine threw (font, layout, data shape).
-   - `blob_upload_failed` — Vercel Blob 5xx / network.
-   - `invalid_state` — invoice flipped out of `paid` (rare; void race).
-   - `invoice_not_found` / `settings_missing` — RLS/tenant glitch.
+   Since #739 (migration 0330) the column holds a closed code, never error
+   text: `<step>:<ErrClass>`, for example `render:TypeError` (the PDF engine
+   threw: font, layout, data shape) or `upload:BlobError` (Vercel Blob 5xx /
+   network), or a plain code: `receipt_doc_num_missing` /
+   `receipt_doc_num_parse_failed` (data corruption, never retried).
+   `legacy_redacted` is a value written before 0330, whose text was scrubbed.
+   For the detail behind a code, find the WARN line
+   `invoicing.pdf.render_and_upload_failed` for that time: it carries `step`,
+   the class and any SQLSTATE or `code` (`errLogFields`). The admin download
+   toast shows fixed copy per step, never the code.
 
 3. **Check the dispatcher logs.**
    ```
