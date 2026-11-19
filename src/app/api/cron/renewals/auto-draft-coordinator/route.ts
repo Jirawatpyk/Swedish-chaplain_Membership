@@ -33,7 +33,7 @@ import { renewalsMetrics } from '@/lib/metrics';
 import { refuseCrossOriginFanOut } from '@/lib/cron-fan-out-guard';
 import { makeRenewalsDeps, readAutoInvoiceGaugeRow } from '@/modules/renewals';
 
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -393,7 +393,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // immutable audit rows. Use a fixed taxonomy.
       logger.error(
         {
-          err: r.reason instanceof Error ? r.reason : new Error(String(r.reason)),
+          ...errLogFields(r.reason),
           tenant_id: tenantId,
           correlationId,
         },

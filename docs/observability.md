@@ -146,8 +146,8 @@ line carries:
 - A user id as `hashId(id)` (`actorUserIdHash`, `userIdHash`).
 
 `pnpm check:log-error-objects` (in `pnpm check` and CI's static job) parses
-`src/modules/{members,broadcasts,invoicing,payments,events,renewals}/**`,
-`src/app/**` and `src/lib/**` (all server code since #740 B1 and B2) with the TypeScript compiler API (a
+`src/modules/**`, `src/app/**` and `src/lib/**` (all server code since #740
+B1 and B2) with the TypeScript compiler API (a
 `.tsx` file as TSX) and refuses these forms inside `logger.<level>(…)` and
 `logger.child(…)` arguments. Since review round 1: on an error-ish base (a
 caught or error-named identifier, or a chain through `.error` / `.cause`) only
@@ -170,7 +170,29 @@ argument's index, and every call to a listed name has those arguments checked
 like a logger call's. An unlisted wrapper fails the gate, and so does a listed
 one that no longer reaches a log line. A LoggerPort adapter's level method
 (`warn(message, meta)`) is not a wrapper: its callers write
-`deps.logger.<level>(…)`, which the gate reads already.
+`deps.logger.<level>(…)`, which the gate reads already. Since the B2 review a
+parameter logged under an error-detail key (`err`, `error`, `cause`,
+`detail`, `reason`, `message` and kin: `err: code`) also makes its function a
+wrapper; a parameter under any other key (`tenantId`) does not. A logger held
+in a local (`const log = deps.logger`, `logger.child(…)`) is read like
+`logger`, and the left side of `&&` is not checked (it is logged only when
+falsy). Wrappers are matched by name, so give a local wrapper a specific one
+(`failQueuePage`, not `fail`). Not followed: a parameter copied into a local
+first, a destructured parameter, a property of a parameter (`ctx.extra`), and
+a wrapper called through an alias.
+
+A Result error's `message` that code wrote as a step (`count-pending:
+repo.unexpected`) is logged as `step` by `errLogFields`, through
+`stepToken()` in `src/lib/log-id.ts`, which refuses anything with capitals,
+an `@`, more than one space or more than 64 characters. A zod failure logs
+`issueCount`, never the issues (an issue message can quote the input).
+
+Field names #740 B2 changed (saved searches and alerts keyed on the old name
+need the new one): a Result error's `errType` / `errKind` / `error` are now
+`err` + `resultKind` (+ `step`); `errMessage` / `errStack` / `zodIssues` are
+gone; the auth link-invalid lines log `linkReason` and the mark-paid-offline
+permanent reject logs `permanentReason` (`reason` and `f4Reason` are redacted
+keys, so those lines carried nothing before).
 
 ---
 

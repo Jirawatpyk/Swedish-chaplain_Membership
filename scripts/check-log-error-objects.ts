@@ -27,8 +27,7 @@
  * if a `// refused` line yields none, or if an `// allowed` line yields one —
  * so a rule that rots cannot pass silently over the real tree.
  *
- * Scope: `src/modules/{members,broadcasts,invoicing,payments,events,renewals}/**`,
- * `src/app/**` and `src/lib/**` `.ts`/`.tsx` files, tests excluded (#740 B1
+ * Scope: `src/modules/**`, `src/app/**` and `src/lib/**` `.ts`/`.tsx` files, tests excluded (#740 B1
  * and B2). Since B2 the call sites of every `LOG_WRAPPERS` entry are read
  * too, and a listed wrapper that no longer reaches a log line fails the run.
  */

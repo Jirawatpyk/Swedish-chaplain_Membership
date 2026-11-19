@@ -160,9 +160,7 @@ export async function POST(
             event: 'admin_event_archive_use_case_error',
             eventId,
             errKind: result.error.kind,
-            // pino's `err` key auto-serializes Error → {type, message, stack}.
-            // Use `typeof === 'object' && !null` guard before `in` to survive
-            // a future primitive-shaped error variant (R3-CRIT-3 + R3-LOW-1).
+            // #740: the class only — an Error's message and stack can quote bound parameters.
             err: errKind(rootCause(result.error)),
           },
           '[F6] archiveEvent returned use-case error',

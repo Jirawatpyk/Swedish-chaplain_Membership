@@ -206,13 +206,13 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
     planResult.status === 'fulfilled' ? planResult.value : null;
   if (memberResult.status === 'rejected') {
     logger.warn(
-      { err: memberResult.reason, memberId: c.memberId },
+      { ...errLogFields(memberResult.reason), memberId: c.memberId },
       '[admin/renewals/cycle-detail] member display lookup failed; falling back to UUID-only',
     );
   }
   if (planResult.status === 'rejected') {
     logger.warn(
-      { err: planResult.reason, planId: c.planIdAtCycleStart },
+      { ...errLogFields(planResult.reason), planId: c.planIdAtCycleStart },
       '[admin/renewals/cycle-detail] plan display lookup failed; falling back to UUID-only',
     );
   }

@@ -182,8 +182,7 @@ export async function POST(
     logger.error(
       {
         errorId: `${ERROR_ID}.UNEXPECTED`,
-        // K12-3 (REL-K-1): pass the Error instance so pino's `err`
-        // serializer captures stack + type.
+        // #740: the class only — an Error's message and stack can quote bound parameters.
         err: errKind(e),
         cycleId,
         correlationId: ctx.correlationId,

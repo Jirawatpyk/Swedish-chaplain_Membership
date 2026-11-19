@@ -53,7 +53,7 @@ import {
 } from '@/modules/renewals';
 import { handleInvitationBounce } from '@/modules/members';
 
-import { errKind, errLogFields, hashId } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 // Subset of the Resend webhook event type enum — only the ones our
 // `email_delivery_events` enum column supports. Unknown event types
 // are logged and silently accepted (200 with no row inserted).
@@ -194,6 +194,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       {
         requestId,
         eventType,
+        // #740 B2 review — the count only: an issue's message can quote the payload.
+        issueCount: parsed.error.issues.length,
       },
       'resend_webhook.schema_rejected',
     );
@@ -270,7 +272,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         requestId,
         eventType: mapped,
         messageId,
-        toEmailHash: hashId(toEmail),
       },
       'resend_webhook.negative_signal',
     );
@@ -292,7 +293,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const { marked } = await handleInvitationBounce(toEmail, requestId, bouncedAt);
       if (marked > 0) {
         logger.info(
-          { requestId, toEmailHash: hashId(toEmail), marked },
+          { requestId, messageId, marked },
           'resend_webhook.invitation_bounced_marked',
         );
       }
@@ -301,7 +302,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         {
           err: errKind(e),
           requestId,
-          toEmailHash: hashId(toEmail),
         },
         'resend_webhook.invitation_bounce_handler_failed',
       );
@@ -331,7 +331,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         {
           err: errKind(e),
           requestId,
-          toEmailHash: hashId(toEmail),
         },
         'resend_webhook.f8_bounce_hook_failed_lookup',
       );
@@ -362,7 +361,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             requestId,
             tenantId: lookup.tenantId,
             memberId: lookup.memberId,
-            toEmailHash: hashId(toEmail),
           },
           'resend_webhook.f8_bounce_hook_failed',
         );

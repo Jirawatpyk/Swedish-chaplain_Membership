@@ -175,7 +175,7 @@ describe('findLogErrorObjects', () => {
     ].join('\n');
     const scan = rules.scanLogErrorObjects('x.ts', src);
     expect(scan.findings.map((f) => f.line)).toEqual([4, 5]);
-    expect(scan.loggerCalls).toBe(3);
+    expect(scan.loggerCalls).toBe(4); // the three level calls and `logger.child(…)`
   });
 
   it('#740 B2 review: stepToken keeps a code-built step and drops driver text', async () => {

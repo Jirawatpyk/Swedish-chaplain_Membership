@@ -258,9 +258,7 @@ async function emitOrchestratedAudit(
     // docstring).
     logger.error(
       {
-        // K12-3 (REL-K-1): pass the Error instance so pino's `err`
-        // serializer captures stack + type without the manual stack
-        // field below.
+        // #740: the class only — an Error's message and stack can quote bound parameters.
         err: errKind(e),
         correlationId,
       },
@@ -419,8 +417,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               jsonParseFailed = true;
               logger.error(
                 {
-                  // K12-3 (REL-K-1): pass the Error instance so pino's
-                  // `err` serializer captures stack + type.
+                  // #740: the class only — an Error's message and stack can quote bound parameters.
                   err: errKind(e),
                   tenantId,
                   status: r.status,

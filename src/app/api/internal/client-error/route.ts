@@ -69,6 +69,17 @@ const reportSchema = z.object({
   message: z.string().max(200).optional(),
 });
 
+/** A client tag or code as logged: a lowercase token (`http_502`, `renewal-confirm`) or `invalid`. */
+function clientToken(value: string): string {
+  return /^[a-z][a-z0-9_.:-]{0,63}$/.test(value) ? value : 'invalid';
+}
+
+/** A client path as logged: its route segments only, or `invalid`. */
+function clientPath(value: string): string {
+  const route = value.split(/[?#]/, 1)[0] ?? '';
+  return /^\/[A-Za-z0-9/_.\-[\]]{0,199}$/.test(route) ? route : 'invalid';
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Read body with byte cap to bound abuse cost. sendBeacon payloads
   // are typically < 200 bytes; > 1 KiB is suspicious.
@@ -144,14 +155,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // alerts can attach to the metric counter (future wave) or the
   // pino log itself. #740 B2 — the client's message is free text (it can
   // quote an error or an address): only its length is logged.
+  // #740 B2 review (security M2) — tag, code and path are client strings too:
+  // a non-token tag or code is logged as `invalid`, and a path keeps only its
+  // route segments (no query string or fragment).
   const { message: clientMessage } = parsed.data;
   logger.warn(
     {
       errorId: 'CLIENT.ERROR_REPORT',
-      tag: parsed.data.tag,
-      code: parsed.data.code,
+      tag: clientToken(parsed.data.tag),
+      code: clientToken(parsed.data.code),
       status: parsed.data.status ?? null,
-      path: parsed.data.path ?? null,
+      path: parsed.data.path === undefined ? null : clientPath(parsed.data.path),
       messageLength: clientMessage?.length ?? null,
       // F1 cross-tenant users — user.id is the only stable correlation
       // handle on the session. Tenant scope (when known) is implicit

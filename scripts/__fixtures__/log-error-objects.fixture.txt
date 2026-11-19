@@ -283,3 +283,6 @@ try {
   aliasedLog.error({ err: e }, 'x'); // refused
   aliasedLog.error({ err: errKind(e) }, 'x'); // allowed
 }
+// A zod error's issue count is a number, not error text.
+declare const zodParsed: { success: false; error: { issues: unknown[] } };
+logger.warn({ issueCount: zodParsed.error.issues.length }, 'x'); // allowed

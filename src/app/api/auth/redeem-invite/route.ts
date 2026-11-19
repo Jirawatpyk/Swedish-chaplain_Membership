@@ -91,7 +91,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // The internal `error.reason` still drives logs + metrics.
       const reason: Extract<RedeemInviteError, { code: 'link-invalid' }>['reason'] = error.reason;
       logger.warn(
-        { requestId, reason },
+        // `reason` is a redacted key (logger.ts); this one is a closed union.
+        { requestId, linkReason: reason },
         'redeem-invite.link-invalid',
       );
       return NextResponse.json({ error: 'link-invalid' }, { status: 410 });

@@ -20,7 +20,7 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { acceptTierUpgrade, makeRenewalsDeps } from '@/modules/renewals';
 
-import { errKind } from '@/lib/log-id';
+import { errLogFields, errStep } from '@/lib/log-id';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
@@ -158,7 +158,8 @@ export async function POST(
     logger.error(
       {
         errorId: `${ERROR_ID}.UNEXPECTED`,
-        err: errKind(e),
+        ...errLogFields(e),
+        step: errStep(e),
         correlationId: ctx.correlationId,
         suggestionId,
       },

@@ -21,7 +21,7 @@ import { markPaidOffline, makeRenewalsDeps, type MarkPaidOfflineError } from '@/
 type MarkPaidOfflinePermanentFailure = Extract<MarkPaidOfflineError, { kind: 'f4_permanent_failure' }>;
 import { assertNever } from '@/lib/assert-never';
 
-import { errKind } from '@/lib/log-id';
+import { errLogFields, errStep } from '@/lib/log-id';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
@@ -258,7 +258,9 @@ export async function POST(
               correlationId: ctx.correlationId,
               cycleId,
               tenantId: tenantCtx.slug,
-              f4Reason,
+              // `f4Reason` is a redacted key (logger.ts); this closed union is
+              // the HTTP error code already, so the log carries it in clear.
+              permanentReason: f4Reason,
             },
             'mark-paid-offline: permanent F4 reject (actionable — retry will not help)',
           );
@@ -404,9 +406,9 @@ export async function POST(
     logger.error(
       {
         errorId: `${ERROR_ID}.UNEXPECTED`,
-        // K12-3 (REL-K-1): pass the Error instance so pino's `err`
-        // serializer captures stack + type.
-        err: errKind(e),
+        // #740: the class only — an Error's message and stack can quote bound parameters.
+        ...errLogFields(e),
+        step: errStep(e),
         correlationId: ctx.correlationId,
         cycleId,
         tenantId: tenantCtx.slug,

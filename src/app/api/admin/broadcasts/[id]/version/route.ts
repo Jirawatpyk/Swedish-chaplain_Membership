@@ -53,6 +53,7 @@ import {
   startFormattedVersion,
   type BroadcastVersion,
   type BroadcastVersionThread,
+  type ListBroadcastVersionsError,
   type SaveFormattedVersionError,
   type StartFormattedVersionError,
   type VersionThreadEntry,
@@ -195,8 +196,10 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
     switch (result.error.kind) {
       case 'not_found':
         return errorResponse(404, 'broadcast_not_found', correlationId);
-      case 'server_error':
-        return serverError(result.error.errKind, 'M119.admin.version.get.server_error', correlationId);
+      case 'server_error': {
+        const kind: Extract<ListBroadcastVersionsError, { kind: 'server_error' }>['errKind'] = result.error.errKind;
+        return logVersionServerError(kind, 'M119.admin.version.get.server_error', correlationId);
+      }
       default:
         return assertNever(result.error);
     }
@@ -206,7 +209,7 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
 
 // ---------------------------------------------------------------------------
 
-function serverError(kind: string, errorId: string, correlationId: string): NextResponse {
+function logVersionServerError(kind: string, errorId: string, correlationId: string): NextResponse {
   logger.error({ err: kind, correlationId, errorId }, 'broadcasts.version.failed');
   return errorResponse(500, 'internal_error', correlationId);
 }
@@ -226,8 +229,10 @@ function startErrorResponse(error: StartFormattedVersionError, correlationId: st
       return errorResponse(409, 'sending_started', correlationId, {
         details: { stage: stageOf(error.status), status: error.status },
       });
-    case 'server_error':
-      return serverError(error.errKind, 'M119.admin.version.post.server_error', correlationId);
+    case 'server_error': {
+      const kind: Extract<StartFormattedVersionError, { kind: 'server_error' }>['errKind'] = error.errKind;
+      return logVersionServerError(kind, 'M119.admin.version.post.server_error', correlationId);
+    }
     default:
       return assertNever(error);
   }
@@ -257,8 +262,10 @@ function saveErrorResponse(error: SaveFormattedVersionError, correlationId: stri
       return errorResponse(422, 'image_source_not_allowlisted', correlationId, {
         details: { images: error.unsafeImageSources },
       });
-    case 'server_error':
-      return serverError(error.errKind, 'M119.admin.version.patch.server_error', correlationId);
+    case 'server_error': {
+      const kind: Extract<SaveFormattedVersionError, { kind: 'server_error' }>['errKind'] = error.errKind;
+      return logVersionServerError(kind, 'M119.admin.version.patch.server_error', correlationId);
+    }
     default:
       return assertNever(error);
   }

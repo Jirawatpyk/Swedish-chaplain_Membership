@@ -77,7 +77,12 @@ export interface LogErrorScan {
  * into a log line, keyed by name, with the argument indexes its call sites
  * must keep free of error text. Each call `name(…)` (or `x.name(…)`) has those
  * arguments checked exactly like a logger call's. A new wrapper fails the gate
- * until it is listed here, so a wrapper is a visible decision, not a blind spot.
+ * until it is listed here, so a wrapper is a visible decision, not a blind spot
+ * — for the shapes discovery follows: a parameter logged as the value, as a
+ * spread, or under an error-detail key (`ERRORISH_KEYS`). Not followed: a
+ * parameter copied into a local first, a destructured parameter, a property of
+ * a parameter, and a call through an alias. Names are global: a generic one
+ * (`fail`) would match unrelated calls, so a wrapper gets a specific name.
  * A LoggerPort adapter's level method (`warn(message, meta)`) is not listed:
  * its callers write `deps.logger.<level>(…)`, which is read already.
  */
@@ -112,6 +117,25 @@ export const LOG_WRAPPERS: Readonly<Record<string, readonly number[]>> = {
   // renewals `_lib/` — shared warning and unexpected-error lines.
   logSupersedeWarnings: [1],
   logUnexpectedError: [2],
+  // #740 B2 review: parameters logged under an error-detail key (`err: code`, `{ reason }`).
+  /** payments sweep-stale-pending-refunds: `reason` of an escalated refund. */
+  escalate: [4],
+  maybeEscalate: [4],
+  /** renewals verify-renewal-link-token: the token-invalid `reason`. */
+  emitTokenInvalid: [3],
+  /** renewals drizzle-renewal-audit-emitter: the fallback log's `reason`. */
+  pinoFallback: [2],
+  /** admin change-requests and member-changes pages: the failure `code`. */
+  failQueuePage: [1],
+  failMemberChangesPage: [1],
+  /** admin broadcasts version route: the 500's `kind`. */
+  logVersionServerError: [0],
+  /** outbox-dispatch: the receipt gate's skip `code`. */
+  gateFail: [0],
+  /** resend-broadcasts webhook: the unattributed opt-out `reason`. */
+  auditUnattributedOptOut: [0],
+  /** stripe webhook: the rejected delivery's `reason`. */
+  auditReject: [1],
 };
 
 const LEVELS = new Set(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'child']);
@@ -143,6 +167,7 @@ const SAFE_CALLS = new Set([
   'hashId',
   'errLogFields',
   'errStep',
+  'stepToken',
   'gatewayField',
   'approvalErrKind',
   'retryableSubKind',
@@ -162,12 +187,41 @@ const OBJECT_FIELDS = new Set(['error', 'cause']);
 /** The only fields read off an error-ish base: closed tokens. */
 const TOKEN_FIELDS = new Set(['code', 'kind', 'name']);
 
-function isLoggerCall(node: ts.CallExpression): boolean {
+function isLoggerTarget(target: ts.Expression, aliases: ReadonlySet<string>): boolean {
+  if (ts.isIdentifier(target)) return target.text === 'logger' || aliases.has(target.text);
+  return ts.isPropertyAccessExpression(target) && target.name.text === 'logger';
+}
+
+function isLoggerCall(node: ts.CallExpression, aliases: ReadonlySet<string> = new Set()): boolean {
   const callee = node.expression;
   if (!ts.isPropertyAccessExpression(callee) || !LEVELS.has(callee.name.text)) return false;
-  const target = callee.expression;
-  if (ts.isIdentifier(target)) return target.text === 'logger';
-  return ts.isPropertyAccessExpression(target) && target.name.text === 'logger';
+  return isLoggerTarget(callee.expression, aliases);
+}
+
+/**
+ * #740 B2 review — locals that hold a logger: `const log = deps.logger`,
+ * `const log = logger.child({ … })`. Calls on them are logger calls too, so a
+ * file cannot step around the rule by renaming its logger. Matched by name in
+ * the whole file: a tripwire, not a scope analysis.
+ */
+function loggerAliases(sf: ts.SourceFile): ReadonlySet<string> {
+  const names = new Set<string>();
+  const holdsLogger = (init: ts.Expression): boolean => {
+    const n = unwrap(init);
+    if (isLoggerTarget(n, names)) return true;
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === 'child') {
+      return isLoggerTarget(unwrap(n.expression.expression), names);
+    }
+    return false;
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined && holdsLogger(node.initializer)) {
+      names.add(node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return names;
 }
 
 function unwrap(node: ts.Expression): ts.Expression {
@@ -366,12 +420,6 @@ const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
   // `TokenFailureReason`, `'not-found' | 'used' | 'expired'`.
   RedeemInviteError: new Set(['reason']),
   ResetPasswordError: new Set(['reason']),
-  // invoicing `get-{invoice,receipt,credit-note}-pdf-signed-url.ts` (#740 B2) —
-  // `key` is a server-built `invoicing/<tenant>/<fy>/<uuid>…_v<n>.pdf` path
-  // (`issue-invoice.ts`, `render-receipt-pdf.ts`, `issue-credit-note.ts`, …).
-  GetInvoicePdfSignedUrlError: new Set(['key']),
-  GetReceiptPdfSignedUrlError: new Set(['key']),
-  GetCreditNotePdfSignedUrlError: new Set(['key']),
   // invoicing `create-invoice-draft.ts` / renewals `mark-paid-offline.ts`
   // (#740 B2) — the live bill's `invoice_id` uuid and `status` enum column;
   // `stage` is the F4 bridge error's `kind`; `orphanInvoiceId` the bridge's
@@ -379,6 +427,14 @@ const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
   // it is error text.
   CreateInvoiceDraftError: new Set(['existingInvoiceId', 'existingStatus']),
   MarkPaidOfflineError: new Set(['existingInvoiceId', 'existingStatus', 'stage', 'orphanInvoiceId']),
+  // invoicing `get-{invoice,receipt,credit-note}-pdf-signed-url.ts` (#740 B2) —
+  // `key` is a server-built `invoicing/<tenant>/<fy>/<uuid>…_v<n>.pdf` path
+  // (`issue-invoice.ts`, `render-receipt-pdf.ts`, `issue-credit-note.ts`, …),
+  // read only on `blob_missing`: the object is gone, so the key opens nothing
+  // (PG-1 holds), and the missing-PDF runbook reads it.
+  GetInvoicePdfSignedUrlError: new Set(['key']),
+  GetReceiptPdfSignedUrlError: new Set(['key']),
+  GetCreditNotePdfSignedUrlError: new Set(['key']),
   // the mark-paid-offline route's own alias for the `f4_permanent_failure`
   // variant (#740 B2) — `reason` is `MarkPaidOfflinePermanentReason`, literals.
   MarkPaidOfflinePermanentFailure: new Set(['reason']),
@@ -404,6 +460,10 @@ const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
   // events `ingest-webhook-attendee.ts` (#740 B2) — `FailureStage`, a closed
   // union of literals, and a boolean. Never `errorMessage`.
   IngestError: new Set(['failureStage', 'auditFallbackFailed']),
+  // broadcasts `start-formatted-version.ts` / `save-formatted-version.ts`
+  // (#740 B2 review) — the one `server_error` construction sets `errKind: errKind(e)`.
+  StartFormattedVersionError: new Set(['errKind']),
+  SaveFormattedVersionError: new Set(['errKind']),
 };
 
 /** `T` for `T['f']`, and for `Extract<T, …>['f']`; else null. */
@@ -733,6 +793,8 @@ function refusal(sf: ts.SourceFile, expr: ts.Expression, scope: Scope): string |
       return CLASSIFY_SAFE_FIELDS.has(field) ? null : `\`classifyThrown(…).${field}\` (only .kind is a closed token)`;
     }
     if (TEXT_FIELDS.has(field)) return `\`.${field}\``;
+    // A zod error's issue count is a number (#740 B2 review): `parsed.error.issues.length`.
+    if (field === 'length' && ts.isPropertyAccessExpression(base) && base.name.text === 'issues') return null;
     const baseShape = shapeOf(base, scope);
     if (baseShape === 'text') return `\`.${field}\` of error text`;
     if (baseShape === 'error') {
@@ -821,7 +883,10 @@ function hasContainer(node: ts.Expression): boolean {
   const n = unwrap(node);
   if (ts.isObjectLiteralExpression(n) || ts.isArrayLiteralExpression(n)) return true;
   if (ts.isConditionalExpression(n)) return hasContainer(n.whenTrue) || hasContainer(n.whenFalse);
-  if (ts.isBinaryExpression(n) && LOGICAL_OPERATORS.has(n.operatorToken.kind)) return hasContainer(n.left) || hasContainer(n.right);
+  if (ts.isBinaryExpression(n) && LOGICAL_OPERATORS.has(n.operatorToken.kind)) {
+    if (n.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) return hasContainer(n.right);
+    return hasContainer(n.left) || hasContainer(n.right);
+  }
   return false;
 }
 
@@ -851,7 +916,8 @@ function checkValue(
     return;
   }
   if (ts.isBinaryExpression(n) && LOGICAL_OPERATORS.has(n.operatorToken.kind)) {
-    checkValue(sf, n.left, scope, out, describe, at);
+    // `a && b` logs `a` only when it is falsy, so it carries nothing (#740 B2 review).
+    if (n.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken) checkValue(sf, n.left, scope, out, describe, at);
     checkValue(sf, n.right, scope, out, describe, at);
     return;
   }
@@ -906,7 +972,21 @@ function functionName(fn: FunctionLike): string | null {
   return null;
 }
 
-/** Identifiers that reach a log argument as the value itself or as a spread. */
+/**
+ * Keys whose value is error detail by name. A parameter logged under one of
+ * them (`err: code`, `{ detail }`) makes its function a log wrapper, the same
+ * as a spread parameter does (#740 B2 review). Other keys (`tenantId`, `count`)
+ * are not followed: they would make every use case a wrapper.
+ */
+const ERRORISH_KEYS = new Set([
+  'err', 'error', 'cause', 'detail', 'details', 'reason', 'message', 'msg',
+  'errMessage', 'errorMessage', 'errorDetail', 'stack', 'description', 'why',
+]);
+
+/**
+ * Identifiers that reach a log argument as the value itself, as a spread, or
+ * as the value of an {@link ERRORISH_KEYS} key (nested objects included).
+ */
 function reachingIdentifiers(arg: ts.Expression, out: ts.Identifier[] = []): ts.Identifier[] {
   const n = unwrap(arg);
   if (ts.isIdentifier(n)) out.push(n);
@@ -915,9 +995,19 @@ function reachingIdentifiers(arg: ts.Expression, out: ts.Identifier[] = []): ts.
     reachingIdentifiers(n.whenFalse, out);
   } else if (ts.isBinaryExpression(n) && LOGICAL_OPERATORS.has(n.operatorToken.kind)) {
     reachingIdentifiers(n.right, out);
-    reachingIdentifiers(n.left, out);
+    if (n.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken) reachingIdentifiers(n.left, out);
   } else if (ts.isObjectLiteralExpression(n)) {
-    for (const p of n.properties) if (ts.isSpreadAssignment(p)) reachingIdentifiers(p.expression, out);
+    for (const p of n.properties) {
+      if (ts.isSpreadAssignment(p)) reachingIdentifiers(p.expression, out);
+      else if (ts.isShorthandPropertyAssignment(p)) {
+        if (ERRORISH_KEYS.has(p.name.text)) out.push(p.name);
+      } else if (ts.isPropertyAssignment(p)) {
+        const key = ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) ? p.name.text : null;
+        const value = unwrap(p.initializer);
+        if (key !== null && ERRORISH_KEYS.has(key)) reachingIdentifiers(value, out);
+        else if (ts.isObjectLiteralExpression(value)) reachingIdentifiers(value, out);
+      }
+    }
   }
   return out;
 }
@@ -946,6 +1036,7 @@ export function scanLogErrorObjects(fileName: string, source: string): LogErrorS
   const findings: LogErrorFinding[] = [];
   const wrappers: Array<{ name: string; index: number }> = [];
   let loggerCalls = 0;
+  const aliases = loggerAliases(sf);
   const discover = (call: ts.CallExpression, args: readonly ts.Expression[]): void => {
     for (const arg of args) {
       for (const id of reachingIdentifiers(arg)) {
@@ -970,7 +1061,7 @@ export function scanLogErrorObjects(fileName: string, source: string): LogErrorS
   };
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
-      if (isLoggerCall(node)) {
+      if (isLoggerCall(node, aliases)) {
         loggerCalls += 1;
         const scope: Scope = { errors: new Set([...caughtNames(node), ...taintedNames(sf, node)]), tokens: TOKEN_FIELDS };
         for (const arg of node.arguments) checkContainer(sf, arg, scope, findings);
