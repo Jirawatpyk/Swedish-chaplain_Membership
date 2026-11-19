@@ -27,6 +27,7 @@ async function f(): Promise<unknown> {
     err({ kind: 'server_error', errClass: cls }); // allowed
     err({ kind: 'server_error', message: result.error.message }); // allowed
     err({ kind: 'server_error', cause: e }); // allowed
+    err({ kind: 'server_error', cause: text }); // refused
     logger.error({ err: errKind(e) }, 'x'); // allowed
     return null;
   }

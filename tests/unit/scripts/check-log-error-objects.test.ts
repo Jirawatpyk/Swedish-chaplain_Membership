@@ -225,6 +225,11 @@ describe('#739 B3a — findCaughtErrorLiterals', () => {
     expect(scan("try {} catch (e) { logger.error({ err: errKind(e) }, 'x'); }")).toEqual([]);
   });
 
+  it('chains only an error object under cause, never a local holding its text', () => {
+    expect(scan("try {} catch (e) { const m = (e as Error).message; return err({ cause: m }); }")).toHaveLength(1);
+    expect(scan("try {} catch (raw) { const c = raw instanceof Error ? raw : new Error('x'); throw new X('y', { cause: c }); }")).toEqual([]);
+  });
+
   it('ignores a value outside a catch', () => {
     expect(scan("const e = new Error('x'); err({ message: e.message });")).toEqual([]);
   });
