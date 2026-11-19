@@ -16,7 +16,6 @@
  * Kill-switch: `FEATURE_F8_RENEWALS=false` → 200 + skipped.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -24,6 +23,10 @@ import { verifyCronBearer } from '@/lib/cron-auth';
 import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { renewalsMetrics } from '@/lib/metrics';
 import { uuidv7 } from '@/lib/request-id';
+import {
+  renewalsCronOverlapBody,
+  tryRenewalsCronLock,
+} from '@/lib/renewals-cron-lock';
 import { asTenantContext } from '@/modules/tenants';
 import {
   reconcilePendingApplications,
@@ -75,21 +78,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Round 6 W-009 — per-tenant advisory lock so a cron-job.org HTTP
     // retry (timeout window) cannot double-fire reconcile and emit
     // duplicate `tier_upgrade_pending_orphan_detected` audits for the
-    // same orphan. Lock namespace `renewals:reconcile:` is disjoint
-    // from `renewals:tierupgrade:` (eval cron), `renewals:dispatch:`
-    // (daily reminder cron), `renewals:at-risk:` (weekly recompute) +
-    // F4 `invoicing:`, F5 `payments:`, F7 `broadcasts:` namespaces.
-    // Auto-released at tx end. Concurrent invocations serialise — the
-    // second waits, then sees zero new orphans (state is idempotent).
+    // same orphan. Lock namespace `renewals:reconcile:` is SHARED with
+    // reconcile-pending-reactivations (the two reconcile crons exclude
+    // each other) and disjoint from `renewals:tierupgrade:` (eval
+    // cron), `renewals:dispatch:` (daily reminder cron),
+    // `renewals:at-risk:` (weekly recompute) + F4 `invoicing:`, F5
+    // `payments:`, F7 `broadcasts:` namespaces. Auto-released at tx
+    // end. A try-lock (#754 follow-up): an overlapping invocation
+    // answers 200 `skipped: overlap` at once instead of waiting out the
+    // 30 s statement bound; the holder does the work.
     const result = await runInTenant(tenantCtx, async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:reconcile:'||${tenantId}, 0))`,
-      );
+      if (!(await tryRenewalsCronLock(tx, 'renewals:reconcile:', tenantId))) {
+        return 'overlap' as const;
+      }
       return await reconcilePendingApplications(deps, {
         tenantId,
         correlationId,
       });
     });
+    if (result === 'overlap') {
+      logger.info(
+        { tenantId, correlationId },
+        'cron.renewals.reconcile_pending.overlap_skipped',
+      );
+      return NextResponse.json(renewalsCronOverlapBody(tenantId));
+    }
     if (!result.ok) {
       logger.error(
         {

@@ -156,6 +156,8 @@ export const dynamic = 'force-dynamic';
 interface PerTenantResultOk {
   readonly tenant_id: string;
   readonly skipped: boolean;
+  /** The per-tenant route's `reason` when `skipped` (e.g. `overlap`). */
+  readonly skip_reason?: string;
   readonly reminders_dispatched?: number;
   readonly tasks_created?: number;
   readonly duration_ms?: number;
@@ -179,6 +181,10 @@ interface OrchestratedSummary {
   // Without this, a dark-launched tenant flag-flapping silently
   // appears as "100% healthy" while no dispatches ran.
   readonly tenants_skipped_kill_switch: number;
+  // #754 follow-up: tenants whose per-tenant route answered 200
+  // `{ skipped: true, reason: 'overlap' }` — another run held the
+  // per-tenant try-lock and did the work. Neither succeeded nor failed.
+  readonly tenants_skipped_overlap: number;
   readonly duration_ms: number;
 }
 
@@ -204,6 +210,7 @@ async function emitOrchestratedAudit(
           tenants_succeeded: summary.tenants_succeeded,
           tenants_failed: summary.tenants_failed,
           tenants_skipped_kill_switch: summary.tenants_skipped_kill_switch,
+          tenants_skipped_overlap: summary.tenants_skipped_overlap,
           duration_ms: summary.duration_ms,
           // bounded-cardinality summary — no PII in the per-tenant payload.
           per_tenant_summaries: perTenantResults.map((r) =>
@@ -351,6 +358,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           tenants_succeeded: 0,
           tenants_failed: 0,
           tenants_skipped_kill_switch: 0,
+          tenants_skipped_overlap: 0,
           duration_ms: Date.now() - startedAt,
         };
         await emitOrchestratedAudit(
@@ -424,6 +432,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           return {
             tenant_id: tenantId,
             skipped: Boolean(r.value.json.skipped),
+            ...(typeof r.value.json.reason === 'string'
+              ? { skip_reason: r.value.json.reason }
+              : {}),
             reminders_dispatched:
               typeof r.value.json.reminders_dispatched === 'number'
                 ? r.value.json.reminders_dispatched
@@ -492,11 +503,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const tenantsSucceededOrSkipped = perTenantResults.filter(
         (r): r is PerTenantResultOk => !('error' in r),
       );
+      // #754 follow-up: an `overlap` skip (another run held the try-lock
+      // and did the work) is counted apart from a kill-switch skip; both
+      // stay out of `tenants_succeeded`.
+      const tenantsSkippedOverlap = tenantsSucceededOrSkipped.filter(
+        (r) => r.skipped && r.skip_reason === 'overlap',
+      ).length;
       const tenantsSkippedKillSwitch = tenantsSucceededOrSkipped.filter(
-        (r) => r.skipped,
+        (r) => r.skipped && r.skip_reason !== 'overlap',
       ).length;
       const tenantsSucceeded =
-        tenantsSucceededOrSkipped.length - tenantsSkippedKillSwitch;
+        tenantsSucceededOrSkipped.length -
+        tenantsSkippedKillSwitch -
+        tenantsSkippedOverlap;
       const tenantsFailed =
         perTenantResults.length - tenantsSucceededOrSkipped.length;
 
@@ -505,6 +524,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         tenants_succeeded: tenantsSucceeded,
         tenants_failed: tenantsFailed,
         tenants_skipped_kill_switch: tenantsSkippedKillSwitch,
+        tenants_skipped_overlap: tenantsSkippedOverlap,
         duration_ms: Date.now() - startedAt,
       };
 

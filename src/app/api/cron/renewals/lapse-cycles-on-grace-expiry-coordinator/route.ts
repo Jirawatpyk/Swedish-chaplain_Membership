@@ -39,6 +39,8 @@ export const dynamic = 'force-dynamic';
 interface PerTenantResult {
   readonly tenant_id: string;
   readonly skipped?: boolean;
+  /** The per-tenant route's `reason` when `skipped` (e.g. `overlap`). */
+  readonly skip_reason?: string;
   readonly cycles_processed?: number;
   readonly grace_expired?: number;
   readonly payment_failed?: number;
@@ -125,6 +127,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             cron_kind: 'lapse',
             ...summary,
             tenants_skipped_kill_switch: 0,
+            tenants_skipped_overlap: 0,
             per_tenant_summaries: [],
           },
         },
@@ -189,6 +192,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return {
           tenant_id: tenantId,
           skipped: Boolean(json.skipped),
+          ...(typeof json.reason === 'string' ? { skip_reason: json.reason } : {}),
           cycles_processed: numFromJson(json, 'cycles_processed'),
           grace_expired: numFromJson(json, 'grace_expired'),
           payment_failed: numFromJson(json, 'payment_failed'),
@@ -235,10 +239,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return r.value;
   });
 
+  // #754 follow-up: a skipped tenant is not a succeeded one. An
+  // `overlap` skip (another run held the per-tenant try-lock and did the
+  // work) is counted on its own; this coordinator checks the kill-switch
+  // itself before fanning out, so `tenants_skipped_kill_switch` stays 0.
   const tenantsSucceeded = perTenantResults.filter(
-    (r) => r.error === undefined,
+    (r) => r.error === undefined && r.skipped !== true,
   ).length;
-  const tenantsFailed = perTenantResults.length - tenantsSucceeded;
+  const tenantsSkippedOverlap = perTenantResults.filter(
+    (r) =>
+      r.error === undefined && r.skipped === true && r.skip_reason === 'overlap',
+  ).length;
+  const tenantsFailed = perTenantResults.filter(
+    (r) => r.error !== undefined,
+  ).length;
   // Round 5 staff-review (K24-Errors-S1): surface tenants that
   // returned 200-OK but had per-cycle errors. Without this, a tenant
   // whose F5 bridge consistently throws (DB blip, RLS misconfig)
@@ -265,6 +279,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     tenants_succeeded: tenantsSucceeded,
     tenants_failed: tenantsFailed,
     tenants_skipped_kill_switch: 0,
+    tenants_skipped_overlap: tenantsSkippedOverlap,
     duration_ms: Date.now() - startedAt,
   };
 

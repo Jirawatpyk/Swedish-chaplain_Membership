@@ -17,21 +17,27 @@
  * released at tx end + DISJOINT from `renewals:lapse:`/`dispatch:`/
  * `at-risk:`/`tierupgrade:` (and the cross-feature `invoicing:`/
  * `payments:`/`broadcasts:` namespaces), so the cron passes can run
- * concurrently on the same tenant. Concurrent cron-job.org retries
- * serialise so the "list eligible cycles" query is not double-issued.
+ * concurrently on the same tenant. The lock is a NON-blocking try-lock
+ * (#754 follow-up): an overlapping retry answers 200 `{ skipped: true,
+ * reason: 'overlap' }` at once, so the "list eligible cycles" query is
+ * not double-issued and the retry does not wait out the 30 s statement
+ * bound.
  *
  * MVP single-tenant guard: only `env.tenant.slug` accepted. Any other
  * slug → 400 `unknown_tenant`. Mirrors dispatch + lapse + at-risk
  * per-tenant convention.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsMetrics } from '@/lib/metrics';
+import {
+  renewalsCronOverlapBody,
+  tryRenewalsCronLock,
+} from '@/lib/renewals-cron-lock';
 import { asTenantContext } from '@/modules/tenants';
 import {
   enterAwaitingPaymentOnExpiry,
@@ -93,10 +99,17 @@ export async function POST(
       // `renewals:at-risk:` + `renewals:tierupgrade:` so the cron
       // passes can run concurrently on the same tenant. Cross-feature
       // namespaces stay disjoint: F4 `invoicing:`, F5 `payments:`, F7
-      // `broadcasts:`. Auto-released at tx-end.
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:enter-awaiting:'||${tenantId}, 0))`,
-      );
+      // `broadcasts:`. Auto-released at tx-end. Try-lock (#754
+      // follow-up): an overlapping run skips at once.
+      if (
+        !(await tryRenewalsCronLock(tx, 'renewals:enter-awaiting:', tenantId))
+      ) {
+        logger.info(
+          { tenantId, correlationId },
+          'cron.renewals.enter-awaiting.per-tenant.overlap_skipped',
+        );
+        return NextResponse.json(renewalsCronOverlapBody(tenantId));
+      }
 
       const deps = makeRenewalsDeps(tenantId);
       const result = await enterAwaitingPaymentOnExpiry(deps, {
