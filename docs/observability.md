@@ -126,7 +126,7 @@ Review round 4 put every code-like value on one shape, `CODE_SHAPE` in
   message, so no message line is kept.
 Any other field of a plain object is dropped. A string value is kept. Any
 other key, and error TEXT in string form under any key, is not
-reduced: that is the gate's job below, and #740 for the modules outside it. A
+reduced: that is the gate's job below. A
 line carries:
 - `err: errKind(e)`: the error class. For a RepoError, `errKind(rootCause(x.error))`
   plus `repoCode: x.error.code`. `...errLogFields(failure)` (`src/lib/log-id.ts`)
@@ -146,8 +146,8 @@ line carries:
 - A user id as `hashId(id)` (`actorUserIdHash`, `userIdHash`).
 
 `pnpm check:log-error-objects` (in `pnpm check` and CI's static job) parses
-`src/modules/{members,broadcasts,invoicing,payments,events,renewals}/**` (the
-last four since #740 B1; `src/app` and `src/lib` follow in B2) with the TypeScript compiler API (a
+`src/modules/{members,broadcasts,invoicing,payments,events,renewals}/**`,
+`src/app/**` and `src/lib/**` (all server code since #740 B1 and B2) with the TypeScript compiler API (a
 `.tsx` file as TSX) and refuses these forms inside `logger.<level>(…)` and
 `logger.child(…)` arguments. Since review round 1: on an error-ish base (a
 caught or error-named identifier, or a chain through `.error` / `.cause`) only
@@ -155,15 +155,22 @@ caught or error-named identifier, or a chain through `.error` / `.cause`) only
 its text (`e.toString()`, `e.message.slice()`), and a call whose literal
 argument holds an error (`JSON.stringify({ e })`) are refused; the safe
 callees are an explicit set, not a name pattern; and the run fails if it
-parsed fewer than `MIN_LOGGER_CALLS` (700 since #740 B1) logger calls. Since review round 2
+parsed fewer than `MIN_LOGGER_CALLS` (1600 since #740 B2) logger calls. Since review round 2
 it follows one hop through a local: `const { x } = e` / `const x = e.y` make
 `x` error-ish unless `y` is `code` / `kind` / `name`, or the local is
 annotated with a type in the rule's reviewed `TOKEN_FIELDS_BY_TYPE`
 (`const x: T['f'] = e.f`). Its positive control is
 `scripts/__fixtures__/log-error-objects.fixture.txt`. It is a tripwire, not
 proof: a value laundered through a call into a local, or through two locals,
-passes it. The other modules and
-`src/app` are a follow-up (#740).
+passes it. Since #740 B2 it walks the arms of a conditional or `??` / `||` /
+`&&` that hold object literals (`err: ok ? { message: e.message } : …`), and
+it reads log wrappers: a function whose own parameter reaches a log line (as
+the value or a spread) must be listed in the rule's `LOG_WRAPPERS` with that
+argument's index, and every call to a listed name has those arguments checked
+like a logger call's. An unlisted wrapper fails the gate, and so does a listed
+one that no longer reaches a log line. A LoggerPort adapter's level method
+(`warn(message, meta)`) is not a wrapper: its callers write
+`deps.logger.<level>(…)`, which the gate reads already.
 
 ---
 
