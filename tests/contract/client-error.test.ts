@@ -203,4 +203,23 @@ describe('POST /api/internal/client-error', () => {
     });
     expect(message).toContain('client-error');
   });
+  it('#740 B2 review: client free text in tag / code / path never reaches the log', async () => {
+    getCurrentSessionMock.mockResolvedValueOnce(signedInSession);
+    rateLimiterCheckMock.mockResolvedValueOnce({ success: true, remaining: 29, reset: Date.now() + 60_000 });
+    const { POST } = await import('@/app/api/internal/client-error/route');
+    const response = await POST(
+      makeRequest(
+        JSON.stringify({
+          tag: 'send to a@b.example',
+          code: 'Failed for a@b.example',
+          path: '/portal/invoices/abc?email=a@b.example#x',
+          message: 'card for a@b.example declined',
+        }),
+      ),
+    );
+    expect(response.status).toBe(204);
+    const [payload] = loggerWarnMock.mock.calls[0]!;
+    expect(payload).toMatchObject({ tag: 'invalid', code: 'invalid', path: '/portal/invoices/abc' });
+    expect(JSON.stringify(payload)).not.toContain('@');
+  });
 });
