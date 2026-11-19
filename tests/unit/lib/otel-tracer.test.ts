@@ -111,18 +111,21 @@ describe('withActiveSpan (R7 LOW-A)', () => {
     expect(t.fakeSpan.endCallCount).toBe(1);
   });
 
-  it('propagates exceptions, calls span.end(), records exception + sets ERROR status', async () => {
+  it('#739: propagates exceptions, calls span.end(), sets ERROR with the class, never the text', async () => {
     const t = makeFakeTracer();
-    const err = new Error('boom');
+    class DrizzleQueryError extends Error {}
+    const err = new DrizzleQueryError('Failed query … a@b.example');
     await expect(
       withActiveSpan(t.tracer, 'test', {}, async () => {
         throw err;
       }),
-    ).rejects.toThrow('boom');
+    ).rejects.toThrow(err);
     expect(t.fakeSpan.endCallCount).toBe(1);
-    expect(t.fakeSpan.recordedExceptions).toContain(err);
+    // recordException exports the message and the stack.
+    expect(t.fakeSpan.recordedExceptions).toHaveLength(0);
     expect(t.fakeSpan.status?.code).toBe(SpanStatusCode.ERROR);
-    expect(t.fakeSpan.status?.message).toBe('boom');
+    expect(t.fakeSpan.status?.message).toBe('DrizzleQueryError');
+    expect(t.fakeSpan.span.setAttribute).toHaveBeenCalledWith('error.type', 'DrizzleQueryError');
   });
 
   it('handles non-Error throws (string/object) without recordException', async () => {
@@ -135,7 +138,7 @@ describe('withActiveSpan (R7 LOW-A)', () => {
     expect(t.fakeSpan.endCallCount).toBe(1);
     expect(t.fakeSpan.recordedExceptions).toHaveLength(0);
     expect(t.fakeSpan.status?.code).toBe(SpanStatusCode.ERROR);
-    expect(t.fakeSpan.status?.message).toBe('string-throw');
+    expect(t.fakeSpan.status?.message).toBe('unknown');
   });
 });
 
@@ -155,5 +158,7 @@ describe('withSpan (regression guard — R7 confirms unchanged)', () => {
       }),
     ).rejects.toThrow('x');
     expect(t.fakeSpan.endCallCount).toBe(1);
+    expect(t.fakeSpan.status?.message).toBe('Error');
+    expect(t.fakeSpan.recordedExceptions).toHaveLength(0);
   });
 });
