@@ -17,6 +17,15 @@ describe('checkFanOutOrigin', () => {
     ).toBe(true);
   });
 
+  it('still checks a loopback server whose env says production (an .env.local pulled from prod)', () => {
+    expect(
+      checkFanOutOrigin({ baseUrl: 'https://swecham.example', requestUrl: REQ, vercelEnv: 'production' }).ok,
+    ).toBe(false);
+    expect(
+      checkFanOutOrigin({ baseUrl: 'https://swecham.example', requestUrl: 'http://127.0.0.1:3400/a', vercelEnv: 'production' }).ok,
+    ).toBe(false);
+  });
+
   it('allows the same origin outside production', () => {
     expect(checkFanOutOrigin({ baseUrl: 'http://localhost:3400', requestUrl: REQ, vercelEnv: undefined }).ok).toBe(true);
     expect(checkFanOutOrigin({ baseUrl: 'http://localhost:3400/', requestUrl: REQ, vercelEnv: 'preview' }).ok).toBe(true);

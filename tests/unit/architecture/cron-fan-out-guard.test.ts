@@ -57,4 +57,18 @@ describe('cron fan-out origin guard coverage (#97)', () => {
       .map(({ p }) => p.slice(ROOT.length + 1));
     expect(missing).toEqual([]);
   });
+
+  // Review M1: a fan-out spelled any other way (another variable name,
+  // `new URL(path, env.app.baseUrl)`) still reads APP_BASE_URL and fetches,
+  // so any cron route doing both must call the guard before its first fetch.
+  it('every cron route that reads APP_BASE_URL and fetches calls the guard first', () => {
+    const missing = files
+      .filter(({ src }) => /env\.app\.baseUrl|APP_BASE_URL/.test(src) && src.includes('fetch('))
+      .filter(({ src }) => {
+        const guard = src.indexOf('refuseCrossOriginFanOut(');
+        return guard === -1 || guard > src.indexOf('fetch(');
+      })
+      .map(({ p }) => p.slice(ROOT.length + 1));
+    expect(missing).toEqual([]);
+  });
 });
