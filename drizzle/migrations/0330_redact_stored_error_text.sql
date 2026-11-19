@@ -22,12 +22,12 @@
 -- statements do not set updated_at, so no timer restarts. Rollback: none needed — the
 -- text is gone by design.
 
--- invoices: keep `step:Class`, `annotation_step:Class` and plain tokens
+-- invoices: keep `step:Class[:code]`, `annotation_step:Class[:code]` and plain tokens
 -- (`receipt_doc_num_missing`); everything else becomes `legacy_redacted`.
 UPDATE "invoices"
    SET "receipt_pdf_last_error" = 'legacy_redacted'
  WHERE "receipt_pdf_last_error" IS NOT NULL
-   AND "receipt_pdf_last_error" !~ '^[a-z][a-z0-9_]*(:[A-Za-z][A-Za-z0-9_]*)?$';
+   AND "receipt_pdf_last_error" !~ '^[a-z][a-z0-9_]*(:[A-Za-z][A-Za-z0-9_]*(:[A-Za-z0-9_.-]+)?)?$';
 
 -- notifications_outbox: keep code-authored values — a token, `prefix:token`, optionally
 -- followed by ` — <code-authored detail>` (`receipt_pdf_gate_skip:invoice_void — …`, which

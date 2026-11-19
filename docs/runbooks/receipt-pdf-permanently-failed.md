@@ -67,9 +67,12 @@ in the webhook tx). It is a **document delivery** issue.
    network), or a plain code: `receipt_doc_num_missing` /
    `receipt_doc_num_parse_failed` (data corruption, never retried).
    `legacy_redacted` is a value written before 0330, whose text was scrubbed.
-   For the detail behind a code, find the WARN line
-   `invoicing.pdf.render_and_upload_failed` for that time: it carries `step`,
-   the class and any SQLSTATE or `code` (`errLogFields`). The admin download
+   A token-shaped SQLSTATE or errno rides on the code
+   (`upload:TypeError:ECONNRESET`). The WARN line
+   `invoicing.pdf.render_and_upload_failed` carries the same plus `blobKey`
+   (`…/<invoiceId>_receipt_v<n>.pdf`): search the logs by the invoice id.
+   For `receipt_doc_num_parse_failed`, read `receipt_document_number_raw` on
+   the row. The admin download
    toast shows fixed copy per step, never the code.
 
 3. **Check the dispatcher logs.**

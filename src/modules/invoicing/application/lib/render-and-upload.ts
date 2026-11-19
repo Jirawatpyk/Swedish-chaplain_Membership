@@ -25,14 +25,15 @@
  * substituted 1:1 for two adjacent try/catch blocks, so code reviewers
  * can map call-site letters (G/H/J2) to the same functional boundary.
  *
- * The `reason` is a closed code, `<step>:<ErrClass>` (`render:TypeError`,
+ * The `reason` is a closed code, `<step>:<ErrClass>[:<code>]` (`render:TypeError`,
+ * `upload:TypeError:ECONNRESET`,
  * `upload:BlobError`; `annotation_render:Error` with the J2 re-annotation
  * `reasonPrefix`), never the thrown text (#739): it is stored in
  * `invoices.receipt_pdf_last_error` and `notifications_outbox.last_error`
  * and audited, and a drizzle error's message quotes bound parameters. The
  * failure's class, SQLSTATE and code go to one WARN line here instead.
  */
-import { errKind, errLogFields } from '@/lib/log-id';
+import { errLogFields } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 
 import type { BlobStoragePort } from '../ports/blob-storage-port';
@@ -79,11 +80,17 @@ export async function renderAndUploadPdf(
   wrap: (kind: RenderAndUploadFailureKind, reason: string) => Error,
 ): Promise<PdfRenderResult & { readonly etag?: string }> {
   const reasonFor = (step: 'render' | 'upload', e: unknown): string => {
+    const fields = errLogFields(e);
+    // The blob key names the tenant, fiscal year and invoice (no PII), so
+    // the line joins back to the row whose column holds the code.
     logger.warn(
-      { step: input.reasonPrefix ? `${input.reasonPrefix}_${step}` : step, ...errLogFields(e) },
+      { step: input.reasonPrefix ? `${input.reasonPrefix}_${step}` : step, blobKey: input.blobKey, ...fields },
       'invoicing.pdf.render_and_upload_failed',
     );
-    return `${input.reasonPrefix ? `${input.reasonPrefix}_` : ''}${step}:${errKind(e)}`;
+    // A token-shaped SQLSTATE or errno rides on the code, so the 10-year
+    // audit row keeps the cause after the log is gone.
+    const code = fields.code ?? fields.errCode;
+    return `${input.reasonPrefix ? `${input.reasonPrefix}_` : ''}${step}:${fields.err}${code !== undefined ? `:${code}` : ''}`;
   };
 
   let rendered: PdfRenderResult;
