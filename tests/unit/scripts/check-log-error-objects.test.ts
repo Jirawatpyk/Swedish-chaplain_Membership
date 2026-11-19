@@ -205,3 +205,27 @@ describe('findLogErrorObjects', () => {
     for (const line of allowed) expect(found.has(line), `allowed line ${line}`).toBe(false);
   });
 });
+
+describe('#739 B3a — findCaughtErrorLiterals', () => {
+  const scan = (src: string) => rules.findCaughtErrorLiterals('x.ts', src).map((f) => f.message);
+
+  it('refuses caught text in a Result, a body or a span status', () => {
+    expect(scan("try {} catch (e) { return err({ message: (e as Error).message }); }")).toHaveLength(1);
+    expect(scan("try {} catch (e) { NextResponse.json({ error: String(e) }); }")).toHaveLength(1);
+    expect(scan("try {} catch (e) { span.setStatus({ code: 2, message: `${e}` }); }")).toHaveLength(1);
+  });
+
+  it('follows a local holding the text, one hop', () => {
+    expect(scan("try {} catch (e) { const m = e instanceof Error ? e.message : ''; return { reason: m }; }")).toHaveLength(1);
+  });
+
+  it('allows the class, a Result error field, error chaining and a log line', () => {
+    expect(scan("try {} catch (e) { return err({ errClass: errKind(e), cause: e }); }")).toEqual([]);
+    expect(scan("try {} catch (e) { return err({ message: result.error.message }); }")).toEqual([]);
+    expect(scan("try {} catch (e) { logger.error({ err: errKind(e) }, 'x'); }")).toEqual([]);
+  });
+
+  it('ignores a value outside a catch', () => {
+    expect(scan("const e = new Error('x'); err({ message: e.message });")).toEqual([]);
+  });
+});
