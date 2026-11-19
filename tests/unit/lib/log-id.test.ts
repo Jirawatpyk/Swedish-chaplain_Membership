@@ -146,3 +146,29 @@ describe('errLogFields() — errCode from the cause chain (review round 4)', () 
     });
   });
 });
+
+describe('errLogFields() — a Result error keyed on kind or type (#740 B1 review)', () => {
+  it('a { kind, message } error gives its kind as resultKind, never the message', () => {
+    const fields = errLogFields({ kind: 'server_error', message: 'insert failed for a@x.io' });
+    expect(fields).toEqual({ err: 'unknown', resultKind: 'server_error' });
+    expect(JSON.stringify(fields)).not.toContain('a@x.io');
+  });
+
+  it('a { type, issues } error gives its type as resultKind', () => {
+    expect(errLogFields({ type: 'invalid_payload', issues: [{ message: 'x' }] })).toEqual({
+      err: 'unknown',
+      resultKind: 'invalid_payload',
+    });
+  });
+
+  it('a kind that is not token-shaped is unrecognised', () => {
+    expect(errLogFields({ kind: 'Failed for a@x.io' })).toEqual({ err: 'unknown', resultKind: 'unrecognised' });
+  });
+
+  it('a { code } error keeps repoCode and adds no resultKind', () => {
+    expect(errLogFields({ code: 'repo.unexpected', kind: 'server_error' })).toEqual({
+      err: 'unknown',
+      repoCode: 'repo.unexpected',
+    });
+  });
+});
