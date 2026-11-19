@@ -1564,7 +1564,7 @@ async function processOneRowInSavepoint(
     // class chain, SQLSTATE and errno. The driver's text quotes bound
     // parameters (emails, names).
     const reason = CSV_ROW_DB_ERROR;
-    const failureStage: FailureStage =
+    const failureStage: TxStageError['stage'] | 'unknown' =
       e instanceof TxStageError ? e.stage : 'unknown';
     logger.warn(
       {
