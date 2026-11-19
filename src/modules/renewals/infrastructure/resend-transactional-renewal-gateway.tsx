@@ -219,9 +219,10 @@ function mapResendError(
   // BEFORE it propagates to `SendRenewalEmailError.message` →
   // `audit_log.payload.failure_message`. Account-scoped identifiers
   // would otherwise persist for 5 years.
-  const message = sanitizeResendErrorMessage(
-    resendError.message ?? 'unknown resend error',
-  );
+  // #739 — a closed code from Resend's error name; its message (which can
+  // quote the address or the sending domain) never reaches failure_reason
+  // or the audit row.
+  const message = `resend:${/^[a-z][a-z0-9_]{0,63}$/.test(name) ? name : 'unknown'}`;
   if (name.includes('validation') || name.includes('invalid_to_address')) {
     return { kind: 'gateway_4xx', retryable: false, message };
   }
@@ -362,9 +363,7 @@ async function sendViaResendWithRetry(args: {
       lastError = {
         kind: 'gateway_5xx',
         retryable: true,
-        message: sanitizeResendErrorMessage(
-          e instanceof Error ? e.message : 'unknown',
-        ),
+        message: `send:${errKind(e)}`,
       };
       logger.warn(
         {
@@ -461,9 +460,7 @@ async function sendDueTrackEmail(
     return err({
       kind: 'gateway_4xx',
       retryable: false,
-      message: sanitizeResendErrorMessage(
-        e instanceof Error ? e.message : 'render failed',
-      ),
+      message: `render:${errKind(e)}`,
     });
   }
 
@@ -621,9 +618,9 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
       return err({
         kind: 'gateway_4xx',
         retryable: false,
-        message: sanitizeResendErrorMessage(
-          e instanceof Error ? e.message : 'render failed',
-        ),
+        // #739 — a closed code; a render exception's text can carry member
+        // names, and the message lands in failure_reason and the audit row.
+        message: `render:${errKind(e)}`,
       });
     }
 
@@ -678,9 +675,9 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
       return err({
         kind: 'gateway_4xx',
         retryable: false,
-        message: sanitizeResendErrorMessage(
-          e instanceof Error ? e.message : 'render failed',
-        ),
+        // #739 — a closed code; a render exception's text can carry member
+        // names, and the message lands in failure_reason and the audit row.
+        message: `render:${errKind(e)}`,
       });
     }
 
@@ -716,9 +713,7 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
         lastError = {
           kind: 'gateway_5xx',
           retryable: true,
-          message: sanitizeResendErrorMessage(
-            e instanceof Error ? e.message : 'unknown',
-          ),
+          message: `send:${errKind(e)}`,
         };
         logger.warn(
           {

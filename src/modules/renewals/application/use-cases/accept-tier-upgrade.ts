@@ -71,7 +71,6 @@ import { sha256HexOf } from '../../domain/value-objects/sha256-hex';
 // prefix / email address leakage from raw `error.message` strings.
 // Imported from Domain (relocated in Round 6) so no
 // Application → Infrastructure boundary violation.
-import { sanitizeResendErrorMessage } from '../../domain/value-objects/sanitize-error-message';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import {
@@ -736,9 +735,11 @@ export async function acceptTierUpgrade(
       // R2-IMP-3: preserve actionable metadata for the
       // template_variables_missing variant (carries `missing[]` not
       // `message`). Fall back to comma-joined missing list.
+      // #739 — the gateway's kind, never its message; the missing-variable
+      // list is code-authored and kept.
       const failureMessage =
         'message' in gatewayResult.error
-          ? gatewayResult.error.message
+          ? gatewayResult.error.kind
           : 'missing' in gatewayResult.error
             ? `template_variables_missing: ${(gatewayResult.error as { missing: ReadonlyArray<string> }).missing.join(',')}`
             : null;
@@ -798,14 +799,9 @@ export async function acceptTierUpgrade(
               to_plan_id: suggestion.toPlanId as PlanId,
               recipient_email_hashed: null,
               failure_kind: 'unknown',
-              // Round 6 W-004 — sanitize Resend SDK exception messages
-              // (may contain API key prefix `re_…` or email addresses)
-              // before persisting in audit_log (5y retention).
-              failure_message: sanitizeResendErrorMessage(
-                gatewayResult.error instanceof Error
-                  ? gatewayResult.error.message
-                  : String(gatewayResult.error),
-              ).slice(0, 500),
+              // #739 — the class of the thrown value, never its text
+              // (audit_log, 5y retention).
+              failure_message: errKind(gatewayResult.error),
             },
           },
           auditCtx,

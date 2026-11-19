@@ -244,7 +244,8 @@ export async function handleDispatcherCrash(
   e: unknown,
   pass: 'main' | 'due-track',
 ): Promise<DispatchOneCycleOutcome> {
-  const errMsg = e instanceof Error ? e.message : String(e);
+  // #739 — the audit and the outcome carry the class, never the thrown text.
+  const errClass = errKind(e);
   const passLabel = pass === 'due-track' ? 'due-track ' : '';
   logger.error(
     {
@@ -264,7 +265,7 @@ export async function handleDispatcherCrash(
           cycle_id: candidate.cycle.cycleId,
           member_id: candidate.member.memberId,
           failure_kind: 'dispatcher_crash',
-          failure_message: errMsg.slice(0, 200),
+          failure_message: errClass,
           via_retry_pass: false,
         },
       },
@@ -290,7 +291,7 @@ export async function handleDispatcherCrash(
   return {
     kind: 'failed_transient' as const,
     reminderEventId: '',
-    reason: `dispatcher_crash: ${errMsg.slice(0, 200)}`,
+    reason: `dispatcher_crash:${errClass}`,
   };
 }
 
@@ -1178,10 +1179,10 @@ export async function defensivelyMarkFailedForRetry(
   origError: unknown,
 ): Promise<DispatchOneCycleOutcome> {
   const { cycle, member } = candidate;
-  const errMsg =
-    origError instanceof Error ? origError.message : String(origError);
-  const truncatedMsg = errMsg.slice(0, 400);
-  const failureReason = `dispatcher_crash: ${truncatedMsg}`;
+  // #739 — a closed code on the row and the class in the audit, never the
+  // thrown text (a drizzle error's message quotes bound parameters).
+  const errClass = errKind(origError);
+  const failureReason = `dispatcher_crash:${errClass}`;
   const retryUntilIso = new Date(
     new Date(ctx.nowIso).getTime() + RETRY_BUDGET_HOURS * 60 * 60 * 1000,
   ).toISOString();
@@ -1222,7 +1223,7 @@ export async function defensivelyMarkFailedForRetry(
               template_id:
                 dueStep.channel === 'email' ? dueStep.templateId : null,
               failure_kind: 'dispatcher_crash',
-              failure_message: truncatedMsg,
+              failure_message: errClass,
             },
           },
           {
