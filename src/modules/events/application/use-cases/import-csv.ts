@@ -1856,7 +1856,8 @@ async function safeEmitRowFailed(
         {
           actorUserId: input.actorUserId,
           rowNumber,
-          reason: reason.slice(0, 500),
+          // No `reason`: it can hold a driver message with bound
+          // parameters (#740); the audit payload keeps it.
           auditErrKind: result.error.kind,
         },
       );
@@ -1870,7 +1871,6 @@ async function safeEmitRowFailed(
       {
         actorUserId: input.actorUserId,
         rowNumber,
-        reason: reason.slice(0, 500),
         ...errLogFields(e),
       },
     );

@@ -135,6 +135,16 @@ function isWebhookReadLagError(e: unknown): boolean {
   return err_.code === 'resource_missing' || err_.statusCode === 404;
 }
 
+/** The fields `mapStripeError` reads off a Stripe SDK error. */
+interface StripeErrorShape {
+  readonly type?: string;
+  readonly code?: string;
+  readonly message?: string;
+  readonly statusCode?: number;
+  readonly param?: string;
+  readonly raw?: { readonly param?: string };
+}
+
 /**
  * Map a Stripe SDK error to the port's `ProcessorGatewayError` union.
  *
@@ -158,16 +168,6 @@ function isWebhookReadLagError(e: unknown): boolean {
  * the SDK + HTTP transport. Production callers MUST go through the
  * gateway methods — no other module imports this symbol.
  */
-/** The fields `mapStripeError` reads off a Stripe SDK error. */
-interface StripeErrorShape {
-  readonly type?: string;
-  readonly code?: string;
-  readonly message?: string;
-  readonly statusCode?: number;
-  readonly param?: string;
-  readonly raw?: { readonly param?: string };
-}
-
 export function mapStripeError(
   e: unknown,
   context: { stripeAccount: string; paymentIntentId?: string | undefined },
