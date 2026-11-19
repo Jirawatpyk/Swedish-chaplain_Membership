@@ -174,7 +174,7 @@ describe('Phase B B11 — POST /api/internal/retention/pseudonymise-eventcreate'
     // SRE alerting fires via the OTel error counter, not HTTP status.
     pseudonymiseStaleNonMemberPiiMock.mockResolvedValue({
       ok: false,
-      error: { kind: 'db_error', message: 'simulated failure' },
+      error: { kind: 'db_error', message: 'simulated failure for a@b.example' },
     });
     const { POST } = await loadRoute();
     const res = await POST(makeRequest());
@@ -184,6 +184,9 @@ describe('Phase B B11 — POST /api/internal/retention/pseudonymise-eventcreate'
     const perTenant = body['perTenant'] as ReadonlyArray<Record<string, unknown>>;
     expect(perTenant.length).toBeGreaterThan(0);
     expect(perTenant[0]?.['outcome']).toBe('error');
-    expect(perTenant[0]?.['message']).toContain('simulated failure');
+    // #739 — the body names the closed kind, never the error text.
+    expect(perTenant[0]?.['errClass']).toBe('db_error');
+    expect(perTenant[0]).not.toHaveProperty('message');
+    expect(JSON.stringify(body)).not.toContain('a@b.example');
   });
 });
