@@ -139,6 +139,8 @@ export const LOG_WRAPPERS: Readonly<Record<string, readonly number[]>> = {
 };
 
 const LEVELS = new Set(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'child']);
+/** #739 B3b — `console.<method>` calls a server file makes land in the function log like a logger call. */
+const CONSOLE_LEVELS = new Set(['log', 'info', 'warn', 'error', 'debug', 'trace']);
 
 /** Identifiers that conventionally hold a caught error. */
 const ERROR_NAMES = new Set(['e', 'err', 'error', 'ex', 'cause']);
@@ -199,8 +201,31 @@ function isLoggerTarget(target: ts.Expression, aliases: ReadonlySet<string>): bo
 
 function isLoggerCall(node: ts.CallExpression, aliases: ReadonlySet<string> = new Set()): boolean {
   const callee = node.expression;
-  if (!ts.isPropertyAccessExpression(callee) || !LEVELS.has(callee.name.text)) return false;
+  // #739 B3b — `logger[level](…)`: a computed level is still a logger call.
+  if (ts.isElementAccessExpression(callee)) return isLoggerTarget(callee.expression, aliases);
+  if (!ts.isPropertyAccessExpression(callee)) return false;
+  // #739 B3b — a server file's `console.warn(…)` reaches the same log stream.
+  if (ts.isIdentifier(callee.expression) && callee.expression.text === 'console') {
+    return aliases.has(SERVER_CONSOLE) && CONSOLE_LEVELS.has(callee.name.text);
+  }
+  if (!LEVELS.has(callee.name.text)) return false;
   return isLoggerTarget(callee.expression, aliases);
+}
+
+/**
+ * #739 B3b — a marker in the alias set: the file is server code (no leading
+ * `'use client'` directive), so its `console.*` calls are logger calls. A
+ * client component's console stays in the browser. Read from the parsed
+ * directive, so a BOM, CRLF or a leading comment cannot hide it.
+ */
+const SERVER_CONSOLE = '\u0000server-console';
+
+function isClientFile(sf: ts.SourceFile): boolean {
+  for (const stmt of sf.statements) {
+    if (!ts.isExpressionStatement(stmt) || !ts.isStringLiteral(stmt.expression)) return false;
+    if (stmt.expression.text === 'use client') return true;
+  }
+  return false;
 }
 
 /**
@@ -226,6 +251,7 @@ function loggerAliases(sf: ts.SourceFile): ReadonlySet<string> {
     ts.forEachChild(node, visit);
   };
   visit(sf);
+  if (!isClientFile(sf)) names.add(SERVER_CONSOLE);
   return names;
 }
 
@@ -255,10 +281,59 @@ function calleeName(call: ts.CallExpression): string | null {
   return null;
 }
 
-/** Names bound by every enclosing `catch (x)` clause and `.catch((x) => …)` callback. */
+/**
+ * #739 B3b — the `Promise.allSettled` result bindings of a file: `const s =
+ * await Promise.allSettled(…)`. Their elements' `.reason` is a rejection
+ * value, an error like a catch binding's.
+ */
+const settledBindingsCache = new WeakMap<ts.SourceFile, ReadonlySet<string>>();
+function settledBindings(sf: ts.SourceFile): ReadonlySet<string> {
+  const cached = settledBindingsCache.get(sf);
+  if (cached !== undefined) return cached;
+  const names = new Set<string>();
+  const visit = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer !== undefined) {
+      const init = unwrap(n.initializer);
+      if (ts.isCallExpression(init) && calleeName(init) === 'Promise.allSettled') names.add(n.name.text);
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  settledBindingsCache.set(sf, names);
+  return names;
+}
+
+/** The callback of `s.map(…)` / `.forEach(…)` / … over an allSettled result, whose first parameter is one settled element. */
+const SETTLED_ITERATORS = new Set(['map', 'forEach', 'flatMap', 'filter', 'find', 'some', 'every']);
+function settledElementName(fn: ts.Node): string | null {
+  if (!(ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) return null;
+  const call = fn.parent;
+  if (!ts.isCallExpression(call) || !call.arguments.includes(fn)) return null;
+  const callee = unwrap(call.expression);
+  if (!ts.isPropertyAccessExpression(callee) || !SETTLED_ITERATORS.has(callee.name.text)) return null;
+  const receiver = unwrap(callee.expression);
+  if (!ts.isIdentifier(receiver) || !settledBindings(fn.getSourceFile()).has(receiver.text)) return null;
+  const p = fn.parameters[0];
+  return p !== undefined && ts.isIdentifier(p.name) ? p.name.text : null;
+}
+
+/** True for a catch block, a `.catch(…)` callback, or an allSettled element callback: where a caught value is in scope. */
+function catchScopeBody(cur: ts.Node): ts.Node | null {
+  if (ts.isCatchClause(cur)) return cur.block;
+  if (settledElementName(cur) !== null) return (cur as ts.ArrowFunction | ts.FunctionExpression).body;
+  return null;
+}
+
+/**
+ * Names bound by every enclosing `catch (x)` clause and `.catch((x) => …)`
+ * callback, plus `r.reason` for the element `r` of an enclosing allSettled
+ * callback (#739 B3b; matched by its text, see {@link exprKey}).
+ */
 function caughtNames(node: ts.Node): ReadonlySet<string> {
   const names = new Set<string>();
   for (let cur: ts.Node | undefined = node; cur !== undefined; cur = cur.parent) {
+    const settled = settledElementName(cur);
+    if (settled !== null) names.add(`${settled}.reason`);
     if (ts.isCatchClause(cur) && cur.variableDeclaration && ts.isIdentifier(cur.variableDeclaration.name)) {
       names.add(cur.variableDeclaration.name.text);
     }
@@ -757,9 +832,18 @@ function isErrorIdentifier(name: string, scope: Scope): boolean {
 /** What an expression yields: an error object, error text, a token read off an error, or none of these. */
 type Shape = 'error' | 'text' | 'token' | null;
 
+/** `r.reason` as a name: a property access on an identifier, by text. */
+function exprKey(node: ts.Expression): string | null {
+  return ts.isPropertyAccessExpression(node) && ts.isIdentifier(unwrap(node.expression))
+    ? `${(unwrap(node.expression) as ts.Identifier).text}.${node.name.text}`
+    : null;
+}
+
 function shapeOf(expr: ts.Expression, scope: Scope): Shape {
   const node = unwrap(expr);
   if (ts.isIdentifier(node)) return isErrorIdentifier(node.text, scope) ? 'error' : null;
+  const key = exprKey(node);
+  if (key !== null && scope.errors.has(key)) return 'error';
   if (ts.isPropertyAccessExpression(node)) {
     const field = node.name.text;
     const base = shapeOf(node.expression, scope);
@@ -790,6 +874,9 @@ function refusal(sf: ts.SourceFile, expr: ts.Expression, scope: Scope): string |
   if (ts.isIdentifier(node)) {
     return isErrorIdentifier(node.text, scope) ? `the error object \`${node.text}\`` : null;
   }
+
+  const settledKey = exprKey(node);
+  if (settledKey !== null && scope.errors.has(settledKey)) return `the rejection value \`${settledKey}\``;
 
   if (ts.isPropertyAccessExpression(node)) {
     const field = node.name.text;
@@ -1109,6 +1196,8 @@ export function findLogErrorObjects(fileName: string, source: string): LogErrorF
 function caughtTextRefusal(expr: ts.Expression, names: ReadonlySet<string>): string | null {
   const node = unwrap(expr);
   if (ts.isIdentifier(node)) return names.has(node.text) ? `the caught value \`${node.text}\`` : null;
+  const key = exprKey(node);
+  if (key !== null && names.has(key)) return `the caught value \`${key}\``;
   if (ts.isPropertyAccessExpression(node)) {
     const base = unwrap(node.expression);
     if (ts.isIdentifier(base) && names.has(base.text)) {
@@ -1173,9 +1262,10 @@ function caughtTextNames(node: ts.Node, caught: ReadonlySet<string>, objects?: S
     if (why.startsWith('the caught value')) objects?.add(name);
     else objects?.delete(name);
   };
-  const blocks: ts.Block[] = [];
+  const blocks: ts.Node[] = [];
   for (let cur: ts.Node | undefined = node.parent; cur !== undefined; cur = cur.parent) {
-    if (ts.isCatchClause(cur)) blocks.push(cur.block);
+    const body = catchScopeBody(cur);
+    if (body !== null) blocks.push(body);
   }
   for (let pass = 0; pass < 2; pass += 1) {
     for (const block of blocks) {

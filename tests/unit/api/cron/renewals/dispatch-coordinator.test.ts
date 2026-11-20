@@ -296,8 +296,23 @@ describe('cron dispatch-coordinator route (T103)', () => {
     const body = await res.json();
     expect(body.tenants_succeeded).toBe(0);
     expect(body.tenants_failed).toBe(1);
-    expect(body.per_tenant_results[0].error).toContain('connection refused');
+    expect(body.per_tenant_results[0].error).toBe('fetch_rejected');
     expect(auditEmitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('#739 B3b: a rejected tenant fetch reports `fetch_rejected`, never the rejection text, in the body and the audit', async () => {
+    fetchMock.mockRejectedValue(new Error('connect failed for member a@b.example'));
+    const res = await POST(makeRequest(VALID_AUTH));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tenants_failed).toBe(1);
+    expect(body.per_tenant_results[0].error).toBe('fetch_rejected');
+    expect(JSON.stringify(body)).not.toContain('a@b.example');
+    const orchestrated = auditEmitMock.mock.calls
+      .map((c) => c[0])
+      .find((ev) => ev.type === 'cron_dispatch_orchestrated');
+    expect(orchestrated).toBeDefined();
+    expect(JSON.stringify(orchestrated!.payload)).not.toContain('a@b.example');
   });
 
   it('per-tenant fetch returns non-2xx: counted as failed (http_500)', async () => {

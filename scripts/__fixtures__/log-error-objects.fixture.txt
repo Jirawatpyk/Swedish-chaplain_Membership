@@ -286,3 +286,33 @@ try {
 // A zod error's issue count is a number, not error text.
 declare const zodParsed: { success: false; error: { issues: unknown[] } };
 logger.warn({ issueCount: zodParsed.error.issues.length }, 'x'); // allowed
+// #739 B3b — a computed level is still a logger call.
+declare const lvl: 'warn' | 'info';
+try {
+  void 0;
+} catch (e) {
+  logger[lvl]({ err: (e as Error).message }, 'x'); // refused
+  logger[lvl]({ err: errKind(e) }, 'x'); // allowed
+}
+// #739 B3b — a server file's console call reaches the function log.
+try {
+  void 0;
+} catch (e) {
+  console.warn('x', { err: (e as Error).message }); // refused
+  console.error('x', e); // refused
+  console.warn('x', { err: errKind(e) }); // allowed
+}
+// #739 B3b — an allSettled rejection value is an error like a catch binding.
+declare function errLogFields(e: unknown): Record<string, string>;
+async function settledFixture(): Promise<void> {
+  const settled = await Promise.allSettled([Promise.resolve(1)]);
+  settled.map((r) => {
+    if (r.status === 'rejected') {
+      const reasonStr = String(r.reason);
+      logger.error({ reason: reasonStr.slice(0, 400) }, 'x'); // refused
+      logger.error({ reason: String(r.reason) }, 'x'); // refused
+      logger.error({ ...errLogFields(r.reason) }, 'x'); // allowed
+    }
+    return null;
+  });
+}

@@ -49,6 +49,11 @@ const ROOTS = [
   'src/app',
   'src/lib',
 ] as const;
+/**
+ * #739 B3b — the files directly under `src/` (`src/proxy.ts`): no directory
+ * root holds them, so the proxy's log lines went unread. No per-root floor.
+ */
+const TOP_LEVEL_DIR = 'src';
 const FIXTURE = 'scripts/__fixtures__/log-error-objects.fixture.txt';
 /** #739 B3a — the positive control and the shrink-only baseline of the caught-literal rule. */
 const CAUGHT_FIXTURE = 'scripts/__fixtures__/caught-error-literals.fixture.txt';
@@ -135,6 +140,22 @@ for (const root of ROOTS) {
     if (caught.length > (caughtBaseline[file] ?? 0)) {
       for (const f of caught) failures.push(`${file}:${f.line}\n    ${f.message} (caught-literal rule, #739)`);
     }
+  }
+}
+const topLevel = readdirSync(TOP_LEVEL_DIR)
+  .filter((f) => /\.tsx?$/.test(f) && !/\.(?:test|spec)\.tsx?$/.test(f) && !f.endsWith('.d.ts'))
+  .map((f) => `${TOP_LEVEL_DIR}/${f}`);
+if (!topLevel.includes('src/proxy.ts')) failures.push(`SCOPE: ${TOP_LEVEL_DIR}/proxy.ts is no longer scanned; the top-level scope has rotted.`);
+for (const file of topLevel) {
+  fileCount += 1;
+  const scan = scanLogErrorObjects(file, readFileSync(file, 'utf8'));
+  loggerCalls += scan.loggerCalls;
+  for (const w of scan.wrappers) discovered.add(`${w.name}:${w.index}`);
+  for (const f of scan.findings) failures.push(`${file}:${f.line}\n    ${f.message}`);
+  const caught = findCaughtErrorLiterals(file, readFileSync(file, 'utf8'));
+  if (caught.length > 0) caughtSeen.set(file, caught.length);
+  if (caught.length > (caughtBaseline[file] ?? 0)) {
+    for (const f of caught) failures.push(`${file}:${f.line}\n    ${f.message} (caught-literal rule, #739)`);
   }
 }
 // #739 B3a — the baseline only shrinks: a file that needs fewer sites lowers its count.

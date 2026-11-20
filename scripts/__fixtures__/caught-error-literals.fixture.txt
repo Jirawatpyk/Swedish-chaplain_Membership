@@ -37,3 +37,17 @@ function g(): void {
   const e = new Error('not caught');
   err({ message: e.message }); // allowed
 }
+
+// #739 B3b — an allSettled rejection value is caught: its text stays out of a Result or body.
+async function settledLiterals(): Promise<unknown> {
+  const settled = await Promise.allSettled([Promise.resolve(1)]);
+  return settled.map((r) => {
+    if (r.status === 'rejected') {
+      const reasonStr = String(r.reason);
+      if (Math.random() > 2) return { tenant_id: 't', error: reasonStr }; // refused
+      if (Math.random() > 2) return { tenant_id: 't', error: String(r.reason).slice(0, 200) }; // refused
+      return { tenant_id: 't', error: 'fetch_rejected' }; // allowed
+    }
+    return { tenant_id: 't', value: r.value }; // allowed
+  });
+}

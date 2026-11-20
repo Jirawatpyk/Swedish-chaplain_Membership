@@ -85,6 +85,16 @@ describe('streamingCsvImporter — happy paths', () => {
     }
   });
 
+  it('#739 B3b: invalid UTF-8 gives the fixed re-save hint, not the decoder engine message', async () => {
+    const result = await collectRows(new Uint8Array([0x61, 0x2c, 0xff, 0xfe, 0x0a]));
+    expect(result.ok).toBe(false);
+    expect(result.error).toEqual({
+      kind: 'invalid_utf8',
+      offset: 0,
+      reason: 'UTF-8 decode failed (re-save the CSV as UTF-8 without BOM)',
+    });
+  });
+
   it('accepts CRLF line endings (crlf-line-endings.csv)', async () => {
     const bytes = readFixture('crlf-line-endings.csv');
     const result = await collectRows(bytes);

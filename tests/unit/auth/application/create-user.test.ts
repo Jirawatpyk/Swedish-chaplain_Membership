@@ -249,7 +249,7 @@ describe('createUser (Path C atomic flow)', () => {
     const deps = makeDeps({
       enqueueInvitationInTx: vi
         .fn()
-        .mockResolvedValue(err({ code: 'enqueue_failed', cause: 'connection reset' })),
+        .mockResolvedValue(err({ code: 'enqueue_failed', errClass: 'Error' })),
     });
 
     const result = await createUser(baseInput, deps);
@@ -266,7 +266,7 @@ describe('createUser (Path C atomic flow)', () => {
     const deps = makeDeps({
       enqueueInvitationInTx: vi
         .fn()
-        .mockResolvedValue(err({ code: 'enqueue_failed', cause: 'timeout' })),
+        .mockResolvedValue(err({ code: 'enqueue_failed', errClass: 'TimeoutError' })),
     });
 
     await createUser(baseInput, deps);
@@ -274,8 +274,8 @@ describe('createUser (Path C atomic flow)', () => {
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({
         errCode: 'enqueue_failed',
-        // #740 B2 review — the cause's class, never the cause itself.
-        errCause: 'unknown',
+        // #739 B3b — the adapter hands over the thrown value's class; it is logged as is.
+        errCause: 'TimeoutError',
       }),
       'create_user.invitation_enqueue_failed',
     );

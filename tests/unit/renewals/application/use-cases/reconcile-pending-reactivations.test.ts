@@ -5,6 +5,7 @@
  * audits + auto-timing-out at 30 days.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { logger } from '@/lib/logger';
 import { reconcilePendingReactivations } from '@/modules/renewals/application/use-cases/reconcile-pending-reactivations';
 import type { ReconcilePendingReactivationsDeps } from '@/modules/renewals/application/use-cases/reconcile-pending-reactivations';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
@@ -762,6 +763,29 @@ describe('reconcilePendingReactivations (063) — POST-refund Step-3 residual cl
       expect(r.value.timedOut).toBe(0);
       expect(r.value.timeoutRefundFailures).toBe(0);
       expect(r.value.timeoutRefundOrphaned).toBe(1);
+    }
+  });
+
+  it('#739 B3b: the transition-race log line carries the conflict class, not its message', async () => {
+    const cycle = pendingCycle({ daysPending: 30 });
+    const { deps } = fakeDeps({
+      cycles: [cycle],
+      transitionImpl: async () => {
+        throw new CycleTransitionConflictError(
+          cycle.cycleId,
+          'pending_admin_reactivation',
+          'completed',
+        );
+      },
+    });
+    const warn = vi.spyOn(logger, 'warn');
+    try {
+      await reconcilePendingReactivations(deps, baseInput);
+      const call = warn.mock.calls.find((c) => String(c[1]).includes('POST-refund timeout transition lost'));
+      expect(call).toBeDefined();
+      expect((call![0] as { err?: unknown }).err).toBe('CycleTransitionConflictError');
+    } finally {
+      warn.mockRestore();
     }
   });
 

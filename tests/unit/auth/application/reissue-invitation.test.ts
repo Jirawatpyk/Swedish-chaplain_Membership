@@ -36,6 +36,7 @@ vi.mock('@/lib/db', () => ({
 }));
 vi.mock('@/lib/auth-deps', () => ({ defaultReissueInvitationDeps: {} }));
 
+import { logger } from '@/lib/logger';
 import { reissueInvitation } from '@/modules/auth/application/reissue-invitation';
 import type { ReissueInvitationDeps } from '@/modules/auth/application/reissue-invitation';
 import { asUserId, asEmailAddress, asTokenId } from '@/modules/auth/domain/branded';
@@ -156,6 +157,15 @@ describe('reissueInvitation', () => {
     );
     // Aborted tx → not counted as sent.
     expect(authMetrics.invitationSent).not.toHaveBeenCalled();
+  });
+
+  it('#739 B3b: logs the enqueue failure class the adapter hands over', async () => {
+    const deps = makeDeps({ enqueueResult: err({ code: 'enqueue_failed', errClass: 'TimeoutError' }) });
+    await reissueInvitation(input, deps);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ errCode: 'enqueue_failed', errCause: 'TimeoutError' }),
+      'reissue_invitation.enqueue_failed',
+    );
   });
 
   it('derives intendedRole from the LOCKED user row, NOT the caller', async () => {
