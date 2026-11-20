@@ -155,11 +155,13 @@ export async function reissueInvitation(
       });
       if (!enqueueResult.ok) {
         const errClass: EnqueueInvitationError['errClass'] = enqueueResult.error.errClass;
+        const sqlState: EnqueueInvitationError['sqlState'] = enqueueResult.error.sqlState;
         logger.error(
           {
             requestId: input.requestId,
             errCode: enqueueResult.error.code,
             errCause: errClass ?? 'unknown',
+            ...(sqlState !== undefined ? { code: sqlState } : {}),
             targetUserIdHash: hashId(user.id),
           },
           'reissue_invitation.enqueue_failed',

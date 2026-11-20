@@ -65,6 +65,7 @@ import type { DbTx } from '@/lib/db';
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { err, ok, type Result } from '@/lib/result';
 import { errKind } from '@/lib/log-id';
+import { pgErrorCode } from '@/lib/db-errors';
 import type {
   EnqueueInvitationInTxFn,
   EnqueueInvitationError,
@@ -222,9 +223,12 @@ const enqueueInvitationInTx: EnqueueInvitationInTxFn = async (
     }
     return ok({ outboxRowId: row.id });
   } catch (e) {
+    // #739 B3b part 2 — the SQLSTATE tells a unique violation from an outage.
+    const sqlState = pgErrorCode(e);
     return err({
       code: 'enqueue_failed',
       errClass: errKind(e),
+      ...(sqlState !== undefined ? { sqlState } : {}),
     });
   }
 };
