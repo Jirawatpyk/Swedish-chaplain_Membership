@@ -450,7 +450,6 @@ export async function recomputeAtRiskScoresBatch(
     }
     return await runInTenant(deps.tenant, work);
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
     logger.error(
       {
         ...errLogFields(e),
@@ -459,6 +458,6 @@ export async function recomputeAtRiskScoresBatch(
       },
       'recompute-at-risk-batch.unexpected_error',
     );
-    return err({ kind: 'server_error' as const, message });
+    return err({ kind: 'server_error' as const, message: errKind(e) });
   }
 }

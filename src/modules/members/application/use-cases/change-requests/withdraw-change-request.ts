@@ -95,13 +95,12 @@ export async function withdrawChangeRequest(
     if (e instanceof Refusal) return err(e.error);
     // an aborted tx carries the repo's own code + cause; anything else is a throw
     const repoError = e instanceof UseCaseAbort && isRepoError(e.error) ? e.error : null;
-    const code = repoError?.code ?? (e instanceof Error ? e.name : String(e));
+    const code = repoError?.code ?? errKind(e);
     logger.error(
       {
         tenantId: deps.tenant.slug,
         requestId: input.requestId,
-        // Spec 140 s2d (#736c) — `code` falls back to `String(e)`; the line takes the class.
-        err: repoError?.code ?? errKind(e),
+        err: code,
         cause: repoError === null ? undefined : errKind(repoErrorCause(repoError)),
       },
       'change-request.withdraw.failed',

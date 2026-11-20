@@ -46,7 +46,6 @@ import type { AuditEventId } from '@/modules/auth';
 import type { TenantId } from '@/modules/members';
 import type { RegistrationId } from '../domain/branded-types';
 import { errLogFields, errKind } from '@/lib/log-id';
-import { sanitizeDbErrorMessage } from './sanitize-db-error';
 
 /**
  * Phase 6 staff-review-4 WARN-1 — single dispatcher that maps a freshly
@@ -168,8 +167,8 @@ export const F6_DEFAULT_RETENTION_YEARS = 5 as const;
 /**
  * Log the error's class + SQLSTATE (never its message or stack: a driver
  * error quotes bound parameters, #740) BEFORE the sanitised Result is
- * returned to Application. Pairs with `sanitizeDbErrorMessage`, which
- * protects the outbound payload (audit row stays clean of PG identifiers).
+ * returned to Application. The Result carries only the class (`errKind`),
+ * #739 B3b.
  */
 function logFullError(
   context: { caller: string; tenantId: string; eventType: string },
@@ -502,7 +501,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
         );
         return err({
           kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
+          message: errKind(e),
         });
       }
     },
@@ -561,7 +560,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
         }
         return err({
           kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
+          message: errKind(e),
         });
       }
     },
@@ -597,7 +596,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
         );
         return err({
           kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
+          message: errKind(e),
         });
       }
     },
@@ -653,7 +652,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
         }
         return err({
           kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
+          message: errKind(e),
         });
       }
     },

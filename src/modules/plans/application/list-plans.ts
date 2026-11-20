@@ -12,6 +12,7 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type {
   ClockPort,
@@ -174,7 +175,7 @@ export async function listPlans(
   } catch (e) {
     return err({
       type: 'server_error',
-      message: e instanceof Error ? e.message : String(e),
+      message: errKind(e),
     });
   }
 }

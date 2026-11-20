@@ -174,7 +174,7 @@ export type ProcessRefundUpdatedOutcome =
 /**
  * Single error class mirrors `processChargeRefunded` — the dispatcher maps
  * this to `dispatch_threw` (transient) and stringifies the cause via
- * `formatDispatchErrorDetail` (constructor-name only, PCI-clean).
+ * `errKind` (constructor-name only, PCI-clean).
  */
 export type ProcessRefundUpdatedError = {
   readonly code: 'dispatch_failed';
@@ -706,7 +706,7 @@ export async function processRefundUpdated(
   } catch (e) {
     // Never leak Stripe/Postgres error text (partial keys / row data). The
     // dispatcher maps this to `dispatch_threw` + stringifies via
-    // `formatDispatchErrorDetail` (constructor-name only).
+    // `errKind` (constructor-name only).
     return err({ code: 'dispatch_failed' as const, cause: e });
   }
 }

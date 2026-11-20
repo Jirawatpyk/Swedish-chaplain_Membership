@@ -48,7 +48,33 @@ export function hashId(id: string): string {
  * cron handlers, log-optimistic-flip route).
  */
 export function errKind(e: unknown): string {
+  // #739 B3b — a `DOMException` is not an `Error` in every runtime, and its
+  // class name hides which one it is; its `name` (`AbortError`,
+  // `TimeoutError`) is the class, when it is token-shaped.
+  if (typeof DOMException !== 'undefined' && e instanceof DOMException) {
+    return ERROR_CLASS.test(e.name) ? e.name : 'DOMException';
+  }
   return e instanceof Error ? e.constructor.name : 'unknown';
+}
+
+/**
+ * #739 B3b — an error class name as `errKind` writes it: one word that starts
+ * with a capital, at most 64 characters. A driver message has a space, an
+ * address an `@`, so neither passes.
+ */
+const ERROR_CLASS = /^[A-Z][A-Za-z0-9]{0,63}$/;
+const STEP_AND_CLASS = /^([a-z][a-z0-9_-]{0,47}): ([A-Z][A-Za-z0-9]{0,63})$/;
+
+/**
+ * #739 B3b — a Result error's `message` that a catch wrote as `errKind(e)`, or
+ * as `<step>: ${errKind(e)}`: the class, and the step when there is one.
+ * Anything else is `undefined`, so no other text reaches a log line.
+ */
+function classFromMessage(text: unknown): { readonly err: string; readonly step?: string } | undefined {
+  if (typeof text !== 'string') return undefined;
+  if (ERROR_CLASS.test(text)) return { err: text };
+  const m = STEP_AND_CLASS.exec(text);
+  return m?.[1] !== undefined && m[2] !== undefined ? { err: m[2], step: m[1] } : undefined;
 }
 
 /**
@@ -165,9 +191,13 @@ export function errLogFields(failure: unknown): {
   if (typeof resultCode === 'string') {
     const cause = rootCause(failure);
     const sqlState = pgErrorCode(cause);
+    // #739 B3b review — a code-keyed Result with no cause reads its class too.
+    const fromMessage =
+      cause === undefined ? classFromMessage((failure as { message?: unknown }).message) : undefined;
     return {
-      err: errKind(cause),
+      err: fromMessage?.err ?? errKind(cause),
       repoCode: RESULT_CODE.test(resultCode) ? resultCode : 'unrecognised',
+      ...(fromMessage?.step !== undefined ? { step: fromMessage.step } : {}),
       ...(sqlState !== undefined ? { code: sqlState } : {}),
     };
   }
@@ -183,9 +213,12 @@ export function errLogFields(failure: unknown): {
     const sqlState = pgErrorCode(cause);
     // #740 B2 review — a `message` code wrote as a step (`count-pending:
     // repo.unexpected`) is the one thing that tells these failures apart.
-    const step = stepToken((failure as { message?: unknown }).message);
+    const message = (failure as { message?: unknown }).message;
+    // #739 B3b — with no `cause`, a catch now writes the class into `message`.
+    const fromMessage = cause === undefined ? classFromMessage(message) : undefined;
+    const step = fromMessage?.step ?? stepToken(message);
     return {
-      err: errKind(cause),
+      err: fromMessage?.err ?? errKind(cause),
       resultKind: RESULT_CODE.test(resultKind) ? resultKind : 'unrecognised',
       ...(step !== undefined ? { step } : {}),
       ...(sqlState !== undefined ? { code: sqlState } : {}),

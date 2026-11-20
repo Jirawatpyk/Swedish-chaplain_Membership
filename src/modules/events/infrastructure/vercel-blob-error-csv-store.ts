@@ -37,7 +37,7 @@ import type {
   DeleteErrorCsvInput,
 } from '../application/ports/error-csv-store';
 
-import { errLogFields } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 // Tenant-scoped path prefix per research.md R6.
 function buildBlobKey(tenantSlug: string, recordId: string): string {
   return `tenants/${tenantSlug}/csv-import-errors/${recordId}.csv`;
@@ -68,7 +68,6 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
       });
       return ok<PutErrorCsvOutput>({ blobUrl: result.url });
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
       logger.error(
         {
           event: 'f6_error_csv_upload_failed',
@@ -79,7 +78,7 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
         },
         'F6.1 error CSV blob upload failed',
       );
-      return err<ErrorCsvStoreError>({ kind: 'storage_error', message });
+      return err<ErrorCsvStoreError>({ kind: 'storage_error', message: errKind(e) });
     }
   },
 
@@ -108,7 +107,6 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
         expiresAt,
       });
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
       logger.error(
         {
           event: 'f6_error_csv_signed_url_failed',
@@ -124,7 +122,7 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
         },
         'F6.1 error CSV signed-URL generation failed (likely malformed blobUrl)',
       );
-      return err<ErrorCsvStoreError>({ kind: 'storage_error', message });
+      return err<ErrorCsvStoreError>({ kind: 'storage_error', message: errKind(e) });
     }
   },
 
@@ -133,6 +131,7 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
       await del(input.blobUrl, { token: env.blob.readWriteToken });
       return ok(undefined);
     } catch (e) {
+      // #739 B3b — read here to classify only; the Result carries the class.
       const message = e instanceof Error ? e.message : String(e);
       // Distinguish "blob already gone" from a real storage error so
       // the TTL sweep cron (US5) can treat re-runs as idempotent
@@ -151,7 +150,7 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
         },
         'F6.1 error CSV blob delete failed',
       );
-      return err<ErrorCsvStoreError>({ kind: 'storage_error', message });
+      return err<ErrorCsvStoreError>({ kind: 'storage_error', message: errKind(e) });
     }
   },
 };

@@ -19,6 +19,7 @@
  * Pure Application — only Domain types + ports.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
@@ -168,10 +169,8 @@ export async function pruneExpiredDrafts(
     // `ok()` import on line 15). Hand-cast bypassed the discriminated-
     // union helper and risked silent shape drift if `Result<T,E>` ever
     // gains a brand or normalisation step.
-    const message = e instanceof Error ? e.message : 'unknown error';
-    // Truncate to bound log size + prevent PII (e.g., constraint-
-    // violation messages with row data) from leaking into audit.
-    const safeMessage = message.length > 500 ? message.slice(0, 500) + '…' : message;
-    return err({ kind: 'prune.server_error', message: safeMessage });
+    // #739 B3b — the class only: a constraint-violation message can carry
+    // row data.
+    return err({ kind: 'prune.server_error', message: errKind(e) });
   }
 }

@@ -305,7 +305,7 @@ describe('toggleEventCategory — Phase 6 T087', () => {
       if (!r.ok) {
         expect(r.error.kind).toBe('lock_acquisition_failed');
         if (r.error.kind === 'lock_acquisition_failed') {
-          expect(r.error.message).toContain('pg lock timeout');
+          expect(r.error.message).toBe('Error');
           expect(r.error.cause).toBe(pgError);
           expect(r.error.cause).toBeInstanceOf(Error);
         }

@@ -696,12 +696,13 @@ describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
   it('e1 — Target A render failure → pdf_render_failed, applyVoid NOT called (rollback)', async () => {
     const deps = makeDeps(makeIssuedBill());
     (deps.pdfRender.render as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('boom-A'),
+      new Error('boom-A: tax id 1234567890123, buyer a@b.example'),
     );
     const r = await voidInvoice(deps, INPUT);
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.error.code).toBe('pdf_render_failed');
+    expect(r.error).toEqual({ code: 'pdf_render_failed', reason: 'Error' });
+    expect(JSON.stringify(r.error)).not.toContain('@');
     expect(deps.invoiceRepo.applyVoid).not.toHaveBeenCalled();
   });
 

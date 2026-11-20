@@ -498,7 +498,7 @@ export async function changePlan(
     // member-self-update, rather than an unhandled 500 at the route layer.
     return err({
       type: 'server_error',
-      message: e instanceof Error ? e.message : String(e),
+      message: errKind(e),
     });
   }
 }

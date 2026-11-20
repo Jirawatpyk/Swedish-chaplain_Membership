@@ -38,6 +38,7 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -190,7 +191,7 @@ export function makeDrizzleQuotaAccountingAdapter(
       } catch (e) {
         return err({
           kind: 'db_error',
-          message: `member/plan lookup failed: ${(e as Error)?.message ?? 'unknown'}`,
+          message: `member_plan_lookup: ${errKind(e)}`,
         });
       }
 

@@ -10,7 +10,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  describeStorageError,
   errorChainMessage,
   isExclusionViolation,
   isExclusionViolationOnConstraint,
@@ -291,7 +290,6 @@ describe('every cause walk is bounded (review round 3)', () => {
     ['isUniqueViolationOnConstraint', () => isUniqueViolationOnConstraint(cyclic(), 'c')],
     ['isExclusionViolation', () => isExclusionViolation(cyclic())],
     ['isExclusionViolationOnConstraint', () => isExclusionViolationOnConstraint(cyclic(), 'c')],
-    ['describeStorageError', () => describeStorageError(cyclic())],
   ])('%s returns on a cyclic cause', (_name, walk) => {
     expect(walk).not.toThrow();
   }, 5_000);

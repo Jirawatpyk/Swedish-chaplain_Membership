@@ -518,7 +518,7 @@ describe('scrubBroadcastContentForMember (COMP-1 US2b)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.kind).toBe('scrub.server_error');
-    expect(result.error.message).toContain('connection terminated');
+    expect(result.error.message).toBe('Error');
     expect(deps.audit.emitTyped).not.toHaveBeenCalled();
     expect(deps.audit.emit).not.toHaveBeenCalled();
     // Failure metric fires on the catch path so a stuck content-scrub
@@ -550,7 +550,7 @@ describe('scrubBroadcastContentForMember (COMP-1 US2b)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.kind).toBe('scrub.server_error');
-    expect(result.error.message).toContain('audit insert failed');
+    expect(result.error.message).toBe('Error');
     // The scrub counts MUST NOT be surfaced as a success — the err
     // branch carries no `scrubbedCount`/`tombstonedCount`.
     expect(result.error).not.toHaveProperty('scrubbedCount');

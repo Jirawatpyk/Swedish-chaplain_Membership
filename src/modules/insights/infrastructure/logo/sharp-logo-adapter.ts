@@ -11,6 +11,7 @@
 import 'server-only';
 import sharp from 'sharp';
 import { ok, err } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type {
   LogoContentType,
   LogoFormat,
@@ -27,11 +28,6 @@ const CONTENT_TYPE: Record<LogoFormat, LogoContentType> = {
   jpeg: 'image/jpeg',
   webp: 'image/webp',
 };
-
-function sanitiseReason(raw: unknown): string {
-  const s = raw instanceof Error ? raw.message : String(raw);
-  return s.length > 200 ? s.slice(0, 200) + '…' : s;
-}
 
 export const sharpLogoAdapter: LogoImagePort = {
   async reencode(bytes) {
@@ -66,7 +62,8 @@ export const sharpLogoAdapter: LogoImagePort = {
         height: outMeta.height ?? 0,
       });
     } catch (e) {
-      return err({ code: 'decode_failed', reason: sanitiseReason(e) });
+      // #739 B3b — the class, never libvips' message (it can carry paths).
+      return err({ code: 'decode_failed', reason: errKind(e) });
     }
   },
 };

@@ -31,6 +31,7 @@
 import 'server-only';
 import sharp from 'sharp';
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { ImageMimeType } from '../application/ports/image-storage-port';
 import type {
   ImageReencodeError,
@@ -177,11 +178,13 @@ export const sharpImageReencoder: ImageReencoderPort = {
       // cannot decode is the member's fault; everything else (OOM, a missing
       // native binding, our own timeout) is ours, and recording it as
       // `broadcast_image_unsafe` would put a false statement in the audit log.
-      const reason = sanitiseReason(e);
-      if (e instanceof ReencodeTimeoutError || !MALFORMED_INPUT.test(reason)) {
-        return err({ kind: 'reencoder_unavailable', reason });
+      // #739 B3b — the message is read here to classify, and never leaves:
+      // the Result carries the class.
+      const message = sanitiseReason(e);
+      if (e instanceof ReencodeTimeoutError || !MALFORMED_INPUT.test(message)) {
+        return err({ kind: 'reencoder_unavailable', reason: errKind(e) });
       }
-      return err({ kind: 'decode_failed', reason });
+      return err({ kind: 'decode_failed', reason: errKind(e) });
     }
   },
 };

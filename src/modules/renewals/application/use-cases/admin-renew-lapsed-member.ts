@@ -532,7 +532,6 @@ export async function adminRenewLapsedMember(
     if (e instanceof PlanNotResolvableError) {
       return err({ kind: 'plan_not_found' });
     }
-    const message = e instanceof Error ? e.message : String(e);
     logger.error(
       {
         err: errKind(e),
@@ -542,7 +541,7 @@ export async function adminRenewLapsedMember(
       },
       '[admin-renew-lapsed-member] cycle-creation tx failed',
     );
-    return err({ kind: 'server_error', message });
+    return err({ kind: 'server_error', message: errKind(e) });
   }
   if (!stateResult.ok) return err(stateResult.error);
   const { cycle, omitMembershipCoverage } = stateResult.value;

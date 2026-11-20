@@ -396,11 +396,86 @@ function settledCaughtNames(cur: ts.Node): string[] {
   return [];
 }
 
-/** Where a caught value is in scope: a catch block, an allSettled element callback, or a `for (r of settled)` body. */
+/**
+ * #739 B3b part 2 — the rejection handler of `.catch(h)` or `.then(ok, h)`:
+ * its first parameter is a caught value.
+ */
+function isRejectionHandler(fn: ts.Node): fn is ts.ArrowFunction | ts.FunctionExpression {
+  if (!(ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) return false;
+  const call = fn.parent;
+  if (!ts.isCallExpression(call) || !ts.isPropertyAccessExpression(call.expression)) return false;
+  const method = call.expression.name.text;
+  return (method === 'catch' && call.arguments[0] === fn) || (method === 'then' && call.arguments[1] === fn);
+}
+
+/** Untyped parameters with one of these names are read as an error a caller caught. */
+const ERROR_PARAM_NAMES = new Set(['e', 'err', 'error', 'cause']);
+
+/**
+ * #739 B3b part 2 — the parameters of a plain function that may hold an error
+ * its caller caught: typed `unknown`, or untyped and named like an error. A
+ * helper that turns such a parameter into a Result has no catch around it.
+ * Only their text counts ({@link caughtTextRefusal}'s `textOnly`): passing the
+ * value on (`parse(e)`, `errKind(e)`) is what such a parameter is for.
+ */
+function errorParamNames(fn: ts.Node): string[] {
+  if (!ts.isFunctionLike(fn) || isRejectionHandler(fn) || isSettledCallback(fn)) return [];
+  const out: string[] = [];
+  for (const p of fn.parameters) {
+    if (!ts.isIdentifier(p.name)) continue;
+    const typedUnknown = p.type?.kind === ts.SyntaxKind.UnknownKeyword;
+    if (typedUnknown || (p.type === undefined && ERROR_PARAM_NAMES.has(p.name.text))) out.push(p.name.text);
+  }
+  return out;
+}
+
+/** #739 B3b part 2 — the locals a binding pattern takes from an error's text: `{ message }`, `{ stack: s }`. */
+function textBindings(binding: ts.BindingName | undefined): string[] {
+  if (binding === undefined || !ts.isObjectBindingPattern(binding)) return [];
+  const out: string[] = [];
+  for (const el of binding.elements) {
+    const key = el.propertyName ?? el.name;
+    if (ts.isIdentifier(key) && TEXT_FIELDS.has(key.text) && ts.isIdentifier(el.name)) out.push(el.name.text);
+  }
+  return out;
+}
+
+/**
+ * Where a caught value is in scope: a catch block, a rejection handler, an
+ * allSettled element callback, a `for (r of settled)` body, or the body of a
+ * function whose parameter may hold a caught error.
+ */
 function catchScopeBody(cur: ts.Node): ts.Node | null {
   if (ts.isCatchClause(cur)) return cur.block;
+  if (isRejectionHandler(cur)) return cur.body;
   if (settledCaughtNames(cur).length > 0) return isSettledCallback(cur) ? cur.body : (cur as ts.ForOfStatement).statement;
+  if (errorParamNames(cur).length > 0) return (cur as ts.FunctionLikeDeclaration).body ?? null;
   return null;
+}
+
+/** #739 B3b part 2 — the error-like parameters of every enclosing function (see {@link errorParamNames}). */
+function paramTextNames(node: ts.Node): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (let cur: ts.Node | undefined = node.parent; cur !== undefined; cur = cur.parent) {
+    for (const n of errorParamNames(cur)) names.add(n);
+  }
+  return names;
+}
+
+/**
+ * #739 B3b part 2 — catch, rejection-handler, settled and error-parameter
+ * scopes in a file: the real-tree floor, so a parse that rots fails loudly.
+ */
+export function countCaughtScopes(fileName: string, source: string): number {
+  const kind = /\.tsx$/i.test(fileName) ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind);
+  let count = 0;
+  const visit = (n: ts.Node): void => {
+    if (ts.isCatchClause(n) ? n.variableDeclaration !== undefined : catchScopeBody(n) !== null) count += 1;
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return count;
 }
 
 /**
@@ -416,17 +491,17 @@ function caughtNames(node: ts.Node): ReadonlySet<string> {
       const info = settledInfo(cur);
       if (info.lists.size > 0 || info.elements.size > 0) names.add(SETTLED_REASON);
     }
-    if (ts.isCatchClause(cur) && cur.variableDeclaration && ts.isIdentifier(cur.variableDeclaration.name)) {
-      names.add(cur.variableDeclaration.name.text);
+    if (ts.isCatchClause(cur) && cur.variableDeclaration) {
+      const b = cur.variableDeclaration.name;
+      if (ts.isIdentifier(b)) names.add(b.text);
+      // #739 B3b part 2 — `catch ({ message })`: the local is the text.
+      for (const n of textBindings(b)) names.add(n);
     }
-    if (
-      (ts.isArrowFunction(cur) || ts.isFunctionExpression(cur)) &&
-      ts.isCallExpression(cur.parent) &&
-      ts.isPropertyAccessExpression(cur.parent.expression) &&
-      cur.parent.expression.name.text === 'catch'
-    ) {
+    // `.catch((x) => …)`, and (#739 B3b part 2) `.then(ok, (x) => …)`.
+    if (isRejectionHandler(cur)) {
       const p = cur.parameters[0];
       if (p !== undefined && ts.isIdentifier(p.name)) names.add(p.name.text);
+      for (const n of textBindings(p?.name)) names.add(n);
     }
   }
   return names;
@@ -470,8 +545,8 @@ const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
   CancelInFlightCyclesForMemberError: new Set(['errClass']),
   // auth `EnqueueInvitationError` — its one construction site
   // (`src/lib/auth-deps.ts`) sets `errClass: errKind(e)`, an error class
-  // name (#739 B3b).
-  EnqueueInvitationError: new Set(['errClass']),
+  // name (#739 B3b), and `sqlState: pgErrorCode(e)`, a SQLSTATE (B3b part 2).
+  EnqueueInvitationError: new Set(['errClass', 'sqlState']),
   // renewals `restore-cycle-for-member.ts` — `errName` is an Error's `.name`
   // or `'UnknownError'`, as above.
   RestoreCycleForMemberError: new Set(['errName']),
@@ -568,7 +643,7 @@ const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
   // Two types share this name (#740 B2): broadcasts `process-webhook-event.ts`
   // — `errClass: errKind(e)`, `step: errStep(e)`, `reason` a literal plus an
   // `EmailLowerError` code; payments `process-webhook-event.ts` — `detail` a
-  // sub-use-case code or `formatDispatchErrorDetail` (an error class),
+  // sub-use-case code or `errKind` (an error class),
   // `subDetail` the F4 bridge code or `F5_SETTINGS_MISSING_DETAIL` /
   // `'invoice_payability_read_failed'`, a boolean, and `DispatchPermanence`.
   ProcessWebhookEventError: new Set([
@@ -1291,17 +1366,28 @@ export function findLogErrorObjects(fileName: string, source: string): LogErrorF
  * hop up, as the log rule taints them) counts, so Result errors and typed
  * error fields stay allowed. Use `errKind(e)` or a closed code.
  */
-function caughtTextRefusal(expr: ts.Expression, names: ReadonlySet<string>): string | null {
+function caughtTextRefusal(
+  expr: ts.Expression,
+  names: ReadonlySet<string>,
+  // #739 B3b part 2 — error-like parameters: only their text counts. `bare`
+  // is true where the value itself becomes text (`String(x)`, `${x}`).
+  textOnly: ReadonlySet<string> = NO_NAMES,
+  bare = false,
+): string | null {
   const node = unwrap(expr);
-  if (ts.isIdentifier(node)) return names.has(node.text) ? `the caught value \`${node.text}\`` : null;
+  const again = (e: ts.Expression, b = bare): string | null => caughtTextRefusal(e, names, textOnly, b);
+  if (ts.isIdentifier(node)) {
+    if (names.has(node.text)) return `the caught value \`${node.text}\``;
+    return bare && textOnly.has(node.text) ? `the text of \`${node.text}\`` : null;
+  }
   const key = exprKey(node);
   if (key !== null && names.has(key)) return `the caught value \`${node.getText()}\``;
   if (ts.isPropertyAccessExpression(node)) {
     const base = unwrap(node.expression);
-    if (ts.isIdentifier(base) && names.has(base.text)) {
+    if (ts.isIdentifier(base) && (names.has(base.text) || textOnly.has(base.text))) {
       return TEXT_FIELDS.has(node.name.text) ? `\`${base.text}.${node.name.text}\`` : null;
     }
-    if (TEXT_FIELDS.has(node.name.text)) return caughtTextRefusal(base, names);
+    if (TEXT_FIELDS.has(node.name.text)) return again(base, false);
     return null;
   }
   if (ts.isCallExpression(node)) {
@@ -1309,39 +1395,52 @@ function caughtTextRefusal(expr: ts.Expression, names: ReadonlySet<string>): str
     if (name !== null && SAFE_CALLS.has(name)) return null;
     const callee = unwrap(node.expression);
     if (ts.isPropertyAccessExpression(callee)) {
-      const inner = caughtTextRefusal(callee.expression, names);
+      const inner = again(callee.expression, callee.name.text === 'toString');
       if (inner !== null) return `\`.${callee.name.text}()\` on ${inner}`;
     }
     for (const arg of node.arguments) {
       const a = unwrap(arg);
       if (ts.isObjectLiteralExpression(a) || ts.isArrayLiteralExpression(a) || ts.isFunctionLike(a)) continue;
-      const inner = caughtTextRefusal(arg, names);
+      const inner = again(arg, name === 'String');
       if (inner !== null) return `\`${name ?? 'a call'}(…)\` of ${inner}`;
     }
     return null;
   }
   if (ts.isTemplateExpression(node)) {
     for (const span of node.templateSpans) {
-      const inner = caughtTextRefusal(span.expression, names);
+      const inner = again(span.expression, true);
       if (inner !== null) return `a template embedding ${inner}`;
     }
     return null;
   }
   if (ts.isConditionalExpression(node)) {
-    return caughtTextRefusal(node.whenTrue, names) ?? caughtTextRefusal(node.whenFalse, names);
+    return again(node.whenTrue) ?? again(node.whenFalse);
   }
   if (ts.isBinaryExpression(node)) {
     const op = node.operatorToken.kind;
-    if (op === ts.SyntaxKind.AmpersandAmpersandToken) return caughtTextRefusal(node.right, names);
-    if (
-      op === ts.SyntaxKind.QuestionQuestionToken ||
-      op === ts.SyntaxKind.BarBarToken ||
-      op === ts.SyntaxKind.PlusToken
-    ) {
-      return caughtTextRefusal(node.left, names) ?? caughtTextRefusal(node.right, names);
+    if (op === ts.SyntaxKind.AmpersandAmpersandToken) return again(node.right);
+    if (op === ts.SyntaxKind.PlusToken) return again(node.left, true) ?? again(node.right, true);
+    if (op === ts.SyntaxKind.QuestionQuestionToken || op === ts.SyntaxKind.BarBarToken) {
+      return again(node.left) ?? again(node.right);
     }
   }
   return null;
+}
+
+const NO_NAMES: ReadonlySet<string> = new Set();
+
+/** #739 B3b part 2 — true when `expr` is (one arm of) an error-like parameter itself: `e instanceof Error ? e : new Error(…)`. */
+function holdsParam(expr: ts.Expression, textOnly: ReadonlySet<string>): boolean {
+  const node = unwrap(expr);
+  if (ts.isIdentifier(node)) return textOnly.has(node.text);
+  if (ts.isConditionalExpression(node)) return holdsParam(node.whenTrue, textOnly) || holdsParam(node.whenFalse, textOnly);
+  if (ts.isBinaryExpression(node)) {
+    const op = node.operatorToken.kind;
+    if (op === ts.SyntaxKind.QuestionQuestionToken || op === ts.SyntaxKind.BarBarToken) {
+      return holdsParam(node.left, textOnly) || holdsParam(node.right, textOnly);
+    }
+  }
+  return false;
 }
 
 /**
@@ -1350,7 +1449,12 @@ function caughtTextRefusal(expr: ts.Expression, names: ReadonlySet<string>): str
  * this rule (two passes, so a local read off such a local counts too). Not
  * the log rule's taint, which also taints `errKind(e)`-style values.
  */
-function caughtTextNames(node: ts.Node, caught: ReadonlySet<string>, objects?: Set<string>): ReadonlySet<string> {
+function caughtTextNames(
+  node: ts.Node,
+  caught: ReadonlySet<string>,
+  objects?: Set<string>,
+  textOnly: Set<string> = new Set(),
+): ReadonlySet<string> {
   const names = new Set(caught);
   for (const c of caught) objects?.add(c);
   // A local whose value is the caught object itself (`raw instanceof Error ?
@@ -1381,10 +1485,23 @@ function caughtTextNames(node: ts.Node, caught: ReadonlySet<string>, objects?: S
       const scan = (n: ts.Node): void => {
         if (n.pos >= node.pos) return;
         if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer !== undefined) {
-          const why = caughtTextRefusal(n.initializer, names);
+          const why = caughtTextRefusal(n.initializer, names, textOnly);
           if (why !== null) record(n.name.text, why);
+          // #739 B3b part 2 — a local holding an error-like parameter itself.
+          else if (holdsParam(n.initializer, textOnly)) textOnly.add(n.name.text);
+        } else if (ts.isVariableDeclaration(n) && ts.isObjectBindingPattern(n.name) && n.initializer !== undefined) {
+          // #739 B3b part 2 — `const { reason } = r`, `const { message } = e`.
+          const base = unwrap(n.initializer);
+          if (ts.isIdentifier(base)) {
+            for (const el of n.name.elements) {
+              const k = el.propertyName ?? el.name;
+              if (!ts.isIdentifier(k) || !ts.isIdentifier(el.name)) continue;
+              const fromError = (names.has(base.text) || textOnly.has(base.text)) && TEXT_FIELDS.has(k.text);
+              if (fromError || names.has(`${base.text}.${k.text}`)) names.add(el.name.text);
+            }
+          }
         } else if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left)) {
-          const why = caughtTextRefusal(n.right, names);
+          const why = caughtTextRefusal(n.right, names, textOnly);
           if (why !== null) record(n.left.text, why);
         }
         if (!ts.isFunctionLike(n)) ts.forEachChild(n, scan);
@@ -1396,12 +1513,21 @@ function caughtTextNames(node: ts.Node, caught: ReadonlySet<string>, objects?: S
 }
 
 /** True when `node` sits in a logger or registered log-wrapper call's arguments. */
-function insideLogCall(node: ts.Node, aliases: ReadonlySet<string>): boolean {
+function insideLogCall(node: ts.Node, aliases: ReadonlySet<string>, client = false): boolean {
   for (let cur: ts.Node | undefined = node.parent; cur !== undefined; cur = cur.parent) {
     if (ts.isFunctionLike(cur)) return false;
     if (ts.isCallExpression(cur) && (isLoggerCall(cur, aliases) || wrapperIndexes(cur) !== null)) return true;
+    // #739 B3b part 2 — a client component's console is the browser's own:
+    // it reaches no server log, body or column.
+    if (client && ts.isCallExpression(cur) && isConsoleCall(cur)) return true;
   }
   return false;
+}
+
+function isConsoleCall(call: ts.CallExpression): boolean {
+  const callee = unwrap(call.expression);
+  const target = ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee) ? unwrap(callee.expression) : null;
+  return target !== null && ts.isIdentifier(target) && target.text === 'console';
 }
 
 /** Caught error text in a non-log object literal: one finding per property. */
@@ -1409,6 +1535,7 @@ export function findCaughtErrorLiterals(fileName: string, source: string): LogEr
   const kind = /\.tsx$/i.test(fileName) ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind);
   const aliases = loggerAliases(sf);
+  const client = isClientFile(sf);
   const out: LogErrorFinding[] = [];
   const visit = (node: ts.Node): void => {
     if (
@@ -1416,9 +1543,11 @@ export function findCaughtErrorLiterals(fileName: string, source: string): LogEr
       ts.isObjectLiteralExpression(node.parent)
     ) {
       const caught = caughtNames(node);
-      if (caught.size > 0 && !insideLogCall(node, aliases)) {
+      const params = paramTextNames(node);
+      if ((caught.size > 0 || params.size > 0) && !insideLogCall(node, aliases, client)) {
         const objects = new Set<string>();
-        const names = caughtTextNames(node, caught, objects);
+        const textOnly = new Set(params);
+        const names = caughtTextNames(node, caught, objects, textOnly);
         // Error chaining (`{ cause: e }`) keeps the object in memory; it is
         // not a sink, and the log rule reads it wherever it is logged.
         // Only the caught object (or a local holding that object): a local
@@ -1437,7 +1566,7 @@ export function findCaughtErrorLiterals(fileName: string, source: string): LogEr
           ? names.has(node.name.text)
             ? `the caught value \`${node.name.text}\``
             : null
-          : caughtTextRefusal(node.initializer, names);
+          : caughtTextRefusal(node.initializer, names, textOnly);
         if (why !== null) {
           out.push({ line: lineOf(sf, node), message: `${node.name.getText(sf)}: ${why} outside a log line` });
         }

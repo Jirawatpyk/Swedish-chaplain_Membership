@@ -24,6 +24,9 @@
  * converted it to `export const safeStringify = (...) => ...`. Moving
  * the function into a leaf module breaks the cycle preventively.
  *
+ * #739 B3b — `safe-audit-emit.ts` no longer imports it: its Result carries the
+ * thrown value's class, never a stringified copy.
+ *
  * Pure Application — no framework imports (Constitution Principle III).
  */
 

@@ -35,6 +35,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  countCaughtScopes,
   findCaughtErrorLiterals,
   findLogErrorObjects,
   LOG_WRAPPERS,
@@ -61,9 +62,8 @@ const SMALL_ROOTS = ['src/hooks', 'src/config', 'src/i18n'] as const;
  */
 const TOP_LEVEL_DIR = 'src';
 const FIXTURE = 'scripts/__fixtures__/log-error-objects.fixture.txt';
-/** #739 B3a — the positive control and the shrink-only baseline of the caught-literal rule. */
+/** #739 B3a — the positive control of the caught-literal rule (B3b part 2 removed its baseline: every site fails). */
 const CAUGHT_FIXTURE = 'scripts/__fixtures__/caught-error-literals.fixture.txt';
-const CAUGHT_BASELINE = 'scripts/caught-error-literals-baseline.json';
 /** A floor, not a pin: the scope rotting to a handful of files must fail loudly. */
 const MIN_FILES_PER_ROOT = 50;
 /**
@@ -72,6 +72,13 @@ const MIN_FILES_PER_ROOT = 50;
  * loudly, not pass at zero findings.
  */
 const MIN_LOGGER_CALLS = 1600;
+/**
+ * #739 B3b part 2 — a floor on the catch, rejection-handler, settled and
+ * error-parameter scopes the caught-literal rule parsed in the real tree: with
+ * no baseline left, a parse that stops seeing them must fail, not pass at zero
+ * (1954 measured 20 Nov 2026).
+ */
+const MIN_CATCH_SCOPES = 1800;
 
 function walk(dir: string, out: string[]): string[] {
   for (const entry of readdirSync(dir)) {
@@ -121,8 +128,7 @@ caughtFixture.split(/\r?\n/).forEach((text, i) => {
 if (caughtFlagged.size === 0 || caughtRefusedMarked === 0) {
   failures.push(`POSITIVE CONTROL: ${CAUGHT_FIXTURE} yielded ${caughtFlagged.size} finding(s); the caught-literal rule is inert.`);
 }
-const caughtBaseline = (JSON.parse(readFileSync(CAUGHT_BASELINE, 'utf8')) as { files: Record<string, number> }).files;
-const caughtSeen = new Map<string, number>();
+let catchScopes = 0;
 
 // --- the real tree ----------------------------------------------------------
 let fileCount = 0;
@@ -141,10 +147,10 @@ for (const root of ROOTS) {
     for (const f of scan.findings) {
       failures.push(`${file}:${f.line}\n    ${f.message}`);
     }
-    const caught = findCaughtErrorLiterals(file, readFileSync(file, 'utf8'));
-    if (caught.length > 0) caughtSeen.set(file, caught.length);
-    if (caught.length > (caughtBaseline[file] ?? 0)) {
-      for (const f of caught) failures.push(`${file}:${f.line}\n    ${f.message} (caught-literal rule, #739)`);
+    const source = readFileSync(file, 'utf8');
+    catchScopes += countCaughtScopes(file, source);
+    for (const f of findCaughtErrorLiterals(file, source)) {
+      failures.push(`${file}:${f.line}\n    ${f.message} (caught-literal rule, #739)`);
     }
   }
 }
@@ -167,20 +173,12 @@ for (const file of topLevel) {
   loggerCalls += scan.loggerCalls;
   for (const w of scan.wrappers) discovered.add(`${w.name}:${w.index}`);
   for (const f of scan.findings) failures.push(`${file}:${f.line}\n    ${f.message}`);
-  const caught = findCaughtErrorLiterals(file, readFileSync(file, 'utf8'));
-  if (caught.length > 0) caughtSeen.set(file, caught.length);
-  if (caught.length > (caughtBaseline[file] ?? 0)) {
-    for (const f of caught) failures.push(`${file}:${f.line}\n    ${f.message} (caught-literal rule, #739)`);
+  const source = readFileSync(file, 'utf8');
+  catchScopes += countCaughtScopes(file, source);
+  for (const f of findCaughtErrorLiterals(file, source)) {
+    failures.push(`${file}:${f.line}\n    ${f.message} (caught-literal rule, #739)`);
   }
 }
-// #739 B3a — the baseline only shrinks: a file that needs fewer sites lowers its count.
-for (const [file, count] of Object.entries(caughtBaseline)) {
-  const now = caughtSeen.get(file) ?? 0;
-  if (now < count) {
-    failures.push(`BASELINE: ${CAUGHT_BASELINE} lists ${count} site(s) for ${file}, which now has ${now}; lower it (it only shrinks).`);
-  }
-}
-const caughtRemaining = [...caughtSeen.values()].reduce((a, b) => a + b, 0);
 // #740 B2 — a listed wrapper that no longer puts that argument in a log line is stale.
 const wrapperCount = Object.keys(LOG_WRAPPERS).length;
 for (const [name, indexes] of Object.entries(LOG_WRAPPERS)) {
@@ -189,6 +187,11 @@ for (const [name, indexes] of Object.entries(LOG_WRAPPERS)) {
       failures.push(`LOG_WRAPPERS: \`${name}: [${index}]\` no longer reaches a log line in the real tree; remove it.`);
     }
   }
+}
+if (catchScopes < MIN_CATCH_SCOPES) {
+  failures.push(
+    `FLOOR: the caught-literal rule parsed ${catchScopes} catch scope(s) in the real tree (expected >= ${MIN_CATCH_SCOPES}); the parse has rotted.`,
+  );
 }
 if (loggerCalls < MIN_LOGGER_CALLS) {
   failures.push(
@@ -212,5 +215,5 @@ if (failures.length > 0) {
 console.log(
   `✓ check:log-error-objects — ${fileCount} file(s) and ${loggerCalls} logger call(s) in ${ROOTS.length} root(s) plus ${topLevel.length} top-level and small-folder file(s) and the call sites of ${wrapperCount} log wrapper(s), no error object or text in a log line; ` +
     `${refusedMarked} refused form(s) in the positive control, each found; ` +
-    `caught-literal rule: ${caughtRemaining} baselined site(s) left for B3b, ${caughtRefusedMarked} refused form(s) in its control.`,
+    `caught-literal rule: ${catchScopes} catch scope(s), no caught error text outside a log line, ${caughtRefusedMarked} refused form(s) in its control.`,
 );

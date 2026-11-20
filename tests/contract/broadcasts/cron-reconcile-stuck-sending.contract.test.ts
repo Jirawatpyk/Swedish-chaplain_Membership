@@ -275,7 +275,7 @@ describe('cron reconcile-stuck-sending — wire contract', () => {
       execute: async () => [{ broadcast_id: 'b1' }],
     }));
     reconcileStuckSendingMock.mockResolvedValueOnce(
-      err({ kind: 'reconcile.gateway_error', cause: 'resend 503' }),
+      err({ kind: 'reconcile.gateway_error', errClass: 'GatewayThrowable' }),
     );
     const { POST } = await import(
       '@/app/api/cron/broadcasts/reconcile-stuck-sending/route'

@@ -692,7 +692,7 @@ async function maybeApplyStateChange(
           : new Error(`NonError(${safeStringify(rawThrow)})`);
       throw new TxStageError(
         'audit_emit',
-        `csv_import_row_state_changed audit emit threw: ${causeErr.message}`,
+        `csv_import_row_state_changed audit emit threw: ${errKind(causeErr)}`,
         { cause: causeErr },
       );
     }
@@ -864,7 +864,7 @@ async function maybeApplyStateChange(
                   : new Error(`NonError(${String(e)})`);
               throw new TxStageError(
                 'quota_decrement',
-                `state-change debit advisory-lock acquisition failed: ${causeErr.message}`,
+                `state-change debit advisory-lock acquisition failed: ${errKind(causeErr)}`,
                 { cause: causeErr },
               );
             }

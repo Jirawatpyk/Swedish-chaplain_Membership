@@ -119,10 +119,6 @@ export type EndMembershipCoverageError = {
   readonly errName: string;
 };
 
-function errName(e: unknown): string {
-  return e instanceof Error ? e.name : 'UnknownError';
-}
-
 /**
  * The shared in-tx core. Locks + re-reads the cycle; `false` when it is no
  * longer OPEN. Closes it `cancelled` / `coverage_ended` + audits atomically.
@@ -202,7 +198,7 @@ export async function endMembershipCoverageNow(
         { err: errKind(e), tenantId, memberId },
         'renewals.coverage_end.lookup_failed',
       );
-      return err({ kind: 'coverage_end.server_error', errName: errName(e) });
+      return err({ kind: 'coverage_end.server_error', errName: errKind(e) });
     }
 
     // Refund still settling → stamp the request only. Coverage ends at
@@ -231,7 +227,7 @@ export async function endMembershipCoverageNow(
           { err: errKind(e), tenantId, memberId, cycleId, refundId: awaitRefund.refundId },
           'renewals.coverage_end.schedule_failed',
         );
-        return err({ kind: 'coverage_end.server_error', errName: errName(e) });
+        return err({ kind: 'coverage_end.server_error', errName: errKind(e) });
       }
     }
 
@@ -274,7 +270,7 @@ export async function endMembershipCoverageNow(
           'renewals.coverage_end.retry_stamp_failed',
         );
       }
-      return err({ kind: 'coverage_end.server_error', errName: errName(e) });
+      return err({ kind: 'coverage_end.server_error', errName: errKind(e) });
     }
   }
   return ok({ outcome: 'no_open_cycle' });

@@ -128,12 +128,11 @@ export async function recordAtRiskOutreach(
       // CHECK constraint violation OR FK violation on a non-existent
       // member surfaces here. Map to typed error so the caller can
       // 4xx instead of 5xx for known invariants.
-      const message = e instanceof Error ? e.message : String(e);
       logger.error(
         { ...errLogFields(e), tenantId: input.tenantId, memberId: input.memberId },
         '[record-at-risk-outreach] insert failed',
       );
-      return err({ kind: 'server_error' as const, message });
+      return err({ kind: 'server_error' as const, message: errKind(e) });
     }
 
     try {

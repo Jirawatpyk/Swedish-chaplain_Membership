@@ -17,6 +17,7 @@
  */
 import { z } from 'zod';
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort, ScheduledPlanChangeRepo } from './ports';
 import { auditInTx, auditFailureMessage, PlanAuditAbort } from './record-audit-event';
@@ -101,7 +102,7 @@ export async function cancelScheduledPlanChange(
     return err({
       code: 'server_error',
       recheckFailed: false,
-      message: `cancelScheduledPlanChange.findById: ${(e as Error)?.message ?? 'unknown'}`,
+      message: `find_by_id: ${errKind(e)}`,
     });
   }
 
@@ -201,9 +202,9 @@ export async function cancelScheduledPlanChange(
         });
       }
     } catch (recheckErr) {
-      recheckErrMessage = (recheckErr as Error)?.message ?? 'unknown';
+      recheckErrMessage = errKind(recheckErr);
     }
-    const baseMessage = `cancelScheduledPlanChange.transitionStatus: ${(e as Error)?.message ?? 'unknown'}`;
+    const baseMessage = `transition_status: ${errKind(e)}`;
     // R5-S12 — construct one of the two `server_error` discriminated
     // variants based on whether the recheck also threw.
     if (recheckErrMessage !== undefined) {

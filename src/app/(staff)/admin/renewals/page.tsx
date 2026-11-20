@@ -651,7 +651,7 @@ async function PipelineMoneyBandSection({
       );
     }
   } else {
-    const e = settled.e;
+    const e = settled.cause;
     logger.error(
       {
         errorId: 'F8.ADMIN.MONEY_BAND',
@@ -724,7 +724,7 @@ async function resolveNeedsActionCount(
 ): Promise<number | undefined> {
   const settled = await countPromise;
   if (!settled.ok) {
-    const e = settled.e;
+    const e = settled.cause;
     logger.error(
       {
         errorId: 'F8.ADMIN.NEEDS_ACTION_BADGE',

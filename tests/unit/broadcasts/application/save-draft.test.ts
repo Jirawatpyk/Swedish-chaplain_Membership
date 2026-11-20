@@ -489,7 +489,7 @@ describe('save-draft โ€” Wave 6b coverage push', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('save_draft.server_error');
       if (result.error.kind === 'save_draft.server_error') {
-        expect(result.error.message).toContain('database connection lost');
+        expect(result.error.message).toBe('Error');
       }
     }
   });
@@ -505,7 +505,7 @@ describe('save-draft โ€” Wave 6b coverage push', () => {
     expect(result.error.kind).toBe('save_draft.server_error');
   });
 
-  it('repo throw with non-Error value โ’ save_draft.server_error with "unknown error"', async () => {
+  it('repo throw with non-Error value โ’ save_draft.server_error with "unknown"', async () => {
     const { deps } = makeDeps({ primaryContact: 'me@example.com' });
     const repo = deps.broadcastsRepo as unknown as {
       insertDraft: BroadcastsRepo['insertDraft'];
@@ -516,7 +516,7 @@ describe('save-draft โ€” Wave 6b coverage push', () => {
     const result = await saveDraft(deps, baseInput);
     expect(result.ok).toBe(false);
     if (!result.ok && result.error.kind === 'save_draft.server_error') {
-      expect(result.error.message).toBe('unknown error');
+      expect(result.error.message).toBe('unknown');
     }
   });
 

@@ -130,13 +130,10 @@ describe('pino-audit-port.emitStandalone', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.kind).toBe('db_error');
     if (result.error.kind !== 'db_error') throw new Error('unreachable');
-    // R10.3 / QA F-3 closure — assertion aligned with actual
-    // `InvalidTenantSlugError` message format at
-    // `src/modules/tenants/domain/tenant-context.ts:51-52` which
-    // produces: "Invalid tenant slug: ... Must match [a-z0-9-]{1,63}
-    // (lowercase alphanumeric + hyphen, 1..63 chars)."
-    // Defensive code is unchanged — only the test expectation aligned.
-    expect(result.error.message).toMatch(/Invalid tenant slug|Must match \[a-z0-9-\]/);
+    // #739 B3b — the Result carries the guard's class
+    // (`InvalidTenantSlugError`, src/modules/tenants/domain/tenant-context.ts),
+    // never its message quoting the slug.
+    expect(result.error.message).toBe('InvalidTenantSlugError');
     // logFullError logs the error class only, never its message (#740)
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({

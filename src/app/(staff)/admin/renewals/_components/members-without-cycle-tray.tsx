@@ -53,7 +53,7 @@ export async function MembersWithoutCycleTray({
   let result: LoadMembersWithoutCycleOutput;
   try {
     const settled = await resultPromise;
-    if (!settled.ok) throw settled.e;
+    if (!settled.ok) throw settled.cause;
     const r = settled.v;
     // The error channel is `never` today, so `ok` is always true; THROW if a
     // real error variant is ever added so the catch renders the "couldn't

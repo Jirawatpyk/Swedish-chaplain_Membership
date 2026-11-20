@@ -51,7 +51,6 @@ const FORBIDDEN_EXPORTS = [
   'tenantWebhookConfigRepo',
   // Sanitiser helpers — Infrastructure-internal
   'wrapRepoError',
-  'sanitizeDbErrorMessage',
 ];
 
 const REQUIRED_EXPORTS = [

@@ -1804,12 +1804,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
     if (!result.ok) {
       expect(result.error.kind).toBe('submit.server_error');
       if (result.error.kind === 'submit.server_error') {
-        expect(result.error.message).toContain('database connection lost');
+        expect(result.error.message).toBe('Error');
       }
     }
   });
 
-  it('repo throw with non-Error value โ’ submit.server_error with "unknown error" message', async () => {
+  it('repo throw with non-Error value โ’ submit.server_error with "unknown" message', async () => {
     const { deps } = makeDeps({
       primaryContact: 'me@example.com',
       memberInBridge: [
@@ -1829,7 +1829,7 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
     if (!result.ok) {
       expect(result.error.kind).toBe('submit.server_error');
       if (result.error.kind === 'submit.server_error') {
-        expect(result.error.message).toBe('unknown error');
+        expect(result.error.message).toBe('unknown');
       }
     }
   });

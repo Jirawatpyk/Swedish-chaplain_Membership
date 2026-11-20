@@ -154,7 +154,7 @@ describe('getPlanForMember — error branches', () => {
     expect(result.error.code).toBe('plan_lookup.server_error');
     if (result.error.code !== 'plan_lookup.server_error')
       throw new Error('unreachable');
-    expect(result.error.message).toContain('connection refused');
+    expect(result.error.message).toBe('member_lookup: Error');
   });
 
   it('returns plan_not_found when F2 planRepo.findOne returns undefined', async () => {

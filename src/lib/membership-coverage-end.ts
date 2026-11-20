@@ -22,6 +22,7 @@
  *
  * Also named in metrics: `renewals_membership_end_requests_total`.
  */
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import { asMemberId } from '@/modules/members';
@@ -90,7 +91,7 @@ async function run(args: Parameters<typeof requestMembershipEnd>[0]): Promise<Me
     return r.value.outcome;
   } catch (e) {
     logger.error(
-      { ...logBase, errName: e instanceof Error ? e.name : 'UnknownError' },
+      { ...logBase, errName: errKind(e) },
       'membership_end.threw',
     );
     return 'failed';

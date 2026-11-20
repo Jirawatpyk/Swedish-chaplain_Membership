@@ -26,13 +26,13 @@
  * Pure Application — no framework/ORM imports; the caller owns the tx + upload.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { PdfRenderPort } from '../ports/pdf-render-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type { Invoice } from '@/modules/invoicing/domain/invoice';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import { loadTenantLogo } from './load-tenant-logo';
-import { sanitiseErrorReason } from './sanitise-error-reason';
 
 /**
  * 088 T068 — a void re-render TARGET: one Blob to overwrite. A voided ISSUED
@@ -184,7 +184,7 @@ export async function buildVoidRenderTargets(
       ...zeroRateSpread,
     });
   } catch (e) {
-    return err({ code: 'pdf_render_failed', reason: sanitiseErrorReason(e) });
+    return err({ code: 'pdf_render_failed', reason: errKind(e) });
   }
   const targetA: VoidRenderTarget = {
     blobKey: loaded.pdf.blobKey,
@@ -261,7 +261,7 @@ export async function buildVoidRenderTargets(
         ...zeroRateSpread,
       });
     } catch (e) {
-      return err({ code: 'pdf_render_failed', reason: sanitiseErrorReason(e) });
+      return err({ code: 'pdf_render_failed', reason: errKind(e) });
     }
     targetB = {
       blobKey: loaded.receiptPdf.blobKey,

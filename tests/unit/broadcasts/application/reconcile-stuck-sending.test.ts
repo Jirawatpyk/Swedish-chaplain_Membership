@@ -620,7 +620,7 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
 
   it('gateway error โ’ reconcile.gateway_error', async () => {
     const repo = makeBroadcastsRepo({ current: baseBroadcast() });
-    const gateway = makeGateway({ retrieve: new Error('network down') });
+    const gateway = makeGateway({ retrieve: new Error('network down — a@b.example') });
     const audit = makeAudit();
     const result = await reconcileStuckSending(
       {
@@ -634,7 +634,8 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.kind).toBe('reconcile.gateway_error');
+      expect(result.error).toEqual({ kind: 'reconcile.gateway_error', errClass: 'Error' });
+      expect(JSON.stringify(result.error)).not.toContain('@');
     }
     expect(repo.transitions).toHaveLength(0);
   });

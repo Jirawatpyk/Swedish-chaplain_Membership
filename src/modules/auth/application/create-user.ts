@@ -160,6 +160,8 @@ export interface EnqueueInvitationError {
    * a failed outbox insert's driver message quotes the bound `to_email`.
    */
   readonly errClass?: string;
+  /** #739 B3b part 2 — the driver's SQLSTATE (`pgErrorCode(e)`), when there is one. */
+  readonly sqlState?: string;
 }
 
 /**
@@ -248,11 +250,13 @@ export async function createUser(
       });
       if (!enqueueResult.ok) {
         const errClass: EnqueueInvitationError['errClass'] = enqueueResult.error.errClass;
+        const sqlState: EnqueueInvitationError['sqlState'] = enqueueResult.error.sqlState;
         logger.error(
           {
             requestId: input.requestId,
             errCode: enqueueResult.error.code,
             errCause: errClass ?? 'unknown',
+            ...(sqlState !== undefined ? { code: sqlState } : {}),
             targetUserIdHash: hashId(user.id),
           },
           'create_user.invitation_enqueue_failed',

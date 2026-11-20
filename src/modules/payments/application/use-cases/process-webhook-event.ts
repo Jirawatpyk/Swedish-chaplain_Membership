@@ -27,6 +27,7 @@
  * Security-critical → 100% branch coverage (Principle II).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import {
   type AuditPort,
   type ClockPort,
@@ -472,19 +473,6 @@ export interface WebhookDispatchEnvelope {
   readonly type: string;
   readonly api_version: string;
   readonly livemode: boolean;
-}
-
-/**
- * PII-safe error detail formatter for `dispatch_failed` responses.
- *
- * Returns the Error class name (e.g. `"StripeAPIError"`, `"PostgresError"`)
- * if the thrown value is an Error instance, else `"unknown"`. Never returns
- * `e.message` because Stripe error payloads can carry partial API key
- * fragments / internal ids — the route logs the full error into pino +
- * audit downstream where leak risk is contained.
- */
-function formatDispatchErrorDetail(e: unknown): string {
-  return e instanceof Error ? e.constructor.name : 'unknown';
 }
 
 /**
@@ -950,8 +938,8 @@ async function processWebhookEventBody(
           // Stripe error messages can carry partial API key fragments /
           // internal ids. Use the class name only — caller logs it into
           // pino + audit downstream where leak risk is real.
-          detail: formatDispatchErrorDetail(refundResult.error.cause),
-          // F5R2 — `formatDispatchErrorDetail` returns the error class
+          detail: errKind(refundResult.error.cause),
+          // F5R2 — `errKind` returns the error class
           // name (e.g. `PostgresError`, `TypeError`), NOT a sub-use-case
           // code, so routing it through `classifyDispatchPermanence` would
           // hit the default arm and return 'transient' anyway. Hardcoded
@@ -1051,7 +1039,7 @@ async function processWebhookEventBody(
           eventType: event.type,
           // Class name only — Stripe/Postgres error text can carry partial
           // keys / row data (PCI SAQ-A). Route logs the full error downstream.
-          detail: formatDispatchErrorDetail(refundUpdatedResult.error.cause),
+          detail: errKind(refundUpdatedResult.error.cause),
           // A thrown-error class doesn't carry permanent/transient semantics;
           // transient lets Stripe retry (the A.14 sweep is the backstop).
           // Task 5 — a thrown dispatch has no F4 sub-code (`detail` is an
@@ -1121,7 +1109,7 @@ async function processWebhookEventBody(
           // Stripe error messages can carry partial API key
           // fragments / internal ids. Use the class name only — caller
           // logs it into pino + audit downstream where leak risk is real.
-          detail: formatDispatchErrorDetail(e),
+          detail: errKind(e),
           // Default to transient: a dispatch-tx throw is most likely
           // a Neon transient or OTel back-pressure. The route layer
           // can override after inspecting `detail` if a permanent
@@ -1157,7 +1145,7 @@ async function processWebhookEventBody(
           code: 'dispatch_failed',
           kind: 'unknown_event_type_threw',
           eventType: event.type,
-          detail: formatDispatchErrorDetail(e),
+          detail: errKind(e),
           // Transient — the default-branch throw is most likely a DB
           // transient on the markProcessed tx (we don't dispatch any
           // business logic for unknown event types). Stripe should

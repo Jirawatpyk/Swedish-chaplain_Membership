@@ -276,7 +276,7 @@ export async function evaluateTierUpgrade(
   } catch (e) {
     return err({
       kind: 'server_error',
-      message: `plan_catalog_read_failed: ${(e as Error)?.message ?? 'unknown'}`,
+      message: `plan_catalog_read_failed: ${errKind(e)}`,
     });
   }
   const hasAnyThreshold = catalogue.some((p) => p.minTurnoverThb !== null);
@@ -534,13 +534,10 @@ export async function evaluateTierUpgrade(
           suggestionsCreated += flushResult.suggestionsCreated;
           conflictSkipped += flushResult.conflictSkipped;
         } catch (e) {
-          // R6-LOW2 close: prefer instanceof Error narrowing over
-          // `(e as Error)?.message` — handles non-Error throws safely.
-          const message =
-            e instanceof Error ? e.message : String(e ?? 'flush_page_failed');
+          // #739 B3b — the class, never the thrown text.
           return err({
             kind: 'server_error',
-            message,
+            message: errKind(e),
           });
         }
       }

@@ -359,11 +359,12 @@ export function CsvMappingForm() {
           method: 'POST',
           body: fd,
         });
-      } catch (e) {
+      } catch {
         setPhase({
           kind: 'error',
           title: tErrors('networkErrorTitle'),
-          detail: e instanceof Error ? e.message : tErrors('unexpectedDetail'),
+          // #739 B3b — fixed copy: a browser error's text is not for the screen.
+          detail: tErrors('unexpectedDetail'),
         });
         return;
       }

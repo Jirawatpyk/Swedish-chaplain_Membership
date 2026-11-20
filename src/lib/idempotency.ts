@@ -222,12 +222,11 @@ export async function reserveIdempotencyRecord(
     await redis.set(redisKey(tenant, key), record, { ex: IDEMPOTENCY_TTL_SECONDS });
     return ok({ kind: 'reserved' });
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
     logger.warn(
       { ...errLogFields(e), tenant: tenant.slug, key },
       'idempotency: Redis reserve failed — caller must surface 503',
     );
-    return err({ kind: 'redis_unavailable', message });
+    return err({ kind: 'redis_unavailable', message: errKind(e) });
   }
 }
 

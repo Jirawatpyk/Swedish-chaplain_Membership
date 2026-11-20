@@ -107,7 +107,7 @@ export type ReconcileStuckSendingOutcome =
 export type ReconcileStuckSendingError =
   | {
       readonly kind: 'reconcile.gateway_error';
-      readonly cause: string;
+      readonly errClass: string;
     }
   | {
       readonly kind: 'reconcile.server_error';
@@ -230,7 +230,7 @@ export async function reconcileStuckSending(
     } catch (e) {
       return err({
         kind: 'reconcile.gateway_error',
-        cause: e instanceof Error ? e.message : 'unknown gateway error',
+        errClass: errKind(e),
       });
     }
 
@@ -305,7 +305,7 @@ export async function reconcileStuckSending(
     }
     return err({
       kind: 'reconcile.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
+      message: errKind(e),
       errClass: errKind(e),
     });
   }

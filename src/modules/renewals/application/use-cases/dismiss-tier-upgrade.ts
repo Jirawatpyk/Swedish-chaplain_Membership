@@ -18,6 +18,7 @@
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import { runInTenant } from '@/lib/db';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
@@ -144,7 +145,7 @@ export async function dismissTierUpgrade(
     }
     return err({
       kind: 'server_error',
-      message: (e as Error)?.message ?? 'unknown',
+      message: errKind(e),
     });
   }
 }

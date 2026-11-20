@@ -103,7 +103,8 @@ function makeDeps(opts: MakeDepsOpts = {}): {
 
 const BASE_INPUT = {
   tenantId: asTenantId('test-chamber'),
-  actorUserId: asUserId('00000000-0000-0000-0000-000000000abc'),
+  actorUserId: asUserId('00000000-0000-0000-0000-000000000abc'),
+
   actorRole: 'admin' as const,
   externalId: 'agm-2026',
   name: 'AGM 2026',
@@ -256,7 +257,7 @@ describe('createEvent — error paths', () => {
     const outcome = await createEvent(BASE_INPUT, deps);
     expect(outcome.kind).toBe('unexpected_error');
     if (outcome.kind === 'unexpected_error') {
-      expect(outcome.message).toMatch(/simulated runInTenantTx failure/);
+      expect(outcome.message).toBe('Error');
     }
     const errorCalls = (logger.error as ReturnType<typeof vi.fn>).mock.calls;
     const threwLog = errorCalls.find(

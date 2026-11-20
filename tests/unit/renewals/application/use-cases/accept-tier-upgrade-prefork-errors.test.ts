@@ -86,21 +86,20 @@ describe('acceptTierUpgrade — pre-tx repo error containment (R3-C3)', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.kind).toBe('server_error');
     if (result.error.kind !== 'server_error') throw new Error('unreachable');
-    expect(result.error.message).toContain('pre-tx-repo-lookup');
-    expect(result.error.message).toContain('connection reset by peer');
+    expect(result.error.message).toBe('pre-tx-repo-lookup: Error');
   });
 
   it('R3-C3: cyclesRepo.findActiveForMember throws → server_error Result.err', async () => {
     const deps = makeMinimalDeps({
-      findActiveResult: new Error('postgres timeout'),
+      findActiveResult: new Error('duplicate key value (email)=(a@b.example)'),
     });
     const result = await acceptTierUpgrade(deps, validInput);
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
     expect(result.error.kind).toBe('server_error');
     if (result.error.kind !== 'server_error') throw new Error('unreachable');
-    expect(result.error.message).toContain('pre-tx-repo-lookup');
-    expect(result.error.message).toContain('postgres timeout');
+    expect(result.error.message).toBe('pre-tx-repo-lookup: Error');
+    expect(JSON.stringify(result.error)).not.toContain('@');
   });
 
   it('happy-path lookup variants still return typed errors (regression guard)', async () => {

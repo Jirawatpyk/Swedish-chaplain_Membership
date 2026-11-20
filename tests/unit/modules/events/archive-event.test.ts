@@ -335,7 +335,7 @@ describe('archiveEvent — Phase 6 wave-4 (FR-019a)', () => {
       if (!result.ok) {
         expect(result.error.kind).toBe('lock_acquisition_failed');
         if (result.error.kind === 'lock_acquisition_failed') {
-          expect(result.error.message).toContain('pg session terminated');
+          expect(result.error.message).toBe('Error');
           // R3-IMP-1: cause preserves original Error for pino `err` key
           expect(result.error.cause).toBe(pgError);
           expect(result.error.cause).toBeInstanceOf(Error);

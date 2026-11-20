@@ -383,8 +383,7 @@ describe('cancelScheduledPlanChange — server_error paths', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.code).toBe('server_error');
     if (result.error.code !== 'server_error') throw new Error('unreachable');
-    expect(result.error.message).toContain('findById');
-    expect(result.error.message).toContain('connection reset by peer');
+    expect(result.error.message).toBe('find_by_id: Error');
   });
 
   it('wraps transitionStatus errors as server_error when re-read shows row still pending', async () => {
@@ -397,7 +396,7 @@ describe('cancelScheduledPlanChange — server_error paths', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.code).toBe('server_error');
     if (result.error.code !== 'server_error') throw new Error('unreachable');
-    expect(result.error.message).toContain('transitionStatus');
+    expect(result.error.message).toBe('transition_status: Error');
     // Audit MUST NOT fire if transition failed — no event to record
     expect(deps.audit.record).not.toHaveBeenCalled();
   });
@@ -444,7 +443,7 @@ describe('cancelScheduledPlanChange — server_error paths', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.code).toBe('server_error');
     if (result.error.code !== 'server_error') throw new Error('unreachable');
-    expect(result.error.message).toContain('original transitionStatus');
+    expect(result.error.message).toBe('transition_status: Error');
   });
 
   // R4-I3 + R5-S12 — `server_error` is now a discriminated union over
@@ -465,12 +464,10 @@ describe('cancelScheduledPlanChange — server_error paths', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.code).toBe('server_error');
     if (result.error.code !== 'server_error') throw new Error('unreachable');
-    expect(result.error.message).toContain('transitionStatus');
+    expect(result.error.message).toBe('transition_status: Error');
     expect(result.error.recheckFailed).toBe(true);
     if (!result.error.recheckFailed) throw new Error('unreachable');
-    expect(result.error.recheckErrMessage).toBe(
-      'rls: connection-pool exhausted',
-    );
+    expect(result.error.recheckErrMessage).toBe('Error');
   });
 
   it('R4-I3 + R5-S12: server_error.recheckFailed=false variant when recheck succeeded', async () => {

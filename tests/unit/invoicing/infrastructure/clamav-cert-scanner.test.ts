@@ -49,6 +49,7 @@ describe('invoicing clamav classifyError', () => {
     expect(r.verdict).toBe('error');
     if (r.verdict !== 'error') throw new Error('narrowing failed');
     expect(r.reason).toBe('unreachable');
+    expect(r.detail).toBe('Error');
   });
 
   it('classifies unrecognised errors as verdict: error, reason: unknown', () => {
@@ -56,7 +57,7 @@ describe('invoicing clamav classifyError', () => {
     expect(r.verdict).toBe('error');
     if (r.verdict !== 'error') throw new Error('narrowing failed');
     expect(r.reason).toBe('unknown');
-    expect(r.detail).toBe('weird wrapper response');
+    expect(r.detail).toBe('Error');
   });
 });
 

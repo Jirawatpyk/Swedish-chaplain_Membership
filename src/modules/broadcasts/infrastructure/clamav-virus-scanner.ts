@@ -37,6 +37,7 @@
 import { Readable } from 'node:stream';
 
 import { env } from '@/lib/env';
+import { errKind } from '@/lib/log-id';
 import type {
   VirusScannerPort,
   VirusScanVerdict,
@@ -221,14 +222,14 @@ export function classifyError(err: unknown, durationMs: number): VirusScanVerdic
     return {
       verdict: 'error',
       reason: 'unreachable',
-      detail: causeCode || message,
+      detail: causeCode || errKind(err),
       durationMs,
     };
   }
   return {
     verdict: 'error',
     reason: 'unknown',
-    detail: err instanceof Error ? err.message : String(err),
+    detail: errKind(err),
     durationMs,
   };
 }

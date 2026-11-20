@@ -158,13 +158,10 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
         if (cancelled) return;
         setFetchState({ band: activeBand, data: json, error: null });
       })
-      .catch((e: unknown) => {
+      .catch(() => {
         if (cancelled) return;
-        setFetchState({
-          band: activeBand,
-          data: null,
-          error: e instanceof Error ? e.message : String(e),
-        });
+        // #739 B3b — only a flag: the Alert shows fixed copy, never the error text.
+        setFetchState({ band: activeBand, data: null, error: 'load_failed' });
       });
     return () => {
       cancelled = true;

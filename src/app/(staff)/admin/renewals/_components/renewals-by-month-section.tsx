@@ -60,7 +60,7 @@ export async function RenewalsByMonthSection({
   let summary: RenewalMonthSummary;
   try {
     const settled = await summaryPromise;
-    if (!settled.ok) throw settled.e;
+    if (!settled.ok) throw settled.cause;
     const r = settled.v;
     // Error channel is `never` today; THROW if a real variant is ever added so
     // the catch renders "couldn't load" instead of a silently empty chart.

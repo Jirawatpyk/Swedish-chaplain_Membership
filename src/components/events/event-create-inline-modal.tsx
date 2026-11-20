@@ -166,10 +166,11 @@ export function EventCreateInlineModal(
               : null,
         }),
       });
-    } catch (e) {
+    } catch {
       setServerError({
         title: t('errors.networkErrorTitle'),
-        detail: e instanceof Error ? e.message : t('errors.networkErrorDetail'),
+        // #739 B3b — fixed copy: a browser error's text is not for the screen.
+        detail: t('errors.networkErrorDetail'),
       });
       setSubmitting(false);
       return;

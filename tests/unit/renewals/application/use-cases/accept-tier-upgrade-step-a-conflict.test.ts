@@ -169,6 +169,6 @@ describe('acceptTierUpgrade — step-(a) concurrent conflict + atomicity (065 Fi
     if (result.ok) throw new Error('unreachable');
     expect(result.error.kind).toBe('server_error');
     if (result.error.kind !== 'server_error') throw new Error('unreachable');
-    expect(result.error.message).toContain('connection reset by peer');
+    expect(result.error.message).toBe('Error');
   });
 });

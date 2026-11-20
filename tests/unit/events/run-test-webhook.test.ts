@@ -273,12 +273,12 @@ describe('runTestWebhook', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.kind).toBe('sign_failed');
     if (result.error.kind !== 'sign_failed') throw new Error('unreachable');
-    expect(result.error.message).toContain('HMAC');
+    expect(result.error.message).toBe('Error');
     expect(signRequest).toHaveBeenCalledTimes(1);
     expect(httpFetch).not.toHaveBeenCalled();
   });
 
-  it('sign_failed — non-Error throw → message coerces via String()', async () => {
+  it('sign_failed — non-Error throw → message is unknown', async () => {
     const httpFetch = makeFetch(200, {
       ok: true,
       matched: 'short_circuited_test',
@@ -294,7 +294,7 @@ describe('runTestWebhook', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.kind).toBe('sign_failed');
     if (result.error.kind !== 'sign_failed') throw new Error('unreachable');
-    expect(result.error.message).toBe('unsupported encoding');
+    expect(result.error.message).toBe('unknown');
     expect(httpFetch).not.toHaveBeenCalled();
   });
 });

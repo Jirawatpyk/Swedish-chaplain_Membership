@@ -264,4 +264,34 @@ describe('#739 B3a — findCaughtErrorLiterals', () => {
   it('ignores a value outside a catch', () => {
     expect(scan("const e = new Error('x'); err({ message: e.message });")).toEqual([]);
   });
+
+  it('#739 B3b part 2: a parameter typed unknown (or named like an error) is caught, by its text only', () => {
+    expect(scan('function f(e: unknown) { return { reason: String(e) }; }')).toHaveLength(1);
+    expect(scan('function f(err) { const m = err.message; return { detail: m }; }')).toHaveLength(1);
+    expect(scan('function f(e: unknown) { return { err: errKind(e), data: parse(e), raw: e }; }')).toEqual([]);
+    expect(scan('function f(row: unknown) { return { label: `x.${row.kind}` }; }')).toEqual([]);
+  });
+
+  it('#739 B3b part 2: a .catch body local, .then rejection handler and destructured bindings', () => {
+    expect(scan('p.catch((e) => { const m = String(e); return { detail: m }; });')).toHaveLength(1);
+    expect(scan('p.then(() => ({ ok: 1 }), (r) => ({ reason: String(r) }));')).toHaveLength(1);
+    expect(scan('try {} catch ({ message }) { return { detail: message }; }')).toHaveLength(1);
+    expect(
+      scan(
+        "async function f() { const all = await Promise.allSettled([p]); for (const r of all) { const { reason } = r; return { e: String(reason) }; } }",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('#739 B3b part 2: a client file console call is the browser console, not a sink', () => {
+    const src = "'use client';\ntry {} catch (e) { console.error({ err: String(e) }, 'x'); }";
+    expect(rules.findCaughtErrorLiterals('x.tsx', src)).toEqual([]);
+    expect(rules.findCaughtErrorLiterals('x.tsx', "'use client';\ntry {} catch (e) { setState({ detail: String(e) }); }")).toHaveLength(1);
+  });
+
+  it('#739 B3b part 2: counts the catch scopes it parsed, for the real-tree floor', () => {
+    expect(
+      rules.countCaughtScopes('x.ts', 'try {} catch (e) {}\np.catch((x) => 1);\nfunction f(e: unknown) {}\nfunction g(n: number) {}'),
+    ).toBe(3);
+  });
 });

@@ -268,7 +268,7 @@ export async function runTestWebhook(
   } catch (e) {
     return err({
       kind: 'sign_failed',
-      message: e instanceof Error ? e.message : String(e),
+      message: errKind(e),
     });
   }
 

@@ -29,6 +29,7 @@
  * Constraints: 1 ≤ N ≤ 100 entries (FR-015d).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { EmailValidatorPort } from '../ports/email-validator-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
@@ -187,7 +188,7 @@ export async function validateCustomRecipients(
   } catch (e) {
     return err({
       kind: 'validate_custom.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
+      message: errKind(e),
     });
   }
 

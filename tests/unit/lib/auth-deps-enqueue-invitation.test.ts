@@ -28,4 +28,28 @@ describe('enqueueInvitationInTx — a failed insert (#739 B3b)', () => {
     expect(result).toEqual({ ok: false, error: { code: 'enqueue_failed', errClass: 'DrizzleQueryError' } });
     expect(JSON.stringify(result)).not.toContain('b.example');
   });
+
+  it('#739 B3b part 2: carries the SQLSTATE under the driver error, so a unique violation reads apart from an outage', async () => {
+    const pg = Object.assign(new Error('duplicate key … invitee@b.example'), { code: '23505' });
+    const tx = {
+      insert: () => ({
+        values: () => ({
+          returning: async () => {
+            throw new DrizzleQueryError('Failed query: insert … params: invitee@b.example', { cause: pg });
+          },
+        }),
+      }),
+    };
+    const result = await defaultCreateUserDeps.enqueueInvitationInTx(tx as never, {
+      tenantId: 't1',
+      toEmail: 'invitee@b.example',
+      token: 'tok' as never,
+      role: 'member',
+    } as never);
+    expect(result).toEqual({
+      ok: false,
+      error: { code: 'enqueue_failed', errClass: 'DrizzleQueryError', sqlState: '23505' },
+    });
+    expect(JSON.stringify(result)).not.toContain('b.example');
+  });
 });

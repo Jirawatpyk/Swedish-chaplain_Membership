@@ -16,6 +16,7 @@
  */
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { ContactId } from '../../domain/contact';
 import type { MemberId } from '../../domain/member';
@@ -97,7 +98,7 @@ export async function markInvitationBounced(
     }
     return err({
       type: 'server_error',
-      message: e instanceof Error ? e.message : String(e),
+      message: errKind(e),
     });
   }
 }
