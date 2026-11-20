@@ -339,3 +339,4 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 - *Consequence*:
   - `docs/runbooks/f6-manual-erasure.md` says rows before 0330 may hold PII in error text. A data-subject request that matches one is escalated to the maintainer, not answered as "audit rows are redacted at emit".
   - B3b starts with a read-only prod count: `SELECT event_type, count(*) FROM audit_log WHERE payload::text ~ '(Failed query|params:|@)' AND event_type IN (…) GROUP BY 1`. The maintainer runs it, and B3b decides on a reviewed payload rewrite from the result.
+  - B3b part 2 (#739, 20 Nov 2026) removes the last error text from Results and adds migration 0331 (0330's UPDATEs again). The `audit_log` count above is requested on relay R167; the payload-rewrite decision follows from its result, in its own change.

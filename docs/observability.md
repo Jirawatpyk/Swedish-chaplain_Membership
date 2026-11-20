@@ -163,9 +163,9 @@ error in both rules: in a `settled.map((r) => …)` / `.forEach` / … callback
 Promise.allSettled(…)` (its locals followed through the enclosing function),
 `settled[0].reason`, `Promise.allSettled(ps).then((rs) => …)` and
 `for (const [i, r] of settled.entries())`. So `String(r.reason)` is refused in
-a log line and in a Result or body. Not read (known residuals): a
-`const { reason } = r` inside the callback body, and a helper parameter typed
-`PromiseRejectedResult`. Since review round 1: on an error-ish base (a
+a log line and in a Result or body. Since #739 B3b part 2 a
+`const { reason } = r` is followed too; a helper parameter typed
+`PromiseRejectedResult` is still not read (none in the tree). Since review round 1: on an error-ish base (a
 caught or error-named identifier, or a chain through `.error` / `.cause`) only
 `.code`, `.kind` and `.name` are read; element access, a method on an error or
 its text (`e.toString()`, `e.message.slice()`), and a call whose literal
@@ -212,22 +212,40 @@ the UI maps it to fixed copy (the receipt download toast, the CSV import
 result). `pnpm check:log-error-objects` also refuses, inside a `catch`, an
 object literal that is not a log argument and carries the caught value's
 `.message` / `.stack`, `String(e)`, `${e}` or the object itself (error
-chaining with `cause: e` is allowed); its positive control is
-`scripts/__fixtures__/caught-error-literals.fixture.txt`, and the sites still
-to fix (#739 B3b) sit in the shrink-only
-`scripts/caught-error-literals-baseline.json`. Migration 0330 rewrote the
-stored text in `invoices.receipt_pdf_last_error`,
+chaining with `cause: e` is allowed, and `cause` is the only key that may hold
+the error object: a DrizzleQueryError keeps `query` / `params` enumerable);
+its positive control is
+`scripts/__fixtures__/caught-error-literals.fixture.txt`. Since #739 B3b part
+2 it has no baseline: every site fails. It also reads a `.catch` callback's
+and `.then(ok, onRejected)` handler's locals, destructured bindings
+(`catch ({ message })`, `const { reason } = r`), and a helper's parameter typed
+`unknown` (or untyped and named `e` / `err` / `error` / `cause`) inside that
+helper, where only its text counts (`.message`, `String(p)`, `${p}`, a local
+holding either), not passing it on (`parse(e)`, `errKind(e)`). Not read (a
+residual): a parameter passed to a sanitising helper that returns its text.
+A client file's `console.*` arguments are skipped: the browser console is no
+server sink. The run fails if it parsed fewer than `MIN_CATCH_SCOPES` catch,
+rejection-handler, settled and error-parameter scopes. Migrations 0330 and
+0331 (the same UPDATEs, for the rows the old deployment wrote during #800's
+deploy window) rewrote the stored text in `invoices.receipt_pdf_last_error`,
 `notifications_outbox.last_error` and `renewal_reminder_events.failure_reason`
 to `legacy_redacted` (`dispatcher_crash:legacy_redacted` for a crash). Rows
-already in `audit_log` keep their text: the table is append-only (D-045).
-The build runs 0330 before the new code is promoted, so rows the old
-deployment writes in that window keep their text; B3b repeats the same
-UPDATEs.
+already in `audit_log` keep their text: the table is append-only (D-045); a
+read-only prod count decides whether any payload is rewritten
+(`docs/decisions.md`).
 
 A Result error's `message` that code wrote as a step (`count-pending:
 repo.unexpected`) is logged as `step` by `errLogFields`, through
 `stepToken()` in `src/lib/log-id.ts`, which refuses anything with capitals,
-an `@`, more than one space or more than 64 characters. A zod failure logs
+an `@`, more than one space or more than 64 characters. Since #739 B3b part
+2 a catch writes the class into such a `message` (`errKind(e)`, or
+`<step>: ${errKind(e)}` with a lowercase step): `errLogFields` logs a message
+that is exactly a class name (one capitalised word, at most 64 characters) as
+`err`, and `<step>: <Class>` as `step` + `err`; any other text stays out. This
+is the one place a log line reads part of a `message`, by shape. `errKind` of
+a `DOMException` is its token-shaped `name` (`AbortError`, `TimeoutError`):
+before, a DOMException that is not an `Error` in the runtime logged
+`'unknown'`. A zod failure logs
 `issueCount`, never the issues (an issue message can quote the input).
 
 Field names #740 B2 changed (saved searches and alerts keyed on the old name
