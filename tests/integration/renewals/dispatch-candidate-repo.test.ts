@@ -7,7 +7,7 @@
  * `'grace'` — `CYCLE_STATUSES` (7-state set) and the migration `0087`
  * `renewal_cycles_status_check` CHECK both reject it. Grace-window
  * inclusion is achieved entirely by the DATE filter
- * (`expires_at >= NOW() - maxOffsetDays days`), NOT by a status.
+ * (`expires_at >= floorExpiresAt`, the caller's now − maxOffsetDays), NOT by a status.
  *
  * This characterization test pins that behaviour: a post-expiry
  * grace-window `awaiting_payment` cycle (expires_at = now - 5 days) MUST
@@ -117,7 +117,7 @@ describe('F8 DispatchCandidateRepo — grace-window inclusion (Task 0.1 / G6)', 
     const repo = makeDrizzleDispatchCandidateRepo(tenantA.ctx);
     const page = await repo.list(tenantA.ctx.slug, {
       cutoffExpiresAt: new Date(Date.now() + 90 * MS_PER_DAY).toISOString(),
-      maxOffsetDays: 30,
+      floorExpiresAt: new Date(Date.now() - 30 * MS_PER_DAY).toISOString(),
       pageSize: 50,
     });
     expect(page.items.map((c) => c.cycle.cycleId)).toContain(graceWindowCycleId);
@@ -163,7 +163,7 @@ describe('F8 DispatchCandidateRepo — grace-window inclusion (Task 0.1 / G6)', 
     const repo = makeDrizzleDispatchCandidateRepo(tenantA.ctx);
     const page = await repo.list(tenantA.ctx.slug, {
       cutoffExpiresAt: new Date(Date.now() + 90 * MS_PER_DAY).toISOString(),
-      maxOffsetDays: 30,
+      floorExpiresAt: new Date(Date.now() - 30 * MS_PER_DAY).toISOString(),
       pageSize: 50,
     });
     const ids = page.items.map((c) => c.cycle.cycleId);

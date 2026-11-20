@@ -209,6 +209,18 @@ describe('dispatchRenewalCycle', () => {
     vi.clearAllMocks();
   });
 
+  it('both edges of the expiry window come from nowIso (#106)', async () => {
+    const { deps, listMock } = fakeDeps([[]]);
+    const result = await dispatchRenewalCycle(deps, VALID_INPUT);
+    assertOk(result);
+    const args = listMock.mock.calls[0]?.[1] as Record<string, unknown>;
+    const day = 24 * 60 * 60 * 1000;
+    const now = new Date(NOW_ISO).getTime();
+    expect(args.cutoffExpiresAt).toBe(new Date(now + 120 * day).toISOString());
+    expect(args.floorExpiresAt).toBe(new Date(now - 120 * day).toISOString());
+    expect(args).not.toHaveProperty('maxOffsetDays');
+  });
+
   it('happy path: 1 page, 2 candidates, both sent → summary counts emails=2', async () => {
     const candidates = [buildCandidate('c-001'), buildCandidate('c-002')];
     (dispatchOneCycle as unknown as ReturnType<typeof vi.fn>).mockImplementation(

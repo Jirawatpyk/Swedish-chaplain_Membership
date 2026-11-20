@@ -53,9 +53,9 @@ import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
-// The dispatch-candidate repo filters cycles by `expires_at >= NOW() -
-// maxOffsetDays` using the DB wall-clock, so `expires_at` must be near
-// real-now to be picked up. Anchor all dates on real-now's midnight (UTC)
+// The dispatch-candidate repo filters cycles by `expires_at >= floorExpiresAt`
+// (nowIso − maxOffsetDays; the DB clock until #106). Anchor all dates on
+// real-now's midnight (UTC)
 // so the day-floored year arithmetic is exact (no time-of-day fraction):
 //
 //   expires_at  = today + 5d  (future → its own T+0 step is NOT yet due,

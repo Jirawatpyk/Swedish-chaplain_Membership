@@ -51,9 +51,9 @@ import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 //   → strictly past, but within the 7-day lookback → catch up.
 //
 // Dates are anchored on the REAL wall-clock so the test never becomes stale:
-// the dispatch-candidate repo filters `expires_at >= NOW() - maxOffsetDays`
-// using the DB wall-clock (NOT the injected nowIso), so hardcoded future dates
-// silently stop matching once DB_NOW > EXPIRES_AT + DEFAULT_MAX_OFFSET_DAYS.
+// until #106 the dispatch-candidate repo's lower bound read the DB clock, so
+// hardcoded dates stopped matching once the real date passed them. Both
+// bounds now come from nowIso; the real-clock anchor stays harmless.
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const TODAY_UTC_MIDNIGHT_MS = Math.floor(Date.now() / MS_PER_DAY) * MS_PER_DAY;
 const EXPIRES_AT = new Date(TODAY_UTC_MIDNIGHT_MS + 5 * MS_PER_DAY); // today + 5d

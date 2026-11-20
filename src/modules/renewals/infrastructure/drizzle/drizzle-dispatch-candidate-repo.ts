@@ -292,13 +292,14 @@ export function makeDrizzleDispatchCandidateRepo(
         // row can ever hold it — `CYCLE_STATUSES` + the migration 0087
         // `renewal_cycles_status_check` CHECK both reject it) but by the
         // DATE window below: a post-expiry cycle whose `expires_at` is no
-        // older than `NOW() - maxOffsetDays days` is still returned so the
+        // older than the caller's `floorExpiresAt` (its `now - maxOffsetDays`,
+        // never the DB's NOW(), #106) is still returned so the
         // schedule's positive-offset (post-expiry) reminder steps fire.
         const filters: SQL[] = [
           eq(renewalCycles.tenantId, tenant.slug),
           sql`${renewalCycles.status} IN (${sql.raw(OPEN_CYCLE_STATUSES_SQL_LIST)})`,
           sql`${renewalCycles.expiresAt} <= ${args.cutoffExpiresAt}`,
-          sql`${renewalCycles.expiresAt} >= NOW() - (${args.maxOffsetDays}::int * INTERVAL '1 day')`,
+          sql`${renewalCycles.expiresAt} >= ${args.floorExpiresAt}`,
           // COMP-1 H4 — never dispatch a renewal reminder to a GDPR-erased
           // member (erasure keeps `status` + the cycle, stamps `erased_at`).
           sql`${members.erasedAt} IS NULL`,
