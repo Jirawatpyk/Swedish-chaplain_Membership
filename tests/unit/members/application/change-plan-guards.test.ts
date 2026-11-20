@@ -165,6 +165,16 @@ describe('changePlan guards (126)', () => {
     expect(deps.memberRepo.updateFieldsInTx).not.toHaveBeenCalled();
   });
 
+  it('#739 B3b — a write that throws is a server_error carrying the class, never the driver text', async () => {
+    const deps = buildDeps({});
+    (deps.memberRepo.updateFieldsInTx as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('duplicate key value (email)=(a@b.example)'),
+    );
+    const r = await changePlan(memberId, BODY, meta, deps);
+    expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'Error' } });
+    if (!r.ok) expect(JSON.stringify(r.error)).not.toContain('@');
+  });
+
   it('#9 (review) — a missing old plan row still lets the change through (no bundle to leave)', async () => {
     const deps = buildDeps({});
     (deps.plans.getPlan as ReturnType<typeof vi.fn>).mockImplementation(async (_t: unknown, id: string) =>

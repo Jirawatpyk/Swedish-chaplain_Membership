@@ -35,11 +35,12 @@ describe('listPlanNames', () => {
     });
   });
 
-  it('a repo fault is a server_error, not a throw', async () => {
+  it('a repo fault is a server_error carrying the error class, never its text', async () => {
     const planRepo = repo(async () => {
-      throw new Error('connection lost');
+      throw new Error('duplicate key value violates unique constraint (email)=(a@b.example)');
     });
     const res = await listPlanNames({ year: asPlanYear(2026) }, { tenant, planRepo });
-    expect(res).toEqual({ ok: false, error: { type: 'server_error', message: 'connection lost' } });
+    expect(res).toEqual({ ok: false, error: { type: 'server_error', message: 'Error' } });
+    if (!res.ok) expect(JSON.stringify(res.error)).not.toContain('@');
   });
 });

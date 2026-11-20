@@ -642,7 +642,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('reclaim.server_error');
-      expect(result.error.message).toContain('list audiences');
+      expect(result.error.message).toBe('Error');
     }
   });
 

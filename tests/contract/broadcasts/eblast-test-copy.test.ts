@@ -173,16 +173,16 @@ describe('sendTestCopy — use case', () => {
     if (r.ok) return;
     expect(r.error.kind).toBe('sanitizer_unavailable');
     if (r.error.kind === 'sanitizer_unavailable') {
-      expect(r.error.reason).toContain('DOMPurify');
+      expect(r.error.reason).toBe('Error');
     }
     expect(send).not.toHaveBeenCalled();
     expect(audit.emitTyped).not.toHaveBeenCalled();
   });
 
-  it('a non-Error sanitiser throw still carries a reason (String(e), not "[object Object]")', async () => {
+  it('a non-Error sanitiser throw carries the class `unknown`, never its text', async () => {
     const { deps } = makeDeps({
       sanitize: () => {
-        // A bare string, deliberately: the `String(e)` arm is a different
+        // A bare string, deliberately: the non-Error arm is a different
         // branch from the `instanceof Error` one.
         throw 'sanitizer pool exhausted';
       },
@@ -190,7 +190,7 @@ describe('sendTestCopy — use case', () => {
     const r = await sendTestCopy(deps, base);
     expect(r).toMatchObject({
       ok: false,
-      error: { kind: 'sanitizer_unavailable', reason: 'sanitizer pool exhausted' },
+      error: { kind: 'sanitizer_unavailable', reason: 'unknown' },
     });
   });
 

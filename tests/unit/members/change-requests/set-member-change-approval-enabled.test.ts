@@ -163,9 +163,9 @@ describe('setMemberChangeApprovalEnabled — a throw that is not an Error (T105 
       throw 'connection reset';
     });
     const r = await setMemberChangeApprovalEnabled(deps, input);
-    expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'set-approval: connection reset' } });
-    // Spec 140 s2d (#736c) — the log line takes the class (`unknown` for a non-Error);
-    // the Result keeps the string form until follow-up (1).
+    expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'set-approval: unknown' } });
+    // Spec 140 s2d (#736c) / #739 B3b — the log line and the Result both take the
+    // class (`unknown` for a non-Error).
     expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'unknown', cause: undefined }), expect.any(String));
   });
 });

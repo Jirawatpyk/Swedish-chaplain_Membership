@@ -41,7 +41,8 @@ describe('classifyError', () => {
     expect(r.verdict).toBe('error');
     if (r.verdict !== 'error') throw new Error('narrowing failed');
     expect(r.reason).toBe('unreachable');
-    expect(r.detail).toContain('econnrefused');
+    // #739 B3b — no cause code: the class, never the message.
+    expect(r.detail).toBe('Error');
     expect(r.durationMs).toBe(42);
   });
 
@@ -64,16 +65,16 @@ describe('classifyError', () => {
     expect(r.verdict).toBe('error');
     if (r.verdict !== 'error') throw new Error('narrowing failed');
     expect(r.reason).toBe('unknown');
-    expect(r.detail).toBe('Invalid response from clamd');
+    expect(r.detail).toBe('Error');
     expect(r.durationMs).toBe(1_234);
   });
 
-  it('classifies non-Error thrown values as verdict: error, reason: unknown with String() detail', () => {
+  it('classifies non-Error thrown values as verdict: error, reason: unknown with the class unknown', () => {
     const r = classifyError('not an Error instance', 0);
     expect(r.verdict).toBe('error');
     if (r.verdict !== 'error') throw new Error('narrowing failed');
     expect(r.reason).toBe('unknown');
-    expect(r.detail).toBe('not an Error instance');
+    expect(r.detail).toBe('unknown');
   });
 
   it('classifies undefined as verdict: error, reason: unknown', () => {
@@ -81,7 +82,7 @@ describe('classifyError', () => {
     expect(r.verdict).toBe('error');
     if (r.verdict !== 'error') throw new Error('narrowing failed');
     expect(r.reason).toBe('unknown');
-    expect(r.detail).toBe('undefined');
+    expect(r.detail).toBe('unknown');
   });
 
   it('preserves durationMs literally (no normalisation)', () => {

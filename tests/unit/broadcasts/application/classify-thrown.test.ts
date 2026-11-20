@@ -7,8 +7,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   GATEWAY_RETRYABLE_SUB_KINDS,
+  classifyThrown,
   retryableSubKind,
 } from '@/modules/broadcasts/application/use-cases/_classify-thrown';
+
+describe('classifyThrown', () => {
+  it('a throw with no `kind` is `unknown` carrying its class, never its text (#739 B3b)', () => {
+    expect(classifyThrown(new TypeError('x is undefined — a@b.example'))).toEqual({ kind: 'unknown', reason: 'TypeError' });
+    expect(classifyThrown('plain string')).toEqual({ kind: 'unknown', reason: 'unknown' });
+  });
+});
 
 describe('retryableSubKind', () => {
   it.each([...GATEWAY_RETRYABLE_SUB_KINDS])('keeps the port sub-kind %s', (sub) => {

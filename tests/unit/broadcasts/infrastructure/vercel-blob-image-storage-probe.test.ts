@@ -59,7 +59,8 @@ describe('vercelBlobImageStorage.existsByContentHash — tri-state probe vs the 
     for (const e of [new BlobServiceRateLimited(), new BlobAccessError(), new BlobUnknownError(), new Error('socket hang up')]) {
       headMock.mockRejectedValueOnce(e);
       const probe = await vercelBlobImageStorage.existsByContentHash(TENANT, HASH, 'image/png');
-      expect(probe.status).toBe('unknown');
+      // #739 B3b — the reason is the SDK class, never its message.
+      expect(probe).toEqual({ status: 'unknown', reason: e.constructor.name });
     }
   });
 

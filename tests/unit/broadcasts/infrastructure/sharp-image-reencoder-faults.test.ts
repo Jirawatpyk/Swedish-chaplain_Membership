@@ -70,18 +70,20 @@ describe('sharpImageReencoder — fault taxonomy (R-M3)', () => {
     const r = await adapter.reencode(PNG_BYTES, 'image/png');
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.error.kind).toBe('decode_failed');
+    expect(r.error).toEqual({ kind: 'decode_failed', reason: 'Error' });
   });
 
   it('a SERVER-fault throw is `reencoder_unavailable`, not a member-unsafe verdict', async () => {
     sharpCtorMock.mockImplementation(() => makePipeline('png'));
-    toBufferMock.mockRejectedValue(new Error('Cannot allocate memory'));
+    toBufferMock.mockRejectedValue(new Error('Cannot allocate memory: /tmp/a@b.example.png'));
     const adapter = await loadAdapter();
 
     const r = await adapter.reencode(PNG_BYTES, 'image/png');
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.error.kind).toBe('reencoder_unavailable');
+    // #739 B3b — the message classifies; the Result carries the class only.
+    expect(r.error).toEqual({ kind: 'reencoder_unavailable', reason: 'Error' });
+    expect(JSON.stringify(r.error)).not.toContain('@');
   });
 
   it('a decompression bomb stays `decode_failed` — it is a refusal of the input, and must not be retried as an outage', async () => {
@@ -108,7 +110,7 @@ describe('sharpImageReencoder — fault taxonomy (R-M3)', () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error.kind).toBe('reencoder_unavailable');
-    expect(r.error.reason).toMatch(/timeout|timed out|15000/i);
+    expect(r.error.reason).toBe('ReencodeTimeoutError');
   });
 });
 

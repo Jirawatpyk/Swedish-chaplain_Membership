@@ -88,7 +88,7 @@ describe('getPlan use case', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.type).toBe('server_error');
-      if (result.error.type === 'server_error') expect(result.error.message).toBe('DB timeout');
+      if (result.error.type === 'server_error') expect(result.error.message).toBe('Error');
     }
     expect(deps.audit.record).not.toHaveBeenCalled();
   });

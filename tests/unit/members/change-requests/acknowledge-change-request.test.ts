@@ -171,9 +171,9 @@ describe('acknowledgeChangeRequest — the failure log (T105: every narrowing ex
     b.repo.findByIdInTx = async () => {
       throw 'connection reset';
     };
-    expect(await acknowledgeChangeRequest(b.deps, input)).toEqual({ ok: false, error: { type: 'server_error', message: 'acknowledge: connection reset' } });
-    // Spec 140 s2d (#736c) — the log line takes the class (`unknown` for a non-Error);
-    // the Result keeps the string form until follow-up (1).
+    expect(await acknowledgeChangeRequest(b.deps, input)).toEqual({ ok: false, error: { type: 'server_error', message: 'acknowledge: unknown' } });
+    // Spec 140 s2d (#736c) / #739 B3b — the log line and the Result both take the
+    // class (`unknown` for a non-Error).
     expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.objectContaining({ err: 'unknown', cause: undefined }), 'change-request.acknowledge.failed');
   });
 });

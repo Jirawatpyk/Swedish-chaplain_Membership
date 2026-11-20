@@ -160,7 +160,7 @@ describe('applyQuotaEffect — Phase 6 T085', () => {
       if (!result.ok) {
         expect(result.error.kind).toBe('lock_acquisition_failed');
         if (result.error.kind === 'lock_acquisition_failed') {
-          expect(result.error.message).toContain('pg session lost');
+          expect(result.error.message).toBe('Error');
           // R3-IMP-1: assert cause carries original Error so future
           // refactor that drops `cause: e` from wrapLockFailure fails here.
           expect(result.error.cause).toBe(pgError);

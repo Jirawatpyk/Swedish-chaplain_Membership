@@ -184,18 +184,17 @@ describe('completeEscalationTask (T209)', () => {
   // as `new Error(String(e))` and surfaced as `kind:'server_error'`.
   // The Application-layer 100% branch coverage threshold requires
   // this fallback path be exercised (was uncovered pre-R10).
-  it('non-Error throw — wrapped via String(e) + kind:server_error', async () => {
+  it('non-Error throw — server_error carrying unknown', async () => {
     const { deps } = fakeDeps(openTaskRow(), async () => {
       throw 'audit-DB-down-string';
     });
     const r = await completeEscalationTask(deps, baseInput);
     expect(r.ok).toBe(false);
     if (!r.ok && r.error.kind === 'server_error') {
-      // Helper coerces String(e) into Error; the Result message
-      // surface picks up the stringified value. Narrow on `kind` first
-      // because `message` only exists on `invalid_input | server_error`
-      // variants.
-      expect(r.error.message).toBe('audit-DB-down-string');
+      // #739 B3b — the Result carries the class (`unknown` for a non-Error),
+      // never the thrown text. Narrow on `kind` first because `message`
+      // only exists on `invalid_input | server_error` variants.
+      expect(r.error.message).toBe('unknown');
     } else {
       throw new Error(`expected server_error result, got ${JSON.stringify(r)}`);
     }

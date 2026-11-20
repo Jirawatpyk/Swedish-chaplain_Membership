@@ -168,13 +168,13 @@ describe('softDeletePlan use case', () => {
     if (!result.ok) {
       expect(result.error.type).toBe('server_error');
       if (result.error.type === 'server_error') {
-        expect(result.error.message).toBe('DB connection lost');
+        expect(result.error.message).toBe('Error');
       }
     }
     expect(deps.planRepo.softDeleteGuarded).not.toHaveBeenCalled();
   });
 
-  it('returns server_error with string coercion when planRepo.findOne throws non-Error', async () => {
+  it('returns server_error with unknown when planRepo.findOne throws non-Error', async () => {
     const planRepo = {
       findOne: vi.fn(async () => { throw 'string error'; }),
       softDeleteGuarded: vi.fn(),
@@ -196,7 +196,7 @@ describe('softDeletePlan use case', () => {
     if (!result.ok) {
       expect(result.error.type).toBe('server_error');
       if (result.error.type === 'server_error') {
-        expect(result.error.message).toBe('string error');
+        expect(result.error.message).toBe('unknown');
       }
     }
   });
@@ -255,13 +255,13 @@ describe('softDeletePlan use case', () => {
     if (!result.ok) {
       expect(result.error.type).toBe('server_error');
       if (result.error.type === 'server_error') {
-        expect(result.error.message).toBe('Soft-delete constraint violation');
+        expect(result.error.message).toBe('Error');
       }
     }
     expect(deps.audit.record).not.toHaveBeenCalled();
   });
 
-  it('returns server_error with string coercion when softDeleteGuarded throws non-Error', async () => {
+  it('returns server_error with unknown when softDeleteGuarded throws non-Error', async () => {
     const planRepo = {
       findOne: vi.fn(async () => makePlan()),
       softDeleteGuarded: hooked(async () => { throw { code: 'PG_CONSTRAINT' }; }),
@@ -279,7 +279,7 @@ describe('softDeletePlan use case', () => {
     if (!result.ok) {
       expect(result.error.type).toBe('server_error');
       if (result.error.type === 'server_error') {
-        expect(result.error.message).toBe('[object Object]');
+        expect(result.error.message).toBe('unknown');
       }
     }
   });

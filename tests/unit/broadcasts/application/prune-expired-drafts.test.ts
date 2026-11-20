@@ -333,7 +333,7 @@ describe('pruneExpiredDrafts (Phase 8 / T171a)', () => {
     expect(repo.calls).toHaveLength(4);
   });
 
-  it('repo throws → returns prune.server_error with the original message', async () => {
+  it('repo throws → returns prune.server_error with the error class', async () => {
     const repo = makeRepo({ shouldThrow: true });
     const result = await pruneExpiredDrafts({
       tenant,
@@ -344,7 +344,7 @@ describe('pruneExpiredDrafts (Phase 8 / T171a)', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('prune.server_error');
-      expect(result.error.message).toContain('Neon');
+      expect(result.error.message).toBe('Error');
     }
   });
 });

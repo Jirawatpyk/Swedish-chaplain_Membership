@@ -122,27 +122,30 @@ describe('setBrandSettings', () => {
 
   it('a repo throw inside the tx surfaces as storage_error (audit row rolled back with it)', async () => {
     const { repo, audit } = makeDeps();
-    (repo.save as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new TypeError('boom'));
+    (repo.save as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new TypeError('duplicate key value (postal_address)=(12 Sukhumvit Rd, a@b.example)'),
+    );
     const r = await setBrandSettings({ repo, audit }, { ...base, primaryColor: '#b04a00', postalAddress: undefined });
-    expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'boom', errKind: 'TypeError' } });
+    expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'TypeError', errKind: 'TypeError' } });
+    if (!r.ok) expect(JSON.stringify(r.error)).not.toContain('@');
   });
 
-  // F7-5 — `detail` is raw Postgres text (never logged), so the error CLASS is
-  // the only thing on-call can see; it must name the real class, not a constant.
+  // F7-5 / #739 B3b — the error CLASS is the only thing on-call can see; it
+  // must name the real class, not a constant.
   it('a custom error class is carried as errKind, so the route can log WHICH fault it was', async () => {
     class NeonDbError extends Error {}
     const { repo, audit } = makeDeps();
     (repo.save as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new NeonDbError('connection reset'));
     const r = await setBrandSettings({ repo, audit }, { ...base, primaryColor: '#b04a00', postalAddress: undefined });
-    expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'connection reset', errKind: 'NeonDbError' } });
+    expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'NeonDbError', errKind: 'NeonDbError' } });
   });
 });
 
 describe('setBrandSettings — non-Error throw', () => {
-  it('a thrown non-Error value is stringified into storage_error.detail', async () => {
+  it('a thrown non-Error value is storage_error with the class unknown, never its text', async () => {
     const { repo, audit } = makeDeps();
     (repo.withTx as ReturnType<typeof vi.fn>).mockRejectedValueOnce('pool exhausted');
     const r = await setBrandSettings({ repo, audit }, { ...base, primaryColor: '#b04a00', postalAddress: undefined });
-    expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'pool exhausted', errKind: 'unknown' } });
+    expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'unknown', errKind: 'unknown' } });
   });
 });

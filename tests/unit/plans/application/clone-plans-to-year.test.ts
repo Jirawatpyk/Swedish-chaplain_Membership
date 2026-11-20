@@ -116,7 +116,7 @@ describe('clonePlansToYear', () => {
 
   // 2. planRepo.cloneYear throws (unexpected exception → server_error)
   describe('planRepo.cloneYear throws', () => {
-    it('returns server_error with the exception message', async () => {
+    it('returns server_error with the error class', async () => {
       const planRepo = {
         findByTenantAndYear: vi.fn(),
         findOne: vi.fn(),
@@ -134,12 +134,10 @@ describe('clonePlansToYear', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.type).toBe('server_error');
-      expect((result.error as { type: 'server_error'; message: string }).message).toContain(
-        'Postgres connection lost',
-      );
+      expect((result.error as { type: 'server_error'; message: string }).message).toBe('Error');
     });
 
-    it('returns server_error with stringified value when non-Error is thrown', async () => {
+    it('returns server_error with unknown when non-Error is thrown', async () => {
       const planRepo = {
         findByTenantAndYear: vi.fn(),
         findOne: vi.fn(),
@@ -157,7 +155,7 @@ describe('clonePlansToYear', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.type).toBe('server_error');
-      expect((result.error as { type: 'server_error'; message: string }).message).toBe('raw string error');
+      expect((result.error as { type: 'server_error'; message: string }).message).toBe('unknown');
     });
   });
 

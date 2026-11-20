@@ -328,7 +328,7 @@ describe('sanitize-html — Wave 6 (T064 GREEN)', () => {
   // (5xx-class infra fault) NOT `broadcast_body_unsafe_html` (4xx user
   // fault). Distinct error code lets the route handler produce a
   // 500 internal_error + ops alert instead of gaslighting the user.
-  it('sanitiser port throws Error → sanitizer_unavailable with err.message', () => {
+  it('sanitiser port throws Error → sanitizer_unavailable with the error class', () => {
     const throwingDeps = {
       sanitizer: {
         sanitize() {
@@ -341,12 +341,12 @@ describe('sanitize-html — Wave 6 (T064 GREEN)', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('sanitizer_unavailable');
       if (result.error.kind === 'sanitizer_unavailable') {
-        expect(result.error.reason).toBe('DOMPurify init failure');
+        expect(result.error.reason).toBe('Error');
       }
     }
   });
 
-  it('sanitiser port throws non-Error → sanitizer_unavailable with "unknown sanitiser error"', () => {
+  it('sanitiser port throws non-Error → sanitizer_unavailable with "unknown"', () => {
     const throwingDeps = {
       sanitizer: {
         sanitize() {
@@ -357,7 +357,7 @@ describe('sanitize-html — Wave 6 (T064 GREEN)', () => {
     const result = sanitizeHtml(throwingDeps, { rawHtml: '<p>any</p>' });
     expect(result.ok).toBe(false);
     if (!result.ok && result.error.kind === 'sanitizer_unavailable') {
-      expect(result.error.reason).toBe('unknown sanitiser error');
+      expect(result.error.reason).toBe('unknown');
     }
   });
 });

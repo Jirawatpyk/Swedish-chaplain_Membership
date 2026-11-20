@@ -231,7 +231,7 @@ describe('sendReminderNow', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('server_error');
       if (result.error.kind === 'server_error') {
-        expect(result.error.message).toMatch(/connection lost/);
+        expect(result.error.message).toBe('Error');
       }
     }
   });

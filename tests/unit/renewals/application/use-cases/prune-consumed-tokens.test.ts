@@ -81,7 +81,7 @@ describe('pruneConsumedTokens (Phase 9 retrofit)', () => {
     if (r.ok) expect(r.value.pruned).toBe(0);
   });
 
-  it('maps adapter throw to server_error (preserves message)', async () => {
+  it('maps adapter throw to server_error (the class, never the text)', async () => {
     const { deps } = fakeDeps({
       pruneImpl: async () => {
         throw new Error('connection terminated by server');
@@ -92,7 +92,7 @@ describe('pruneConsumedTokens (Phase 9 retrofit)', () => {
     if (!r.ok) {
       expect(r.error.kind).toBe('server_error');
       if (r.error.kind === 'server_error') {
-        expect(r.error.message).toContain('connection terminated');
+        expect(r.error.message).toBe('Error');
       }
     }
   });

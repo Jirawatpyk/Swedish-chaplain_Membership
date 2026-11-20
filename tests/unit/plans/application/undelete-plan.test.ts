@@ -112,7 +112,7 @@ describe('undeletePlan use case', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.type).toBe('server_error');
-      if (result.error.type === 'server_error') expect(result.error.message).toBe('DB down');
+      if (result.error.type === 'server_error') expect(result.error.message).toBe('Error');
     }
   });
 

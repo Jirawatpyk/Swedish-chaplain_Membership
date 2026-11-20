@@ -367,7 +367,7 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
         mimeType: 'image/png',
       });
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.error).toEqual({ kind: 'storage_unavailable', reason: message });
+      if (!r.ok) expect(r.error).toEqual({ kind: 'storage_unavailable', reason: 'ImageStorageUnavailableError' });
     },
   );
 
@@ -397,7 +397,7 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
       mimeType: 'image/png',
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toEqual({ kind: 'storage_unavailable', reason: message });
+    if (!r.ok) expect(r.error).toEqual({ kind: 'storage_unavailable', reason: 'ImageStorageUnavailableError' });
     // Both probes said `absent`: the first PUT, then the re-PUT under the lock.
     expect(deps.storage.put).toHaveBeenCalledTimes(2);
     expect(deps.imagesRepo.lockContentHash).toHaveBeenCalledTimes(1);

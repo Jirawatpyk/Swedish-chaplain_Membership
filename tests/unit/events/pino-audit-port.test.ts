@@ -80,7 +80,7 @@ describe('pino-audit-port — logFullError coverage on emit + emitRolledBack', (
   it('emit (in-tx) — executor.execute throw → logFullError with caller="emit" + sanitised Result.err', async () => {
     const executor = {
       execute: vi.fn().mockRejectedValue(
-        new Error('relation "audit_log" does not exist'),
+        new Error('relation "audit_log" does not exist — params: [a@b.example]'),
       ),
     } as unknown as TenantTx;
     const port = makePinoAuditPort(executor);
@@ -91,8 +91,9 @@ describe('pino-audit-port — logFullError coverage on emit + emitRolledBack', (
     if (result.ok) throw new Error('unreachable');
     expect(result.error.kind).toBe('db_error');
     if (result.error.kind !== 'db_error') throw new Error('unreachable');
-    // Sanitiser strips `"audit_log"` identifier
-    expect(result.error.message).toMatch(/relation\s+"\[redacted\]"/);
+    // #739 B3b — the class only; no identifier, no bound parameter.
+    expect(result.error.message).toBe('Error');
+    expect(JSON.stringify(result.error)).not.toContain('@');
 
     // logFullError logs the error class only (#740)
     expect(errorSpy).toHaveBeenCalledWith(
@@ -136,7 +137,7 @@ describe('pino-audit-port — logFullError coverage on emit + emitRolledBack', (
     if (result.ok) throw new Error('unreachable');
     expect(result.error.kind).toBe('db_error');
     if (result.error.kind !== 'db_error') throw new Error('unreachable');
-    expect(result.error.message).toMatch(/column\s+"\[redacted\]"/);
+    expect(result.error.message).toBe('Error');
 
     // logFullError logs the error class only (#740)
     expect(errorSpy).toHaveBeenCalledWith(
@@ -185,10 +186,9 @@ describe('pino-audit-port — logFullError coverage on emit + emitRolledBack', (
     if (result.error.kind !== 'db_error') throw new Error('unreachable');
     // Post-A1 refactor — `asTenantContext` throws `InvalidTenantSlugError`
     // BEFORE `runInTenant` is reached, so the slug-guard message now
-    // originates from `asTenantContext` ("Invalid tenant slug: ...") not
-    // the prior inline runInTenant guard ("slug invariant violated").
-    // Sanitizer redacts the table name within the slug.
-    expect(result.error.message).toMatch(/Invalid tenant slug/);
+    // originates from `asTenantContext`; the Result carries its class
+    // (#739 B3b), never the message quoting the slug.
+    expect(result.error.message).toBe('InvalidTenantSlugError');
 
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({

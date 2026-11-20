@@ -178,7 +178,7 @@ function makeDeps(overrides: Partial<UpdatePlanDeps> = {}): UpdatePlanDeps {
 describe('updatePlan', () => {
   // 1. planRepo.findOne throws
   describe('planRepo.findOne throws', () => {
-    it('returns server_error with the exception message', async () => {
+    it('returns server_error with the error class', async () => {
       const planRepo = makePlanRepo({ findOneThrows: 'Connection timeout' });
       const deps = makeDeps({ planRepo });
 
@@ -187,12 +187,10 @@ describe('updatePlan', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.type).toBe('server_error');
-      expect((result.error as { type: 'server_error'; message: string }).message).toContain(
-        'Connection timeout',
-      );
+      expect((result.error as { type: 'server_error'; message: string }).message).toBe('Error');
     });
 
-    it('returns server_error with stringified value when non-Error is thrown', async () => {
+    it('returns server_error with unknown when non-Error is thrown', async () => {
       const planRepo = {
         ...makePlanRepo(),
         findOne: vi.fn(async () => { throw 42; }),
@@ -204,7 +202,7 @@ describe('updatePlan', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.type).toBe('server_error');
-      expect((result.error as { type: 'server_error'; message: string }).message).toBe('42');
+      expect((result.error as { type: 'server_error'; message: string }).message).toBe('unknown');
     });
   });
 
@@ -427,7 +425,7 @@ describe('updatePlan', () => {
 
   // 6. planRepo.update throws
   describe('planRepo.update throws', () => {
-    it('returns server_error with the exception message', async () => {
+    it('returns server_error with the error class', async () => {
       const planRepo = makePlanRepo({ updateThrows: 'Unique constraint violated' });
       const deps = makeDeps({ planRepo });
 
@@ -436,12 +434,10 @@ describe('updatePlan', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.type).toBe('server_error');
-      expect((result.error as { type: 'server_error'; message: string }).message).toContain(
-        'Unique constraint violated',
-      );
+      expect((result.error as { type: 'server_error'; message: string }).message).toBe('Error');
     });
 
-    it('returns server_error with stringified value when non-Error is thrown', async () => {
+    it('returns server_error with unknown when non-Error is thrown', async () => {
       const planRepo = {
         ...makePlanRepo(),
         update: hooked(async () => { throw { code: 'P2002' }; }),

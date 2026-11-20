@@ -106,6 +106,19 @@ describe('mapStripeError — direct unit', () => {
     const e = new DOMException('Aborted', 'AbortError');
     const result = mapStripeError(e, ctx);
     expect(result.kind).toBe('retryable');
+    // #739 B3b — no Stripe type: the reason is the class.
+    expect(result.reason).toBe('AbortError');
+  });
+
+  it('#739 B3b — the reason is the Stripe type, never the message (it can echo a user value)', () => {
+    const e = new Stripe.errors.StripeInvalidRequestError({
+      message: 'Invalid email address: a@b.example',
+      type: 'StripeInvalidRequestError' as never,
+      code: 'email_invalid',
+    });
+    const result = mapStripeError(e, ctx);
+    expect(result).toEqual({ kind: 'permanent', code: 'email_invalid', reason: 'StripeInvalidRequestError' });
+    expect(JSON.stringify(result)).not.toContain('@');
   });
 
   // R1 self-review M (2026-04-26): bare Node net errors (legacy https

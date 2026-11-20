@@ -358,7 +358,7 @@ describe('computeAtRiskScore (T154)', () => {
     if (!r.ok) {
       expect(r.error.kind).toBe('server_error');
       if (r.error.kind === 'server_error') {
-        expect(r.error.message).toContain('CTE query timed out');
+        expect(r.error.message).toBe('Error');
       }
     }
   });

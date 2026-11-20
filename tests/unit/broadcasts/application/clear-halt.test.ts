@@ -239,7 +239,7 @@ describe('clear-halt — Wave 6 GREEN (T114)', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('clear_halt.server_error');
       if (result.error.kind === 'clear_halt.server_error') {
-        expect(result.error.message).toBe('db down');
+        expect(result.error.message).toBe('Error');
       }
     }
   });

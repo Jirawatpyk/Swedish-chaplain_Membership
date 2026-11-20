@@ -43,10 +43,12 @@ describe('sharpLogoAdapter.reencode (FR-025a)', () => {
     if (!r.ok) expect(r.error.code).toBe('unsupported_format');
   });
 
-  it('rejects non-image bytes with decode_failed', async () => {
-    const r = await sharpLogoAdapter.reencode(new TextEncoder().encode('not an image at all'));
+  it('rejects non-image bytes with decode_failed, carrying the error class, never its text', async () => {
+    const r = await sharpLogoAdapter.reencode(new TextEncoder().encode('not an image: a@b.example'));
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('decode_failed');
+    if (r.ok) return;
+    expect(r.error).toEqual({ code: 'decode_failed', reason: 'Error' });
+    expect(JSON.stringify(r.error)).not.toContain('@');
   });
 
   it('bounds output dimensions to ≤ 800px (never enlarges aspect)', async () => {
