@@ -18,6 +18,7 @@
 // pull `sharp` into client bundles and break the build.
 import 'server-only';
 import sharp from 'sharp';
+import { errKind } from '@/lib/log-id';
 import type {
   ImageReEncodePort,
   ImageReEncodeResult,
@@ -31,26 +32,6 @@ import type {
 // images that DO decode successfully; this limit catches ones that try
 // to allocate too much memory just to decode.
 const LIMIT_INPUT_PIXELS = 2_000 * 500;
-
-/**
- * R20-02 — sanitise a libvips / sharp error message before it lands in
- * the returned `reason` field (which the use-case logs at warn level
- * AND carries across the Application boundary).
- *
- * Sharp occasionally embeds absolute filesystem paths (sandbox temp
- * dirs, libvips shared-object paths) in its error messages.
- * Separately, any numeric run-id or inode in the path could pattern-
- * match on a 13-digit Thai tax-id regex and drag a real tax_id through
- * logs if a coincidentally-shaped substring appears. Belt-and-
- * suspenders: strip 13-digit sequences + truncate to 200 chars.
- *
- * Mirrors `void-invoice.ts:sanitiseErrorReason` for consistency.
- */
-function sanitiseErrorReason(raw: unknown): string {
-  const s = (raw instanceof Error ? raw.message : String(raw))
-    .replace(/\d{13}/g, '[REDACTED-TAXID]');
-  return s.length > 200 ? s.slice(0, 200) + '…' : s;
-}
 
 export const sharpImageReencodeAdapter: ImageReEncodePort = {
   async reencode(
@@ -108,11 +89,9 @@ export const sharpImageReencodeAdapter: ImageReEncodePort = {
         ok: false,
         error: {
           code: 'decode_failed',
-          // R20-02 — strip 13-digit sequences + truncate to 200 chars
-          // before the reason crosses the Application boundary. Sharp
-          // error messages can carry sandbox paths / libvips shared-
-          // object references that shouldn't live in warn logs raw.
-          reason: sanitiseErrorReason(e),
+          // R20-02 / #739 B3b — the class only: sharp's messages can
+          // carry sandbox paths / libvips shared-object references.
+          reason: errKind(e),
         },
       };
     }

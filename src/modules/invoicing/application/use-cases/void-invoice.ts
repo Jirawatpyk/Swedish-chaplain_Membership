@@ -250,12 +250,6 @@ export interface VoidInvoiceDeps {
   readonly pendingPaymentCanceller?: PendingPaymentCancellerPort;
 }
 
-// `sanitiseErrorReason` moved to `../lib/sanitise-error-reason` so
-// `build-void-render-targets` can share it without an import cycle
-// (void-invoice → build-void-render-targets → void-invoice). Re-exported here
-// to keep the T-SAN unit test's import path valid.
-export { sanitiseErrorReason } from '../lib/sanitise-error-reason';
-
 export async function voidInvoice(
   deps: VoidInvoiceDeps,
   input: VoidInvoiceInput,
