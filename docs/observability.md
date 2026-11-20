@@ -2060,10 +2060,10 @@ effect for observability:
 - Vercel runtime-log aggregation captures BOTH `console.warn` and pino
   JSON lines. Search filters that match only on pino's `{level: ...}`
   shape will miss `safeMetric` swallow events.
-- Scrape rules for `metrics_emit_failed_swallowed` should match on the
-  string `"[metrics:safeMetric]"` prefix that the wrapper writes
-  before the swallowed error. See `src/lib/metrics.ts` for the exact
-  format.
+- Scrape rules match the `metrics_emit_failed_swallowed` string, the
+  first argument the wrapper passes to `console.warn`; the second is
+  `{ err: <ErrClass> }` (#739 B3b: the class, never the message). See
+  `src/lib/metrics.ts` for the exact format.
 - For Sentry/Datadog scrape configs: include `console.warn` lines in
   the F8 + F4 + F5 + F7 metric-failure alert rules — pino-only filters
   miss this swallow class.
