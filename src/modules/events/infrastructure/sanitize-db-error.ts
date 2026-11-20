@@ -1,14 +1,10 @@
 /**
- * Shared DB-error sanitiser for F6 Infrastructure layer.
+ * Shared DB-error wrapper for the F6 Infrastructure layer.
  *
  * Postgres `pg-protocol` error messages include table names, column
- * names, constraint names, and other schema-identifier metadata that
- * are useful for SRE debugging but should never reach Application-
- * layer Result types or audit-log payloads. This helper strips those
- * identifiers + caps the string length for safe propagation.
- *
- * Centralised here so both audit-port emit-error path and Drizzle
- * repo adapters share the same Postgres-identifier redaction regex.
+ * names, constraint names and bound parameters, so none of that text
+ * reaches Application-layer Result types or audit-log payloads: the
+ * Result carries only the error CLASS (`errKind`, #739 B3b).
  *
  * Callers log the error's class and codes (`...errLogFields(e)`) at
  * the catch site, never its message or stack: a driver error's text
@@ -19,23 +15,9 @@
  */
 
 import { logger } from '@/lib/logger';
-import { errLogFields } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { GraceStateInvariantError } from '../domain/tenant-webhook-config';
 import { MatchResolutionInvariantError } from '../domain/event-registration';
-
-const DB_ERROR_MESSAGE_CAP = 200;
-
-export function sanitizeDbErrorMessage(e: unknown): string {
-  const raw = e instanceof Error ? e.message : String(e);
-  // Single-pass regex strips both quoted-identifier (`"foo"`) and bare-
-  // identifier (`foo`) forms after the canonical Postgres marker words.
-  const stripped = raw.replace(
-    /(table|column|constraint|relation|function|index|sequence|schema)\s+("[^"]+"|[a-z_][a-z0-9_]*)/gi,
-    (_m, kind, ident) =>
-      `${kind} ${ident.startsWith('"') ? '"[redacted]"' : '[redacted]'}`,
-  );
-  return stripped.slice(0, DB_ERROR_MESSAGE_CAP);
-}
 
 /**
  * Single catch-block helper for the F6 repository adapters.
@@ -48,8 +30,8 @@ export function sanitizeDbErrorMessage(e: unknown): string {
  *
  * Logs the error class + SQLSTATE via `logger.error` with
  * `event: 'f6_repo_db_error'` (never the message or stack, #740) AND
- * applies outbound payload sanitisation (Postgres identifiers stripped,
- * message capped at 200 chars). The `repoLabel` parameter narrows
+ * returns the error class as the outbound `message` (#739 B3b). The
+ * `repoLabel` parameter narrows
  * the log line to the specific repo so SREs can filter alerts by
  * adapter origin.
  *
@@ -70,7 +52,7 @@ export function wrapRepoError(
   // R5.1 / Round 4 C-1 — re-throw read-time invariant violations BEFORE
   // sanitisation. Without this guard, an `asGraceState` or
   // `asMatchResolutionView` throw would be silently swallowed into a
-  // generic `Result.err({kind:'db_error', message:'<sanitised>'})` —
+  // generic `Result.err({kind:'db_error', message:'<class>'})` —
   // forensically indistinguishable from a Neon connectivity blip.
   // The dedicated error classes preserve their `name` + structured
   // fields up to the route handler, which surfaces the violation as
@@ -92,5 +74,5 @@ export function wrapRepoError(
     },
     `[F6 ${repoLabel} repository] DB error`,
   );
-  return { kind: 'db_error', message: sanitizeDbErrorMessage(e) };
+  return { kind: 'db_error', message: errKind(e) };
 }

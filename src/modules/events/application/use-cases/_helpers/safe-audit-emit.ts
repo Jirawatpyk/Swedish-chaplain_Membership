@@ -33,6 +33,7 @@
  * Pure Application — no framework imports (Constitution Principle III).
  */
 import { err, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { AuditEventId } from '@/modules/auth';
 import type {
   F6AuditPort,
@@ -40,11 +41,6 @@ import type {
   F6AuditEventType,
   AuditEmitError,
 } from '../../ports/audit-port';
-// /code-review (2026-05-19 post-ship) — import from the leaf module
-// `./safe-stringify` instead of `./process-attendee-in-tx` to break a
-// 3-file circular import cycle. See `./safe-stringify.ts` header for
-// the cycle diagram + TDZ-fragility rationale.
-import { safeStringify } from './safe-stringify';
 
 /**
  * Wraps `audit.emit()` to catch raw throws and convert them into the
@@ -62,13 +58,11 @@ export async function safeAuditEmit<T extends F6AuditEventType>(
     // Raw throw from `audit.emit()` (DB-layer panic, sub-adapter
     // regression). Convert into the canonical `db_error` Result.err
     // shape so the caller's existing `if (!r.ok)` Result-handler
-    // catches it. `safeStringify` preserves diagnostic content from
-    // non-Error throws (e.g. `{kind:'POOL_EXHAUSTED',...}`).
-    const messageFromRaw =
-      raw instanceof Error ? raw.message : safeStringify(raw);
+    // catches it. #739 B3b — the message carries the thrown value's
+    // class, never its text (a driver message quotes bound parameters).
     return err({
       kind: 'db_error',
-      message: `audit emit threw: ${messageFromRaw}`,
+      message: `audit_emit: ${errKind(raw)}`,
     });
   }
 }

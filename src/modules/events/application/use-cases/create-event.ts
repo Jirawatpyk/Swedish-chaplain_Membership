@@ -268,7 +268,7 @@ export async function createEvent(
     );
     return {
       kind: 'unexpected_error',
-      message: e instanceof Error ? e.message : 'createEvent threw',
+      message: errKind(e),
     };
   }
 }

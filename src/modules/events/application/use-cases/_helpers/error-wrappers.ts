@@ -45,6 +45,7 @@
 import type { AuditEmitError } from '../../ports/audit-port';
 import { InvalidLockKeyError } from '../../ports/advisory-lock-acquirer';
 import { auditEmitErrorMessage } from './audit-error-message';
+import { errKind } from '@/lib/log-id';
 
 export type AuditEmitFailure = {
   readonly kind: 'audit_emit_failed';
@@ -86,7 +87,7 @@ export type LockFailure =
  */
 export function wrapLockFailure(e: unknown): LockFailure {
   if (e instanceof InvalidLockKeyError) {
-    return { kind: 'lock_key_invariant_violation', message: e.message, cause: e };
+    return { kind: 'lock_key_invariant_violation', message: errKind(e), cause: e };
   }
   const normalised =
     e instanceof Error
@@ -100,7 +101,7 @@ export function wrapLockFailure(e: unknown): LockFailure {
         );
   return {
     kind: 'lock_acquisition_failed',
-    message: normalised.message,
+    message: errKind(e),
     cause: normalised,
   };
 }
