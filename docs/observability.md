@@ -146,9 +146,11 @@ line carries:
 - A user id as `hashId(id)` (`actorUserIdHash`, `userIdHash`).
 
 `pnpm check:log-error-objects` (in `pnpm check` and CI's static job) parses
-`src/modules/**`, `src/app/**`, `src/lib/**` and the files directly under
-`src/` such as `src/proxy.ts` (all server code since #740 B1 and B2, and #739
-B3b for the top level) with the TypeScript compiler API (a
+`src/modules/**`, `src/app/**`, `src/lib/**`, `src/components/**` (server
+components such as the outbox health badge), `src/hooks`, `src/config`,
+`src/i18n`, the files directly under `src/` such as `src/proxy.ts`, and the
+repo root's `instrumentation.ts` (#740 B1 and B2; #739 B3b for the rest) with
+the TypeScript compiler API (a
 `.tsx` file as TSX) and refuses these forms inside `logger.<level>(…)` and
 `logger.child(…)` arguments. Since #739 B3b it also reads `logger[level](…)`
 with a computed level, and a server file's `console.<method>(…)` (a file whose
@@ -158,9 +160,12 @@ residual). A `Promise.allSettled` element's `.reason` counts as a caught
 error in both rules: in a `settled.map((r) => …)` / `.forEach` / … callback
 (also after `.filter(…)`, or destructured as `({ reason })`), a
 `for (const r of settled)` body, a destructured `const [a] = await
-Promise.allSettled(…)`, and `settled[0].reason`. So `String(r.reason)` is
-refused in a log line and in a Result or body. The repo root's
-`instrumentation.ts` is scanned with the `src/*.ts` files. Since review round 1: on an error-ish base (a
+Promise.allSettled(…)` (its locals followed through the enclosing function),
+`settled[0].reason`, `Promise.allSettled(ps).then((rs) => …)` and
+`for (const [i, r] of settled.entries())`. So `String(r.reason)` is refused in
+a log line and in a Result or body. Not read (known residuals): a
+`const { reason } = r` inside the callback body, and a helper parameter typed
+`PromiseRejectedResult`. Since review round 1: on an error-ish base (a
 caught or error-named identifier, or a chain through `.error` / `.cause`) only
 `.code`, `.kind` and `.name` are read; element access, a method on an error or
 its text (`e.toString()`, `e.message.slice()`), and a call whose literal

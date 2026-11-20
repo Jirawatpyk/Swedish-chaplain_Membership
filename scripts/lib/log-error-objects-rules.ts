@@ -202,7 +202,10 @@ function isLoggerTarget(target: ts.Expression, aliases: ReadonlySet<string>): bo
 function isLoggerCall(node: ts.CallExpression, aliases: ReadonlySet<string> = new Set()): boolean {
   const callee = node.expression;
   // #739 B3b — `logger[level](…)`: a computed level is still a logger call.
-  if (ts.isElementAccessExpression(callee)) return isLoggerTarget(callee.expression, aliases);
+  if (ts.isElementAccessExpression(callee)) {
+    if (ts.isIdentifier(callee.expression) && callee.expression.text === 'console') return aliases.has(SERVER_CONSOLE);
+    return isLoggerTarget(callee.expression, aliases);
+  }
   if (!ts.isPropertyAccessExpression(callee)) return false;
   // #739 B3b — a server file's `console.warn(…)` reaches the same log stream.
   if (ts.isIdentifier(callee.expression) && callee.expression.text === 'console') {
@@ -311,6 +314,14 @@ function settledInfo(sf: ts.SourceFile): SettledInfo {
   // Two passes, so an alias declared before its source is read too.
   for (let pass = 0; pass < 2; pass += 1) {
     const visit = (n: ts.Node): void => {
+      // `Promise.allSettled(ps).then((rs) => …)`: the callback's parameter is the list.
+      if ((ts.isArrowFunction(n) || ts.isFunctionExpression(n)) && ts.isCallExpression(n.parent) && n.parent.arguments[0] === n) {
+        const callee = unwrap(n.parent.expression);
+        const p0 = n.parameters[0];
+        if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'then' && isSettledListExpr(callee.expression, lists) && p0 !== undefined && ts.isIdentifier(p0.name)) {
+          lists.add(p0.name.text);
+        }
+      }
       if (ts.isVariableDeclaration(n) && n.initializer !== undefined && isSettledListExpr(n.initializer, lists)) {
         if (ts.isIdentifier(n.name)) lists.add(n.name.text);
         else if (ts.isArrayBindingPattern(n.name)) {
@@ -354,12 +365,23 @@ function settledCaughtNames(cur: ts.Node): string[] {
     const call = cur.parent as ts.CallExpression;
     const callee = unwrap(call.expression) as ts.PropertyAccessExpression;
     binding = cur.parameters[callee.name.text === 'reduce' ? 1 : 0]?.name;
-  } else if (
-    ts.isForOfStatement(cur) &&
-    ts.isVariableDeclarationList(cur.initializer) &&
-    isSettledListExpr(cur.expression, settledInfo(cur.getSourceFile()).lists)
-  ) {
-    binding = cur.initializer.declarations[0]?.name;
+  } else if (ts.isForOfStatement(cur) && ts.isVariableDeclarationList(cur.initializer)) {
+    const lists = settledInfo(cur.getSourceFile()).lists;
+    const decl = cur.initializer.declarations[0]?.name;
+    const iterated = unwrap(cur.expression);
+    if (isSettledListExpr(iterated, lists)) binding = decl;
+    // `for (const [i, r] of settled.entries())`: the element is the second binding.
+    else if (
+      ts.isCallExpression(iterated) &&
+      ts.isPropertyAccessExpression(unwrap(iterated.expression)) &&
+      (unwrap(iterated.expression) as ts.PropertyAccessExpression).name.text === 'entries' &&
+      isSettledListExpr((unwrap(iterated.expression) as ts.PropertyAccessExpression).expression, lists) &&
+      decl !== undefined &&
+      ts.isArrayBindingPattern(decl)
+    ) {
+      const el = decl.elements[1];
+      if (el !== undefined && ts.isBindingElement(el)) binding = el.name;
+    }
   }
   if (binding === undefined) return [];
   if (ts.isIdentifier(binding)) return [`${binding.text}.reason`];
@@ -1342,6 +1364,17 @@ function caughtTextNames(node: ts.Node, caught: ReadonlySet<string>, objects?: S
   for (let cur: ts.Node | undefined = node.parent; cur !== undefined; cur = cur.parent) {
     const body = catchScopeBody(cur);
     if (body !== null) blocks.push(body);
+  }
+  // #739 B3b review — a destructured or indexed allSettled element has no
+  // callback or loop around it: follow its locals through the enclosing
+  // function body (or the file).
+  if (caught.has(SETTLED_REASON)) {
+    let fn: ts.Node | undefined = node.parent;
+    while (fn !== undefined && !ts.isFunctionLike(fn) && !ts.isSourceFile(fn)) fn = fn.parent;
+    if (fn !== undefined) {
+      const body = ts.isSourceFile(fn) ? fn : (fn as ts.FunctionLikeDeclaration).body;
+      if (body !== undefined) blocks.push(body);
+    }
   }
   for (let pass = 0; pass < 2; pass += 1) {
     for (const block of blocks) {

@@ -20,6 +20,7 @@ import { db } from '@/lib/db';
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
  
 import { logger } from '@/lib/logger';
+import { errLogFields } from '@/lib/log-id';
 import { OutboxHealthPopover } from '@/components/shell/outbox-health-popover';
 
 export async function OutboxHealthBadge() {
@@ -60,7 +61,7 @@ export async function OutboxHealthBadge() {
     permanentFailed = pf?.n ?? 0;
     stuckPending = sp?.n ?? 0;
   } catch (err) {
-    logger.warn({ err }, 'outbox_health_badge.db_query_failed');
+    logger.warn({ ...errLogFields(err) }, 'outbox_health_badge.db_query_failed');
     return null;
   }
 

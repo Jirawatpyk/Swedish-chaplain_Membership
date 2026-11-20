@@ -64,3 +64,10 @@ async function settledLiteralForms(): Promise<unknown[]> {
   out.push({ error: 'fetch_rejected' }); // allowed
   return out;
 }
+
+// #739 B3b code review — a destructured element's reason through a local, in a plain function body.
+async function settledDestructuredLocal(): Promise<unknown> {
+  const [only] = await Promise.allSettled([Promise.resolve(1)]);
+  const text = only.status === 'rejected' ? String(only.reason) : '';
+  return { error: text }; // refused
+}

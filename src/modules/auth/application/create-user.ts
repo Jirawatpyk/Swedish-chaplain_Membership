@@ -43,7 +43,7 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errKind, errLogFields, hashId } from '@/lib/log-id';
+import { errLogFields, hashId } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
 import { db, type DbTx } from '@/lib/db';
 import {

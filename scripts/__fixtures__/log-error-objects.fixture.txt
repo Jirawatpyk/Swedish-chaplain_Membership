@@ -329,3 +329,20 @@ async function settledForms(): Promise<void> {
   all.forEach(({ reason }) => logger.error({ reason: String(reason) }, 'x')); // refused
   logger.error({ ...errLogFields((all[0] as PromiseRejectedResult).reason) }, 'x'); // allowed
 }
+// #739 B3b code review — `.then` over allSettled, `.entries()`, and a computed console level.
+declare const ps: Promise<number>[];
+function settledThen(): void {
+  void Promise.allSettled(ps).then((rs) => rs.map((r) => logger.error({ reason: String(r.reason) }, 'x'))); // refused
+}
+async function settledEntries(): Promise<void> {
+  const all = await Promise.allSettled(ps);
+  for (const [, r] of all.entries()) {
+    if (r.status === 'rejected') logger.error({ reason: String(r.reason) }, 'x'); // refused
+  }
+}
+declare const consoleLvl: 'warn' | 'error';
+try {
+  void 0;
+} catch (e) {
+  console[consoleLvl]('x', { err: (e as Error).message }); // refused
+}

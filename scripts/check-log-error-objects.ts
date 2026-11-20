@@ -48,7 +48,12 @@ const ROOTS = [
   'src/modules',
   'src/app',
   'src/lib',
+  // #739 B3b code review — server components and helpers live here too
+  // (`outbox-health-badge.tsx` logged a raw DB error unread).
+  'src/components',
 ] as const;
+/** #739 B3b code review — the small `src/` folders: scanned, with no per-root file floor. */
+const SMALL_ROOTS = ['src/hooks', 'src/config', 'src/i18n'] as const;
 /**
  * #739 B3b — the files directly under `src/` (`src/proxy.ts`) and the repo
  * root's `instrumentation.ts`: no directory root holds them, so their log
@@ -148,11 +153,12 @@ const topLevel = [
     .filter((f) => /\.tsx?$/.test(f) && !/\.(?:test|spec)\.tsx?$/.test(f) && !f.endsWith('.d.ts'))
     .map((f) => `${TOP_LEVEL_DIR}/${f}`),
   // #739 B3b review — Next's boot hook sits at the repo root, outside `src/`.
-  'instrumentation.ts',
+  ...(statSync('instrumentation.ts', { throwIfNoEntry: false }) ? ['instrumentation.ts'] : []),
+  ...SMALL_ROOTS.flatMap((root) => walk(root, [])),
 ];
 for (const required of ['src/proxy.ts', 'instrumentation.ts']) {
-  if (!topLevel.includes(required) || !statSync(required, { throwIfNoEntry: false })) {
-    failures.push(`SCOPE: ${required} is no longer scanned; the top-level scope has rotted.`);
+  if (!topLevel.includes(required)) {
+    failures.push(`SCOPE: ${required} is no longer scanned (moved or deleted?); update the gate's top-level scope.`);
   }
 }
 for (const file of topLevel) {
@@ -204,7 +210,7 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `✓ check:log-error-objects — ${fileCount} file(s) and ${loggerCalls} logger call(s) in ${ROOTS.length} root(s) plus ${topLevel.length} top-level file(s) and the call sites of ${wrapperCount} log wrapper(s), no error object or text in a log line; ` +
+  `✓ check:log-error-objects — ${fileCount} file(s) and ${loggerCalls} logger call(s) in ${ROOTS.length} root(s) plus ${topLevel.length} top-level and small-folder file(s) and the call sites of ${wrapperCount} log wrapper(s), no error object or text in a log line; ` +
     `${refusedMarked} refused form(s) in the positive control, each found; ` +
     `caught-literal rule: ${caughtRemaining} baselined site(s) left for B3b, ${caughtRefusedMarked} refused form(s) in its control.`,
 );
