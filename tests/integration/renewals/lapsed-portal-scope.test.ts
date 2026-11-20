@@ -356,8 +356,10 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
     expect(rows[0]?.payload).toMatchObject({
       member_id: activeMemberId,
       blocked_route: '/portal/dashboard',
-      error: 'simulated connection reset (Task 8 fail-open proof)',
+      // #739 — the class, never the thrown text.
+      error: 'Error',
     });
+    expect(JSON.stringify(rows[0]?.payload)).not.toContain('simulated connection reset');
   });
 
   it('cross-tenant: tenant B has no view of tenant A members → full', async () => {
