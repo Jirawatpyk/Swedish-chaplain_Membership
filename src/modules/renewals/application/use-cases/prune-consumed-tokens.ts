@@ -112,7 +112,6 @@ export async function pruneConsumedTokens(
       durationMs,
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
     logger.error(
       {
         err: errKind(e),
@@ -121,6 +120,6 @@ export async function pruneConsumedTokens(
       },
       'renewals.prune_consumed_tokens.failed',
     );
-    return err({ kind: 'server_error', message });
+    return err({ kind: 'server_error', message: errKind(e) });
   }
 }

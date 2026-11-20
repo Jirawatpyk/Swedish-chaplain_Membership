@@ -179,7 +179,7 @@ export async function completeEscalationTask(
     });
     return err({
       kind: 'server_error',
-      message: e instanceof Error ? e.message : String(e),
+      message: errKind(e),
     });
   }
 }

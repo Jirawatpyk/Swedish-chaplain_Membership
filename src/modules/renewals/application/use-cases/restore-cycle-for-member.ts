@@ -81,6 +81,7 @@
  * (Constitution Principle III). No ORM / HTTP / framework / React imports.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import { runInTenant } from '@/lib/db';
 import { isUniqueViolation, errorChainMessage } from '@/lib/db-errors';
 import type { TenantContext } from '@/modules/tenants';
@@ -314,8 +315,8 @@ export async function restoreCycleForMember(
     }
     return err({
       kind: 'restore.server_error',
-      message: e instanceof Error ? e.message : String(e),
-      errName: e instanceof Error ? e.name : 'UnknownError',
+      message: errKind(e),
+      errName: errKind(e),
     });
   }
 }

@@ -123,7 +123,7 @@ type GatewayResult =
       readonly recipientHash: Sha256Hex;
       readonly error: SendRenewalEmailError;
     }
-  | { readonly kind: 'threw'; readonly error: unknown };
+  | { readonly kind: 'threw'; readonly cause: unknown };
 
 // Round 5 SUG-1 — compile-time pin on the GatewayResult arm count.
 // Mutual subtype assertion: any divergence between the canonical
@@ -138,7 +138,7 @@ type _GatewayResultArmsLocked =
       readonly recipientHash: Sha256Hex;
       readonly error: SendRenewalEmailError;
     }
-  | { readonly kind: 'threw'; readonly error: unknown };
+  | { readonly kind: 'threw'; readonly cause: unknown };
 type _AssertGatewayResultLocked = [
   _GatewayResultArmsLocked extends GatewayResult ? true : never,
   GatewayResult extends _GatewayResultArmsLocked ? true : never,
@@ -222,7 +222,7 @@ export async function acceptTierUpgrade(
   } catch (e) {
     return err({
       kind: 'server_error',
-      message: `pre-tx-repo-lookup: ${(e as Error)?.message ?? 'unknown'}`,
+      message: `pre-tx-repo-lookup: ${errKind(e)}`,
     });
   }
 
@@ -577,7 +577,7 @@ export async function acceptTierUpgrade(
     // instead of silently firing the no_recipient skip path.
     let gatewayResult: GatewayResult = {
       kind: 'threw',
-      error: new Error('not_yet_evaluated'),
+      cause: new Error('not_yet_evaluated'),
     };
 
     try {
@@ -651,7 +651,7 @@ export async function acceptTierUpgrade(
     } catch (e) {
       // Gateway / lookup / hash crash — does NOT include audit-emit
       // throws (those are isolated to the per-emit try/catch below).
-      gatewayResult = { kind: 'threw', error: e };
+      gatewayResult = { kind: 'threw', cause: e };
       renewalsMetrics.tierUpgradeNotifyFailed('unknown');
       logger.warn(
         {
@@ -804,7 +804,7 @@ export async function acceptTierUpgrade(
               failure_kind: 'unknown',
               // #739 — the class of the thrown value, never its text
               // (audit_log, 5y retention).
-              failure_message: errKind(gatewayResult.error),
+              failure_message: errKind(gatewayResult.cause),
             },
           },
           auditCtx,
@@ -936,7 +936,7 @@ export async function acceptTierUpgrade(
     }
     return err({
       kind: 'server_error',
-      message: (e as Error)?.message ?? 'unknown',
+      message: errKind(e),
     });
   }
 }

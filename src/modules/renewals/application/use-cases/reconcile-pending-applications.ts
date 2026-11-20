@@ -97,7 +97,7 @@ export async function reconcilePendingApplications(
   } catch (e) {
     return err({
       kind: 'server_error',
-      message: `list_orphaned_failed: ${(e as Error)?.message ?? 'unknown'}`,
+      message: `list_orphaned_failed: ${errKind(e)}`,
     });
   }
 

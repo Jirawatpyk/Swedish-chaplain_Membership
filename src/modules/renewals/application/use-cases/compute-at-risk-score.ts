@@ -108,12 +108,11 @@ export async function computeAtRiskScore(
       input.memberId,
     );
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
     logger.error(
       { ...errLogFields(e), tenantId: input.tenantId, memberId: input.memberId },
       '[compute-at-risk-score] scorer threw — propagating to cron for partial-failure audit',
     );
-    return err({ kind: 'server_error' as const, message });
+    return err({ kind: 'server_error' as const, message: errKind(e) });
   }
 
   // Step 2 — min-tenure skip path (FR-035). Emit + return without

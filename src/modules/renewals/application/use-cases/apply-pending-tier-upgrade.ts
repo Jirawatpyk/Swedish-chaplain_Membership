@@ -375,7 +375,7 @@ export async function applyPendingTierUpgrade(
   } catch (e) {
     return err({
       kind: 'server_error',
-      message: (e as Error)?.message ?? 'unknown',
+      message: errKind(e),
     });
   }
 }
