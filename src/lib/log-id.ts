@@ -191,9 +191,13 @@ export function errLogFields(failure: unknown): {
   if (typeof resultCode === 'string') {
     const cause = rootCause(failure);
     const sqlState = pgErrorCode(cause);
+    // #739 B3b review — a code-keyed Result with no cause reads its class too.
+    const fromMessage =
+      cause === undefined ? classFromMessage((failure as { message?: unknown }).message) : undefined;
     return {
-      err: errKind(cause),
+      err: fromMessage?.err ?? errKind(cause),
       repoCode: RESULT_CODE.test(resultCode) ? resultCode : 'unrecognised',
+      ...(fromMessage?.step !== undefined ? { step: fromMessage.step } : {}),
       ...(sqlState !== undefined ? { code: sqlState } : {}),
     };
   }

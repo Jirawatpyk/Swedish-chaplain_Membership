@@ -427,7 +427,7 @@ export async function memberSelfUpdate(
     }
     if (e instanceof UseCaseAbort) {
       const re = e.error as RepoError;
-      return err({ type: 'server_error', message: `self update: ${re.code}` });
+      return err({ type: 'server_error', message: `self_update: ${re.code}` });
     }
     return err({
       type: 'server_error',

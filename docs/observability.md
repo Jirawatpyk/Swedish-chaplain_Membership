@@ -222,7 +222,9 @@ and `.then(ok, onRejected)` handler's locals, destructured bindings
 `unknown` (or untyped and named `e` / `err` / `error` / `cause`) inside that
 helper, where only its text counts (`.message`, `String(p)`, `${p}`, a local
 holding either), not passing it on (`parse(e)`, `errKind(e)`). Not read (a
-residual): a parameter passed to a sanitising helper that returns its text.
+residual): a parameter passed to a sanitising helper that returns its text,
+and a parameter typed `Error` / `any` or named otherwise (`ex`, `reason`,
+`failure`); none read its text in the tree today.
 A client file's `console.*` arguments are skipped: the browser console is no
 server sink. The run fails if it parsed fewer than `MIN_CATCH_SCOPES` catch,
 rejection-handler, settled and error-parameter scopes. Migrations 0330 and
