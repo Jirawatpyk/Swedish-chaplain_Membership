@@ -87,6 +87,20 @@ describe('small renewals repos — tenant predicate on every statement (130)', (
     expect(v).toEqual([]);
   });
 
+  it('dispatch candidates: the expiry window comes from the caller\'s clock, never NOW() (#106)', async () => {
+    rec.statements.length = 0;
+    const floor = '2026-02-15T08:00:00.000Z';
+    await makeDrizzleDispatchCandidateRepo(CTX).list(SHAPE_TENANT, {
+      cutoffExpiresAt: '2026-10-13T08:00:00.000Z',
+      floorExpiresAt: floor,
+      pageSize: 10,
+    });
+    expect(rec.statements).toHaveLength(1);
+    const stmt = rec.statements[0]!;
+    expect(stmt.sql).not.toMatch(/now\(\)/i);
+    expect(stmt.params).toContain(floor);
+  });
+
   it('schedule policy', async () => {
     const v = await check(makeDrizzleTenantRenewalSchedulePolicyRepo(CTX), {
       findByBucket: [SHAPE_TENANT, 'regular'],
