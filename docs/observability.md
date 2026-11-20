@@ -210,10 +210,16 @@ not create (Next's own, when an error escapes a route or a page, and
 `@vercel/otel`'s fetch spans) record the exception's message and stack; since
 #739 `redactErrorTextSpanProcessor` (`src/lib/otel-redact-span-processor.ts`,
 listed before `'auto'` in `instrumentation.ts`) reduces every ended span to the
-class before export: an `exception` event keeps only `exception.type`, and an
-error status message becomes that class. Not covered: Next printing an
-unhandled error (message and stack) to stderr, which reaches the Vercel runtime
-logs (follow-up issue). Where a person reads the code,
+class before export: an `exception` event keeps only `exception.type` (a class,
+or a closed code: SQLSTATE, HTTP status, Node errno), and an error status
+message becomes that class. A span it cannot read is emptied, never thrown on;
+`otel-redact-span-processor-real-sdk.test.ts` runs it on a real `@vercel/otel`
+span, so a change in that package's span handling fails there. Not covered
+(follow-up issues): Next printing an unhandled error to stderr (`logError` for a
+route or page, `console.error` for a render error), which reaches the Vercel
+runtime logs and which `onRequestError` cannot suppress; and a token in a URL
+(`http.target` on Next's request span, `http.url` and the name of a fetch span),
+which the processor does not touch. Where a person reads the code,
 the UI maps it to fixed copy (the receipt download toast, the CSV import
 result). `pnpm check:log-error-objects` also refuses, inside a `catch`, an
 object literal that is not a log argument and carries the caught value's
