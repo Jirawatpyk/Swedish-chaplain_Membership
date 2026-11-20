@@ -43,7 +43,7 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errKind, errLogFields, hashId } from '@/lib/log-id';
+import { errLogFields, hashId } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
 import { db, type DbTx } from '@/lib/db';
 import {
@@ -149,14 +149,17 @@ export interface EnqueueInvitationRequest {
 
 /**
  * Literal union of known enqueue failure codes. Keeping this closed
- * lets consumers exhaustively handle the error space; the `cause`
- * field is sanitised (string) to avoid raw DB exception leakage.
+ * lets consumers exhaustively handle the error space.
  */
 export type EnqueueInvitationErrorCode = 'enqueue_failed' | 'no_row_returned';
 
 export interface EnqueueInvitationError {
   readonly code: EnqueueInvitationErrorCode;
-  readonly cause?: string;
+  /**
+   * #739 B3b — the thrown value's class (`errKind(e)`), never its message:
+   * a failed outbox insert's driver message quotes the bound `to_email`.
+   */
+  readonly errClass?: string;
 }
 
 /**
@@ -244,11 +247,12 @@ export async function createUser(
         tenantId: input.tenantId,
       });
       if (!enqueueResult.ok) {
+        const errClass: EnqueueInvitationError['errClass'] = enqueueResult.error.errClass;
         logger.error(
           {
             requestId: input.requestId,
             errCode: enqueueResult.error.code,
-            errCause: errKind(enqueueResult.error.cause),
+            errCause: errClass ?? 'unknown',
             targetUserIdHash: hashId(user.id),
           },
           'create_user.invitation_enqueue_failed',

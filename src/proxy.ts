@@ -5,6 +5,7 @@ import { REQUEST_ID_HEADER, requestIdFromHeaders } from '@/lib/request-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { KILL_SWITCH_RETRY_AFTER_SECONDS } from '@/lib/kill-switch-retry';
+import { errLogFields } from '@/lib/log-id';
 
 /**
  * Staff-review R2 R023 (2026-04-28) — per-request nonce forwarded to
@@ -556,7 +557,7 @@ export function proxy(request: NextRequest): NextResponse {
       {
         pathname: nextUrl.pathname,
         requestId,
-        err: error instanceof Error ? error.message : String(error),
+        ...errLogFields(error),
       },
       '[proxy] tenant resolver failed; header omitted',
     );

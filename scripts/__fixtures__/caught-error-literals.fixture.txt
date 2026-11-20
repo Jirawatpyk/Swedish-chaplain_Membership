@@ -37,3 +37,37 @@ function g(): void {
   const e = new Error('not caught');
   err({ message: e.message }); // allowed
 }
+
+// #739 B3b — an allSettled rejection value is caught: its text stays out of a Result or body.
+async function settledLiterals(): Promise<unknown> {
+  const settled = await Promise.allSettled([Promise.resolve(1)]);
+  return settled.map((r) => {
+    if (r.status === 'rejected') {
+      const reasonStr = String(r.reason);
+      if (Math.random() > 2) return { tenant_id: 't', error: reasonStr }; // refused
+      if (Math.random() > 2) return { tenant_id: 't', error: String(r.reason).slice(0, 200) }; // refused
+      return { tenant_id: 't', error: 'fetch_rejected' }; // allowed
+    }
+    return { tenant_id: 't', value: r.value }; // allowed
+  });
+}
+
+// #739 B3b review — for..of and a destructured element.
+async function settledLiteralForms(): Promise<unknown[]> {
+  const out: unknown[] = [];
+  const all = await Promise.allSettled([Promise.resolve(1)]);
+  for (const r of all) {
+    if (r.status === 'rejected') out.push({ error: String(r.reason) }); // refused
+  }
+  const [first] = await Promise.allSettled([Promise.resolve(1)]);
+  if (first.status === 'rejected') out.push({ error: String(first.reason) }); // refused
+  out.push({ error: 'fetch_rejected' }); // allowed
+  return out;
+}
+
+// #739 B3b code review — a destructured element's reason through a local, in a plain function body.
+async function settledDestructuredLocal(): Promise<unknown> {
+  const [only] = await Promise.allSettled([Promise.resolve(1)]);
+  const text = only.status === 'rejected' ? String(only.reason) : '';
+  return { error: text }; // refused
+}

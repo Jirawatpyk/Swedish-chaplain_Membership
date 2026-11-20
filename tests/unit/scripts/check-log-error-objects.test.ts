@@ -28,7 +28,7 @@ describe('findLogErrorObjects', () => {
     expect(lines(src)).toEqual([5]);
   });
 
-  it('reads `deps.logger.<level>` and every level, and only the logger', () => {
+  it('reads `deps.logger.<level>`, every level and (#739 B3b) a server console call, not a Result', () => {
     const src = [
       'try { run(); } catch (e) {',
       '  deps.logger.fatal({ err: e });',
@@ -37,7 +37,7 @@ describe('findLogErrorObjects', () => {
       '  return err({ code: "repo.unexpected", cause: e });',
       '}',
     ].join('\n');
-    expect(lines(src)).toEqual([2, 3]);
+    expect(lines(src)).toEqual([2, 3, 4]);
   });
 
   it('refuses error text in the message argument too', () => {
@@ -105,7 +105,8 @@ describe('findLogErrorObjects', () => {
       'logger.child({ id });',
       "console.error({ id }, 'c');",
     ].join('\n');
-    expect(rules.scanLogErrorObjects('x.ts', src)).toEqual({ findings: [], loggerCalls: 3, wrappers: [] });
+    // #739 B3b — a server file's console call counts too.
+    expect(rules.scanLogErrorObjects('x.ts', src)).toEqual({ findings: [], loggerCalls: 4, wrappers: [] });
   });
 
   // #740 B2 — the two forms the B1 reviews found the rule could not see.
@@ -203,6 +204,36 @@ describe('findLogErrorObjects', () => {
     const found = new Set(lines(text));
     expect([...found].sort((a, b) => a - b)).toEqual(refused);
     for (const line of allowed) expect(found.has(line), `allowed line ${line}`).toBe(false);
+  });
+});
+
+describe('#739 B3b — the log rule reads console, computed levels and allSettled rejections', () => {
+  it("reads a server file's console call, and skips a 'use client' file's", () => {
+    const body = 'try { run(); } catch (e) {\n  console.warn("x", { err: e.message });\n}\n';
+    expect(lines(body)).toEqual([2]);
+    expect(lines(`'use client';\n${body}`)).toEqual([]);
+    // The directive is read from the parse, so a leading comment and CRLF cannot hide it.
+    expect(lines(`// c\r\n'use client';\r\n${body.replace(/\n/g, '\r\n')}`)).toEqual([]);
+  });
+
+  it('reads a computed-level logger call', () => {
+    expect(lines('try { run(); } catch (e) {\n  logger[lvl]({ err: e.message }, "x");\n}\n')).toEqual([2]);
+  });
+
+  it('treats an allSettled element reason as an error, through a local', () => {
+    const src = [
+      'const settled = await Promise.allSettled(ps);',
+      'settled.map((r) => {',
+      '  const s = String(r.reason);',
+      '  logger.error({ reason: s }, "x");',
+      '  logger.error({ ...errLogFields(r.reason) }, "x");',
+      '});',
+    ].join('\n');
+    expect(lines(src)).toEqual([4]);
+  });
+
+  it('leaves a `.reason` field of anything else alone', () => {
+    expect(lines('items.map((r) => logger.info({ reason: r.reason }, "x"));')).toEqual([]);
   });
 });
 

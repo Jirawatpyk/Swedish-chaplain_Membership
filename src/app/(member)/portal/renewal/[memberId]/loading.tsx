@@ -28,6 +28,7 @@ import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { Card } from '@jirawatpyk/aura-react/server';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
+import { errKind } from '@/lib/log-id';
 
 const FALLBACK_LOADING_ANNOUNCE = 'Loading renewal details…';
 
@@ -46,7 +47,7 @@ async function resolveLoadingAnnounce(): Promise<string> {
     // locale key" guesswork. Server component → console.warn lands in
     // the Vercel function log stream.
     console.warn('[renewal/loading] getTranslations failed — falling back to EN canonical', {
-      err: e instanceof Error ? e.message : String(e),
+      err: errKind(e),
     });
     return FALLBACK_LOADING_ANNOUNCE;
   }

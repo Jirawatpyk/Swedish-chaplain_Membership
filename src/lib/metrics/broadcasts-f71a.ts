@@ -52,6 +52,7 @@
  * Test discipline: mock via `vi.mock('@/lib/metrics/broadcasts-f71a')`
  * — module path is stable across F7.1a + F7.1b.
  */
+import { errKind } from '@/lib/log-id';
 import {
   metrics,
   type Counter,
@@ -155,7 +156,7 @@ function safeMetric(fn: () => void): void {
     fn();
   } catch (e) {
     console.warn('metrics_emit_failed_swallowed', {
-      err: (e as Error).message,
+      err: errKind(e),
       surface: 'broadcasts_f71a',
     });
   }

@@ -146,10 +146,26 @@ line carries:
 - A user id as `hashId(id)` (`actorUserIdHash`, `userIdHash`).
 
 `pnpm check:log-error-objects` (in `pnpm check` and CI's static job) parses
-`src/modules/**`, `src/app/**` and `src/lib/**` (all server code since #740
-B1 and B2) with the TypeScript compiler API (a
+`src/modules/**`, `src/app/**`, `src/lib/**`, `src/components/**` (server
+components such as the outbox health badge), `src/hooks`, `src/config`,
+`src/i18n`, the files directly under `src/` such as `src/proxy.ts`, and the
+repo root's `instrumentation.ts` (#740 B1 and B2; #739 B3b for the rest) with
+the TypeScript compiler API (a
 `.tsx` file as TSX) and refuses these forms inside `logger.<level>(…)` and
-`logger.child(…)` arguments. Since review round 1: on an error-ish base (a
+`logger.child(…)` arguments. Since #739 B3b it also reads `logger[level](…)`
+with a computed level, and a server file's `console.<method>(…)` (a file whose
+parsed leading directive is `'use client'` is skipped: its console stays in
+the browser; one rendered on the server during SSR is not read, a known
+residual). A `Promise.allSettled` element's `.reason` counts as a caught
+error in both rules: in a `settled.map((r) => …)` / `.forEach` / … callback
+(also after `.filter(…)`, or destructured as `({ reason })`), a
+`for (const r of settled)` body, a destructured `const [a] = await
+Promise.allSettled(…)` (its locals followed through the enclosing function),
+`settled[0].reason`, `Promise.allSettled(ps).then((rs) => …)` and
+`for (const [i, r] of settled.entries())`. So `String(r.reason)` is refused in
+a log line and in a Result or body. Not read (known residuals): a
+`const { reason } = r` inside the callback body, and a helper parameter typed
+`PromiseRejectedResult`. Since review round 1: on an error-ish base (a
 caught or error-named identifier, or a chain through `.error` / `.cause`) only
 `.code`, `.kind` and `.name` are read; element access, a method on an error or
 its text (`e.toString()`, `e.message.slice()`), and a call whose literal
@@ -2053,10 +2069,10 @@ effect for observability:
 - Vercel runtime-log aggregation captures BOTH `console.warn` and pino
   JSON lines. Search filters that match only on pino's `{level: ...}`
   shape will miss `safeMetric` swallow events.
-- Scrape rules for `metrics_emit_failed_swallowed` should match on the
-  string `"[metrics:safeMetric]"` prefix that the wrapper writes
-  before the swallowed error. See `src/lib/metrics.ts` for the exact
-  format.
+- Scrape rules match the `metrics_emit_failed_swallowed` string, the
+  first argument the wrapper passes to `console.warn`; the second is
+  `{ err: <ErrClass> }` (#739 B3b: the class, never the message). See
+  `src/lib/metrics.ts` for the exact format.
 - For Sentry/Datadog scrape configs: include `console.warn` lines in
   the F8 + F4 + F5 + F7 metric-failure alert rules — pino-only filters
   miss this swallow class.

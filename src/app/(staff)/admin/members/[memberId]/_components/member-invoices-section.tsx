@@ -41,6 +41,7 @@ import { MemberInvoicesTable, type MemberInvoiceRow } from './member-invoices-ta
 import { resolveMemberInvoiceDisplayNumber } from './resolve-invoice-display-number';
 import { formatDatePreset } from '@/lib/format-date-localised';
 import { formatSatangThb } from '@/lib/format-thb';
+import { errKind } from '@/lib/log-id';
 
 interface MemberInvoicesSectionProps {
   readonly tenant: TenantContext;
@@ -166,8 +167,10 @@ export async function MemberInvoicesSection({
   // silently rendering an empty state — an admin on a renewal call
   // needs to distinguish "no invoices" from "DB failed".
   if (!result.ok) {
+    // #739 B3b — the cause's class, never its text: this message reaches the
+    // runtime log, and a drizzle error's message quotes bound parameters.
     throw new Error(
-      `MemberInvoicesSection: listInvoicesByMember failed (${String(result.error.cause)})`,
+      `MemberInvoicesSection: listInvoicesByMember failed (${result.error.type}: ${errKind(result.error.cause)})`,
     );
   }
 

@@ -48,7 +48,18 @@ const ROOTS = [
   'src/modules',
   'src/app',
   'src/lib',
+  // #739 B3b code review — server components and helpers live here too
+  // (`outbox-health-badge.tsx` logged a raw DB error unread).
+  'src/components',
 ] as const;
+/** #739 B3b code review — the small `src/` folders: scanned, with no per-root file floor. */
+const SMALL_ROOTS = ['src/hooks', 'src/config', 'src/i18n'] as const;
+/**
+ * #739 B3b — the files directly under `src/` (`src/proxy.ts`) and the repo
+ * root's `instrumentation.ts`: no directory root holds them, so their log
+ * lines went unread. No per-root floor.
+ */
+const TOP_LEVEL_DIR = 'src';
 const FIXTURE = 'scripts/__fixtures__/log-error-objects.fixture.txt';
 /** #739 B3a — the positive control and the shrink-only baseline of the caught-literal rule. */
 const CAUGHT_FIXTURE = 'scripts/__fixtures__/caught-error-literals.fixture.txt';
@@ -137,6 +148,31 @@ for (const root of ROOTS) {
     }
   }
 }
+const topLevel = [
+  ...readdirSync(TOP_LEVEL_DIR)
+    .filter((f) => /\.tsx?$/.test(f) && !/\.(?:test|spec)\.tsx?$/.test(f) && !f.endsWith('.d.ts'))
+    .map((f) => `${TOP_LEVEL_DIR}/${f}`),
+  // #739 B3b review — Next's boot hook sits at the repo root, outside `src/`.
+  ...(statSync('instrumentation.ts', { throwIfNoEntry: false }) ? ['instrumentation.ts'] : []),
+  ...SMALL_ROOTS.flatMap((root) => walk(root, [])),
+];
+for (const required of ['src/proxy.ts', 'instrumentation.ts']) {
+  if (!topLevel.includes(required)) {
+    failures.push(`SCOPE: ${required} is no longer scanned (moved or deleted?); update the gate's top-level scope.`);
+  }
+}
+for (const file of topLevel) {
+  fileCount += 1;
+  const scan = scanLogErrorObjects(file, readFileSync(file, 'utf8'));
+  loggerCalls += scan.loggerCalls;
+  for (const w of scan.wrappers) discovered.add(`${w.name}:${w.index}`);
+  for (const f of scan.findings) failures.push(`${file}:${f.line}\n    ${f.message}`);
+  const caught = findCaughtErrorLiterals(file, readFileSync(file, 'utf8'));
+  if (caught.length > 0) caughtSeen.set(file, caught.length);
+  if (caught.length > (caughtBaseline[file] ?? 0)) {
+    for (const f of caught) failures.push(`${file}:${f.line}\n    ${f.message} (caught-literal rule, #739)`);
+  }
+}
 // #739 B3a — the baseline only shrinks: a file that needs fewer sites lowers its count.
 for (const [file, count] of Object.entries(caughtBaseline)) {
   const now = caughtSeen.get(file) ?? 0;
@@ -174,7 +210,7 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `✓ check:log-error-objects — ${fileCount} file(s) and ${loggerCalls} logger call(s) in ${ROOTS.length} root(s) and the call sites of ${wrapperCount} log wrapper(s), no error object or text in a log line; ` +
+  `✓ check:log-error-objects — ${fileCount} file(s) and ${loggerCalls} logger call(s) in ${ROOTS.length} root(s) plus ${topLevel.length} top-level and small-folder file(s) and the call sites of ${wrapperCount} log wrapper(s), no error object or text in a log line; ` +
     `${refusedMarked} refused form(s) in the positive control, each found; ` +
     `caught-literal rule: ${caughtRemaining} baselined site(s) left for B3b, ${caughtRefusedMarked} refused form(s) in its control.`,
 );

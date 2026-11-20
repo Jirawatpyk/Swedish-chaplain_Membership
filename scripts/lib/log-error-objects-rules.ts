@@ -139,6 +139,8 @@ export const LOG_WRAPPERS: Readonly<Record<string, readonly number[]>> = {
 };
 
 const LEVELS = new Set(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'child']);
+/** #739 B3b — `console.<method>` calls a server file makes land in the function log like a logger call. */
+const CONSOLE_LEVELS = new Set(['log', 'info', 'warn', 'error', 'debug', 'trace']);
 
 /** Identifiers that conventionally hold a caught error. */
 const ERROR_NAMES = new Set(['e', 'err', 'error', 'ex', 'cause']);
@@ -199,8 +201,34 @@ function isLoggerTarget(target: ts.Expression, aliases: ReadonlySet<string>): bo
 
 function isLoggerCall(node: ts.CallExpression, aliases: ReadonlySet<string> = new Set()): boolean {
   const callee = node.expression;
-  if (!ts.isPropertyAccessExpression(callee) || !LEVELS.has(callee.name.text)) return false;
+  // #739 B3b — `logger[level](…)`: a computed level is still a logger call.
+  if (ts.isElementAccessExpression(callee)) {
+    if (ts.isIdentifier(callee.expression) && callee.expression.text === 'console') return aliases.has(SERVER_CONSOLE);
+    return isLoggerTarget(callee.expression, aliases);
+  }
+  if (!ts.isPropertyAccessExpression(callee)) return false;
+  // #739 B3b — a server file's `console.warn(…)` reaches the same log stream.
+  if (ts.isIdentifier(callee.expression) && callee.expression.text === 'console') {
+    return aliases.has(SERVER_CONSOLE) && CONSOLE_LEVELS.has(callee.name.text);
+  }
+  if (!LEVELS.has(callee.name.text)) return false;
   return isLoggerTarget(callee.expression, aliases);
+}
+
+/**
+ * #739 B3b — a marker in the alias set: the file is server code (no leading
+ * `'use client'` directive), so its `console.*` calls are logger calls. A
+ * client component's console stays in the browser. Read from the parsed
+ * directive, so a BOM, CRLF or a leading comment cannot hide it.
+ */
+const SERVER_CONSOLE = '\u0000server-console';
+
+function isClientFile(sf: ts.SourceFile): boolean {
+  for (const stmt of sf.statements) {
+    if (!ts.isExpressionStatement(stmt) || !ts.isStringLiteral(stmt.expression)) return false;
+    if (stmt.expression.text === 'use client') return true;
+  }
+  return false;
 }
 
 /**
@@ -226,6 +254,7 @@ function loggerAliases(sf: ts.SourceFile): ReadonlySet<string> {
     ts.forEachChild(node, visit);
   };
   visit(sf);
+  if (!isClientFile(sf)) names.add(SERVER_CONSOLE);
   return names;
 }
 
@@ -255,10 +284,138 @@ function calleeName(call: ts.CallExpression): string | null {
   return null;
 }
 
-/** Names bound by every enclosing `catch (x)` clause and `.catch((x) => …)` callback. */
+/**
+ * #739 B3b — what a file holds from `Promise.allSettled`: the identifiers
+ * bound to a settled list (`const s = await Promise.allSettled(…)`, an alias
+ * `const t = s`, or `s.filter(…)`), and the identifiers bound to one element
+ * (`const [a, b] = await Promise.allSettled(…)`). An element's `.reason` is a
+ * rejection value, an error like a catch binding's.
+ */
+interface SettledInfo {
+  readonly lists: ReadonlySet<string>;
+  readonly elements: ReadonlySet<string>;
+}
+const settledInfoCache = new WeakMap<ts.SourceFile, SettledInfo>();
+/** The list methods whose result is still a settled list. */
+const SETTLED_LIST_METHODS = new Set(['filter', 'slice', 'concat', 'reverse', 'sort', 'toReversed', 'toSorted']);
+function isSettledListExpr(expr: ts.Expression, lists: ReadonlySet<string>): boolean {
+  const n = unwrap(expr);
+  if (ts.isIdentifier(n)) return lists.has(n.text);
+  if (!ts.isCallExpression(n)) return false;
+  if (calleeName(n) === 'Promise.allSettled') return true;
+  const callee = unwrap(n.expression);
+  return ts.isPropertyAccessExpression(callee) && SETTLED_LIST_METHODS.has(callee.name.text) && isSettledListExpr(callee.expression, lists);
+}
+function settledInfo(sf: ts.SourceFile): SettledInfo {
+  const cached = settledInfoCache.get(sf);
+  if (cached !== undefined) return cached;
+  const lists = new Set<string>();
+  const elements = new Set<string>();
+  // Two passes, so an alias declared before its source is read too.
+  for (let pass = 0; pass < 2; pass += 1) {
+    const visit = (n: ts.Node): void => {
+      // `Promise.allSettled(ps).then((rs) => …)`: the callback's parameter is the list.
+      if ((ts.isArrowFunction(n) || ts.isFunctionExpression(n)) && ts.isCallExpression(n.parent) && n.parent.arguments[0] === n) {
+        const callee = unwrap(n.parent.expression);
+        const p0 = n.parameters[0];
+        if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'then' && isSettledListExpr(callee.expression, lists) && p0 !== undefined && ts.isIdentifier(p0.name)) {
+          lists.add(p0.name.text);
+        }
+      }
+      if (ts.isVariableDeclaration(n) && n.initializer !== undefined && isSettledListExpr(n.initializer, lists)) {
+        if (ts.isIdentifier(n.name)) lists.add(n.name.text);
+        else if (ts.isArrayBindingPattern(n.name)) {
+          for (const el of n.name.elements) {
+            if (ts.isBindingElement(el) && ts.isIdentifier(el.name)) {
+              (el.dotDotDotToken !== undefined ? lists : elements).add(el.name.text);
+            }
+          }
+        }
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+  }
+  const info = { lists, elements };
+  settledInfoCache.set(sf, info);
+  return info;
+}
+
+/**
+ * A marker in the caught set: in a file that holds allSettled results, a
+ * `.reason` read off one element in a form with no name of its own
+ * (`s[0].reason`, a destructured `a.reason`) is a caught value.
+ */
+const SETTLED_REASON = '\u0000settled-reason';
+
+/** The callback of `s.map(…)` / `.forEach(…)` / … over an allSettled list, whose first parameter is one settled element. */
+const SETTLED_ITERATORS = new Set(['map', 'forEach', 'flatMap', 'filter', 'find', 'findLast', 'some', 'every', 'reduce']);
+function isSettledCallback(fn: ts.Node): fn is ts.ArrowFunction | ts.FunctionExpression {
+  if (!(ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) return false;
+  const call = fn.parent;
+  if (!ts.isCallExpression(call) || !call.arguments.includes(fn)) return false;
+  const callee = unwrap(call.expression);
+  if (!ts.isPropertyAccessExpression(callee) || !SETTLED_ITERATORS.has(callee.name.text)) return false;
+  return isSettledListExpr(callee.expression, settledInfo(fn.getSourceFile()).lists);
+}
+/** The caught names one enclosing node binds from an allSettled element: `r.reason`, or a destructured `reason`. */
+function settledCaughtNames(cur: ts.Node): string[] {
+  let binding: ts.BindingName | undefined;
+  if (isSettledCallback(cur)) {
+    const call = cur.parent as ts.CallExpression;
+    const callee = unwrap(call.expression) as ts.PropertyAccessExpression;
+    binding = cur.parameters[callee.name.text === 'reduce' ? 1 : 0]?.name;
+  } else if (ts.isForOfStatement(cur) && ts.isVariableDeclarationList(cur.initializer)) {
+    const lists = settledInfo(cur.getSourceFile()).lists;
+    const decl = cur.initializer.declarations[0]?.name;
+    const iterated = unwrap(cur.expression);
+    if (isSettledListExpr(iterated, lists)) binding = decl;
+    // `for (const [i, r] of settled.entries())`: the element is the second binding.
+    else if (
+      ts.isCallExpression(iterated) &&
+      ts.isPropertyAccessExpression(unwrap(iterated.expression)) &&
+      (unwrap(iterated.expression) as ts.PropertyAccessExpression).name.text === 'entries' &&
+      isSettledListExpr((unwrap(iterated.expression) as ts.PropertyAccessExpression).expression, lists) &&
+      decl !== undefined &&
+      ts.isArrayBindingPattern(decl)
+    ) {
+      const el = decl.elements[1];
+      if (el !== undefined && ts.isBindingElement(el)) binding = el.name;
+    }
+  }
+  if (binding === undefined) return [];
+  if (ts.isIdentifier(binding)) return [`${binding.text}.reason`];
+  if (ts.isObjectBindingPattern(binding)) {
+    const out: string[] = [];
+    for (const el of binding.elements) {
+      const key = el.propertyName ?? el.name;
+      if (ts.isIdentifier(key) && key.text === 'reason' && ts.isIdentifier(el.name)) out.push(el.name.text);
+    }
+    return out;
+  }
+  return [];
+}
+
+/** Where a caught value is in scope: a catch block, an allSettled element callback, or a `for (r of settled)` body. */
+function catchScopeBody(cur: ts.Node): ts.Node | null {
+  if (ts.isCatchClause(cur)) return cur.block;
+  if (settledCaughtNames(cur).length > 0) return isSettledCallback(cur) ? cur.body : (cur as ts.ForOfStatement).statement;
+  return null;
+}
+
+/**
+ * Names bound by every enclosing `catch (x)` clause and `.catch((x) => …)`
+ * callback, plus `r.reason` for the element `r` of an enclosing allSettled
+ * callback (#739 B3b; matched by its text, see {@link exprKey}).
+ */
 function caughtNames(node: ts.Node): ReadonlySet<string> {
   const names = new Set<string>();
   for (let cur: ts.Node | undefined = node; cur !== undefined; cur = cur.parent) {
+    for (const n of settledCaughtNames(cur)) names.add(n);
+    if (ts.isSourceFile(cur)) {
+      const info = settledInfo(cur);
+      if (info.lists.size > 0 || info.elements.size > 0) names.add(SETTLED_REASON);
+    }
     if (ts.isCatchClause(cur) && cur.variableDeclaration && ts.isIdentifier(cur.variableDeclaration.name)) {
       names.add(cur.variableDeclaration.name.text);
     }
@@ -311,6 +468,10 @@ const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
   // renewals `cancel-in-flight-cycles-for-member.ts` — its one construction
   // site sets `errClass: errKind(e)`, an error class name (#711).
   CancelInFlightCyclesForMemberError: new Set(['errClass']),
+  // auth `EnqueueInvitationError` — its one construction site
+  // (`src/lib/auth-deps.ts`) sets `errClass: errKind(e)`, an error class
+  // name (#739 B3b).
+  EnqueueInvitationError: new Set(['errClass']),
   // renewals `restore-cycle-for-member.ts` — `errName` is an Error's `.name`
   // or `'UnknownError'`, as above.
   RestoreCycleForMemberError: new Set(['errName']),
@@ -757,9 +918,30 @@ function isErrorIdentifier(name: string, scope: Scope): boolean {
 /** What an expression yields: an error object, error text, a token read off an error, or none of these. */
 type Shape = 'error' | 'text' | 'token' | null;
 
+/** `r.reason` as a name: a property access on an identifier, by text. */
+function exprKey(node: ts.Expression): string | null {
+  if (!ts.isPropertyAccessExpression(node)) return null;
+  const base = unwrap(node.expression);
+  if (node.name.text === 'reason') {
+    const info = settledInfo(node.getSourceFile());
+    // `a.reason` of a destructured element, or `s[0].reason` / `s.at(-1).reason` of a settled list.
+    if (ts.isIdentifier(base) && info.elements.has(base.text)) return SETTLED_REASON;
+    if (ts.isElementAccessExpression(base) && isSettledListExpr(base.expression, info.lists)) return SETTLED_REASON;
+    if (ts.isCallExpression(base)) {
+      const callee = unwrap(base.expression);
+      if (ts.isPropertyAccessExpression(callee) && ['at', 'find', 'findLast'].includes(callee.name.text) && isSettledListExpr(callee.expression, info.lists)) {
+        return SETTLED_REASON;
+      }
+    }
+  }
+  return ts.isIdentifier(base) ? `${base.text}.${node.name.text}` : null;
+}
+
 function shapeOf(expr: ts.Expression, scope: Scope): Shape {
   const node = unwrap(expr);
   if (ts.isIdentifier(node)) return isErrorIdentifier(node.text, scope) ? 'error' : null;
+  const key = exprKey(node);
+  if (key !== null && scope.errors.has(key)) return 'error';
   if (ts.isPropertyAccessExpression(node)) {
     const field = node.name.text;
     const base = shapeOf(node.expression, scope);
@@ -790,6 +972,9 @@ function refusal(sf: ts.SourceFile, expr: ts.Expression, scope: Scope): string |
   if (ts.isIdentifier(node)) {
     return isErrorIdentifier(node.text, scope) ? `the error object \`${node.text}\`` : null;
   }
+
+  const settledKey = exprKey(node);
+  if (settledKey !== null && scope.errors.has(settledKey)) return `the rejection value \`${node.getText()}\``;
 
   if (ts.isPropertyAccessExpression(node)) {
     const field = node.name.text;
@@ -1109,6 +1294,8 @@ export function findLogErrorObjects(fileName: string, source: string): LogErrorF
 function caughtTextRefusal(expr: ts.Expression, names: ReadonlySet<string>): string | null {
   const node = unwrap(expr);
   if (ts.isIdentifier(node)) return names.has(node.text) ? `the caught value \`${node.text}\`` : null;
+  const key = exprKey(node);
+  if (key !== null && names.has(key)) return `the caught value \`${node.getText()}\``;
   if (ts.isPropertyAccessExpression(node)) {
     const base = unwrap(node.expression);
     if (ts.isIdentifier(base) && names.has(base.text)) {
@@ -1173,9 +1360,21 @@ function caughtTextNames(node: ts.Node, caught: ReadonlySet<string>, objects?: S
     if (why.startsWith('the caught value')) objects?.add(name);
     else objects?.delete(name);
   };
-  const blocks: ts.Block[] = [];
+  const blocks: ts.Node[] = [];
   for (let cur: ts.Node | undefined = node.parent; cur !== undefined; cur = cur.parent) {
-    if (ts.isCatchClause(cur)) blocks.push(cur.block);
+    const body = catchScopeBody(cur);
+    if (body !== null) blocks.push(body);
+  }
+  // #739 B3b review — a destructured or indexed allSettled element has no
+  // callback or loop around it: follow its locals through the enclosing
+  // function body (or the file).
+  if (caught.has(SETTLED_REASON)) {
+    let fn: ts.Node | undefined = node.parent;
+    while (fn !== undefined && !ts.isFunctionLike(fn) && !ts.isSourceFile(fn)) fn = fn.parent;
+    if (fn !== undefined) {
+      const body = ts.isSourceFile(fn) ? fn : (fn as ts.FunctionLikeDeclaration).body;
+      if (body !== undefined) blocks.push(body);
+    }
   }
   for (let pass = 0; pass < 2; pass += 1) {
     for (const block of blocks) {

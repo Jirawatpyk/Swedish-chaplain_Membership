@@ -42,7 +42,7 @@ import { countTenantSkips, reportOverlapSkips } from '@/lib/renewals-cron-lock';
 import { asTenantContext } from '@/modules/tenants';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 /**
  * Phase 9 / T231 + Cycle-state observable gauge wiring.
  *
@@ -462,17 +462,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // without per-tenant context — operators had to grep audit
         // payloads to identify which tenant failed.
         if (r.status === 'rejected') {
-          const reasonStr = String(r.reason);
+          // #739 B3b — the rejection's class (and SQLSTATE / code) only: its
+          // text can quote connection details or bound parameters, and this
+          // value lands in the cron_dispatch_orchestrated audit row and the
+          // HTTP body. Same taxonomy as the auto-draft coordinator.
           logger.error(
-            {
-              tenantId,
-              correlationId,
-              reason: reasonStr.slice(0, 400),
-            },
+            { ...errLogFields(r.reason), tenantId, correlationId },
             'cron.renewals.coordinator.tenant_fetch_rejected',
           );
           renewalsMetrics.coordinatorTenantFailed(tenantId, 'rejected');
-          return { tenant_id: tenantId, error: reasonStr };
+          return { tenant_id: tenantId, error: 'fetch_rejected' };
         }
         if (r.value.jsonParseFailed) {
           renewalsMetrics.coordinatorTenantFailed(tenantId, 'json_parse_failed');

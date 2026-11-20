@@ -1,3 +1,5 @@
+import { errKind } from '@/lib/log-id';
+
 export type BreadcrumbSegment = {
   href: string;
   segment: string;
@@ -387,7 +389,7 @@ export function buildBreadcrumbStaticLabels(
       result[segment] = t(key);
     } catch (err) {
       if (process.env.NODE_ENV === 'development') {
-        console.warn(`[breadcrumb] missing i18n key: breadcrumb.${key}`, err);
+        console.warn(`[breadcrumb] missing i18n key: breadcrumb.${key}`, { err: errKind(err) });
       }
     }
   }

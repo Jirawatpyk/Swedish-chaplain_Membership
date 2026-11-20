@@ -31,7 +31,7 @@
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { errLogFields } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import { events, eventRegistrations } from './schema';
@@ -162,7 +162,7 @@ export const drizzleEventAttendeesQuery: EventAttendeesQueryPort = {
         // can at least see the bridge failed open from container logs.
         console.error(
           '[F6→F8 bridge] logger.error or metric counter itself threw — F8 no-throw contract preserved',
-          loggerErr,
+          { err: errKind(loggerErr) },
         );
       }
       return [];
