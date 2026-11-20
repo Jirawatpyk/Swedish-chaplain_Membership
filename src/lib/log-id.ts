@@ -63,6 +63,11 @@ export function errKind(e: unknown): string {
  * address an `@`, so neither passes.
  */
 const ERROR_CLASS = /^[A-Z][A-Za-z0-9]{0,63}$/;
+
+/** #739 — true when `text` is a bare error class name (one capitalised word, at most 64 characters). */
+export function isErrorClassToken(text: unknown): text is string {
+  return typeof text === 'string' && ERROR_CLASS.test(text);
+}
 const STEP_AND_CLASS = /^([a-z][a-z0-9_-]{0,47}): ([A-Z][A-Za-z0-9]{0,63})$/;
 
 /**
