@@ -70,6 +70,38 @@ describe('redactErrorTextSpanProcessor (#739)', () => {
     expect(JSON.stringify(span)).not.toContain('@');
   });
 
+  it('#739 review: closed codes (SQLSTATE, HTTP status, Node errno) are kept', () => {
+    for (const code of ['23505', '500', 'ECONNRESET', 'ERR_STREAM_PREMATURE_CLOSE']) {
+      const span = failedSpan(code);
+      end(span);
+      expect(span.events[1]?.attributes).toEqual({ 'exception.type': code });
+    }
+  });
+
+  it('#739 review: a status-only error span (no event, no error.type) reads unknown', () => {
+    const span = failedSpan('Error');
+    delete span.attributes['error.type'];
+    span.events = [span.events[0]!];
+    end(span);
+    expect(span.status).toEqual({ code: ERROR, message: 'unknown' });
+  });
+
+  it('#739 review: the caller\'s status object is not mutated', () => {
+    const span = failedSpan('DrizzleQueryError');
+    const callerStatus = span.status;
+    end(span);
+    expect(callerStatus.message).toContain('a@b.example');
+    expect(span.status.message).toBe('DrizzleQueryError');
+  });
+
+  it('#739 review: a span that breaks the redaction is emptied, never thrown', () => {
+    const span = failedSpan('Error') as unknown as { events: unknown; status: { code: number; message?: string } };
+    span.events = 'not an array';
+    expect(() => redactErrorTextSpanProcessor.onEnd(span as never)).not.toThrow();
+    expect(span.events).toEqual([]);
+    expect(span.status.message).toBe('unknown');
+  });
+
   it('an OK span and other events are untouched', () => {
     const span = failedSpan('Error');
     span.status = { code: OK };
