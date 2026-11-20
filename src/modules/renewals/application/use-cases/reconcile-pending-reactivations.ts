@@ -1410,7 +1410,7 @@ async function processTimeout(
           // no-money conflict is the clean no-op `admin_race_skipped`.
           tx2Outcome = refundIssued ? 'post_refund_admin_race' : 'admin_race_skipped';
           logger[refundIssued ? 'warn' : 'info'](
-            { cycleId, tenantId: cycle.tenantId, refundIssued, err: e.message },
+            { cycleId, tenantId: cycle.tenantId, refundIssued, ...errLogFields(e) },
             refundIssued
               ? '[reconcile-pending-reactivations] POST-refund timeout transition lost optimistic-lock race — refund issued against a now-non-pending cycle (accepted residual #6)'
               : '[reconcile-pending-reactivations] timeout transition lost race (no money moved) — skipping',

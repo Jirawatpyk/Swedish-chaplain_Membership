@@ -66,7 +66,7 @@ import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import type { TenantSlug } from '@/modules/tenants/domain/tenant-slug';
 import { TxAbort } from './tx-abort';
-import type { EnqueueInvitationInTxFn } from './create-user';
+import type { EnqueueInvitationError, EnqueueInvitationInTxFn } from './create-user';
 import { defaultReissueInvitationDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
@@ -154,11 +154,12 @@ export async function reissueInvitation(
         tenantId: input.tenantId,
       });
       if (!enqueueResult.ok) {
+        const errClass: EnqueueInvitationError['errClass'] = enqueueResult.error.errClass;
         logger.error(
           {
             requestId: input.requestId,
             errCode: enqueueResult.error.code,
-            errCause: errKind(enqueueResult.error.cause),
+            errCause: errClass ?? 'unknown',
             targetUserIdHash: hashId(user.id),
           },
           'reissue_invitation.enqueue_failed',

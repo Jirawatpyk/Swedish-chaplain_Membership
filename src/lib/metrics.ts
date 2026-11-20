@@ -31,6 +31,7 @@
  * label — those belong in traces + logs, not metrics.
  */
 import type { Role } from '@/modules/auth/domain/role';
+import { errKind } from '@/lib/log-id';
 import {
   metrics,
   type Counter,
@@ -1960,7 +1961,7 @@ function safeMetric(fn: () => void): void {
     // existing pattern across all F1/F4/F5/F7/F8 metric helpers —
     // ~50+ call sites; refactor warrants its own PR).
     console.warn('metrics_emit_failed_swallowed', {
-      err: (e as Error).message,
+      err: errKind(e),
     });
   }
 }

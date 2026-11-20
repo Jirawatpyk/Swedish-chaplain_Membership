@@ -42,7 +42,7 @@ import { refuseCrossOriginFanOut } from '@/lib/cron-fan-out-guard';
 import { countTenantSkips, reportOverlapSkips } from '@/lib/renewals-cron-lock';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -308,12 +308,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       };
     }
     if (r.status === 'rejected') {
-      const reasonStr = String(r.reason);
+      // #739 B3b — the rejection's class (and SQLSTATE / code) only: its
+      // text can quote connection details or bound parameters, and this
+      // value lands in the cron_dispatch_orchestrated audit row and the
+      // HTTP body. Same taxonomy as the auto-draft coordinator.
       logger.error(
-        { tenantId, correlationId, reason: reasonStr.slice(0, 400) },
+        { ...errLogFields(r.reason), tenantId, correlationId },
         'cron.renewals.at_risk.coordinator.tenant_fetch_rejected',
       );
-      return { tenant_id: tenantId, error: reasonStr };
+      return { tenant_id: tenantId, error: 'fetch_rejected' };
     }
     if (r.value.jsonParseFailed) {
       return {

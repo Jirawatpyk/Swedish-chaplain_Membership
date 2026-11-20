@@ -195,7 +195,7 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `✓ check:log-error-objects — ${fileCount} file(s) and ${loggerCalls} logger call(s) in ${ROOTS.length} root(s) and the call sites of ${wrapperCount} log wrapper(s), no error object or text in a log line; ` +
+  `✓ check:log-error-objects — ${fileCount} file(s) and ${loggerCalls} logger call(s) in ${ROOTS.length} root(s) plus ${topLevel.length} top-level file(s) and the call sites of ${wrapperCount} log wrapper(s), no error object or text in a log line; ` +
     `${refusedMarked} refused form(s) in the positive control, each found; ` +
     `caught-literal rule: ${caughtRemaining} baselined site(s) left for B3b, ${caughtRefusedMarked} refused form(s) in its control.`,
 );

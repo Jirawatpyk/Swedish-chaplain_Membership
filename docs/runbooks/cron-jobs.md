@@ -1687,6 +1687,14 @@ Same pattern as dispatch coordinator with these differences:
 - `500` — unexpected coordinator-level error (per-tenant errors degrade to
   `tenants_failed > 0` in the 200 response, not 500)
 
+A per-tenant fetch that rejects (network, timeout) reads `error:
+'fetch_rejected'` in `per_tenant_results` and in the
+`cron_dispatch_orchestrated` audit row, for every renewals coordinator (#739
+B3b; before, the dispatch, tier-upgrade-evaluate and at-risk-recompute
+coordinators stored the rejection's text). The class and SQLSTATE are in the
+`…tenant_fetch_rejected` log line. Older audit rows keep their text: the table
+is append-only.
+
 ## F8 — renewals/tier-upgrade-evaluate-coordinator (NEW — F8 Phase 7)
 
 Weekly evaluation of tier-upgrade eligibility per F2 plan thresholds

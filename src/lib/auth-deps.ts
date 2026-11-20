@@ -64,6 +64,7 @@ import { eq } from 'drizzle-orm';
 import type { DbTx } from '@/lib/db';
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type {
   EnqueueInvitationInTxFn,
   EnqueueInvitationError,
@@ -223,7 +224,7 @@ const enqueueInvitationInTx: EnqueueInvitationInTxFn = async (
   } catch (e) {
     return err({
       code: 'enqueue_failed',
-      cause: e instanceof Error ? e.message : String(e),
+      errClass: errKind(e),
     });
   }
 };

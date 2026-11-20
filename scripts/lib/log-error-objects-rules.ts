@@ -386,6 +386,10 @@ const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
   // renewals `cancel-in-flight-cycles-for-member.ts` — its one construction
   // site sets `errClass: errKind(e)`, an error class name (#711).
   CancelInFlightCyclesForMemberError: new Set(['errClass']),
+  // auth `EnqueueInvitationError` — its one construction site
+  // (`src/lib/auth-deps.ts`) sets `errClass: errKind(e)`, an error class
+  // name (#739 B3b).
+  EnqueueInvitationError: new Set(['errClass']),
   // renewals `restore-cycle-for-member.ts` — `errName` is an Error's `.name`
   // or `'UnknownError'`, as above.
   RestoreCycleForMemberError: new Set(['errName']),

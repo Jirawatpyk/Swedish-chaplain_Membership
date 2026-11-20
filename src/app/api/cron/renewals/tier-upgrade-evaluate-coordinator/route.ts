@@ -44,7 +44,7 @@ import { refuseCrossOriginFanOut } from '@/lib/cron-fan-out-guard';
 import { countTenantSkips, reportOverlapSkips } from '@/lib/renewals-cron-lock';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -282,17 +282,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       };
     }
     if (r.status === 'rejected') {
-      const reasonStr = String(r.reason);
+      // #739 B3b — the rejection's class (and SQLSTATE / code) only: its
+      // text can quote connection details or bound parameters, and this
+      // value lands in the cron_dispatch_orchestrated audit row and the
+      // HTTP body. Same taxonomy as the auto-draft coordinator.
       logger.error(
-        { tenantId, correlationId, reason: reasonStr.slice(0, 400) },
+        { ...errLogFields(r.reason), tenantId, correlationId },
         'cron.renewals.tier_upgrade.coordinator.tenant_fetch_rejected',
       );
-      // Round 6 W-007 — cap the response-body `error` field to 200
-      // chars to prevent stack-trace / internal-hostname leakage to
-      // cron-job.org. Log slice (line above) keeps 400 chars for ops
-      // diagnostics; HTTP response body MUST stay tighter because
-      // cron-job.org persists it on their dashboard for ≤30 days.
-      return { tenant_id: tenantId, error: reasonStr.slice(0, 200) };
+      return { tenant_id: tenantId, error: 'fetch_rejected' };
     }
     if (r.value.jsonParseFailed) {
       return {
