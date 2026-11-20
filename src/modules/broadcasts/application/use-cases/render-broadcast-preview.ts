@@ -16,6 +16,7 @@
  * Pure Application — no framework imports.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantSlug } from '@/modules/tenants';
 import type { BrandChromePort } from '../ports/brand-chrome-port';
@@ -78,7 +79,7 @@ export async function renderBroadcastPreview(
   try {
     sanitised = deps.sanitizer.sanitize(input.bodyHtml);
   } catch (e) {
-    return err({ kind: 'sanitizer_unavailable', reason: e instanceof Error ? e.message : String(e) });
+    return err({ kind: 'sanitizer_unavailable', reason: errKind(e) });
   }
   if (Buffer.byteLength(sanitised, 'utf8') > PREVIEW_BODY_MAX_BYTES) {
     return err({ kind: 'invalid_body', reason: 'body_too_large' });

@@ -54,14 +54,14 @@ export function sanitizeHtml(
   try {
     sanitised = deps.sanitizer.sanitize(input.rawHtml);
   } catch (e) {
-    const reason = e instanceof Error ? e.message : 'unknown sanitiser error';
     // Sanitiser threw — infra fault, NOT user content. Log + escalate.
     logger.error(
-      // Spec 140 s2d (#736c) — the class, never the sanitiser's message (the Result keeps it).
+      // Spec 140 s2d (#736c) / #739 B3b — the class, never the sanitiser's
+      // message, in the log line and in the Result.
       { err: errKind(e), rawHtmlBytes: Buffer.byteLength(input.rawHtml, 'utf8') },
       'broadcasts.sanitize.sanitizer_unavailable',
     );
-    return err({ kind: 'sanitizer_unavailable', reason });
+    return err({ kind: 'sanitizer_unavailable', reason: errKind(e) });
   }
 
   const bytes = Buffer.byteLength(sanitised, 'utf8');

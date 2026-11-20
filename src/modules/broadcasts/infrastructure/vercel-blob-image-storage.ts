@@ -120,14 +120,14 @@ export const vercelBlobImageStorage: ImageStoragePort = {
       // tell those apart from the value: under the upload's content-hash lock
       // a rate-limited `head` looked exactly like "the sweep took the bytes".
       // A failed probe is `unknown`; only a genuine 404 is `absent`.
-      const msg = e instanceof Error ? e.message : String(e);
       if (e instanceof BlobNotFoundError) return { status: 'absent' };
       logger.warn(
-        // Spec 140 s2d (#736c) — the class, never the SDK's message (the probe result keeps it).
+        // Spec 140 s2d (#736c) / #739 B3b — the class, never the SDK's message,
+        // in the log line and in the probe result.
         { err: errKind(e), tenantId, contentHash, mime: mimeType },
         'broadcasts.blob_head_error',
       );
-      return { status: 'unknown', reason: msg };
+      return { status: 'unknown', reason: errKind(e) };
     }
   },
 

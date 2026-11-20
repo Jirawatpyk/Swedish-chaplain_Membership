@@ -59,9 +59,8 @@ export type SetBrandSettingsError =
   | { readonly kind: 'colour_contrast'; readonly ratio: number; readonly required: typeof AA_MIN_CONTRAST }
   | { readonly kind: 'address_too_long'; readonly max: typeof BRAND_POSTAL_ADDRESS_MAX }
   /**
-   * `detail` is raw Postgres text that can embed SQL param VALUES (the postal
-   * address) — never logged. `errKind` is the error CLASS (F7-5), the one
-   * PII-free field on-call can read.
+   * #739 B3b — `detail` and `errKind` both carry the error CLASS (F7-5), never
+   * the Postgres text (it can embed SQL param VALUES, e.g. the postal address).
    */
   | { readonly kind: 'storage_error'; readonly detail: string; readonly errKind: string };
 
@@ -117,6 +116,6 @@ export async function setBrandSettings(
       return ok(saved);
     });
   } catch (e) {
-    return err({ kind: 'storage_error', detail: e instanceof Error ? e.message : String(e), errKind: errKind(e) });
+    return err({ kind: 'storage_error', detail: errKind(e), errKind: errKind(e) });
   }
 }

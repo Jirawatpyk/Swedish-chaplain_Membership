@@ -279,29 +279,3 @@ export function isExclusionViolationOnConstraint(
   });
   return named ?? (sawExclusion && errorChainMessage(error).includes(constraintName));
 }
-
-/**
- * Format a storage error for `storage_error.detail` payloads on
- * `Result.err` returns. Lifted from `drizzle-image-allowlist-repo.ts` +
- * `drizzle-broadcast-templates-repo.ts` 2026-05-21 (review finding
- * simplifier H3 — duplicate `describeStorageError` in 2 repos).
- *
- * Returns `"<chained messages joined by ' | '> [<sqlstate>]"` when a
- * Postgres SQLSTATE is present anywhere in the cause chain, else just
- * the chained-messages string. (M2 Round 2 docstring fix 2026-05-21 —
- * previously claimed "top-level message" but `errorChainMessage`
- * actually walks the FULL `.cause` chain and joins with ` | `, so the
- * old wording understated the behaviour.)
- *
- * The trailing `[<code>]` lets ops grep the audit-event payload for
- * systemic violations (e.g. `[23P01]` indicates a stale read after a
- * schema migration).
- *
- * Uses `errorChainMessage` for the message-chain walk so behaviour
- * stays consistent with auth + invoicing call sites.
- */
-export function describeStorageError(error: unknown): string {
-  const message = errorChainMessage(error);
-  const code = walkCauses(error, (cur) => (isPostgresError(cur) ? cur.code : undefined));
-  return code === undefined ? message : `${message} [${code}]`;
-}

@@ -275,7 +275,7 @@ export async function saveDraft(
   } catch (e) {
     return err({
       kind: 'save_draft.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
+      message: errKind(e),
     });
   }
 }

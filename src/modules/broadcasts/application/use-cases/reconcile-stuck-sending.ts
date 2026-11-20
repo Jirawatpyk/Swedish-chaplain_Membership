@@ -230,7 +230,7 @@ export async function reconcileStuckSending(
     } catch (e) {
       return err({
         kind: 'reconcile.gateway_error',
-        cause: e instanceof Error ? e.message : 'unknown gateway error',
+        cause: errKind(e),
       });
     }
 
@@ -305,7 +305,7 @@ export async function reconcileStuckSending(
     }
     return err({
       kind: 'reconcile.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
+      message: errKind(e),
       errClass: errKind(e),
     });
   }

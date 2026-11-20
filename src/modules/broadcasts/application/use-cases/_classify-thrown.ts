@@ -15,6 +15,7 @@
  * one shared reader is the point of this file.
  */
 import { RESEND_QUOTA_EXCEEDED_CODES, type GatewayRetryableSubKind } from '../ports/broadcasts-gateway-port';
+import { errKind } from '@/lib/log-id';
 
 export type GatewayThrownShape = {
   kind?: string;
@@ -45,7 +46,7 @@ export function classifyThrown(
   }
   return {
     kind: 'unknown',
-    reason: e instanceof Error ? e.message : String(e),
+    reason: errKind(e),
   };
 }
 

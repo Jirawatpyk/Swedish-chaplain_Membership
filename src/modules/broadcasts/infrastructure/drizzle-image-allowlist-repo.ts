@@ -31,7 +31,6 @@
 import { and, eq } from 'drizzle-orm';
 import { runInTenant, withTenantTxOrOpen } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
-import { describeStorageError } from '@/lib/db-errors';
 import type {
   AllowlistAddError,
   AllowlistEntry,
@@ -41,6 +40,7 @@ import type {
   ImageAllowlistTx,
 } from '../application/ports/image-allowlist-port';
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { TenantSlug } from '@/modules/tenants';
 import { tenantImageSourceAllowlist } from './schema';
 
@@ -59,9 +59,8 @@ async function withTenantTx<T>(
   return withTenantTxOrOpen(tenantId, tx, fn);
 }
 
-// `describeStorageError` lifted to `@/lib/db-errors` 2026-05-21
-// (review finding simplifier H3). Re-export not needed — direct import
-// at the top of this file.
+// A `storage_error` carries the error class (`errKind`, #739 B3b), never the
+// driver text.
 
 export function makeDrizzleImageAllowlistRepo(): ImageAllowlistPort {
   return {
@@ -159,7 +158,7 @@ export function makeDrizzleImageAllowlistRepo(): ImageAllowlistPort {
         }
         return ok(undefined);
       } catch (e) {
-        return err({ kind: 'storage_error', detail: describeStorageError(e) });
+        return err({ kind: 'storage_error', detail: errKind(e) });
       }
     },
 
@@ -216,7 +215,7 @@ export function makeDrizzleImageAllowlistRepo(): ImageAllowlistPort {
         // shouldn't happen under RLS but defensively report not_found.
         return err({ kind: 'not_found' });
       } catch (e) {
-        return err({ kind: 'storage_error', detail: describeStorageError(e) });
+        return err({ kind: 'storage_error', detail: errKind(e) });
       }
     },
   };

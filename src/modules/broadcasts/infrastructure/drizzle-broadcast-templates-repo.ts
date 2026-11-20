@@ -29,8 +29,9 @@
 import { and, eq, isNull, desc, sql } from 'drizzle-orm';
 import { runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
-import { describeStorageError, isUniqueViolation } from '@/lib/db-errors';
+import { isUniqueViolation } from '@/lib/db-errors';
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { TenantSlug } from '@/modules/tenants';
 import type {
   BroadcastTemplate,
@@ -79,12 +80,9 @@ function toDomain(row: BroadcastTemplateRow): BroadcastTemplate {
   };
 }
 
-// `describeStorageError` + `isUniqueViolation` lifted to `@/lib/db-errors`
-// 2026-05-21 (review finding simplifier H3) — was byte-identical to the
-// helpers in `drizzle-image-allowlist-repo.ts`. Walks the full cause
-// chain (Drizzle 0.45+ wraps multiple levels) rather than only checking
-// the top-level `.cause` — strictly more capable than the prior local
-// implementation.
+// `isUniqueViolation` lifted to `@/lib/db-errors` 2026-05-21 (review finding
+// simplifier H3). A `storage_error` carries the error class (`errKind`, #739
+// B3b), never the driver text.
 
 /**
  * Shared SELECT implementation for `findById`. The tx caller controls
@@ -242,7 +240,7 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
           return ok(toDomain(inserted[0] as BroadcastTemplateRow));
         });
       } catch (e) {
-        return err({ kind: 'storage_error', detail: describeStorageError(e) });
+        return err({ kind: 'storage_error', detail: errKind(e) });
       }
     },
 
@@ -290,7 +288,7 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
             locale: input.locale ?? 'en',
           });
         }
-        return err({ kind: 'storage_error', detail: describeStorageError(e) });
+        return err({ kind: 'storage_error', detail: errKind(e) });
       }
     },
 
@@ -319,7 +317,7 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
           return ok(undefined);
         });
       } catch (e) {
-        return err({ kind: 'storage_error', detail: describeStorageError(e) });
+        return err({ kind: 'storage_error', detail: errKind(e) });
       }
     },
 

@@ -15,7 +15,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errLogFields, hashId } from '@/lib/log-id';
+import { errKind, errLogFields, hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort } from '../ports/audit-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
@@ -107,7 +107,7 @@ export async function clearHalt(
   } catch (e) {
     return err({
       kind: 'clear_halt.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
+      message: errKind(e),
     });
   }
 }

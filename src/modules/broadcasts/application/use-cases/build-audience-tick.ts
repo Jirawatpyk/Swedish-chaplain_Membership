@@ -566,7 +566,7 @@ async function releaseLease(deps: LeasedTickDeps, input: BuildAudienceTickInput)
 }
 
 /** What a pre-call lease check read, or the DB fault that kept it from reading. */
-type LeaseRead = LeaseCheck | { readonly failed: unknown };
+type LeaseRead = LeaseCheck | { readonly cause: unknown };
 
 /**
  * Spec 140 s2b — the pre-call check, before each irreversible Resend call:
@@ -588,7 +588,7 @@ async function checkLeaseBefore(
     );
   } catch (e) {
     logger.warn({ ...ids, err: errKind(e) }, 'broadcasts.audience_import.lease_check_failed');
-    return { failed: e };
+    return { cause: e };
   }
   if (read === 'lost') logger.info(ids, 'broadcasts.audience_import.lease_lost');
   if (read === 'expiring') logger.warn({ ...ids, headroomMs }, 'broadcasts.audience_import.lease_expiring');
@@ -600,10 +600,10 @@ type LeaseStop = 'lost' | { readonly expiring: string };
 
 /**
  * Review round 2 (CR#7) — the ONE mapping from a pre-call read to a stop:
- * `null` = held, make the call; a stop otherwise; `{ failed }` passes through.
+ * `null` = held, make the call; a stop otherwise; `{ cause }` passes through.
  * `leaseGate` and the restart's per-delete gate both read it.
  */
-function leaseReadStop(read: LeaseRead, step: string): LeaseStop | { readonly failed: unknown } | null {
+function leaseReadStop(read: LeaseRead, step: string): LeaseStop | { readonly cause: unknown } | null {
   if (read === 'held') return null;
   if (typeof read === 'object') return read;
   // Review round 1 (CR#4) — this tick's own lease ran short: its own answer.
@@ -648,8 +648,8 @@ async function leaseGate(
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError> | null> {
   const stop = leaseReadStop(await checkLeaseBefore(deps, input, step, headroomMs), step);
   if (stop === null) return null;
-  if (typeof stop === 'object' && 'failed' in stop) {
-    return err({ kind: 'dispatch.server_error', message: 'lease_check_failed', errClass: errKind(stop.failed), phase: 'lease' });
+  if (typeof stop === 'object' && 'cause' in stop) {
+    return err({ kind: 'dispatch.server_error', message: 'lease_check_failed', errClass: errKind(stop.cause), phase: 'lease' });
   }
   return leaseStopAnswer(stop);
 }
@@ -1399,7 +1399,7 @@ async function restartAudienceBuild(
   const leaseGateStep = async (step: string): Promise<LeaseStop | 'failed' | null> => {
     const stop = leaseReadStop(await checkLeaseBefore(deps, input, step), step);
     if (stop === null) return null;
-    if (typeof stop === 'object' && 'failed' in stop) return failed(step, stop.failed);
+    if (typeof stop === 'object' && 'cause' in stop) return failed(step, stop.cause);
     return stop === 'lost' ? lost(step, 'lost') : stop;
   };
 

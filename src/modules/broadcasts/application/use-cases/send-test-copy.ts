@@ -33,6 +33,7 @@
  */
 import { createHash } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { TenantSlug } from '@/modules/tenants';
 import {
   hasBlockViolations,
@@ -133,7 +134,7 @@ export async function sendTestCopy(
   try {
     sanitised = deps.sanitizer.sanitize(input.bodyHtml);
   } catch (e) {
-    return err({ kind: 'sanitizer_unavailable', reason: e instanceof Error ? e.message : String(e) });
+    return err({ kind: 'sanitizer_unavailable', reason: errKind(e) });
   }
   if (Buffer.byteLength(sanitised, 'utf8') > TEST_COPY_BODY_MAX_BYTES) {
     return err({ kind: 'invalid_body', reason: 'body_too_large' });

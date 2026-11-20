@@ -1032,7 +1032,7 @@ export async function submitBroadcast(
   } catch (e) {
     return err({
       kind: 'submit.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
+      message: errKind(e),
     });
   }
 }

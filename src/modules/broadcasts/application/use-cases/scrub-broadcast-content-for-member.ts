@@ -62,6 +62,7 @@
  * observability, not produced here).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
@@ -354,12 +355,11 @@ export async function scrubBroadcastContentForMember(
       },
       'broadcasts.content_scrub.failed',
     );
-    // NOTE: the returned Result `message` is NOT a log — but it propagates the
-    // raw error text to the members-side adapter. That adapter (FIX D) logs only
-    // `errKind`, never this `message`, so no raw PG message reaches a log sink.
+    // #739 B3b — the returned Result `message` carries the class only, never
+    // the raw PG text (the members-side adapter logs `errKind` either way).
     return err({
       kind: 'scrub.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
+      message: errKind(e),
     });
   }
 }

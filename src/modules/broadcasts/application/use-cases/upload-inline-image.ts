@@ -388,7 +388,7 @@ export async function uploadInlineImage(
         { tenantId: input.tenantId, contentHash, mime, requestId: input.requestId },
         'broadcasts.uploadInlineImage.put_rejected_existing_after_unknown_probe',
       );
-      return err({ kind: 'storage_unavailable', reason: msg });
+      return err({ kind: 'storage_unavailable', reason: errKind(e) });
     }
     // F119 F7-2 — the ADAPTER classifies an outage by the SDK's own classes
     // and throws the port error. This used to be a regex over `msg` for the
@@ -406,7 +406,7 @@ export async function uploadInlineImage(
         },
         'broadcasts.blob_put_failed',
       );
-      return err({ kind: 'storage_unavailable', reason: msg });
+      return err({ kind: 'storage_unavailable', reason: errKind(e) });
     }
     throw e;
   }
@@ -467,7 +467,7 @@ async function recordImage(
       },
       'broadcasts.uploadInlineImage.reput_storage_unavailable',
     );
-    return err({ kind: 'storage_unavailable', reason: e.message });
+    return err({ kind: 'storage_unavailable', reason: errKind(e) });
   }
 }
 

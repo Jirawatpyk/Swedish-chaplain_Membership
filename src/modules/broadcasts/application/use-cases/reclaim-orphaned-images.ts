@@ -267,7 +267,7 @@ export async function reclaimOrphanedImages(
       };
     }));
   } catch (e) {
-    return err({ kind: 'sweep.server_error', message: e instanceof Error ? e.message : String(e) });
+    return err({ kind: 'sweep.server_error', message: errKind(e) });
   }
 
   // Spec 131 (#658 reviews) — arm 3 in its OWN bounded transactions, and its

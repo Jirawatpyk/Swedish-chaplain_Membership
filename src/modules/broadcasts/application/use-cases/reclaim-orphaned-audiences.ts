@@ -78,7 +78,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errLogFields } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
@@ -208,15 +208,6 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/**
- * Truncate an unknown thrown value to a safe log message (≤500 chars).
- * Used in catch blocks to build `reclaim.server_error` results.
- */
-function toSafeMessage(e: unknown): string {
-  const msg = e instanceof Error ? e.message : 'unknown error';
-  return msg.length > 500 ? msg.slice(0, 500) + '…' : msg;
-}
-
 // ---------------------------------------------------------------------------
 // Use-case
 // ---------------------------------------------------------------------------
@@ -243,7 +234,7 @@ export async function reclaimOrphanedAudiences(
   try {
     listing = await deps.broadcastsGateway.listAudiences({ deadlineAt: input.deadlineAt });
   } catch (e) {
-    return err({ kind: 'reclaim.server_error', message: toSafeMessage(e) });
+    return err({ kind: 'reclaim.server_error', message: errKind(e) });
   }
 
   const { audiences, truncated } = listing;
@@ -349,7 +340,7 @@ export async function reclaimOrphanedAudiences(
           uniqueIds,
         );
     } catch (e) {
-      return err({ kind: 'reclaim.server_error', message: toSafeMessage(e) });
+      return err({ kind: 'reclaim.server_error', message: errKind(e) });
     }
     orphans = candidates.filter((c) => {
       const referenced = referencedByBroadcast.get(c.broadcastId);
@@ -364,7 +355,7 @@ export async function reclaimOrphanedAudiences(
     try {
       existing = await deps.broadcastsRepo.existingBroadcastIds(deps.tenant.slug, uniqueIds);
     } catch (e) {
-      return err({ kind: 'reclaim.server_error', message: toSafeMessage(e) });
+      return err({ kind: 'reclaim.server_error', message: errKind(e) });
     }
     orphans = candidates.filter((c) => !existing.has(c.broadcastId));
   }
