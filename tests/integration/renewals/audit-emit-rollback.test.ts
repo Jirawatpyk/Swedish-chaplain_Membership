@@ -191,7 +191,8 @@ describe('F8 audit-emit failure rollback (J7-H5) — Principle VIII state↔audi
     expect(reminderRows).toHaveLength(1);
     const row = reminderRows[0]!;
     expect(row.status).toBe('failed');
-    expect(row.failureReason ?? '').toMatch(/^dispatcher_crash: /);
+    // #739 — a closed code, never the thrown text.
+    expect(row.failureReason ?? '').toMatch(/^dispatcher_crash:[A-Za-z][A-Za-z0-9_]*$/);
     // retry_until is set so the retry pass picks it up within 24h.
     expect(row.retryUntil).not.toBeNull();
     expect(row.retryExhaustedAt).toBeNull();

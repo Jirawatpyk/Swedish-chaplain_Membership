@@ -122,4 +122,16 @@ describe('Phase B B11 — POST /api/internal/retention/sweep-eventcreate-idempot
     const body = (await res.json()) as Record<string, unknown>;
     expect(body['ok']).toBe(true);
   });
+
+  it('#739: a per-tenant throw reports its class, never the error text', async () => {
+    class DrizzleQueryError extends Error {}
+    runInTenantMock.mockRejectedValueOnce(new DrizzleQueryError('Failed query … a@b.example'));
+    const { POST } = await loadRoute();
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { perTenant: ReadonlyArray<Record<string, unknown>> };
+    expect(body.perTenant[0]?.['errClass']).toBe('DrizzleQueryError');
+    expect(body.perTenant[0]).not.toHaveProperty('message');
+    expect(JSON.stringify(body)).not.toContain('a@b.example');
+  });
 });

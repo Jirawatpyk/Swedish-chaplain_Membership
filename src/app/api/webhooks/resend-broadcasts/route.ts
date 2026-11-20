@@ -52,8 +52,7 @@ import { randomUUID } from 'node:crypto';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { broadcastsTracer } from '@/lib/otel-tracer';
-import { SpanStatusCode } from '@opentelemetry/api';
+import { broadcastsTracer, markSpanFailed } from '@/lib/otel-tracer';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { sha256Hex } from '@/lib/crypto';
 import {
@@ -576,10 +575,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           );
           return r;
         } catch (e) {
-          span.setStatus({
-            code: SpanStatusCode.ERROR,
-            message: e instanceof Error ? e.message : 'webhook_threw',
-          });
+          markSpanFailed(span, e);
           throw e;
         } finally {
           span.end();

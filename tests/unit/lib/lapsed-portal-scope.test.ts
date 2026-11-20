@@ -266,7 +266,8 @@ describe('checkPortalAccess — fail-open on read error', () => {
       payload: {
         member_id: MEMBER_ID,
         blocked_route: '/portal/broadcasts/new',
-        error: 'connection reset',
+        // #739 — the class, never the thrown text.
+        error: 'Error',
       },
     });
   });

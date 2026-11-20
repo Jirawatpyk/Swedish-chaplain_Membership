@@ -1,36 +1,30 @@
 /**
- * R5.4 / Round 4 I-8 — shared error-message formatter that preserves
- * ES2022 `Error.cause` info on the rendered string.
- *
- * Round 3 R3.3.2 + R3.3.3 introduced near-identical cause-appending
- * logic at two sites:
- *   - `import-csv.ts` `toErrMessage` (15 call sites — audit payload
- *      `errorMessage` + log `err` field)
- *   - `ingest-webhook-attendee.ts:384` outer-catch (rolled-back audit
- *      `errorMessage`)
- *
- * Both wrap a TxStageError-class error and need to surface the
- * underlying cause discriminator (PostgresError + connection-terminated
- * vs MarkRefundedError + already_refunded vs AuditEmitError.db_error
- * etc) so SRE forensics can distinguish failure modes on the audit
- * fallback log line.
+ * #739 B3a — the class chain of a thrown value: what the events module
+ * stores about a failure (the `webhook_rolled_back` audit payload's
+ * `errClass`). It replaces R5.4's `formatErrorWithCause`, which rendered
+ * `${e.message} (cause: ${name}: ${message})`: a drizzle error's message
+ * quotes bound parameters, so that text put emails and names into a
+ * 5-year audit row.
  *
  * Contract:
- *   - Non-Error input → `String(e)` (preserves backward compat).
- *   - Error without cause → `e.message`.
- *   - Error with Error-typed cause → `${e.message} (cause: ${cause.name}: ${cause.message})`.
- *   - Error with non-Error cause (string, primitive) → `e.message` only
- *     (backward compat — non-Error causes are dropped by design).
+ *   - non-Error → `unknown`;
+ *   - Error → its class (`e.name` when it is a token other than `Error`,
+ *     so a synthetic cause's discriminator survives; else the constructor);
+ *   - Error with an Error cause → `Outer(cause:Inner)`; any other cause is
+ *     dropped.
  *
- * Pure function — no framework imports, no logging. Lives in
- * application/use-cases/_helpers so callers in `application/use-cases/`
- * import it without breaking Principle III (Domain ← Application ←
- * Infrastructure direction).
+ * The failure stage stays on its own field (`failureStage`), and the log
+ * line carries `errLogFields(e)`.
  */
-export function formatErrorWithCause(e: unknown): string {
-  if (!(e instanceof Error)) return String(e);
-  if (e.cause instanceof Error) {
-    return `${e.message} (cause: ${e.cause.name}: ${e.cause.message})`;
-  }
-  return e.message;
+import { errKind } from '@/lib/log-id';
+
+const CLASS_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+
+function className(e: Error): string {
+  return e.name !== 'Error' && CLASS_NAME.test(e.name) ? e.name : errKind(e);
+}
+
+export function formatErrorClass(e: unknown): string {
+  if (!(e instanceof Error)) return 'unknown';
+  return e.cause instanceof Error ? `${className(e)}(cause:${className(e.cause)})` : className(e);
 }

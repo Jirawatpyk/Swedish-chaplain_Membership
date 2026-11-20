@@ -115,6 +115,16 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${remainder}s`;
 }
 
+/**
+ * #739 B3a — the import writes these two codes for a database failure (the
+ * driver's text quotes bound parameters); every other reason is parser or
+ * validation text the import writes itself and is shown as is.
+ */
+type DbFailureReason = 'row_db_error' | 'batch_tx_aborted';
+function isDbFailureReason(reason: string): reason is DbFailureReason {
+  return reason === 'row_db_error' || reason === 'batch_tx_aborted';
+}
+
 export function CsvImportResult({ result, footerAction }: CsvImportResultProps) {
   const t = useTranslations('admin.events.import.result');
   const tHistory = useTranslations('admin.events.import.history');
@@ -262,12 +272,17 @@ export function CsvImportResult({ result, footerAction }: CsvImportResultProps) 
                 <li
                   key={`${row.rowNumber}-${row.reason}`}
                   data-testid="result-error-row"
-                  className="font-mono"
                 >
                   <strong>
                     {t('errorRowLabel', { rowNumber: row.rowNumber })}
                   </strong>
-                  : {row.reason}
+                  {/* Translated copy reads in the body face; only a raw
+                      parser reason keeps mono (#739 UX M2). */}
+                  : {isDbFailureReason(row.reason) ? (
+                    t(`errorReasons.${row.reason}`)
+                  ) : (
+                    <span className="font-mono">{row.reason}</span>
+                  )}
                 </li>
               ))}
             </ul>

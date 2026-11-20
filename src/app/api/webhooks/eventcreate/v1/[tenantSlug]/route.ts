@@ -42,7 +42,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { SpanStatusCode, type Span } from '@opentelemetry/api';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
-import { eventsTracer } from '@/lib/otel-tracer';
+import { eventsTracer, markSpanFailed } from '@/lib/otel-tracer';
 import { safeEmitStandalone } from '@/lib/events-safe-emit-standalone';
 import { problemResponse } from '@/lib/http/problem-response';
 import { asTenantId } from '@/modules/members';
@@ -165,11 +165,8 @@ function markSpanError(span: Span, reason: string): void {
 // R7-F staff-review fix (2026-05-13): `safeEmitStandalone` extracted
 // to `@/lib/events-safe-emit-standalone` so admin route handlers can
 // reuse the same idiom (round-6 B7 originally inlined a bare try/
-// catch; round-7 R2-F refactors it). The shared helper internally
-// applies `redactStack` to the caught error's stack before logging
-// (preserving the round-6 W2 PII protection — container paths +
-// node_modules + webpack-internal:/// scrubbed). Callers do not need
-// to re-redact.
+// catch; round-7 R2-F refactors it). Since #740 / #739 it logs the
+// error's class, never its message or stack.
 
 // ---------------------------------------------------------------------------
 // Route handler
@@ -918,11 +915,7 @@ export async function POST(
         // Last-resort catch — span needs to be ended with error status
         // even if something genuinely unexpected throws past every
         // defensive layer above.
-        span.setStatus({
-          code: SpanStatusCode.ERROR,
-          message: e instanceof Error ? e.message : String(e),
-        });
-        if (e instanceof Error) span.recordException(e);
+        markSpanFailed(span, e);
         logger.fatal(
           {
             event: 'f6_webhook_uncaught_exception',

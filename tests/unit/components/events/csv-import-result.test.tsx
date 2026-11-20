@@ -50,6 +50,10 @@ const MESSAGES = {
           errorRowsTitle: '{count, plural, one {# error row} other {# error rows}}',
           errorRowLabel: 'Row {rowNumber}',
           noErrorRows: 'All rows imported cleanly',
+          errorReasons: {
+            row_db_error: 'Not saved: this row could not be saved.',
+            batch_tx_aborted: 'Not saved: this batch could not be saved.',
+          },
         },
         history: {
           downloadErrorCsv: 'Download error CSV',
@@ -128,5 +132,38 @@ describe('R8.B1 — <CsvImportResult> safetyNetFailedOpen chip rendering', () =>
     expect(screen.getByTestId('result-safety-net-unavailable')).toBeDefined();
     expect(screen.getByTestId('result-history-degraded')).toBeDefined();
     expect(screen.getByTestId('result-audit-degraded')).toBeDefined();
+  });
+});
+
+describe('#739 — a database-failure row shows fixed copy, never a code or error text', () => {
+  afterEach(() => cleanup());
+
+  it('row_db_error and batch_tx_aborted read as copy; a parser reason stays as written', () => {
+    renderResult({
+      errorRows: [
+        { rowNumber: 2, reason: 'row_db_error' },
+        { rowNumber: 3, reason: 'batch_tx_aborted' },
+        { rowNumber: 4, reason: 'Missing email' },
+      ],
+    } as Partial<CsvImportResultPayload>);
+    const rows = screen.getAllByTestId('result-error-row').map((r) => r.textContent);
+    expect(rows[0]).toContain('Not saved: this row could not be saved.');
+    expect(rows[1]).toContain('Not saved: this batch could not be saved.');
+    expect(rows[2]).toContain('Missing email');
+    expect(rows.join(' ')).not.toContain('row_db_error');
+  });
+
+  it('translated copy is not set in mono; only a raw parser reason is (UX M2)', () => {
+    renderResult({
+      errorRows: [
+        { rowNumber: 2, reason: 'row_db_error' },
+        { rowNumber: 4, reason: 'Missing email' },
+      ],
+    } as Partial<CsvImportResultPayload>);
+    const [dbRow, parserRow] = screen.getAllByTestId('result-error-row');
+    expect(dbRow).not.toHaveClass('font-mono');
+    expect(dbRow?.querySelector('.font-mono')).toBeNull();
+    expect(parserRow).not.toHaveClass('font-mono');
+    expect(parserRow?.querySelector('.font-mono')?.textContent).toBe('Missing email');
   });
 });

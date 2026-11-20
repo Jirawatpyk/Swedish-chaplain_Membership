@@ -724,7 +724,7 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     if (!r.ok) {
       expect(r.error.code).toBe('pdf_render_failed');
       if (r.error.code === 'pdf_render_failed') {
-        expect(r.error.reason).toContain('font load failed');
+        expect(r.error.reason).toBe('render:Error');
       }
     }
     // 065 L-3 — render fails BEFORE upload inside renderAndUploadPdf: this

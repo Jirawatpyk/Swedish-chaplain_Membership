@@ -160,8 +160,8 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
       expect(outcome.summary.rowsAlreadyImported).toBe(0);
       expect(outcome.summary.errorRows).toHaveLength(ROW_COUNT);
       for (const errorRow of outcome.summary.errorRows) {
-        expect(errorRow.reason).toContain('batch tx aborted:');
-        expect(errorRow.reason).toContain('deferred-constraint');
+        // #739 — a closed code; the driver's text never reaches the row.
+        expect(errorRow.reason).toBe('batch_tx_aborted');
       }
     }
 

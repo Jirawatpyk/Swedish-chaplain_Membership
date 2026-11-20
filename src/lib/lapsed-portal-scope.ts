@@ -464,7 +464,6 @@ function emitFailOpen(
   ctx: PortalAccessContext,
   err: unknown,
 ): void {
-  const message = err instanceof Error ? err.message : String(err);
   try {
     logger.warn(
       {
@@ -484,7 +483,8 @@ function emitFailOpen(
     payload: {
       member_id: ctx.memberId,
       blocked_route: ctx.pathname,
-      error: message,
+      // #739 — the class, never the thrown text.
+      error: errKind(err),
     },
   };
   // Fire-and-forget — `checkPortalAccess`'s catch block already decided to

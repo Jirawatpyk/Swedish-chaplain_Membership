@@ -1,0 +1,39 @@
+// Positive control for the caught-error-literal rule in `pnpm check:log-error-objects` (#739 B3a).
+// Parsed as TypeScript, never compiled. Every line marked `// refused` must yield a finding on THAT
+// line; every line marked `// allowed` must yield none.
+declare const logger: { error(o: unknown, m?: string): void };
+declare const NextResponse: { json(b: unknown): unknown };
+declare const span: { setStatus(s: unknown): void };
+declare const SpanStatusCode: { ERROR: number };
+declare function errKind(e: unknown): string;
+declare function err<T>(e: T): T;
+declare function describe(e: unknown): string;
+declare const result: { error: { message: string; kind: string } };
+
+async function f(): Promise<unknown> {
+  try {
+    return 1;
+  } catch (e) {
+    const text = e instanceof Error ? e.message : String(e);
+    const cls = errKind(e);
+    NextResponse.json({ message: e instanceof Error ? e.message : 'x' }); // refused
+    span.setStatus({ code: SpanStatusCode.ERROR, message: String(e) }); // refused
+    err({ kind: 'server_error', message: text }); // refused
+    err({ kind: 'server_error', detail: `failed: ${e}` }); // refused
+    err({ kind: 'server_error', reason: describe(e) }); // refused
+    err({ kind: 'server_error', error: e }); // refused
+    err({ kind: 'server_error', stack: (e as Error).stack }); // refused
+    err({ kind: 'server_error', errClass: errKind(e) }); // allowed
+    err({ kind: 'server_error', errClass: cls }); // allowed
+    err({ kind: 'server_error', message: result.error.message }); // allowed
+    err({ kind: 'server_error', cause: e }); // allowed
+    err({ kind: 'server_error', cause: text }); // refused
+    logger.error({ err: errKind(e) }, 'x'); // allowed
+    return null;
+  }
+}
+
+function g(): void {
+  const e = new Error('not caught');
+  err({ message: e.message }); // allowed
+}

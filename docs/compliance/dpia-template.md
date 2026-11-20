@@ -333,7 +333,7 @@ EventCreate (US)                  Zapier (US)                   Chamber-OS (SG)
 | Member impersonation via fuzzy company-name match | Low | Medium | Tied fuzzy → `unmatched` (FR-012) requires admin manual relink; quota decrement gated on definitive match types only (Phase 6 T085) |
 | PII over-retention | Low (sweep cron at 04:00 daily) | High | Phase 10 T113 PII-pseudonymisation cron + FR-032 2-year non-member retention enforced at DB level via partial index `event_regs_pseudonymise_eligibility_idx` |
 | Audit log integrity loss | Very low | High | FR-037 strict-tx + dual-write fallback + pino.fatal stderr backstop (verified by `tests/integration/events/db-unavailable-during-tx.test.ts`) |
-| Logged-PII leak via stack trace | Low | Medium | Round-6 W2 fix routes both `webhook_rolled_back` audit payload + `safeEmitStandalone` pino log lines through `redactStack` (verified showing `[redacted-path]` markers in chaos test output) |
+| Logged-PII leak via stack trace | Low | Medium | Since #740 / #739 no stack reaches a log line, an audit payload or a span (`webhook_rolled_back` carries `errClass`); `check:log-error-objects` refuses `.stack` in logs and in non-log literals in a catch |
 
 ### Outstanding items before flag-flip
 

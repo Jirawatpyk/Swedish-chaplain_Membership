@@ -144,9 +144,9 @@ describe('loadPipeline OTel span attributes (S-06 + W-R8-4)', () => {
   });
 
   // Round 10 I4 — error-path coverage. If the repo throws, the span
-  // MUST receive setStatus(ERROR) + recordException via withActiveSpan,
+  // MUST receive setStatus(ERROR) via withActiveSpan (#739: the class only),
   // and the throw MUST propagate to the use-case caller.
-  it('on repo throw: span receives setStatus(ERROR) + recordException + throw propagates', async () => {
+  it('on repo throw: span receives setStatus(ERROR) with the class, no recordException, throw propagates (#739)', async () => {
     const repoError = new Error('db: connection lost');
     const deps = {
       tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
@@ -162,10 +162,11 @@ describe('loadPipeline OTel span attributes (S-06 + W-R8-4)', () => {
     expect(setStatusMock).toHaveBeenCalledWith(
       expect.objectContaining({
         code: SpanStatusCode.ERROR,
-        message: expect.stringContaining('connection lost'),
+        message: 'Error',
       }),
     );
-    expect(recordExceptionMock).toHaveBeenCalledWith(repoError);
+    expect(setAttributeMock).toHaveBeenCalledWith('error.type', 'Error');
+    expect(recordExceptionMock).not.toHaveBeenCalled();
   });
 
   // Round 10 S1 — bucketCount NaN/negative guard. If summary aggregation

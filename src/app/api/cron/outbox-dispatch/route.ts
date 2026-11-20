@@ -608,7 +608,7 @@ async function dispatchReceiptPdfRender(
       .set({
         status: 'permanently_failed' as const,
         attempts: row.attempts + 1,
-        lastError: 'missing tenant_id',
+        lastError: 'missing_tenant_id',
         updatedAt: now,
       })
       .where(eq(notificationsOutbox.id, row.id));
@@ -628,7 +628,7 @@ async function dispatchReceiptPdfRender(
       .set({
         status: 'permanently_failed' as const,
         attempts: row.attempts + 1,
-        lastError: 'malformed context_data',
+        lastError: 'malformed_context_data',
         updatedAt: now,
       })
       .where(eq(notificationsOutbox.id, row.id));
@@ -1310,6 +1310,9 @@ async function dispatchOne(
     const nextAttempt = row.attempts + 1;
     const isPermanent =
       nextAttempt >= MAX_ATTEMPTS || result.error.code === 'invalid-recipient';
+    // #739 — the stored and audited failure is the sender's closed code,
+    // never its message: Resend's validation text can quote the address.
+    const sendFailure = `resend:${result.error.code}`;
 
     if (isPermanent) {
       await tx
@@ -1317,7 +1320,7 @@ async function dispatchOne(
         .set({
           status: 'permanently_failed',
           attempts: nextAttempt,
-          lastError: result.error.message,
+          lastError: sendFailure,
           updatedAt: now,
         })
         .where(eq(notificationsOutbox.id, row.id));
@@ -1347,7 +1350,7 @@ async function dispatchOne(
           outbox_row_id: row.id,
           notification_type: row.notificationType,
           attempts: nextAttempt,
-          last_error: result.error.message,
+          last_error: sendFailure,
         },
       });
       // T106 — dual-emit F4-specific `auto_email_delivery_failed` for
@@ -1366,7 +1369,7 @@ async function dispatchOne(
             outbox_row_id: row.id,
             notification_type: row.notificationType,
             attempts: nextAttempt,
-            last_error: result.error.message,
+            last_error: sendFailure,
             reason:
               result.error.code === 'invalid-recipient'
                 ? 'invalid_recipient'
@@ -1405,7 +1408,7 @@ async function dispatchOne(
       .set({
         attempts: nextAttempt,
         nextRetryAt,
-        lastError: result.error.message,
+        lastError: sendFailure,
         updatedAt: now,
       })
       .where(eq(notificationsOutbox.id, row.id));

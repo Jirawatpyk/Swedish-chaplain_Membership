@@ -39,7 +39,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { sql } from 'drizzle-orm';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { errLogFields } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { runInTenant } from '@/lib/db';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { gateF6Cron } from '@/lib/events-cron-deps';
@@ -58,7 +58,8 @@ const ROUTE = '/api/internal/observability/recompute-match-rate';
 
 interface RecomputeResult {
   readonly tenantsProcessed: number;
-  readonly errors: ReadonlyArray<{ readonly tenantId: string; readonly message: string }>;
+  /** #739 — each error's class, never its text. */
+  readonly errors: ReadonlyArray<{ readonly tenantId: string; readonly errClass: string }>;
 }
 
 async function listKnownTenants(): Promise<ReadonlyArray<string>> {
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const tenants = await listKnownTenants();
-  const errors: Array<{ tenantId: string; message: string }> = [];
+  const errors: Array<{ tenantId: string; errClass: string }> = [];
   let processed = 0;
 
   for (const tenantId of tenants) {
@@ -140,12 +141,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       eventcreateMetrics.matchRateGauge(tenantId, value);
       processed += 1;
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
       logger.error(
         { event: 'recompute_match_rate_per_tenant_failed', tenantId, ...errLogFields(e) },
         '[F6] recompute-match-rate: per-tenant failure',
       );
-      errors.push({ tenantId, message });
+      errors.push({ tenantId, errClass: errKind(e) });
     }
   }
 

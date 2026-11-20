@@ -33,8 +33,7 @@ import { makeMarketingDirectory } from '@/lib/broadcast-marketing-deps';
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { broadcastsTracer } from '@/lib/otel-tracer';
-import { SpanStatusCode } from '@opentelemetry/api';
+import { broadcastsTracer, markSpanFailed } from '@/lib/otel-tracer';
 import { broadcastTierCodesSchema } from '@/lib/broadcasts-tier-codes';
 
 import { errKind } from '@/lib/log-id';
@@ -138,10 +137,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           }
           return r;
         } catch (e) {
-          span.setStatus({
-            code: SpanStatusCode.ERROR,
-            message: e instanceof Error ? e.message : 'submit_threw',
-          });
+          markSpanFailed(span, e);
           throw e;
         } finally {
           span.end();

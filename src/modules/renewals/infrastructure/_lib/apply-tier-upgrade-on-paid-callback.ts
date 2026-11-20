@@ -93,10 +93,8 @@ export function makeApplyTierUpgradeOnPaidCallback(
                   invoice_id: evt.invoiceId as unknown as InvoiceId,
                   member_id: evt.memberId as unknown as MemberIdBrand,
                   cycle_id: cycle.cycleId,
-                  failure_message:
-                    e instanceof Error
-                      ? e.message.slice(0, 200)
-                      : 'unknown',
+                  // #739 — the class, never the thrown text.
+                  failure_message: errKind(e),
                 },
               },
               {

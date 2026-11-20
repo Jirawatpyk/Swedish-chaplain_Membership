@@ -58,8 +58,7 @@ const VALID_ENTRY: F6AuditEntry<'webhook_rolled_back'> = {
     requestId: 'req-unit-test',
     source: 'eventcreate',
     failureStage: 'unknown',
-    errorMessage: 'unit-test forced failure',
-    errorStack: null,
+    errClass: 'TxStageError',
   },
 };
 

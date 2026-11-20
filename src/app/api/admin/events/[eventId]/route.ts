@@ -165,9 +165,8 @@ export async function GET(
         }),
     );
   } catch (e) {
-    // R9-I1 staff-review fix (2026-05-14) — see `route.ts` sibling
-    // for full rationale. `redactStack` strips container paths
-    // before pino sees the stack (round-8 W2 contract carry).
+    // R9-I1 staff-review fix (2026-05-14). Since #740 the line carries the
+    // error's class, never its message or stack.
     logger.error(
       {
         event: 'admin_event_detail_route_throw',

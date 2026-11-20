@@ -24,7 +24,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { createHmac, createHash } from 'node:crypto';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { errLogFields } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
 import { runInTenant } from '@/lib/db';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { gateF6Cron } from '@/lib/events-cron-deps';
@@ -112,7 +112,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     rowsScanned?: number;
     rowsPseudonymised?: number;
     durationMs?: number;
-    message?: string;
+    /** #739 — the error's class or closed kind, never its text. */
+    errClass?: string;
   }> = [];
 
   for (const tenantSlug of tenants) {
@@ -161,17 +162,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         perTenant.push({
           tenantId: tenantSlug,
           outcome: 'error',
-          message: result.error.message,
+          errClass: result.error.kind,
         });
       }
     } catch (e) {
       eventcreateMetrics.pseudonymisationSweepRowsTotal(tenantSlug, 'error');
-      const message = e instanceof Error ? e.message : String(e);
       logger.error(
         { event: 'pseudonymise_sweep_per_tenant_throw', tenantSlug, ...errLogFields(e) },
         '[F6] pseudonymise sweep: per-tenant tx threw',
       );
-      perTenant.push({ tenantId: tenantSlug, outcome: 'error', message });
+      perTenant.push({ tenantId: tenantSlug, outcome: 'error', errClass: errKind(e) });
     }
   }
 

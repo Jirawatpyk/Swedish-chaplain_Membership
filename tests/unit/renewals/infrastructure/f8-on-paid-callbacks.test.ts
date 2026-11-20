@@ -530,6 +530,8 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
     // hooks come from Stripe webhook context, NOT admin/system. Drift
     // here would mis-classify forensic-chain provenance.
     expect(context).toMatchObject({ actorRole: 'webhook' });
+    // #739 — the audit names the class, never the thrown text.
+    expect((event as { payload: { failure_message: string } }).payload.failure_message).toBe('Error');
     // Audit succeeded → no fatal escalation.
     expect(loggerFatalMock).not.toHaveBeenCalled();
   });

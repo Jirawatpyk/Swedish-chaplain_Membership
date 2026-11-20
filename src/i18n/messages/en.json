@@ -3393,7 +3393,9 @@
           "resendNoRecipient": "No primary contact — nothing was sent. Add or promote a contact on the member page, then resend.",
           "resendNoBuyerEmail": "No buyer email on this event invoice — nothing was sent. Reissue it with a buyer email, or send the PDF manually.",
           "receiptPending": "Receipt PDF is still being prepared. Please retry in a moment.",
-          "receiptFailed": "Receipt PDF render failed: {reason}. Contact support if this persists.",
+          "receiptFailedRender": "The receipt PDF could not be generated, and retrying will not fix it. Contact support to regenerate it.",
+          "receiptFailedUpload": "The receipt PDF was generated but could not be stored, and retrying will not fix it. Contact support to regenerate it.",
+          "receiptFailedUnknown": "The receipt PDF is not available, and retrying will not fix it. Contact support to regenerate it.",
           "receiptForbidden": "You do not have access to this receipt.",
           "receiptUnavailable": "Receipt PDF is not available right now. Please try again.",
           "receiptSessionExpired": "Your session has expired. Please sign in again to download.",
@@ -5948,6 +5950,10 @@
           "matchBreakdownTitle": "Match breakdown",
           "errorRowsTitle": "Rows with errors ({count})",
           "errorRowLabel": "Row {rowNumber}",
+          "errorReasons": {
+            "row_db_error": "Not saved because of a system error. Upload the same file again; rows already saved are skipped. If it keeps failing, contact support.",
+            "batch_tx_aborted": "Not saved because it was saved together with other rows, and that group failed. Upload the same file again; rows already saved are skipped. If it keeps failing, contact support."
+          },
           "noErrorRows": "All rows imported cleanly — no errors to review.",
           "recordIdLabel": "Reference ID",
           "historyDegraded": "Import history could not be saved — the rows above are still committed safely, but the audit row is missing. Please quote the reference ID to support if you need to look this up later.",

@@ -3393,7 +3393,9 @@
           "resendNoRecipient": "Ingen primär kontakt — ingenting skickades. Lägg till eller befordra en kontakt på medlemssidan och skicka sedan igen.",
           "resendNoBuyerEmail": "Ingen köpar-e-post på denna evenemangsfaktura — ingenting skickades. Utfärda den på nytt med en köpar-e-post, eller skicka PDF:en manuellt.",
           "receiptPending": "Kvitto-PDF förbereds fortfarande. Försök igen om en stund.",
-          "receiptFailed": "Kvitto-PDF kunde inte genereras: {reason}. Kontakta support om problemet kvarstår.",
+          "receiptFailedRender": "Kvitto-PDF:en kunde inte genereras, och ett nytt försök hjälper inte. Kontakta support för att generera om den.",
+          "receiptFailedUpload": "Kvitto-PDF:en genererades men kunde inte lagras, och ett nytt försök hjälper inte. Kontakta support för att generera om den.",
+          "receiptFailedUnknown": "Kvitto-PDF:en är inte tillgänglig, och ett nytt försök hjälper inte. Kontakta support för att generera om den.",
           "receiptForbidden": "Du har inte behörighet till detta kvitto.",
           "receiptUnavailable": "Kvitto-PDF är inte tillgänglig just nu. Försök igen.",
           "receiptSessionExpired": "Din session har gått ut. Logga in igen för att ladda ner.",
@@ -5948,6 +5950,10 @@
           "matchBreakdownTitle": "Matchningsöversikt",
           "errorRowsTitle": "Rader med fel ({count})",
           "errorRowLabel": "Rad {rowNumber}",
+          "errorReasons": {
+            "row_db_error": "Inte sparad på grund av ett systemfel. Ladda upp samma fil igen; redan sparade rader hoppas över. Kontakta support om felet kvarstår.",
+            "batch_tx_aborted": "Inte sparad eftersom raden sparades tillsammans med andra rader och den gruppen misslyckades. Ladda upp samma fil igen; redan sparade rader hoppas över. Kontakta support om felet kvarstår."
+          },
           "noErrorRows": "Alla rader importerades utan fel.",
           "recordIdLabel": "Referens-ID",
           "historyDegraded": "Importhistoriken kunde inte sparas — raderna ovan är fortfarande säkert införda, men granskningstabellen saknar en rad för denna import. Ange referens-ID:t ovan om du behöver kontakta supporten i efterhand.",

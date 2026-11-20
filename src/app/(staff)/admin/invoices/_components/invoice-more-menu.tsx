@@ -30,6 +30,7 @@ import { DropdownMenu, IconButton, type MenuItem } from '@jirawatpyk/aura-react'
 import { toast } from '@/lib/toast';
 import { useBelowSm } from '@/hooks/use-below-sm';
 import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-client';
+import { receiptFailedCopyKey } from '../_lib/receipt-failure-copy';
 
 export interface InvoiceMoreMenuProps {
   readonly invoiceId: string;
@@ -188,7 +189,7 @@ export function InvoiceMoreMenu({
         fallbackFilename: `${documentNumber}-receipt.pdf`,
         toasts: {
           pending: t('toast.receiptPending'),
-          failed: (reason) => t('toast.receiptFailed', { reason }),
+          failed: (reason) => t(receiptFailedCopyKey(reason)),
           forbidden: t('toast.receiptForbidden'),
           unavailable: t('toast.receiptUnavailable'),
           sessionExpired: t('toast.receiptSessionExpired'),

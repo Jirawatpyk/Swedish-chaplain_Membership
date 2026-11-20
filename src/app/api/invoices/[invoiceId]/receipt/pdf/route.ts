@@ -93,9 +93,9 @@ export async function GET(
       );
     }
     if (result.error.code === 'receipt_pdf_failed') {
-      // Admin sees the failure reason so they can take corrective action.
-      // Reason is internal (sanitiseErrorReason pattern at use-case
-      // boundaries) — safe to surface to admin context.
+      // #739 — `reason` is the stored closed code (`render:<ErrClass>`,
+      // `upload:<ErrClass>`, `legacy_redacted`), never error text. The admin
+      // toast maps it to fixed copy (`receiptFailedCopyKey`).
       return NextResponse.json(
         { error: { code: 'receipt_pdf_failed', reason: result.error.reason } },
         { status: 502 },

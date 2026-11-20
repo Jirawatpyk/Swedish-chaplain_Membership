@@ -23,6 +23,7 @@
  * in spans, swap to `cryptoHash('sha256', tenantId)` at the call
  * site — but no F5 use-case needs that today.
  */
+import { errKind } from '@/lib/log-id';
 import {
   SpanStatusCode,
   trace,
@@ -156,10 +157,23 @@ export function membersTracer(): Tracer {
 }
 
 /**
+ * #739 — mark a span failed by the error's class: the status message and an
+ * `error.type` attribute (OTel semantic convention). Never the message, and
+ * no `recordException`, which exports the message and the stack: a drizzle
+ * error's message quotes bound parameters (emails, names).
+ */
+export function markSpanFailed(span: Span, e: unknown): void {
+  const errClass = errKind(e);
+  span.setAttribute('error.type', errClass);
+  span.setStatus({ code: SpanStatusCode.ERROR, message: errClass });
+}
+
+/**
  * Round 5 simplification — span lifecycle helper.
  *
  * Wraps `tracer.startSpan(name, {attributes}) → fn(span) → catch:
- * setStatus(ERROR) + recordException + rethrow → finally: span.end()`.
+ * markSpanFailed (#739: the class, no recordException) + rethrow → finally:
+ * span.end()`.
  * Removes the duplicated try/catch/finally boilerplate that started
  * showing up at the F7 webhook, cron, and unsubscribe entrypoints.
  *
@@ -190,11 +204,7 @@ export async function withSpan<T>(
   try {
     return await fn(span);
   } catch (e) {
-    span.setStatus({
-      code: SpanStatusCode.ERROR,
-      message: e instanceof Error ? e.message : String(e),
-    });
-    if (e instanceof Error) span.recordException(e);
+    markSpanFailed(span, e);
     throw e;
   } finally {
     span.end();
@@ -223,11 +233,7 @@ export async function withActiveSpan<T>(
     try {
       return await fn(span);
     } catch (e) {
-      span.setStatus({
-        code: SpanStatusCode.ERROR,
-        message: e instanceof Error ? e.message : String(e),
-      });
-      if (e instanceof Error) span.recordException(e);
+      markSpanFailed(span, e);
       throw e;
     } finally {
       span.end();

@@ -177,6 +177,11 @@ const SAFE_CALLS = new Set([
   // renewals `renewal-gateway.ts` — an exhaustive switch over the closed
   // `SendRenewalEmailError['kind']` union that returns a boolean (#740 B1).
   'isPermanentGatewayError',
+  // events `_helpers/format-error-with-cause.ts` — the class chain
+  // `Outer(cause:Inner)` from `errKind` / a token-shaped `.name` (#739).
+  'formatErrorClass',
+  // `src/lib/otel-tracer.ts` — sets the span status to `errKind(e)` (#739).
+  'markSpanFailed',
 ]);
 /** The only fields of `classifyThrown(e)` that are closed tokens (`reason` carries the message). */
 const CLASSIFY_SAFE_FIELDS = new Set(['kind', 'subKind', 'resourceType']);
@@ -1085,4 +1090,162 @@ export function scanLogErrorObjects(fileName: string, source: string): LogErrorS
 /** The findings of {@link scanLogErrorObjects} alone. */
 export function findLogErrorObjects(fileName: string, source: string): LogErrorFinding[] {
   return scanLogErrorObjects(fileName, source).findings;
+}
+
+// ---------------------------------------------------------------------------
+// #739 B3a — caught error text in an object literal (not a log line)
+// ---------------------------------------------------------------------------
+
+/**
+ * #739 B3a — inside a `catch`, an object literal that is NOT a log or
+ * log-wrapper argument must not carry the caught value's text: its
+ * `.message` / `.stack`, `String(e)`, `${e}`, or the object itself. Such a
+ * literal is an HTTP body, a span status, an audit payload, a stored column
+ * or a Result that later reaches one, and a drizzle error's message quotes
+ * bound parameters. Only the caught binding (and the locals read off it one
+ * hop up, as the log rule taints them) counts, so Result errors and typed
+ * error fields stay allowed. Use `errKind(e)` or a closed code.
+ */
+function caughtTextRefusal(expr: ts.Expression, names: ReadonlySet<string>): string | null {
+  const node = unwrap(expr);
+  if (ts.isIdentifier(node)) return names.has(node.text) ? `the caught value \`${node.text}\`` : null;
+  if (ts.isPropertyAccessExpression(node)) {
+    const base = unwrap(node.expression);
+    if (ts.isIdentifier(base) && names.has(base.text)) {
+      return TEXT_FIELDS.has(node.name.text) ? `\`${base.text}.${node.name.text}\`` : null;
+    }
+    if (TEXT_FIELDS.has(node.name.text)) return caughtTextRefusal(base, names);
+    return null;
+  }
+  if (ts.isCallExpression(node)) {
+    const name = calleeName(node);
+    if (name !== null && SAFE_CALLS.has(name)) return null;
+    const callee = unwrap(node.expression);
+    if (ts.isPropertyAccessExpression(callee)) {
+      const inner = caughtTextRefusal(callee.expression, names);
+      if (inner !== null) return `\`.${callee.name.text}()\` on ${inner}`;
+    }
+    for (const arg of node.arguments) {
+      const a = unwrap(arg);
+      if (ts.isObjectLiteralExpression(a) || ts.isArrayLiteralExpression(a) || ts.isFunctionLike(a)) continue;
+      const inner = caughtTextRefusal(arg, names);
+      if (inner !== null) return `\`${name ?? 'a call'}(…)\` of ${inner}`;
+    }
+    return null;
+  }
+  if (ts.isTemplateExpression(node)) {
+    for (const span of node.templateSpans) {
+      const inner = caughtTextRefusal(span.expression, names);
+      if (inner !== null) return `a template embedding ${inner}`;
+    }
+    return null;
+  }
+  if (ts.isConditionalExpression(node)) {
+    return caughtTextRefusal(node.whenTrue, names) ?? caughtTextRefusal(node.whenFalse, names);
+  }
+  if (ts.isBinaryExpression(node)) {
+    const op = node.operatorToken.kind;
+    if (op === ts.SyntaxKind.AmpersandAmpersandToken) return caughtTextRefusal(node.right, names);
+    if (
+      op === ts.SyntaxKind.QuestionQuestionToken ||
+      op === ts.SyntaxKind.BarBarToken ||
+      op === ts.SyntaxKind.PlusToken
+    ) {
+      return caughtTextRefusal(node.left, names) ?? caughtTextRefusal(node.right, names);
+    }
+  }
+  return null;
+}
+
+/**
+ * The caught bindings plus the locals that hold their text: a declaration or
+ * assignment inside an enclosing catch block whose value is caught text by
+ * this rule (two passes, so a local read off such a local counts too). Not
+ * the log rule's taint, which also taints `errKind(e)`-style values.
+ */
+function caughtTextNames(node: ts.Node, caught: ReadonlySet<string>, objects?: Set<string>): ReadonlySet<string> {
+  const names = new Set(caught);
+  for (const c of caught) objects?.add(c);
+  // A local whose value is the caught object itself (`raw instanceof Error ?
+  // raw : new Error(…)`) holds an error, not its text: `cause:` may chain it.
+  const record = (name: string, why: string): void => {
+    names.add(name);
+    if (why.startsWith('the caught value')) objects?.add(name);
+    else objects?.delete(name);
+  };
+  const blocks: ts.Block[] = [];
+  for (let cur: ts.Node | undefined = node.parent; cur !== undefined; cur = cur.parent) {
+    if (ts.isCatchClause(cur)) blocks.push(cur.block);
+  }
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const block of blocks) {
+      const scan = (n: ts.Node): void => {
+        if (n.pos >= node.pos) return;
+        if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer !== undefined) {
+          const why = caughtTextRefusal(n.initializer, names);
+          if (why !== null) record(n.name.text, why);
+        } else if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left)) {
+          const why = caughtTextRefusal(n.right, names);
+          if (why !== null) record(n.left.text, why);
+        }
+        if (!ts.isFunctionLike(n)) ts.forEachChild(n, scan);
+      };
+      ts.forEachChild(block, scan);
+    }
+  }
+  return names;
+}
+
+/** True when `node` sits in a logger or registered log-wrapper call's arguments. */
+function insideLogCall(node: ts.Node, aliases: ReadonlySet<string>): boolean {
+  for (let cur: ts.Node | undefined = node.parent; cur !== undefined; cur = cur.parent) {
+    if (ts.isFunctionLike(cur)) return false;
+    if (ts.isCallExpression(cur) && (isLoggerCall(cur, aliases) || wrapperIndexes(cur) !== null)) return true;
+  }
+  return false;
+}
+
+/** Caught error text in a non-log object literal: one finding per property. */
+export function findCaughtErrorLiterals(fileName: string, source: string): LogErrorFinding[] {
+  const kind = /\.tsx$/i.test(fileName) ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind);
+  const aliases = loggerAliases(sf);
+  const out: LogErrorFinding[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node)) &&
+      ts.isObjectLiteralExpression(node.parent)
+    ) {
+      const caught = caughtNames(node);
+      if (caught.size > 0 && !insideLogCall(node, aliases)) {
+        const objects = new Set<string>();
+        const names = caughtTextNames(node, caught, objects);
+        // Error chaining (`{ cause: e }`) keeps the object in memory; it is
+        // not a sink, and the log rule reads it wherever it is logged.
+        // Only the caught object (or a local holding that object): a local
+        // holding its text is text.
+        // A chained DrizzleQueryError keeps `query` / `params` as own
+        // enumerable fields, so such a Result must never be serialised whole.
+        const chainedName = ts.isShorthandPropertyAssignment(node)
+          ? node.name.text
+          : ts.isIdentifier(unwrap(node.initializer))
+            ? (unwrap(node.initializer) as ts.Identifier).text
+            : null;
+        const chained = node.name.getText(sf) === 'cause' && chainedName !== null && objects.has(chainedName);
+        const why = chained
+          ? null
+          : ts.isShorthandPropertyAssignment(node)
+          ? names.has(node.name.text)
+            ? `the caught value \`${node.name.text}\``
+            : null
+          : caughtTextRefusal(node.initializer, names);
+        if (why !== null) {
+          out.push({ line: lineOf(sf, node), message: `${node.name.getText(sf)}: ${why} outside a log line` });
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
 }

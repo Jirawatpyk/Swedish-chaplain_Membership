@@ -722,7 +722,8 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       | null;
     expect(payload?.failure_kind).toBe('unknown');
     expect(payload?.recipient_email_hashed).toBeNull();
-    expect(payload?.failure_message).toMatch(/synthetic_dispatch_lookup_crash/);
+    // #739 — the class of the thrown value, never its text.
+    expect(payload?.failure_message).toBe('Error');
     // Round 5 IMP-9 — bounded-payload cap (≤500 chars).
     expect(payload?.failure_message?.length ?? 0).toBeLessThanOrEqual(500);
   }, 60_000);
