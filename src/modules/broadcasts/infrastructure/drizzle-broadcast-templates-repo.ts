@@ -31,7 +31,8 @@ import { runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { isUniqueViolation } from '@/lib/db-errors';
 import { err, ok, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
+import { logger } from '@/lib/logger';
 import type { TenantSlug } from '@/modules/tenants';
 import type {
   BroadcastTemplate,
@@ -240,6 +241,8 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
           return ok(toDomain(inserted[0] as BroadcastTemplateRow));
         });
       } catch (e) {
+        // #739 B3b review — the route answers a bare 500, so the class and SQLSTATE are logged here.
+        logger.error({ ...errLogFields(e), repo: 'templates' }, 'broadcasts.templates.storage_error');
         return err({ kind: 'storage_error', detail: errKind(e) });
       }
     },
@@ -288,6 +291,8 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
             locale: input.locale ?? 'en',
           });
         }
+        // #739 B3b review — the route answers a bare 500, so the class and SQLSTATE are logged here.
+        logger.error({ ...errLogFields(e), repo: 'templates' }, 'broadcasts.templates.storage_error');
         return err({ kind: 'storage_error', detail: errKind(e) });
       }
     },
@@ -317,6 +322,8 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
           return ok(undefined);
         });
       } catch (e) {
+        // #739 B3b review — the route answers a bare 500, so the class and SQLSTATE are logged here.
+        logger.error({ ...errLogFields(e), repo: 'templates' }, 'broadcasts.templates.storage_error');
         return err({ kind: 'storage_error', detail: errKind(e) });
       }
     },

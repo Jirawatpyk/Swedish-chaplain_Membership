@@ -14,6 +14,8 @@
 -- no updated_at (none of the three tables has an updated_at trigger; the
 -- invoices immutability trigger does not lock receipt_pdf_last_error). Rollback:
 -- none needed — the text is gone by design.
+-- A promote back to a deployment before #739 writes error text into these
+-- columns again; re-run these UPDATEs by hand after one (docs/observability.md).
 
 UPDATE "invoices"
    SET "receipt_pdf_last_error" = 'legacy_redacted'

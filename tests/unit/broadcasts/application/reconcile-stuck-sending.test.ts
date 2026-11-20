@@ -634,7 +634,7 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toEqual({ kind: 'reconcile.gateway_error', cause: 'Error' });
+      expect(result.error).toEqual({ kind: 'reconcile.gateway_error', errClass: 'Error' });
       expect(JSON.stringify(result.error)).not.toContain('@');
     }
     expect(repo.transitions).toHaveLength(0);

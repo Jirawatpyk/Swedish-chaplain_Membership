@@ -34,6 +34,9 @@ describe('migration 0331 repeats 0330', () => {
         .filter((l) => !l.startsWith('--') && l.trim() !== '')
         .join('\n');
     expect(statements(read('0331_redact_stored_error_text_again.sql'))).toBe(statements(migration));
+    // The statement filter drops `--> statement-breakpoint` too, so count them apart.
+    const breaks = (x: string): number => x.split('--> statement-breakpoint').length;
+    expect(breaks(read('0331_redact_stored_error_text_again.sql'))).toBe(breaks(migration));
     for (const column of ['receipt_pdf_last_error', 'last_error', 'failure_reason']) {
       expect(keepPattern(column, read('0331_redact_stored_error_text_again.sql'))).toBe(keepPattern(column));
     }

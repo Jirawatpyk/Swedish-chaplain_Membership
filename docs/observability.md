@@ -248,6 +248,19 @@ before, a DOMException that is not an `Error` in the runtime logged
 `'unknown'`. A zod failure logs
 `issueCount`, never the issues (an issue message can quote the input).
 
+Values that moved in #739 B3b part 2 (a saved search keyed on the old value
+needs the new one): renewals' `errName` (end-membership-coverage,
+restore-cycle, `membership-coverage-end`) is `errKind`, so `'UnknownError'`
+reads `'unknown'` and a class that sets `.name` by hand reads its constructor
+name; a webhook `dispatch_failure_detail` for a DOMException reads
+`AbortError` / `TimeoutError`, not `DOMException`; the reencoder's timeout
+reason is `ReencodeTimeoutError`. Known residuals, not this change: a Resend
+API body's text still becomes `classifyResendError`'s `reason` (it reaches no
+log, column, audit or body), and a catch that returns only the class carries
+no SQLSTATE (`DrizzleQueryError` for every driver fault) unless its Result
+keeps `cause`; the broadcasts templates and allowlist repos log
+`errLogFields(e)` at their `storage_error` catch for that reason.
+
 Field names #740 B2 changed (saved searches and alerts keyed on the old name
 need the new one): a Result error's `errType` / `errKind` / `error` are now
 `err` + `resultKind` (+ `step`); `errMessage` / `errStack` / `zodIssues` are

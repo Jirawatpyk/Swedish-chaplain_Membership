@@ -40,7 +40,8 @@ import type {
   ImageAllowlistTx,
 } from '../application/ports/image-allowlist-port';
 import { err, ok, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errKind, errLogFields } from '@/lib/log-id';
+import { logger } from '@/lib/logger';
 import type { TenantSlug } from '@/modules/tenants';
 import { tenantImageSourceAllowlist } from './schema';
 
@@ -158,6 +159,8 @@ export function makeDrizzleImageAllowlistRepo(): ImageAllowlistPort {
         }
         return ok(undefined);
       } catch (e) {
+        // #739 B3b review — the route answers a bare 500, so the class and SQLSTATE are logged here.
+        logger.error({ ...errLogFields(e), repo: 'image_allowlist' }, 'broadcasts.image_allowlist.storage_error');
         return err({ kind: 'storage_error', detail: errKind(e) });
       }
     },
@@ -215,6 +218,8 @@ export function makeDrizzleImageAllowlistRepo(): ImageAllowlistPort {
         // shouldn't happen under RLS but defensively report not_found.
         return err({ kind: 'not_found' });
       } catch (e) {
+        // #739 B3b review — the route answers a bare 500, so the class and SQLSTATE are logged here.
+        logger.error({ ...errLogFields(e), repo: 'image_allowlist' }, 'broadcasts.image_allowlist.storage_error');
         return err({ kind: 'storage_error', detail: errKind(e) });
       }
     },

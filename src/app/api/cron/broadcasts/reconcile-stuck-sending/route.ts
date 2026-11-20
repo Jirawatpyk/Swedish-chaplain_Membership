@@ -173,10 +173,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (!result.ok) {
         if (result.error.kind === 'reconcile.gateway_error') {
           summary.gateway_error++;
+          // #739 B3b review — the gateway error's class (`errKind`).
+          const errClass: Extract<ReconcileStuckSendingError, { kind: 'reconcile.gateway_error' }>['errClass'] =
+            result.error.errClass;
           logger.warn(
             {
               tenantId: tenant.slug,
               broadcastId: row.broadcast_id,
+              errClass,
             },
             'cron.broadcasts.reconcile.gateway_error',
           );

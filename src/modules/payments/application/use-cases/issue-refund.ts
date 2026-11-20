@@ -1043,8 +1043,8 @@ async function issueRefundBody(
         tenantId: input.tenantId,
         refundId: prepared.refundId,
         paymentId,
-        // Bounded discriminator only — never `reason` (may embed account ids
-        // or key prefixes).
+        // Bounded discriminator only — never `reason` (free text that may
+        // embed a refund id or amount).
         errKind: stripeRefund.error.kind,
         rowState: 'left_pending_for_sweep',
       });

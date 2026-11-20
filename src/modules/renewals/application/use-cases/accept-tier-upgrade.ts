@@ -921,8 +921,8 @@ export async function acceptTierUpgrade(
     // If a future non-HTTP caller (cron, queue worker, internal
     // service) invokes `acceptTierUpgrade(...)`, THAT caller MUST
     // wrap the call with equivalent log emission. The Result.err
-    // `message` field carries the original throw's message verbatim
-    // for diagnostic purposes; callers should log with errorId
+    // `message` field carries the throw's class (`errKind`, #739 B3b),
+    // never its text; callers should log with errorId
     // matching their context (e.g., `F8.ACCEPT_TIER.CRON_INVOKED_THREW`).
     //
     // 065 Fix 1 — the transitionStatus CAS loser throws

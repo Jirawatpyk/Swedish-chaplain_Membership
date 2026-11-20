@@ -483,8 +483,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const { status, routeCode } = httpStatusForUseCaseError(result.error);
     // PCI: log ONLY the bounded `kind` discriminator — never raw Stripe SDK
     // text. Unlike initiate-payment's closed-union `reason`, a refund's
-    // gateway `reason` IS Stripe's own message (an idempotency error repeats
-    // the key), so it is not logged at all (Task B PCI review).
+    // gateway `reason` is free text (a gateway-built sentence with a refund
+    // id, or the Stripe error type), so it is not logged at all (Task B PCI
+    // review).
     // No Retry-After on any use-case error: the helper sets it only for a
     // `retryable` processor failure, which this route answers with
     // `processor_outcome_unknown`, whose copy says NOT to retry (Task B).

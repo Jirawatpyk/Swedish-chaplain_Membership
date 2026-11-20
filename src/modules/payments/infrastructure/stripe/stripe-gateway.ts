@@ -146,6 +146,9 @@ interface StripeErrorShape {
   readonly raw?: { readonly param?: string };
 }
 
+/** #739 B3b review — a Stripe `type` is a closed token; anything else falls back to the class. */
+const STRIPE_TYPE = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+
 /**
  * Map a Stripe SDK error to the port's `ProcessorGatewayError` union.
  *
@@ -187,7 +190,7 @@ export function mapStripeError(
   // #739 B3b — a closed `reason`: the Stripe error type, else the class.
   // Never `err_.message`: a validation message can embed a user value
   // (an email) verbatim — see the log note below.
-  const reason = err_.type ?? errKind(e);
+  const reason = typeof err_.type === 'string' && STRIPE_TYPE.test(err_.type) ? err_.type : errKind(e);
 
   // Safe structured log — only allow-list fields. `param` is an
   // enum-shaped pointer to the offending API parameter

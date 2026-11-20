@@ -136,7 +136,7 @@ export interface ProcessChargeRefundedSuccess {
  */
 export type ProcessChargeRefundedError = {
   readonly code: 'dispatch_failed';
-  /** Original thrown value — caller stringifies via formatDispatchErrorDetail. */
+  /** Original thrown value — caller stringifies via errKind. */
   readonly cause: unknown;
 };
 
@@ -416,7 +416,7 @@ export async function processChargeRefunded(
     // Stripe error messages can carry partial API key fragments / internal
     // ids — never include `e.message` in the returned error. The
     // dispatcher (process-webhook-event.ts) maps this to `dispatch_threw`
-    // and stringifies via `formatDispatchErrorDetail` (constructor-name only).
+    // and stringifies via `errKind` (constructor-name only).
     return err({ code: 'dispatch_failed' as const, cause: e });
   }
   return ok(

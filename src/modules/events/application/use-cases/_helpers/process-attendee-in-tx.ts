@@ -40,6 +40,7 @@
  * Pure Application — no framework imports (Constitution Principle III).
  */
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { F6_FISCAL_YEAR_START_MONTH } from './fiscal-year-constants';
 import {
@@ -245,7 +246,7 @@ export async function emitOrThrow(
         : new Error(`NonError(${safeStringify(raw)})`);
     throw new TxStageError(
       'audit_emit',
-      `audit emit threw: ${causeErr.message}`,
+      `audit emit threw: ${errKind(causeErr)}`,
       { cause: causeErr },
     );
   }
@@ -923,13 +924,10 @@ export async function processAttendeeInTx(
           e instanceof Error
             ? e
             : new Error(`NonError(${safeStringify(e)})`);
-        const messageForWrap =
-          e instanceof Error
-            ? (e.message ?? 'unknown')
-            : safeStringify(e);
+        // #739 B3b review — the class, never the driver text (the cause keeps the error).
         throw new TxStageError(
           'quota_decrement',
-          `refund advisory-lock acquisition failed: ${messageForWrap}`,
+          `refund advisory-lock acquisition failed: ${errKind(rawForCause)}`,
           { cause: rawForCause },
         );
       }

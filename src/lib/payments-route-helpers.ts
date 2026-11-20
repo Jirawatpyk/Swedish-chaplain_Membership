@@ -150,8 +150,9 @@ const REASON_CODE = /^[a-z][a-z0-9_]{0,63}$/;
  *     snake_case code (≤ 64 chars; anything else is dropped, #731). A
  *     closed-union literal for initiate-payment, and the `kind` for
  *     cancel-payment, so those routes may log it. issue-refund's `reason`
- *     IS Stripe's raw message (an idempotency error repeats the key): the
- *     refund route must never log or return it (Task B PCI review)
+ *     is free text (the Stripe error type since #739 B3b, or a sentence the
+ *     gateway builds with a refund id): the refund route never logs or
+ *     returns it (Task B PCI review)
  *   - `retryAfterSeconds` — `30` for retryable processor failures (or
  *     for any `processor_unavailable` on routes whose error union
  *     lacks a `kind` field, e.g. cancel-payment); `undefined` for

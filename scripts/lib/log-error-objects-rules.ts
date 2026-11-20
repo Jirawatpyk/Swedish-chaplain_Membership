@@ -643,7 +643,7 @@ const TOKEN_FIELDS_BY_TYPE: Readonly<Record<string, ReadonlySet<string>>> = {
   // Two types share this name (#740 B2): broadcasts `process-webhook-event.ts`
   // — `errClass: errKind(e)`, `step: errStep(e)`, `reason` a literal plus an
   // `EmailLowerError` code; payments `process-webhook-event.ts` — `detail` a
-  // sub-use-case code or `formatDispatchErrorDetail` (an error class),
+  // sub-use-case code or `errKind` (an error class),
   // `subDetail` the F4 bridge code or `F5_SETTINGS_MISSING_DETAIL` /
   // `'invoice_payability_read_failed'`, a boolean, and `DispatchPermanence`.
   ProcessWebhookEventError: new Set([
