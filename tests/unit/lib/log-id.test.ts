@@ -200,6 +200,22 @@ describe('errLogFields() — a Result error keyed on kind or type (#740 B1 revie
     }
   });
 
+  it('#739 B3b review: a { code } Result with no cause reads its `<step>: <Class>` message too', () => {
+    expect(errLogFields({ code: 'plan_lookup.server_error', message: 'plan_lookup: NeonDbError' })).toEqual({
+      err: 'NeonDbError',
+      repoCode: 'plan_lookup.server_error',
+      step: 'plan_lookup',
+    });
+    expect(errLogFields({ code: 'repo.unexpected', message: 'Failed for a@x.io' })).toEqual({
+      err: 'unknown',
+      repoCode: 'repo.unexpected',
+    });
+    // memberSelfUpdate's repo-abort step is a token, so it is logged.
+    expect(errLogFields({ type: 'server_error', message: 'self_update: repo.unexpected' }).step).toBe(
+      'self_update: repo.unexpected',
+    );
+  });
+
   it('a kind that is not token-shaped is unrecognised', () => {
     expect(errLogFields({ kind: 'Failed for a@x.io' })).toEqual({ err: 'unknown', resultKind: 'unrecognised' });
   });
