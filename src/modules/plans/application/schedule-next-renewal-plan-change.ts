@@ -30,6 +30,7 @@
  * Pure Application code — no framework imports (Constitution Principle III).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort, ScheduledPlanChangeRepo, SupersedeAndInsertResult } from './ports';
 import { auditFailureMessage, auditInTx, PlanAuditAbort } from './record-audit-event';
@@ -122,7 +123,7 @@ export async function scheduleNextRenewalPlanChange(
     }
     return err({
       code: 'server_error',
-      message: `scheduleNextRenewalPlanChange: ${(e as Error)?.message ?? 'unknown'}`,
+      message: `schedule_next_renewal: ${errKind(e)}`,
     });
   }
 

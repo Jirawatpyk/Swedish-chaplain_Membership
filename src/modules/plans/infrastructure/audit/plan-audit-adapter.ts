@@ -152,7 +152,6 @@ function persistFailed(
   // through `@/modules/plans` and reachable from Client Components
   // — pino's `worker_threads` import would break the client bundle.
   // See post-ship R6 C4 fix relocation 2026-05-19).
-  const message = e instanceof Error ? e.message : String(e);
   logger.error(
     {
       event: 'plan_audit_persist_failed',
@@ -166,6 +165,6 @@ function persistFailed(
   );
   return err({
     type: 'persist_failed',
-    message,
+    message: errKind(e),
   });
 }

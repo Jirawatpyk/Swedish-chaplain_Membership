@@ -12,6 +12,7 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort, PlanRepo } from './ports';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
@@ -50,7 +51,7 @@ export async function getPlan(
   } catch (e) {
     return err({
       type: 'server_error',
-      message: e instanceof Error ? e.message : String(e),
+      message: errKind(e),
     });
   }
 

@@ -32,6 +32,7 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
 import type { TenantContext } from '@/modules/tenants';
 import type {
@@ -113,7 +114,7 @@ export async function createPlan(
   } catch (e) {
     return err({
       type: 'server_error',
-      message: e instanceof Error ? e.message : String(e),
+      message: errKind(e),
     });
   }
 
@@ -164,7 +165,7 @@ export async function createPlan(
     ) {
       return err({ type: 'duplicate_plan' });
     }
-    return err({ type: 'server_error', message: msg });
+    return err({ type: 'server_error', message: errKind(e) });
   }
 
   return ok(created);

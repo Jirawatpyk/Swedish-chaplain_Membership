@@ -41,6 +41,7 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type {
   AuditPort,
@@ -88,7 +89,7 @@ export async function softDeletePlan(
   } catch (e) {
     return err({
       type: 'server_error',
-      message: e instanceof Error ? e.message : String(e),
+      message: errKind(e),
     });
   }
   if (!existing) {
@@ -151,7 +152,7 @@ export async function softDeletePlan(
     }
     return err({
       type: 'server_error',
-      message: e instanceof Error ? e.message : String(e),
+      message: errKind(e),
     });
   }
 
