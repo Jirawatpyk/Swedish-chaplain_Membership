@@ -21,6 +21,7 @@
 import type Stripe from 'stripe';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { env } from '@/lib/env';
 import { asSatang, satangToProcessorAmount, type Satang } from '@/lib/money';
 import { paymentsMetrics } from '@/lib/metrics';
@@ -183,7 +184,10 @@ export function mapStripeError(
   // error (genuinely rare for Stripe, but downstream consumers cannot
   // distinguish "Stripe forgot to set a code" from "wrong code").
   const code = err_.code ?? 'unknown_stripe_error';
-  const reason = err_.message ?? `Stripe ${type}`;
+  // #739 B3b — a closed `reason`: the Stripe error type, else the class.
+  // Never `err_.message`: a validation message can embed a user value
+  // (an email) verbatim — see the log note below.
+  const reason = err_.type ?? errKind(e);
 
   // Safe structured log — only allow-list fields. `param` is an
   // enum-shaped pointer to the offending API parameter
