@@ -169,6 +169,11 @@ export async function dispatchRenewalCycle(
   // schedule's positive-offset steps (e.g., T+7).
   const cutoffMs = new Date(nowIso).getTime() + maxOffsetDays * 24 * 60 * 60 * 1000;
   const cutoffExpiresAt = new Date(cutoffMs).toISOString();
+  // The lower edge uses the same clock as the upper one (#106): a pinned
+  // or replayed `nowIso` must not be paired with the DB's own NOW().
+  const floorExpiresAt = new Date(
+    new Date(nowIso).getTime() - maxOffsetDays * 24 * 60 * 60 * 1000,
+  ).toISOString();
 
   const summary: DispatchRenewalCycleSummary = {
     candidatesProcessed: 0,
@@ -346,7 +351,7 @@ export async function dispatchRenewalCycle(
   while (true) {
     const page = await deps.dispatchCandidateRepo.list(input.tenantId, {
       cutoffExpiresAt,
-      maxOffsetDays,
+      floorExpiresAt,
       pageSize,
       ...(cursor !== undefined ? { cursor } : {}),
     });

@@ -296,7 +296,7 @@ describe('066 listDueTrackCandidates — second candidate arm (live Neon)', () =
     const repo = makeDrizzleDispatchCandidateRepo(tenantA.ctx);
     const mainArm = await repo.list(tenantA.ctx.slug, {
       cutoffExpiresAt: new Date(Date.now() + 120 * MS_PER_DAY).toISOString(),
-      maxOffsetDays: 120,
+      floorExpiresAt: new Date(Date.now() - 120 * MS_PER_DAY).toISOString(),
       pageSize: 100,
     });
     expect(mainArm.items.map((c) => c.cycle.cycleId)).not.toContain(bornAwaitingCycle);

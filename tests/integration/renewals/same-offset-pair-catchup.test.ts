@@ -53,9 +53,9 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 //   expires_at     = due-date + 60 = today + 53
 //
 // Dates are anchored on the REAL wall-clock so the test never becomes stale:
-// the dispatch-candidate repo filters `expires_at >= NOW() - maxOffsetDays`
-// using the DB wall-clock (NOT the injected nowIso), so hardcoded future dates
-// silently stop matching once DB_NOW > EXPIRES_AT + DEFAULT_MAX_OFFSET_DAYS.
+// until #106 the dispatch-candidate repo's lower bound read the DB clock, so
+// hardcoded dates stopped matching once the real date passed them. Both
+// bounds now come from nowIso; the real-clock anchor stays harmless.
 const TODAY_UTC_MIDNIGHT_MS = Math.floor(Date.now() / MS_PER_DAY) * MS_PER_DAY;
 const NOW_ISO = new Date(TODAY_UTC_MIDNIGHT_MS).toISOString(); // today midnight
 const EXPIRES_AT = new Date(TODAY_UTC_MIDNIGHT_MS + 53 * MS_PER_DAY); // today + 53d

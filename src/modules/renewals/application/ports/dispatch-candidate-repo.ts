@@ -58,8 +58,12 @@ export interface DispatchCandidate {
 export interface DispatchCandidateListArgs {
   /** Upper bound on `expires_at` — typically `now + maxOffsetDays`. */
   readonly cutoffExpiresAt: string;
-  /** Maximum offset (positive integer days) any policy step has. */
-  readonly maxOffsetDays: number;
+  /**
+   * Lower bound on `expires_at` — typically `now - maxOffsetDays`. The
+   * caller computes it from its own clock (the dispatcher's `nowIso`), so
+   * both edges of the window come from one clock (#106).
+   */
+  readonly floorExpiresAt: string;
   readonly pageSize: number;
   readonly cursor?: string;
 }
@@ -89,7 +93,7 @@ export interface DispatchCandidateRepo {
    * Cursor-paginated list of cycles eligible for dispatch evaluation.
    * Ordered by `(expires_at ASC, cycle_id ASC)` for deterministic
    * batching. Filters out terminal cycle statuses + cycles whose
-   * `expires_at` is older than `now - maxOffsetDays` (rare — only
+   * `expires_at` is older than `floorExpiresAt` (rare — only
    * relevant if grace period extends past the schedule's last step).
    */
   list(

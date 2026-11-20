@@ -117,7 +117,7 @@ describe('F8 processing candidate reads exclude erased members (COMP-1 H4)', () 
     const repo = makeDrizzleDispatchCandidateRepo(tenant.ctx);
     const page = await repo.list(tenant.ctx.slug, {
       cutoffExpiresAt: new Date(Date.now() + 90 * MS_PER_DAY).toISOString(),
-      maxOffsetDays: 30,
+      floorExpiresAt: new Date(Date.now() - 30 * MS_PER_DAY).toISOString(),
       pageSize: 100,
     });
     const ids = page.items.map((c) => c.cycle.memberId);
