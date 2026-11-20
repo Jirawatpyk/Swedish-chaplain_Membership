@@ -436,6 +436,23 @@ describe('CsvMappingForm — board layout (US9b-2 parity)', () => {
     expect(screen.queryByTestId('csv-chosen-file')).not.toBeInTheDocument();
   });
 
+  it('#739 B3b: a network failure shows the fixed detail, never the browser error text', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch a@b.example');
+      }),
+    );
+    const user = userEvent.setup();
+    renderForm();
+    await uploadThreeRowCsv(user);
+    const confirm = await screen.findByRole('button', { name: /Confirm and import/i });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await user.click(confirm);
+    expect(await screen.findByText(/Unexpected error\. Retry; if it persists, contact support\./)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('Failed to fetch');
+  });
+
   it('shows "Upload another CSV" inside the result card', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => completedResponse()));
     const user = userEvent.setup();

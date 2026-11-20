@@ -12,18 +12,33 @@ import { describe, expect, it } from 'vitest';
 
 import { db } from '@/lib/db';
 
-const migration = readFileSync(
-  join(process.cwd(), 'drizzle/migrations/0330_redact_stored_error_text.sql'),
-  'utf8',
-);
+const read = (file: string): string => readFileSync(join(process.cwd(), 'drizzle/migrations', file), 'utf8');
+const migration = read('0330_redact_stored_error_text.sql');
 
 /** The `!~ '<pattern>'` of the UPDATE on `column`. */
-function keepPattern(column: string): string {
+function keepPattern(column: string, source: string = migration): string {
   const re = new RegExp(`"${column}" !~ '([^']+)'`);
-  const m = re.exec(migration);
+  const m = re.exec(source);
   if (m?.[1] === undefined) throw new Error(`no keep-pattern for ${column}`);
   return m[1];
 }
+
+// #739 B3b part 2 — 0331 repeats 0330's UPDATEs for the rows the old
+// deployment wrote during #800's deploy window: the same statements, so the
+// keep-patterns below hold for both.
+describe('migration 0331 repeats 0330', () => {
+  it('has the same UPDATE statements', () => {
+    const statements = (s: string): string =>
+      s
+        .split('\n')
+        .filter((l) => !l.startsWith('--') && l.trim() !== '')
+        .join('\n');
+    expect(statements(read('0331_redact_stored_error_text_again.sql'))).toBe(statements(migration));
+    for (const column of ['receipt_pdf_last_error', 'last_error', 'failure_reason']) {
+      expect(keepPattern(column, read('0331_redact_stored_error_text_again.sql'))).toBe(keepPattern(column));
+    }
+  });
+});
 
 async function kept(column: string, value: string): Promise<boolean> {
   const rows = await db.execute<{ keep: boolean }>(

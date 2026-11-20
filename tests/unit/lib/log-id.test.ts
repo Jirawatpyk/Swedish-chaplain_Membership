@@ -15,7 +15,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DrizzleQueryError } from 'drizzle-orm';
-import { errLogFields, hashId } from '@/lib/log-id';
+import { errKind, errLogFields, hashId } from '@/lib/log-id';
 import { UseCaseAbort } from '@/modules/members/application/tx-abort';
 
 describe('hashId() — djb2 log-correlation hash', () => {
@@ -173,6 +173,33 @@ describe('errLogFields() — a Result error keyed on kind or type (#740 B1 revie
     });
   });
 
+  it('#739 B3b: a message that is the error class is err; `<step>: <Class>` is step and err', () => {
+    expect(errLogFields({ kind: 'server_error', message: 'NeonDbError' })).toEqual({
+      err: 'NeonDbError',
+      resultKind: 'server_error',
+    });
+    expect(errLogFields({ type: 'server_error', message: 'plan_lookup: TypeError' })).toEqual({
+      err: 'TypeError',
+      resultKind: 'server_error',
+      step: 'plan_lookup',
+    });
+  });
+
+  it('#739 B3b: text that is not a bare class never becomes err', () => {
+    for (const message of [
+      'Duplicate key',
+      'error',
+      'TypeError: boom',
+      `${'A'.repeat(65)}`,
+      'Error@a.io',
+      'plan_lookup: Failed for a@x.io',
+    ]) {
+      const fields = errLogFields({ kind: 'server_error', message });
+      expect(fields.err).toBe('unknown');
+      expect(JSON.stringify(fields)).not.toContain('a.io');
+    }
+  });
+
   it('a kind that is not token-shaped is unrecognised', () => {
     expect(errLogFields({ kind: 'Failed for a@x.io' })).toEqual({ err: 'unknown', resultKind: 'unrecognised' });
   });
@@ -182,5 +209,14 @@ describe('errLogFields() — a Result error keyed on kind or type (#740 B1 revie
       err: 'unknown',
       repoCode: 'repo.unexpected',
     });
+  });
+});
+
+describe('errKind() — a DOMException gives its name (#739 B3b)', () => {
+  it('AbortError and TimeoutError are told apart; a free-form name stays DOMException', () => {
+    expect(errKind(new DOMException('stop', 'AbortError'))).toBe('AbortError');
+    expect(errKind(new DOMException('late', 'TimeoutError'))).toBe('TimeoutError');
+    expect(errKind(new DOMException('x', 'not a name a@b.io'))).toBe('DOMException');
+    expect(errKind(new TypeError('a@b.io'))).toBe('TypeError');
   });
 });

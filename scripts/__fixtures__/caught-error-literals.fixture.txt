@@ -71,3 +71,62 @@ async function settledDestructuredLocal(): Promise<unknown> {
   const text = only.status === 'rejected' ? String(only.reason) : '';
   return { error: text }; // refused
 }
+
+// #739 B3b part 2 — (a) a helper that takes the error as a parameter, with no catch around it.
+function toFailure(e: unknown): unknown {
+  if (Math.random() > 2) return { reason: e instanceof Error ? e.message : String(e) }; // refused
+  const lower = e instanceof Error ? e.message.toLowerCase() : '';
+  if (Math.random() > 2) return { detail: lower }; // refused
+  const normalised = e instanceof Error ? e : new Error('x');
+  if (Math.random() > 2) return { message: normalised.message }; // refused
+  if (Math.random() > 2) return { kind: 'x', err: errKind(e), data: parse(e) }; // allowed
+  return { message: `${errKind(e)}` }; // allowed
+}
+
+function wrap(error): unknown {
+  return { message: `wrapped: ${error.message}` }; // refused
+}
+
+function rowLabel(e: { taskType: string }): unknown {
+  return { label: `task.${e.taskType}` }; // allowed
+}
+
+// (b) a `.catch` callback body's locals and `.then`'s rejection handler.
+function catchCallbacks(p: Promise<unknown>): void {
+  void p.catch((e) => {
+    const m = e instanceof Error ? e.message : String(e);
+    return { detail: m }; // refused
+  });
+  void p.then(
+    () => ({ ok: true }), // allowed
+    (rej) => ({ reason: String(rej) }), // refused
+  );
+}
+
+// (c) destructured bindings.
+async function destructured(p: Promise<unknown>): Promise<unknown> {
+  try {
+    await p;
+  } catch ({ message }) {
+    return { detail: message }; // refused
+  }
+  void p.catch(({ message }) => ({ detail: message })); // refused
+  const all = await Promise.allSettled([p]);
+  for (const r of all) {
+    if (r.status === 'rejected') {
+      const { reason } = r;
+      return { error: String(reason) }; // refused
+    }
+  }
+  return { error: 'fetch_rejected' }; // allowed
+}
+
+// The class, with or without a code-written step, is what a Result carries.
+function classes(): unknown {
+  try {
+    return 1;
+  } catch (e) {
+    if (Math.random() > 2) return { message: errKind(e) }; // allowed
+    return { message: `plan_lookup: ${errKind(e)}` }; // allowed
+  }
+}

@@ -25,11 +25,11 @@ describe('settle', () => {
     });
   });
 
-  it('converts a rejection into { ok: false, e } carrying the ORIGINAL error', async () => {
+  it('converts a rejection into { ok: false, cause } carrying the ORIGINAL error', async () => {
     const boom = new Error('neon exploded');
     await expect(settle(Promise.reject(boom))).resolves.toEqual({
       ok: false,
-      e: boom,
+      cause: boom,
     });
   });
 
