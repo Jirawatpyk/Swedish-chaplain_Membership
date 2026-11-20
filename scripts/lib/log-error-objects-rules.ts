@@ -282,45 +282,102 @@ function calleeName(call: ts.CallExpression): string | null {
 }
 
 /**
- * #739 B3b — the `Promise.allSettled` result bindings of a file: `const s =
- * await Promise.allSettled(…)`. Their elements' `.reason` is a rejection
- * value, an error like a catch binding's.
+ * #739 B3b — what a file holds from `Promise.allSettled`: the identifiers
+ * bound to a settled list (`const s = await Promise.allSettled(…)`, an alias
+ * `const t = s`, or `s.filter(…)`), and the identifiers bound to one element
+ * (`const [a, b] = await Promise.allSettled(…)`). An element's `.reason` is a
+ * rejection value, an error like a catch binding's.
  */
-const settledBindingsCache = new WeakMap<ts.SourceFile, ReadonlySet<string>>();
-function settledBindings(sf: ts.SourceFile): ReadonlySet<string> {
-  const cached = settledBindingsCache.get(sf);
+interface SettledInfo {
+  readonly lists: ReadonlySet<string>;
+  readonly elements: ReadonlySet<string>;
+}
+const settledInfoCache = new WeakMap<ts.SourceFile, SettledInfo>();
+/** The list methods whose result is still a settled list. */
+const SETTLED_LIST_METHODS = new Set(['filter', 'slice', 'concat', 'reverse', 'sort', 'toReversed', 'toSorted']);
+function isSettledListExpr(expr: ts.Expression, lists: ReadonlySet<string>): boolean {
+  const n = unwrap(expr);
+  if (ts.isIdentifier(n)) return lists.has(n.text);
+  if (!ts.isCallExpression(n)) return false;
+  if (calleeName(n) === 'Promise.allSettled') return true;
+  const callee = unwrap(n.expression);
+  return ts.isPropertyAccessExpression(callee) && SETTLED_LIST_METHODS.has(callee.name.text) && isSettledListExpr(callee.expression, lists);
+}
+function settledInfo(sf: ts.SourceFile): SettledInfo {
+  const cached = settledInfoCache.get(sf);
   if (cached !== undefined) return cached;
-  const names = new Set<string>();
-  const visit = (n: ts.Node): void => {
-    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer !== undefined) {
-      const init = unwrap(n.initializer);
-      if (ts.isCallExpression(init) && calleeName(init) === 'Promise.allSettled') names.add(n.name.text);
-    }
-    ts.forEachChild(n, visit);
-  };
-  visit(sf);
-  settledBindingsCache.set(sf, names);
-  return names;
+  const lists = new Set<string>();
+  const elements = new Set<string>();
+  // Two passes, so an alias declared before its source is read too.
+  for (let pass = 0; pass < 2; pass += 1) {
+    const visit = (n: ts.Node): void => {
+      if (ts.isVariableDeclaration(n) && n.initializer !== undefined && isSettledListExpr(n.initializer, lists)) {
+        if (ts.isIdentifier(n.name)) lists.add(n.name.text);
+        else if (ts.isArrayBindingPattern(n.name)) {
+          for (const el of n.name.elements) {
+            if (ts.isBindingElement(el) && ts.isIdentifier(el.name)) {
+              (el.dotDotDotToken !== undefined ? lists : elements).add(el.name.text);
+            }
+          }
+        }
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+  }
+  const info = { lists, elements };
+  settledInfoCache.set(sf, info);
+  return info;
 }
 
-/** The callback of `s.map(…)` / `.forEach(…)` / … over an allSettled result, whose first parameter is one settled element. */
-const SETTLED_ITERATORS = new Set(['map', 'forEach', 'flatMap', 'filter', 'find', 'some', 'every']);
-function settledElementName(fn: ts.Node): string | null {
-  if (!(ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) return null;
+/**
+ * A marker in the caught set: in a file that holds allSettled results, a
+ * `.reason` read off one element in a form with no name of its own
+ * (`s[0].reason`, a destructured `a.reason`) is a caught value.
+ */
+const SETTLED_REASON = '\u0000settled-reason';
+
+/** The callback of `s.map(…)` / `.forEach(…)` / … over an allSettled list, whose first parameter is one settled element. */
+const SETTLED_ITERATORS = new Set(['map', 'forEach', 'flatMap', 'filter', 'find', 'findLast', 'some', 'every', 'reduce']);
+function isSettledCallback(fn: ts.Node): fn is ts.ArrowFunction | ts.FunctionExpression {
+  if (!(ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) return false;
   const call = fn.parent;
-  if (!ts.isCallExpression(call) || !call.arguments.includes(fn)) return null;
+  if (!ts.isCallExpression(call) || !call.arguments.includes(fn)) return false;
   const callee = unwrap(call.expression);
-  if (!ts.isPropertyAccessExpression(callee) || !SETTLED_ITERATORS.has(callee.name.text)) return null;
-  const receiver = unwrap(callee.expression);
-  if (!ts.isIdentifier(receiver) || !settledBindings(fn.getSourceFile()).has(receiver.text)) return null;
-  const p = fn.parameters[0];
-  return p !== undefined && ts.isIdentifier(p.name) ? p.name.text : null;
+  if (!ts.isPropertyAccessExpression(callee) || !SETTLED_ITERATORS.has(callee.name.text)) return false;
+  return isSettledListExpr(callee.expression, settledInfo(fn.getSourceFile()).lists);
+}
+/** The caught names one enclosing node binds from an allSettled element: `r.reason`, or a destructured `reason`. */
+function settledCaughtNames(cur: ts.Node): string[] {
+  let binding: ts.BindingName | undefined;
+  if (isSettledCallback(cur)) {
+    const call = cur.parent as ts.CallExpression;
+    const callee = unwrap(call.expression) as ts.PropertyAccessExpression;
+    binding = cur.parameters[callee.name.text === 'reduce' ? 1 : 0]?.name;
+  } else if (
+    ts.isForOfStatement(cur) &&
+    ts.isVariableDeclarationList(cur.initializer) &&
+    isSettledListExpr(cur.expression, settledInfo(cur.getSourceFile()).lists)
+  ) {
+    binding = cur.initializer.declarations[0]?.name;
+  }
+  if (binding === undefined) return [];
+  if (ts.isIdentifier(binding)) return [`${binding.text}.reason`];
+  if (ts.isObjectBindingPattern(binding)) {
+    const out: string[] = [];
+    for (const el of binding.elements) {
+      const key = el.propertyName ?? el.name;
+      if (ts.isIdentifier(key) && key.text === 'reason' && ts.isIdentifier(el.name)) out.push(el.name.text);
+    }
+    return out;
+  }
+  return [];
 }
 
-/** True for a catch block, a `.catch(…)` callback, or an allSettled element callback: where a caught value is in scope. */
+/** Where a caught value is in scope: a catch block, an allSettled element callback, or a `for (r of settled)` body. */
 function catchScopeBody(cur: ts.Node): ts.Node | null {
   if (ts.isCatchClause(cur)) return cur.block;
-  if (settledElementName(cur) !== null) return (cur as ts.ArrowFunction | ts.FunctionExpression).body;
+  if (settledCaughtNames(cur).length > 0) return isSettledCallback(cur) ? cur.body : (cur as ts.ForOfStatement).statement;
   return null;
 }
 
@@ -332,8 +389,11 @@ function catchScopeBody(cur: ts.Node): ts.Node | null {
 function caughtNames(node: ts.Node): ReadonlySet<string> {
   const names = new Set<string>();
   for (let cur: ts.Node | undefined = node; cur !== undefined; cur = cur.parent) {
-    const settled = settledElementName(cur);
-    if (settled !== null) names.add(`${settled}.reason`);
+    for (const n of settledCaughtNames(cur)) names.add(n);
+    if (ts.isSourceFile(cur)) {
+      const info = settledInfo(cur);
+      if (info.lists.size > 0 || info.elements.size > 0) names.add(SETTLED_REASON);
+    }
     if (ts.isCatchClause(cur) && cur.variableDeclaration && ts.isIdentifier(cur.variableDeclaration.name)) {
       names.add(cur.variableDeclaration.name.text);
     }
@@ -838,9 +898,21 @@ type Shape = 'error' | 'text' | 'token' | null;
 
 /** `r.reason` as a name: a property access on an identifier, by text. */
 function exprKey(node: ts.Expression): string | null {
-  return ts.isPropertyAccessExpression(node) && ts.isIdentifier(unwrap(node.expression))
-    ? `${(unwrap(node.expression) as ts.Identifier).text}.${node.name.text}`
-    : null;
+  if (!ts.isPropertyAccessExpression(node)) return null;
+  const base = unwrap(node.expression);
+  if (node.name.text === 'reason') {
+    const info = settledInfo(node.getSourceFile());
+    // `a.reason` of a destructured element, or `s[0].reason` / `s.at(-1).reason` of a settled list.
+    if (ts.isIdentifier(base) && info.elements.has(base.text)) return SETTLED_REASON;
+    if (ts.isElementAccessExpression(base) && isSettledListExpr(base.expression, info.lists)) return SETTLED_REASON;
+    if (ts.isCallExpression(base)) {
+      const callee = unwrap(base.expression);
+      if (ts.isPropertyAccessExpression(callee) && ['at', 'find', 'findLast'].includes(callee.name.text) && isSettledListExpr(callee.expression, info.lists)) {
+        return SETTLED_REASON;
+      }
+    }
+  }
+  return ts.isIdentifier(base) ? `${base.text}.${node.name.text}` : null;
 }
 
 function shapeOf(expr: ts.Expression, scope: Scope): Shape {
@@ -880,7 +952,7 @@ function refusal(sf: ts.SourceFile, expr: ts.Expression, scope: Scope): string |
   }
 
   const settledKey = exprKey(node);
-  if (settledKey !== null && scope.errors.has(settledKey)) return `the rejection value \`${settledKey}\``;
+  if (settledKey !== null && scope.errors.has(settledKey)) return `the rejection value \`${node.getText()}\``;
 
   if (ts.isPropertyAccessExpression(node)) {
     const field = node.name.text;
@@ -1201,7 +1273,7 @@ function caughtTextRefusal(expr: ts.Expression, names: ReadonlySet<string>): str
   const node = unwrap(expr);
   if (ts.isIdentifier(node)) return names.has(node.text) ? `the caught value \`${node.text}\`` : null;
   const key = exprKey(node);
-  if (key !== null && names.has(key)) return `the caught value \`${key}\``;
+  if (key !== null && names.has(key)) return `the caught value \`${node.getText()}\``;
   if (ts.isPropertyAccessExpression(node)) {
     const base = unwrap(node.expression);
     if (ts.isIdentifier(base) && names.has(base.text)) {

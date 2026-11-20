@@ -153,10 +153,14 @@ B3b for the top level) with the TypeScript compiler API (a
 `logger.child(…)` arguments. Since #739 B3b it also reads `logger[level](…)`
 with a computed level, and a server file's `console.<method>(…)` (a file whose
 parsed leading directive is `'use client'` is skipped: its console stays in
-the browser). A `Promise.allSettled` element's `.reason`, inside a
-`settled.map((r) => …)` callback over the result, counts as a caught error in
-both rules, so `String(r.reason)` is refused in a log line and in a Result or
-body. Since review round 1: on an error-ish base (a
+the browser; one rendered on the server during SSR is not read, a known
+residual). A `Promise.allSettled` element's `.reason` counts as a caught
+error in both rules: in a `settled.map((r) => …)` / `.forEach` / … callback
+(also after `.filter(…)`, or destructured as `({ reason })`), a
+`for (const r of settled)` body, a destructured `const [a] = await
+Promise.allSettled(…)`, and `settled[0].reason`. So `String(r.reason)` is
+refused in a log line and in a Result or body. The repo root's
+`instrumentation.ts` is scanned with the `src/*.ts` files. Since review round 1: on an error-ish base (a
 caught or error-named identifier, or a chain through `.error` / `.cause`) only
 `.code`, `.kind` and `.name` are read; element access, a method on an error or
 its text (`e.toString()`, `e.message.slice()`), and a call whose literal

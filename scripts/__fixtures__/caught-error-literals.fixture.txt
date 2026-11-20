@@ -51,3 +51,16 @@ async function settledLiterals(): Promise<unknown> {
     return { tenant_id: 't', value: r.value }; // allowed
   });
 }
+
+// #739 B3b review — for..of and a destructured element.
+async function settledLiteralForms(): Promise<unknown[]> {
+  const out: unknown[] = [];
+  const all = await Promise.allSettled([Promise.resolve(1)]);
+  for (const r of all) {
+    if (r.status === 'rejected') out.push({ error: String(r.reason) }); // refused
+  }
+  const [first] = await Promise.allSettled([Promise.resolve(1)]);
+  if (first.status === 'rejected') out.push({ error: String(first.reason) }); // refused
+  out.push({ error: 'fetch_rejected' }); // allowed
+  return out;
+}

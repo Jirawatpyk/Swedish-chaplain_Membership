@@ -316,3 +316,16 @@ async function settledFixture(): Promise<void> {
     return null;
   });
 }
+// #739 B3b review — the other allSettled forms: for..of, destructuring, index, filter, destructured reason.
+async function settledForms(): Promise<void> {
+  const all = await Promise.allSettled([Promise.resolve(1)]);
+  for (const r of all) {
+    if (r.status === 'rejected') logger.error({ reason: String(r.reason) }, 'x'); // refused
+  }
+  const [first] = await Promise.allSettled([Promise.resolve(1)]);
+  if (first.status === 'rejected') logger.error({ reason: String(first.reason) }, 'x'); // refused
+  logger.error({ reason: String((all[0] as PromiseRejectedResult).reason) }, 'x'); // refused
+  all.filter((r) => r.status === 'rejected').forEach((r) => logger.error({ reason: String(r.reason) }, 'x')); // refused
+  all.forEach(({ reason }) => logger.error({ reason: String(reason) }, 'x')); // refused
+  logger.error({ ...errLogFields((all[0] as PromiseRejectedResult).reason) }, 'x'); // allowed
+}

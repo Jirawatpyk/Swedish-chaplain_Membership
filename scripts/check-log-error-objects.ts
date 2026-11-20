@@ -50,8 +50,9 @@ const ROOTS = [
   'src/lib',
 ] as const;
 /**
- * #739 B3b — the files directly under `src/` (`src/proxy.ts`): no directory
- * root holds them, so the proxy's log lines went unread. No per-root floor.
+ * #739 B3b — the files directly under `src/` (`src/proxy.ts`) and the repo
+ * root's `instrumentation.ts`: no directory root holds them, so their log
+ * lines went unread. No per-root floor.
  */
 const TOP_LEVEL_DIR = 'src';
 const FIXTURE = 'scripts/__fixtures__/log-error-objects.fixture.txt';
@@ -142,10 +143,18 @@ for (const root of ROOTS) {
     }
   }
 }
-const topLevel = readdirSync(TOP_LEVEL_DIR)
-  .filter((f) => /\.tsx?$/.test(f) && !/\.(?:test|spec)\.tsx?$/.test(f) && !f.endsWith('.d.ts'))
-  .map((f) => `${TOP_LEVEL_DIR}/${f}`);
-if (!topLevel.includes('src/proxy.ts')) failures.push(`SCOPE: ${TOP_LEVEL_DIR}/proxy.ts is no longer scanned; the top-level scope has rotted.`);
+const topLevel = [
+  ...readdirSync(TOP_LEVEL_DIR)
+    .filter((f) => /\.tsx?$/.test(f) && !/\.(?:test|spec)\.tsx?$/.test(f) && !f.endsWith('.d.ts'))
+    .map((f) => `${TOP_LEVEL_DIR}/${f}`),
+  // #739 B3b review — Next's boot hook sits at the repo root, outside `src/`.
+  'instrumentation.ts',
+];
+for (const required of ['src/proxy.ts', 'instrumentation.ts']) {
+  if (!topLevel.includes(required) || !statSync(required, { throwIfNoEntry: false })) {
+    failures.push(`SCOPE: ${required} is no longer scanned; the top-level scope has rotted.`);
+  }
+}
 for (const file of topLevel) {
   fileCount += 1;
   const scan = scanLogErrorObjects(file, readFileSync(file, 'utf8'));
