@@ -121,6 +121,13 @@ describe('mapStripeError — direct unit', () => {
     expect(JSON.stringify(result)).not.toContain('@');
   });
 
+  it('#739 B3b review — a non-token `type` is never the reason; the class is', () => {
+    const e = Object.assign(new TypeError('fetch failed'), { type: 'bad type a@b.example' });
+    const result = mapStripeError(e, ctx);
+    expect(result.reason).toBe('TypeError');
+    expect(JSON.stringify(result)).not.toContain('@');
+  });
+
   // R1 self-review M (2026-04-26): bare Node net errors (legacy https
   // path or undici-wrapped) should classify retryable via `.code`.
   describe('Node-level net errors (R1 self-review M)', () => {
