@@ -43,6 +43,13 @@ describe('redactUrl (#805)', () => {
     );
   });
 
+  it('#805 review: a token with a stray character, a digit-free random suffix and a // path are still caught', () => {
+    expect(redactUrl(`/reset-password/${TOKEN}%20`)).toBe('/reset-password/:id');
+    expect(redactUrl(`/a/${TOKEN};x`)).toBe('/a/:id');
+    expect(redactUrl('https://x.public.blob.vercel-storage.com/logo-AbCdEfGhIjKlMnOpQrStUvWx.png')).toBe('https://x.public.blob.vercel-storage.com/:id');
+    expect(redactUrl(`//${TOKEN}/x`)).toBe('/:id/x');
+  });
+
   it('an unparseable value reads unknown', () => {
     expect(redactUrl('http://[::1')).toBe('unknown');
     expect(redactUrl(42)).toBe('unknown');
@@ -75,6 +82,23 @@ describe('redactErrorTextSpanProcessor URL attributes (#805)', () => {
     expect('url.query' in s.attributes).toBe(false);
     expect(JSON.stringify(s)).not.toContain(TOKEN);
     expect(JSON.stringify(s)).not.toContain(UUID);
+  });
+
+  it('#805 review: a root span\'s http.referer loses its token', () => {
+    const s = end(span('POST /api/auth/reset-password', { 'http.referer': `https://swecham.example/reset-password/${TOKEN}` }));
+    expect(s.attributes['http.referer']).toBe('https://swecham.example/reset-password/:id');
+  });
+
+  it('#805 review: resource.name "<METHOD> <route>" keeps its method and route', () => {
+    const s = end(span('GET /admin/members', { 'resource.name': 'GET /admin/members', 'http.route': '/admin/members' }));
+    expect(s.attributes['resource.name']).toBe('GET /admin/members');
+    const rsc = end(span('RSC GET /invite/[token]', { 'resource.name': `RSC GET /invite/${TOKEN}` }));
+    expect(rsc.attributes['resource.name']).toBe('RSC GET /invite/:id');
+  });
+
+  it('#805 review: a lowercase method in a fetch span name is still redacted', () => {
+    const s = end(span(`fetch patch https://api.x.test/a?token=${TOKEN}`, {}));
+    expect(s.name).toBe('fetch patch https://api.x.test/a');
   });
 
   it('a span that breaks the redaction loses its URL attributes too', () => {
