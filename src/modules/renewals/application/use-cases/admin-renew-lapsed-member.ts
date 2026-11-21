@@ -100,7 +100,7 @@ import {
   InvoiceLinkConflictError,
 } from '../ports/renewal-cycle-repo';
 
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 /**
  * L1 (068 security review) — the partial UNIQUE index enforcing invariant
  * L135 ("at most one active cycle per member"):
@@ -541,7 +541,7 @@ export async function adminRenewLapsedMember(
       },
       '[admin-renew-lapsed-member] cycle-creation tx failed',
     );
-    return err({ kind: 'server_error', message: errKind(e) });
+    return err({ kind: 'server_error', message: errClassWithCode(e) });
   }
   if (!stateResult.ok) return err(stateResult.error);
   const { cycle, omitMembershipCoverage } = stateResult.value;

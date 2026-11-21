@@ -82,7 +82,7 @@ export type RescheduleOnPlanChangeInput = z.infer<
 // `TierBucket` literal-union instead of bare string.
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 export interface RescheduleOnPlanChangeOutput {
   readonly cancelledStepIds: ReadonlyArray<string>;
   readonly newStepIds: ReadonlyArray<string>;
@@ -423,7 +423,7 @@ export async function rescheduleOnPlanChange(
     );
     return err({
       kind: 'server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
 }

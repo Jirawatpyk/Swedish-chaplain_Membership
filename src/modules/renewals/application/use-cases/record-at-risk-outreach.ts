@@ -40,7 +40,7 @@ import {
 // Type-only import — runtime no-op brand cast (Constitution Principle III)
 import type { MemberId } from '@/modules/members';
 
-import { errKind, errLogFields } from '@/lib/log-id';
+import { errClassWithCode, errKind, errLogFields } from '@/lib/log-id';
 export const recordAtRiskOutreachInputSchema = z
   .object({
     tenantId: z.string().min(1),
@@ -132,7 +132,7 @@ export async function recordAtRiskOutreach(
         { ...errLogFields(e), tenantId: input.tenantId, memberId: input.memberId },
         '[record-at-risk-outreach] insert failed',
       );
-      return err({ kind: 'server_error' as const, message: errKind(e) });
+      return err({ kind: 'server_error' as const, message: errClassWithCode(e) });
     }
 
     try {

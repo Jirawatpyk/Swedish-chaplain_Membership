@@ -35,7 +35,7 @@ import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId as MemberIdBrand } from '@/modules/members';
 import type { RenewalsDeps } from '../renewals-deps';
 
-import { errKind, errLogFields } from '@/lib/log-id';
+import { errClassWithCode, errKind, errLogFields } from '@/lib/log-id';
 export function makeApplyTierUpgradeOnPaidCallback(
   deps: RenewalsDeps,
   tenantId: string,
@@ -94,7 +94,7 @@ export function makeApplyTierUpgradeOnPaidCallback(
                   member_id: evt.memberId as unknown as MemberIdBrand,
                   cycle_id: cycle.cycleId,
                   // #739 — the class, never the thrown text.
-                  failure_message: errKind(e),
+                  failure_message: errClassWithCode(e),
                 },
               },
               {

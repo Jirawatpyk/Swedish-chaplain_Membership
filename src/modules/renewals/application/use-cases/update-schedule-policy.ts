@@ -44,7 +44,7 @@ import {
   type SchedulePolicyError,
 } from '../../domain/tenant-renewal-schedule-policy';
 
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 // ---------------------------------------------------------------------------
 // Input schema — tolerates the JSONB-shape steps array directly so route
 // handlers don't have to re-shape from the wire format.
@@ -245,7 +245,7 @@ export async function updateSchedulePolicy(
     );
     return err({
       kind: 'server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
   }

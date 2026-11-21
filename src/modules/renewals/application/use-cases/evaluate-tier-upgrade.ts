@@ -50,7 +50,7 @@ import type {
 // Type-only — runtime no-op brand cast (Constitution Principle III).
 import type { MemberId, PlanId } from '@/modules/members';
 
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 export const evaluateTierUpgradeInputSchema = z.object({
   tenantId: z.string().min(1),
   correlationId: z.string().min(1),
@@ -276,7 +276,7 @@ export async function evaluateTierUpgrade(
   } catch (e) {
     return err({
       kind: 'server_error',
-      message: `plan_catalog_read_failed: ${errKind(e)}`,
+      message: `plan_catalog_read_failed: ${errClassWithCode(e)}`,
     });
   }
   const hasAnyThreshold = catalogue.some((p) => p.minTurnoverThb !== null);
@@ -537,7 +537,7 @@ export async function evaluateTierUpgrade(
           // #739 B3b — the class, never the thrown text.
           return err({
             kind: 'server_error',
-            message: errKind(e),
+            message: errClassWithCode(e),
           });
         }
       }
