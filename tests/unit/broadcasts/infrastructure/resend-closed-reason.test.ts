@@ -102,4 +102,38 @@ describe('classifyResendError — the reason is a closed code (#739 PR 2)', () =
     const e = await thrownBy(() => resendBroadcastsGateway.deleteAudience(SEGMENT_ID));
     expect(e.code).toBe('restricted_api_key');
   });
+
+  it('review round 1 — a name outside the set never becomes the code either', async () => {
+    stubResendFetch(async () => json(400, { statusCode: 400, name: 'some_future_name', message: 'x' }));
+    const e = await thrownBy(() => resendBroadcastsGateway.retrieveBroadcast(BROADCAST_ID));
+    expect(e.code).toBe('http_400');
+  });
+
+  it("review round 1 — the measured Free-plan cap leaves as code contact_limit", async () => {
+    stubResendFetch(async () =>
+      json(422, { statusCode: 422, name: 'validation_error', message: 'You have reached your contact limit' }),
+    );
+    const e = await thrownBy(() => resendBroadcastsGateway.createContactImport(SEGMENT_ID, ['a@example.com']));
+    expect(e.kind).toBe('permanent');
+    expect(e.code).toBe('contact_limit');
+    expect(e.reason).toBe('validation_error');
+  });
+
+  it('review round 1 — a transport failure on the import leg keeps its class: network:<Class>', async () => {
+    stubResendFetch(async () => {
+      throw new TypeError('fetch failed for a@b.example');
+    });
+    const e = await thrownBy(() => resendBroadcastsGateway.createContactImport(SEGMENT_ID, ['a@example.com']));
+    expect(e.kind).toBe('retryable');
+    expect(e.reason).toBe('network:TypeError');
+    expect(e.message).not.toContain('@');
+  });
+
+  it('review round 1 — an HTML 4xx page on the import leg keeps none of its text', async () => {
+    stubResendFetch(async () => new Response('<html>Forbidden for a@b.example</html>', { status: 403 }));
+    const e = await thrownBy(() => resendBroadcastsGateway.createContactImport(SEGMENT_ID, ['a@example.com']));
+    expect(e.reason).toBe('http_403');
+    expect(e.message).toBe('http_403');
+    expect(e.httpStatus).toBe(403);
+  });
 });

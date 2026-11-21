@@ -264,6 +264,12 @@ describe('errClassWithCode() — the class and the SQLSTATE, never the text (#73
     expect(errClassWithCode('a string')).toBe('unknown');
   });
 
+  it('review round 1 — a class name that is not token-shaped is written as unknown', () => {
+    const e = Object.assign(new Error('x'), { code: '23505' });
+    Object.defineProperty(e, 'constructor', { value: { name: 'a@b.example' } });
+    expect(errClassWithCode(e)).toBe('unknown:23505');
+  });
+
   it('errLogFields reads `<Class>:<SQLSTATE>` and `<step>: <Class>:<SQLSTATE>` as err, step and code', () => {
     expect(errLogFields({ kind: 'server_error', message: 'NeonDbError:40001' })).toEqual({
       err: 'NeonDbError',
