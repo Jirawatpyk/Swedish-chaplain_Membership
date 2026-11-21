@@ -298,7 +298,7 @@ describe('e2e-critical.yml — review round 1 (PR #586)', () => {
 
   it('bounds each test step and stops a broken run early, keeping its trace (H3)', () => {
     for (const body of testSteps()) {
-      expect(body).toMatch(/^\s+timeout-minutes: 20\s*$/m);
+      expect(body).toMatch(/^\s+timeout-minutes: 15\s*$/m);
       expect(body).toMatch(/--max-failures=5/);
     }
   });
