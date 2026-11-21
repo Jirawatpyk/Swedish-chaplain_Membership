@@ -495,7 +495,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const gateway = makeGateway({
       audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE }],
       throws: {
-        [audienceId]: new Error('Cannot delete last audience'),
+        [audienceId]: new GatewayThrowable({ kind: 'permanent', code: 'last_audience', reason: 'validation_error' }),
       },
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
@@ -523,7 +523,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const audienceId = 'aud-last-seg';
     const gateway = makeGateway({
       audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE }],
-      throws: { [audienceId]: new Error('You cannot delete your last segment') },
+      throws: { [audienceId]: new GatewayThrowable({ kind: 'permanent', code: 'last_audience', reason: 'validation_error' }) },
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
@@ -534,20 +534,23 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
   });
 
   it.each([
-    'The last segment cannot be deleted',
-    'Cannot remove the last segment',
-  ])('(f4) other wordings of the refusal are a benign skip too: %s', async (message) => {
-    const audienceId = 'aud-last-worded';
+    ['a plain Error', new Error('Cannot delete last audience')],
+    [
+      'a permanent GatewayThrowable with any other code',
+      new GatewayThrowable({ kind: 'permanent', code: 'validation_error', reason: 'Cannot delete last audience' }),
+    ],
+  ])('(f5) #739 PR 2: the refusal is read from the closed code, never the text: %s is a failure', async (_label, thrown) => {
+    const audienceId = 'aud-text-only';
     const gateway = makeGateway({
       audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE }],
-      throws: { [audienceId]: new Error(message) },
+      throws: { [audienceId]: thrown },
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
       { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
       { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
     );
-    expect(result.ok && result.value).toMatchObject({ failed: 0, skippedLastAudience: 1 });
+    expect(result.ok && result.value).toMatchObject({ failed: 1, skippedLastAudience: 0 });
   });
 
   it('(f3) a retryable failure whose text mentions a last segment is still a failure, not a skip', async () => {
@@ -608,11 +611,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const gateway = makeGateway({
       audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_B}`, createdAt: PAST_GRACE_DATE }],
       throws: {
-        [audienceId]: new GatewayThrowable({
-          kind: 'permanent',
-          code: 'validation_error',
-          reason: 'Cannot delete last audience',
-        }),
+        [audienceId]: new GatewayThrowable({ kind: 'permanent', code: 'last_audience', reason: 'validation_error' }),
       },
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) }); // UUID_B NOT in DB → orphan

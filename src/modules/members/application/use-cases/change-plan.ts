@@ -16,7 +16,7 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   asOverrideReason,
@@ -498,7 +498,7 @@ export async function changePlan(
     // member-self-update, rather than an unhandled 500 at the route layer.
     return err({
       type: 'server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
 }

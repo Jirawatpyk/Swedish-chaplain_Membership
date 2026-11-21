@@ -78,7 +78,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { errKind, errLogFields } from '@/lib/log-id';
+import { errClassWithCode, errLogFields } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 
@@ -214,14 +214,15 @@ function escapeRegex(s: string): string {
 
 const RECLAIM_CONCURRENCY = 5;
 
-/** Resend 403 error message for the account's last audience. */
-// Spec 141: resend@6.35 deletes at `/segments`, whose refusal wording was not
-// measured (deleting the last one cannot be probed on an account prod shares),
-// so a refusal is any message naming "last audience|segment" AND a delete /
-// remove verb, in either order. Matched only on a non-retryable error, so a
-// transient failure that mentions a segment still counts as `failed`.
-const LAST_AUDIENCE_PATTERN = /\blast (audience|segment)\b/i;
-const DELETE_VERB_PATTERN = /\b(delet|remov)\w*/i;
+/**
+ * The gateway's code for Resend's "cannot delete the last audience/segment"
+ * refusal. #739 PR 2 — the adapter recognises Resend's wording
+ * (`isLastAudienceRefusal` in `resend-broadcasts-gateway.ts`, spec 141's
+ * either-order match) and this use case reads only the closed code, never the
+ * provider's text. Read only on a non-retryable throw, so a transient failure
+ * still counts as `failed`.
+ */
+const LAST_AUDIENCE_CODE = 'last_audience';
 
 export async function reclaimOrphanedAudiences(
   deps: ReclaimOrphanedAudiencesDeps,
@@ -234,7 +235,7 @@ export async function reclaimOrphanedAudiences(
   try {
     listing = await deps.broadcastsGateway.listAudiences({ deadlineAt: input.deadlineAt });
   } catch (e) {
-    return err({ kind: 'reclaim.server_error', message: errKind(e) });
+    return err({ kind: 'reclaim.server_error', message: errClassWithCode(e) });
   }
 
   const { audiences, truncated } = listing;
@@ -340,7 +341,7 @@ export async function reclaimOrphanedAudiences(
           uniqueIds,
         );
     } catch (e) {
-      return err({ kind: 'reclaim.server_error', message: errKind(e) });
+      return err({ kind: 'reclaim.server_error', message: errClassWithCode(e) });
     }
     orphans = candidates.filter((c) => {
       const referenced = referencedByBroadcast.get(c.broadcastId);
@@ -355,7 +356,7 @@ export async function reclaimOrphanedAudiences(
     try {
       existing = await deps.broadcastsRepo.existingBroadcastIds(deps.tenant.slug, uniqueIds);
     } catch (e) {
-      return err({ kind: 'reclaim.server_error', message: errKind(e) });
+      return err({ kind: 'reclaim.server_error', message: errClassWithCode(e) });
     }
     orphans = candidates.filter((c) => !existing.has(c.broadcastId));
   }
@@ -390,12 +391,8 @@ export async function reclaimOrphanedAudiences(
       // Treat as a benign skip: NOT a failure (don't increment `failed`), NOT
       // deleted. The audience will become eligible once another audience is
       // created by the next broadcast dispatch.
-      if (
-        e instanceof Error &&
-        !isRetryableThrow(classifyThrown(e).kind) &&
-        LAST_AUDIENCE_PATTERN.test(e.message) &&
-        DELETE_VERB_PATTERN.test(e.message)
-      ) {
+      const thrown = classifyThrown(e);
+      if (!isRetryableThrow(thrown.kind) && thrown.code === LAST_AUDIENCE_CODE) {
         skippedLastAudience++;
         logger.info(
           { audienceId: orphan.audienceId },
@@ -412,7 +409,7 @@ export async function reclaimOrphanedAudiences(
           // Spec 140 s2d (#736c) — the class and the gateway's closed kind, never
           // the message (a Resend error carries provider text).
           ...errLogFields(e),
-          gatewayKind: classifyThrown(e).kind,
+          gatewayKind: thrown.kind,
         },
         'broadcasts.audience_reclaim.delete_failed',
       );

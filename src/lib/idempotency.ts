@@ -38,7 +38,7 @@ import { logger } from './logger';
 import { err, ok, type Result } from './result';
 import type { TenantContext } from '@/modules/tenants';
 
-import { errKind, errLogFields } from '@/lib/log-id';
+import { errClassWithCode, errKind, errLogFields } from '@/lib/log-id';
 // --- Types -------------------------------------------------------------------
 
 export type IdempotencyClassification =
@@ -226,7 +226,7 @@ export async function reserveIdempotencyRecord(
       { ...errLogFields(e), tenant: tenant.slug, key },
       'idempotency: Redis reserve failed — caller must surface 503',
     );
-    return err({ kind: 'redis_unavailable', message: errKind(e) });
+    return err({ kind: 'redis_unavailable', message: errClassWithCode(e) });
   }
 }
 

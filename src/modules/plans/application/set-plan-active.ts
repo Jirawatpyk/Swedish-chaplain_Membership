@@ -22,7 +22,7 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort, PlanRepo } from './ports';
 import { auditFailureMessage, auditInTx, PlanAuditAbort } from './record-audit-event';
@@ -64,7 +64,7 @@ export async function setPlanActive(
   } catch (e) {
     return err({
       type: 'server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
   if (!existing) {
@@ -120,7 +120,7 @@ export async function setPlanActive(
     }
     return err({
       type: 'server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
   if (!updated) {

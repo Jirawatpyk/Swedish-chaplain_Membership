@@ -29,7 +29,7 @@ import {
   type DispatchOneCycleOutcome,
 } from './_lib/dispatch-one-cycle';
 
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 export const sendReminderNowInputSchema = z.object({
   tenantId: z.string().min(1),
   cycleId: z.string().uuid(),
@@ -142,7 +142,7 @@ export async function sendReminderNow(
     );
     return err({
       kind: 'server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
   }

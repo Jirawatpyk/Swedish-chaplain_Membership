@@ -32,7 +32,7 @@ import type { CycleId } from '../../domain/renewal-cycle';
 import type { MemberId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 export const skipEscalationTaskInputSchema = z.object({
   tenantId: z.string().min(1),
   taskId: z.string().uuid(),
@@ -155,7 +155,7 @@ export async function skipEscalationTask(
     });
     return err({
       kind: 'server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
 }

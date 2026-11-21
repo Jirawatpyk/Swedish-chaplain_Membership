@@ -32,7 +32,7 @@ import type { MemberId } from '@/modules/members';
 // dismiss UPDATE) from a genuine dismiss failure.
 import { TierUpgradeStatusConflictError } from '../ports/tier-upgrade-suggestion-repo';
 
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 export const reconcilePendingApplicationsInputSchema = z.object({
   tenantId: z.string().min(1),
   correlationId: z.string().min(1),
@@ -97,7 +97,7 @@ export async function reconcilePendingApplications(
   } catch (e) {
     return err({
       kind: 'server_error',
-      message: `list_orphaned_failed: ${errKind(e)}`,
+      message: `list_orphaned_failed: ${errClassWithCode(e)}`,
     });
   }
 

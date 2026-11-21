@@ -272,7 +272,16 @@ an `@`, more than one space or more than 64 characters. Since #739 B3b part
 `<step>: ${errKind(e)}` with a lowercase step): `errLogFields` logs a message
 that is exactly a class name (one capitalised word, at most 64 characters) as
 `err`, and `<step>: <Class>` as `step` + `err`; any other text stays out. This
-is the one place a log line reads part of a `message`, by shape. `errKind` of
+is the one place a log line reads part of a `message`, by shape. Since #739
+PR 2 the catch writes `errClassWithCode(e)`: the class, plus `:<SQLSTATE>`
+when the cause chain holds a Postgres error (`NeonDbError:23505`), and
+`errLogFields` logs the suffix as `code`, so a unique violation and a
+statement timeout no longer read alike. A suffix that is not five digits or
+capitals with a digit is not read. The Resend gateway's thrown `reason` (and
+its `.message`) is a closed code too: Resend's error `name` when the adapter
+knows it, `http_<status>`, or `network:<Class>` for a transport fault, never
+Resend's own text (the `code` is the same closed name); the last-audience
+refusal leaves as `code: 'last_audience'`. `errKind` of
 a `DOMException` is its token-shaped `name` (`AbortError`, `TimeoutError`):
 before, a DOMException that is not an `Error` in the runtime logged
 `'unknown'`. A zod failure logs

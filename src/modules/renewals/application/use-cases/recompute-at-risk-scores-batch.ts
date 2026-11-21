@@ -53,7 +53,7 @@ import type {
 import type { MemberId } from '@/modules/members';
 import { parseInput } from './_lib/parse-input';
 
-import { errKind, errLogFields } from '@/lib/log-id';
+import { errClassWithCode, errKind, errLogFields } from '@/lib/log-id';
 export const recomputeAtRiskScoresBatchInputSchema = z.object({
   tenantId: z.string().min(1),
   correlationId: z.string().min(1),
@@ -458,6 +458,6 @@ export async function recomputeAtRiskScoresBatch(
       },
       'recompute-at-risk-batch.unexpected_error',
     );
-    return err({ kind: 'server_error' as const, message: errKind(e) });
+    return err({ kind: 'server_error' as const, message: errClassWithCode(e) });
   }
 }

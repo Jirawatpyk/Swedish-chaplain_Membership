@@ -160,10 +160,13 @@ const SAFE_NAME = /^(?:code|.*(?:Code|Kind|Class))$/;
  * a boolean. Review round 3 — `primaryContactTriggerViolation` (a local's
  * initializer is now judged like a log value): a count, a member uuid matched
  * by `[0-9a-f-]{36}` and a tenant slug parsed from the trigger's own raise
- * (`src/lib/db-errors.ts`), or null; never the message.
+ * (`src/lib/db-errors.ts`), or null; never the message. #739 PR 2 —
+ * `errClassWithCode` an error class, plus `:` and a SQLSTATE matched by
+ * `[0-9A-Z]{5}` when the cause chain holds one (`src/lib/log-id.ts`).
  */
 const SAFE_CALLS = new Set([
   'errKind',
+  'errClassWithCode',
   'pgErrorCode',
   'pgErrorMeta',
   'hashId',

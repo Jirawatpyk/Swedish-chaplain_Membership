@@ -40,7 +40,7 @@ import type { TenantId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import type { WebhookSecret } from '../../domain/branded-types';
 
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 export interface RunTestWebhookInput {
   readonly tenantId: TenantId;
   readonly tenantSlug: string;
@@ -268,7 +268,7 @@ export async function runTestWebhook(
   } catch (e) {
     return err({
       kind: 'sign_failed',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
 

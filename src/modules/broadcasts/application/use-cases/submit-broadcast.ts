@@ -44,7 +44,7 @@ import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
 import { assertNever } from '@/lib/assert-never';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { asMemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
@@ -1032,7 +1032,7 @@ export async function submitBroadcast(
   } catch (e) {
     return err({
       kind: 'submit.server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
 }

@@ -1564,7 +1564,8 @@ type GatewayFailure =
       readonly resourceType?: 'audience' | 'broadcast' | 'import' | undefined;
       readonly resourceId?: string | undefined;
       /**
-       * The adapter's `code` — `err.name` from Resend, or `http_<status>`.
+       * The adapter's `code` — a closed code since #739 PR 2: Resend's name when
+       * the adapter knows it, `last_audience`, or `http_<status>`.
        * Carried for the failure METRIC only (round 3 finding 3-12): without it
        * every terminal import failure was counted `app_error`, so the runbook's
        * "group by failure_reason to identify the dominant cause" step had one

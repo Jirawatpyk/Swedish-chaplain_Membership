@@ -37,7 +37,7 @@ import type {
   DeleteErrorCsvInput,
 } from '../application/ports/error-csv-store';
 
-import { errKind, errLogFields } from '@/lib/log-id';
+import { errClassWithCode, errLogFields } from '@/lib/log-id';
 // Tenant-scoped path prefix per research.md R6.
 function buildBlobKey(tenantSlug: string, recordId: string): string {
   return `tenants/${tenantSlug}/csv-import-errors/${recordId}.csv`;
@@ -78,7 +78,7 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
         },
         'F6.1 error CSV blob upload failed',
       );
-      return err<ErrorCsvStoreError>({ kind: 'storage_error', message: errKind(e) });
+      return err<ErrorCsvStoreError>({ kind: 'storage_error', message: errClassWithCode(e) });
     }
   },
 
@@ -122,7 +122,7 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
         },
         'F6.1 error CSV signed-URL generation failed (likely malformed blobUrl)',
       );
-      return err<ErrorCsvStoreError>({ kind: 'storage_error', message: errKind(e) });
+      return err<ErrorCsvStoreError>({ kind: 'storage_error', message: errClassWithCode(e) });
     }
   },
 
@@ -150,7 +150,7 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
         },
         'F6.1 error CSV blob delete failed',
       );
-      return err<ErrorCsvStoreError>({ kind: 'storage_error', message: errKind(e) });
+      return err<ErrorCsvStoreError>({ kind: 'storage_error', message: errClassWithCode(e) });
     }
   },
 };

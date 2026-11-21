@@ -21,7 +21,7 @@
  *     (FR-002 precondition `a` rejects free-tier members)
  */
 import { err, ok, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { Plan } from '../domain/plan';
 import { asPlanSlug, asPlanYear } from '../domain/plan';
@@ -88,7 +88,7 @@ export async function getPlanForMember(
   } catch (e) {
     return err({
       code: 'plan_lookup.server_error',
-      message: `member_lookup: ${errKind(e)}`,
+      message: `member_lookup: ${errClassWithCode(e)}`,
     });
   }
 
@@ -102,7 +102,7 @@ export async function getPlanForMember(
   } catch (e) {
     return err({
       code: 'plan_lookup.server_error',
-      message: `plan_lookup: ${errKind(e)}`,
+      message: `plan_lookup: ${errClassWithCode(e)}`,
     });
   }
 

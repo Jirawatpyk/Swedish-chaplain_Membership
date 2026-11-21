@@ -172,6 +172,18 @@ describe('createPlan use case', () => {
     }
   });
 
+  it('#739 PR 2: a Postgres failure keeps its SQLSTATE in the message, never its text', async () => {
+    const pg = Object.assign(new Error('canceling statement due to statement timeout: a@b.example'), { code: '57014' });
+    const deps = makeDeps({ findOneResult: pg });
+    const result = await createPlan(baseInput, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.type === 'server_error') {
+      expect(result.error.message).toBe('Error:57014');
+    } else {
+      expect.unreachable('expected server_error');
+    }
+  });
+
   it('returns server_error when planRepo.insert throws generic error', async () => {
     const deps = makeDeps({
       findOneResult: undefined,

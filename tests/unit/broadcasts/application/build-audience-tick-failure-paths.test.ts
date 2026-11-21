@@ -2569,6 +2569,21 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(spy.mock.calls.map((c) => c[1])).toContain('resend_403');
   });
 
+  it('#739 PR 2 code-review: a named 403 from our own key (restricted_api_key) stays app_error, never resend_403', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'permanent', code: 'restricted_api_key' },
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const labels = spy.mock.calls.map((c) => c[1]);
+    expect(labels).toContain('app_error');
+    expect(labels).not.toContain('resend_403');
+  });
+
   /**
    * Positive control, and the reason the mapper is deliberately narrow: a
    * `permanent` whose code is NOT one we measured must stay `app_error`. A

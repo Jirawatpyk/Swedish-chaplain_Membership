@@ -45,7 +45,7 @@ import {
 import type { AuditEventId } from '@/modules/auth';
 import type { TenantId } from '@/modules/members';
 import type { RegistrationId } from '../domain/branded-types';
-import { errLogFields, errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind, errLogFields } from '@/lib/log-id';
 
 /**
  * Phase 6 staff-review-4 WARN-1 — single dispatcher that maps a freshly
@@ -501,7 +501,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
         );
         return err({
           kind: 'db_error',
-          message: errKind(e),
+          message: errClassWithCode(e),
         });
       }
     },
@@ -560,7 +560,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
         }
         return err({
           kind: 'db_error',
-          message: errKind(e),
+          message: errClassWithCode(e),
         });
       }
     },
@@ -596,7 +596,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
         );
         return err({
           kind: 'db_error',
-          message: errKind(e),
+          message: errClassWithCode(e),
         });
       }
     },
@@ -652,7 +652,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
         }
         return err({
           kind: 'db_error',
-          message: errKind(e),
+          message: errClassWithCode(e),
         });
       }
     },

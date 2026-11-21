@@ -6,6 +6,7 @@ declare const NextResponse: { json(b: unknown): unknown };
 declare const span: { setStatus(s: unknown): void };
 declare const SpanStatusCode: { ERROR: number };
 declare function errKind(e: unknown): string;
+declare function errClassWithCode(e: unknown): string;
 declare function err<T>(e: T): T;
 declare function describe(e: unknown): string;
 declare const result: { error: { message: string; kind: string } };
@@ -24,6 +25,8 @@ async function f(): Promise<unknown> {
     err({ kind: 'server_error', error: e }); // refused
     err({ kind: 'server_error', stack: (e as Error).stack }); // refused
     err({ kind: 'server_error', errClass: errKind(e) }); // allowed
+    err({ kind: 'server_error', message: errClassWithCode(e) }); // allowed
+    err({ kind: 'server_error', message: `step: ${errClassWithCode(e)}` }); // allowed
     err({ kind: 'server_error', errClass: cls }); // allowed
     err({ kind: 'server_error', message: result.error.message }); // allowed
     err({ kind: 'server_error', cause: e }); // allowed

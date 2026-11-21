@@ -5,7 +5,7 @@
  * unlike `listPlans` it reads no tax policy and computes no VAT.
  */
 import { err, ok, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { PlanRepo } from './ports';
 import type { Plan, PlanYear } from '../domain/plan';
@@ -30,6 +30,6 @@ export async function listPlanNames(
     });
     return ok(plans.map((p) => ({ plan_id: p.plan_id, plan_name: p.plan_name })));
   } catch (e) {
-    return err({ type: 'server_error', message: errKind(e) });
+    return err({ type: 'server_error', message: errClassWithCode(e) });
   }
 }

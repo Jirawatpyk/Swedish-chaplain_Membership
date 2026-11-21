@@ -26,7 +26,7 @@
 
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import {
@@ -165,6 +165,6 @@ function persistFailed(
   );
   return err({
     type: 'persist_failed',
-    message: errKind(e),
+    message: errClassWithCode(e),
   });
 }

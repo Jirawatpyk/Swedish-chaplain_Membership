@@ -43,7 +43,7 @@ import { err, ok, type Result } from '@/lib/result';
 import { unsafeIanaTimezone, type TenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
@@ -305,7 +305,7 @@ export async function reconcileStuckSending(
     }
     return err({
       kind: 'reconcile.server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
       errClass: errKind(e),
     });
   }

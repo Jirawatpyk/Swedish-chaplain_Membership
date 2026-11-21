@@ -15,7 +15,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DrizzleQueryError } from 'drizzle-orm';
-import { errKind, errLogFields, hashId } from '@/lib/log-id';
+import { errClassWithCode, errKind, errLogFields, hashId } from '@/lib/log-id';
 import { UseCaseAbort } from '@/modules/members/application/tx-abort';
 
 describe('hashId() — djb2 log-correlation hash', () => {
@@ -234,5 +234,66 @@ describe('errKind() — a DOMException gives its name (#739 B3b)', () => {
     expect(errKind(new DOMException('late', 'TimeoutError'))).toBe('TimeoutError');
     expect(errKind(new DOMException('x', 'not a name a@b.io'))).toBe('DOMException');
     expect(errKind(new TypeError('a@b.io'))).toBe('TypeError');
+  });
+});
+
+describe('errClassWithCode() — the class and the SQLSTATE, never the text (#739 follow-up, PR 2)', () => {
+  class PostgresError extends Error {
+    readonly code: string;
+    constructor(message: string, code: string) {
+      super(message);
+      this.code = code;
+    }
+  }
+
+  it('a Postgres error gives `<Class>:<SQLSTATE>`, and its message never appears', () => {
+    const e = new PostgresError('duplicate key value: (email)=(a@b.example)', '23505');
+    expect(errClassWithCode(e)).toBe('PostgresError:23505');
+  });
+
+  it('a Postgres error under a wrapping Error is found through the cause chain', () => {
+    const wrapped = new Error('Failed query: insert … params: a@b.example', {
+      cause: new PostgresError('deadlock detected', '40P01'),
+    });
+    expect(errClassWithCode(wrapped)).toBe('Error:40P01');
+  });
+
+  it('an error with no SQLSTATE gives the class alone', () => {
+    expect(errClassWithCode(new TypeError('x a@b.example'))).toBe('TypeError');
+    expect(errClassWithCode(Object.assign(new Error('x'), { code: 'ECONNRESET' }))).toBe('Error');
+    expect(errClassWithCode('a string')).toBe('unknown');
+  });
+
+  it('review round 1 — a class name that is not token-shaped is written as unknown', () => {
+    const e = Object.assign(new Error('x'), { code: '23505' });
+    Object.defineProperty(e, 'constructor', { value: { name: 'a@b.example' } });
+    expect(errClassWithCode(e)).toBe('unknown:23505');
+    // code-review round 1 — and the SQLSTATE still reaches the log line.
+    expect(errLogFields({ kind: 'server_error', message: 'unknown:23505' })).toEqual({
+      err: 'unknown',
+      resultKind: 'server_error',
+      code: '23505',
+    });
+  });
+
+  it('errLogFields reads `<Class>:<SQLSTATE>` and `<step>: <Class>:<SQLSTATE>` as err, step and code', () => {
+    expect(errLogFields({ kind: 'server_error', message: 'NeonDbError:40001' })).toEqual({
+      err: 'NeonDbError',
+      resultKind: 'server_error',
+      code: '40001',
+    });
+    expect(errLogFields({ code: 'plan_lookup.server_error', message: 'plan_lookup: PostgresError:23505' })).toEqual({
+      err: 'PostgresError',
+      repoCode: 'plan_lookup.server_error',
+      step: 'plan_lookup',
+      code: '23505',
+    });
+  });
+
+  it('a suffix that is not a SQLSTATE, or text around it, is never read', () => {
+    for (const message of ['Error:2350', 'Error:abcde', 'a@b:23505', 'Error:23505 a@b.example', 'Error: 23505']) {
+      const fields = errLogFields({ kind: 'server_error', message });
+      expect(fields).toEqual({ err: 'unknown', resultKind: 'server_error' });
+    }
   });
 });

@@ -68,18 +68,45 @@ const ERROR_CLASS = /^[A-Z][A-Za-z0-9]{0,63}$/;
 export function isErrorClassToken(text: unknown): text is string {
   return typeof text === 'string' && ERROR_CLASS.test(text);
 }
-const STEP_AND_CLASS = /^([a-z][a-z0-9_-]{0,47}): ([A-Z][A-Za-z0-9]{0,63})$/;
+/**
+ * #739 PR 2 — the optional `:<SQLSTATE>` suffix {@link errClassWithCode}
+ * writes: five digits or capitals with at least one digit (the
+ * `firstSqlStateError` shape in `db-errors.ts`).
+ */
+const CLASS_AND_CODE = /^([A-Z][A-Za-z0-9]{0,63}|unknown)(?::((?=[0-9A-Z]*\d)[0-9A-Z]{5}))?$/;
+const STEP_AND_CLASS = /^([a-z][a-z0-9_-]{0,47}): ([A-Z][A-Za-z0-9]{0,63}|unknown)(?::((?=[0-9A-Z]*\d)[0-9A-Z]{5}))?$/;
+
+/**
+ * #739 PR 2 — what a catch writes into a Result's `message` when the Result
+ * keeps no `cause`: the error class, and the Postgres SQLSTATE when the cause
+ * chain holds one (`NeonDbError:23505`). Never the error's text. A Result that
+ * kept only `errKind(e)` lost the one field that tells a unique violation from
+ * a statement timeout; `errLogFields` reads both halves back.
+ */
+export function errClassWithCode(e: unknown): string {
+  // Review round 1 (security L2) — `constructor.name` comes from code, but a
+  // value merged from untrusted JSON can carry its own; write only a token.
+  const kind = errKind(e);
+  const cls = ERROR_CLASS.test(kind) || kind === 'unknown' ? kind : 'unknown';
+  const code = pgErrorCode(e);
+  return code === undefined ? cls : `${cls}:${code}`;
+}
 
 /**
  * #739 B3b — a Result error's `message` that a catch wrote as `errKind(e)`, or
  * as `<step>: ${errKind(e)}`: the class, and the step when there is one.
  * Anything else is `undefined`, so no other text reaches a log line.
  */
-function classFromMessage(text: unknown): { readonly err: string; readonly step?: string } | undefined {
+function classFromMessage(
+  text: unknown,
+): { readonly err: string; readonly step?: string; readonly code?: string } | undefined {
   if (typeof text !== 'string') return undefined;
-  if (ERROR_CLASS.test(text)) return { err: text };
+  const bare = CLASS_AND_CODE.exec(text);
+  if (bare?.[1] !== undefined) return { err: bare[1], ...(bare[2] !== undefined ? { code: bare[2] } : {}) };
   const m = STEP_AND_CLASS.exec(text);
-  return m?.[1] !== undefined && m[2] !== undefined ? { err: m[2], step: m[1] } : undefined;
+  return m?.[1] !== undefined && m[2] !== undefined
+    ? { err: m[2], step: m[1], ...(m[3] !== undefined ? { code: m[3] } : {}) }
+    : undefined;
 }
 
 /**
@@ -199,11 +226,12 @@ export function errLogFields(failure: unknown): {
     // #739 B3b review — a code-keyed Result with no cause reads its class too.
     const fromMessage =
       cause === undefined ? classFromMessage((failure as { message?: unknown }).message) : undefined;
+    const code = sqlState ?? fromMessage?.code;
     return {
       err: fromMessage?.err ?? errKind(cause),
       repoCode: RESULT_CODE.test(resultCode) ? resultCode : 'unrecognised',
       ...(fromMessage?.step !== undefined ? { step: fromMessage.step } : {}),
-      ...(sqlState !== undefined ? { code: sqlState } : {}),
+      ...(code !== undefined ? { code } : {}),
     };
   }
   // #740 B1 review — a Result error keyed on `kind` or `type` (`{ kind,
@@ -222,11 +250,12 @@ export function errLogFields(failure: unknown): {
     // #739 B3b — with no `cause`, a catch now writes the class into `message`.
     const fromMessage = cause === undefined ? classFromMessage(message) : undefined;
     const step = fromMessage?.step ?? stepToken(message);
+    const code = sqlState ?? fromMessage?.code;
     return {
       err: fromMessage?.err ?? errKind(cause),
       resultKind: RESULT_CODE.test(resultKind) ? resultKind : 'unrecognised',
       ...(step !== undefined ? { step } : {}),
-      ...(sqlState !== undefined ? { code: sqlState } : {}),
+      ...(code !== undefined ? { code } : {}),
     };
   }
   const wrapped = failure instanceof Error ? wrappedResultError(failure) : undefined;

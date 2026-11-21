@@ -26,7 +26,7 @@ import { z } from 'zod';
 import { hasDangerousUrlScheme } from '@/lib/safe-url';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { Member, MemberId } from '../../domain/member';
 import type { Contact, ContactId, PreferredLanguage } from '../../domain/contact';
@@ -431,7 +431,7 @@ export async function memberSelfUpdate(
     }
     return err({
       type: 'server_error',
-      message: `self_update: ${errKind(e)}`,
+      message: `self_update: ${errClassWithCode(e)}`,
     });
   }
 }

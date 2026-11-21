@@ -43,7 +43,7 @@ import { RISK_BAND_THRESHOLDS } from '../../domain/value-objects/risk-band';
 // Type-only import — runtime no-op brand cast (Constitution Principle III)
 import type { MemberId } from '@/modules/members';
 
-import { errKind, errLogFields } from '@/lib/log-id';
+import { errClassWithCode, errKind, errLogFields } from '@/lib/log-id';
 export const computeAtRiskScoreInputSchema = z.object({
   tenantId: z.string().min(1),
   memberId: z.string().uuid(),
@@ -112,7 +112,7 @@ export async function computeAtRiskScore(
       { ...errLogFields(e), tenantId: input.tenantId, memberId: input.memberId },
       '[compute-at-risk-score] scorer threw — propagating to cron for partial-failure audit',
     );
-    return err({ kind: 'server_error' as const, message: errKind(e) });
+    return err({ kind: 'server_error' as const, message: errClassWithCode(e) });
   }
 
   // Step 2 — min-tenure skip path (FR-035). Emit + return without

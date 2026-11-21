@@ -29,7 +29,7 @@
  */
 import type { Resend } from 'resend';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind, isErrorClassToken } from '@/lib/log-id';
 import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import {
   IMPORT_CALL_TIMEOUT_MS,
@@ -103,7 +103,11 @@ export type GatewayThrowableInit =
       readonly resourceId: string;
       readonly reason: string;
     }
-  | { readonly kind: 'permanent'; readonly code: string; readonly reason: string };
+  | {
+      readonly kind: 'permanent';
+      readonly code: string;
+      readonly reason: string;
+    };
 
 export class GatewayThrowable extends Error {
   readonly kind: GatewayThrowableKind;
@@ -257,14 +261,85 @@ function statusAndNameOf(err: ResendErrorShape): ResendErrorShape {
   };
 }
 
+/**
+ * #739 PR 2 — the error names a thrown `reason` may carry: Resend's own
+ * (`RESEND_ERROR_CODE_KEY` in resend@6.35.0's `index.d.mts`, plus
+ * `resource_locked`, which the 409 branch below reads) and the ones this
+ * adapter builds itself. Any other name becomes `http_<status>`.
+ */
+const RESEND_ERROR_NAMES: ReadonlySet<string> = new Set([
+  'invalid_idempotency_key',
+  'validation_error',
+  'missing_api_key',
+  'restricted_api_key',
+  'invalid_api_key',
+  'not_found',
+  'method_not_allowed',
+  'invalid_idempotent_request',
+  'concurrent_idempotent_requests',
+  'invalid_attachment',
+  'invalid_from_address',
+  'invalid_access',
+  'invalid_parameter',
+  'invalid_region',
+  'missing_required_field',
+  'monthly_quota_exceeded',
+  'daily_quota_exceeded',
+  'rate_limit_exceeded',
+  'security_error',
+  'application_error',
+  'internal_server_error',
+  'resource_locked',
+  'network_error',
+  'unsafe_recipient_format',
+]);
+
+/**
+ * #739 PR 2 — a thrown `reason` (and so its `.message`) is a closed code,
+ * never Resend's `message`: that is provider prose and can quote the address
+ * or the id the request named. `network` for a transport fault (status 0).
+ */
+function closedReason(err: ResendErrorShape | undefined | null, status: number): string {
+  // Review round 1 (observability M2) — a transport fault keeps its class
+  // (`network:TypeError`, `network:TimeoutError`) when the caller passed one.
+  if (status === 0) return isErrorClassToken(err?.message) ? `network:${err.message}` : 'network';
+  return closedName(err, status);
+}
+
+/** Resend's name when this build knows it, else `http_<status>` (review round 1, security L1: the code too). */
+function closedName(err: ResendErrorShape | undefined | null, status: number): string {
+  const name = err?.name;
+  return name !== undefined && RESEND_ERROR_NAMES.has(name) ? name : `http_${status}`;
+}
+
+/** The closed code of a permanent refusal: the measured last-audience case, else {@link closedName}. */
+function permanentCode(err: ResendErrorShape | undefined | null, status: number): string {
+  return isLastAudienceRefusal(err?.message) ? 'last_audience' : closedName(err, status);
+}
+
+/**
+ * Resend's refusal to delete the account's last audience or segment
+ * (MEASURED 2026-11-03: 403 `validation_error` "Cannot delete last audience.";
+ * resend@6.35 words it for a segment). Recognised here, where Resend's text is
+ * still in hand, so it leaves the adapter as `code: 'last_audience'` and no
+ * caller reads the text (#739 PR 2; it was matched in
+ * `reclaim-orphaned-audiences.ts`).
+ */
+const LAST_AUDIENCE_PATTERN = /\blast (audience|segment)\b/i;
+const DELETE_VERB_PATTERN = /\b(delet|remov)\w*/i;
+
+function isLastAudienceRefusal(message: string | undefined): boolean {
+  return message !== undefined && LAST_AUDIENCE_PATTERN.test(message) && DELETE_VERB_PATTERN.test(message);
+}
+
 function classifyResendError(
   err: ResendErrorShape | undefined | null,
   resourceType?: 'audience' | 'broadcast' | 'import',
   resourceId?: string,
 ): GatewayThrowable {
   const status = httpStatusOf(err);
-  const reason = err?.message ?? 'unknown resend error';
-  const code = err?.name ?? `http_${status}`;
+  const reason = closedReason(err, status);
+  const code = closedName(err, status);
 
   // Review I6: tag retryable errors with the transport class so OTel
   // metrics + alerts can split network outage from server-side bugs.
@@ -323,7 +398,11 @@ function classifyResendError(
       resourceId,
     });
   }
-  return new GatewayThrowable({ kind: 'permanent', reason, code });
+  return new GatewayThrowable({
+    kind: 'permanent',
+    reason,
+    code: permanentCode(err, status),
+  });
 }
 
 /**
@@ -422,9 +501,8 @@ async function boundedCall<T>(
   // SDK throwable that bypassed classification escapes as `retryable`
   // with `subKind: 'timeout'`.
   if (lastErr instanceof GatewayThrowable) throw lastErr;
-  const reason =
-    lastErr instanceof Error ? lastErr.message : String(lastErr ?? 'unknown retryable error');
-  throw new GatewayThrowable({ kind: 'retryable', subKind: 'timeout', reason });
+  // #739 PR 2 — the class, never the thrown text.
+  throw new GatewayThrowable({ kind: 'retryable', subKind: 'timeout', reason: errClassWithCode(lastErr) });
 }
 
 function client(): Resend {
@@ -1260,7 +1338,8 @@ function throwImportError(
     {
       statusCode: status,
       name: body.name ?? `http_${status}`,
-      message: body.message ?? 'resend contact import error',
+      // Read only for the last-audience refusal; `closedReason` never copies it.
+      ...(body.message !== undefined && { message: body.message }),
     },
     // Round 4, whole-branch review #7 — was `'audience'`, with `resourceId` set
     // to the IMPORT id. A 404 on `GET /contacts/imports/{id}` is a missing
@@ -1361,6 +1440,7 @@ async function importFetch(
     throw classifyResendError({
       statusCode: 0,
       name: 'network_error',
+      // Review round 1 — the class alone; `closedReason` keeps it as `network:<Class>`.
       message: errKind(e),
     });
   }
@@ -1374,6 +1454,7 @@ async function importFetch(
     throw classifyResendError({
       statusCode: 0,
       name: 'network_error',
+      // Review round 1 — the class alone; `closedReason` keeps it as `network:<Class>`.
       message: errKind(e),
     });
   }
@@ -1381,7 +1462,9 @@ async function importFetch(
   try {
     body = text.length > 0 ? (JSON.parse(text) as ResendImportResponse) : {};
   } catch {
-    body = { message: text.slice(0, 200) };
+    // #739 PR 2 — a non-JSON page (an edge's or proxy's) carries no Resend name;
+    // its text is not kept, so it cannot become a reason.
+    body = {};
   }
   if (!res.ok) throwImportError(rawHttpStatusOf(res.status, text), body, resourceId);
   return body;

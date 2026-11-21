@@ -34,7 +34,7 @@ import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 /**
  * Retention window per `data-model.md § 2.8` and migration 0093 header
  * comment. Kept as a constant so a future tenant-overridable setting
@@ -120,6 +120,6 @@ export async function pruneConsumedTokens(
       },
       'renewals.prune_consumed_tokens.failed',
     );
-    return err({ kind: 'server_error', message: errKind(e) });
+    return err({ kind: 'server_error', message: errClassWithCode(e) });
   }
 }

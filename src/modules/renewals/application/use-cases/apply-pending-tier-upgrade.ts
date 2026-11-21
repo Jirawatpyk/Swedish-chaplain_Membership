@@ -58,7 +58,7 @@ import type { MemberId, PlanId } from '@/modules/members';
 import { parseInvoiceId, type InvoiceId } from '@/modules/invoicing';
 import type { RenewalActorRole } from '../ports/renewal-audit-emitter';
 
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 /**
  * Actor context for the `tier_upgrade_applied_at_renewal` audit emitted
  * by `applyPendingTierUpgradeInTx`. The default (online F4 invoice-paid
@@ -375,7 +375,7 @@ export async function applyPendingTierUpgrade(
   } catch (e) {
     return err({
       kind: 'server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
 }

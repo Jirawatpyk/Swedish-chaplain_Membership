@@ -16,7 +16,7 @@
  * Caller (cron handler) wraps in `runInTenant(ctx, ...)` per tenant.
  */
 import { ok, err, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode } from '@/lib/log-id';
 import type { TenantId } from '@/modules/members';
 
 /** Optional cap to prevent runaway DELETEs on a misconfigured tenant. */
@@ -76,6 +76,6 @@ export async function sweepStaleIdempotencyReceipts(
       durationMs: Date.now() - startedAt,
     });
   } catch (e) {
-    return err({ kind: 'sweep_db_error', message: errKind(e) });
+    return err({ kind: 'sweep_db_error', message: errClassWithCode(e) });
   }
 }

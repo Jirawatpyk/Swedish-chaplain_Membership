@@ -100,7 +100,7 @@ import { TierUpgradeStatusConflictError } from '../ports/tier-upgrade-suggestion
 // the same helper F4/F5 conflict paths use.
 import { isUniqueViolation, errorChainMessage } from '@/lib/db-errors';
 
-import { errKind, errLogFields } from '@/lib/log-id';
+import { errClassWithCode, errKind, errLogFields } from '@/lib/log-id';
 // 065 Fix B (S3) — the partial-unique index enforcing "at most one
 // pending scheduled_plan_changes row per (tenant, member, cycle)"
 // (migration 0086). A 23505 on THIS index at step (a) means a concurrent
@@ -222,7 +222,7 @@ export async function acceptTierUpgrade(
   } catch (e) {
     return err({
       kind: 'server_error',
-      message: `pre-tx-repo-lookup: ${errKind(e)}`,
+      message: `pre-tx-repo-lookup: ${errClassWithCode(e)}`,
     });
   }
 
@@ -804,7 +804,7 @@ export async function acceptTierUpgrade(
               failure_kind: 'unknown',
               // #739 — the class of the thrown value, never its text
               // (audit_log, 5y retention).
-              failure_message: errKind(gatewayResult.cause),
+              failure_message: errClassWithCode(gatewayResult.cause),
             },
           },
           auditCtx,
@@ -936,7 +936,7 @@ export async function acceptTierUpgrade(
     }
     return err({
       kind: 'server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
 }
