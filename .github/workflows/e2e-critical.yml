@@ -243,7 +243,10 @@ jobs:
       # output dir are named after it.
       - name: e2e @critical on the matrix project
         id: e2e
-        timeout-minutes: 15
+        # The suite runs 11-15 min: the runner is in the US and the Neon branch
+        # in Singapore, so every database round trip costs ~200 ms. 15 min
+        # timed out a run whose 24 tests had all passed (#807, 21 Nov 2026).
+        timeout-minutes: 20
         env:
           PROJECT: ${{ matrix.project }}
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/${{ matrix.project }}

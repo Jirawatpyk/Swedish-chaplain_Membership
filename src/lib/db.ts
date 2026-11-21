@@ -76,22 +76,25 @@ export type Database = typeof db;
 //
 // Every tenant-scoped query path MUST go through `runInTenant(ctx, fn)`.
 // This helper opens an explicit Drizzle transaction and, inside it,
-// issues two `SET LOCAL` statements before the callback runs:
+// sets these transaction-local values (with `row_security = on` and the
+// #754 `statement_timeout`) in one `set_config(…, true)` statement before
+// the callback runs:
 //
-//   1. `SET LOCAL ROLE chamber_app` — switches the transaction's
+//   1. role `chamber_app` — switches the transaction's
 //      effective role to a `NOBYPASSRLS` role. Neon's default integration
 //      role (`neondb_owner`) has `rolbypassrls = TRUE`, which silently
 //      disables `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`
 //      for queries run as the owner. Without this `SET LOCAL ROLE` the
 //      RLS policies are a no-op. See research.md § 2.4 "CRITICAL FINDING".
 //
-//   2. `SET LOCAL app.current_tenant = <slug>` — sets the per-transaction
+//   2. `app.current_tenant = <slug>` — sets the per-transaction
 //      session variable that every tenant-isolation policy reads from
 //      `current_setting('app.current_tenant', TRUE)`. `SET LOCAL` scopes
 //      the value to the current transaction so pgBouncer transaction-mode
 //      pooling doesn't leak it between requests.
 //
-// Both are `SET LOCAL` (never session-level `SET`) because transaction
+// Both are transaction-local (`is_local = true`, the same as `SET LOCAL`,
+// never session-level `SET`) because transaction
 // scoping is the only way pgBouncer can safely reuse a backend
 // connection for a different tenant's next request.
 //
@@ -300,33 +303,32 @@ export async function runInTenant<T>(
 ): Promise<T> {
   return db.transaction(async (tx) => {
     // ctx.slug is already validated by asTenantContext against
-    // `[a-z0-9-]{1,63}` so there is no injection surface even though GUC
-    // names don't accept bind parameters. The runtime check below is a
-    // belt-and-suspenders guard against future type-system bypasses.
+    // `[a-z0-9-]{1,63}`, and set_config takes it as a bound parameter. The
+    // runtime check below is a belt-and-suspenders guard against future
+    // type-system bypasses.
     if (!/^[a-z0-9-]{1,63}$/.test(ctx.slug)) {
       throw new Error(`runInTenant: slug invariant violated: ${ctx.slug}`);
     }
-    // RLS hardening (incident 2026-07-17): force `row_security = on` for
-    // this transaction FIRST. A pooled Neon connection can inherit a stale
-    // session-level `row_security = off` (e.g. an owner-level `SET
-    // row_security = off` left on the shared transaction-mode pooler by an
-    // ops script). Because the connection role is BYPASSRLS, the `SET LOCAL
-    // ROLE chamber_app` below drops to a NOBYPASSRLS role — and with
-    // row_security=off every FORCE-RLS tenant read then raises SQLSTATE
-    // 42501 ("query would be affected by row-level security policy"): an
-    // intermittent, hard-to-trace failure. `SET LOCAL` scopes it to this tx
-    // (auto-reset at COMMIT), so runInTenant self-heals a contaminated
-    // connection and RLS is always ENFORCED — never errored, never bypassed.
-    // Role is switched next, BEFORE the app.current_tenant GUC write, so the
-    // GUC is logged against chamber_app. See
-    // docs/runbooks/rls-row-security-incident.md.
-    await tx.execute(sql`SET LOCAL row_security = on`);
-    await tx.execute(sql`SET LOCAL ROLE chamber_app`);
-    // #754 — bound each statement; the pooler dropped the startup bound.
+    // One statement, so one round trip (each separate SET LOCAL cost one;
+    // CI's runner talks to a Neon branch in Singapore at ~200 ms each). The
+    // `true` argument of set_config is `is_local`: every value resets at
+    // COMMIT / ROLLBACK, exactly as SET LOCAL. Nothing reads them until the
+    // statement ends, so their order inside it does not matter.
+    //
+    // - row_security = on (RLS hardening, incident 2026-07-17): a pooled Neon
+    //   connection can inherit a stale session-level `row_security = off`
+    //   left by an ops script. The connection role is BYPASSRLS, and the
+    //   role switch below drops to a NOBYPASSRLS role, so with row_security
+    //   off every FORCE-RLS tenant read raises 42501. Forcing it on here
+    //   self-heals a contaminated connection; RLS is always ENFORCED. See
+    //   docs/runbooks/rls-row-security-incident.md.
+    // - role = chamber_app: the NOBYPASSRLS role the policies apply to
+    //   (`set_config('role', …)` is SET ROLE, with the same membership check).
+    // - statement_timeout (#754): the pooler drops the startup bound.
+    // - app.current_tenant: the RLS policies' tenant, bound as a parameter.
     await tx.execute(
-      sql.raw(`SET LOCAL statement_timeout = ${TENANT_TX_STATEMENT_TIMEOUT_MS}`),
+      sql`select set_config('row_security', 'on', true), set_config('role', 'chamber_app', true), set_config('statement_timeout', ${String(TENANT_TX_STATEMENT_TIMEOUT_MS)}, true), set_config('app.current_tenant', ${ctx.slug}, true)`,
     );
-    await tx.execute(sql.raw(`SET LOCAL app.current_tenant = '${ctx.slug}'`));
 
     bindTenantTx(tx, ctx.slug);
     const result = await fn(tx);
