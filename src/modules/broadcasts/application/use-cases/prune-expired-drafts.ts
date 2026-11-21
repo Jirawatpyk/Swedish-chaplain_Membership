@@ -19,7 +19,7 @@
  * Pure Application — only Domain types + ports.
  */
 import { err, ok, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
@@ -171,6 +171,6 @@ export async function pruneExpiredDrafts(
     // gains a brand or normalisation step.
     // #739 B3b — the class only: a constraint-violation message can carry
     // row data.
-    return err({ kind: 'prune.server_error', message: errKind(e) });
+    return err({ kind: 'prune.server_error', message: errClassWithCode(e) });
   }
 }

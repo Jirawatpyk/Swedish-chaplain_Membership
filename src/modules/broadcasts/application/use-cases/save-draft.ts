@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   asBroadcastId,
@@ -275,7 +275,7 @@ export async function saveDraft(
   } catch (e) {
     return err({
       kind: 'save_draft.server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
 }

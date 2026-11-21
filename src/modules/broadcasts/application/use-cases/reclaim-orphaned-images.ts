@@ -76,7 +76,7 @@
  * publicly served.
  */
 import { err, ok, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantSlug } from '@/modules/tenants';
@@ -267,7 +267,7 @@ export async function reclaimOrphanedImages(
       };
     }));
   } catch (e) {
-    return err({ kind: 'sweep.server_error', message: errKind(e) });
+    return err({ kind: 'sweep.server_error', message: errClassWithCode(e) });
   }
 
   // Spec 131 (#658 reviews) — arm 3 in its OWN bounded transactions, and its

@@ -29,7 +29,7 @@
  */
 import type { Resend } from 'resend';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import {
   IMPORT_CALL_TIMEOUT_MS,
@@ -103,13 +103,20 @@ export type GatewayThrowableInit =
       readonly resourceId: string;
       readonly reason: string;
     }
-  | { readonly kind: 'permanent'; readonly code: string; readonly reason: string };
+  | {
+      readonly kind: 'permanent';
+      readonly code: string;
+      readonly reason: string;
+      /** #739 PR 2 — the HTTP status Resend answered, so a 403 counts as one whatever its name. */
+      readonly httpStatus?: number;
+    };
 
 export class GatewayThrowable extends Error {
   readonly kind: GatewayThrowableKind;
   readonly subKind?: GatewayThrowableSubKind;
   readonly reason: string;
   readonly code?: string;
+  readonly httpStatus?: number;
   readonly resourceType?: 'audience' | 'broadcast' | 'import';
   readonly resourceId?: string;
 
@@ -125,6 +132,7 @@ export class GatewayThrowable extends Error {
       this.resourceId = init.resourceId;
     } else if (init.kind === 'permanent') {
       this.code = init.code;
+      if (init.httpStatus !== undefined) this.httpStatus = init.httpStatus;
     }
   }
 }
@@ -257,13 +265,72 @@ function statusAndNameOf(err: ResendErrorShape): ResendErrorShape {
   };
 }
 
+/**
+ * #739 PR 2 — the error names a thrown `reason` may carry: Resend's own
+ * (`RESEND_ERROR_CODE_KEY` in resend@6.35.0's `index.d.mts`, plus
+ * `resource_locked`, which the 409 branch below reads) and the ones this
+ * adapter builds itself. Any other name becomes `http_<status>`.
+ */
+const RESEND_ERROR_NAMES: ReadonlySet<string> = new Set([
+  'invalid_idempotency_key',
+  'validation_error',
+  'missing_api_key',
+  'restricted_api_key',
+  'invalid_api_key',
+  'not_found',
+  'method_not_allowed',
+  'invalid_idempotent_request',
+  'concurrent_idempotent_requests',
+  'invalid_attachment',
+  'invalid_from_address',
+  'invalid_access',
+  'invalid_parameter',
+  'invalid_region',
+  'missing_required_field',
+  'monthly_quota_exceeded',
+  'daily_quota_exceeded',
+  'rate_limit_exceeded',
+  'security_error',
+  'application_error',
+  'internal_server_error',
+  'resource_locked',
+  'network_error',
+  'unsafe_recipient_format',
+]);
+
+/**
+ * #739 PR 2 — a thrown `reason` (and so its `.message`) is a closed code,
+ * never Resend's `message`: that is provider prose and can quote the address
+ * or the id the request named. `network` for a transport fault (status 0).
+ */
+function closedReason(err: ResendErrorShape | undefined | null, status: number): string {
+  if (status === 0) return 'network';
+  const name = err?.name;
+  return name !== undefined && RESEND_ERROR_NAMES.has(name) ? name : `http_${status}`;
+}
+
+/**
+ * Resend's refusal to delete the account's last audience or segment
+ * (MEASURED 2026-11-03: 403 `validation_error` "Cannot delete last audience.";
+ * resend@6.35 words it for a segment). Recognised here, where Resend's text is
+ * still in hand, so it leaves the adapter as `code: 'last_audience'` and no
+ * caller reads the text (#739 PR 2; it was matched in
+ * `reclaim-orphaned-audiences.ts`).
+ */
+const LAST_AUDIENCE_PATTERN = /\blast (audience|segment)\b/i;
+const DELETE_VERB_PATTERN = /\b(delet|remov)\w*/i;
+
+function isLastAudienceRefusal(message: string | undefined): boolean {
+  return message !== undefined && LAST_AUDIENCE_PATTERN.test(message) && DELETE_VERB_PATTERN.test(message);
+}
+
 function classifyResendError(
   err: ResendErrorShape | undefined | null,
   resourceType?: 'audience' | 'broadcast' | 'import',
   resourceId?: string,
 ): GatewayThrowable {
   const status = httpStatusOf(err);
-  const reason = err?.message ?? 'unknown resend error';
+  const reason = closedReason(err, status);
   const code = err?.name ?? `http_${status}`;
 
   // Review I6: tag retryable errors with the transport class so OTel
@@ -287,7 +354,7 @@ function classifyResendError(
     // DOCUMENTED 429 that does not clear inside a call, nor inside FR-021's
     // hour (a daily quota may reset inside it; the spec chose permanent). The
     // name is kept as the code, which the failure metric maps to `resend_429`.
-    return new GatewayThrowable({ kind: 'permanent', reason, code });
+    return new GatewayThrowable({ kind: 'permanent', reason, code, httpStatus: status });
   }
   if (status === 429) {
     // Resend's account rate limit — measured at 10 req/s, not the 2 this
@@ -323,7 +390,12 @@ function classifyResendError(
       resourceId,
     });
   }
-  return new GatewayThrowable({ kind: 'permanent', reason, code });
+  return new GatewayThrowable({
+    kind: 'permanent',
+    reason,
+    code: isLastAudienceRefusal(err?.message) ? 'last_audience' : code,
+    httpStatus: status,
+  });
 }
 
 /**
@@ -422,9 +494,8 @@ async function boundedCall<T>(
   // SDK throwable that bypassed classification escapes as `retryable`
   // with `subKind: 'timeout'`.
   if (lastErr instanceof GatewayThrowable) throw lastErr;
-  const reason =
-    lastErr instanceof Error ? lastErr.message : String(lastErr ?? 'unknown retryable error');
-  throw new GatewayThrowable({ kind: 'retryable', subKind: 'timeout', reason });
+  // #739 PR 2 — the class, never the thrown text.
+  throw new GatewayThrowable({ kind: 'retryable', subKind: 'timeout', reason: errClassWithCode(lastErr) });
 }
 
 function client(): Resend {
@@ -1260,7 +1331,8 @@ function throwImportError(
     {
       statusCode: status,
       name: body.name ?? `http_${status}`,
-      message: body.message ?? 'resend contact import error',
+      // Read only for the last-audience refusal; `closedReason` never copies it.
+      ...(body.message !== undefined && { message: body.message }),
     },
     // Round 4, whole-branch review #7 — was `'audience'`, with `resourceId` set
     // to the IMPORT id. A 404 on `GET /contacts/imports/{id}` is a missing
@@ -1361,7 +1433,7 @@ async function importFetch(
     throw classifyResendError({
       statusCode: 0,
       name: 'network_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
   let text: string;
@@ -1374,14 +1446,16 @@ async function importFetch(
     throw classifyResendError({
       statusCode: 0,
       name: 'network_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
   let body: ResendImportResponse;
   try {
     body = text.length > 0 ? (JSON.parse(text) as ResendImportResponse) : {};
   } catch {
-    body = { message: text.slice(0, 200) };
+    // #739 PR 2 — a non-JSON page (an edge's or proxy's) carries no Resend name;
+    // its text is not kept, so it cannot become a reason.
+    body = {};
   }
   if (!res.ok) throwImportError(rawHttpStatusOf(res.status, text), body, resourceId);
   return body;

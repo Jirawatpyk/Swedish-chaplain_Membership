@@ -33,6 +33,8 @@ export type GatewayThrownShape = {
   resourceType?: 'audience' | 'broadcast' | 'import';
   resourceId?: string;
   code?: string;
+  /** #739 PR 2 — the HTTP status of a `permanent` throw (`classifyResendError`). */
+  httpStatus?: number;
 };
 
 export function classifyThrown(

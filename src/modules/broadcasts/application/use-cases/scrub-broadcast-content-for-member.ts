@@ -62,7 +62,7 @@
  * observability, not produced here).
  */
 import { err, ok, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
@@ -359,7 +359,7 @@ export async function scrubBroadcastContentForMember(
     // the raw PG text (the members-side adapter logs `errKind` either way).
     return err({
       kind: 'scrub.server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
 }
