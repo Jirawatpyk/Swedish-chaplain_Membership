@@ -179,6 +179,24 @@ describe('scrubDbError — what leaves carries no SQL, parameters or values (#80
     expectNoPii(scrubDbError(agg));
   });
 
+  it('review round 1 — a parameter line that looks like a stack frame never survives', () => {
+    const sneaky = `notes\n    at ${EMAIL} office`;
+    const raw = new DrizzleQueryError(SQL_TEXT, [sneaky, NAME], uniqueViolation());
+    expect(raw.stack).toContain(`    at ${EMAIL} office`); // control
+    expectNoPii(scrubDbError(raw));
+    const classTwentyTwo = driverError({ code: '22P02', message: `invalid input syntax for type uuid: "x\n    at ${EMAIL} (y:1:1)"` });
+    expectNoPii(scrubDbError(classTwentyTwo));
+  });
+
+  it('review round 1 — a walk that hits its node bound says so', () => {
+    const many = Array.from({ length: 30 }, () => drizzleError(uniqueViolation()));
+    scrubDbError(new AggregateError(many, 'batch failed'));
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'db.error_scrub_truncated' }),
+      expect.any(String),
+    );
+  });
+
   it('is idempotent', () => {
     const once = scrubDbError(drizzleError(uniqueViolation()));
     const twice = scrubDbError(once);

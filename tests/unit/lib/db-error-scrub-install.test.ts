@@ -121,6 +121,11 @@ describe('installDbErrorScrub (#804)', () => {
     expect(pgErrorCode(e)).toBe('23505');
   });
 
+  it('review round 1 — a prepared query without execute/all is refused at install, not on the first query', () => {
+    const fake = { transaction: () => undefined, session: { prepareQuery: () => ({}) } };
+    expect(() => installDbErrorScrub(fake as never)).toThrow(/installDbErrorScrub/);
+  });
+
   it('a db without the drizzle internals it expects is refused at install', () => {
     expect(() => installDbErrorScrub({ transaction: () => undefined } as never)).toThrow(/installDbErrorScrub/);
   });
