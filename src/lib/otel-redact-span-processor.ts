@@ -25,8 +25,9 @@
  * `@vercel/otel` calls `onEnd` in list order, so this runs before the batch
  * processor queues it. `@opentelemetry/sdk-trace-base` is not a direct
  * dependency, so the processor is written against the shape `registerOTel`
- * accepts. Not covered: Next printing an unhandled error to stderr
- * (`docs/observability.md` § Log hygiene).
+ * accepts. Next still prints an unhandled error to stderr; since #804 a DB
+ * error reaches that print scrubbed (`src/lib/db-error-scrub.ts`,
+ * `docs/observability.md` § Log hygiene).
  */
 import type { registerOTel } from '@vercel/otel';
 

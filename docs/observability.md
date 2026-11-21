@@ -214,10 +214,21 @@ class before export: an `exception` event keeps only `exception.type` (a class,
 or a closed code: SQLSTATE, HTTP status, Node errno), and an error status
 message becomes that class. A span it cannot read is emptied, never thrown on;
 `otel-redact-span-processor-real-sdk.test.ts` runs it on a real `@vercel/otel`
-span, so a change in that package's span handling fails there. Not covered
-(follow-up issues): Next printing an unhandled error to stderr (`logError` for a
-route or page, `console.error` for a render error), which reaches the Vercel
-runtime logs and which `onRequestError` cannot suppress (#804). Since #805 the
+span, so a change in that package's span handling fails there. Next still
+prints an unhandled error to stderr (`logError` for a route or page,
+`console.error` for a render error), and `onRequestError` cannot suppress it;
+since #804 a DB error reaches that print without its SQL, bound parameters or
+row values. `scrubDbError` (`src/lib/db-error-scrub.ts`) runs where an error
+leaves our DB layer, wired by `installDbErrorScrub` in `db.ts` onto
+`db.transaction` (so `runInTenant`) and the root session (every query outside a
+transaction). It keeps the class, SQLSTATE, constraint / table / column names
+and Postgres's names-only message (a class-22 message, which can quote input,
+becomes the code), and drops drizzle's `query` / `params` and the driver's
+`detail`, `hint`, `where` and `internal_query`. A catch inside a transaction
+still sees the raw error. Residuals: a driver error caught inside a
+transaction, kept in a Result and thrown later in a new Error outside any DB
+call; `scripts/*` clients (CLIs, not Vercel); and the driver's non-enumerable
+`query` / `parameters`, which default `util.inspect` does not print. Since #805 the
 same processor also drops URL credentials: `http.target` becomes `http.route`
 when Next set one, and every other URL (`http.target` without a route,
 `http.url`, `url.full`, `url.path`, `http.referer`, `next.span_name`, and the

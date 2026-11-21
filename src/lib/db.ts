@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { env } from './env';
+import { installDbErrorScrub } from './db-error-scrub';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import * as schema from '@/modules/auth/infrastructure/db/schema';
 
@@ -67,7 +68,10 @@ if (!env.isProduction) {
   global.__dbClient = pgClient;
 }
 
-export const db = drizzle(pgClient, { schema });
+// #804: a DB error leaving a transaction, or a query outside one, carries no
+// SQL, bound parameters or row values (`db-error-scrub.ts`). Inside a
+// transaction callback the error is still raw.
+export const db = installDbErrorScrub(drizzle(pgClient, { schema }));
 
 export type Database = typeof db;
 
