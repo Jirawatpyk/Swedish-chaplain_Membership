@@ -13,7 +13,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
-import { runInTenant, tenantSlugOf } from '@/lib/db';
+import { runInTenant, tenantSlugOf, tenantTxSetupSql } from '@/lib/db';
 import { env } from '@/lib/env';
 import { asTenantContext } from '@/modules/tenants';
 
@@ -76,15 +76,18 @@ describe('RLS hardening — runInTenant forces row_security on', () => {
     });
     afterAll(() => client.end());
 
-    // Mirrors runInTenant's SQL sequence (src/lib/db.ts) so this test fails
-    // loudly if the statements/ordering drift. `withFix:false` reproduces the
-    // pre-fix behaviour and is the control.
+    // `withFix:true` runs runInTenant's own setup statement
+    // (`tenantTxSetupSql`), so a change to it is tested here. `withFix:false`
+    // is the control: the same role, timeout and tenant with no row_security.
     const runTenantSeq = (opts: { withFix: boolean }) =>
       client.begin(async (tx) => {
-        if (opts.withFix) await tx`SET LOCAL row_security = on`;
-        await tx`SET LOCAL ROLE chamber_app`;
-        await tx`SET LOCAL statement_timeout = 30000`;
-        await tx.unsafe(`SET LOCAL app.current_tenant = '${TENANT_SLUG}'`);
+        if (opts.withFix) {
+          await tx.unsafe(tenantTxSetupSql(TENANT_SLUG));
+        } else {
+          await tx`SET LOCAL ROLE chamber_app`;
+          await tx`SET LOCAL statement_timeout = 30000`;
+          await tx.unsafe(`SET LOCAL app.current_tenant = '${TENANT_SLUG}'`);
+        }
         return tx`SELECT 1 AS ok FROM membership_plans LIMIT 1`;
       });
 
@@ -95,7 +98,7 @@ describe('RLS hardening — runInTenant forces row_security on', () => {
       });
     });
 
-    it('with SET LOCAL row_security = on the poisoned connection serves tenant reads', async () => {
+    it('with runInTenant\'s setup statement the poisoned connection serves tenant reads', async () => {
       await client`SET row_security = off`;
       await expect(runTenantSeq({ withFix: true })).resolves.toBeDefined();
     });

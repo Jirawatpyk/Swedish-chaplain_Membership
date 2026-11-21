@@ -44,9 +44,10 @@ one-off user-inspection script.
 
 ## Fix (code — shipped)
 
-`runInTenant` now issues **`SET LOCAL row_security = on`** as the first
-statement of every tenant transaction (before `SET LOCAL ROLE chamber_app`).
-`SET LOCAL` is transaction-scoped, so even a contaminated connection is
+`runInTenant` now sets **`row_security = on`** in the first statement of
+every tenant transaction, together with the `chamber_app` role (one
+`set_config(…, true)` select since 21 Nov 2026, which is `SET LOCAL`).
+A transaction-local value is transaction-scoped, so even a contaminated connection is
 forced back to `row_security = on` for the duration of the tenant work — RLS
 is always enforced, never errored or bypassed. Regression guard:
 `tests/integration/rls-row-security-hardening.test.ts` (reproduces the 42501
@@ -72,5 +73,5 @@ redeploy alone does NOT clear it (it only resets the app's client pool).
   bypass RLS, the owner already has BYPASSRLS — `SET row_security = off` is
   redundant *and* dangerous. If you must, use the **direct (non-pooled)**
   endpoint on a throwaway connection you close immediately.
-- The `runInTenant` `SET LOCAL row_security = on` above makes the app immune
+- The `runInTenant` transaction-local `row_security = on` above makes the app immune
   regardless of connection contamination — the durable defence.
