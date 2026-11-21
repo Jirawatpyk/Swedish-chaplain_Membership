@@ -220,11 +220,16 @@ route or page, `console.error` for a render error), which reaches the Vercel
 runtime logs and which `onRequestError` cannot suppress (#804). Since #805 the
 same processor also drops URL credentials: `http.target` becomes `http.route`
 when Next set one, and every other URL (`http.target` without a route,
-`http.url`, `url.full`, `url.path`, `resource.name`, the name of a `fetch` /
-`http` span) keeps its origin and path with no query, a path segment that looks
-like a credential (a uuid, or 16+ url-safe characters holding a digit) reading
-`:id`; `url.query` is dropped. Reset, invitation, verification and unsubscribe
-tokens, the GDPR export bearer, Blob and heartbeat URLs are covered. Where a person reads the code,
+`http.url`, `url.full`, `url.path`, `http.referer`, `next.span_name`, and the
+URL that ends a span name or `resource.name`, so `GET /route` keeps its method)
+keeps its origin and path with no query; a path segment that, percent-decoded,
+holds a uuid, a run of 16+ letters and digits, or a run of 16+ url-safe
+characters with a digit reads `:id`; `url.query` is dropped. That covers every
+token the app mints today (64-hex reset, invitation and verification tokens,
+base64url export and unsubscribe tokens), Blob random suffixes and heartbeat
+uuids. A new token type must be at least 16 characters long, or a span would
+export it. Residuals: a short id in a path (the 5-character HIBP range prefix)
+is kept, and spans Vercel's runtime creates outside the process are not seen. Where a person reads the code,
 the UI maps it to fixed copy (the receipt download toast, the CSV import
 result). `pnpm check:log-error-objects` also refuses, inside a `catch`, an
 object literal that is not a log argument and carries the caught value's

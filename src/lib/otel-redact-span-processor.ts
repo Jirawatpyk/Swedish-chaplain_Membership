@@ -55,26 +55,51 @@ const CLOSED_CODE = /^(?:[0-9A-Z]{5}|[1-5][0-9]{2}|[A-Z][A-Z0-9_]{1,63})$/;
 const asClass = (value: unknown): string =>
   isErrorClassToken(value) || (typeof value === 'string' && CLOSED_CODE.test(value)) ? value : 'unknown';
 
-/** A path segment that can carry a credential: a uuid, or 16+ url-safe characters holding a digit. */
-const CREDENTIAL_SEGMENT = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b.*|(?=[^/]*\d)[A-Za-z0-9_.-]{16,})$/i;
+/**
+ * A path segment that can carry a credential, read after percent-decoding: it
+ * holds a uuid, a run of 16+ letters and digits, or a run of 16+ url-safe
+ * characters with a digit. Every token the app mints matches (64-hex reset,
+ * invitation and verification tokens; base64url export and unsubscribe
+ * tokens), and so does a Blob random suffix; a new token type shorter than 16
+ * characters would not, so keep tokens at least that long.
+ */
+const CREDENTIAL_SEGMENT =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9]{16,}|(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{16,}/i;
 const RELATIVE_BASE = 'http://relative.invalid';
-const URL_ATTRIBUTES = ['http.url', 'url.full', 'url.path', 'resource.name'] as const;
-const URL_SPAN_NAME = /^((?:fetch|http) [A-Z]+) (\S+)$/;
+/** Attributes that hold a URL, or a URL after a method (`resource.name` is `GET /route` on a server span). */
+const URL_ATTRIBUTES = ['http.url', 'url.full', 'url.path', 'http.referer', 'resource.name', 'next.span_name'] as const;
+
+function decoded(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
 
 /** A URL (absolute or a path) with no query, no fragment and no credential-looking path segment; `'unknown'` when it cannot be read. */
 export function redactUrl(raw: unknown): string {
   if (typeof raw !== 'string') return 'unknown';
+  const relative = raw.startsWith('/') && !/^\/\/[^/]*\.[^/]*\//.test(raw) ? raw.replace(/^\/+/, '/') : null;
   let url: URL;
   try {
-    url = new URL(raw, RELATIVE_BASE);
+    url = new URL(relative ?? raw, RELATIVE_BASE);
   } catch {
     return 'unknown';
   }
   const path = url.pathname
     .split('/')
-    .map((segment) => (CREDENTIAL_SEGMENT.test(segment) ? ':id' : segment))
+    .map((segment) => (CREDENTIAL_SEGMENT.test(decoded(segment)) ? ':id' : segment))
     .join('/');
-  return url.origin === RELATIVE_BASE && !raw.startsWith(RELATIVE_BASE) ? path : `${url.origin}${path}`;
+  return relative !== null ? path : `${url.origin}${path}`;
+}
+
+/** A span name or `resource.name`: the words before a trailing URL are kept, the URL is redacted; a value with no URL is unchanged. */
+function redactTrailingUrl(value: string): string {
+  const space = value.lastIndexOf(' ');
+  const last = value.slice(space + 1);
+  if (!last.startsWith('/') && !/^[a-z][a-z0-9+.-]*:\/\//i.test(last)) return value;
+  return `${value.slice(0, space + 1)}${redactUrl(last)}`;
 }
 
 function redactUrls(span: MutableEndedSpan): void {
@@ -83,10 +108,13 @@ function redactUrls(span: MutableEndedSpan): void {
     const route = attributes['http.route'];
     attributes['http.target'] = typeof route === 'string' ? route : redactUrl(attributes['http.target']);
   }
-  for (const key of URL_ATTRIBUTES) if (key in attributes) attributes[key] = redactUrl(attributes[key]);
+  for (const key of URL_ATTRIBUTES) {
+    if (!(key in attributes)) continue;
+    const value = attributes[key];
+    attributes[key] = typeof value === 'string' ? redactTrailingUrl(value) : 'unknown';
+  }
   delete attributes['url.query'];
-  const named = typeof span.name === 'string' ? URL_SPAN_NAME.exec(span.name) : null;
-  if (named) span.name = `${named[1]} ${redactUrl(named[2])}`;
+  if (typeof span.name === 'string') span.name = redactTrailingUrl(span.name);
 }
 
 function redact(span: MutableEndedSpan): void {
@@ -111,16 +139,28 @@ function redact(span: MutableEndedSpan): void {
 
 /** If the span is not shaped as expected, drop its events and URL attributes and mark the status unknown: never export text, never throw into `span.end()`. */
 function failClosed(span: MutableEndedSpan): void {
+  // Each step on its own: one that throws must not keep the next from running.
   try {
     span.events = [];
+  } catch {
+    // keep going
+  }
+  try {
     span.status = { code: span.status?.code ?? STATUS_ERROR, message: 'unknown' };
+  } catch {
+    // keep going
+  }
+  try {
     if (typeof span.attributes === 'object' && span.attributes !== null) {
       for (const key of ['http.target', 'url.query', ...URL_ATTRIBUTES]) delete span.attributes[key];
     }
-    const named = typeof span.name === 'string' ? URL_SPAN_NAME.exec(span.name) : null;
-    if (named) span.name = named[1]!;
   } catch {
-    // Nothing more can be done without throwing into the caller.
+    // keep going
+  }
+  try {
+    if (typeof span.name === 'string') span.name = span.name.split(' ').filter((word) => !/[/:]/.test(word)).join(' ');
+  } catch {
+    // keep going
   }
 }
 
