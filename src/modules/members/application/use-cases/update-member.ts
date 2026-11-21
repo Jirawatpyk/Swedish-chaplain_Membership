@@ -16,7 +16,7 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   asIsoCountryCode,
@@ -630,7 +630,7 @@ export async function updateMember(
     }
     return err({
       type: 'server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
 }
