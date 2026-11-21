@@ -50,7 +50,12 @@ import { errKind } from './log-id';
 
 const MAX_NODES = 20;
 
-/** Keys under which a wrapper holds the error it caught (`cause`, Result `error`, `AggregateError.errors`). */
+/**
+ * Keys under which a wrapper holds the error it caught (`cause`, Result
+ * `error`, `AggregateError.errors`). A driver error found under one of them
+ * is replaced IN its holder, so an app error's `.error` (e.g. `PlanAuditAbort`)
+ * then holds the clean clone; its readers use only code / class.
+ */
 const CHILD_KEYS = ['cause', 'error'] as const;
 
 const DRIVER_KEPT_FIELDS = [
@@ -208,13 +213,15 @@ export function scrubDbError(e: unknown): unknown {
   try {
     return scrubUnsafe(e);
   } catch (scrubErr) {
-    logger.error(
-      {
-        event: 'db.error_scrub_failed',
-        err: errKind(scrubErr),
-      },
-      'db error scrub failed; rethrowing the original error',
-    );
+    // The log must never replace the error being rethrown (review round 1).
+    try {
+      logger.error(
+        { event: 'db.error_scrub_failed', err: errKind(scrubErr) },
+        'db error scrub failed; rethrowing the original error',
+      );
+    } catch {
+      // nothing more to do: the original goes back either way
+    }
     return e;
   }
 }
