@@ -1,5 +1,6 @@
 import { registerOTel } from '@vercel/otel';
 import { assertVercelDeploymentForTrustedXff } from '@/lib/client-ip';
+import { redactErrorTextSpanProcessor } from '@/lib/otel-redact-span-processor';
 
 /**
  * OpenTelemetry instrumentation entry point (T019, plan.md § Performance
@@ -17,8 +18,9 @@ import { assertVercelDeploymentForTrustedXff } from '@/lib/client-ip';
 export function register() {
   registerOTel({
     serviceName: 'swecham-membership',
-    // Additional configuration (sampler, exporters) can be added here.
-    // Defaults: AlwaysOnSampler + Vercel-managed OTLP exporter.
+    // #739 — first, so every ended span loses its error text (message, stack)
+    // before the Vercel-managed OTLP exporter ('auto') queues it.
+    spanProcessors: [redactErrorTextSpanProcessor, 'auto'],
   });
 
   // K14-1 (R13-W1): wire the K13-7 boot-time XFF trust assertion.

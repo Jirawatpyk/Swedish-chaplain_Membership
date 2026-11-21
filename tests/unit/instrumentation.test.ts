@@ -50,6 +50,14 @@ describe('instrumentation.register() — boot-time wiring (K16-1 R14-S6)', () =>
     });
   });
 
+  it('#739: the redacting span processor runs before the auto exporter', async () => {
+    const { redactErrorTextSpanProcessor } = await import('@/lib/otel-redact-span-processor');
+    register();
+    expect(registerOTelMock.mock.calls[0]![0]).toMatchObject({
+      spanProcessors: [redactErrorTextSpanProcessor, 'auto'],
+    });
+  });
+
   it('K14-1 (R13-W1): calls assertVercelDeploymentForTrustedXff exactly once', () => {
     // The R13-W1 finding was triple-confirmed: the function was
     // exported but never called. K14-1 + the follow-up commit shipped
