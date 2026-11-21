@@ -250,6 +250,15 @@ describe('scrubDbError — what leaves carries no SQL, parameters or values (#80
     expect(scrubDbError(a)).toBe(a);
   });
 
+  it('review round 1 — even a logger that throws on the failure line gives back the original', () => {
+    const raw = drizzleError(uniqueViolation());
+    Object.freeze(raw);
+    vi.mocked(logger.error).mockImplementationOnce(() => {
+      throw new Error('logger down');
+    });
+    expect(scrubDbError(raw)).toBe(raw);
+  });
+
   it('it is total: a scrub that throws gives back the original and logs the failure', () => {
     const raw = drizzleError(uniqueViolation());
     Object.freeze(raw); // the in-place scrub of message / query now throws
