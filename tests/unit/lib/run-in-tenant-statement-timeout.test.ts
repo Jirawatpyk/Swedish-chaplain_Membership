@@ -31,7 +31,7 @@ vi.mock('drizzle-orm/postgres-js', () => ({
   }),
 }));
 
-import { TENANT_TX_STATEMENT_TIMEOUT_MS, runInTenant } from '@/lib/db';
+import { TENANT_TX_STATEMENT_TIMEOUT_MS, runInTenant, tenantTxSetupSql } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 
 describe('runInTenant transaction settings (#754, one round trip)', () => {
@@ -45,10 +45,14 @@ describe('runInTenant transaction settings (#754, one round trip)', () => {
     expect(TENANT_TX_STATEMENT_TIMEOUT_MS).toBe(30_000);
     expect(seenByCallback).toHaveLength(1);
     const [setup] = seenByCallback;
+    // No bound parameters: postgres.js sends a parameterised statement as
+    // Parse/Describe, then Bind/Execute (two round trips); a literal one is a
+    // single simple query.
     expect(setup!.sql).toBe(
       "select set_config('row_security', 'on', true), set_config('role', 'chamber_app', true), " +
-        "set_config('statement_timeout', $1, true), set_config('app.current_tenant', $2, true)",
+        "set_config('statement_timeout', '30000', true), set_config('app.current_tenant', 'swecham', true)",
     );
-    expect(setup!.params).toEqual(['30000', 'swecham']);
+    expect(setup!.params).toEqual([]);
+    expect(setup!.sql).toBe(tenantTxSetupSql('swecham'));
   });
 });
