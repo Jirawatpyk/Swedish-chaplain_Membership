@@ -229,7 +229,13 @@ token the app mints today (64-hex reset, invitation and verification tokens,
 base64url export and unsubscribe tokens), Blob random suffixes and heartbeat
 uuids. A new token type must be at least 16 characters long, or a span would
 export it. Residuals: a short id in a path (the 5-character HIBP range prefix)
-is kept, and spans Vercel's runtime creates outside the process are not seen. Where a person reads the code,
+is kept, and spans Vercel's runtime creates outside the process are not seen.
+Vercel's own `vercel.edge-network` request span records the raw path in its
+name and `http.target`, and the full URL, query included, in `http.url`, so a
+sampled or `--trace` request keeps a reset, invitation, unsubscribe, export
+(`?token=`) or renewal (`?t=`) credential in Vercel Traces for about a day
+(R169/R170). No app code can redact it; #809 tracks moving the credentials out
+of URLs. Where a person reads the code,
 the UI maps it to fixed copy (the receipt download toast, the CSV import
 result). `pnpm check:log-error-objects` also refuses, inside a `catch`, an
 object literal that is not a log argument and carries the caught value's

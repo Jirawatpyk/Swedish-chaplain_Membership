@@ -243,6 +243,10 @@ jobs:
       # output dir are named after it.
       - name: e2e @critical on the matrix project
         id: e2e
+        # The suite runs about 10 min (21 Nov 2026). Keep this cap tight: the
+        # runner is in the US and the Neon branch in Singapore (~200 ms a round
+        # trip), so one extra statement per tenant transaction (#754) pushed the
+        # suite to 15 min and this cap caught it (#807, #808).
         timeout-minutes: 15
         env:
           PROJECT: ${{ matrix.project }}
