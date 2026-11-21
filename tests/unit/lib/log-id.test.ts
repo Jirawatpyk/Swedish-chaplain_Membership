@@ -268,6 +268,12 @@ describe('errClassWithCode() — the class and the SQLSTATE, never the text (#73
     const e = Object.assign(new Error('x'), { code: '23505' });
     Object.defineProperty(e, 'constructor', { value: { name: 'a@b.example' } });
     expect(errClassWithCode(e)).toBe('unknown:23505');
+    // code-review round 1 — and the SQLSTATE still reaches the log line.
+    expect(errLogFields({ kind: 'server_error', message: 'unknown:23505' })).toEqual({
+      err: 'unknown',
+      resultKind: 'server_error',
+      code: '23505',
+    });
   });
 
   it('errLogFields reads `<Class>:<SQLSTATE>` and `<step>: <Class>:<SQLSTATE>` as err, step and code', () => {
