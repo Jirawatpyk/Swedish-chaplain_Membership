@@ -29,7 +29,7 @@ import {
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
-import { errClassWithCode, errKind } from '@/lib/log-id';
+import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { broadcastsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -131,7 +131,7 @@ export async function POST(
           );
           return r;
         } catch (e) {
-          span.setStatus({ code: SpanStatusCode.ERROR, message: errClassWithCode(e) });
+          span.setStatus({ code: SpanStatusCode.ERROR, message: errKind(e) });
           throw e;
         } finally {
           span.end();

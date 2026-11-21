@@ -84,8 +84,12 @@ const STEP_AND_CLASS = /^([a-z][a-z0-9_-]{0,47}): ([A-Z][A-Za-z0-9]{0,63})(?::((
  * a statement timeout; `errLogFields` reads both halves back.
  */
 export function errClassWithCode(e: unknown): string {
+  // Review round 1 (security L2) — `constructor.name` comes from code, but a
+  // value merged from untrusted JSON can carry its own; write only a token.
+  const kind = errKind(e);
+  const cls = ERROR_CLASS.test(kind) || kind === 'unknown' ? kind : 'unknown';
   const code = pgErrorCode(e);
-  return code === undefined ? errKind(e) : `${errKind(e)}:${code}`;
+  return code === undefined ? cls : `${cls}:${code}`;
 }
 
 /**

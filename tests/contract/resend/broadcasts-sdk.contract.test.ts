@@ -492,7 +492,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       await expect(resendBroadcastsGateway.deleteAudience(AUD)).rejects.toMatchObject({
         name: 'GatewayThrowable',
         kind: 'permanent',
-        code: 'validation_error',
+        code: 'last_audience', // #739 PR 2 — the refusal leaves as a closed code
       });
       expect(calls).toHaveLength(2);
     });
@@ -504,7 +504,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       await expect(resendBroadcastsGateway.deleteAudience(AUD)).rejects.toMatchObject({
         name: 'GatewayThrowable',
         kind: 'permanent',
-        code: 'validation_error',
+        code: 'last_audience', // #739 PR 2 — the refusal leaves as a closed code
       });
       expect(calls).toHaveLength(2);
     });
@@ -517,7 +517,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       await expect(resendBroadcastsGateway.deleteAudience(AUD)).rejects.toMatchObject({
         name: 'GatewayThrowable',
         kind: 'permanent',
-        code: 'validation_error',
+        code: 'last_audience', // #739 PR 2 — the refusal leaves as a closed code
       });
       expect(calls).toHaveLength(2);
     });

@@ -1953,6 +1953,8 @@ const AUDITED_GATEWAY_CODES: ReadonlySet<string> = new Set([
   'unsafe_recipient_format',
   ...RESEND_QUOTA_EXCEEDED_CODES,
   'broadcast_name_too_long',
+  // #739 PR 2 review round 1 — the Free-plan contact cap, named by the adapter.
+  'contact_limit',
 ]);
 
 /** Tick 1 — hand the audience over. Sends nothing. */

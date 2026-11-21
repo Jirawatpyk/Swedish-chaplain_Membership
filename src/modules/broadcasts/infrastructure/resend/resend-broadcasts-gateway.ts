@@ -29,7 +29,7 @@
  */
 import type { Resend } from 'resend';
 import { logger } from '@/lib/logger';
-import { errClassWithCode, errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind, isErrorClassToken } from '@/lib/log-id';
 import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import {
   IMPORT_CALL_TIMEOUT_MS,
@@ -304,9 +304,31 @@ const RESEND_ERROR_NAMES: ReadonlySet<string> = new Set([
  * or the id the request named. `network` for a transport fault (status 0).
  */
 function closedReason(err: ResendErrorShape | undefined | null, status: number): string {
-  if (status === 0) return 'network';
+  // Review round 1 (observability M2) — a transport fault keeps its class
+  // (`network:TypeError`, `network:TimeoutError`) when the caller passed one.
+  if (status === 0) return isErrorClassToken(err?.message) ? `network:${err.message}` : 'network';
+  return closedName(err, status);
+}
+
+/** Resend's name when this build knows it, else `http_<status>` (review round 1, security L1: the code too). */
+function closedName(err: ResendErrorShape | undefined | null, status: number): string {
   const name = err?.name;
   return name !== undefined && RESEND_ERROR_NAMES.has(name) ? name : `http_${status}`;
+}
+
+/**
+ * Review round 1 (observability M1) — the Free plan's contact cap (MEASURED,
+ * spec 140: 422 `validation_error` "You have reached your contact limit"). Its
+ * name is shared with every other validation refusal, so the adapter names it
+ * while Resend's text is still in hand.
+ */
+const CONTACT_LIMIT_PATTERN = /\bcontact limit\b/i;
+
+/** The closed code of a permanent refusal: a recognised measured case, else {@link closedName}. */
+function permanentCode(err: ResendErrorShape | undefined | null, status: number): string {
+  if (isLastAudienceRefusal(err?.message)) return 'last_audience';
+  if (err?.message !== undefined && CONTACT_LIMIT_PATTERN.test(err.message)) return 'contact_limit';
+  return closedName(err, status);
 }
 
 /**
@@ -331,7 +353,7 @@ function classifyResendError(
 ): GatewayThrowable {
   const status = httpStatusOf(err);
   const reason = closedReason(err, status);
-  const code = err?.name ?? `http_${status}`;
+  const code = closedName(err, status);
 
   // Review I6: tag retryable errors with the transport class so OTel
   // metrics + alerts can split network outage from server-side bugs.
@@ -393,7 +415,7 @@ function classifyResendError(
   return new GatewayThrowable({
     kind: 'permanent',
     reason,
-    code: isLastAudienceRefusal(err?.message) ? 'last_audience' : code,
+    code: permanentCode(err, status),
     httpStatus: status,
   });
 }
@@ -1433,7 +1455,8 @@ async function importFetch(
     throw classifyResendError({
       statusCode: 0,
       name: 'network_error',
-      message: errClassWithCode(e),
+      // Review round 1 — the class alone; `closedReason` keeps it as `network:<Class>`.
+      message: errKind(e),
     });
   }
   let text: string;
@@ -1446,7 +1469,8 @@ async function importFetch(
     throw classifyResendError({
       statusCode: 0,
       name: 'network_error',
-      message: errClassWithCode(e),
+      // Review round 1 — the class alone; `closedReason` keeps it as `network:<Class>`.
+      message: errKind(e),
     });
   }
   let body: ResendImportResponse;
