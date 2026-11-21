@@ -11,6 +11,7 @@ import { registerOTel } from '@vercel/otel';
 import { redactErrorTextSpanProcessor } from '@/lib/otel-redact-span-processor';
 
 interface Seen {
+  name?: string;
   events: { name: string; attributes?: Record<string, unknown> }[];
   status: { code: number; message?: string };
   attributes: Record<string, unknown>;
@@ -20,7 +21,7 @@ const seen: Seen[] = [];
 const capture = {
   onStart() {},
   onEnd(span: Seen) {
-    seen.push(JSON.parse(JSON.stringify({ events: span.events, status: span.status, attributes: span.attributes })));
+    seen.push(JSON.parse(JSON.stringify({ name: span.name, events: span.events, status: span.status, attributes: span.attributes })));
   },
   forceFlush: () => Promise.resolve(),
   shutdown: () => Promise.resolve(),
@@ -62,5 +63,27 @@ describe('redactErrorTextSpanProcessor on a real @vercel/otel span (#739 review)
     expect(seen[1]!.attributes['error.type']).toBe('500');
     expect(seen[1]!.status.message).toBe('500');
     expect(JSON.stringify(seen)).not.toContain('@');
+  });
+});
+
+describe('redactErrorTextSpanProcessor URL redaction on a real span (#805)', () => {
+  afterEach(() => {
+    trace.disable();
+    seen.length = 0;
+  });
+
+  it('the exporter sees no token from a request span or a fetch span', () => {
+    const token = 'Zq3xT9pLm2Kd8vRw5sYb1nHc';
+    registerOTel({ serviceName: 't', spanProcessors: [redactErrorTextSpanProcessor, capture as never], instrumentations: [] });
+    const tracer = trace.getTracer('next.js');
+
+    const req = tracer.startSpan('GET', { attributes: { 'http.target': `/invite/${token}` } });
+    req.setAttribute('http.route', '/invite/[token]');
+    req.end();
+    const url = `https://example.test/api/internal/exports/j/download?token=${token}`;
+    tracer.startSpan(`fetch GET ${url}`, { attributes: { 'http.url': url, 'url.full': url } }).end();
+
+    expect(seen).toHaveLength(2);
+    expect(JSON.stringify(seen)).not.toContain(token);
   });
 });
