@@ -217,9 +217,14 @@ message becomes that class. A span it cannot read is emptied, never thrown on;
 span, so a change in that package's span handling fails there. Not covered
 (follow-up issues): Next printing an unhandled error to stderr (`logError` for a
 route or page, `console.error` for a render error), which reaches the Vercel
-runtime logs and which `onRequestError` cannot suppress; and a token in a URL
-(`http.target` on Next's request span, `http.url` and the name of a fetch span),
-which the processor does not touch. Where a person reads the code,
+runtime logs and which `onRequestError` cannot suppress (#804). Since #805 the
+same processor also drops URL credentials: `http.target` becomes `http.route`
+when Next set one, and every other URL (`http.target` without a route,
+`http.url`, `url.full`, `url.path`, `resource.name`, the name of a `fetch` /
+`http` span) keeps its origin and path with no query, a path segment that looks
+like a credential (a uuid, or 16+ url-safe characters holding a digit) reading
+`:id`; `url.query` is dropped. Reset, invitation, verification and unsubscribe
+tokens, the GDPR export bearer, Blob and heartbeat URLs are covered. Where a person reads the code,
 the UI maps it to fixed copy (the receipt download toast, the CSV import
 result). `pnpm check:log-error-objects` also refuses, inside a `catch`, an
 object literal that is not a log argument and carries the caught value's

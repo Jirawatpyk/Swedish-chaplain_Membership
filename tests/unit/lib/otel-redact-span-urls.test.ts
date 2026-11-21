@@ -77,6 +77,13 @@ describe('redactErrorTextSpanProcessor URL attributes (#805)', () => {
     expect(JSON.stringify(s)).not.toContain(UUID);
   });
 
+  it('a span that breaks the redaction loses its URL attributes too', () => {
+    const s = span(`fetch GET https://x.test/a?token=${TOKEN}`, { 'http.target': `/invite/${TOKEN}`, 'http.url': `https://x.test/a?token=${TOKEN}` }) as unknown as { events: unknown };
+    s.events = 'not an array';
+    end(s);
+    expect(JSON.stringify(s)).not.toContain(TOKEN);
+  });
+
   it('an ordinary span name and other attributes are untouched', () => {
     const s = end(span('GET /admin/members', { 'http.route': '/admin/members', 'next.route': '/admin/members' }));
     expect(s).toEqual(span('GET /admin/members', { 'http.route': '/admin/members', 'next.route': '/admin/members' }));
