@@ -17,7 +17,7 @@
  */
 import { z } from 'zod';
 import { err, ok, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort, ScheduledPlanChangeRepo } from './ports';
 import { auditInTx, auditFailureMessage, PlanAuditAbort } from './record-audit-event';
@@ -102,7 +102,7 @@ export async function cancelScheduledPlanChange(
     return err({
       code: 'server_error',
       recheckFailed: false,
-      message: `find_by_id: ${errKind(e)}`,
+      message: `find_by_id: ${errClassWithCode(e)}`,
     });
   }
 

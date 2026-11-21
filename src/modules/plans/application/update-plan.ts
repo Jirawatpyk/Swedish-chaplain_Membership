@@ -34,7 +34,7 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode } from '@/lib/log-id';
 import { planMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type {
@@ -156,7 +156,7 @@ export async function updatePlan(
   } catch (e) {
     return err({
       type: 'server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
   // 126 #6 — `findOne` returns soft-deleted rows (undelete needs them); a
@@ -245,7 +245,7 @@ export async function updatePlan(
     }
     return err({
       type: 'server_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     });
   }
   if (!updated) {
