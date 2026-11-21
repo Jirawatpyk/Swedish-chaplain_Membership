@@ -17,6 +17,8 @@ const executed: { sql: string; params: unknown[] }[] = [];
 
 vi.mock('drizzle-orm/postgres-js', () => ({
   drizzle: () => ({
+    // #804: `installDbErrorScrub` refuses a db without the root session.
+    session: { prepareQuery: () => ({ execute: async () => [], all: async () => [] }) },
     transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
       const dialect = new PgDialect();
       const tx = {
