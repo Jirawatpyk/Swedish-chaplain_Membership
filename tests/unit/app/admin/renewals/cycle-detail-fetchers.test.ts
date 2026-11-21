@@ -43,6 +43,23 @@ describe('fetchMemberDisplay (Phase 6 review-round 2 A2)', () => {
     };
   }
 
+  it('#804 review round 1 — an infra failure rethrows a scrubbed driver cause (no SQL, no params)', async () => {
+    const { DrizzleQueryError } = await import('drizzle-orm');
+    const raw = new DrizzleQueryError('select * from members where name = $1', ['Leak Person'], new Error('x'));
+    const deps = makeDeps({ findById: vi.fn(async () => err({ code: 'repo.unexpected', cause: raw })) });
+    const thrown = await fetchMemberDisplay(
+      { tenantSlug: TENANT_SLUG, memberId: MEMBER_UUID, actorUserId: 'u1', requestId: 'r1' },
+      deps,
+    ).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    const { inspect } = await import('node:util');
+    expect(thrown).toBeInstanceOf(Error);
+    expect(inspect(thrown, { depth: 10 })).not.toContain('Leak Person');
+    expect(inspect(thrown, { depth: 10 })).not.toContain('select * from members');
+  });
+
   it('returns memberDisplay when member + primary contact resolve', async () => {
     const deps = makeDeps({
       findById: vi.fn(async () =>

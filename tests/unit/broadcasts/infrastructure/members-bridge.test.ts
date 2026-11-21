@@ -205,6 +205,19 @@ describe('membersBridge — the other lookups discriminate "no data" from "no an
     expect(await membersBridge.getMemberPrimaryContact(tenant, 'm-1')).toBeNull();
   });
 
+  it('#804 review round 1 — the thrown read failure carries a scrubbed driver cause (no SQL, no params)', async () => {
+    const { DrizzleQueryError } = await import('drizzle-orm');
+    const raw = new DrizzleQueryError('select * from contacts where email = $1', ['leak@example.invalid'], new Error('x'));
+    vi.mocked(f3mod.getMemberPrimaryContact).mockResolvedValueOnce(err({ code: 'repo.unexpected' as const, cause: raw }) as never);
+    const thrown = await membersBridge.getMemberPrimaryContact(tenant, 'm-1').then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    const { inspect } = await import('node:util');
+    expect(inspect(thrown, { depth: 10 })).not.toContain('leak@example.invalid');
+    expect(inspect(thrown, { depth: 10 })).not.toContain('select * from contacts');
+  });
+
   it('getMembersHaltedInTenant: repo.unexpected THROWS — a halt gate must never fail open', async () => {
     vi.mocked(f3mod.getMembersHaltedInTenant).mockResolvedValueOnce(boom() as never);
     await expect(membersBridge.getMembersHaltedInTenant(tenant)).rejects.toThrow(/repo\.unexpected/);
