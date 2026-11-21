@@ -534,23 +534,6 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
   });
 
   it.each([
-    'The last segment cannot be deleted',
-    'Cannot remove the last segment',
-  ])('(f4) the closed last_audience code is a skip whatever the wording was: %s', async (_message) => {
-    const audienceId = 'aud-last-worded';
-    const gateway = makeGateway({
-      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE }],
-      throws: { [audienceId]: new GatewayThrowable({ kind: 'permanent', code: 'last_audience', reason: 'validation_error' }) },
-    });
-    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
-    const result = await reclaimOrphanedAudiences(
-      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock, audit: NO_AUDIT },
-      { graceMs: GRACE_MS, limit: 50, deadlineAt: FAR_DEADLINE },
-    );
-    expect(result.ok && result.value).toMatchObject({ failed: 0, skippedLastAudience: 1 });
-  });
-
-  it.each([
     ['a plain Error', new Error('Cannot delete last audience')],
     [
       'a permanent GatewayThrowable with any other code',

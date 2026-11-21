@@ -1564,15 +1564,14 @@ type GatewayFailure =
       readonly resourceType?: 'audience' | 'broadcast' | 'import' | undefined;
       readonly resourceId?: string | undefined;
       /**
-       * The adapter's `code` — `err.name` from Resend, or `http_<status>`.
+       * The adapter's `code` — a closed code since #739 PR 2: Resend's name when
+       * the adapter knows it, `last_audience`, or `http_<status>`.
        * Carried for the failure METRIC only (round 3 finding 3-12): without it
        * every terminal import failure was counted `app_error`, so the runbook's
        * "group by failure_reason to identify the dominant cause" step had one
        * bucket. Never logged — it is provider free text.
        */
       readonly code?: string | undefined;
-      /** #739 PR 2 — the HTTP status of a `permanent` throw, for the failure metric. */
-      readonly httpStatus?: number | undefined;
     };
 
 /**
@@ -1607,7 +1606,6 @@ async function viaGateway<T>(fn: () => Promise<T>): Promise<Result<T, GatewayFai
       resourceType: shape.resourceType,
       resourceId: shape.resourceId,
       code: shape.code,
-      httpStatus: shape.httpStatus,
     });
   }
 }
@@ -1709,15 +1707,11 @@ type FailureMetricLabel =
 function importReasonToFailureMetric(
   reason: ImportFailureReason | 'audience_import_stuck',
   code: string | undefined,
-  httpStatus?: number,
 ): FailureMetricLabel {
   if (reason === 'member_halted' || reason === 'member_not_in_good_standing') return 'member_ineligible';
   if (reason === 'audience_import_stuck') return 'timeout';
   if (reason === 'provider_cancelled') return 'provider_cancelled';
-  // #739 PR 2 — a real Resend 403 arrives NAMED (`restricted_api_key`,
-  // `validation_error`, …), so its status, not `http_403`, says it was a 403;
-  // `http_403` stays for a nameless raw-fetch page on the import leg.
-  if (httpStatus === 403 || code === 'http_403') return 'resend_403';
+  if (code === 'http_403') return 'resend_403';
   if (code === 'http_429' || isQuotaExceededCode(code)) return 'resend_429';
   return 'app_error';
 }
@@ -1909,7 +1903,7 @@ async function onGatewayFailure(
       {
         auditEventType: 'broadcast_resend_resource_missing',
         notifyMember: false,
-        failureMetric: importReasonToFailureMetric(failure.reason, failure.code, failure.httpStatus),
+        failureMetric: importReasonToFailureMetric(failure.reason, failure.code),
         resourceMissing: {
           resourceType: failure.resourceType ?? 'broadcast',
           resourceId: failure.resourceId ?? (input.broadcastId as unknown as string),
@@ -1930,7 +1924,7 @@ async function onGatewayFailure(
       expected: null,
     },
     {
-      failureMetric: importReasonToFailureMetric(failure.reason, failure.code, failure.httpStatus),
+      failureMetric: importReasonToFailureMetric(failure.reason, failure.code),
       // Review round 1 (R1-G) — only a code from a closed set
       // (`AUDITED_GATEWAY_CODES`); any other code, which can be a provider's
       // free `name`, stays out of an append-only payload.
@@ -1953,8 +1947,6 @@ const AUDITED_GATEWAY_CODES: ReadonlySet<string> = new Set([
   'unsafe_recipient_format',
   ...RESEND_QUOTA_EXCEEDED_CODES,
   'broadcast_name_too_long',
-  // #739 PR 2 review round 1 — the Free-plan contact cap, named by the adapter.
-  'contact_limit',
 ]);
 
 /** Tick 1 — hand the audience over. Sends nothing. */

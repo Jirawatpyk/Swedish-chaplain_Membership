@@ -73,8 +73,8 @@ export function isErrorClassToken(text: unknown): text is string {
  * writes: five digits or capitals with at least one digit (the
  * `firstSqlStateError` shape in `db-errors.ts`).
  */
-const CLASS_AND_CODE = /^([A-Z][A-Za-z0-9]{0,63})(?::((?=[0-9A-Z]*\d)[0-9A-Z]{5}))?$/;
-const STEP_AND_CLASS = /^([a-z][a-z0-9_-]{0,47}): ([A-Z][A-Za-z0-9]{0,63})(?::((?=[0-9A-Z]*\d)[0-9A-Z]{5}))?$/;
+const CLASS_AND_CODE = /^([A-Z][A-Za-z0-9]{0,63}|unknown)(?::((?=[0-9A-Z]*\d)[0-9A-Z]{5}))?$/;
+const STEP_AND_CLASS = /^([a-z][a-z0-9_-]{0,47}): ([A-Z][A-Za-z0-9]{0,63}|unknown)(?::((?=[0-9A-Z]*\d)[0-9A-Z]{5}))?$/;
 
 /**
  * #739 PR 2 — what a catch writes into a Result's `message` when the Result

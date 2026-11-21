@@ -13,9 +13,7 @@
  *   - `reason` (and `.message`) is Resend's error `name` when it is one this
  *     build knows, else `http_<status>`, else `network` for a transport fault;
  *   - the "cannot delete the last audience/segment" refusal is recognised here,
- *     inside the adapter, and leaves as `code: 'last_audience'`;
- *   - a permanent throw carries its HTTP status, so a 403 can be counted as one
- *     whatever name Resend gave it.
+ *     inside the adapter, and leaves as `code: 'last_audience'`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -66,16 +64,6 @@ describe('classifyResendError — the reason is a closed code (#739 PR 2)', () =
     expect(e.message).toBe('http_400');
   });
 
-  it('a permanent throw carries its HTTP status', async () => {
-    stubResendFetch(async () =>
-      json(403, { statusCode: 403, name: 'restricted_api_key', message: 'This API key is restricted' }),
-    );
-    const e = await thrownBy(() => resendBroadcastsGateway.retrieveBroadcast(BROADCAST_ID));
-    expect(e.kind).toBe('permanent');
-    expect(e.httpStatus).toBe(403);
-    expect(e.reason).toBe('restricted_api_key');
-  });
-
   it.each([
     'Cannot delete last audience.',
     'You cannot delete your last segment',
@@ -109,13 +97,13 @@ describe('classifyResendError — the reason is a closed code (#739 PR 2)', () =
     expect(e.code).toBe('http_400');
   });
 
-  it("review round 1 — the measured Free-plan cap leaves as code contact_limit", async () => {
+  it('review round 1 — the contact-cap answer keeps the plain closed name (its wording is not measured)', async () => {
     stubResendFetch(async () =>
       json(422, { statusCode: 422, name: 'validation_error', message: 'You have reached your contact limit' }),
     );
     const e = await thrownBy(() => resendBroadcastsGateway.createContactImport(SEGMENT_ID, ['a@example.com']));
     expect(e.kind).toBe('permanent');
-    expect(e.code).toBe('contact_limit');
+    expect(e.code).toBe('validation_error');
     expect(e.reason).toBe('validation_error');
   });
 
@@ -134,6 +122,5 @@ describe('classifyResendError — the reason is a closed code (#739 PR 2)', () =
     const e = await thrownBy(() => resendBroadcastsGateway.createContactImport(SEGMENT_ID, ['a@example.com']));
     expect(e.reason).toBe('http_403');
     expect(e.message).toBe('http_403');
-    expect(e.httpStatus).toBe(403);
   });
 });

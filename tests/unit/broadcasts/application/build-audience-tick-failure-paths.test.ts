@@ -67,8 +67,6 @@ function gatewayThrow(
      * drive the observed-class mapping the FR-021 budget now reports.
      */
     subKind?: string | undefined;
-    /** #739 PR 2 — the HTTP status the adapter puts on a `permanent` throw. */
-    httpStatus?: number | undefined;
   } = {},
 ): Error {
   const e = new Error(reason) as Error & {
@@ -78,7 +76,6 @@ function gatewayThrow(
     resourceId?: string;
     code?: string;
     subKind?: string;
-    httpStatus?: number;
   };
   e.kind = kind;
   e.reason = reason;
@@ -90,7 +87,6 @@ function gatewayThrow(
   if (extra.resourceId !== undefined) e.resourceId = extra.resourceId;
   if (extra.code !== undefined) e.code = extra.code;
   if (extra.subKind !== undefined) e.subKind = extra.subKind;
-  if (extra.httpStatus !== undefined) e.httpStatus = extra.httpStatus;
   return e;
 }
 
@@ -211,8 +207,6 @@ function makeDeps(opts: {
     readonly code?: string;
     /** Round 4 F7 — the transport class the adapter observed. */
     readonly subKind?: string;
-    /** #739 PR 2 — the HTTP status of a `permanent` throw. */
-    readonly httpStatus?: number;
   };
   /** A second gateway method that throws (same shape as `throwOn`). */
   readonly throwOnAlso?: { readonly method: GatewayMethod; readonly kind: string; readonly code?: string };
@@ -441,7 +435,7 @@ function makeDeps(opts: {
               code: opts.throwOn.code,
               subKind: opts.throwOn.subKind,
             }
-          : { code: opts.throwOn.code, subKind: opts.throwOn.subKind, httpStatus: opts.throwOn.httpStatus },
+          : { code: opts.throwOn.code, subKind: opts.throwOn.subKind },
       );
     }
     if (opts.throwOnAlso?.method === m) {
@@ -2575,17 +2569,19 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(spy.mock.calls.map((c) => c[1])).toContain('resend_403');
   });
 
-  it('#739 PR 2: a real Resend 403 (a named error, status 403) is counted as resend_403', async () => {
+  it('#739 PR 2 code-review: a named 403 from our own key (restricted_api_key) stays app_error, never resend_403', async () => {
     const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
     const { deps } = makeDeps({
       ...POLLING,
       audienceImportSubmittedAt: NOW,
-      throwOn: { method: 'sendBroadcast', kind: 'permanent', code: 'restricted_api_key', httpStatus: 403 },
+      throwOn: { method: 'sendBroadcast', kind: 'permanent', code: 'restricted_api_key' },
     });
 
     await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(spy.mock.calls.map((c) => c[1])).toContain('resend_403');
+    const labels = spy.mock.calls.map((c) => c[1]);
+    expect(labels).toContain('app_error');
+    expect(labels).not.toContain('resend_403');
   });
 
   /**

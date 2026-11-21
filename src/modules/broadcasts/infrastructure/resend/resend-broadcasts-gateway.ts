@@ -107,8 +107,6 @@ export type GatewayThrowableInit =
       readonly kind: 'permanent';
       readonly code: string;
       readonly reason: string;
-      /** #739 PR 2 — the HTTP status Resend answered, so a 403 counts as one whatever its name. */
-      readonly httpStatus?: number;
     };
 
 export class GatewayThrowable extends Error {
@@ -116,7 +114,6 @@ export class GatewayThrowable extends Error {
   readonly subKind?: GatewayThrowableSubKind;
   readonly reason: string;
   readonly code?: string;
-  readonly httpStatus?: number;
   readonly resourceType?: 'audience' | 'broadcast' | 'import';
   readonly resourceId?: string;
 
@@ -132,7 +129,6 @@ export class GatewayThrowable extends Error {
       this.resourceId = init.resourceId;
     } else if (init.kind === 'permanent') {
       this.code = init.code;
-      if (init.httpStatus !== undefined) this.httpStatus = init.httpStatus;
     }
   }
 }
@@ -316,19 +312,9 @@ function closedName(err: ResendErrorShape | undefined | null, status: number): s
   return name !== undefined && RESEND_ERROR_NAMES.has(name) ? name : `http_${status}`;
 }
 
-/**
- * Review round 1 (observability M1) — the Free plan's contact cap (MEASURED,
- * spec 140: 422 `validation_error` "You have reached your contact limit"). Its
- * name is shared with every other validation refusal, so the adapter names it
- * while Resend's text is still in hand.
- */
-const CONTACT_LIMIT_PATTERN = /\bcontact limit\b/i;
-
-/** The closed code of a permanent refusal: a recognised measured case, else {@link closedName}. */
+/** The closed code of a permanent refusal: the measured last-audience case, else {@link closedName}. */
 function permanentCode(err: ResendErrorShape | undefined | null, status: number): string {
-  if (isLastAudienceRefusal(err?.message)) return 'last_audience';
-  if (err?.message !== undefined && CONTACT_LIMIT_PATTERN.test(err.message)) return 'contact_limit';
-  return closedName(err, status);
+  return isLastAudienceRefusal(err?.message) ? 'last_audience' : closedName(err, status);
 }
 
 /**
@@ -376,7 +362,7 @@ function classifyResendError(
     // DOCUMENTED 429 that does not clear inside a call, nor inside FR-021's
     // hour (a daily quota may reset inside it; the spec chose permanent). The
     // name is kept as the code, which the failure metric maps to `resend_429`.
-    return new GatewayThrowable({ kind: 'permanent', reason, code, httpStatus: status });
+    return new GatewayThrowable({ kind: 'permanent', reason, code });
   }
   if (status === 429) {
     // Resend's account rate limit — measured at 10 req/s, not the 2 this
@@ -416,7 +402,6 @@ function classifyResendError(
     kind: 'permanent',
     reason,
     code: permanentCode(err, status),
-    httpStatus: status,
   });
 }
 
