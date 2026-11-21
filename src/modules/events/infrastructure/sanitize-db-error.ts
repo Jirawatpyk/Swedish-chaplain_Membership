@@ -15,7 +15,7 @@
  */
 
 import { logger } from '@/lib/logger';
-import { errClassWithCode, errKind, errLogFields } from '@/lib/log-id';
+import { errClassWithCode, errLogFields } from '@/lib/log-id';
 import { GraceStateInvariantError } from '../domain/tenant-webhook-config';
 import { MatchResolutionInvariantError } from '../domain/event-registration';
 

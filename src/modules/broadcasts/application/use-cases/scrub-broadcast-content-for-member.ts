@@ -62,7 +62,7 @@
  * observability, not produced here).
  */
 import { err, ok, type Result } from '@/lib/result';
-import { errClassWithCode, errKind } from '@/lib/log-id';
+import { errClassWithCode } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
