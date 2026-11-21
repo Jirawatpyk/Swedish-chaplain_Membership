@@ -223,12 +223,22 @@ leaves our DB layer, wired by `installDbErrorScrub` in `db.ts` onto
 `db.transaction` (so `runInTenant`) and the root session (every query outside a
 transaction). It keeps the class, SQLSTATE, constraint / table / column names
 and Postgres's names-only message (a class-22 message, which can quote input,
-becomes the code), and drops drizzle's `query` / `params` and the driver's
-`detail`, `hint`, `where` and `internal_query`. A catch inside a transaction
-still sees the raw error. Residuals: a driver error caught inside a
-transaction, kept in a Result and thrown later in a new Error outside any DB
-call; `scripts/*` clients (CLIs, not Vercel); and the driver's non-enumerable
-`query` / `parameters`, which default `util.inspect` does not print. Since #805 the
+becomes the code), and drops drizzle's `query` / `params` and every other
+driver field (`detail`, `hint`, `where`, `internal_query`, `position`, `file`,
+`line`, `routine`); the stack keeps only the frames after the original
+message. A catch inside a transaction still sees the raw error. Triage after
+#804: every escaped query reads `DrizzleQueryError: Failed query`, so find the
+query by its stack frame and its `[cause]` line (SQLSTATE, constraint, table),
+not by the message; `detail` (which key value collided) is gone on purpose. It
+walks `cause`, `error` and `errors[]` up to 20 nodes. A scrub that throws logs
+`db.error_scrub_failed` (error) and rethrows the original, raw error, and a walk
+cut by the bound logs `db.error_scrub_truncated` (warn); alert on any
+`db.error_scrub_failed`, since it means a raw error reached Next. Residuals: a
+driver error caught inside a transaction, kept in a Result and thrown later in
+a new Error outside any DB call (the three page and bridge sites that did this
+scrub the cause); `scripts/*` clients (CLIs, not Vercel); and a raw driver
+error's non-enumerable `query` / `parameters` (on an error that was never
+scrubbed), which default `util.inspect` does not print. Since #805 the
 same processor also drops URL credentials: `http.target` becomes `http.route`
 when Next set one, and every other URL (`http.target` without a route,
 `http.url`, `url.full`, `url.path`, `http.referer`, `next.span_name`, and the

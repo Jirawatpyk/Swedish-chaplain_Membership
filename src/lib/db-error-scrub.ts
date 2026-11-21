@@ -1,4 +1,5 @@
 import { logger } from './logger';
+import { errKind } from './log-id';
 
 /**
  * #804 — a DB error that leaves our DB layer carries no SQL, no bound
@@ -91,16 +92,27 @@ export function isDriverErrorShape(e: unknown): e is Error & Rec {
   return typeof r.code === 'string' && typeof r.severity === 'string' && typeof e.message === 'string';
 }
 
-function frames(stack: unknown): string {
+/**
+ * The stack's frames only, fail closed. V8 builds the stack header from the
+ * whole message, and a message can quote a parameter on several lines, one
+ * of which may look like a frame (`    at …`). So the original message is cut
+ * off by position first, and only what follows it is filtered for frames;
+ * a stack that does not contain the message keeps no frames at all
+ * (review round 1, #804).
+ */
+function frames(stack: unknown, originalMessage: string): string {
   if (typeof stack !== 'string') return '';
+  const at = stack.indexOf(originalMessage);
+  if (at === -1) return '';
   return stack
+    .slice(at + originalMessage.length)
     .split('\n')
     .filter((line) => /^\s+at /.test(line))
     .join('\n');
 }
 
-function withFrames(header: string, stack: unknown): string {
-  const f = frames(stack);
+function withFrames(header: string, stack: unknown, originalMessage: string): string {
+  const f = frames(stack, originalMessage);
   return f ? `${header}\n${f}` : header;
 }
 
@@ -120,7 +132,7 @@ function cleanDriverClone(e: Error & Rec): Error {
     if (e[key] !== undefined) clone[key] = e[key];
   }
   Object.defineProperty(clone, 'stack', {
-    value: withFrames(`${name}: ${message}`, e.stack),
+    value: withFrames(`${name}: ${message}`, e.stack, e.message),
     writable: true,
     configurable: true,
     enumerable: false,
@@ -131,10 +143,11 @@ function cleanDriverClone(e: Error & Rec): Error {
 
 function scrubDrizzleInPlace(e: Error & Rec): void {
   const name = e.constructor?.name || 'Error';
+  const originalMessage = e.message;
   e.message = 'Failed query';
   delete e.query;
   delete e.params;
-  e.stack = withFrames(`${name}: Failed query`, e.stack);
+  e.stack = withFrames(`${name}: Failed query`, e.stack, originalMessage);
   scrubbed.add(e);
 }
 
@@ -176,6 +189,14 @@ function scrubUnsafe(e: unknown): unknown {
       });
     }
   }
+  if (queue.some(isObject)) {
+    // The bound stopped the walk with links still unread: those may print
+    // raw. Rare (a wrapper holding more than MAX_NODES errors); say so.
+    logger.warn(
+      { event: 'db.error_scrub_truncated', maxNodes: MAX_NODES, unread: queue.length },
+      'db error scrub stopped at its node bound; deeper links were not scrubbed',
+    );
+  }
   return top;
 }
 
@@ -190,7 +211,7 @@ export function scrubDbError(e: unknown): unknown {
     logger.error(
       {
         event: 'db.error_scrub_failed',
-        err: scrubErr instanceof Error ? scrubErr.constructor.name : 'unknown',
+        err: errKind(scrubErr),
       },
       'db error scrub failed; rethrowing the original error',
     );
@@ -215,6 +236,8 @@ function rethrowScrubbed<T>(run: () => T): T {
 
 type Fn = (...args: unknown[]) => unknown;
 
+const PREPARED_METHODS = ['execute', 'all'] as const;
+
 interface ScrubbableDb {
   transaction: Fn;
   session?: { prepareQuery?: Fn } | undefined;
@@ -233,8 +256,9 @@ interface ScrubbableDb {
  *     outside any transaction — every bare `db.select / insert / update /
  *     delete / execute / query.* / $count`, aliased executors included.
  *
- * The session is a drizzle internal (0.45). If its shape is not what this
- * expects, it throws at module load: loud in CI, never a silent fail-open.
+ * The session and its prepared query are drizzle internals (0.45). If their
+ * shape is not what this expects, it throws at module load: loud in CI and at
+ * boot, never a silent fail-open.
  */
 export function installDbErrorScrub<D>(db: D): D {
   const target = db as unknown as ScrubbableDb;
@@ -246,14 +270,19 @@ export function installDbErrorScrub<D>(db: D): D {
   target.transaction = (...args: unknown[]) => rethrowScrubbed(() => transaction(...args));
 
   const prepareQuery = session.prepareQuery.bind(session);
+  // Check the prepared query's shape once here, so a drizzle upgrade fails at
+  // module load rather than on every query at runtime (review round 1). It
+  // builds a prepared query and never runs it.
+  const probe = prepareQuery({ sql: 'select 1', params: [] }, undefined, undefined, false) as Record<string, unknown>;
+  for (const method of PREPARED_METHODS) {
+    if (typeof probe?.[method] !== 'function') {
+      throw new Error(`installDbErrorScrub: prepared query has no ${method}() (drizzle upgrade?)`);
+    }
+  }
   session.prepareQuery = (...args: unknown[]) => {
     const prepared = prepareQuery(...args) as Record<string, unknown>;
-    for (const method of ['execute', 'all'] as const) {
-      const original = prepared[method];
-      if (typeof original !== 'function') {
-        throw new Error(`installDbErrorScrub: prepared query has no ${method}() (drizzle upgrade?)`);
-      }
-      const bound = (original as Fn).bind(prepared);
+    for (const method of PREPARED_METHODS) {
+      const bound = (prepared[method] as Fn).bind(prepared);
       prepared[method] = (...a: unknown[]) => rethrowScrubbed(() => bound(...a));
     }
     return prepared;
