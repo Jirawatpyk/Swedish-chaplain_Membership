@@ -42,7 +42,7 @@ import type { Result } from '@/lib/result';
 import { ok, err } from '@/lib/result';
 import { safeAuditEmit } from './_helpers/safe-audit-emit';
 
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode, errKind } from '@/lib/log-id';
 // ---------------------------------------------------------------------------
 // Input + Output + Outcome
 // ---------------------------------------------------------------------------
@@ -268,7 +268,7 @@ export async function createEvent(
     );
     return {
       kind: 'unexpected_error',
-      message: errKind(e),
+      message: errClassWithCode(e),
     };
   }
 }

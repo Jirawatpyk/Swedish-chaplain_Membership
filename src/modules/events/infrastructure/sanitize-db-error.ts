@@ -15,7 +15,7 @@
  */
 
 import { logger } from '@/lib/logger';
-import { errKind, errLogFields } from '@/lib/log-id';
+import { errClassWithCode, errKind, errLogFields } from '@/lib/log-id';
 import { GraceStateInvariantError } from '../domain/tenant-webhook-config';
 import { MatchResolutionInvariantError } from '../domain/event-registration';
 
@@ -74,5 +74,5 @@ export function wrapRepoError(
     },
     `[F6 ${repoLabel} repository] DB error`,
   );
-  return { kind: 'db_error', message: errKind(e) };
+  return { kind: 'db_error', message: errClassWithCode(e) };
 }

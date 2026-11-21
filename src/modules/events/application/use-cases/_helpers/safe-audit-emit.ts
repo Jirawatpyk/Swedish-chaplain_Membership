@@ -33,7 +33,7 @@
  * Pure Application — no framework imports (Constitution Principle III).
  */
 import { err, type Result } from '@/lib/result';
-import { errKind } from '@/lib/log-id';
+import { errClassWithCode } from '@/lib/log-id';
 import type { AuditEventId } from '@/modules/auth';
 import type {
   F6AuditPort,
@@ -62,7 +62,7 @@ export async function safeAuditEmit<T extends F6AuditEventType>(
     // class, never its text (a driver message quotes bound parameters).
     return err({
       kind: 'db_error',
-      message: `audit_emit: ${errKind(raw)}`,
+      message: `audit_emit: ${errClassWithCode(raw)}`,
     });
   }
 }
