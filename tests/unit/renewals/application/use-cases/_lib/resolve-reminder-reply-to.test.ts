@@ -70,4 +70,18 @@ describe('resolveReminderReplyTo (#707)', () => {
       expect.any(String),
     );
   });
+
+  it('review (PDPA L-1): a name with address syntax (< > " , ; ( ) \\) is dropped, so it can never redirect a reply', () => {
+    for (const name of ['Jane <x@evil.example>', 'Jane, x@evil.example', 'Jane "Q"', 'A; B', 'A\\B', 'A>B', 'Jane (x@evil.example)']) {
+      expect(
+        resolveReminderReplyTo({ replyToEmail: 'renewals@swecham.example', replyToDisplayName: name }, TENANT),
+      ).toEqual({ email: 'renewals@swecham.example', displayName: null });
+    }
+    // Ordinary names, Thai and Swedish included, stay.
+    for (const name of ['SweCham Membership', 'หอการค้าไทย-สวีเดน', 'Medlemskap & förnyelse', "O'Brien Membership"]) {
+      expect(
+        resolveReminderReplyTo({ replyToEmail: 'renewals@swecham.example', replyToDisplayName: name }, TENANT),
+      ).toEqual({ email: 'renewals@swecham.example', displayName: name });
+    }
+  });
 });
