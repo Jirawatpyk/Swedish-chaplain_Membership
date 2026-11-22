@@ -84,4 +84,12 @@ describe('resolveReminderReplyTo (#707)', () => {
       ).toEqual({ email: 'renewals@swecham.example', displayName: name });
     }
   });
+
+  it('review (code-review, reliability M-1): a name with : @ [ ] or a control character is dropped too', () => {
+    for (const name of ['Membership: TSCC', 'renewals@tscc', 'TSCC [Membership]', 'A\tB', 'A\u0000B', 'A\u007fB', 'A\u2028B']) {
+      expect(
+        resolveReminderReplyTo({ replyToEmail: 'renewals@swecham.example', replyToDisplayName: name }, TENANT),
+      ).toEqual({ email: 'renewals@swecham.example', displayName: null });
+    }
+  });
 });
