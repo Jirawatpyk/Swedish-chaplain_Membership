@@ -2293,7 +2293,11 @@
           },
           "renewalSchedules": {
             "title": "Reminder schedules",
-            "description": "Cadence and channel per member tier, and the reply-to address for renewal reminders."
+            "description": "Cadence and channel for renewal reminders, configurable per member tier."
+          },
+          "renewalReplyTo": {
+            "title": "Reminder reply-to",
+            "description": "Where members' replies to renewal reminders go."
           },
           "broadcasts": {
             "title": "Broadcast settings",
@@ -6536,6 +6540,7 @@
       "events": "Events",
       "settingsInvoices": "Invoice settings",
       "settingsRenewalSchedules": "Reminder schedules",
+      "settingsRenewalReplyTo": "Reminder reply-to",
       "settingsMemberChanges": "Member change approval",
       "settingsBroadcasts": "Broadcast settings",
       "settingsBroadcastsBrand": "E-Blast brand",

@@ -67,7 +67,8 @@ describe('settings index declares a permission per card', () => {
     // F114 US6 member-change approval card (flag-aware too).
     // F119 T029: 6 with the chamber brand card (flag-aware, same
     // `settings.broadcasts` key as its allow-list sibling).
-    expect(CATEGORIES).toHaveLength(6);
+    // PR B (#814): 7 with the renewal reminder Reply-To card.
+    expect(CATEGORIES).toHaveLength(7);
   });
 
   it('the page still filters — `visible` is derived, not the raw list', () => {
@@ -110,6 +111,7 @@ describe('ON-leg visibility per role', () => {
     const visible = visibleFor('admin');
     expect(visible).not.toContain('/admin/settings/invoicing');
     expect(visible).toContain('/admin/settings/renewals/schedules');
+    expect(visible).toContain('/admin/settings/renewals/reply-to');
     expect(visible).toContain('/admin/settings/broadcasts');
     expect(visible).toContain('/admin/settings/integrations/eventcreate');
   });

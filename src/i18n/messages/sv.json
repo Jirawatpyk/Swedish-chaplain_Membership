@@ -2293,7 +2293,11 @@
           },
           "renewalSchedules": {
             "title": "Påminnelseschema",
-            "description": "Intervall och kanal per medlemsnivå, och svarsadressen för förnyelsepåminnelser."
+            "description": "Frekvens och kanal för förnyelsepåminnelser, konfigurerbart per medlemsnivå."
+          },
+          "renewalReplyTo": {
+            "title": "Svarsadress för påminnelser",
+            "description": "Hit går medlemmarnas svar på förnyelsepåminnelser."
           },
           "broadcasts": {
             "title": "Inställningar för utskick",
@@ -6535,6 +6539,7 @@
       "settings": "Inställningar",
       "settingsInvoices": "Fakturainställningar",
       "settingsRenewalSchedules": "Påminnelseschema",
+      "settingsRenewalReplyTo": "Svarsadress för påminnelser",
       "settingsMemberChanges": "Godkännande av medlemsändringar",
       "settingsBroadcasts": "Inställningar för utskick",
       "settingsBroadcastsBrand": "Profil för utskick",

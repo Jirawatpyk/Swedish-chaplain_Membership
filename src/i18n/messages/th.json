@@ -2293,7 +2293,11 @@
           },
           "renewalSchedules": {
             "title": "ตารางการแจ้งเตือนต่ออายุ",
-            "description": "ความถี่และช่องทางแยกตามระดับสมาชิก และอีเมลรับคำตอบกลับของอีเมลเตือนต่ออายุ"
+            "description": "ความถี่และช่องทางของการแจ้งเตือนต่ออายุ ปรับได้แยกตามระดับสมาชิก"
+          },
+          "renewalReplyTo": {
+            "title": "อีเมลรับคำตอบกลับ",
+            "description": "ปลายทางของข้อความที่สมาชิกตอบกลับอีเมลเตือนต่ออายุ"
           },
           "broadcasts": {
             "title": "ตั้งค่า E-Blast",
@@ -6535,6 +6539,7 @@
       "settings": "ตั้งค่า",
       "settingsInvoices": "ตั้งค่าใบแจ้งหนี้",
       "settingsRenewalSchedules": "ตารางการแจ้งเตือนต่ออายุ",
+      "settingsRenewalReplyTo": "อีเมลรับคำตอบกลับ",
       "settingsMemberChanges": "การอนุมัติคำขอแก้ไขข้อมูลของสมาชิก",
       "settingsBroadcasts": "ตั้งค่า E-Blast",
       "settingsBroadcastsBrand": "แบรนด์ E-Blast",

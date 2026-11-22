@@ -110,7 +110,7 @@ describe('staffNavConfig', () => {
     expect(erasureLog.guard?.key).toBe('members.erasure_log_read');
   });
 
-  it('section 6 is Settings with Invoice + RenewalSchedules + MemberChanges + BroadcastSettings + BroadcastBrand + EventCreate', () => {
+  it('section 6 is Settings with Invoice + RenewalSchedules + RenewalReplyTo + MemberChanges + BroadcastSettings + BroadcastBrand + EventCreate', () => {
     // R7 consolidation removed the Fee Configuration page (VAT + currency
     // + registration fee live in Invoice Settings). F8 added Reminder
     // schedules; F6 added the EventCreate setup wizard; F7.1a US2 added
@@ -120,7 +120,9 @@ describe('staffNavConfig', () => {
     expect(settingsSection.titleKey).toBe('nav.staff.sections.settings');
     // F119 T029: +1 — the chamber brand page, directly under its allow-list
     // sibling.
-    expect(settingsSection.items).toHaveLength(6);
+    // PR B (#814): +1 — the renewal reminder Reply-To, directly under
+    // Reminder schedules.
+    expect(settingsSection.items).toHaveLength(7);
     expect(settingsSection.items[0]!.titleKey).toBe('nav.staff.settingsInvoices');
     const invoiceSettingsItem = settingsSection.items[0]! as NavItem;
     expect(invoiceSettingsItem.href).toBe('/admin/settings/invoicing');
@@ -131,14 +133,24 @@ describe('staffNavConfig', () => {
     expect(renewalSchedulesItem.href).toBe(
       '/admin/settings/renewals/schedules',
     );
+    // Narrowed from the `/admin/settings/renewals` prefix: the reply-to page is
+    // a sibling entry now, and the prefix would light both rows on its URL.
+    expect(renewalSchedulesItem.activePattern).toBe('/admin/settings/renewals/schedules');
+    // PR B — the reminder Reply-To, same key as the schedules page and as both
+    // verbs of `/api/admin/renewals/settings/reply-to`.
+    expect(settingsSection.items[2]!.titleKey).toBe('nav.staff.settingsRenewalReplyTo');
+    const replyToItem = settingsSection.items[2]! as NavItem;
+    expect(replyToItem.href).toBe('/admin/settings/renewals/reply-to');
+    expect(replyToItem.guard?.key).toBe('settings.renewal_schedules');
+    expect(replyToItem.activePattern).toBe('/admin/settings/renewals/reply-to');
     // F114 US6 — the per-tenant member-change approval switch. It was
     // reachable ONLY from the /admin/settings hub card, whose own docblock
     // claims the cards "mirror the sidebar entries exactly"; they did not.
     // Same permission + flag as that card and as the page itself.
-    expect(settingsSection.items[2]!.titleKey).toBe(
+    expect(settingsSection.items[3]!.titleKey).toBe(
       'nav.staff.settingsMemberChanges',
     );
-    const memberChangesItem = settingsSection.items[2]! as NavItem;
+    const memberChangesItem = settingsSection.items[3]! as NavItem;
     expect(memberChangesItem.href).toBe('/admin/settings/member-changes');
     expect(memberChangesItem.guard?.key).toBe('members.write');
     expect(memberChangesItem.visibilityFlag).toBe('memberChangeApproval');
@@ -146,10 +158,10 @@ describe('staffNavConfig', () => {
     // parent highlighted.
     expect(memberChangesItem.activePattern).toBe('/admin/settings/member-changes');
     // F7.1a US2 — broadcast settings (image-source allowlist).
-    expect(settingsSection.items[3]!.titleKey).toBe(
+    expect(settingsSection.items[4]!.titleKey).toBe(
       'nav.staff.settingsBroadcasts',
     );
-    const broadcastSettingsItem = settingsSection.items[3]! as NavItem;
+    const broadcastSettingsItem = settingsSection.items[4]! as NavItem;
     expect(broadcastSettingsItem.href).toBe('/admin/settings/broadcasts');
 
     // Structural sibling — survives nav reordering. If a future commit
@@ -168,19 +180,19 @@ describe('staffNavConfig', () => {
     expect(broadcastsByHref?.activePattern).toBe('exact:/admin/settings/broadcasts');
 
     // F119 T029 — the chamber brand page, same key + flag as its sibling.
-    expect(settingsSection.items[4]!.titleKey).toBe(
+    expect(settingsSection.items[5]!.titleKey).toBe(
       'nav.staff.settingsBroadcastsBrand',
     );
-    const brandItem = settingsSection.items[4]! as NavItem;
+    const brandItem = settingsSection.items[5]! as NavItem;
     expect(brandItem.href).toBe('/admin/settings/broadcasts/brand');
     expect(brandItem.guard?.key).toBe('settings.broadcasts');
     expect(brandItem.visibilityFlag).toBe('broadcastsEnabled');
 
     // F6 Phase 5 — integration setup wizard entry.
-    expect(settingsSection.items[5]!.titleKey).toBe(
+    expect(settingsSection.items[6]!.titleKey).toBe(
       'nav.staff.settingsIntegrationEventcreate',
     );
-    const integrationItem = settingsSection.items[5]! as NavItem;
+    const integrationItem = settingsSection.items[6]! as NavItem;
     expect(integrationItem.href).toBe(
       '/admin/settings/integrations/eventcreate',
     );
