@@ -19,6 +19,7 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { scrubDbError } from '@/lib/db-error-scrub';
 import { asTenantContext } from '@/modules/tenants';
 import {
   asMemberId,
@@ -100,8 +101,10 @@ export async function fetchMemberDisplay(
     // into `null` hid Neon outages behind "—" placeholders with no
     // SRE signal.
     if ('code' in memberResult.error && memberResult.error.code !== 'repo.not_found') {
+      // #804: a driver error the repo caught inside its tx; scrubbed so a
+      // rethrow never prints its SQL and parameters.
       const cause =
-        'cause' in memberResult.error ? memberResult.error.cause : undefined;
+        'cause' in memberResult.error ? scrubDbError(memberResult.error.cause) : undefined;
       throw new Error(
         `[fetchMemberDisplay] member lookup failed: ${memberResult.error.code}`,
         cause !== undefined ? { cause } : {},

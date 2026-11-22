@@ -34,6 +34,7 @@ import {
   f3DrizzleMemberRepo,
   type MemberNumber,
 } from '@/modules/members';
+import { scrubDbError } from '@/lib/db-error-scrub';
 
 /**
  * UX-audit PR-B B4 — the per-member facts the pending-review list needs to
@@ -89,7 +90,9 @@ export async function fetchPendingReviewCompanyNames(args: {
     // renders the "couldn't load" alert instead of a silently blank list.
     throw new Error(
       `[fetchPendingReviewCompanyNames] member batch lookup failed: ${result.error.code}`,
-      'cause' in result.error ? { cause: result.error.cause } : {},
+      // #804: the cause is a driver error the repo caught inside its tx;
+      // thrown from here it would print its SQL and parameters to stderr.
+      'cause' in result.error ? { cause: scrubDbError(result.error.cause) } : {},
     );
   }
 

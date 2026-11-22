@@ -26,6 +26,7 @@ import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { errKind, errLogFields, rootCause } from '@/lib/log-id';
+import { scrubDbError } from '@/lib/db-error-scrub';
 import type { TenantContext } from '@/modules/tenants';
 import {
   drizzleMemberRepo,
@@ -69,7 +70,9 @@ import type { EmailLower } from '../domain/value-objects/email-lower';
  * through here; none builds its own message.
  */
 function failedRead(read: string, error: { readonly code: string }): Error {
-  return new Error(`${read}:${error.code}`, { cause: rootCause(error) });
+  // #804: the cause is a driver error the repo caught inside its own
+  // transaction; thrown from here it would print its SQL and parameters.
+  return new Error(`${read}:${error.code}`, { cause: scrubDbError(rootCause(error)) });
 }
 
 /**
