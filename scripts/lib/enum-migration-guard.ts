@@ -98,13 +98,13 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *                        += 'member_plan_change_billing_effect' (0270, renumbered from
  *                           0259 at rebase so it follows the task-7 stack's 0269)
  *                        += the ten F119 approval-round events (0308)
- *                        += 'renewal_reply_to_updated' (0333, PR B)
  *                        += 'broadcast_retention_swept' (0310, F7 retention sweep)
  *                        += 'broadcast_unsubscribe_unattributed' (0312, F7 opt-out)
  *                        += 'webhook_unresolved_event_adopted' (0320, 132 adopt-on-replay)
  *                        += 'credit_note_issue_replayed' (0324, 066 key replay)
  *                        += 'credit_note_attempt_abandoned' (0326, 068 Start over)
  *                        += 'broadcast_audience_disclosed', 'broadcast_audience_deleted' (0327, 139 s2)
+ *                        += 'renewal_reply_to_updated' (0333, PR B)
  *   - `notification_type` += the two F114 rows (0301), the five F119 eblast_* rows (0308)
  *   - `broadcast_status`  += the five F119 approval-round statuses (0308)
  */

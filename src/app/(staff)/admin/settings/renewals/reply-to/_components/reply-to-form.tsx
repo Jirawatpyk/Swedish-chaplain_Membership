@@ -64,6 +64,9 @@ export function ReplyToForm({
     displayName: initialDisplayName,
   });
   const [busy, setBusy] = useState<'save' | 'remove' | null>(null);
+  // The toast's Undo holds the `send` of the render that removed, where
+  // `busy` reads null; the ref guards every caller against a request in flight.
+  const inFlight = useRef(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -85,7 +88,7 @@ export function ReplyToForm({
     kind: 'save' | 'remove' | 'undo',
     values: { email: string | null; displayName: string | null },
   ): Promise<void> {
-    if (busy !== null) return;
+    if (inFlight.current) return;
     setEmailError(null);
     setNameError(null);
     setFormError(null);
@@ -94,6 +97,7 @@ export function ReplyToForm({
       showFieldError('name', t('errors.nameTooLong'));
       return;
     }
+    inFlight.current = true;
     setBusy(kind === 'remove' ? 'remove' : 'save');
     const before = stored;
     const payload = values;
@@ -141,6 +145,7 @@ export function ReplyToForm({
     } catch {
       setFormError(t('errors.network'));
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }

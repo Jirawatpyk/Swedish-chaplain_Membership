@@ -1132,7 +1132,9 @@ When a staff member whose address is the reply-to asks for erasure (or leaves):
 1. The tenant changes the reply-to to a role mailbox, or removes it, on
    `/admin/settings/renewals/reply-to` (an admin or super admin; future reminders carry the
    new value from the next dispatch pass). The `renewal_reply_to_updated`
-   audit rows hold only the address's domain, so they need no clearing.
+   audit rows hold only the address's domain, so they need no clearing,
+   unless that domain itself names the person (a personal domain such as
+   `firstname-lastname.se`); record that case in the DPO log.
 2. Clear the existing snapshots for that address, in the tenant:
 
    ```sql

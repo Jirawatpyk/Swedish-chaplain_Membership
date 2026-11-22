@@ -3,7 +3,8 @@
  * `/admin/settings/renewals/reply-to`.
  *
  * Gate: `settings.renewal_schedules`, the key the schedule editor and the API
- * route behind this form use (admin, super_admin). F8 flag off → `notFound()`.
+ * route behind this form use (admin, super_admin), checked first; then F8
+ * flag off → `notFound()`.
  * A read failure reaches the error boundary rather than rendering an empty
  * form that would claim no reply-to is set.
  */
@@ -29,8 +30,8 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function RenewalReplyToSettingsPage(): Promise<React.ReactElement> {
-  if (!env.features.f8Renewals) notFound();
   await requirePagePermission('settings.renewal_schedules');
+  if (!env.features.f8Renewals) notFound();
   const h = await headers();
   const tenant = resolveTenantFromHeaders(h);
   const result = await loadRenewalReplyTo(makeRenewalsDeps(tenant.slug), tenant.slug);
@@ -44,7 +45,7 @@ export default async function RenewalReplyToSettingsPage(): Promise<React.ReactE
   return renderRenewalReplyToView({ email: result.value.email, displayName: result.value.displayName });
 }
 
-/** The page body, shared with the /test-fixtures/aura-admin preview. */
+/** The page body, apart from the data read. */
 export async function renderRenewalReplyToView({
   email,
   displayName,

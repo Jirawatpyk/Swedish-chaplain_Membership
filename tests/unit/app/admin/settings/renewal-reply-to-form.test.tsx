@@ -126,6 +126,21 @@ describe('ReplyToForm', () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
+  it("the toast's Undo sends nothing while another save is in flight", async () => {
+    const fetchFn = stubFetch(200, { email: null, displayName: null, changed: true });
+    renderForm('m@swecham.example', 'SweCham');
+    fireEvent.click(screen.getByRole('button', { name: t.actions.remove }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+    const undo = (vi.mocked(toast.success).mock.calls[0] as unknown as [string, { action: { onClick: () => void } }])[1].action;
+    fetchFn.mockImplementationOnce(() => new Promise<Response>(() => {}));
+    fireEvent.change(emailInput(), { target: { value: 'n@swecham.example' } });
+    fireEvent.click(screen.getByRole('button', { name: t.actions.save }));
+    await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(2));
+    undo.onClick();
+    await Promise.resolve();
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
   it('Remove is offered only while a value is stored, and sends nulls', async () => {
     renderForm();
     expect(screen.queryByRole('button', { name: t.actions.remove })).toBeNull();

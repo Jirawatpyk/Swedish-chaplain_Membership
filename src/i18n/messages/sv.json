@@ -2293,7 +2293,7 @@
           },
           "renewalSchedules": {
             "title": "Påminnelseschema",
-            "description": "Intervall, kanal och svarsadress för förnyelsepåminnelser, per medlemsnivå."
+            "description": "Intervall och kanal per medlemsnivå, och svarsadressen för förnyelsepåminnelser."
           },
           "broadcasts": {
             "title": "Inställningar för utskick",

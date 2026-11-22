@@ -2293,7 +2293,7 @@
           },
           "renewalSchedules": {
             "title": "Reminder schedules",
-            "description": "Cadence, channel and reply-to address for renewal reminders, configurable per member tier."
+            "description": "Cadence and channel per member tier, and the reply-to address for renewal reminders."
           },
           "broadcasts": {
             "title": "Broadcast settings",

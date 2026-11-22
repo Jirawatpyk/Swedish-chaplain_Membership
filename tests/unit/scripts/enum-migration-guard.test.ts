@@ -180,6 +180,7 @@ describe('findMissingEnumValues', () => {
           // 0327 (spec 139 s2):
           'broadcast_audience_disclosed',
           'broadcast_audience_deleted',
+          'renewal_reply_to_updated',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
@@ -277,6 +278,7 @@ describe('findMissingEnumValues', () => {
           // 0327 (spec 139 s2):
           'broadcast_audience_disclosed',
           'broadcast_audience_deleted',
+          'renewal_reply_to_updated',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
@@ -401,6 +403,7 @@ describe('findMissingEnumValues', () => {
           // 0327 (spec 139 s2):
           'broadcast_audience_disclosed',
           'broadcast_audience_deleted',
+          'renewal_reply_to_updated',
         ],
       },
     ]);
