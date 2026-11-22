@@ -152,6 +152,7 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'GET /api/admin/renewals', kind: 'api', key: 'renewals.read' },
   { surface: 'GET /api/admin/renewals/at-risk', kind: 'api', key: 'renewals.read' },
   { surface: 'GET /api/admin/renewals/[cycleId]', kind: 'api', key: 'renewals.read' },
+  { surface: 'GET /api/admin/renewals/settings/reply-to', kind: 'api', key: 'settings.renewal_schedules' },
   { surface: 'GET /api/admin/renewals/settings/schedules', kind: 'api', key: 'settings.renewal_schedules' },
   { surface: 'GET /api/admin/renewals/settlement-preview', kind: 'api', key: 'renewals.read' },
   { surface: 'GET /api/admin/renewals/tasks', kind: 'api', key: 'renewals.read' },
@@ -312,6 +313,9 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   // per-METHOD, not per-file.
   { surface: 'PUT /api/admin/broadcasts/draft', kind: 'api', key: 'broadcasts.write' },
   { surface: 'PUT /api/admin/renewals/settings/schedules/[tierBucket]', kind: 'api', key: 'settings.renewal_schedules' },
+  // PR B (#707 follow-up) — the renewal reminder Reply-To; same key as the
+  // schedule editor (admin + super_admin; manager holds no settings.* key).
+  { surface: 'PUT /api/admin/renewals/settings/reply-to', kind: 'api', key: 'settings.renewal_schedules' },
 ];
 
 /** Every captured surface. */

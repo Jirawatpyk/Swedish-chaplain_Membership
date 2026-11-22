@@ -148,6 +148,7 @@ export type F8ErrorId =
   // reminder-schedule settings
   | 'F8.SCHEDULES_READ'
   | 'F8.SCHEDULES_WRITE'
+  | 'F8.REPLY_TO'
   // member-scoped renewal actions (admin/members/**, not admin/renewals/**)
   | 'F8.MEMBER_RENEW'
   | 'F8.MEMBER_BLOCK_AUTO_REACTIVATION'

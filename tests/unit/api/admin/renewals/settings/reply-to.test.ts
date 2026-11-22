@@ -139,7 +139,7 @@ describe('GET /api/admin/renewals/settings/reply-to', () => {
     const res = await GET(req());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ email: 'm@swecham.example', displayName: 'SweCham' });
-    expect(requireAdminMock).toHaveBeenCalledWith(expect.anything(), 'read', 'settings.renewal_schedules', 'F8.REPLY_TO_READ');
+    expect(requireAdminMock).toHaveBeenCalledWith(expect.anything(), 'read', 'settings.renewal_schedules', 'F8.REPLY_TO');
   });
 
   it('a gate refusal is returned as is', async () => {
@@ -170,7 +170,7 @@ describe('PUT /api/admin/renewals/settings/reply-to', () => {
     const res = await PUT(req({ email: 'm@swecham.example', displayName: null }));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ email: 'm@swecham.example', displayName: null, changed: true });
-    expect(requireAdminMock).toHaveBeenCalledWith(expect.anything(), 'write', 'settings.renewal_schedules', 'F8.REPLY_TO_WRITE');
+    expect(requireAdminMock).toHaveBeenCalledWith(expect.anything(), 'write', 'settings.renewal_schedules', 'F8.REPLY_TO');
     expect(updateMock).toHaveBeenCalledWith(expect.anything(), {
       tenantId: 'tenanta',
       email: 'm@swecham.example',
