@@ -5,8 +5,9 @@
  *
  * A value Resend would refuse never reaches a send. A malformed address
  * would 422 every reminder of the tenant, so it resolves to "no reply-to";
- * a display name with a line break (a header injection) or over 100
- * characters is dropped and the address kept. Either is logged by field,
+ * a display name with a line break (a header injection), address syntax
+ * (`< > " , ; ( ) \`, which could make the header name another address), or
+ * over 100 characters is dropped and the address kept. Either is logged by field,
  * never by value.
  *
  * Pure Application — no framework/ORM imports (Constitution Principle III).
@@ -22,6 +23,9 @@ export interface ReminderReplyTo {
 
 const EMAIL = z.string().email().max(254);
 const MAX_DISPLAY_NAME = 100;
+// Line breaks, and the RFC 5322 specials that could turn an unquoted
+// display name into a second address, a group or a comment (review, PDPA L-1).
+const UNSAFE_DISPLAY_NAME = /[\r\n<>",;()\\]/;
 
 function warnInvalid(tenantId: string, field: 'email' | 'display_name'): void {
   logger.warn(
@@ -42,7 +46,7 @@ export function resolveReminderReplyTo(
   }
   const name = settings?.replyToDisplayName?.trim() ?? '';
   if (name === '') return { email, displayName: null };
-  if (/[\r\n]/.test(name) || name.length > MAX_DISPLAY_NAME) {
+  if (UNSAFE_DISPLAY_NAME.test(name) || name.length > MAX_DISPLAY_NAME) {
     warnInvalid(tenantId, 'display_name');
     return { email, displayName: null };
   }

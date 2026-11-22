@@ -1118,6 +1118,38 @@ future edit — it is also recorded in the design's known-limitations section
 
 ---
 
+## Staff reply-to (#707) — not reached by any erasure cascade
+
+`tenant_renewal_settings.reply_to_email` / `reply_to_display_name` are the
+tenant's renewal Reply-To. Since migration 0332 each renewal reminder row keeps
+a snapshot of them (`renewal_reminder_events.reply_to_*`), so a retry sends the
+Reply-To the first attempt sent. The values are not member data, so member
+erasure leaves them alone. They can name a staff member (`jane@chamber…`) but
+are not bound to a user id, so `eraseUser` cannot find them either.
+
+When a staff member whose address is the reply-to asks for erasure (or leaves):
+
+1. The tenant changes `tenant_renewal_settings.reply_to_*` to a role mailbox
+   (future reminders carry it from the next dispatch pass).
+2. Clear the existing snapshots for that address, in the tenant:
+
+   ```sql
+   UPDATE renewal_reminder_events
+      SET reply_to_email = NULL, reply_to_display_name = NULL
+    WHERE tenant_id = $1 AND lower(reply_to_email) = lower($2);
+   ```
+
+   A row still inside its 24 h retry window then retries with no Reply-To,
+   which differs from its first attempt: Resend answers 409 and the retry pass
+   opens a manual-outreach task for it. Run step 2 outside the 23:00 UTC
+   dispatch window, after `retry_until` has passed for the affected rows,
+   if that matters.
+3. Record the request and the row count in the DPO log.
+
+Prefer a role mailbox as the reply-to from the start; it avoids all of this.
+
+---
+
 ## Related
 
 - **`/admin/compliance/erasure-log`** (US3-D) — the DPO evidence log: the
