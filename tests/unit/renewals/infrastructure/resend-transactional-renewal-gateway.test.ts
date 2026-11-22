@@ -470,7 +470,8 @@ describe('resendTransactionalRenewalGateway', () => {
       warnSpy.mockRestore();
     }, 30_000);
 
-    it('#709: a 5xx then success returns the second delivery id', async () => {
+    it('#709: a 5xx then success returns the second delivery id and logs retry_succeeded', async () => {
+      const infoSpy = vi.spyOn(logger, 'info');
       sendMock
         .mockResolvedValueOnce({ data: null, error: { name: 'application_error', message: 'x' } })
         .mockResolvedValueOnce({ data: { id: 'tier-retry-id' }, error: null });
@@ -479,6 +480,12 @@ describe('resendTransactionalRenewalGateway', () => {
       if (!result.ok) return;
       expect(result.value.deliveryId).toBe('tier-retry-id');
       expect(sendMock).toHaveBeenCalledTimes(2);
+      // New with the fold: the tier path logs a successful retry too.
+      expect(infoSpy).toHaveBeenCalledWith(
+        { tenantId: 'tenanta', deliveryId: 'tier-retry-id', attempt: 1 },
+        'resend.renewals.tier_upgrade_approval.retry_succeeded',
+      );
+      infoSpy.mockRestore();
     });
   });
 
