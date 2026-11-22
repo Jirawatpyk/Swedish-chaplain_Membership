@@ -33,7 +33,7 @@ function stubFetch(status: number, body: unknown) {
 }
 
 const emailInput = () => screen.getByLabelText(t.email.label) as HTMLInputElement;
-const nameInput = () => screen.getByLabelText(t.displayName.label) as HTMLInputElement;
+const nameInput = () => screen.getByLabelText(new RegExp(`^${t.displayName.label}`)) as HTMLInputElement;
 
 // tests/setup.ts installs fake timers globally; the fetch round trips and
 // waitFor here need real ones.
@@ -70,13 +70,28 @@ describe('ReplyToForm', () => {
     expect(screen.getByRole('button', { name: t.actions.remove })).toBeTruthy();
   });
 
-  it('an unchanged save shows no toast', async () => {
+  it('an unchanged save shows no toast and says so inline', async () => {
     stubFetch(200, { email: 'm@swecham.example', displayName: null, changed: false });
     renderForm('m@swecham.example');
     fireEvent.click(screen.getByRole('button', { name: t.actions.save }));
-    await waitFor(() => expect(fetch).toHaveBeenCalled());
-    await Promise.resolve();
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe(t.status.unchanged));
     expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('a name over 100 characters is refused before sending', async () => {
+    const fetchFn = stubFetch(200, {});
+    renderForm('m@swecham.example');
+    fireEvent.change(nameInput(), { target: { value: 'x'.repeat(101) } });
+    fireEvent.click(screen.getByRole('button', { name: t.actions.save }));
+    expect(await screen.findByText(t.errors.nameTooLong)).toBeTruthy();
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('a network failure says the server was not reached', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))));
+    renderForm('m@swecham.example');
+    fireEvent.click(screen.getByRole('button', { name: t.actions.save }));
+    expect((await screen.findByRole('alert')).textContent).toBe(t.errors.network);
   });
 
   it('a 422 invalid_email shows on the email field and keeps the typed value', async () => {
@@ -87,6 +102,7 @@ describe('ReplyToForm', () => {
     expect(await screen.findByText(t.errors.invalidEmail)).toBeTruthy();
     expect(emailInput().value).toBe('not an address');
     expect(emailInput().getAttribute('aria-invalid')).toBe('true');
+    await waitFor(() => expect(document.activeElement).toBe(emailInput()));
   });
 
   it('a 422 invalid_display_name shows its reason on the name field', async () => {
@@ -96,6 +112,7 @@ describe('ReplyToForm', () => {
     fireEvent.click(screen.getByRole('button', { name: t.actions.save }));
     expect(await screen.findByText(t.errors.nameUnsafe)).toBeTruthy();
     expect(nameInput().getAttribute('aria-invalid')).toBe('true');
+    await waitFor(() => expect(document.activeElement).toBe(nameInput()));
   });
 
   it('a read-only 503 and a 500 show inline alerts; nothing toasts', async () => {
@@ -116,9 +133,30 @@ describe('ReplyToForm', () => {
     const fetchFn = stubFetch(200, { email: null, displayName: null, changed: true });
     renderForm('m@swecham.example', 'SweCham');
     fireEvent.click(screen.getByRole('button', { name: t.actions.remove }));
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t.toast.removed));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+    const [message, opts] = vi.mocked(toast.success).mock.calls[0] as unknown as [
+      string,
+      { action: { label: string; onClick: () => void } },
+    ];
+    expect(message).toBe(t.toast.removed);
+    expect(opts.action.label).toBe(t.toast.undo);
     expect(JSON.parse(String((fetchFn.mock.calls[0] as unknown as [string, RequestInit])[1].body))).toEqual({ email: null, displayName: null });
     expect(emailInput().value).toBe('');
     expect(screen.queryByRole('button', { name: t.actions.remove })).toBeNull();
+    // The Remove button is gone, so focus moves to the email field, not <body>.
+    await waitFor(() => expect(document.activeElement).toBe(emailInput()));
+
+    // Undo puts the removed values back.
+    fetchFn.mockImplementationOnce(
+      async () =>
+        new Response(JSON.stringify({ email: 'm@swecham.example', displayName: 'SweCham', changed: true }), { status: 200 }),
+    );
+    opts.action.onClick();
+    await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(String((fetchFn.mock.calls[1] as unknown as [string, RequestInit])[1].body))).toEqual({
+      email: 'm@swecham.example',
+      displayName: 'SweCham',
+    });
+    await waitFor(() => expect(emailInput().value).toBe('m@swecham.example'));
   });
 });

@@ -2293,7 +2293,7 @@
           },
           "renewalSchedules": {
             "title": "Påminnelseschema",
-            "description": "Frekvens och kanal för förnyelsepåminnelser, konfigurerbart per medlemsnivå."
+            "description": "Intervall, kanal och svarsadress för förnyelsepåminnelser, per medlemsnivå."
           },
           "broadcasts": {
             "title": "Inställningar för utskick",
@@ -2311,7 +2311,7 @@
       },
       "renewalReplyTo": {
         "pageTitle": "Svarsadress för påminnelser",
-        "pageDescription": "Vart ett medlemssvar på en förnyelsepåminnelse går.",
+        "pageDescription": "Hit går medlemmarnas svar på förnyelsepåminnelser.",
         "title": "Svarsadress",
         "cardDescription": "Förnyelsepåminnelser skickas från kammarens avsändaradress. När en medlem svarar går svaret till adressen nedan. Lämna den tom så går svaren till avsändaradressen.",
         "email": {
@@ -2319,8 +2319,8 @@
           "hint": "Använd en delad brevlåda för teamet, till exempel membership@…, inte en enskild persons adress."
         },
         "displayName": {
-          "label": "Visat namn (valfritt)",
-          "hint": "Visas bredvid adressen i medlemmens e-postprogram, t.ex. \"Medlemsteamet\". Högst 100 tecken; inga < > ( ) [ ] : ; @ \\\\ , eller \"."
+          "label": "Visat namn",
+          "hint": "Visas bredvid adressen i medlemmens e-postprogram, t.ex. \"Medlemsteamet\". Högst 100 tecken; inga < > ( ) [ ] : ; @ \\ , eller \"."
         },
         "note": "En ändring gäller påminnelser som skickas från och med nu. Påminnelser som redan har skickats, eller väntar på ett nytt försök, behåller den svarsadress de först skickades med.",
         "actions": {
@@ -2329,15 +2329,20 @@
         },
         "toast": {
           "saved": "Svarsadressen har sparats",
-          "removed": "Svarsadressen har tagits bort – svar går till avsändaradressen"
+          "removed": "Svarsadressen har tagits bort – svar går till avsändaradressen",
+          "undo": "Ångra"
+        },
+        "status": {
+          "unchanged": "Inga ändringar att spara."
         },
         "errors": {
           "invalidEmail": "Ange en giltig e-postadress, till exempel membership@example.com.",
-          "nameWithoutEmail": "Lägg till en e-postadress eller rensa namnet.",
-          "nameUnsafe": "Namnet får inte innehålla < > ( ) [ ] : ; @ \\\\ , \" eller radbrytningar.",
+          "nameWithoutEmail": "Lägg till en e-postadress eller töm namnfältet.",
+          "nameUnsafe": "Namnet får inte innehålla < > ( ) [ ] : ; @ \\ , \" eller radbrytningar.",
           "nameTooLong": "Namnet får vara högst 100 tecken.",
           "readOnly": "Systemet är i skrivskyddat läge för underhåll. Inget har ändrats – försök igen senare.",
-          "generic": "Svarsadressen kunde inte sparas. Inget har ändrats – försök igen."
+          "generic": "Svarsadressen kunde inte sparas. Inget har ändrats – försök igen.",
+          "network": "Kunde inte nå servern. Ladda om sidan för att se vad som är sparat."
         }
       },
       "memberChanges": {
@@ -6575,6 +6580,7 @@
     }
   },
   "breadcrumb": {
+    "replyTo": "Svarsadress",
     "support": "Hjälp och support",
     "brand": "Profil",
     "admin": "Admin",

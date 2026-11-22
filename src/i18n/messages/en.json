@@ -2293,7 +2293,7 @@
           },
           "renewalSchedules": {
             "title": "Reminder schedules",
-            "description": "Cadence and channel for renewal reminders, configurable per member tier."
+            "description": "Cadence, channel and reply-to address for renewal reminders, configurable per member tier."
           },
           "broadcasts": {
             "title": "Broadcast settings",
@@ -2311,7 +2311,7 @@
       },
       "renewalReplyTo": {
         "pageTitle": "Reminder reply-to",
-        "pageDescription": "Where a member's reply to a renewal reminder goes.",
+        "pageDescription": "Where members' replies to renewal reminders go.",
         "title": "Reply-to address",
         "cardDescription": "Renewal reminders are sent from the chamber's sending address. When a member replies, the reply goes to the address below. Leave it empty and replies go to the sending address.",
         "email": {
@@ -2319,8 +2319,8 @@
           "hint": "Use a shared team mailbox, such as membership@…, not one person's own address."
         },
         "displayName": {
-          "label": "Name shown (optional)",
-          "hint": "Shown beside the address in the member's mail app, e.g. \"Membership team\". Up to 100 characters; no < > ( ) [ ] : ; @ \\\\ , or \" characters."
+          "label": "Name shown",
+          "hint": "Shown beside the address in the member's mail app, e.g. \"Membership team\". Up to 100 characters; no < > ( ) [ ] : ; @ \\ , or \" characters."
         },
         "note": "A change applies to reminders sent from now on. Reminders already sent, or waiting to be retried, keep the reply-to they were first sent with.",
         "actions": {
@@ -2329,15 +2329,20 @@
         },
         "toast": {
           "saved": "Reply-to saved",
-          "removed": "Reply-to removed — replies go to the sending address"
+          "removed": "Reply-to removed — replies go to the sending address",
+          "undo": "Undo"
+        },
+        "status": {
+          "unchanged": "No changes to save."
         },
         "errors": {
           "invalidEmail": "Enter a valid email address, like membership@example.com.",
           "nameWithoutEmail": "Add an email address, or clear the name.",
-          "nameUnsafe": "The name can't contain < > ( ) [ ] : ; @ \\\\ , \" or line breaks.",
+          "nameUnsafe": "The name can't contain < > ( ) [ ] : ; @ \\ , \" or line breaks.",
           "nameTooLong": "The name can be at most 100 characters.",
           "readOnly": "The system is in read-only mode for maintenance. Nothing was changed — try again later.",
-          "generic": "The reply-to couldn't be saved. Nothing was changed — try again."
+          "generic": "The reply-to couldn't be saved. Nothing was changed — try again.",
+          "network": "Couldn't reach the server. Reload the page to see what's saved."
         }
       },
       "memberChanges": {
@@ -6575,6 +6580,7 @@
     }
   },
   "breadcrumb": {
+    "replyTo": "Reminder reply-to",
     "support": "Help and support",
     "brand": "Brand",
     "admin": "Admin",
