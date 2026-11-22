@@ -8104,6 +8104,7 @@
       "membership_access_fail_open": "ตรวจสอบสิทธิ์สมาชิกภาพล้มเหลว — อนุญาตแบบ fail-open",
       "renewal_lapse_deferred_invoice_not_due": "เลื่อนการยกเลิกสมาชิกภาพ — ใบแจ้งหนี้ยังไม่ถึงกำหนดชำระ",
       "renewal_lapse_deferred_warning_pending": "เลื่อนการยกเลิกสมาชิกภาพ — หนังสือเตือนยังไม่พ้นระยะเวลาแจ้งเตือน",
+      "renewal_reply_to_updated": "แก้ไขอีเมลตอบกลับของอีเมลเตือนต่ออายุ",
       "event_attendance_by_suspended_member": "บันทึกการเข้าร่วมงาน — สิทธิประโยชน์สมาชิกถูกระงับหรือยกเลิก",
       "renewal_auto_drafted": "สร้างร่างใบแจ้งหนี้ต่ออายุอัตโนมัติ",
       "renewal_auto_draft_discarded": "ยกเลิกร่างใบแจ้งหนี้ต่ออายุอัตโนมัติ",

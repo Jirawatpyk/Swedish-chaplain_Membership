@@ -8104,6 +8104,7 @@
       "membership_access_fail_open": "Membership-access check failed open",
       "renewal_lapse_deferred_invoice_not_due": "Lapse deferred — invoice not yet due",
       "renewal_lapse_deferred_warning_pending": "Lapse deferred — termination warning not yet matured",
+      "renewal_reply_to_updated": "Renewal reminder reply-to updated",
       "event_attendance_by_suspended_member": "Attendance recorded — member benefit access suspended/terminated",
       "renewal_auto_drafted": "Renewal draft auto-created",
       "renewal_auto_draft_discarded": "Renewal auto-draft discarded",

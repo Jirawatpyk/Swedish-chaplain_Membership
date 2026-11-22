@@ -8104,6 +8104,7 @@
       "membership_access_fail_open": "Kontroll av medlemsåtkomst misslyckades (fail-open)",
       "renewal_lapse_deferred_invoice_not_due": "Uppsägning uppskjuten — fakturan har inte förfallit än",
       "renewal_lapse_deferred_warning_pending": "Uppsägning uppskjuten — varselperioden har inte löpt ut än",
+      "renewal_reply_to_updated": "Svarsadress för förnyelsepåminnelser uppdaterad",
       "event_attendance_by_suspended_member": "Närvaro registrerad — medlemmens förmånsåtkomst avstängd eller uppsagd",
       "renewal_auto_drafted": "Förnyelseutkast skapat automatiskt",
       "renewal_auto_draft_discarded": "Automatiskt förnyelseutkast kasserat",

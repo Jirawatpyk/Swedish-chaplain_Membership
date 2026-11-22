@@ -84,6 +84,9 @@ const F8_ENUM_SHIPPED_TUPLE = [
   // this same commit (`lapse-cycles-on-grace-expiry.ts` `processOne`,
   // `deferred_no_prior_warning` branch), so SHIPPED from day one.
   'renewal_lapse_deferred_warning_pending',
+  // --- PR B (migration 0333): emitted by update-renewal-reply-to.ts in
+  // the same commit, so SHIPPED from day one.
+  'renewal_reply_to_updated',
   // --- F8-completion slice 2 — T-0 payability flip emit site -----------
   // Migration 0215 adds the pgEnum value. Emit sites:
   //   - enter-awaiting-payment-on-expiry.ts (T-0 cron, source:'cron')
