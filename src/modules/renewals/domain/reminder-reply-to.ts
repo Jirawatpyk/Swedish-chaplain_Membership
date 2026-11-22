@@ -19,7 +19,9 @@
 export const REPLY_TO_EMAIL_MAX = 254;
 export const REPLY_TO_DISPLAY_NAME_MAX = 100;
 
-const UNSAFE_DISPLAY_NAME = /[\u0000-\u001f\u007f\u2028\u2029<>()[\]:;@\\,"]/;
+// C1 controls, zero-width and bidi marks (U+200B–200F, U+202A–202E,
+// U+2066–2069, U+FEFF) can spoof how the sender reads in a mail app.
+const UNSAFE_DISPLAY_NAME = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff<>()[\]:;@\\,"]/;
 
 export type ReplyToDisplayNameProblem = 'unsafe_character' | 'too_long';
 
