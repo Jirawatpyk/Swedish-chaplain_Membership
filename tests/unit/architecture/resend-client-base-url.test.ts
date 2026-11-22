@@ -1,5 +1,5 @@
 /**
- * Spec 141 — every Resend client in src and scripts pins `baseUrl`.
+ * Spec 141 — every Resend client in src, scripts and the root files pins `baseUrl`.
  *
  * resend@6.35 reads `RESEND_BASE_URL` from the process env when a client is
  * built; a client without an explicit `baseUrl` would send the Bearer key (and,
@@ -11,6 +11,16 @@
  * the `Resend` binding wherever the import put it (a renamed import, a
  * namespace, `require`), refuses a subclass and any other escape of the
  * binding, and refuses an options object whose pin a spread could override.
+ * Review round 1 added: a dynamic import, a re-export, an import-equals, a
+ * subpath import or a require() outside a variable's initializer is refused
+ * outright; the pin counts only as `RESEND_API_BASE_URL` imported from the
+ * shared module and not redeclared; a getter, method or shorthand `baseUrl`
+ * is never pinned; and the client list must match exactly.
+ *
+ * Still out of reach, named so nobody reads this as complete: `createRequire`
+ * (`req('resend')`), `rs.default.Resend` through a default import, and
+ * scope-blind names (a shadowing local is refused, which fails closed). The
+ * runtime contract test above covers the three clients that exist.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -19,11 +29,13 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = join(__dirname, '../../..');
 
+const SOURCE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
+
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) sourceFiles(path, out);
-    else if (/\.(ts|tsx|mts|cts|js|mjs|cjs)$/.test(name)) out.push(path);
+    else if (SOURCE.test(name)) out.push(path);
   }
   return out;
 }
@@ -37,6 +49,15 @@ export interface ResendScan {
 
 function isResendModule(node: ts.Expression | undefined): boolean {
   return node !== undefined && ts.isStringLiteral(node) && node.text === 'resend';
+}
+
+/** `resend` or a subpath of it (`resend/dist/…`). */
+function isResendSpecifier(node: ts.Node | undefined): boolean {
+  return (
+    node !== undefined &&
+    ts.isStringLiteral(node) &&
+    (node.text === 'resend' || node.text.startsWith('resend/'))
+  );
 }
 
 function isRequireResend(node: ts.Node | undefined): node is ts.CallExpression {
@@ -61,6 +82,16 @@ function isPinnedOptions(arg: ts.Expression | undefined): boolean {
   for (const p of arg.properties) {
     if (ts.isSpreadAssignment(p)) return false;
     if (p.name !== undefined && ts.isComputedPropertyName(p.name)) return false;
+    // A getter, setter, method or shorthand named baseUrl overrides or
+    // replaces the pin, so it is never pinned.
+    if (
+      !ts.isPropertyAssignment(p) &&
+      p.name !== undefined &&
+      (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) &&
+      p.name.text === 'baseUrl'
+    ) {
+      return false;
+    }
     if (
       ts.isPropertyAssignment(p) &&
       (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) &&
@@ -77,8 +108,45 @@ export function scanResendClients(source: string, fileName = 'x.ts'): ResendScan
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind);
   const direct = new Set<string>(); // local names bound to the Resend class
   const namespaces = new Set<string>(); // local names bound to the module
+  const constructions: string[] = [];
+  const violations: string[] = [];
+  const text = (n: ts.Node): string => n.getText(sf);
+  // The pin counts only as the shared constant, imported under its own name
+  // and not redeclared in the file (security L4).
+  let pinImported = false;
+  let pinShadowed = false;
 
   for (const st of sf.statements) {
+    // Loaders and re-exports the binding walk can't follow are refused, so a
+    // client is always built from a static import in the file that pins it
+    // (security M2, L3, L6).
+    if (ts.isImportDeclaration(st) && !st.importClause?.isTypeOnly) {
+      const spec = st.moduleSpecifier;
+      if (isResendSpecifier(spec) && !isResendModule(spec)) violations.push(text(st));
+    }
+    if (ts.isExportDeclaration(st) && !st.isTypeOnly && isResendSpecifier(st.moduleSpecifier)) {
+      violations.push(text(st));
+    }
+    if (
+      ts.isImportEqualsDeclaration(st) &&
+      !st.isTypeOnly &&
+      ts.isExternalModuleReference(st.moduleReference) &&
+      isResendSpecifier(st.moduleReference.expression)
+    ) {
+      violations.push(text(st));
+    }
+    if (
+      ts.isImportDeclaration(st) &&
+      ts.isStringLiteral(st.moduleSpecifier) &&
+      /(^|\/)resend-api-base-url$/.test(st.moduleSpecifier.text) &&
+      st.importClause?.namedBindings &&
+      ts.isNamedImports(st.importClause.namedBindings) &&
+      st.importClause.namedBindings.elements.some(
+        (el) => el.name.text === 'RESEND_API_BASE_URL' && el.propertyName === undefined,
+      )
+    ) {
+      pinImported = true;
+    }
     if (ts.isImportDeclaration(st) && isResendModule(st.moduleSpecifier)) {
       const clause = st.importClause;
       if (clause === undefined || clause.isTypeOnly) continue;
@@ -94,6 +162,33 @@ export function scanResendClients(source: string, fileName = 'x.ts'): ResendScan
     }
   }
   const visitRequire = (node: ts.Node): void => {
+    // A dynamic import of the SDK, or a require() anywhere but a variable's
+    // initializer, can't be followed (security M1, L3).
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      isResendSpecifier(node.arguments[0])
+    ) {
+      violations.push(text(node));
+    }
+    if (
+      isRequireResend(node) &&
+      !(ts.isVariableDeclaration(node.parent) && node.parent.initializer === node)
+    ) {
+      violations.push(text(node.parent));
+    }
+    if (
+      (ts.isVariableDeclaration(node) ||
+        ts.isParameter(node) ||
+        ts.isBindingElement(node) ||
+        ts.isFunctionDeclaration(node) ||
+        ts.isClassDeclaration(node)) &&
+      node.name !== undefined &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'RESEND_API_BASE_URL'
+    ) {
+      pinShadowed = true;
+    }
     if (ts.isVariableDeclaration(node) && isRequireResend(node.initializer)) {
       if (ts.isIdentifier(node.name)) namespaces.add(node.name.text);
       else if (ts.isObjectBindingPattern(node.name)) {
@@ -108,10 +203,6 @@ export function scanResendClients(source: string, fileName = 'x.ts'): ResendScan
     ts.forEachChild(node, visitRequire);
   };
   visitRequire(sf);
-
-  const constructions: string[] = [];
-  const violations: string[] = [];
-  const text = (n: ts.Node): string => n.getText(sf);
 
   /** A reference to the Resend class: `R` or `ns.Resend`. */
   const isResendRef = (n: ts.Node): boolean =>
@@ -157,7 +248,8 @@ export function scanResendClients(source: string, fileName = 'x.ts'): ResendScan
   const visit = (node: ts.Node): void => {
     if (ts.isNewExpression(node) && isResendRef(node.expression)) {
       constructions.push(text(node));
-      if (!isPinnedOptions(node.arguments?.[1])) violations.push(text(node));
+      const pinned = pinImported && !pinShadowed && isPinnedOptions(node.arguments?.[1]);
+      if (!pinned) violations.push(text(node));
       node.arguments?.forEach(visit);
       return;
     }
@@ -251,18 +343,29 @@ describe('Resend clients pin baseUrl (spec 141, #709)', () => {
     expect(scanResendClients(source).violations).toEqual([]);
   });
 
-  it('every Resend client in src and scripts passes baseUrl: RESEND_API_BASE_URL', () => {
-    let constructions = 0;
+  it('every Resend client in src, scripts and the root config passes baseUrl: RESEND_API_BASE_URL', () => {
+    const perFile = new Map<string, number>();
     const violations: Array<{ file: string; at: string }> = [];
     // scripts/ too: an operator script holds a live key just as src does.
-    for (const file of [...sourceFiles(join(ROOT, 'src')), ...sourceFiles(join(ROOT, 'scripts'))]) {
+    // Root files (next.config.ts, instrumentation.ts) run in prod as well.
+    const rootFiles = readdirSync(ROOT)
+      .filter((n) => SOURCE.test(n))
+      .map((n) => join(ROOT, n))
+      .filter((p) => statSync(p).isFile());
+    for (const file of [...sourceFiles(join(ROOT, 'src')), ...sourceFiles(join(ROOT, 'scripts')), ...rootFiles]) {
       const scan = scanResendClients(readFileSync(file, 'utf8'), file);
-      constructions += scan.constructions.length;
       const rel = relative(ROOT, file).replace(/\\/g, '/');
+      if (scan.constructions.length > 0) perFile.set(rel, scan.constructions.length);
       for (const at of scan.violations) violations.push({ file: rel, at });
     }
-    // A scan that finds nothing proves nothing: there are three clients today.
-    expect(constructions).toBeGreaterThanOrEqual(3);
     expect(violations).toEqual([]);
+    // The exact client list, one each: a scan that finds nothing proves
+    // nothing, and a fourth client (or one that moved) is a reviewed change
+    // here and in tests/contract/resend/base-url-pinned.contract.test.ts.
+    expect(Object.fromEntries([...perFile].sort())).toEqual({
+      'src/modules/auth/infrastructure/email/resend-client.ts': 1,
+      'src/modules/broadcasts/infrastructure/resend/resend-broadcasts-client.ts': 1,
+      'src/modules/renewals/infrastructure/resend-transactional-renewal-gateway.tsx': 1,
+    });
   });
 });
