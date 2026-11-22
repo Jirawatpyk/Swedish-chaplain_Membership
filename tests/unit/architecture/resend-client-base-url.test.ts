@@ -178,10 +178,12 @@ export function scanResendClients(source: string, fileName = 'x.ts'): ResendScan
   return { constructions, violations };
 }
 
+const PIN_IMPORT = "import { RESEND_API_BASE_URL } from '@/lib/resend-api-base-url';";
+
 describe('Resend clients pin baseUrl (spec 141, #709)', () => {
   it('the parser finds a construction and tells a pinned one from an unpinned one (positive control)', () => {
     const scan = scanResendClients(
-      "import { Resend } from 'resend';\n/** every `new Resend(…)` */\nconst a = new Resend(key, { baseUrl: RESEND_API_BASE_URL });\r\n// new Resend(x)\nconst b = new Resend(key);",
+      `import { Resend } from 'resend';\n${PIN_IMPORT}\n/** every \`new Resend(…)\` */\nconst a = new Resend(key, { baseUrl: RESEND_API_BASE_URL });\r\n// new Resend(x)\nconst b = new Resend(key);`,
     );
     expect(scan.constructions).toEqual([
       'new Resend(key, { baseUrl: RESEND_API_BASE_URL })',
@@ -192,7 +194,7 @@ describe('Resend clients pin baseUrl (spec 141, #709)', () => {
 
   it('only the shared constant counts as pinned (an env-driven baseUrl does not)', () => {
     const pinned = (opts: string) =>
-      scanResendClients(`import { Resend } from 'resend';\nnew Resend(key${opts});`).violations.length === 0;
+      scanResendClients(`import { Resend } from 'resend';\n${PIN_IMPORT}\nnew Resend(key${opts});`).violations.length === 0;
     expect(pinned(', { baseUrl: RESEND_API_BASE_URL }')).toBe(true);
     expect(pinned(', { baseUrl: process.env.RESEND_BASE_URL })')).toBe(false);
     expect(pinned(', { baseUrl: undefined }')).toBe(false);
@@ -208,6 +210,32 @@ describe('Resend clients pin baseUrl (spec 141, #709)', () => {
     ['an options variable', "import { Resend } from 'resend';\nnew Resend(k, opts);"],
     ['an alias of the class', "import { Resend } from 'resend';\nconst R2 = Resend;\nnew R2(k);"],
     ['the namespace passed on', "import * as rs from 'resend';\nbuild(rs);"],
+    // Review round 1 (security M1, M2, L3–L5): loaders and shapes the binding
+    // walk can't follow are refused outright, so a client must be built
+    // from a static import in the file that pins it.
+    ['a dynamic import', "const { Resend } = await import('resend');\nnew Resend(k);"],
+    ['a dynamic import then', "import('resend').then((m) => new m.Resend(k));"],
+    ['a re-export', "export { Resend } from 'resend';"],
+    ['a star re-export', "export * from 'resend';"],
+    ['a require member read', "const R = require('resend').Resend;\nnew R(k);"],
+    ['an import-equals', "import rs = require('resend');\nnew rs.Resend(k, {});"],
+    ['a subpath import', "import { Resend } from 'resend/dist/index.mjs';\nnew Resend(k);"],
+    [
+      'a local constant with the pin\'s name',
+      "import { Resend } from 'resend';\nconst RESEND_API_BASE_URL = process.env.RESEND_BASE_URL;\nnew Resend(k, { baseUrl: RESEND_API_BASE_URL });",
+    ],
+    [
+      'a pin constant not imported from the shared module',
+      "import { Resend } from 'resend';\nnew Resend(k, { baseUrl: RESEND_API_BASE_URL });",
+    ],
+    [
+      'a getter overriding the pin',
+      `import { Resend } from 'resend';\n${PIN_IMPORT}\nnew Resend(k, { baseUrl: RESEND_API_BASE_URL, get baseUrl() { return process.env.X; } });`,
+    ],
+    [
+      'a method overriding the pin',
+      `import { Resend } from 'resend';\n${PIN_IMPORT}\nnew Resend(k, { baseUrl: RESEND_API_BASE_URL, baseUrl() { return 'x'; } });`,
+    ],
   ])('#709: %s is refused', (_label, source) => {
     expect(scanResendClients(source).violations).not.toEqual([]);
   });
@@ -215,8 +243,10 @@ describe('Resend clients pin baseUrl (spec 141, #709)', () => {
   it.each([
     ['a type-only import', "import type { Resend } from 'resend';\nlet c: Resend;"],
     ['a type-only specifier', "import { type Resend } from 'resend';\nfunction f(c: Resend) { return c; }"],
-    ['a pinned renamed import', "import { Resend as R } from 'resend';\nnew R(k, { baseUrl: RESEND_API_BASE_URL });"],
-    ['a pinned construction in a lazy getter', "import { Resend } from 'resend';\nlet c: Resend | null = null;\nfunction get(): Resend { return (c ??= new Resend(k, { baseUrl: RESEND_API_BASE_URL })); }"],
+    ['a pinned renamed import', `import { Resend as R } from 'resend';\n${PIN_IMPORT}\nnew R(k, { baseUrl: RESEND_API_BASE_URL });`],
+    ['a pin imported by a relative path (scripts)', "import { Resend } from 'resend';\nimport { RESEND_API_BASE_URL } from '../src/lib/resend-api-base-url';\nnew Resend(k, { baseUrl: RESEND_API_BASE_URL });"],
+    ['a quoted baseUrl key', `import { Resend } from 'resend';\n${PIN_IMPORT}\nnew Resend(k, { 'baseUrl': RESEND_API_BASE_URL });`],
+    ['a pinned construction in a lazy getter', `import { Resend } from 'resend';\n${PIN_IMPORT}\nlet c: Resend | null = null;\nfunction get(): Resend { return (c ??= new Resend(k, { baseUrl: RESEND_API_BASE_URL })); }`],
   ])('#709: %s is allowed', (_label, source) => {
     expect(scanResendClients(source).violations).toEqual([]);
   });
