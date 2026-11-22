@@ -92,7 +92,9 @@ export function reminderRowReplyTo(row: {
   readonly replyToEmail: string | null;
   readonly replyToDisplayName: string | null;
 }): ReminderReplyTo | null {
-  return row.replyToEmail !== null
-    ? { email: row.replyToEmail, displayName: row.replyToDisplayName }
+  // `!= null` and non-empty: a partial projection can never yield an
+  // `{ replyToEmail: undefined }` key (review, reliability LOW-1).
+  return row.replyToEmail != null && row.replyToEmail !== ''
+    ? { email: row.replyToEmail, displayName: row.replyToDisplayName ?? null }
     : null;
 }

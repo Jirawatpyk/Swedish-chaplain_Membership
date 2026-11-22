@@ -241,6 +241,9 @@ export async function dispatchRenewalCycle(
     );
   // #707 — the tenant's renewal reply-to, read ONCE for the pass and
   // snapshotted on every reminder row it inserts (the retry reads the row).
+  // A failed read fails the pass like the read above it (the tick answers
+  // 500 and the next retries), rather than sending a whole pass silently
+  // without the tenant's Reply-To (review round 1).
   const replyTo = resolveReminderReplyTo(
     await deps.tenantRenewalSettingsRepo.findByTenant(input.tenantId),
     input.tenantId,

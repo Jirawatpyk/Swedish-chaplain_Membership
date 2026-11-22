@@ -5,9 +5,10 @@
  *
  * A value Resend would refuse never reaches a send. A malformed address
  * would 422 every reminder of the tenant, so it resolves to "no reply-to";
- * a display name with a line break (a header injection), address syntax
- * (`< > " , ; ( ) \`, which could make the header name another address), or
- * over 100 characters is dropped and the address kept. Either is logged by field,
+ * a display name with a control character (a header injection), an RFC 5322
+ * special (`( ) < > [ ] : ; @ \ , "`, which could make the unquoted header
+ * name another address), or over 100 characters is dropped and the address
+ * kept. Either is logged by field,
  * never by value.
  *
  * Pure Application — no framework/ORM imports (Constitution Principle III).
@@ -23,9 +24,13 @@ export interface ReminderReplyTo {
 
 const EMAIL = z.string().email().max(254);
 const MAX_DISPLAY_NAME = 100;
-// Line breaks, and the RFC 5322 specials that could turn an unquoted
-// display name into a second address, a group or a comment (review, PDPA L-1).
-const UNSAFE_DISPLAY_NAME = /[\r\n<>",;()\\]/;
+// Control characters (line breaks included, and U+2028/2029), and every
+// RFC 5322 special — the gateway writes the name UNQUOTED as `Name <email>`,
+// so a special could make it a second address, a group (`:`) or a comment
+// (review round 1: PDPA L-1, code-review, reliability M-1). Rejected here,
+// before the snapshot, so the header format itself never has to change: a
+// changed format would change the payload of rows already mid-retry.
+const UNSAFE_DISPLAY_NAME = /[\u0000-\u001f\u007f\u2028\u2029<>()[\]:;@\\,"]/;
 
 function warnInvalid(tenantId: string, field: 'email' | 'display_name'): void {
   logger.warn(
