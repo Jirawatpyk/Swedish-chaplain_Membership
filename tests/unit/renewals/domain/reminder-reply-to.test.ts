@@ -29,6 +29,12 @@ describe('checkReplyToDisplayName', () => {
     }
   });
 
+  it('a C1 control, a bidi override or a zero-width character is unsafe (security L2)', () => {
+    for (const cp of [0x80, 0x85, 0x9f, 0x200b, 0x200d, 0x200e, 0x200f, 0x202a, 0x202e, 0x2066, 0x2069, 0xfeff]) {
+      expect(checkReplyToDisplayName(`Swe${String.fromCodePoint(cp)}Cham`)).toBe('unsafe_character');
+    }
+  });
+
   it('over 100 characters is too long; exactly 100 passes', () => {
     expect(checkReplyToDisplayName('x'.repeat(101))).toBe('too_long');
     expect(checkReplyToDisplayName('x'.repeat(100))).toBeNull();
