@@ -411,6 +411,100 @@ describe('resendTransactionalRenewalGateway', () => {
       expect(sendMock.mock.calls[0]![0].headers).toBeUndefined();
       expect(sendMock.mock.calls[0]![1]).toEqual({ idempotencyKey: 'suggestion-id-1' });
     });
+
+    // #709 part 2 — pinned before the two send loops are folded into one:
+    // the tier email's request body and retry semantics must not move.
+    const TIER_INPUT = {
+      tenantId: 'tenanta',
+      recipient: VALID_INPUT.recipient,
+      memberCompanyName: 'Acme Co',
+      targetPlanName: 'Corporate',
+      effectiveAtIso: '2026-08-15T00:00:00Z',
+      idempotencyKey: 'suggestion-id-1',
+      correlationId: 'corr-1',
+    };
+
+    it('#709: the request body is exactly from, to, subject, html, text (no replyTo)', async () => {
+      await resendTransactionalRenewalGateway.sendTierUpgradeApprovalEmail(TIER_INPUT);
+      expect(Object.keys(sendMock.mock.calls[0]![0])).toEqual(['from', 'to', 'subject', 'html', 'text']);
+      expect(sendMock.mock.calls[0]![0].to).toBe('admin@acme.example');
+    });
+
+    it('#709: a 5xx is retried to 4 attempts, then gateway_5xx with the exhausted log line', async () => {
+      const errorSpy = vi.spyOn(logger, 'error');
+      sendMock.mockResolvedValue({ data: null, error: { name: 'rate_limit_exceeded', message: 'slow down' } });
+      const result = await resendTransactionalRenewalGateway.sendTierUpgradeApprovalEmail(TIER_INPUT);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('gateway_5xx');
+      expect(sendMock).toHaveBeenCalledTimes(4);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenanta', lastErrorKind: 'gateway_5xx' }),
+        'resend.renewals.tier_upgrade_approval.exhausted_retries',
+      );
+      errorSpy.mockRestore();
+    }, 30_000);
+
+    it('#709: a permanent error aborts with no retry', async () => {
+      sendMock.mockResolvedValue({ data: null, error: { name: 'validation_error', message: 'bad' } });
+      const result = await resendTransactionalRenewalGateway.sendTierUpgradeApprovalEmail(TIER_INPUT);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('gateway_4xx');
+      expect(sendMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('#709: an SDK exception is retried and ends as send:<Class>, never its text', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn');
+      sendMock.mockRejectedValue(new Error('connect a@b.example refused'));
+      const result = await resendTransactionalRenewalGateway.sendTierUpgradeApprovalEmail(TIER_INPUT);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toEqual({ kind: 'gateway_5xx', retryable: true, message: 'send:Error' });
+      expect(sendMock).toHaveBeenCalledTimes(4);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ err: 'Error', tenantId: 'tenanta', attempt: 0 }),
+        'resend.renewals.tier_upgrade_approval.exception',
+      );
+      expect(JSON.stringify(warnSpy.mock.calls)).not.toContain('a@b.example');
+      warnSpy.mockRestore();
+    }, 30_000);
+
+    it('#709: a 5xx then success returns the second delivery id and logs retry_succeeded', async () => {
+      const infoSpy = vi.spyOn(logger, 'info');
+      sendMock
+        .mockResolvedValueOnce({ data: null, error: { name: 'application_error', message: 'x' } })
+        .mockResolvedValueOnce({ data: { id: 'tier-retry-id' }, error: null });
+      const result = await resendTransactionalRenewalGateway.sendTierUpgradeApprovalEmail(TIER_INPUT);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.deliveryId).toBe('tier-retry-id');
+      expect(sendMock).toHaveBeenCalledTimes(2);
+      // New with the fold: the tier path logs a successful retry too.
+      expect(infoSpy).toHaveBeenCalledWith(
+        { tenantId: 'tenanta', deliveryId: 'tier-retry-id', attempt: 1 },
+        'resend.renewals.tier_upgrade_approval.retry_succeeded',
+      );
+      infoSpy.mockRestore();
+    });
+  });
+
+  describe('#709: the ladder request body is unchanged by the fold', () => {
+    it('without a reply-to: from, to, subject, html, text', async () => {
+      await resendTransactionalRenewalGateway.sendRenewalEmail(VALID_INPUT);
+      expect(Object.keys(sendMock.mock.calls[0]![0])).toEqual(['from', 'to', 'subject', 'html', 'text']);
+    });
+
+    it('with a reply-to: replyTo comes last, as Name <email>', async () => {
+      await resendTransactionalRenewalGateway.sendRenewalEmail({
+        ...VALID_INPUT,
+        replyToEmail: 'renewals@swecham.example',
+        replyToDisplayName: 'SweCham',
+      });
+      const body = sendMock.mock.calls[0]![0];
+      expect(Object.keys(body)).toEqual(['from', 'to', 'subject', 'html', 'text', 'replyTo']);
+      expect(body.replyTo).toBe('SweCham <renewals@swecham.example>');
+    });
   });
 
   describe('input validation', () => {
