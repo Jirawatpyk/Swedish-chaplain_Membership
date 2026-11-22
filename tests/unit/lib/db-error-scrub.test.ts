@@ -197,6 +197,16 @@ describe('scrubDbError — what leaves carries no SQL, parameters or values (#80
     );
   });
 
+  it('R171 — a fresh DrizzleQueryError whose stack was never read keeps its frames', () => {
+    // V8 formats `stack` lazily on first read; no `.stack` touch before the scrub.
+    const fresh = new DrizzleQueryError(SQL_TEXT, [EMAIL, NAME], uniqueViolation());
+    scrubDbError(fresh);
+    const stack = fresh.stack ?? '';
+    expect(stack.startsWith('DrizzleQueryError: Failed query')).toBe(true);
+    expect(stack).toMatch(/\n\s+at .*db-error-scrub\.test\.ts/);
+    for (const needle of PII) expect(stack).not.toContain(needle);
+  });
+
   it('is idempotent', () => {
     const once = scrubDbError(drizzleError(uniqueViolation()));
     const twice = scrubDbError(once);
