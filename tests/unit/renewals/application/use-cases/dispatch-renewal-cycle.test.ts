@@ -139,6 +139,8 @@ function fakeDeps(
      * this knob + the dispatchDueTrackCycle mock.
      */
     duePages?: ReadonlyArray<DueTrackCandidate>[];
+    /** #707 — the tenant's renewal settings row (reply-to). */
+    settings?: { replyToEmail: string | null; replyToDisplayName: string | null } | null;
   } = {},
 ): {
   deps: RenewalsDeps;
@@ -146,6 +148,7 @@ function fakeDeps(
   dueListMock: ReturnType<typeof vi.fn>;
   auditEmitMock: ReturnType<typeof vi.fn>;
   listUnreconciledMemberIdsMock: ReturnType<typeof vi.fn>;
+  findSettingsMock: ReturnType<typeof vi.fn>;
 } {
   let pageIdx = 0;
   const listMock = vi.fn(async () => {
@@ -175,8 +178,13 @@ function fakeDeps(
   const listUnreconciledMemberIdsMock = vi.fn(
     async () => opts.unreconciledMemberIds ?? new Set<string>(),
   );
+  // #707 — the reply-to read, once per pass.
+  const findSettingsMock = vi.fn(async () => opts.settings ?? null);
   const deps: RenewalsDeps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
+    tenantRenewalSettingsRepo: {
+      findByTenant: findSettingsMock,
+    } as unknown as RenewalsDeps['tenantRenewalSettingsRepo'],
     // 066 F-4 — the due-track pass (listDueTrackCandidates) runs FIRST in
     // runDispatchLoop. The default `duePages` [[]] keeps it an empty page
     // (no due+N warnings) for the STANDARD-pass tests; the '066 §3.2(2)'
@@ -195,7 +203,7 @@ function fakeDeps(
       listMemberIdsWithUnreconciledPaidMembershipInvoice: listUnreconciledMemberIdsMock,
     } as unknown as RenewalsDeps['memberRenewalFlagsRepo'],
   } as unknown as RenewalsDeps;
-  return { deps, listMock, dueListMock, auditEmitMock, listUnreconciledMemberIdsMock };
+  return { deps, listMock, dueListMock, auditEmitMock, listUnreconciledMemberIdsMock, findSettingsMock };
 }
 
 const VALID_INPUT = {
@@ -461,6 +469,48 @@ describe('dispatchRenewalCycle', () => {
     for (const call of oneCycleMock.mock.calls) {
       expect(call[2].unreconciledMemberIds).toBe(unreconciledMemberIds);
     }
+  });
+
+  it('#707: reads the tenant reply-to ONCE per pass and threads it into every ctx, due-track pass included', async () => {
+    const oneCycleMock = dispatchOneCycle as unknown as ReturnType<typeof vi.fn>;
+    oneCycleMock.mockImplementation(async () => ({
+      kind: 'sent',
+      reminderEventId: 'r1',
+      deliveryId: 'd1',
+      dispatchedAt: NOW_ISO,
+    }));
+    const dueMock = dispatchDueTrackCycle as unknown as ReturnType<typeof vi.fn>;
+    dueMock.mockImplementation(async () => ({
+      kind: 'sent',
+      reminderEventId: 'r2',
+      deliveryId: 'd2',
+      dispatchedAt: NOW_ISO,
+    }));
+    const { deps, findSettingsMock } = fakeDeps([[buildCandidate('c-001')], [buildCandidate('c-002')]], {
+      duePages: [[buildDueCandidate('c-due-1')]],
+      settings: { replyToEmail: 'renewals@swecham.example', replyToDisplayName: 'SweCham' },
+    });
+    const result = await dispatchRenewalCycle(deps, VALID_INPUT);
+    assertOk(result);
+    expect(findSettingsMock).toHaveBeenCalledTimes(1);
+    expect(findSettingsMock).toHaveBeenCalledWith(TENANT_ID);
+    const expected = { email: 'renewals@swecham.example', displayName: 'SweCham' };
+    for (const call of oneCycleMock.mock.calls) expect(call[2].replyTo).toEqual(expected);
+    expect(dueMock.mock.calls.length).toBeGreaterThan(0);
+    for (const call of dueMock.mock.calls) expect(call[2].replyTo).toEqual(expected);
+  });
+
+  it('#707: a tenant with no settings row dispatches with replyTo null', async () => {
+    const oneCycleMock = dispatchOneCycle as unknown as ReturnType<typeof vi.fn>;
+    oneCycleMock.mockImplementation(async () => ({
+      kind: 'sent',
+      reminderEventId: 'r1',
+      deliveryId: 'd1',
+      dispatchedAt: NOW_ISO,
+    }));
+    const { deps } = fakeDeps([[buildCandidate('c-001')]]);
+    await dispatchRenewalCycle(deps, VALID_INPUT);
+    expect(oneCycleMock.mock.calls[0]![2].replyTo).toBeNull();
   });
 
   it('rejects empty tenantId with invalid_input', async () => {

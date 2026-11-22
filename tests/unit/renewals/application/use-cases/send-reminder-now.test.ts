@@ -68,10 +68,17 @@ function buildCandidate(): DispatchCandidate {
 
 function fakeDeps(
   candidate: DispatchCandidate | null,
-  opts: { hasUnreconciledInvoice?: boolean } = {},
+  opts: {
+    hasUnreconciledInvoice?: boolean;
+    /** #707 — the tenant's renewal settings row (reply-to). */
+    settings?: { replyToEmail: string | null; replyToDisplayName: string | null } | null;
+  } = {},
 ): RenewalsDeps {
   return {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
+    tenantRenewalSettingsRepo: {
+      findByTenant: vi.fn(async () => opts.settings ?? null),
+    } as unknown as RenewalsDeps['tenantRenewalSettingsRepo'],
     dispatchCandidateRepo: {
       list: vi.fn(),
       findOne: vi.fn(async () => candidate),
@@ -149,6 +156,21 @@ describe('sendReminderNow', () => {
     const ctx = oneCycleMock.mock.calls[0]![2];
     expect(ctx.actorUserId).toBe(ACTOR_USER_ID);
     expect(ctx.actorRole).toBe('admin');
+  });
+
+  it('#707: threads the tenant reply-to into dispatchOneCycle ctx', async () => {
+    const oneCycleMock = dispatchOneCycle as unknown as ReturnType<typeof vi.fn>;
+    oneCycleMock.mockImplementation(async () => ({
+      kind: 'sent',
+      reminderEventId: 'r1',
+      deliveryId: 'd1',
+      dispatchedAt: NOW_ISO,
+    }));
+    await sendReminderNow(
+      fakeDeps(buildCandidate(), { settings: { replyToEmail: 'renewals@swecham.example', replyToDisplayName: null } }),
+      VALID_INPUT,
+    );
+    expect(oneCycleMock.mock.calls[0]![2].replyTo).toEqual({ email: 'renewals@swecham.example', displayName: null });
   });
 
   // FIX-6 (PR #173 review, 2026-07-09) — the single-member read is wrapped

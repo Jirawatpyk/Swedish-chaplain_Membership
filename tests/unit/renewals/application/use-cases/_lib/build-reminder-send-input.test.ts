@@ -31,6 +31,7 @@ const base = {
   stepId: 't-30.email',
   templateId: 'renewal.t-30.regular',
   reminderEventId: 'rem-1',
+  replyTo: null,
 };
 
 describe('buildReminderSendInput (spec 141)', () => {
@@ -54,5 +55,31 @@ describe('buildReminderSendInput (spec 141)', () => {
   it('a createdAt too early for the token to outlive the cycle gives the plain portal link', () => {
     const input = buildReminderSendInput({ ...base, reminderCreatedAt: '2026-05-14T00:00:00.000Z' });
     expect(input.templateVariables['renewal_link_url']).toBe('https://swecham.example/portal/renewal/m-1');
+  });
+
+  it("#707: the row's reply-to snapshot becomes the Reply-To, name and address", () => {
+    const input = buildReminderSendInput({
+      ...base,
+      reminderCreatedAt: '2026-05-15T00:00:00.000Z',
+      replyTo: { email: 'renewals@swecham.example', displayName: 'SweCham Membership' },
+    });
+    expect(input.replyToEmail).toBe('renewals@swecham.example');
+    expect(input.replyToDisplayName).toBe('SweCham Membership');
+  });
+
+  it('#707: an address with no name sets only the address', () => {
+    const input = buildReminderSendInput({
+      ...base,
+      reminderCreatedAt: '2026-05-15T00:00:00.000Z',
+      replyTo: { email: 'renewals@swecham.example', displayName: null },
+    });
+    expect(input.replyToEmail).toBe('renewals@swecham.example');
+    expect('replyToDisplayName' in input).toBe(false);
+  });
+
+  it('#707: no snapshot (a row created before it, or a tenant with none) carries no reply-to keys at all', () => {
+    const input = buildReminderSendInput({ ...base, reminderCreatedAt: '2026-05-15T00:00:00.000Z' });
+    expect('replyToEmail' in input).toBe(false);
+    expect('replyToDisplayName' in input).toBe(false);
   });
 });
