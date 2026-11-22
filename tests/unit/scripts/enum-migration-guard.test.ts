@@ -435,6 +435,8 @@ describe('findMissingEnumValues', () => {
     // staff switch and the portal self-toggle in prod.
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('contact_marketing_opted_out');
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('contact_marketing_opted_in');
+    // PR B (mig 0333): every reply-to save INSERTs it with the settings upsert.
+    expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('renewal_reply_to_updated');
     // F119 PR-2 (mig 0308): a new KEY, not an append — every hand-off UPDATEs
     // broadcasts.status to one of these (R-9).
     expect(REQUIRED_ENUM_VALUES['broadcast_status']).toContain('awaiting_member_approval');

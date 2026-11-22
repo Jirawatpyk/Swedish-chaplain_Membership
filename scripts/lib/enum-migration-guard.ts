@@ -98,6 +98,7 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *                        += 'member_plan_change_billing_effect' (0270, renumbered from
  *                           0259 at rebase so it follows the task-7 stack's 0269)
  *                        += the ten F119 approval-round events (0308)
+ *                        += 'renewal_reply_to_updated' (0333, PR B)
  *                        += 'broadcast_retention_swept' (0310, F7 retention sweep)
  *                        += 'broadcast_unsubscribe_unattributed' (0312, F7 opt-out)
  *                        += 'webhook_unresolved_event_adopted' (0320, 132 adopt-on-replay)
@@ -204,6 +205,10 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     // Art. 30 record of a recipient-list disclosure and a segment delete.
     'broadcast_audience_disclosed',
     'broadcast_audience_deleted',
+    // PR B (0333) — `updateRenewalReplyTo` INSERTs it in the same tx as the
+    // tenant_renewal_settings upsert; a non-persisting ADD VALUE would 500
+    // every reply-to save in prod instead of failing the deploy here.
+    'renewal_reply_to_updated',
   ],
   // F114 (0301) — the two outbox row types the same use cases INSERT.
   notification_type: [

@@ -1364,6 +1364,13 @@ export interface F8AuditPayloadShapes {
    * PII discipline: IDs + dates only — no email addresses, no member
    * names (mirrors `renewal_lapse_deferred_invoice_not_due`).
    */
+  readonly renewal_lapse_deferred_warning_pending: {
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
+    readonly due_date: string;
+    readonly warning_sent_at: string | null;
+    readonly earliest_terminate_on: string | null;
+  };
   /**
    * PR B — the renewal reminder Reply-To was set, changed or cleared.
    * PII discipline: the address's domain only, never the address (a 5-year
@@ -1374,13 +1381,6 @@ export interface F8AuditPayloadShapes {
     readonly email_set: boolean;
     readonly email_domain: string | null;
     readonly display_name_set: boolean;
-  };
-  readonly renewal_lapse_deferred_warning_pending: {
-    readonly cycle_id: CycleId;
-    readonly member_id: MemberId;
-    readonly due_date: string;
-    readonly warning_sent_at: string | null;
-    readonly earliest_terminate_on: string | null;
   };
   /**
    * 066 §4.4(2) — a payment settled a MEMBERSHIP invoice for a member whose
