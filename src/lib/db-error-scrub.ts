@@ -128,6 +128,8 @@ function safeDriverMessage(e: Error & Rec): string {
 }
 
 function cleanDriverClone(e: Error & Rec): Error {
+  // Read the stack first, as `scrubDrizzleInPlace` does (lazy V8 stacks, R171).
+  const originalStack = e.stack;
   const clone = Object.create(Object.getPrototypeOf(e) as object) as Error & Rec;
   const message = safeDriverMessage(e);
   const name = typeof e.name === 'string' ? e.name : 'PostgresError';
@@ -137,7 +139,7 @@ function cleanDriverClone(e: Error & Rec): Error {
     if (e[key] !== undefined) clone[key] = e[key];
   }
   Object.defineProperty(clone, 'stack', {
-    value: withFrames(`${name}: ${message}`, e.stack, e.message),
+    value: withFrames(`${name}: ${message}`, originalStack, e.message),
     writable: true,
     configurable: true,
     enumerable: false,
@@ -148,11 +150,15 @@ function cleanDriverClone(e: Error & Rec): Error {
 
 function scrubDrizzleInPlace(e: Error & Rec): void {
   const name = e.constructor?.name || 'Error';
+  // V8 formats `stack` lazily, on its first read: read it BEFORE the message
+  // changes, or its header is built from the new message and no frame can be
+  // found after the original one (R171).
+  const originalStack = e.stack;
   const originalMessage = e.message;
   e.message = 'Failed query';
   delete e.query;
   delete e.params;
-  e.stack = withFrames(`${name}: Failed query`, e.stack, originalMessage);
+  e.stack = withFrames(`${name}: Failed query`, originalStack, originalMessage);
   scrubbed.add(e);
 }
 
