@@ -1129,8 +1129,10 @@ are not bound to a user id, so `eraseUser` cannot find them either.
 
 When a staff member whose address is the reply-to asks for erasure (or leaves):
 
-1. The tenant changes `tenant_renewal_settings.reply_to_*` to a role mailbox
-   (future reminders carry it from the next dispatch pass).
+1. The tenant changes the reply-to to a role mailbox, or removes it, on
+   `/admin/settings/renewals/reply-to` (an admin; future reminders carry the
+   new value from the next dispatch pass). The `renewal_reply_to_updated`
+   audit rows hold only the address's domain, so they need no clearing.
 2. Clear the existing snapshots for that address, in the tenant:
 
    ```sql

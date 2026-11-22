@@ -54,6 +54,7 @@ export const OBSERVED_PAGES: readonly ObservedSurface[] = [
   { surface: '/admin/renewals/[cycleId]', kind: 'page', key: 'renewals.read' },
   { surface: '/admin/renewals/tasks', kind: 'page', key: 'renewals.read' },
   { surface: '/admin/settings/renewals/schedules', kind: 'page', key: 'settings.renewal_schedules' },
+  { surface: '/admin/settings/renewals/reply-to', kind: 'page', key: 'settings.renewal_schedules' },
   { surface: '/admin/broadcasts/new', kind: 'page', key: 'broadcasts.write' },
   { surface: '/admin/broadcasts/templates', kind: 'page', key: 'broadcasts.write' },
   { surface: '/admin/broadcasts/templates/new', kind: 'page', key: 'broadcasts.write' },
