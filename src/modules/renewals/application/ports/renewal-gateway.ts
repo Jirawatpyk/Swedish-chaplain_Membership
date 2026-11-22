@@ -8,9 +8,8 @@
  * reminders are TRANSACTIONAL communications per FR-019 + Assumption A5.
  *
  * Locale: caller passes the recipient's preferred locale ('en' | 'th'
- * | 'sv'). Adapter resolves the localised template + From-name from
- * the tenant's `tenant_renewal_settings.reply_to_*` (when set) or
- * falls back to F1+F4 defaults.
+ * | 'sv'). Adapter resolves the localised template; From is the F1+F4
+ * default. Reply-To comes from the caller (`replyToEmail` below).
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
@@ -47,9 +46,9 @@ export interface SendRenewalEmailInput {
   /** Idempotency key — typically the reminder_event_id UUID. */
   readonly idempotencyKey: string;
   /**
-   * Optional reply-to override (per-cycle ED escalation can route to a
-   * specific admin). Falls back to tenant_renewal_settings defaults
-   * when null.
+   * Optional Reply-To. For a reminder (#707) the caller passes the reminder
+   * row's snapshot of `tenant_renewal_settings.reply_to_*`; absent = no
+   * Reply-To header. The adapter adds no default of its own.
    */
   readonly replyToEmail?: string;
   readonly replyToDisplayName?: string;

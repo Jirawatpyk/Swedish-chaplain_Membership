@@ -70,6 +70,13 @@ export const renewalReminderEvents = pgTable(
     retryUntil: timestamp('retry_until', { withTimezone: true }),
     retryExhaustedAt: timestamp('retry_exhausted_at', { withTimezone: true }),
 
+    // #707 (migration 0332) — the tenant's renewal Reply-To as the first
+    // attempt sent it. The retry sends this, never the current tenant
+    // setting, so Resend's Idempotency-Key sees one request. NULL = no
+    // Reply-To (every row created before 0332).
+    replyToEmail: text('reply_to_email'),
+    replyToDisplayName: text('reply_to_display_name'),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

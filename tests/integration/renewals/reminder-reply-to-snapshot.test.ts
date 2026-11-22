@@ -114,8 +114,8 @@ describe('#707 renewal reminder reply-to snapshot (live Neon)', () => {
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
-    tenantA = await createTestTenant('test-replyto-a');
-    tenantB = await createTestTenant('test-replyto-b');
+    tenantA = await createTestTenant('test-swecham');
+    tenantB = await createTestTenant('test-chamber');
     await seedRenewalPolicies(tenantA.ctx);
     await seedRenewalPolicies(tenantB.ctx);
     cycleA = await seedCycle(tenantA, user);

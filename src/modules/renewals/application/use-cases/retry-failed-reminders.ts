@@ -37,7 +37,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
-import { buildReminderSendInput } from './_lib/build-reminder-send-input';
+import { buildReminderSendInput, reminderRowReplyTo } from './_lib/build-reminder-send-input';
 // BUG-2 — retry pass must re-apply the FR-033 outreach-pause gate (Gate 10)
 // the same way the main dispatcher does. Same use-cases/ dir, no cycle
 // (pause file imports only zod/result/otel + RenewalsDeps type).
@@ -273,6 +273,9 @@ async function attemptRetry(
     templateId: event.templateId,
     reminderEventId: event.reminderEventId,
     reminderCreatedAt: event.createdAt,
+    // #707 — the row's snapshot, never the current tenant setting: a tenant
+    // that edits its reply-to cannot turn this retry into a Resend 409.
+    replyTo: reminderRowReplyTo(event),
   });
   const locale = sendInput.recipient.preferredLocale;
   const gatewayResult = await deps.renewalGateway.sendRenewalEmail(sendInput);

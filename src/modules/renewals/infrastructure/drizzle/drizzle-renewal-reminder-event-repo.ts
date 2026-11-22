@@ -70,6 +70,8 @@ function rowToDomain(row: RenewalReminderEventRow): ReminderEvent {
     retryExhaustedAt: row.retryExhaustedAt
       ? row.retryExhaustedAt.toISOString()
       : null,
+    replyToEmail: row.replyToEmail,
+    replyToDisplayName: row.replyToDisplayName,
   };
 }
 
@@ -99,6 +101,8 @@ export function makeDrizzleRenewalReminderEventRepo(
           templateId: input.templateId ?? null,
           taskType: input.taskType ?? null,
           actorUserId: input.actorUserId ?? null,
+          replyToEmail: input.replyToEmail ?? null,
+          replyToDisplayName: input.replyToDisplayName ?? null,
           status: 'pending',
         })
         .onConflictDoNothing({
@@ -373,6 +377,8 @@ export function makeDrizzleRenewalReminderEventRepo(
         templateId: input.templateId ?? null,
         taskType: input.taskType ?? null,
         actorUserId: input.actorUserId ?? null,
+        replyToEmail: input.replyToEmail ?? null,
+        replyToDisplayName: input.replyToDisplayName ?? null,
         status: 'pending' as const,
       }));
       const insertedRows = await txDb

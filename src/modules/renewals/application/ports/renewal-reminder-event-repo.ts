@@ -42,6 +42,14 @@ export interface ReminderEvent {
    * "emit permanent audit + create task once" contract.
    */
   readonly retryExhaustedAt: string | null;
+  /**
+   * #707 — the Reply-To the first attempt sent (the tenant's renewal
+   * reply-to, copied at insert). The retry sends this, never the current
+   * tenant setting. NULL = no Reply-To, which every row created before
+   * migration 0332 holds.
+   */
+  readonly replyToEmail: string | null;
+  readonly replyToDisplayName: string | null;
 }
 
 export interface NewReminderEventInput {
@@ -53,6 +61,9 @@ export interface NewReminderEventInput {
   readonly templateId?: string;
   readonly taskType?: string;
   readonly actorUserId?: string;
+  /** #707 — the reply-to snapshot (email rows only). */
+  readonly replyToEmail?: string | null;
+  readonly replyToDisplayName?: string | null;
 }
 
 export interface ReminderEventTransitionInput {

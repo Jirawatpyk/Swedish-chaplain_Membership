@@ -41,7 +41,8 @@ import { env } from '@/lib/env';
 import { renewalsMetrics } from '@/lib/metrics';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../../infrastructure/renewals-deps';
-import { buildReminderSendInput } from './build-reminder-send-input';
+import { buildReminderSendInput, reminderRowReplyTo } from './build-reminder-send-input';
+import type { ReminderReplyTo } from './resolve-reminder-reply-to';
 import {
   findDueStepsForDate,
 } from '../../../domain/tenant-renewal-schedule-policy';
@@ -51,7 +52,10 @@ import type {
   ReminderStep,
 } from '../../../domain/value-objects/reminder-step';
 import type { DispatchCandidate } from '../../ports/dispatch-candidate-repo';
-import { ReminderEventNotFoundError } from '../../ports/renewal-reminder-event-repo';
+import {
+  ReminderEventNotFoundError,
+  type ReminderEvent,
+} from '../../ports/renewal-reminder-event-repo';
 import { isPermanentGatewayError } from '../../ports/renewal-gateway';
 import type { RenewalActorRole } from '../../ports/renewal-audit-emitter';
 import { pauseRemindersAfterOutreach } from '../pause-reminders-after-outreach';
@@ -148,6 +152,12 @@ export interface DispatchContext {
    * `unreconciledMemberIds`); empty for the admin single-cycle path.
    */
   readonly dueTrackCycleIds: ReadonlySet<string>;
+  /**
+   * #707 — the tenant's renewal reply-to, resolved ONCE per pass
+   * (`resolveReminderReplyTo`). Copied onto each reminder row at insert;
+   * the send reads it back from the row. Required, so no caller can forget it.
+   */
+  readonly replyTo: ReminderReplyTo | null;
 }
 
 /**
@@ -1095,7 +1105,12 @@ async function fireStep(
       yearInCycle: stepYearInCycle,
       channel: step.channel,
       ...(step.channel === 'email'
-        ? { templateId: step.templateId }
+        ? {
+            templateId: step.templateId,
+            // #707 — the reply-to snapshot the first attempt AND the retry send.
+            replyToEmail: ctx.replyTo?.email ?? null,
+            replyToDisplayName: ctx.replyTo?.displayName ?? null,
+          }
         : { taskType: step.taskType }),
       ...(ctx.actorUserId !== null ? { actorUserId: ctx.actorUserId } : {}),
     }),
@@ -1137,7 +1152,7 @@ async function fireStep(
         step,
         reminderEventId,
         catchUp,
-        reminderInsert.row.createdAt,
+        reminderInsert.row,
       );
     }
     // Task channel — the `year_in_cycle` recorded on the audit is the
@@ -1287,11 +1302,12 @@ export async function dispatchEmailStep(
   reminderEventId: string,
   catchUp: CatchUpInfo,
   /**
-   * Spec 141: the reminder row's `createdAt`. The CTA is signed at this
-   * instant, and the retry path signs at the same one, so a retry renders a
+   * Spec 141: the reminder row. The CTA is signed at its `createdAt`, and
+   * the retry path signs at the same one, so a retry renders a
    * byte-identical body and Resend's Idempotency-Key returns the first send.
+   * #707: its reply-to snapshot is the Reply-To, for the same reason.
    */
-  reminderCreatedAt: string,
+  reminderRow: Pick<ReminderEvent, 'createdAt' | 'replyToEmail' | 'replyToDisplayName'>,
 ): Promise<DispatchOneCycleOutcome> {
   const { cycle, member, primaryContact } = candidate;
   // Type narrowing — Gate 11 already guarantees primaryContact !== null
@@ -1314,7 +1330,8 @@ export async function dispatchEmailStep(
     stepId: step.stepId,
     templateId: step.templateId,
     reminderEventId,
-    reminderCreatedAt,
+    reminderCreatedAt: reminderRow.createdAt,
+    replyTo: reminderRowReplyTo(reminderRow),
   });
   const locale = sendInput.recipient.preferredLocale;
 

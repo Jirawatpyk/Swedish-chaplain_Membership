@@ -12,6 +12,10 @@
  * and the token's `iat` — is taken at the row's `createdAt`, never at the tick.
  * A second hand-kept copy of this input is how the two paths would drift.
  *
+ * #707 — the Reply-To likewise comes from the reminder row: the tenant's
+ * reply-to is snapshotted on the row at insert, so a tenant that edits it,
+ * or a deploy between the attempts, cannot change what the retry sends.
+ *
  * Pure Application — no framework/ORM imports (Constitution Principle III).
  */
 import { asCycleId } from '../../../domain/renewal-cycle';
@@ -19,6 +23,7 @@ import type { DispatchCandidate } from '../../ports/dispatch-candidate-repo';
 import type { RenewalLinkTokenSigner } from '../../ports/renewal-link-token-signer';
 import type { SendRenewalEmailInput } from '../../ports/renewal-gateway';
 import { buildRenewalCtaUrl } from './build-renewal-redeem-link-url';
+import type { ReminderReplyTo } from './resolve-reminder-reply-to';
 
 export function buildReminderSendInput(args: {
   readonly signer: RenewalLinkTokenSigner;
@@ -32,6 +37,11 @@ export function buildReminderSendInput(args: {
   readonly reminderEventId: string;
   /** The reminder row's `created_at` — the instant the first attempt used. */
   readonly reminderCreatedAt: string;
+  /**
+   * #707 — the reminder row's reply-to snapshot (null = no Reply-To). Read
+   * from the ROW on both paths, never from the current tenant setting.
+   */
+  readonly replyTo: ReminderReplyTo | null;
 }): SendRenewalEmailInput {
   const { cycle, member } = args.candidate;
   const { primaryContact } = args;
@@ -72,5 +82,17 @@ export function buildReminderSendInput(args: {
       preferences_url: `${args.baseUrl}/portal/preferences/renewals`,
     },
     idempotencyKey: args.reminderEventId,
+    ...(args.replyTo !== null ? { replyToEmail: args.replyTo.email } : {}),
+    ...(args.replyTo?.displayName ? { replyToDisplayName: args.replyTo.displayName } : {}),
   };
+}
+
+/** #707 — the reply-to snapshot a reminder row holds, as the builder takes it. */
+export function reminderRowReplyTo(row: {
+  readonly replyToEmail: string | null;
+  readonly replyToDisplayName: string | null;
+}): ReminderReplyTo | null {
+  return row.replyToEmail !== null
+    ? { email: row.replyToEmail, displayName: row.replyToDisplayName }
+    : null;
 }
