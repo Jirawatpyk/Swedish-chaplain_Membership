@@ -167,6 +167,9 @@ function fakeDeps(opts: {
         actorUserId: null,
         yearInCycle: input.yearInCycle,
         createdAt: NOW_ISO,
+        // #707 — the row holds what the insert wrote (the snapshot).
+        replyToEmail: input.replyToEmail ?? null,
+        replyToDisplayName: input.replyToDisplayName ?? null,
       },
     };
   });
@@ -319,6 +322,8 @@ const happyCtx: DispatchContext = {
   // 066 §3.2(2) — empty by default; the due-track suppression tests
   // override this field explicitly.
   dueTrackCycleIds: new Set(),
+  // #707 — no tenant reply-to by default; the reply-to tests set one.
+  replyTo: null,
 };
 
 describe('dispatchOneCycle', () => {
@@ -359,6 +364,47 @@ describe('dispatchOneCycle', () => {
         .templateVariables;
       expect(String(vars['renewal_link_url'])).not.toContain('redeem-link');
       expect(String(vars['renewal_link_url'])).toContain('/portal/renewal/');
+    });
+
+    it('#707: the tenant reply-to is snapshotted on the reminder row at insert', async () => {
+      const { deps, insertReminderMock } = fakeDeps({});
+      const ctx = { ...happyCtx, replyTo: { email: 'renewals@swecham.example', displayName: 'SweCham Membership' } };
+      await dispatchOneCycle(deps, buildHappyCandidate(), ctx);
+      expect(insertReminderMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          replyToEmail: 'renewals@swecham.example',
+          replyToDisplayName: 'SweCham Membership',
+        }),
+      );
+    });
+
+    it('#707: the send carries the ROW snapshot as Reply-To, not the context value', async () => {
+      // The row is the record of what the first attempt sent; the retry reads
+      // the same row, so both attempts carry one Reply-To.
+      const { deps, gatewayMock, insertReminderMock } = fakeDeps({});
+      const base = insertReminderMock.getMockImplementation()!;
+      insertReminderMock.mockImplementation(async (...args: Parameters<typeof base>) => {
+        const r = await base(...args);
+        return { ...r, row: { ...r.row, replyToEmail: 'row@swecham.example', replyToDisplayName: null } };
+      });
+      const ctx = { ...happyCtx, replyTo: { email: 'ctx@swecham.example', displayName: 'Ctx' } };
+      const result = await dispatchOneCycle(deps, buildHappyCandidate(), ctx);
+      expect(result.kind).toBe('sent');
+      const sent = (gatewayMock.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+      expect(sent['replyToEmail']).toBe('row@swecham.example');
+      expect('replyToDisplayName' in sent).toBe(false);
+    });
+
+    it('#707: no tenant reply-to → the row holds nulls and the send has no reply-to keys', async () => {
+      const { deps, gatewayMock, insertReminderMock } = fakeDeps({});
+      await dispatchOneCycle(deps, buildHappyCandidate(), happyCtx);
+      expect(insertReminderMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ replyToEmail: null, replyToDisplayName: null }),
+      );
+      const sent = (gatewayMock.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+      expect('replyToEmail' in sent).toBe(false);
     });
 
     it('locale: member.preferred_locale wins over the contact default (email-locale audit 2026-07-16)', async () => {

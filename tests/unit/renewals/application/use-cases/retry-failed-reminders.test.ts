@@ -69,6 +69,9 @@ function buildFailedEvent(
     createdAt: '2026-05-14T10:00:00.000Z',
     retryUntil: '2026-05-15T22:00:00.000Z', // 22:00 = 12 + 10 hours from now=12:00
     retryExhaustedAt: null,
+    // #707 — no reply-to snapshot by default (a row created before it).
+    replyToEmail: null,
+    replyToDisplayName: null,
     ...overrides,
   };
 }
@@ -270,6 +273,34 @@ describe('retryFailedReminders', () => {
         .templateVariables;
       expect(String(vars['renewal_link_url'])).not.toContain('redeem-link');
       expect(String(vars['renewal_link_url'])).toContain('/portal/renewal/');
+    });
+
+    it("#707: the retry sends the row's reply-to snapshot, never the current tenant setting", async () => {
+      // The tenant changed its reply-to after the first attempt; the retry
+      // still sends what the first attempt sent, so Resend's Idempotency-Key
+      // sees the same request instead of answering 409.
+      const { deps, gatewayMock } = fakeDeps({
+        eligible: [
+          buildFailedEvent({ replyToEmail: 'first@swecham.example', replyToDisplayName: 'SweCham' }),
+        ],
+      });
+      const settingsSpy = vi.fn(async () => ({ replyToEmail: 'changed@swecham.example', replyToDisplayName: 'Changed' }));
+      (deps as unknown as { tenantRenewalSettingsRepo: unknown }).tenantRenewalSettingsRepo = { findByTenant: settingsSpy };
+      const result = await retryFailedReminders(deps, VALID_INPUT);
+      assertOk(result);
+      const sent = (gatewayMock.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+      expect(sent['replyToEmail']).toBe('first@swecham.example');
+      expect(sent['replyToDisplayName']).toBe('SweCham');
+      expect(settingsSpy).not.toHaveBeenCalled();
+    });
+
+    it('#707: a row with no snapshot (first attempt before #707) retries with no reply-to keys', async () => {
+      const { deps, gatewayMock } = fakeDeps({ eligible: [buildFailedEvent()] });
+      const result = await retryFailedReminders(deps, VALID_INPUT);
+      assertOk(result);
+      const sent = (gatewayMock.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+      expect('replyToEmail' in sent).toBe(false);
+      expect('replyToDisplayName' in sent).toBe(false);
     });
 
     // BUG-2 — the retry pass must re-apply the dispatcher gates whose

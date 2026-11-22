@@ -38,6 +38,7 @@ import {
   SKIP_REASONS,
 } from './_lib/dispatch-one-cycle';
 import { dispatchDueTrackCycle } from './_lib/dispatch-due-track';
+import { resolveReminderReplyTo } from './_lib/resolve-reminder-reply-to';
 
 /**
  * F8 Phase 4 Wave I2e/F1 — bucket count for k-anonymity in span
@@ -238,6 +239,15 @@ export async function dispatchRenewalCycle(
     await deps.memberRenewalFlagsRepo.listMemberIdsWithUnreconciledPaidMembershipInvoice(
       input.tenantId,
     );
+  // #707 — the tenant's renewal reply-to, read ONCE for the pass and
+  // snapshotted on every reminder row it inserts (the retry reads the row).
+  // A failed read fails the pass like the read above it (the tick answers
+  // 500 and the next retries), rather than sending a whole pass silently
+  // without the tenant's Reply-To (review round 1).
+  const replyTo = resolveReminderReplyTo(
+    await deps.tenantRenewalSettingsRepo.findByTenant(input.tenantId),
+    input.tenantId,
+  );
   // ------------------------------------------------------------------
   // 066 §3.2(2) — DUE-TRACK pass. Runs FIRST so the suppression set
   // (`dueTrackCycleIds`) exists before the main ladder pass: a cycle
@@ -258,6 +268,7 @@ export async function dispatchRenewalCycle(
       nowIso,
       unreconciledMemberIds,
       dueTrackCycleIds: new Set<string>(), // unused inside the due pass
+      replyTo,
     };
     const counts = summary as {
       candidatesProcessed: number;
@@ -345,6 +356,7 @@ export async function dispatchRenewalCycle(
     requestId: input.requestId ?? null,
     unreconciledMemberIds,
     dueTrackCycleIds,
+    replyTo,
   };
   let cursor: string | undefined = undefined;
   let pages = 0;

@@ -185,6 +185,9 @@ export async function dispatchDueTrackCycle(
       yearInCycle: stepYearInCycle,
       channel: 'email',
       templateId: DUE_TRACK_TEMPLATE_ID,
+      // #707 — the reply-to snapshot the first attempt AND the retry send.
+      replyToEmail: ctx.replyTo?.email ?? null,
+      replyToDisplayName: ctx.replyTo?.displayName ?? null,
       ...(ctx.actorUserId !== null ? { actorUserId: ctx.actorUserId } : {}),
     }),
   );
@@ -219,7 +222,7 @@ export async function dispatchDueTrackCycle(
       emailStep,
       reminderEventId,
       catchUp,
-      reminderInsert.row.createdAt,
+      reminderInsert.row,
     );
   } catch (e) {
     return await defensivelyMarkFailedForRetry(

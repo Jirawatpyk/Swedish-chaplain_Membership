@@ -420,7 +420,8 @@ Same as F7 — the chamber tenant operating the Chamber-OS deployment.
 | `members.risk_score`, `members.risk_score_band`, `members.risk_score_factors` (F8-added) | F8 8-factor heuristic recompute | **systematic evaluation per PDPA §32 / GDPR Art. 22** — DPIA required |
 | `members.risk_snoozed_until` (F8-added) | Admin snooze action | operational state |
 | `renewal_cycles.frozen_plan_price_thb`, `period_from`, `period_to` | F4 + F8-derived | financial metadata |
-| `renewal_reminder_events.dispatched_at`, `step_id`, `recipient_email` | Resend dispatch | dispatch audit |
+| `renewal_reminder_events.dispatched_at`, `step_id`, `delivery_id`, `status` (the recipient address is not stored on the row; it is read from the primary contact at send) | Resend dispatch | dispatch audit |
+| `tenant_renewal_settings.reply_to_email`, `reply_to_display_name`, and their per-reminder snapshot `renewal_reminder_events.reply_to_email`, `reply_to_display_name` (#707, migration 0332) | Set by tenant staff (SQL today; no admin writer yet) | staff contact data — may identify a natural person (prefer a role mailbox); sent to members as the reminder's Reply-To header via Resend |
 | `at_risk_outreach.notes`, `channel`, `outcome` | Admin/manager outreach record | operational + free-text PII |
 | `tier_upgrade_suggestions.evidence` (turnover, paid-invoice volume) | F2 + F4 aggregates | financial signal |
 | `renewal_escalation_tasks.notes` | Admin task record | operational + free-text PII |
@@ -459,6 +460,8 @@ Same as F7 — the chamber tenant operating the Chamber-OS deployment.
 - **Member** of the renewing membership (recipient of reminder email
   via Resend transactional, dispatched from `BROADCASTS_FROM_EMAIL`
   domain).
+- **Member** also receives the tenant's renewal reply-to address and display
+  name, as the reminder's Reply-To header (#707).
 - **Chamber admin + manager users** (recipients of admin-pipeline view,
   at-risk widget, tier-upgrade suggestions, escalation tasks).
 - **No third-party recipients** (no marketing list export, no analytics
@@ -477,6 +480,7 @@ membership-onboarding via F1 invitation flow). cron-job.org is EU-based
 |---|---|---|
 | `renewal_cycles` rows (status='cancelled') | **5 years** | Constitution v1.4.0 default for non-tax-document audit |
 | `renewal_reminder_events` | **5 years** | dispatch-audit baseline |
+| `renewal_reminder_events.reply_to_*` snapshot (#707) | **with its row (5 years)** | the record of the Reply-To a reminder actually carried; kept with the dispatch audit it belongs to, not cleared after the retry window. It is staff contact data, not bound to a user id: a staff erasure request clears it by hand (`docs/runbooks/member-erasure.md` § Staff reply-to) |
 | `at_risk_outreach` rows | **5 years** | operational record per outreach |
 | `tier_upgrade_suggestions` rows | **5 years** | suggestion audit |
 | `renewal_escalation_tasks` rows | **5 years** | task audit |

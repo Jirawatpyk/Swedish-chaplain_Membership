@@ -30,6 +30,7 @@ import {
 } from './_lib/dispatch-one-cycle';
 
 import { errClassWithCode, errKind } from '@/lib/log-id';
+import { resolveReminderReplyTo } from './_lib/resolve-reminder-reply-to';
 export const sendReminderNowInputSchema = z.object({
   tenantId: z.string().min(1),
   cycleId: z.string().uuid(),
@@ -112,6 +113,11 @@ export async function sendReminderNow(
         input.tenantId,
         candidate.member.memberId,
       );
+    // #707 — the tenant's renewal reply-to, snapshotted on the reminder row.
+    const replyTo = resolveReminderReplyTo(
+      await deps.tenantRenewalSettingsRepo.findByTenant(input.tenantId),
+      input.tenantId,
+    );
     const outcome = await dispatchOneCycle(deps, candidate, {
       tenantId: input.tenantId,
       actorUserId: input.actorUserId,
@@ -127,6 +133,7 @@ export async function sendReminderNow(
       // cycle (deliberate human override; the cron pass computes the
       // real suppression set).
       dueTrackCycleIds: new Set(),
+      replyTo,
     });
     return ok(outcome);
   } catch (e) {
