@@ -12,6 +12,7 @@
  *   - /admin/renewals/[cycleId]              (US1 cycle detail)
  *   - /admin/renewals/tasks                  (US6 escalation queue)
  *   - /admin/renewals/tier-upgrades          (US5 tier-upgrade queue)
+ *   - /admin/settings/renewals/reply-to      (PR B: the reminder Reply-To form)
  *   - /portal/renewal/[memberId]             (US3 self-service entry)
  *   - /portal/account#renewal-prefs          (US3 reminder preferences —
  *       058 D2 moved the opt-out into the Account hub; scan scoped to
@@ -156,6 +157,16 @@ test.describe('@a11y T267 — F8 axe-core scan', () => {
         await page.goto('/admin/renewals/tier-upgrades');
         await page.waitForLoadState('domcontentloaded');
         await expectNoAxeViolations(page, `/admin/renewals/tier-upgrades (${theme})`);
+      });
+
+      test(`/admin/settings/renewals/reply-to (${theme})`, async ({ page }) => {
+        await setTheme(page, theme);
+        await signInAsAdmin(page);
+        await page.goto('/admin/settings/renewals/reply-to');
+        // The form is a client component: scan once its fields are on the
+        // page, not the loading skeleton (R173: no axe scan reached this page).
+        await expect(page.getByRole('textbox', { name: 'Reply-to email' })).toBeVisible();
+        await expectNoAxeViolations(page, `/admin/settings/renewals/reply-to (${theme})`);
       });
 
       test(`/admin/renewals/[cycleId] (${theme})`, async ({ page }) => {

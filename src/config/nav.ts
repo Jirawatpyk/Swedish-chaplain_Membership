@@ -21,6 +21,7 @@ import {
   MegaphoneIcon,
   RefreshCwIcon,
   CalendarClockIcon,
+  ReplyIcon,
   CalendarDaysIcon,
   PaletteIcon,
   PlugZapIcon,
@@ -564,7 +565,20 @@ export const staffNavConfig: NavConfig = {
           icon: CalendarClockIcon,
           href: '/admin/settings/renewals/schedules',
           guard: defineGuard('settings.renewal_schedules'),
-          activePattern: '/admin/settings/renewals',
+          // Narrowed from the `/admin/settings/renewals` prefix: the reply-to
+          // page below is a sibling entry, and the prefix would light both rows.
+          activePattern: '/admin/settings/renewals/schedules',
+        },
+        // PR B (#814) — the renewal reminder Reply-To. Same key as the
+        // schedules page above and as both verbs of `/api/admin/renewals/
+        // settings/reply-to` (admin, super_admin). Like schedules it has no
+        // visibilityFlag: both pages answer for the F8 flag themselves.
+        {
+          titleKey: 'nav.staff.settingsRenewalReplyTo',
+          icon: ReplyIcon,
+          href: '/admin/settings/renewals/reply-to',
+          guard: defineGuard('settings.renewal_schedules'),
+          activePattern: '/admin/settings/renewals/reply-to',
         },
         // F114 US6 — the per-tenant member-change approval switch. It shipped
         // reachable ONLY from the `/admin/settings` hub card, whose docblock

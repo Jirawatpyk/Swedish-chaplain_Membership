@@ -5,32 +5,28 @@
  *
  * A value Resend would refuse never reaches a send. A malformed address
  * would 422 every reminder of the tenant, so it resolves to "no reply-to";
- * a display name with a control character (a header injection), an RFC 5322
- * special (`( ) < > [ ] : ; @ \ , "`, which could make the unquoted header
- * name another address), or over 100 characters is dropped and the address
- * kept. Either is logged by field,
- * never by value.
+ * a display name that fails the Domain rule (`domain/reminder-reply-to.ts`)
+ * is dropped and the address kept. Either is logged by field, never by
+ * value. The admin writer applies the same two checks, so a saved value
+ * always passes here.
  *
  * Pure Application — no framework/ORM imports (Constitution Principle III).
  */
 import { z } from 'zod';
 import { logger } from '@/lib/logger';
 import type { TenantRenewalSettings } from '../../../domain/tenant-renewal-settings';
+import { REPLY_TO_EMAIL_MAX, checkReplyToDisplayName } from '../../../domain/reminder-reply-to';
 
 export interface ReminderReplyTo {
   readonly email: string;
   readonly displayName: string | null;
 }
 
-const EMAIL = z.string().email().max(254);
-const MAX_DISPLAY_NAME = 100;
-// Control characters (line breaks included, and U+2028/2029), and every
-// RFC 5322 special — the gateway writes the name UNQUOTED as `Name <email>`,
-// so a special could make it a second address, a group (`:`) or a comment
-// (review round 1: PDPA L-1, code-review, reliability M-1). Rejected here,
-// before the snapshot, so the header format itself never has to change: a
-// changed format would change the payload of rows already mid-retry.
-const UNSAFE_DISPLAY_NAME = /[\u0000-\u001f\u007f\u2028\u2029<>()[\]:;@\\,"]/;
+/**
+ * The address check both the dispatcher and the admin writer use (PR B):
+ * an address Resend would refuse 422s every reminder of the tenant.
+ */
+export const reminderReplyToEmailSchema = z.string().email().max(REPLY_TO_EMAIL_MAX);
 
 function warnInvalid(tenantId: string, field: 'email' | 'display_name'): void {
   logger.warn(
@@ -45,13 +41,13 @@ export function resolveReminderReplyTo(
 ): ReminderReplyTo | null {
   const email = settings?.replyToEmail?.trim() ?? '';
   if (email === '') return null;
-  if (!EMAIL.safeParse(email).success) {
+  if (!reminderReplyToEmailSchema.safeParse(email).success) {
     warnInvalid(tenantId, 'email');
     return null;
   }
   const name = settings?.replyToDisplayName?.trim() ?? '';
   if (name === '') return { email, displayName: null };
-  if (UNSAFE_DISPLAY_NAME.test(name) || name.length > MAX_DISPLAY_NAME) {
+  if (checkReplyToDisplayName(name) !== null) {
     warnInvalid(tenantId, 'display_name');
     return { email, displayName: null };
   }

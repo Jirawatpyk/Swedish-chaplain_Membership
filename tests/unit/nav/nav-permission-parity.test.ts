@@ -73,7 +73,8 @@ describe('staff nav declares a permission for every entry (T061)', () => {
     // shipped reachable only from the /admin/settings hub card.
     // F119 T029: +1 — the chamber brand page under Settings.
     // 124: +1 — the invoice dashboard under Finance.
-    expect(STAFF_ITEMS).toHaveLength(21);
+    // PR B (#814): +1 — the renewal reminder Reply-To under Settings.
+    expect(STAFF_ITEMS).toHaveLength(22);
   });
 
   it('every staff nav item declares a guard', () => {

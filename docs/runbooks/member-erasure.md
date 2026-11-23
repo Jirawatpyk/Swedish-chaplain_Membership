@@ -1129,8 +1129,12 @@ are not bound to a user id, so `eraseUser` cannot find them either.
 
 When a staff member whose address is the reply-to asks for erasure (or leaves):
 
-1. The tenant changes `tenant_renewal_settings.reply_to_*` to a role mailbox
-   (future reminders carry it from the next dispatch pass).
+1. The tenant changes the reply-to to a role mailbox, or removes it, on
+   `/admin/settings/renewals/reply-to` (an admin or super admin; future reminders carry the
+   new value from the next dispatch pass). The `renewal_reply_to_updated`
+   audit rows hold only the address's domain, so they need no clearing,
+   unless that domain itself names the person (a personal domain such as
+   `firstname-lastname.se`); record that case in the DPO log.
 2. Clear the existing snapshots for that address, in the tenant:
 
    ```sql
@@ -1144,7 +1148,11 @@ When a staff member whose address is the reply-to asks for erasure (or leaves):
    opens a manual-outreach task for it. Run step 2 outside the 23:00 UTC
    dispatch window, after `retry_until` has passed for the affected rows,
    if that matters.
-3. Record the request and the row count in the DPO log.
+3. Reminders already sent keep the address in their `Reply-To` header in the
+   members' mailboxes and in Resend's own send log (a sub-processor), which
+   follows Resend's retention. Steps 1–2 do not reach either; say so in the
+   reply to the request.
+4. Record the request and the row count in the DPO log.
 
 Prefer a role mailbox as the reply-to from the start; it avoids all of this.
 

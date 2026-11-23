@@ -290,6 +290,30 @@ List open escalation tasks.
 
 ## 6. Settings
 
+### `GET` / `PUT /api/admin/renewals/settings/reply-to` (built, PR B — #707 follow-up)
+
+The renewal reminder Reply-To, the only tenant setting with a writer so far
+(the `/settings/tenant` pair below was designed but not built).
+
+- Gate: `settings.renewal_schedules` (admin, super_admin); a manager gets 403
+  plus `f8_role_violation_blocked`. F8 flag off: 503 `feature_disabled`.
+- **GET 200**: `{ email: string | null, displayName: string | null }`.
+- **PUT body** (strict): `{ email: string | null, displayName: string | null }`.
+  An empty or blank `email` clears both fields. READ_ONLY_MODE: 503 after the
+  gate, before any write.
+- **PUT 200**: `{ email, displayName, changed }` — the trimmed stored values;
+  `changed: false` when they matched (no write, no audit).
+- **Errors**: 400 `invalid_body`; 422 `invalid_email`,
+  `display_name_without_email`, `invalid_display_name` (+ `reason`:
+  `unsafe_character` | `too_long`); 500 `server_error`.
+- **Audit**: `renewal_reply_to_updated` (5 y), only on a change, atomic with
+  the write. Payload `{ change: 'set' | 'changed' | 'cleared', email_set,
+  email_domain, display_name_set }` — the address's domain, never the address.
+- Reminder rows already created keep the reply-to they were snapshotted with
+  (#707), so a change never alters a retry's request body.
+
+---
+
 ### `GET /api/admin/renewals/settings/tenant`
 
 Read tenant-level F8 settings.

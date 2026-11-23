@@ -2295,6 +2295,10 @@
             "title": "Påminnelseschema",
             "description": "Frekvens och kanal för förnyelsepåminnelser, konfigurerbart per medlemsnivå."
           },
+          "renewalReplyTo": {
+            "title": "Svarsadress för påminnelser",
+            "description": "Hit går medlemmarnas svar på förnyelsepåminnelser."
+          },
           "broadcasts": {
             "title": "Inställningar för utskick",
             "description": "Tillåtna bildkällor för utskick till medlemmar."
@@ -2307,6 +2311,42 @@
             "title": "Godkännande av medlemsändringar",
             "description": "Om ändringar som medlemmar gör i sina egna företags- och kontaktuppgifter ska vänta på ett personalbeslut innan de tillämpas."
           }
+        }
+      },
+      "renewalReplyTo": {
+        "pageTitle": "Svarsadress för påminnelser",
+        "pageDescription": "Hit går medlemmarnas svar på förnyelsepåminnelser.",
+        "title": "Svarsadress",
+        "cardDescription": "Förnyelsepåminnelser skickas från kammarens avsändaradress. När en medlem svarar går svaret till adressen nedan. Lämna den tom så går svaren till avsändaradressen.",
+        "email": {
+          "label": "Svarsadress (e-post)",
+          "hint": "Använd en delad brevlåda för teamet, till exempel membership@…, inte en enskild persons adress."
+        },
+        "displayName": {
+          "label": "Visat namn",
+          "hint": "Visas bredvid adressen i medlemmens e-postprogram, t.ex. \"Medlemsteamet\". Högst 100 tecken; inga < > ( ) [ ] : ; @ \\ , eller \"."
+        },
+        "note": "En ändring gäller påminnelser som skickas från och med nu. Påminnelser som redan har skickats, eller väntar på ett nytt försök, behåller den svarsadress de först skickades med.",
+        "actions": {
+          "save": "Spara",
+          "remove": "Ta bort svarsadress"
+        },
+        "toast": {
+          "saved": "Svarsadressen har sparats",
+          "removed": "Svarsadressen har tagits bort – svar går till avsändaradressen",
+          "undo": "Ångra"
+        },
+        "status": {
+          "unchanged": "Inga ändringar att spara."
+        },
+        "errors": {
+          "invalidEmail": "Ange en giltig e-postadress, till exempel membership@example.com.",
+          "nameWithoutEmail": "Lägg till en e-postadress eller töm namnfältet.",
+          "nameUnsafe": "Namnet får inte innehålla < > ( ) [ ] : ; @ \\ , \" eller radbrytningar.",
+          "nameTooLong": "Namnet får vara högst 100 tecken.",
+          "readOnly": "Systemet är i skrivskyddat läge för underhåll. Inget har ändrats – försök igen senare.",
+          "generic": "Svarsadressen kunde inte sparas. Inget har ändrats – försök igen.",
+          "network": "Kunde inte nå servern. Ladda om sidan för att se vad som är sparat."
         }
       },
       "memberChanges": {
@@ -4713,6 +4753,7 @@
       },
       "settings": {
         "schedules": {
+          "replyToLink": "Svarsadress för påminnelser",
           "title": "Påminnelseschema",
           "subtitle": "Bestäm hur medlemmar i varje nivå kontaktas före och efter sitt förnyelsedatum.",
           "tabs": {
@@ -6498,6 +6539,7 @@
       "settings": "Inställningar",
       "settingsInvoices": "Fakturainställningar",
       "settingsRenewalSchedules": "Påminnelseschema",
+      "settingsRenewalReplyTo": "Svarsadress för påminnelser",
       "settingsMemberChanges": "Godkännande av medlemsändringar",
       "settingsBroadcasts": "Inställningar för utskick",
       "settingsBroadcastsBrand": "Profil för utskick",
@@ -6543,6 +6585,7 @@
     }
   },
   "breadcrumb": {
+    "replyTo": "Svarsadress",
     "support": "Hjälp och support",
     "brand": "Profil",
     "admin": "Admin",
@@ -8104,6 +8147,7 @@
       "membership_access_fail_open": "Kontroll av medlemsåtkomst misslyckades (fail-open)",
       "renewal_lapse_deferred_invoice_not_due": "Uppsägning uppskjuten — fakturan har inte förfallit än",
       "renewal_lapse_deferred_warning_pending": "Uppsägning uppskjuten — varselperioden har inte löpt ut än",
+      "renewal_reply_to_updated": "Svarsadress för förnyelsepåminnelser uppdaterad",
       "event_attendance_by_suspended_member": "Närvaro registrerad — medlemmens förmånsåtkomst avstängd eller uppsagd",
       "renewal_auto_drafted": "Förnyelseutkast skapat automatiskt",
       "renewal_auto_draft_discarded": "Automatiskt förnyelseutkast kasserat",

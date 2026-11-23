@@ -409,6 +409,25 @@ export {
   type UpdateSchedulePolicyError,
 } from './application/use-cases/update-schedule-policy';
 
+// --- PR B (#707 follow-up): the renewal reminder Reply-To setting -----------
+export {
+  loadRenewalReplyTo,
+  type RenewalReplyTo,
+  type LoadRenewalReplyToError,
+} from './application/use-cases/load-renewal-reply-to';
+
+export {
+  updateRenewalReplyTo,
+  type UpdateRenewalReplyToInput,
+  type UpdateRenewalReplyToOutput,
+  type UpdateRenewalReplyToError,
+} from './application/use-cases/update-renewal-reply-to';
+
+export {
+  REPLY_TO_DISPLAY_NAME_MAX,
+  REPLY_TO_EMAIL_MAX,
+} from './domain/reminder-reply-to';
+
 // --- Phase 4 Wave I2a use-cases (T092) ------------------------------------
 export {
   pauseRemindersAfterOutreach,

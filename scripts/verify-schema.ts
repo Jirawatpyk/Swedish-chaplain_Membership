@@ -266,6 +266,12 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'broadcast_audience_disclosed') AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'broadcast_audience_deleted')`,
       },
       {
+        // PR B (mig 0333) — every reply-to save writes this value in the
+        // same tx as the settings upsert, so a missing value 500s the save.
+        name: 'audit_event_type renewal_reply_to_updated (mig 0333)',
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'renewal_reply_to_updated')`,
+      },
+      {
         // Spec 142 (mig 0328) — the arbiter of `f7AuditAdapter.emitOnce`'s
         // `ON CONFLICT`. Without it that INSERT fails with 42P10, so every
         // segment removal loses its row. The same comparison as 0328's own

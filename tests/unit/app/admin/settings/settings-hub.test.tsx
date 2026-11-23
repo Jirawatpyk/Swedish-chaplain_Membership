@@ -61,7 +61,7 @@ describe('settings hub on AURA', () => {
   it('draws one AURA card per visible category, each one link named by its title', async () => {
     const root = await renderHub();
     const cards = root.querySelectorAll('.aura-card');
-    expect(cards).toHaveLength(6);
+    expect(cards).toHaveLength(7);
     const invoicing = [...root.querySelectorAll('a')].find((a) => a.textContent?.trim() === t.categories.invoicing.title);
     expect(invoicing).toBeDefined();
     expect(invoicing!.getAttribute('href')).toBe('/admin/settings/invoicing');

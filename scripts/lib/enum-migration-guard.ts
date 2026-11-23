@@ -104,6 +104,7 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *                        += 'credit_note_issue_replayed' (0324, 066 key replay)
  *                        += 'credit_note_attempt_abandoned' (0326, 068 Start over)
  *                        += 'broadcast_audience_disclosed', 'broadcast_audience_deleted' (0327, 139 s2)
+ *                        += 'renewal_reply_to_updated' (0333, PR B)
  *   - `notification_type` += the two F114 rows (0301), the five F119 eblast_* rows (0308)
  *   - `broadcast_status`  += the five F119 approval-round statuses (0308)
  */
@@ -204,6 +205,10 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     // Art. 30 record of a recipient-list disclosure and a segment delete.
     'broadcast_audience_disclosed',
     'broadcast_audience_deleted',
+    // PR B (0333) — `updateRenewalReplyTo` INSERTs it in the same tx as the
+    // tenant_renewal_settings upsert; a non-persisting ADD VALUE would 500
+    // every reply-to save in prod instead of failing the deploy here.
+    'renewal_reply_to_updated',
   ],
   // F114 (0301) — the two outbox row types the same use cases INSERT.
   notification_type: [

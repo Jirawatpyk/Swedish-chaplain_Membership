@@ -421,7 +421,7 @@ Same as F7 — the chamber tenant operating the Chamber-OS deployment.
 | `members.risk_snoozed_until` (F8-added) | Admin snooze action | operational state |
 | `renewal_cycles.frozen_plan_price_thb`, `period_from`, `period_to` | F4 + F8-derived | financial metadata |
 | `renewal_reminder_events.dispatched_at`, `step_id`, `delivery_id`, `status` (the recipient address is not stored on the row; it is read from the primary contact at send) | Resend dispatch | dispatch audit |
-| `tenant_renewal_settings.reply_to_email`, `reply_to_display_name`, and their per-reminder snapshot `renewal_reminder_events.reply_to_email`, `reply_to_display_name` (#707, migration 0332) | Set by tenant staff (SQL today; no admin writer yet) | staff contact data — may identify a natural person (prefer a role mailbox); sent to members as the reminder's Reply-To header via Resend |
+| `tenant_renewal_settings.reply_to_email`, `reply_to_display_name`, and their per-reminder snapshot `renewal_reminder_events.reply_to_email`, `reply_to_display_name` (#707, migration 0332) | Set by tenant admins on `/admin/settings/renewals/reply-to` (PR B; the page recommends a role mailbox). The `renewal_reply_to_updated` audit row (5 y) keeps only the address's domain and whether a name is set, never the address | staff contact data — may identify a natural person (prefer a role mailbox); sent to members as the reminder's Reply-To header via Resend |
 | `at_risk_outreach.notes`, `channel`, `outcome` | Admin/manager outreach record | operational + free-text PII |
 | `tier_upgrade_suggestions.evidence` (turnover, paid-invoice volume) | F2 + F4 aggregates | financial signal |
 | `renewal_escalation_tasks.notes` | Admin task record | operational + free-text PII |

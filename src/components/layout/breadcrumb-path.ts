@@ -299,6 +299,8 @@ const STATIC_LABEL_KEYS = {
   // "compliance / erasure-log" (incident 2026-07-18, PR #223 follow-up).
   compliance: 'compliance',
   'erasure-log': 'erasureLog',
+  // PR B — `/admin/settings/renewals/reply-to`.
+  'reply-to': 'replyTo',
   // Spec 122 US10b — `/admin/audit` showed its raw slug in the trail (board
   // `Admin-audit` reads "Audit log").
   audit: 'audit',

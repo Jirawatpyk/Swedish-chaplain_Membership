@@ -271,6 +271,9 @@ export const F8_AUDIT_EVENT_TYPES = [
   //     the pgEnum value; SHIPPED in `F8_ENUM_SHIPPED_TUPLE` — the emit
   //     site lands in this same commit. ---
   'renewal_lapse_deferred_warning_pending',
+  // --- PR B (#707 follow-up, migration 0333): staff set or clear the
+  //     renewal reminder Reply-To on /admin/settings/renewals/reply-to. ---
+  'renewal_reply_to_updated',
 ] as const;
 
 export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
@@ -279,9 +282,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 74
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 75
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 74';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 75';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;
@@ -1367,6 +1370,17 @@ export interface F8AuditPayloadShapes {
     readonly due_date: string;
     readonly warning_sent_at: string | null;
     readonly earliest_terminate_on: string | null;
+  };
+  /**
+   * PR B — the renewal reminder Reply-To was set, changed or cleared.
+   * PII discipline: the address's domain only, never the address (a 5-year
+   * row would outlive a staff erasure request); the name only as a flag.
+   */
+  readonly renewal_reply_to_updated: {
+    readonly change: 'set' | 'changed' | 'cleared';
+    readonly email_set: boolean;
+    readonly email_domain: string | null;
+    readonly display_name_set: boolean;
   };
   /**
    * 066 §4.4(2) — a payment settled a MEMBERSHIP invoice for a member whose

@@ -497,6 +497,10 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     lockstep with F8_AUDIT_EVENT_TYPES — the F8 audit-count parity
   //     tests enforce it. ---
   'renewal_lapse_deferred_warning_pending',
+  // --- PR B (#707 follow-up, migration 0333) — the renewal reminder Reply-To
+  //     set, changed or cleared by staff. Keep in lockstep with
+  //     F8_AUDIT_EVENT_TYPES. ---
+  'renewal_reply_to_updated',
   // 066-renewal-swecham-round2 §4.4(2) — post-termination payment (F8 taxonomy, 10y retention via migration 0257 trigger).
   'payment_on_terminated_member',
   // --- 059 PR-A Task 4 fix (migration 0251, 2026-07-14) — F4 write-time

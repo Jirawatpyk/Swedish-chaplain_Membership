@@ -29,6 +29,8 @@ import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
 import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
+import Link from 'next/link';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -102,7 +104,20 @@ export default async function RenewalSchedulesSettingsPage() {
 
   return (
     <FormContainer align="start">
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle')}
+        actions={
+          // PR B — the reminders' Reply-To lives on its own page; the sidebar's
+          // Renewals entry already covers /admin/settings/renewals/*.
+          <Link
+            href="/admin/settings/renewals/reply-to"
+            className={buttonClass({ variant: 'secondary', touchHeight: true })}
+          >
+            {t('replyToLink')}
+          </Link>
+        }
+      />
       {/*
         016 post-ship review finding #6 — `readOnly` was computed as
         `!canPerform(role, 'settings.renewal_schedules')`, provably

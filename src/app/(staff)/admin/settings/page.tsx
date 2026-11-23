@@ -8,6 +8,8 @@
  *     reset window, etc.). Super-admin-only since D4.
  *   - Reminder schedules (`/admin/settings/renewals/schedules`) — F8
  *     renewal reminder cadence per tier-bucket.
+ *   - Reminder reply-to (`/admin/settings/renewals/reply-to`) — where a
+ *     member's reply to a renewal reminder goes (PR B, #814).
  *   - Broadcast settings (`/admin/settings/broadcasts`) — F7.1a
  *     inline-image source allowlist. Hidden when F7 is off.
  *   - EventCreate integration (`/admin/settings/integrations/
@@ -29,6 +31,7 @@ import { getTranslations } from 'next-intl/server';
 import {
   FileCog2Icon,
   CalendarClockIcon,
+  ReplyIcon,
   ClipboardCheckIcon,
   Settings2Icon,
   PaletteIcon,
@@ -73,6 +76,14 @@ export const CATEGORIES = [
     descriptionKey: 'categories.renewalSchedules.description',
     href: '/admin/settings/renewals/schedules',
     icon: CalendarClockIcon,
+    permission: 'settings.renewal_schedules',
+  },
+  // PR B (#814) — beside its sidebar row, under Reminder schedules.
+  {
+    titleKey: 'categories.renewalReplyTo.title',
+    descriptionKey: 'categories.renewalReplyTo.description',
+    href: '/admin/settings/renewals/reply-to',
+    icon: ReplyIcon,
     permission: 'settings.renewal_schedules',
   },
   // F114 US6 (FR-031) — the per-tenant member-change approval switch. Third,
